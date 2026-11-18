@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 #
 # The whole test run, the one command to run before committing: every suite in
-# the `suites` list below, each in quiet mode, and shellcheck, all started at
-# once so they overlap.
+# the `suites` list below, each in quiet mode, and shellcheck, overlapping. The
+# suites other than orch_test.sh start first, in list order, each holding a slot
+# of the job pool while it runs (waiting for one when none is free); then
+# orch_test.sh, which holds none (its sections take their own); then shellcheck.
 # Each one's stdout is captured to a temporary directory, removed on exit, and
 # its exit status is taken from waiting on it; once every one has finished,
 # their output is printed in a fixed order, no matter which finished first. A
@@ -83,9 +85,13 @@
 # computes for its shellcheck limit is never exported: an unset ORCH_TEST_JOBS
 # stays unset for the suites.
 #
-# Each shellcheck process holds a slot of the job pool (test_jobs.sh) while it
+# Each suite other than orch_test.sh and each shellcheck process holds a slot of
+# the job pool (test_jobs.sh) while it
 # runs, waiting for one when none is free, and printing "all.sh: waiting for a
 # job slot (N in use)" on stderr the first time; CI bypasses the pool.
+# ORCH_TEST_JOBS narrows the pool's slot range to min(ORCH_TEST_JOBS, the
+# pool size) and bounds the whole run: every suite, section child and shellcheck
+# process fits within that many slots, so ORCH_TEST_JOBS=1 runs one at a time.
 #
 # Outside CI all.sh lowers its own niceness to 10 at start (test_jobs.sh), so
 # every process it starts inherits it; a niceness of 10 or more is left alone,
@@ -121,13 +127,20 @@ mkdir "$suites_tmp" || exit 1
 suites=(orch_test.sh hooks_test.sh docs_lint.sh version_bump_test.sh autopilot_container_test.sh autopilot_up_test.sh lens_bench_test.sh)
 # A group other than the first runs orch_test.sh alone.
 if [ "$all_runs_rest" -eq 0 ]; then suites=(orch_test.sh); fi
-for suite in "${suites[@]}"; do
+# The other suites start first, in list order, each under its slot, then
+# orch_test.sh with none; pids and the report stay in list order.
+start_order=()
+for ((suite_n = 1; suite_n < ${#suites[@]}; suite_n++)); do start_order+=("$suite_n"); done
+start_order+=(0)
+for suite_n in "${start_order[@]}"; do
+  suite="${suites[$suite_n]}"
   if [ "$suite" = orch_test.sh ]; then
-    TMPDIR="$suites_tmp" ORCH_TEST_SHARD="$all_shard" bash "$dir/$suite" >"$tmp/$suite" &
+    TMPDIR="$suites_tmp" ORCH_TEST_SHARD="$all_shard" test_jobs_suite_start "$tmp/$suite" bash "$dir/$suite"
   else
-    TMPDIR="$suites_tmp" bash "$dir/$suite" >"$tmp/$suite" &
+    test_jobs_slot_wait
+    TMPDIR="$suites_tmp" test_jobs_suite_start "$tmp/$suite" bash "$dir/$suite"
   fi
-  pids+=("$!")
+  pids[suite_n]="$TEST_JOBS_SUITE_PID"
 done
 have_sc=0
 if [ "$all_runs_rest" -eq 1 ] && command -v shellcheck >/dev/null 2>&1; then

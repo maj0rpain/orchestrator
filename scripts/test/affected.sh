@@ -40,6 +40,11 @@
 # changed scripts/**/*.sh files that still exist. Sections are chosen through
 # orch_test.sh's ORCH_TEST_ONLY.
 #
+# Each suite other than orch_test.sh holds a slot of the job pool while it runs
+# (test_jobs.sh's suite start, as all.sh's suites do), waiting for one when none
+# is free: they start first, in selection order, then orch_test.sh, which holds
+# none (its sections take their own), then shellcheck.
+#
 # Output is like all.sh's: each part's FAIL lines and one summary line, in a
 # fixed order - the suites in all.sh's list order, orch_test.sh carrying the
 # placement and selected sections, then shellcheck last. Exits 1 when anything
@@ -262,14 +267,26 @@ pids=()
 trap 'test_jobs_stop_children "${pids[@]}"' INT TERM
 trap 'rm -rf "$tmp"' EXIT
 
-for suite in "${selected[@]}"; do
+# The suites other than orch_test.sh start first, in selection order, each under
+# its slot, then orch_test.sh with none; pids and the report stay in selection
+# order.
+start_order=()
+for suite_n in "${!selected[@]}"; do
+  [ "${selected[$suite_n]}" = orch_test.sh ] || start_order+=("$suite_n")
+done
+for suite_n in "${!selected[@]}"; do
+  [ "${selected[$suite_n]}" = orch_test.sh ] && start_order+=("$suite_n")
+done
+for suite_n in "${start_order[@]}"; do
+  suite="${selected[$suite_n]}"
   if [ "$suite" = orch_test.sh ] && [ -n "$only" ]; then
-    ORCH_TEST_ONLY="^($only)\$" bash "$dir/$suite" >"$tmp/$suite" &
+    ORCH_TEST_ONLY="^($only)\$" test_jobs_suite_start "$tmp/$suite" bash "$dir/$suite"
   else
     unset ORCH_TEST_ONLY
-    bash "$dir/$suite" >"$tmp/$suite" &
+    [ "$suite" = orch_test.sh ] || test_jobs_slot_wait
+    test_jobs_suite_start "$tmp/$suite" bash "$dir/$suite"
   fi
-  pids+=("$!")
+  pids[suite_n]="$TEST_JOBS_SUITE_PID"
 done
 
 have_sc=0

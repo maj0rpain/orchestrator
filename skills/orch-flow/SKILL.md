@@ -181,7 +181,8 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
      repo), opened with the Read tool, never `cat`, and compare it with
      `01-plan.md` (`bash "$ORCH" handoff path spec`). Then decide:
      **Rewrite** when the plan changed the issue's scope or substance,
-     including any glossary or ADR wording the planning decided - a
+     including any glossary or ADR wording the planning decided and the
+     plan's agreed seams line when the body does not state those seams - a
      blueprint's too, so the rewrite's retire-or-keep question still meets
      its breakdown; **As it stands** otherwise: a blueprint the plan did not
      change (the body is already a spec), an issue the interview only
@@ -194,8 +195,9 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    - **0c. On Rewrite**, invoke the `orch-to-spec` skill in rewrite mode on
      the issue (args `<n>`), from `01-plan.md` - its **Rejected alternatives**
      section is load-bearing, as in step 1 - and follow it. Its test-seams
-     check and its retire-or-keep breakdown question come with it,
-     unchanged; step 5 then reads what it left (`retired` leaves no
+     check comes with it, asked only when `01-plan.md` records no agreed
+     seams, and so does its retire-or-keep breakdown question, unchanged;
+     step 5 then reads what it left (`retired` leaves no
      breakdown, so the issue is broken down again; `kept` skips it). If it
      stops without reporting the issue number, stop the phase: leave the
      state as it is (the phase stays `spec`), say what blocked, and leave
@@ -205,8 +207,8 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    - **0d. On As it stands**, go to step 4.
 1. Read `bash "$ORCH" handoff path spec`. The **Rejected alternatives** section
    is load-bearing: do not re-propose anything it rules out.
-2. Invoke the `orch-to-spec` skill and follow it. It will check test seams
-   with the user - that exchange is the point, so do not skip it - and
+2. Invoke the `orch-to-spec` skill and follow it. It checks the test
+   seams with the user only when the plan handoff records no agreed seams, and
    reports the issue it published.
 3. Record the published issue: `bash "$ORCH" state set issue <number>`.
    Then stop the session: the spec review runs in a fresh one, without this

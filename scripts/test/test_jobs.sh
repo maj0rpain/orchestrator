@@ -55,8 +55,11 @@
 # from one pool of slot lock files, so concurrent runs queue for slots instead
 # of oversubscribing the machine. The pool holds test_jobs_default slots (the
 # job-count logic is untouched); a slot is held by an flock on its file, which
-# the kernel releases when the last process holding the open file dies. The pool
-# lives in $HOME/.cache/orchestrator/test-job-pool unless the test-only
+# the kernel releases when the last process holding the open file dies.
+# ORCH_TEST_JOBS, when a positive integer, narrows the slot range a run tries to
+# 1..min(ORCH_TEST_JOBS, the pool size), so it bounds the whole run, nested
+# runners (which inherit it) included; an invalid value narrows nothing.
+# The pool lives in $HOME/.cache/orchestrator/test-job-pool unless the test-only
 # ORCH_TEST_POOL_DIR names another directory.
 #
 # test_jobs_pool_init <runner>: decides whether this run is pooled, setting
@@ -94,6 +97,27 @@
 # eval, so the redirection is built from the constant in one place; no runner
 # writes the number. <cmd>
 # is an external command.
+#
+# The suite start, which all.sh, affected.sh and section-durations.sh call
+# so no runner starts a whole suite its own way. A suite is one
+# script of a runner's suites list; each one other than orch_test.sh, whose
+# coordinator mostly sleeps while its section children hold their own slots,
+# holds a slot while it runs. It has two steps a caller can run apart:
+#
+# test_jobs_slot_wait: the take step: waits for a slot (with the waiting notice)
+# and keeps it on the runner's fd.
+#
+# test_jobs_suite_start <outfile> <cmd>...: the start step. Starts <cmd> (an
+# external command; assignments before the call pass through) in the background
+# with its stdout on <outfile> (`-` keeps the caller's stdout), through
+# test_jobs_job, its children marked
+# ORCH_TEST_POOL_HELD with the pool directory when a slot was taken (an
+# inherited marker passes on when the run is unpooled), and hands the slot to a
+# holder that keeps it until the suite exits. Records the suite's pid in
+# TEST_JOBS_SUITE_PID, which the caller reads, never `$!`: after this step with
+# a slot taken `$!` names the slot's holder; with no slot (an unpooled run, or
+# a start with no take step first) there is no holder, `$!` is the suite's own
+# pid, and the suite starts with no slot.
 #
 # test_jobs_stop_children <pid>...: a runner's INT/TERM handler. Sends TERM to
 # every pid given, waits for each one, and exits 130, so the runner's EXIT trap
@@ -297,6 +321,7 @@ TEST_JOBS_IN_USE=0
 TEST_JOBS_NOTED=0
 TEST_JOBS_RUNNER=""
 TEST_JOBS_CHILD=""
+TEST_JOBS_SUITE_PID=""
 
 test_jobs_pool_init() {
   local dir slots
@@ -311,6 +336,10 @@ test_jobs_pool_init() {
   [ "${ORCH_TEST_POOL_HELD:-}" = "$dir" ] && return 0
   command -v flock >/dev/null 2>&1 || return 0
   mkdir -p "$dir" 2>/dev/null || return 0
+  if is_positive_integer "${ORCH_TEST_JOBS:-}" &&
+    [ "$((10#$ORCH_TEST_JOBS))" -lt "$slots" ]; then
+    slots=$((10#$ORCH_TEST_JOBS))
+  fi
   TEST_JOBS_SLOTS="$slots"
   TEST_JOBS_POOL="$dir"
 }
@@ -361,4 +390,18 @@ test_jobs_slot_release() {
 test_jobs_job() {
   eval "exec $TEST_JOBS_FD>&-"
   exec "$@"
+}
+
+# shellcheck disable=SC2034 # read by the sourcing runners
+test_jobs_suite_start() {
+  local out="$1" held="${ORCH_TEST_POOL_HELD:-}"
+  shift
+  [ -z "$TEST_JOBS_SLOT_FD" ] || held="$TEST_JOBS_POOL"
+  if [ "$out" = - ]; then
+    ORCH_TEST_POOL_HELD="$held" test_jobs_job "$@" &
+  else
+    ORCH_TEST_POOL_HELD="$held" test_jobs_job "$@" >"$out" &
+  fi
+  TEST_JOBS_SUITE_PID=$!
+  test_jobs_slot_release "$TEST_JOBS_SUITE_PID"
 }

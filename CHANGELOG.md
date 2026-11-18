@@ -1,5 +1,15 @@
 # Changelog
 
+## 6.6.0
+
+The planning interview's close asks one route question where it asked up to three. Picking a route now moves a movable interviewed issue to `ready-for-agent`, and the question says so, so the separate label question is gone; a held label (`wontfix`, `ready-for-human`) still gets its own override question. The question also names the test seams in one line, and picking a route accepts them. A free-text answer can change the seams, leave the label alone, name another issue or decline every route. The accepted seams carry through to the spec, in the conversation or in the plan handoff's Decisions, and `orch-to-spec` asks its test-seams check only when no seams were agreed, as one line whose first option accepts. You can set a default route with `git config [--global] orchestrator.route flow|quick|blueprint|autopilot`, and the new `orch.sh route show` prints it. The route question then lists that route first and marks it recommended, and it is still asked at every close. ADR-0064 records the change.
+
+The test runners now keep the whole run inside the shared job pool. `all.sh` and `affected.sh` start their other suites first, each holding a pool slot, and only then start `orch_test.sh`'s sections, so `ORCH_TEST_POOL_PERCENT` bounds the run's jobs, not its CPU use. `section-durations.sh` likewise holds a slot for each suite it times. `ORCH_TEST_JOBS` now narrows the pool's slot range, so it bounds the whole pooled run and not just the sections.
+
+## 6.5.0
+
+`spec-review check` now reports every violation it can stand behind in one run (over-long summaries, incomplete items, bad citations and anchor problems), still stopping at a line it cannot parse, and `check --tickets` follows the same rule; `apply` is unchanged. `side-checkout issue` prints nothing when the checkout records no issue, and still exits 1. `issue fetch` (and `spec fetch`) prints a `cited files changed since <sha>:` line for an audit-filed issue, naming the cited files changed since the audit. The new `issue labels <n>...` prints each issue's state and labels, and the interview runs it before it proposes folding in another issue or ordering the plan against one, and never recommends folding in an issue that carries a phase label.
+
 ## 6.4.0
 
 The audits now build their report, filing and cross-links through `orch.sh` instead of by hand. `orch.sh audit begin` opens a run's folder before the Hunt; `orch.sh audit report` reads the ranked file and renders the HTML report from it; and `orch.sh audit file --run <dir> <numbers>` (a comma-separated list) files a run's picked findings in one batch, each issue's body and labels taken from the ranked file, and writes a `Related:` line on each filed issue whose finding overlaps another picked one, naming those issues. A finding that refers to the report's own numbering is refused before anything reaches GitHub, and a rerun after a failed create or Related write finishes the batch without filing twice. The audits' read-only promise now covers the repo's files only, not the run folder under `.orchestrator/`.

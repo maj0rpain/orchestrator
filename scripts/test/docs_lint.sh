@@ -4961,6 +4961,16 @@ assert_empty "four numbered route options in the Closing section are not flagged
 check "orch-interview's Closing section has four numbered route options" \
   "$(scan_interview_closing "$PLUGIN_ROOT")"
 
+printf '# I\n\nRead each issue first.\n' >"$fixture/skills/orch-interview/SKILL.md"
+flags "an interview skill that does not name issue labels is flagged" \
+  "$(scan_names_phrase "$fixture" 'skills/orch-interview/SKILL.md' 'issue labels')" \
+  "skills/orch-interview/SKILL.md: does not name issue labels"
+printf '# I\n\nRun orch.sh issue labels <n>.\n' >"$fixture/skills/orch-interview/SKILL.md"
+assert_empty "an interview skill that names issue labels is not flagged" \
+  "$(scan_names_phrase "$fixture" 'skills/orch-interview/SKILL.md' 'issue labels')"
+check "orch-interview names issue labels" \
+  "$(scan_names_phrase "$PLUGIN_ROOT" 'skills/orch-interview/SKILL.md' 'issue labels')"
+
 # This repo's CLAUDE.md Testing section names its two verification commands
 # (ADR-0058), so the ticket/full split cannot rot.
 # scan_repo_verification <plugin root>: one line per verification line the

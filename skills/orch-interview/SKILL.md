@@ -124,6 +124,11 @@ with the Read tool, never `cat`, so a large issue is read once, in full; an
 empty comments file means no comments. Never read it with `gh issue view`. If
 either fetch fails, report its `orch:` message and stop before the next round.
 
+For an audit-filed issue the fetch also prints one line, `cited files changed
+since <sha>: none` or the changed files (or `unknown (<reason>)`): that is the
+drift check. Run no drift check by hand (`git log`, `git diff`), and re-read
+each listed file before trusting the finding's line numbers.
+
 When the user asks for the next issue without naming a number, run
 `bash "$ORCH" issue next` before the first round. On exit 0 it prints
 `<number><TAB><title>`; fetch the number field only. Tell the user in one
@@ -158,6 +163,13 @@ habits on every round:
   check whether the code agrees, and surface a contradiction: "The code
   cancels whole Orders, but you just said partial cancellation is possible.
   Which is right?"
+- **Check an issue before folding it in.** Before proposing to fold another
+  issue into the plan, or to order the plan against one, run
+  `bash "$ORCH" issue labels <n>` on it. The question then states the issue's
+  state, its phase label and whether it carries `orch:running`. An issue with
+  a phase label is never recommended for folding in: an autopilot flow
+  already holds its work. The session may still recommend ordering the plan
+  against it.
 - **Name the docs the plan will make stale.** When the plan changes or
   removes something a doc describes, name each such doc by document and
   section (the README's Install section), so the spec lists it under
@@ -216,34 +228,33 @@ question. Otherwise, before asking anything, run `bash "$ORCH" issue triage <n>
 --check` - never a raw `gh` call - and follow what it prints:
 
 - `ready`: ask no label question. Name #<n> as the interviewed issue in one
-  sentence and go straight to the route question.
+  sentence and go straight to the route question, which says nothing about a
+  label move.
 - `wontfix` or `ready-for-human`, a held label: ask one blocking question,
   naming that label: "#<n> carries `<label>`. Override it and move #<n> to
   `ready-for-agent`?", with the options "Override and move", "Skip", or "It's a
   different issue". On "Override and move", run `bash "$ORCH" issue triage <n>
   --override`. If that fails, report its `orch:` message, warn the user that
   `init --issue` will refuse #<n> until it carries `ready-for-agent`, and
-  continue to the route question.
-- `movable`: ask one blocking question, naming its number: "Move #<n> to
-  `ready-for-agent`", "Skip", or "It's a different issue". On a move, run
-  `bash "$ORCH" issue triage <n>`. If it exits 2, the issue carries `wontfix` or
-  `ready-for-human` and it printed which: ask the user whether to override that
-  label; on a yes, rerun it with `--override`; on a no, skip the relabel. On any
-  other failure, warn the user that `init --issue` will refuse #<n> until it
-  carries `ready-for-agent`, and continue to the route question.
+  continue to the route question. This move has then run: a later free-text
+  answer that declines every route or names another issue leaves it in place
+  and undoes nothing. On "Skip", go straight to the route question. On "It's a
+  different issue", the user names it: run the check on that issue instead and
+  follow the same branches for it.
+- `movable`: ask no label question. The route question carries one sentence
+  saying that picking a route moves #<n> to `ready-for-agent`, naming the
+  repo's own label string. The move itself runs after the pick, as the route
+  question says.
 - If the check itself fails, ask no label question: warn the user, relaying the
   check's `orch:` reason, that `init --issue` will refuse #<n> until it carries
-  `ready-for-agent`, and continue to the route question.
-
-On "Skip", go straight to the route question. On "It's a different issue", the
-user names it: run the check on that issue instead and follow the same branches
-for it.
+  `ready-for-agent`, and continue to the route question, which carries no move
+  sentence.
 
 ### Done-close
 
 If the planning settles that the interviewed issue's work is already done - a
-commit, PR or issue already did it - skip the interviewed-issue step's move to
-`ready-for-agent` and the route question. Instead ask one blocking question that
+commit, PR or issue already did it - skip the label move and the route
+question. Instead ask one blocking question that
 names the commit, PR or issue that did the work, with two options: "Close #<n>
 as done (duplicate of #<m>)" when another issue, #<m>, did the work, else "Close
 #<n> as done (completed)"; and "Leave #<n> open". On the close, write the
@@ -257,8 +268,9 @@ plan's work already done, ask no question: report what did the work and stop.
 
 ### Route question
 
-Before you implement anything, and without editing any file first, ask the
-user how to carry the plan out, with these route options:
+Before you implement anything, and without editing any file first, run
+`bash "$ORCH" route show`, then ask the user how to carry the plan out, with
+these route options:
 
 1. Start the orchestrator flow - the full plan -> spec -> implement -> review
    pipeline, with its own handoff and review loop.
@@ -272,13 +284,48 @@ user how to carry the plan out, with these route options:
 
 On Junie: ask exactly three options, 1 to 3; there is no Autopilot flow.
 
-Keep the route options in the order above unless you recommend one. To
-recommend a route from the scope of the work (Quick implementation for a
-one-site fix, say), list it first, append " (Recommended)" to its label, and
+Keep the route options in the order above unless you recommend one. The
+default route: `route show` prints a route word (`flow`, `quick`, `blueprint`
+or `autopilot`) or `none`. A word naming a route this host offers is that
+route: list it first, append " (Recommended)" to its label, give in one clause
+that it is the user's default route, and make no scope-based recommendation
+beside it. With `none`, or a route the host does not offer (`autopilot` on
+Junie), recommend from the scope of the work (Quick implementation for a
+one-site fix, say): list it first, append " (Recommended)" to its label, and
 give that scope-based reason in one clause in its description, or in the
-question text where options have no description. At most one route option
-carries "(Recommended)", and a route option moved out of the order above always
-carries it. Do not ask the user to type a command.
+question text where options have no description. If the command fails, report
+its `orch:` message and recommend from the scope of the work. At most one route
+option carries "(Recommended)", and a route option moved out of the order above
+always carries it. Do not ask the user to type a command.
+
+The seams line. Sketch the test seams by `orch-to-spec`'s rule (existing seams
+before new ones, the highest seam possible) and state them in one line in the
+question's text, never in a printout beside the tool call; a plan with nothing
+to test says so in that line. For a movable interviewed issue the question's
+text also carries the move sentence from the interviewed-issue step.
+
+On a route pick, the seams line is the agreed seams: carry it into the route,
+and ask no test-seams question after the route question. For a movable
+interviewed issue, run `bash "$ORCH" issue triage <n>` before the route's
+skill. If it exits 2, the issue carries `wontfix` or `ready-for-human` and it
+printed which: ask the user whether to override that label; on a yes, rerun it
+with `--override`; on a no, skip the relabel. On any other failure, warn the
+user that `init --issue` will refuse #<n> until it carries `ready-for-agent`.
+In each case the picked route then runs.
+
+Free-text answers. The question takes a free-text answer, which stands in for
+the old label question's answers and for a change of seams:
+
+- It declines every route: run no route and move no label.
+- It picks a route and says to leave the label: that route runs with no move.
+- It says to leave the label and picks no route: ask the route question again
+  without the move sentence.
+- It names a different issue: that issue is the interviewed issue; run the
+  label check on it and ask the route question again.
+- It names other seams: those are the seams; ask the route question again with
+  the new line. An answer that also picks a route is taken whole, with no
+  second ask.
+- Anything unclear is asked about. Apply nothing on a guess.
 
 Run the chosen route yourself: on "Start the orchestrator flow", run the
 orch-flow skill; on "Quick implementation", the orch-quick-implement skill; on
@@ -298,14 +345,14 @@ checkout, so run their skills only on that route (on Claude Code, with args
 
 ### Blueprint route
 
-When the interviewed-issue step settled an interviewed issue - the one this
-planning was about, or the one the user named under "It's a different issue" -
-whatever happened to its label - moved, already ready, skipped, or the check
-failed - write the spec in rewrite mode on that issue, replacing #<n>'s body
-instead of publishing a new issue (orch-to-spec, handed #<n>). Only with no
-interviewed issue, publish the spec as a new issue (orch-to-spec). Either way,
-write any glossary or ADR wording the planning decided into the issue body
-verbatim.
+When the planning has an interviewed issue - the one this planning was about,
+or the one the user named in its place - whatever happened to its label -
+moved, already ready, left alone, or the check failed - write the spec in
+rewrite mode on that issue, replacing #<n>'s body instead of publishing a new
+issue (orch-to-spec, handed #<n>). Only with no interviewed issue, publish the
+spec as a new issue (orch-to-spec). Either way, write any glossary or ADR
+wording the planning decided into the issue body verbatim.
+
 
 The route's steps run in this order, and one rule covers every step: when a
 step stops or fails, stop there - run no later step, and report why it stopped.
@@ -340,7 +387,8 @@ writes no flow state and makes no side checkout, so run neither `init` nor
 
 First write the spec: run the orch-to-spec skill - in
 rewrite mode, args set to the interviewed issue's number, when there is one,
-else in publish mode - with its test-seams check. Then write the plan from
+else in publish mode - with the seams the route question's line agreed,
+asking no test-seams question. Then write the plan from
 `skills/orch-handoff/SKILL.md` under the plugin root, reading only its `## In an
 autopilot flow`, `## What belongs in one` and `01-plan.md` template (the `###`
 heading under `## Templates`) sections, without loading the skill or listing its

@@ -396,12 +396,12 @@ cmd_side_checkout_list() {
 }
 
 # Prints the issue the current side checkout records (see side-checkout add
-# --issue); exits 1 in a checkout that is no side checkout or records none,
+# --issue); exits 1, printing nothing, in a checkout that is no side checkout
+# or records none,
 # and 2 on a usage error, so a caller never reads one as the other.
 cmd_side_checkout_issue() {
   [ $# -eq 0 ] || die2 "usage: orch.sh side-checkout issue"
-  side_checkout_issue "$(pwd -P)" \
-    || die "this checkout is no side checkout recording an issue"
+  side_checkout_issue "$(pwd -P)" || exit 1
 }
 
 # Removes side checkout <slug> by hand, never with force. Every refusal - an

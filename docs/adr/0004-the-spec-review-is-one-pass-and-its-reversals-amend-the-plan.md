@@ -16,6 +16,9 @@ material or minor, though it still ranks nothing across lenses.
 Superseded in part by ADR-0053: the spec handoff no longer copies the changelog
 or the seams; both live on the issue.
 
+Amended by ADR-0064: seams are agreed on the planning close's route
+question, and in the spec phase only where no planning close agreed them.
+
 A spec review runs once, in the spec phase, after the issue exists - published
 by `to-spec` or already adopted at init - and before `02-spec.md` is written.
 Four lenses read the issue as fresh sub-agents and report findings; every

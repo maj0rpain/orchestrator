@@ -598,11 +598,16 @@ model's: call `AskUserQuestion` with exactly four options (three on Junie),
 start the flow (`orchestrator:orch-flow`), a quick implementation
 (`orchestrator:orch-quick-implement`), a blueprint only (publish the spec,
 offer a spec review, publish the ticket breakdown, then stop), or, on Claude
-Code only, an autopilot flow, and do whichever the human picks. The autopilot
-flow runs `orch-to-spec`, writes the `orch-handoff` skill's `01-plan.md` with
-its `## Autopilot` block to a scratch file, and ends in `autopilot start
-<issue> <plan-file>`; the planning session writes no flow state and makes no
-side checkout.
+Code only, an autopilot flow, and do whichever the human picks. The question
+recommends the default route when one is set (`orch.sh route show`, below),
+else a route from the scope of the work. It names the test seams in one line,
+which picking a route accepts, and, for an interviewed issue that can be
+moved, says that picking a route moves it to `ready-for-agent`; a free-text
+answer changes the seams, leaves the label, names another issue or declines
+every route. The autopilot flow runs `orch-to-spec`, writes the `orch-handoff`
+skill's `01-plan.md` with its `## Autopilot` block to a scratch file, and ends
+in `autopilot start <issue> <plan-file>`; the planning session writes no flow
+state and makes no side checkout.
 
 Beside a flow already running in the checkout (any phase but `done`), it
 still sends the planning rules, with a closing that names that flow - its
@@ -619,7 +624,8 @@ to honour a human's request for a side checkout.
 `orch.sh side-checkout add <slug> --issue N` makes a side checkout for a
 quick implementation and records `N`, its issue, in the side checkout's
 ownership marker; without `--issue` the marker records nothing. Run inside a
-checkout, `orch.sh side-checkout issue` prints the recorded issue, and exits 1
+checkout, `orch.sh side-checkout issue` prints the recorded issue, and exits 1,
+printing nothing,
 in a checkout that is not a side checkout or records none, so a session
 opened there picks the issue up without being told. `side-checkout list`
 appends `quick #N` to each side checkout that records one.
@@ -657,3 +663,9 @@ changing. The guard does not arm on Junie (ADR-0025): there the planning
 message and the snippet's standing planning section steer planning away from
 source edits, and `orch.sh init`'s working-tree check catches any at flow
 start.
+
+### Default route
+
+| Command | What it does |
+| --- | --- |
+| `orch.sh route show` | Print the default route, `flow`, `quick`, `blueprint` or `autopilot`, from the git config key `orchestrator.route`, the clone's local value first, then the user's global one, or `none` when it is unset or empty; any other value is refused, naming the key, the value and the four words. Set it with `git config [--global] orchestrator.route <route>`. |
