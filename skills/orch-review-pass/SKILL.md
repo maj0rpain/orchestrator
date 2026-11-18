@@ -88,8 +88,7 @@ step 3's `--deviations`.
    with that is not a spec question (step 7). Use no fixer agent, no closer,
    no severity, no budget, and file nothing. Commit the fixes as one commit.
    After the fixes, run the repo's ticket verification (a `Ticket verification:
-   <command>` line in its instructions, else its full verification) through
-   `verification run`.
+   <command>` line in its instructions, else its full verification).
    Run it in the foreground and wait for it (host capability *Run a long
    command*), through `verification run`, a **re-callable command**:
    `bash "$ORCH" verification run '<command>'` at the longest timeout, and run

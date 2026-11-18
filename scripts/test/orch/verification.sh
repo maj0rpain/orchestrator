@@ -103,6 +103,7 @@ for vr_case in alone group; do
   if [ "$vr_case" = alone ]; then
     PATH="$vr_count:$PATH" ORCH_WAIT_BLOCK=60 "$ORCH" verification run "$cmd" >/dev/null 2>&1 &
     vr_pid=$!
+    disown "$vr_pid"  # its kill -9 below is not a job message on stderr
     fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
     kill -9 "$vr_pid"
   else
@@ -199,15 +200,24 @@ assert_eq "a run whose group was killed is replaced by a fresh one" "$(counting_
 assert_eq "which is delivered whole" "$out" "done"
 
 # A stale run that ignores TERM never holds a call past ORCH_WAIT_BLOCK: the
-# grace wait of its stop is bounded by the block, and the next call goes on.
-rm -f "$vr_dir/gate"
-cmd="trap '' TERM; $(vr_gate "$vr_dir" quiet)"
+# grace wait of its stop is bounded by the block, and the grace is measured
+# across calls, so a next call, with the grace spent since the TERM, goes on to
+# KILL and starts the fresh run.
+rm -f "$vr_dir/gate" "$vr_dir/pids"
+cmd="trap '' TERM; echo \$\$ >>\"$vr_dir/pids\"; $(vr_gate "$vr_dir")"
 vr_run "$cmd" >/dev/null
+fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
 echo six >>README.md
 vr_t0=$SECONDS
 ORCH_WAIT_BLOCK=0.5 ORCH_VERIFICATION_GRACE=30 "$ORCH" verification run "$cmd" >/dev/null 2>&1; st=$?
 assert_status "a stop whose grace outlasts the block ends in exit 75" "$st" 75
 assert_eq "within the block, not the grace" "$(( SECONDS - vr_t0 < 4 ))" "1"
+sleep 2
+ORCH_WAIT_BLOCK=0.5 ORCH_VERIFICATION_GRACE=1 "$ORCH" verification run "$cmd" >/dev/null 2>&1; st=$?
+assert_status "the next call, the grace spent since the TERM, goes on and starts the fresh run" "$st" 75
+kill -0 "$(head -n 1 "$vr_dir/pids")" 2>/dev/null; st=$?
+fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
+assert_status "and the stale run that ignored TERM is gone" "$st" 1
 : >"$vr_dir/gate"
 
 # A call never sleeps past ORCH_WAIT_BLOCK, whatever the poll interval.

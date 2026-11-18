@@ -23,10 +23,10 @@
 # config, default 3600 s) is stopped by its own runner, with no call needed,
 # and delivered as failed by the next one, its orch: message naming the process
 # group when that could not be stopped. A record with no state is waited on for
-# ORCH_VERIFICATION_GRACE, then cleared as stale. Records of
-# checkouts that no longer exist are cleared by the next call. A finished
-# result is forgotten only once a call has printed it whole. Nothing about a
-# delivered run is measured or kept (ADR-0063).
+# ORCH_VERIFICATION_GRACE (counted across calls), then cleared as stale.
+# Records of checkouts that no longer exist are cleared by the next call. A
+# finished result is forgotten only once a call has printed it whole. Nothing
+# about a delivered run is measured or kept (ADR-0063).
 # Its tests: scripts/test/orch/verification.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -122,35 +122,62 @@ verification_grace_nap() {
   sleep "$(wait_nap 0.1 "$spent")"
 }
 
-# verification_wait_gone <pid>: waits up to ORCH_VERIFICATION_GRACE seconds (and
-# ORCH_WAIT_BLOCK) for the process group <pid> to be gone. Returns 1 when it is
-# still there.
+# verification_epoch_in <file>: prints the epoch second <file> holds, or the
+# current one when it is missing or holds no whole number.
+verification_epoch_in() {
+  local t=""
+  [ ! -f "$1" ] || t="$(<"$1")"
+  case "$t" in ''|*[!0-9]*) printf '%(%s)T\n' -1 ;; *) printf '%s\n' "$t" ;; esac
+}
+
+# verification_mark <file>: records the current epoch second in <file> unless it
+# already holds one, so a grace is counted across calls, from the first.
+verification_mark() {
+  [ ! -f "$1" ] || return 0
+  if printf '%(%s)T\n' -1 >"$1.tmp" 2>/dev/null; then
+    mv -f "$1.tmp" "$1" 2>/dev/null || true
+  fi
+}
+
+# verification_wait_gone <pid> [<epoch>]: waits until ORCH_VERIFICATION_GRACE
+# seconds have passed since <epoch> (default now) - wall clock, so a grace spent
+# across several calls counts as one - or ORCH_WAIT_BLOCK ends the call, for the
+# process group <pid> to be gone. Returns 1 when it is still there.
 verification_wait_gone() {
-  local pid="$1" slept=0
+  local pid="$1" since="${2:-}" slept=0
+  [ -n "$since" ] || printf -v since '%(%s)T' -1
   while kill -0 -- "-$pid" 2>/dev/null; do
-    float_lt "$slept" "$ORCH_VERIFICATION_GRACE" || return 1
+    float_lt "$(wait_elapsed "$since" "$slept")" "$ORCH_VERIFICATION_GRACE" || return 1
     verification_grace_nap
     slept="$(float_add "$slept" 0.1)"
   done
 }
 
-# verification_stop <pid>: stops the run's process group: TERM, then KILL after
-# ORCH_VERIFICATION_GRACE seconds. Returns 1 when the group is still there.
+# verification_stop <pid> <dir>: stops the run's process group: TERM, then KILL
+# once ORCH_VERIFICATION_GRACE seconds have passed since the TERM, which
+# <dir>/termed keeps, so a call whose block ends inside the grace is followed
+# by one that goes on to KILL. Returns 1 when the group is still there.
 verification_stop() {
-  local pid="$1" sig
-  for sig in TERM KILL; do
-    kill "-$sig" -- "-$pid" 2>/dev/null || true
-    verification_wait_gone "$pid" && return 0
-  done
-  return 1
+  local pid="$1" d="$2"
+  if [ ! -f "$d/termed" ]; then
+    kill -TERM -- "-$pid" 2>/dev/null || true
+    verification_mark "$d/termed"
+  fi
+  verification_wait_gone "$pid" "$(verification_epoch_in "$d/termed")" && return 0
+  kill -KILL -- "-$pid" 2>/dev/null || true
+  verification_wait_gone "$pid"
 }
 
-# verification_wait_state <dir>: waits up to ORCH_VERIFICATION_GRACE seconds for
-# the record <dir> to have its state file. Returns 1 when it still has none.
+# verification_wait_state <dir>: waits until ORCH_VERIFICATION_GRACE seconds
+# have passed since a call first found the record <dir> without its state file
+# (kept in <dir>/waiting, so the grace holds across calls) for it to have one.
+# Returns 1 when it still has none.
 verification_wait_state() {
-  local slept=0
+  local slept=0 since
+  verification_mark "$1/waiting"
+  since="$(verification_epoch_in "$1/waiting")"
   until [ -f "$1/state" ]; do
-    float_lt "$slept" "$ORCH_VERIFICATION_GRACE" || return 1
+    float_lt "$(wait_elapsed "$since" "$slept")" "$ORCH_VERIFICATION_GRACE" || return 1
     verification_grace_nap
     slept="$(float_add "$slept" 0.1)"
   done
@@ -277,9 +304,12 @@ verification_run() {
       fi
       stop=""
     fi
-    if [ -n "$stop" ] && [ ! -f "$d/status" ] && [ -f "$d/pid" ] && liveness_record_alive "$(<"$d/pid")"; then
+    # A TERMed run whose leader died still has its group to KILL: its record
+    # says termed, whatever the liveness record says.
+    if [ -n "$stop" ] && [ ! -f "$d/status" ] && [ -f "$d/pid" ] &&
+       { [ -f "$d/termed" ] || liveness_record_alive "$(<"$d/pid")"; }; then
       rec="$(<"$d/pid")"
-      verification_stop "${rec%% *}" || die "the stale run of this command (process group ${rec%% *}) could not be stopped - stop it by hand"
+      verification_stop "${rec%% *}" "$d" || die "the stale run of this command (process group ${rec%% *}) could not be stopped - stop it by hand"
     fi
     rm -rf "$d"
   done

@@ -61,7 +61,7 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    record of what it wrote, and the driver blames later findings against
    them. Done when every item is fixed or on your could-not-fix list, and
    every listed site of a pattern finding is fixed or deferred.
-2. **Verify.** Run the **ticket verification** through `verification run`. Find
+2. **Verify.** Run the **ticket verification**. Find
    it in the repo's instructions (`CLAUDE.md`, `AGENTS.md`,
    `CONTRIBUTING.md`) yourself: a line
    reading `Ticket verification: <command>`. The prompt hands you only the full

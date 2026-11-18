@@ -243,7 +243,7 @@ implementer follows it from here.
    `CLAUDE.md`, `AGENTS.md`, README, CI workflows, or test runner - and run
    them on the resolved tree - the repo's **ticket verification**, a line
    reading `Ticket verification: <command>` in those instructions, is the
-   checks command when it names one - through `verification run`.
+   checks command when it names one.
    Run it in the foreground and wait for it (host capability *Run a long
    command*), through `verification run`, a **re-callable command**:
    `bash "<orch.sh>" verification run '<command>'` at the longest timeout, and

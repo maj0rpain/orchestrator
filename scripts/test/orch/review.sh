@@ -818,8 +818,13 @@ state_fixture pr 7
 
 rm -f "$ORCH_GH_FAKE_STORE/prs/7/head"
 rc_spend
-rc_probe  # a call whose sleep spends its block exits 75 at once: this one tops the total up past the cap
-rc_probe; st=$?
+# Calls top the one total up until it passes the cap (a slow machine takes more
+# calls to spend the block than a quiet one): a total restarted per call, 0.4 s
+# each against 1.5 s, would never end the wait.
+for _ in 1 2 3 4 5 6 7 8; do
+  rc_probe; st=$?
+  [ "$st" -eq 75 ] || break
+done
 assert_status "a head that cannot be read keys the total by the PR alone: its calls share one" "$st" 1
 fake_pr 7 open topic main
 rm -rf "${ORCH_DIR_NAME:?}/wait"

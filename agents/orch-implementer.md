@@ -123,13 +123,11 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    and carry on. Before writing tests, read any test-helpers reference or
    helper index the repo's agent files (`CLAUDE.md`, `AGENTS.md`) point to.
 3. **Verify as you go**: run typechecking and single test files regularly,
-   and the repo's **ticket verification** once, at the end,
-   through `verification run`.
+   and the repo's **ticket verification** once, at the end.
    Find the ticket verification where you find the full verification, in the
    repo's instructions (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`): a line
    reading `Ticket verification: <command>`. When they name none, run the
-   repo's full verification instead, its `Full verification: <command>` line or
-   the command they document. The report's `Verification` line names the
+   the command they document.
    inner command, not the `verification run` call.
    Run it in the foreground and wait for it (host capability *Run a long
    command*), through `verification run`, a **re-callable command**:

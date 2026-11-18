@@ -262,7 +262,7 @@
 5	6	the multi-loop machinery is gone	8cbc8c9ee1a33748c9ad58440f05830134c73795
 45	49	review file	cb1f1cabf91630416daf9b520f1c1176bfa7a862
 14	15	review ready	3de42f3d7ace4ec6ce6ffa7c0883b3806733eed4
-128	75	review ci	f5fe396e014ddcb8606e7cb91bd63c581a66715c
+134	78	review ci	1a90b2d106434d98d50735e5bb297eb734fc21de
 13	12	the grace counts from the push (issue #475)	eb2a643a788b9b82800270785192827a831aab40
 51	42	the grace is skipped on no evidence of CI (issue #476)	47adf5995cd35a720b31a17a50f1a4366fc237c7
 9	10	review rerun	39699a125cfcb488efe0e549d5a7f71549d25bc2
@@ -353,8 +353,8 @@
 141	147	ticket reclaim (ADR-0054)	17ed22348527c35ead699f866b4bb1141afeec43
 1	2	ticket exists: no repo (#3050)	291d750cc4efbe9e118a0494a09f83666294d0d8
 17	20	trust module	8907f14dbb6515e13cfad144156774f74dc17a98
-48	7	verification run	47b3faa12874515582dcc444b9ef94f7c0e68c16
-180	19	verification run: the run key, stale runs, the ceiling	2fa1096a19147e62b37f102277291e3d050a5e19
+48	7	verification run	60a21967681dc4d52f5e7454aaa13fb421327ec2
+218	20	verification run: the run key, stale runs, the ceiling	d6767899974051012ef212291e12b14b9e31c07e
 0	1	verification run in help and the CLI conventions	bcef7e4ad67e97b98e872bc1de7a617d10a78253
 58	3	wait: a call's block is wall time	efdd947d3b4366fe7c9b9f1339c3369847a43565
 686	811	hooks_test.sh	058e31b62b5c66adb779670b21daecb8f80a55e8
