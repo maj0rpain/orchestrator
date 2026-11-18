@@ -129,7 +129,10 @@ trap test_jobs_stop_descendants INT TERM
 # The parallel run starts its kept sections longest-first, read from the
 # committed tab-separated file section-durations.tsv beside this runner: one
 # line per section, "<wall tenths>", "<cpu tenths>" and the section's title,
-# tab-separated. Sections the file does not list start first, in walk order;
+# tab-separated, and a fourth column, the fingerprint of the text the line was
+# measured from, on every line but shellcheck's; this runner reads three- and
+# four-column lines alike and ignores the fingerprint (test_tree.sh's reader).
+# Sections the file does not list start first, in walk order;
 # the rest follow by wall seconds, longest first, ties in walk order. Output
 # stays in walk order. A line that does not parse and a name matching no
 # section are ignored, and a missing file gives walk order, so the file costs
@@ -187,15 +190,6 @@ trap test_jobs_stop_descendants INT TERM
 # so the processes it starts inherit it; a niceness of 10 or more is left
 # alone, so nested runs never stack, and a failing renice is ignored.
 
-# section_files: the noun files the walk reads, one per line - harness.sh,
-# then every other scripts/test/orch/*.sh but setup.sh, in LC_ALL=C order
-# whatever the caller's locale. There is no list of files: a new one is read.
-section_files() {
-  printf '%s\n' "$SECTION_DIR/harness.sh"
-  printf '%s\n' "$SECTION_DIR"/*.sh | LC_ALL=C sort |
-    grep -vxF -e "$SETUP_FILE" -e "$SECTION_DIR/harness.sh"
-}
-
 # The walk section_titles and section_text share, over setup.sh, the noun
 # files, then setup.sh again. Each line is in one phase. "setup" is setup.sh's
 # shared setup (from its `# >>> shared setup` line to its `# >>> summary` line),
@@ -218,7 +212,7 @@ section_walk_awk="$SECTION_TITLE_AWK"'
 section_walk() {
   local program="$1" files
   shift
-  mapfile -t files < <(section_files)
+  mapfile -t files < <(section_files "$SECTION_DIR")
   ORCH_SETUP_FILE="$SETUP_FILE" awk "$@" "$section_walk_awk$program" \
     "$SETUP_FILE" "${files[@]}" "$SETUP_FILE"
 }

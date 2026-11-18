@@ -61,7 +61,9 @@
 # Exits 1 when any suite failed or printed a FAIL line, a suite left temp files
 # behind, or shellcheck did not pass.
 #
-# ORCH_TEST_ONLY is unset, so every section of orch_test.sh runs.
+# ORCH_TEST_ONLY is unset, so every section of orch_test.sh runs. So is
+# DOCS_LINT_RECORDING, which only section-durations.sh sets, so an inherited
+# value cannot switch off docs_lint.sh's ledger and budget rules here.
 #
 # ORCH_TEST_SHARD=<i>/<n> passes to orch_test.sh alone (never to the other
 # suites), which runs group i of n of its sections; all.sh runs the other suites
@@ -72,8 +74,11 @@
 #
 # CHANGELOG_BASE and NO_VERSION_BUMP pass through untouched - set, empty or
 # unset - for docs_lint.sh's changelog fragment rule (CI's fragment.yml runs
-# docs_lint.sh --fragment-only, the fragment rule alone, and feeds them
-# itself). ORCH_TEST_JOBS
+# docs_lint.sh --fragment-only, the fragment rule and the suite budget rules
+# that judge a change against a base, and feeds them
+# itself). DOCS_LINT_BASE passes through the same way: the base affected.sh
+# hands docs_lint.sh on its full-suite fallback, for its suite budget rules.
+# ORCH_TEST_JOBS
 # passes through too: orch_test.sh runs that many sections at once, by default
 # 75% of the usable CPUs (ORCH_TEST_POOL_PERCENT sets another share; the full
 # count under CI), and ORCH_TEST_JOBS=1 runs them
@@ -107,7 +112,7 @@ source "$dir/test_tree.sh"
 sc_jobs="$(test_jobs_count all.sh)" || exit 1
 test_jobs_lower_priority
 test_jobs_pool_init all.sh || exit 1
-unset ORCH_TEST_ONLY
+unset ORCH_TEST_ONLY DOCS_LINT_RECORDING
 all_shard="${ORCH_TEST_SHARD:-}"
 unset ORCH_TEST_SHARD
 test_jobs_shard all.sh "$all_shard" || exit 1

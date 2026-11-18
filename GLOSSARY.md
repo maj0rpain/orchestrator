@@ -1017,6 +1017,16 @@ command again on unchanged code goes on waiting for the same work while it is
 still going, never starting a second copy beside it. `verification run`, `review
 ci` and `spec-review wait` are re-callable.
 
+**Suite budget**:
+The most CPU seconds the recorded costs of the suite's parts may sum to: one
+committed number, changed only on a human's say, in a change that changes
+nothing else except, at a full refresh, those records. Each test section,
+each other suite and the shellcheck run has one recorded cost, in the
+durations file, on the scale of the machine that last measured them all. A
+change whose total is over the suite budget and above its base's total cannot
+land: its session makes the tests it added or edited cheaper, or stops for
+the human. Not the review loop's **budget**.
+
 ### Hosts
 
 **Host**:
