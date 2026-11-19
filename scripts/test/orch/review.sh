@@ -827,6 +827,12 @@ for _ in 1 2 3 4 5 6 7 8; do
 done
 assert_status "a head that cannot be read keys the total by the PR alone: its calls share one" "$st" 1
 fake_pr 7 open topic main
+# A secondary limit on a read before the wait is keyed (the PR's refs) ends the
+# call as still running within the block, not after ORCH_GH_LIMIT_WAIT.
+printf 'You have exceeded a secondary rate limit.\n' >"$ORCH_GH_FAKE_STORE/ratelimit"
+ORCH_GH_LIMIT_WAIT=30 ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=100 ORCH_WAIT_BLOCK=0.3 timeout 10 "$ORCH" review ci >/dev/null 2>&1; st=$?
+rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
+assert_status "a limit met reading the PR's refs ends the call as still running within the block" "$st" 75
 rm -rf "${ORCH_DIR_NAME:?}/wait"
 for bad_block in soon 0 0.0; do
   out="$(ORCH_WAIT_BLOCK=$bad_block timeout 5 "$ORCH" review ci 2>&1)"; st=$?

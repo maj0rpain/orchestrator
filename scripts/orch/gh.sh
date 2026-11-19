@@ -69,7 +69,9 @@ gh_capture_err() {
 # temp files, through the limit retry protocol (#2724) - the one copy of it: a
 # failed call goes through gh_limit_handle, a first secondary limit (status 2)
 # is retried once, a limit given up on (status 1) fails the call with the
-# handler's message in place of the command's stderr, and any other failure
+# handler's message in place of the command's stderr - or with nothing on
+# stderr, for the silent give-up of a re-callable wait (the mark
+# gh_limit_handle leaves) - and any other failure
 # keeps its stderr as it is. The command's status passes through, and so does
 # the stdout of the deciding attempt alone - the one whose outcome the call
 # returns - byte for byte from its file, never through a shell variable; an
@@ -104,7 +106,9 @@ gh_limit_retry() {
 #
 # gh_limit_handle is the one limit handler: the guard calls it on a failed
 # call, and the test fake's failing operations call it too. It never dies: the
-# failed call returns its own status, with the distinct message on stderr.
+# failed call returns its own status, with the distinct message on stderr -
+# except the silent give-up of a re-callable wait, which leaves a mark and no
+# message.
 
 # gh_limit_kind <stderr>: secondary for GitHub's secondary-limit wording,
 # "submitted too quickly" or an HTTP 429; primary for its primary-limit

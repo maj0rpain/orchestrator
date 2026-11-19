@@ -106,8 +106,9 @@ dir_stamp() { date -u +%Y%m%d-%H%M%S; }
 # overridable and the tests turn them down to fractions of a second; bash
 # arithmetic is integer only and would read a grace of 0.3 as 0. A fractional
 # `sleep` is a GNU/BSD extension rather than POSIX, which is a line this file
-# can hold because the fractions only ever come from a test - the shipped
-# defaults are whole seconds.
+# can hold because every platform the plugin runs on (Linux, macOS, Git Bash)
+# ships a sleep that takes one: the verification poll's shipped defaults are
+# fractional (0.2 s), and the tests turn the rest down to fractions.
 float_lt()  { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'; }
 # float_add <a> <b>: prints a + b to three decimal places.
 float_add() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f\n", a + b }'; }

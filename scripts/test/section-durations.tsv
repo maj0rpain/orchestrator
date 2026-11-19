@@ -262,7 +262,7 @@
 5	6	the multi-loop machinery is gone	8cbc8c9ee1a33748c9ad58440f05830134c73795
 45	49	review file	cb1f1cabf91630416daf9b520f1c1176bfa7a862
 14	15	review ready	3de42f3d7ace4ec6ce6ffa7c0883b3806733eed4
-134	78	review ci	1a90b2d106434d98d50735e5bb297eb734fc21de
+132	76	review ci	67768cd834eb07a3dda28b9d8b7520371b15af5e
 13	12	the grace counts from the push (issue #475)	eb2a643a788b9b82800270785192827a831aab40
 51	42	the grace is skipped on no evidence of CI (issue #476)	47adf5995cd35a720b31a17a50f1a4366fc237c7
 9	10	review rerun	39699a125cfcb488efe0e549d5a7f71549d25bc2

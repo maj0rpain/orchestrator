@@ -906,7 +906,17 @@ cmd_review() {
       # The total is stored from the first call: a wait belongs to this PR and
       # head commit, or to the PR alone when the head cannot be read, and is
       # forgotten once a call delivers an outcome (wait.sh).
+      # The refs read runs before the wait's key is known, so a provisional
+      # guard stands in for it: a limit the block cannot hold is slept short
+      # and marked there, and ends the call as still running with no total yet.
+      mkdir -p "$ORCH/wait" || die "could not create $ORCH/wait"
+      WAIT_FILE="$ORCH/wait/pending-$pr"
+      rm -f "$WAIT_FILE.limited"
       pr_refs_read "$pr" head_oid head_ref base_ref refs_err || head_oid=""
+      if [ -e "$WAIT_FILE.limited" ]; then
+        rm -f "$WAIT_FILE.limited"
+        wait_exit_running
+      fi
       wait_open "review ci $pr $head_oid" started slept
       elapsed="$(wait_elapsed "$started" "$slept")"
       if [ -n "$head_oid" ]; then
@@ -921,6 +931,7 @@ cmd_review() {
         if no_ci_evidence "$head_oid" "$base_ref" "$pr"; then
           no_ci=1
         fi
+        wait_limited_check "$slept"
       fi
       while :; do
         # Branch protection's required checks decide it wherever it names any.
