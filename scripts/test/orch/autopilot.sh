@@ -3269,14 +3269,14 @@ rm -f "$ac_err"
 
 ac_log="$(mktemp)"
 ac_defs="$(writeln "$(counting_defs adapter_issue_state_labels issue)" "$(counting_defs adapter_issues_open_rows rows)")"
-counted_adapter_run "$ac_log" "$ac_defs" "$ORCH" autopilot candidates --all >"$ac_log.out" 2>&1
+counted_adapter_run "$ac_log" "$ac_defs" "$ORCH" autopilot candidates --all >/dev/null 2>&1
 assert_eq "--all makes one listing" "$(log_count "$ac_log" rows)" "1"
 assert_eq "and no per-issue state-and-labels read" "$(log_count "$ac_log" issue)" "0"
-counted_adapter_run "$ac_log" "$ac_defs" "$ORCH" autopilot candidates --limit 3 >"$ac_log.out" 2>&1
+counted_adapter_run "$ac_log" "$ac_defs" "$ORCH" autopilot candidates --limit 3 >/dev/null 2>&1
 assert_eq "--limit makes no per-issue state-and-labels read" "$(log_count "$ac_log" issue)" "0"
-counted_adapter_run "$ac_log" "$ac_defs" "$ORCH" autopilot candidates 1 99 >"$ac_log.out" 2>&1
+counted_adapter_run "$ac_log" "$ac_defs" "$ORCH" autopilot candidates 1 99 >/dev/null 2>&1
 assert_eq "named issues each keep one direct read" "$(log_count "$ac_log" issue)" "2"
-rm -f "$ac_log" "$ac_log.out"
+rm -f "$ac_log"
 
 for args in "" "--all 1" "1 --all" "--limit 2 --all" "--all --limit 2" "--limit 0" "--limit x" "--limit" "--limit 1 5" "abc"; do
   # shellcheck disable=SC2086 # the words are the arguments

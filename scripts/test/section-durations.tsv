@@ -80,7 +80,7 @@
 16	18	autopilot run: a start-up read that meets a GitHub limit (#2577)	929190161e7c50cff18ab6e7bccb60001583384b
 47	38	autopilot tick: the early GitHub pause (#2577)	6e6a9b751bcc70cda56db94edf32dd17761c940e
 17	19	autopilot run: the session log's GitHub usage line (#2577)	6bda132d04146540ce70f9650992e428ac2afb59
-27	22	autopilot candidates	65cc481838127495cdb87f132a2d0b2f1ca8802e
+28	22	autopilot candidates	8592ae15d07de5fdedc7f071630838ec706c1f4d
 7	7	autopilot answer: no repo (#3050)	43b2e7d2c6f7ae2f2e566aafa0fd64850f14e34a
 4	5	autopilot session ops read the issue in one jq	c951be202d457a4ea4c00d130cfba0b2f8ae5aeb
 11	12	base	57ecdb1a5a0345f71d06015c379e962ff1d3fc4f
