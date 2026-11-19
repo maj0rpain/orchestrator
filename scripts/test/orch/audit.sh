@@ -21,15 +21,16 @@ audit_repo() {
   errf="$(mktemp)"
 }
 
-# run_save / run_restore: copy the four files the tests edit in a run
-# (ranked.md, area-1.md, area-2.md, record) to <file>.saved, and back.
+# run_save / run_restore: copy the files the tests edit in a run to
+# <file>.saved, and back. run_files holds the list once.
+run_files=(ranked.md area-1.md area-2.md record)
 run_save() {
   local f
-  for f in ranked.md area-1.md area-2.md record; do cp "$run/$f" "$run/$f.saved"; done
+  for f in "${run_files[@]}"; do cp "$run/$f" "$run/$f.saved"; done
 }
 run_restore() {
   local f
-  for f in ranked.md area-1.md area-2.md record; do cp "$run/$f.saved" "$run/$f"; done
+  for f in "${run_files[@]}"; do cp "$run/$f.saved" "$run/$f"; done
 }
 
 # report_run: a fresh repo and an audit run holding two area files and a
@@ -420,9 +421,8 @@ assert_contains "an overlap link's span is code" "$page" 'href="#finding-1">Find
 
 echo
 echo "audit report refusals"
-run_restore
 # report_refuse <what> <expected text> <sed script over ranked.md>: the one run
-# above, its ranked file restored, then edited by the sed script.
+# above, its files restored, then edited by the sed script.
 report_refuse() {
   run_restore
   printf 'earlier report\n' >"$report"
@@ -492,7 +492,6 @@ fi
 
 echo
 echo "audit report-reference check in audit report"
-run_restore
 for phrase in "finding 2" "Findings #3" "CANDIDATE 4" "candidates 1" "this report" "This Report"; do
   report_refuse "a title saying '$phrase'" "says '$phrase'" "s/^Title: Deepen d.sh/Title: Deepen d.sh like $phrase/"
 done
