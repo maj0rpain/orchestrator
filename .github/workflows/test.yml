@@ -41,7 +41,8 @@ jobs:
   # A push to main: the whole suite on the runner's own tools, unsplit, so
   # drift on that side is seen within one merge. The container suite does not
   # run on a push. Its verify step states SIGPIPE ignored itself, so a change
-  # in what the runner hands the job cannot move it.
+  # in what the runner hands the job cannot move it. The default disposition is
+  # covered by local runs, where the shell starts at it (a WSL shell may not).
   runner:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -94,7 +95,9 @@ jobs:
   # 4 jobs, each one ORCH_TEST_SHARD group. It runs the runner's checkout, not
   # the image's baked-in copy, which has no .git. The suite starts with SIGPIPE
   # ignored, set inside the container (the docker CLI's disposition does not
-  # reach it), so this gate sees what the runner job sees on main.
+  # reach it), so this gate sees what the runner job sees on main. The default
+  # disposition is covered by local runs, where the shell starts at it (a WSL
+  # shell may not).
   container:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
