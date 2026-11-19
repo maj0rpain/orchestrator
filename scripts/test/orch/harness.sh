@@ -4322,6 +4322,45 @@ af_out="$(cd "$af" && DOCS_LINT_BASE=stale bash scripts/test/affected.sh 2>&1)"
 assert_eq "with no base the fallback hands on none, whatever it inherited" "$af_out" "all base=unset"
 af_reset
 
+# A ticket branch's base is its parent branch as the local repository has it,
+# never origin's copy (#3547). origin/lag is the initial commit, the local
+# parent is main plus the branch module change, and the ticket adds a doc.
+af_reset
+af_git update-ref refs/remotes/origin/lag "$af_c0"
+af_git branch -q par "$(af_git rev-parse origin/rel)"
+af_git checkout -q -b feat--t1 par
+af_put docs/a.md changed
+af_git commit -qam doc
+af_git config branch.feat--t1.orchestrator-ticket-parent par
+assert_eq "a ticket branch selects from its own diff where origin's copy of its parent lags" \
+  "$(af_plan)" "$af_from_rel"
+af_git config branch.feat--t1.orchestrator-base lag
+assert_eq "the local parent beats a base recorded on the ticket branch" \
+  "$(af_plan)" "$af_from_rel"
+assert_eq "a <ref> wins over the local parent" "$(af_plan origin/main)" "$af_from_main"
+af_git config branch.feat--t1.orchestrator-ticket-parent nosuch
+af_git config branch.feat--t1.orchestrator-base lag
+assert_eq "a parent missing locally falls back to the recorded base" "$(af_plan)" "$af_from_main"
+af_git config --unset branch.feat--t1.orchestrator-ticket-parent
+assert_eq "no recorded parent falls back to the recorded base" "$(af_plan)" "$af_from_main"
+af_git branch -q orphan-par "$(af_git commit-tree "$af_tree" -m orphan)"
+af_git config branch.feat--t1.orchestrator-ticket-parent orphan-par
+assert_eq "a parent with no merge-base falls back to the recorded base" "$(af_plan)" "$af_from_main"
+# The docs lint gets the base the selection used, narrow and fallback alike.
+af_git config branch.feat--t1.orchestrator-ticket-parent par
+af_own="$(af_git merge-base HEAD par)"
+af_put scripts/test/docs_lint.sh "echo \"lint base=\${DOCS_LINT_BASE-unset}\" >\"$af.log\"" 'echo; echo "1 passed, 0 failed"'
+: >"$af.log"
+af_out="$(cd "$af" && DOCS_LINT_BASE=stale PATH="$af_sc:$PATH" bash scripts/test/affected.sh 2>&1)"
+assert_contains "on a ticket branch the narrow selection hands docs_lint.sh the parent's base" \
+  "$(cat "$af.log")" "lint base=$af_own"
+af_put scripts/test/all.sh 'echo "all base=${DOCS_LINT_BASE-unset}"'
+af_out="$(cd "$af" && DOCS_LINT_BASE=stale bash scripts/test/affected.sh 2>&1)"
+assert_eq "on a ticket branch the fallback hands all.sh the parent's base" "$af_out" "all base=$af_own"
+af_git checkout -q -f feat
+af_git branch -q -D feat--t1 par orphan-par
+af_reset
+
 # An invalid ORCH_TEST_POOL_PERCENT is refused before anything runs.
 : >"$af.log"
 af_out="$(cd "$af" && env -u CI ORCH_TEST_POOL_PERCENT=abc bash scripts/test/affected.sh HEAD 2>&1)"; st=$?

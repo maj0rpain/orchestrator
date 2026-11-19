@@ -6,8 +6,13 @@
 # full suite (all.sh) wherever a change's reach is unclear. Run all.sh once
 # before opening a PR.
 #
-# The base is the merge-base of HEAD with <ref> when one is given. Otherwise it
-# is the merge-base with origin's copy of the branch's base branch, read from
+# The base is the merge-base of HEAD with <ref> when one is given. On a ticket
+# branch that records branch.<b>.orchestrator-ticket-parent it is the
+# merge-base of HEAD with that parent branch as the local repository has it,
+# never origin's copy, so a ticket verifies its own diff; with the parent
+# missing locally, or no merge-base with it, the base is found as follows, as
+# on any other branch. Otherwise it is the merge-base with origin's copy of
+# the branch's base branch, read from
 # git config, never through orch.sh: the base recorded for the current branch
 # (branch.<b>.orchestrator-base), or for a ticket branch the one recorded for
 # the branch it was forked from (branch.<b>.orchestrator-ticket-parent), else
@@ -32,7 +37,8 @@
 #                                     all.sh (this row wins)
 # A deleted module or section file runs all.sh too.
 #
-# The base worked out above is handed to docs_lint.sh in DOCS_LINT_BASE, the
+# The base worked out above, a ticket branch's own included, is handed to
+# docs_lint.sh in DOCS_LINT_BASE, the
 # docs lint's own base setting for its suite budget rules, on the narrow
 # selection and on the full-suite fallback alike (all.sh passes it through to
 # its docs_lint.sh). With no base the setting is unset, never inherited.
@@ -109,7 +115,7 @@ full_suite() {
 # resolve_base: prints the commit the changed range starts at (the merge-base),
 # or nothing when there is none. A <ref> that does not resolve exits 2.
 resolve_base() {
-  local target branch name parent
+  local target branch name parent own
   if [ "$have_ref" -eq 1 ]; then
     target="$(git rev-parse --verify -q "$ref^{commit}")" || {
       echo "affected.sh: unknown ref $ref" >&2
@@ -119,9 +125,13 @@ resolve_base() {
     branch="$(git symbolic-ref -q --short HEAD)" || branch=""
     name=""
     if [ -n "$branch" ]; then
+      parent="$(git config --get "branch.$branch.orchestrator-ticket-parent")" || parent=""
+      if [ -n "$parent" ] && target="$(git rev-parse --verify -q "refs/heads/$parent^{commit}")"; then
+        own="$(git merge-base HEAD "$target" 2>/dev/null)" || own=""
+        [ -n "$own" ] && { printf '%s\n' "$own"; return 0; }
+      fi
       name="$(git config --get "branch.$branch.orchestrator-base")" || name=""
       if [ -z "$name" ]; then
-        parent="$(git config --get "branch.$branch.orchestrator-ticket-parent")" || parent=""
         [ -n "$parent" ] && { name="$(git config --get "branch.$parent.orchestrator-base")" || name=""; }
       fi
     fi
