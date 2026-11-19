@@ -1598,10 +1598,11 @@ fi
 # with two, and no cat.
 mi_git="$(counting_bin git)"
 mi_cat="$(counting_bin cat)"
-mi_for_issue() { # <issue>: empties the git/cat logs, then runs side_checkout_for_issue
+mi_counted() { # <cmd>...: empties the git/cat logs, then runs <cmd> under the counting PATH
   : >"$mi_git/git.log"; : >"$mi_cat/cat.log"
-  PATH="$mi_git:$mi_cat:$PATH" sourced_orch side_checkout_for_issue "$1"
+  PATH="$mi_git:$mi_cat:$PATH" "$@"
 }
+mi_for_issue() { mi_counted sourced_orch side_checkout_for_issue "$1"; } # <issue>
 healthy_repo  # a fresh walk: only the side checkouts below are in it
 mi_dir="$(mktemp -d)"  # one parent, so the walk reaches s1..s5 in name order
 mi_wt s1 '9001\n' "$mi_dir" >/dev/null
@@ -1611,10 +1612,7 @@ mi_two="$(counting_starts "$mi_git" git)"
 # side-checkout list: one git process more for each added flow-less side
 # checkout (its holding line's branch read), and no more cat. It runs in this
 # repo between the for-issue runs, since each run empties the logs.
-mi_list_starts() {
-  : >"$mi_git/git.log"; : >"$mi_cat/cat.log"
-  PATH="$mi_git:$mi_cat:$PATH" "$ORCH" side-checkout list >/dev/null 2>&1
-}
+mi_list_starts() { mi_counted "$ORCH" side-checkout list >/dev/null 2>&1; }
 mi_list_starts
 mi_git2="$(counting_starts "$mi_git" git)"
 mi_cat2="$(counting_starts "$mi_cat" cat)"

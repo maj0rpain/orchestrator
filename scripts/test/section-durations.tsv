@@ -295,7 +295,7 @@
 5	7	side-checkout prune: fork PRs are not proof (#1979)	004dd30e3e0deb54b95c8c79110e26cd2ffc4014
 49	52	side-checkout prune: the merged-PR close backstop (#2477)	69f285288eabcace9d74fa67194548b6bf7ab512
 2	3	side_checkout_marker reads the worktree's git pointer	7605e77ff7fdca5853e0a9cc368065fe764cb65e
-11	12	side checkout marker issue: reading without re-classifying (#3073)	24d2222c32c9c2665abf206cd8e7dda9dc27aa97
+11	12	side checkout marker issue: reading without re-classifying (#3073)	e17567fa0e13f6b631e7648ba8499218e232d2c4
 5	6	archive reads the flow's slug once	d1e47a75531129e6123579f59802dd69c84d1d76
 5	7	side-checkout: the default branch is asked for only when needed	5f8f132611fabd4e0dede5d1e6b3db76ceff3111
 6	6	spec-review begin (#224)	fe74fe8dd28fdc37ed2e86fe535752768ee13f03
