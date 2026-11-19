@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.3
+
+The trust module test section reads issue 8 once for its lower-case and empty association check, one orch.sh run fewer per suite run.
+
 ## 6.8.2
 
 Name `scripts/orch.sh` and `scripts/test/orch/harness.sh` by their repo-relative paths in CLAUDE.md and CONTRIBUTING.md.
