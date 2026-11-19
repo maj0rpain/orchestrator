@@ -3,8 +3,8 @@
 # This repo's ticket verification: affected.sh [--plan] [<ref>]. It maps the
 # files changed since the branch's base to the test suites and orch_test.sh
 # sections that cover them, always runs the cheap broad checks, and runs the
-# full suite (all.sh) wherever a change's reach is unclear. Run all.sh once
-# before opening a PR.
+# full suite (all.sh) wherever a change's reach is unclear. CI is the one place
+# the whole suite always runs.
 #
 # The base is the merge-base of HEAD with <ref> when one is given. On a ticket
 # branch that records branch.<b>.orchestrator-ticket-parent it is the

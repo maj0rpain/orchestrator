@@ -188,7 +188,7 @@
 #   scan_interview_closing  orch-interview's SKILL.md's Closing section has
 #     four numbered route options
 #   scan_repo_verification  this repo's CLAUDE.md Testing section names a
-#     Ticket verification: and a Full verification: command
+#     Ticket verification:, Branch verification: and Full verification: command
 #   scan_branch_verification  CLAUDE.md's Branch verification: line, if any,
 #     has a command and sits in the Testing section
 # <<< rules
@@ -5382,7 +5382,7 @@ scan_repo_verification() {
     echo "CLAUDE.md: has no ## Testing section"
     return 0
   }
-  for label in "Ticket verification" "Full verification"; do
+  for label in "Ticket verification" "Branch verification" "Full verification"; do
     grep -qE "^$label: [^[:space:]]" <<<"$body" ||
       echo "CLAUDE.md: the ## Testing section has no '$label: <command>' line"
   done
@@ -5395,15 +5395,19 @@ flags "a Testing section without Full verification is flagged" \
 printf '# C\n\n## Testing\n\nFull verification: b.sh\n' >"$fixture/CLAUDE.md"
 flags "a Testing section without Ticket verification is flagged" \
   "$(scan_repo_verification "$fixture")" "no 'Ticket verification: <command>' line"
-printf '# C\n\n## Testing\n\nTicket verification: a.sh\nFull verification: b.sh\n\n## Next\n' \
+printf '# C\n\n## Testing\n\nTicket verification: a.sh\nFull verification: b.sh\n' \
   >"$fixture/CLAUDE.md"
-assert_empty "a Testing section with both lines is not flagged" \
+flags "a Testing section without Branch verification is flagged" \
+  "$(scan_repo_verification "$fixture")" "no 'Branch verification: <command>' line"
+printf '# C\n\n## Testing\n\nTicket verification: a.sh\nBranch verification: a.sh\nFull verification: b.sh\n\n## Next\n' \
+  >"$fixture/CLAUDE.md"
+assert_empty "a Testing section with all three lines is not flagged" \
   "$(scan_repo_verification "$fixture")"
 printf '# C\n\n## Testing\n\n## Next\n\nTicket verification: a.sh\nFull verification: b.sh\n' \
   >"$fixture/CLAUDE.md"
 flags "verification lines outside the Testing section are flagged" \
   "$(scan_repo_verification "$fixture")" "no 'Ticket verification: <command>' line"
-check "CLAUDE.md's Testing section names a Ticket verification and a Full verification" \
+check "CLAUDE.md's Testing section names a Ticket, a Branch and a Full verification" \
   "$(scan_repo_verification "$PLUGIN_ROOT")"
 
 # A `Branch verification:` line, when CLAUDE.md has one, is well formed (a
