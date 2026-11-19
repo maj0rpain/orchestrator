@@ -12,7 +12,11 @@
 # the key the caller builds, and is forgotten as soon as a call delivers an
 # outcome. Its tests: scripts/test/orch/wait.sh, and the `review ci` and
 # `spec-review wait` sections, and the `gh rate limits (#2577)` section of
-# scripts/test/orch/gh.sh.
+# scripts/test/orch/gh.sh; wait_block_nap's: the `verification run: block
+# naps start no awk far from the block's end` section of
+# scripts/test/orch/verification.sh.
+# wait_block_nap is the block turn of a caller that keeps no stored total
+# (`verification run`), with a fast path that starts no awk.
 # The module also owns the limit decision - whether a GitHub rate-limit wait
 # fits in what is left of the block (wait_limit_fits) - and the ".limited" mark
 # that carries a give-up out of a subshell. The mark sits at WAIT_MARK, the open
@@ -147,6 +151,40 @@ wait_block_spent() { wait_elapsed "$WAIT_CALL_START" "$1"; }
 # ORCH_WAIT_BLOCK after <spent> seconds when that is less.
 wait_nap() {
   awk -v i="$1" -v b="$ORCH_WAIT_BLOCK" -v s="$2" 'BEGIN { r = b - s; print (r < i) ? r : i }'
+}
+
+# wait_block_nap <interval>: one turn of a poll inside this call's block, for a
+# caller that keeps no stored total (`verification run` and its grace waits):
+# exits 75 through wait_exit_running when the block is spent, else sleeps
+# <interval>, or what is left of the block when that is less. The fast path -
+# the whole seconds since WAIT_CALL_START, plus one, plus <interval> rounded up,
+# at most the block's whole-second part - just sleeps: no awk, and nothing added
+# to the caller's `blocked`; the wall clock alone bounds the block there. It
+# sets `block_fast` in the caller's scope. The slow path keeps
+# wait_block_spent's test, counting the wall clock plus one second once
+# `block_fast` is set (the whole-second clock reads up to a second short, and
+# the fast naps are not in
+# `blocked`), and adds its nap to the caller's `blocked`, read as ${blocked:-0}.
+wait_block_nap() {
+  local wall whole up="${1%%.*}" frac="" spent nap
+  [[ "$1" != *.* ]] || frac="${1#*.}"
+  [ -z "${frac//0/}" ] || up=$(( 10#${up:-0} + 1 ))
+  whole="${ORCH_WAIT_BLOCK%%.*}"
+  printf -v wall '%(%s)T' -1
+  if [ $(( wall - WAIT_CALL_START + 1 + 10#${up:-0} )) -le "$(( 10#${whole:-0} ))" ]; then
+    block_fast=1
+    sleep "$1"
+    return 0
+  fi
+  if [ -n "${block_fast:-}" ]; then
+    spent="$(wait_elapsed "$(( WAIT_CALL_START - 1 ))" "${blocked:-0}")"
+  else
+    spent="$(wait_block_spent "${blocked:-0}")"
+  fi
+  float_lt "$spent" "$ORCH_WAIT_BLOCK" || wait_exit_running
+  nap="$(wait_nap "$1" "$spent")"
+  sleep "$nap"
+  blocked="$(float_add "${blocked:-0}" "$nap")"
 }
 
 # wait_store_and_exit: stores WAIT_START and WAIT_SLEPT in WAIT_FILE, says the

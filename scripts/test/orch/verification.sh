@@ -5,12 +5,15 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# vr_gate <dir> [quiet]: a command line that signals it is running through
-# <dir>/up (a FIFO, unless quiet), waits until <dir>/gate exists, logs one start
-# of the counted date, and prints "done".
+# vr_gate <dir> [quiet|after-state]: a command line that signals it is running
+# through <dir>/up (a FIFO, unless quiet), waits until <dir>/gate exists, logs
+# one start of the counted date, and prints "done". after-state signals once
+# the call has written the record's state, which it does after the start, so a
+# caller killed on the signal leaves a whole record, one newer than <dir>/mark.
 vr_gate() {
   local up="echo up >\"$1/up\"; "
-  [ -z "${2-}" ] || up=""
+  [ "${2-}" != quiet ] || up=""
+  [ "${2-}" != after-state ] || up="until [ -n \"\$(find .orchestrator/verification -name state -newer \"$1/mark\")\" ]; do sleep 0.1; done; $up"
   printf 'date >/dev/null; %swhile [ ! -f "%s/gate" ]; do sleep 0.1; done; echo done' "$up" "$1"
 }
 
@@ -62,6 +65,30 @@ out="$(ORCH_WAIT_BLOCK=0 "$ORCH" verification run 'true' 2>&1)"; st=$?
 assert_ne "a zero wait block is refused" "$st" 0
 assert_contains "naming it" "$out" "ORCH_WAIT_BLOCK"
 
+out="$("$ORCH" verification 2>&1)"; st=$?
+assert_status "verification with no verb exits 1" "$st" 1
+assert_contains "with the usage line" "$out" "usage: orch.sh verification run <command>"
+out="$("$ORCH" verification run 2>&1)"; st=$?
+assert_status "verification run with no command exits 1" "$st" 1
+assert_contains "with the usage line" "$out" "usage: orch.sh verification run <command>"
+
+# A mark on a record directory that is gone brings nothing back.
+vr_gone="$vr_dir/gone"
+sourced_orch_script "orch_load verification; verification_mark '$vr_gone/termed'" >/dev/null 2>&1
+assert_eq "a mark in a removed record directory creates nothing" "$([ -e "$vr_gone" ] && echo made || echo none)" "none"
+
+# A termed record with a dead leader is still stoppable, until it has a status.
+vr_sd="$vr_dir/stoppable"
+mkdir "$vr_sd"
+: >"$vr_sd/termed"
+printf '99999999 x\n' >"$vr_sd/pid"
+sourced_orch_script "orch_load verification; verification_stoppable '$vr_sd'" >/dev/null 2>&1; st=$?
+assert_status "a termed record with a dead leader is stoppable" "$st" 0
+: >"$vr_sd/status"
+sourced_orch_script "orch_load verification; verification_stoppable '$vr_sd'" >/dev/null 2>&1; st=$?
+assert_status "a record with a status is not stoppable" "$st" 1
+rm -rf "$vr_sd"
+
 # Outliving one call, then attaching, then delivery.
 cmd="$(vr_gate "$vr_dir")"
 out="$(PATH="$vr_count:$PATH" ORCH_WAIT_BLOCK=0.2 "$ORCH" verification run "$cmd" 2>"$vr_dir/err")"; st=$?
@@ -70,15 +97,15 @@ assert_eq "with empty stdout" "$out" ""
 assert_eq "and the still-running line on stderr" "$(<"$vr_dir/err")" \
   "orch: still running after 0.2s - run the same command again"
 fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
-out="$(PATH="$vr_count:$PATH" ORCH_WAIT_BLOCK=0.2 "$ORCH" verification run "$cmd" 2>&1)"; st=$?
+out="$(vr_run "$cmd")"; st=$?
 assert_status "the same line run again attaches, still running" "$st" 75
 assert_eq "and started no second copy" "$(counting_starts "$vr_count" date)" "1"
 : >"$vr_dir/gate"
-out="$(PATH="$vr_count:$PATH" "$ORCH" verification run "$cmd" 2>&1)"; st=$?
+out="$(vr_block=5 vr_run "$cmd")"; st=$?
 assert_status "the finished run is delivered with its status" "$st" 0
 assert_eq "and its output" "$out" "done"
 assert_eq "still one start" "$(counting_starts "$vr_count" date)" "1"
-out="$(PATH="$vr_count:$PATH" ORCH_WAIT_BLOCK=0.2 "$ORCH" verification run "$cmd" 2>&1)"; st=$?
+out="$(vr_run "$cmd")"; st=$?
 assert_status "the call after delivery starts a fresh run, still going" "$st" 75
 assert_eq "two starts in all" "$(counting_starts "$vr_count" date)" "2"
 fifo_read_line 20 "$vr_dir/up" "$vr_dir/up" >/dev/null
@@ -96,8 +123,8 @@ assert_eq "the next call delivers the result whole" "$out" "300000"
 # The calling process killed mid-run, alone and with its whole process group.
 for vr_case in alone group; do
   rm -f "$vr_dir/gate"
-  cmd="$(vr_gate "$vr_dir"); echo $vr_case"
-  : >"$vr_dir/pid"
+  cmd="$(vr_gate "$vr_dir" after-state); echo $vr_case"
+  : >"$vr_dir/pid"; : >"$vr_dir/mark"
   if [ "$vr_case" = alone ]; then
     PATH="$vr_count:$PATH" ORCH_WAIT_BLOCK=60 "$ORCH" verification run "$cmd" >/dev/null 2>&1 &
     vr_pid=$!
@@ -114,7 +141,7 @@ for vr_case in alone group; do
   wait 2>/dev/null
   before="$(counting_starts "$vr_count" date)"
   : >"$vr_dir/gate"
-  out="$(PATH="$vr_count:$PATH" "$ORCH" verification run "$cmd" 2>&1)"; st=$?
+  out="$(vr_block=5 vr_run "$cmd")"; st=$?
   assert_status "the run survives the caller killed ($vr_case): its result is collected" "$st" 0
   assert_eq "its output ($vr_case)" "$out" "done
 $vr_case"
@@ -304,6 +331,56 @@ out="$(cd "$vr_wt" && vr_block=5 vr_run "$vr_cmd")"; st=$?
 assert_eq "a checkout made again at the same path starts a fresh run" "$(counting_starts "$vr_count" date)" "$((base + 1))"
 assert_eq "and is never handed the old result" "$out" "done
 again"
+
+# --- verification run: block naps start no awk far from the end ---------------
+# A waiting call, and a grace wait inside it, start no awk on a turn while the
+# block is far from spent (wait_block_nap's fast path); a sub-second block still
+# ends in exit 75 on time (the section above).
+echo
+echo "verification run: block naps start no awk far from the block's end"
+new_repo >/dev/null
+bn_awk="$(counting_bin awk)"
+PATH="$bn_awk:$PATH" ORCH_WAIT_BLOCK=60 "$ORCH" verification run 'true' >/dev/null 2>&1
+bn_quick="$(counting_starts "$bn_awk" awk)"
+: >"$bn_awk/awk.log"
+PATH="$bn_awk:$PATH" ORCH_WAIT_BLOCK=60 "$ORCH" verification run 'sleep 1' >/dev/null 2>&1; st=$?
+assert_status "a long-block call polling a run of about a second delivers it" "$st" 0
+assert_eq "and starts no more awk than a call whose run ends at once" \
+  "$(( $(counting_starts "$bn_awk" awk) <= bn_quick ))" "1"
+
+# verification_stop's grace wait, kill faked as a group that goes after a second
+# (or is gone already).
+bn_stop() {
+  : >"$bn_awk/awk.log"
+  bn_d="$(mktemp -d)"
+  PATH="$bn_awk:$PATH" ORCH_WAIT_BLOCK=60 ORCH_VERIFICATION_GRACE=5 sourced_orch_script \
+    "orch_load verification; end=\$(( SECONDS + $1 )); kill() { [ \"\$1\" != -0 ] || [ \"\$SECONDS\" -lt \"\$end\" ]; }; verification_stop 4242 '$bn_d'" >/dev/null 2>&1
+  assert_status "a stop whose group goes after $1 s returns 0" "$?" 0
+  bn_count="$(counting_starts "$bn_awk" awk)"
+}
+bn_stop 0; bn_gone="$bn_count"
+bn_stop 2; bn_slow="$bn_count"
+assert_eq "a grace wait over a group that lasts a second starts no more awk than one over a gone group" \
+  "$(( bn_slow <= bn_gone ))" "1"
+
+# verification_wait_state: a record with no state past its grace is given up on
+# at once, never exit 75 under a long block; with its state it is waited for
+# no more.
+bn_rec="$(mktemp -d)"
+printf '%s\n' "$(( $(printf '%(%s)T' -1) - 10 ))" >"$bn_rec/waiting"
+ORCH_WAIT_BLOCK=60 ORCH_VERIFICATION_GRACE=1 sourced_orch_script \
+  "orch_load verification; verification_wait_state '$bn_rec'" >/dev/null 2>&1; st=$?
+assert_status "a record with no state and a 10 s old mark under a 1 s grace returns 1, never exit 75" "$st" 1
+bn_t0=$SECONDS
+ORCH_WAIT_BLOCK=60 ORCH_VERIFICATION_GRACE=3 sourced_orch_script \
+  "orch_load verification; verification_wait_state '$bn_rec'" >/dev/null 2>&1; st=$?
+assert_status "a record with no state and a 10 s old mark is given up on at once" "$st" 1
+assert_eq "and without waiting out a grace counted from naps" "$(( SECONDS - bn_t0 < 2 ))" "1"
+: >"$bn_rec/state"
+ORCH_WAIT_BLOCK=60 ORCH_VERIFICATION_GRACE=1 sourced_orch_script \
+  "orch_load verification; verification_wait_state '$bn_rec'" >/dev/null 2>&1; st=$?
+assert_status "a record with its state returns 0" "$st" 0
+rm -rf "$bn_rec"
 
 # --- verification run in help and the CLI conventions -------------------------
 echo
