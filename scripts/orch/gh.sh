@@ -1456,7 +1456,7 @@ adapter_claim_delete() {
 # pruning the local copies of claims since freed. Fails, git's reason on
 # stderr, where origin cannot be read.
 adapter_claim_list() {
-  local err ref msg issue host pid phase started seen=""
+  local err ref msg issue host pid phase started sentinel_read=""
   local nl=$'\n' sentinel='orch-claim-list-end'
   local pat_host="$nl"'host: ([^'"$nl"']*)' pat_pid="$nl"'pid: ([^'"$nl"']*)'
   local pat_phase="$nl"'phase: ([^'"$nl"']*)' pat_started="$nl"'started: ([^'"$nl"']*)'
@@ -1470,7 +1470,7 @@ adapter_claim_list() {
   while IFS= read -r -d '' ref && IFS= read -r -d '' msg; do
     ref="${ref#"$nl"}"
     if [ "$ref" = "$sentinel" ]; then
-      seen=1
+      sentinel_read=1
       continue
     fi
     issue="${ref##*/}"
@@ -1483,7 +1483,7 @@ adapter_claim_list() {
     printf '%s\t%s\t%s\t%s\t%s\n' "$issue" "$host" "$pid" "$phase" "$started"
   done < <(git for-each-ref --sort=version:refname --format='%(refname)%00%(contents)%00' refs/orch/claims/ \
     && printf '%s\0\0' "$sentinel")
-  [ -n "$seen" ] || return 1
+  [ -n "$sentinel_read" ] || return 1
 }
 
 if [ -n "${ORCH_GH_ADAPTER:-}" ]; then
