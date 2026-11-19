@@ -1479,6 +1479,12 @@ autopilot_run() {
       --strict-mcp-config --exclude-dynamic-system-prompt-sections \
       --append-system-prompt "$AUTOPILOT_SYSTEM_PROMPT" \
       --output-format stream-json --verbose ) >"$log" 2>&1 || rc=$?
+  # The session's verification runs end with it. A child process, so no exit of
+  # the stop (a group surviving KILL, a spent wait block) ends this wrapper; a
+  # failed stop is a warning in the log and changes nothing else.
+  # Its own loads are not this wrapper's, so a load trace is left out of it.
+  ( ORCH_LOAD_TRACE='' "$AUTOPILOT_SELF" verification stop "$side" >/dev/null 2>>"$log" ) ||
+    printf 'autopilot run: could not stop every verification run of %s\n' "$side" >>"$log"
   if usage="$(autopilot_github_usage "$usage_before")"; then printf 'autopilot run: GitHub API usage this session: %s\n' "$usage" >>"$log"; fi
   autopilot_session_end "$issue" "$phase" "$log" "$rc" "$mine"
 }

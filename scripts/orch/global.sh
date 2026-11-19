@@ -1130,6 +1130,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               failed with an orch: line, exit 1. Records of
                               checkouts that no longer exist are cleared by the
                               next call
+  verification stop <checkout>  stop every live verification run of <checkout>
+                              or a ticket worktree under it (TERM, then KILL),
+                              removing its record; exits 1 when a group
+                              survives the KILL. The autopilot wrapper runs it
+                              when a session ends
   status                      human-readable summary of this checkout's flow,
                               then one line for every other checkout holding
                               a flow and every side checkout
