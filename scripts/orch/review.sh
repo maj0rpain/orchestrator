@@ -209,7 +209,7 @@ review_flat_record_gone() {
 # pre-redo-<redo_count>/ (review_terminal_record), so the stopped loop's end
 # stays readable until the redo's closing write.
 review_terminal_state() {
-  local i="$1" b="$2" path err sec="" line started="" body=""
+  local i="$1" budget="$2" path err sec="" line started="" body=""
   local first_raw first rest after s sep
   if [ "$i" -eq 0 ]; then note none; return 1; fi
   # The detail is review_record_path's own last orch: line.
@@ -220,7 +220,7 @@ review_terminal_state() {
   # iteration; only its absence depends on the budget - pending before it is
   # spent, interrupted once it is.
   if ! review_record_terminal "$path" sec; then
-    if [ "$i" -lt "$b" ]; then note pending; else note interrupted; fi
+    if [ "$i" -lt "$budget" ]; then note pending; else note interrupted; fi
     return 1
   fi
   # The section from its first line holding more than spaces and tabs on.
@@ -715,7 +715,7 @@ review_standards_declared() {
 # nothing). A declaration the resolution rejects dies with its message, after
 # printing the first line and the entries up to the rejected one, last.
 review_standards_resolve_source() {
-  local listed=() hop=() next=() f p span
+  local listed=() hop=() next=() f p span entry
   for f in CLAUDE.md AGENTS.md; do
     ! review_standards_inside "$f" || listed+=("$f")
   done
@@ -736,9 +736,9 @@ review_standards_resolve_source() {
     # doctor to read as data.
     printf 'declared %s\n' "$f"
     [ "${#entries[@]}" -gt 0 ] || die "$f declares Standards: with no entries (want backticked paths)"
-    for span in "${entries[@]}"; do
-      printf '%s\n' "$span"
-      review_standards_declared "$span"
+    for entry in "${entries[@]}"; do
+      printf '%s\n' "$entry"
+      review_standards_declared "$entry"
     done
     return 0
   done
@@ -778,19 +778,19 @@ review_standards() {
 # reported - never parsed a second time. A declaration it dies on is a FAIL
 # carrying its own message.
 check_standards_declaration() {
-  local resolved err list first entry=""
+  local resolved err list first decl_file entry=""
   if ! capture resolved err review_standards_resolve_source; then
     d_fail "$(err_line "$err")"
     # The died resolution left its stdout: the declaring file, then the entries
     # up to the rejected one (none when the paragraph had no entries).
     lines_split "$resolved" first list
-    first="${first#declared }"
+    decl_file="${first#declared }"
     entry="${list##*$'\n'}"
     if [ -n "$entry" ]; then
-      d_remedy "change the entry \`$entry\` in the Standards: paragraph of $first to a repo-relative path of a file in the repo, with at most one #Heading that matches once - or delete the paragraph to have the reviewers crawl the standards documents" \
+      d_remedy "change the entry \`$entry\` in the Standards: paragraph of $decl_file to a repo-relative path of a file in the repo, with at most one #Heading that matches once - or delete the paragraph to have the reviewers crawl the standards documents" \
         "see docs/repo-setup.md under the plugin root"
     else
-      d_remedy "list backticked repo-relative paths in the Standards: paragraph of $first - or delete the paragraph to have the reviewers crawl the standards documents" \
+      d_remedy "list backticked repo-relative paths in the Standards: paragraph of $decl_file - or delete the paragraph to have the reviewers crawl the standards documents" \
         "see docs/repo-setup.md under the plugin root"
     fi
     return 0
@@ -817,10 +817,10 @@ check_standards_declaration() {
 # `budget` are never written. A failed clear dies (exit 1) naming the report.
 review_resume() {
   [ $# -eq 0 ] || die "usage: orch.sh review resume"
-  local state i path report b budget effective recorded phase active=""
-  require_state_read i=iteration budget=budget recorded=branch phase=phase
-  effective="$(review_budget_fallback "$budget")"
-  state="$(review_terminal_state "$i" "$effective")" || true
+  local state i path report b budget_raw budget recorded phase active=""
+  require_state_read i=iteration budget_raw=budget recorded=branch phase=phase
+  budget="$(review_budget_fallback "$budget_raw")"
+  state="$(review_terminal_state "$i" "$budget")" || true
   state="${state%%$'\n'*}"
   case "$state" in
     pending|interrupted) ;;
@@ -1048,10 +1048,10 @@ cmd_review() {
     rerun) review_rerun "$@" ;;
     resume) review_resume "$@" ;;
     terminal)
-      local ti tb
-      require_state_read ti=iteration tb=budget
+      local i budget_raw
+      require_state_read i=iteration budget_raw=budget
       [ $# -eq 0 ] || die "usage: orch.sh review terminal"
-      review_terminal_state "$ti" "$(review_budget_fallback "$tb")"
+      review_terminal_state "$i" "$(review_budget_fallback "$budget_raw")"
       ;;
     retire)
       require_state
