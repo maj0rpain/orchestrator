@@ -5392,7 +5392,7 @@ scan_repo_verification() {
     body=""
     echo "CLAUDE.md: has no ## Testing section"
   fi
-  all="$(grep -E '^Branch verification:' "$r/CLAUDE.md" || true)"
+  all="$(grep -E '^Branch verification:' "$r/CLAUDE.md" 2>/dev/null || true)"
   [ -n "$all" ] || return 0
   [ -z "$(grep -vE '^Branch verification:[[:space:]]*[^[:space:]]' <<<"$all" || true)" ] ||
     echo "CLAUDE.md: a 'Branch verification:' line has no command"
