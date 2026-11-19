@@ -363,10 +363,9 @@ ci_deliver() {
 }
 
 # review_ci_once <pr> <pr_arg>: `review ci --no-wait`, one pass of the probe
-# the waiting form repeats: it reads no stored total, never sleeps and writes
-# nothing (no state key, wait file, provisional guard); where the loop would
-# sleep it prints `pending`. A rate limit is given up on at once
-# (NO_WAIT_CALL).
+# the waiting form repeats: it reads no total, never sleeps and writes no
+# state, wait file or guard; where the loop would sleep it prints `pending`.
+# A rate limit is given up on at once (NO_WAIT_CALL).
 review_ci_once() {
   local pr="$1" pr_arg="$2" started elapsed=0 res verdict refs_err head_oid head_ref base_ref push_age=0
   local no_ci=0 ci_status refs_rc=0 grace_none

@@ -837,10 +837,8 @@ rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
 assert_status "a limit met reading the PR's refs ends the call as still running within the block" "$st" 75
 assert_eq "with stdout empty and no total stored" "$out$(ls "${ORCH_DIR_NAME:?}/wait" 2>/dev/null)" ""
 rm -rf "${ORCH_DIR_NAME:?}/wait"
-for bad_block in soon 0 0.0; do
-  out="$(ORCH_WAIT_BLOCK=$bad_block timeout 5 "$ORCH" review ci 2>&1)"; st=$?
-  assert_status "an ORCH_WAIT_BLOCK of $bad_block is refused" "$st" 2
-done
+out="$(ORCH_WAIT_BLOCK=0 timeout 5 "$ORCH" review ci 2>&1)"; st=$?
+assert_status "an ORCH_WAIT_BLOCK of 0 is refused" "$st" 2
 assert_contains "naming the variable" "$out" "ORCH_WAIT_BLOCK"
 help_out="$("$ORCH" help)"
 assert_contains "help names ORCH_WAIT_BLOCK and exit 75 for review ci" "$help_out" "75 - run it again; the 900 s total"

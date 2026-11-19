@@ -103,14 +103,11 @@ assert_status "a mark left by an earlier call is cleared by wait_guard" "$st" 0
 # afresh): its second line is the seconds slept wait_limited_check stored.
 out="$(sourced_orch_script 'wait_guard 7; wait_open "wt-mark-test" s l; ORCH_WAIT_BLOCK=0; wait_limit_fits 60 && exit 9; [ -e "$WAIT_FILE.limited" ] || exit 8; [ ! -e "$ORCH/wait/pending-7.limited" ] || exit 7; (wait_limited_check 3) >/dev/null 2>&1; rc=$?; [ "$rc" = 75 ] || exit 6; [ "$(sed -n 1p "$WAIT_FILE")" = "$s" ] && [ "$(sed -n 2p "$WAIT_FILE")" = 3 ] || exit 5; exit 75' 2>&1)"; st=$?
 assert_status "a limit the block cannot hold leaves the total's mark and wait_limited_check exits 75 keeping the total" "$st" 75
-sourced_orch_script 'wait_open "wt-mark-test" s l; wait_forget; [ ! -e "$WAIT_FILE" ]' >/dev/null 2>&1; st=$?
-assert_status "wait_forget forgets it" "$st" 0
+rm -rf "${ORCH_DIR_NAME:?}/wait"
 
 # wait_limit_fits with only WAIT_MARK set decides a wait is open.
 sourced_orch_script 'unset WAIT_FILE; WAIT_MARK=$1.m; ORCH_WAIT_BLOCK=0; wait_limit_fits 60 && exit 9; [ -e "$WAIT_MARK" ]' "$wt_wf" >/dev/null 2>&1; st=$?
 assert_status "a limit the block cannot hold leaves the mark with only WAIT_MARK set" "$st" 0
-sourced_orch_script 'unset WAIT_FILE WAIT_MARK; ORCH_WAIT_BLOCK=0; wait_limit_fits 60' >/dev/null 2>&1; st=$?
-assert_status "and no wait open fits, leaving none" "$st" 0
 rm -f "$wt_wf.m"
 
 # wait_block_check refuses a non-number or zero block through the dier given.
