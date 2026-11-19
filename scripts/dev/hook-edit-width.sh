@@ -132,7 +132,7 @@ case "$event" in
     # moved the session's cwd into another checkout.
     { printf 'root\t%s\n' "$root" &&
       { [ -z "$list" ] || printf '%s\n' "$list"; }; } 2>/dev/null \
-      >"$snap" || rm -f "$snap" 2>/dev/null
+      >"$snap" || drop_snapshot_and_exit "$snap"
     exit 0
     ;;
   PostToolUse | PostToolUseFailure) ;;

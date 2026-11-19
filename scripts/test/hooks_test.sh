@@ -1691,7 +1691,7 @@ assert_eq "the Stop paste guard allows a payload with no transcript_path" "$(sg_
 # Fail open.
 assert_eq "a transcript with no arming pass line allows" "$(sg_decide "$T11")" allow
 unset ORCH_PASTE_GUARD_WAIT
-rm -rf "$PG" "$pg_fb_jq1" "$pg_fb_jq2" "$pg_fb_tail" "$pg_fb_grep"
+rm -rf "$PG" "$JQB" "$pg_fb_jq1" "$pg_fb_jq2" "$pg_fb_tail" "$pg_fb_grep"
 
 assert_eq "hooks.json registers hook-paste-stop-guard.sh under Stop" \
   "$(jq -r '[.hooks.Stop[]? | .hooks[]?.command | select(test("hook-paste-stop-guard\\.sh"))] | length' "$DIR/../hooks/hooks.json")" 1
@@ -1844,6 +1844,7 @@ assert_contains "edit hook: runs through CLAUDE_PROJECT_DIR" "$reg" 'CLAUDE_PROJ
 assert_not_contains "edit hook: absent from hooks/hooks.json" \
   "$(cat "$ROOT/hooks/hooks.json")" 'hook-edit-width'
 
+rm -rf "$EW" "$NOSC" "$NOREPO" "$EW2"
 
 # --- bash width hook (scripts/dev/hook-edit-width.sh on Bash calls)
 EDIT_HOOK="$ROOT/scripts/dev/hook-edit-width.sh"
