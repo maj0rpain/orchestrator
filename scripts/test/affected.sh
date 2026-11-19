@@ -107,9 +107,9 @@
 #
 # Always run: docs_lint.sh, orch_test.sh's placement sections (test-helper
 # placement, gh op placement, marked comment prelude placement, comment
-# reader placement), and the shellcheck run, at warning severity, on the
-# changed scripts/**/*.sh files that still exist. Sections are chosen through
-# orch_test.sh's ORCH_TEST_ONLY.
+# reader placement, helper body copies), and the shellcheck run, at warning
+# severity, on the changed scripts/**/*.sh files that still exist. Sections are
+# chosen through orch_test.sh's ORCH_TEST_ONLY.
 #
 # Each suite other than orch_test.sh holds a slot of the job pool while it runs
 # (test_jobs.sh's suite start, as all.sh's suites do), waiting for one when none
@@ -492,7 +492,7 @@ harness="scripts/test/orch/harness.sh"
 if [ -f "$harness" ]; then
   while IFS= read -r t; do
     case "$t" in
-      "test-helper placement ("* | "gh op placement ("* | "marked comment prelude placement ("* | "comment reader placement ("*)
+      "test-helper placement ("* | "gh op placement ("* | "marked comment prelude placement ("* | "comment reader placement ("* | "helper body copies ("*)
         add_title "$t" ;;
     esac
   done < <(titles_of "$harness")

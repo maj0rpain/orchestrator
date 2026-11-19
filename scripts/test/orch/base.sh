@@ -84,6 +84,7 @@ orch_gh_failing base set uat >/dev/null
 out="$(orch_gh_failing base clear 2>&1)"; st=$?
 assert_status "clear succeeds when a setting exists" "$st" 0
 assert_eq "clear removes the setting" "$(base_setting)" "<unset>"
+assert_eq "clear prints the base it falls back to" "$out" "main (default)"
 out="$(orch_gh_failing base clear 2>&1)"; st=$?
 assert_status "clear succeeds when nothing was set" "$st" 0
 

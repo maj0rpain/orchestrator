@@ -492,8 +492,7 @@ review_file() {
   done
 
   severity_label_ensure "review:$severity" "$colour" "$desc"
-  triage_label_into triage needs-triage
-  triage_label_ensure "$triage"
+  needs_triage_label_ready triage
   category_label_ensure "$category"
   # The title carries no severity prefix: the label holds it, where triage
   # can change it, and the title reads as an issue.
@@ -781,7 +780,7 @@ review_standards() {
 check_standards_declaration() {
   local resolved err list first entry=""
   if ! capture resolved err review_standards_resolve_source; then
-    d_fail "${err#orch: }"
+    d_fail "$(err_line "$err")"
     # The died resolution left its stdout: the declaring file, then the entries
     # up to the rejected one (none when the paragraph had no entries).
     lines_split "$resolved" first list

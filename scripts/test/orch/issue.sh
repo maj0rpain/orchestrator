@@ -1484,12 +1484,8 @@ echo
 echo "issue ready: no repo"
 healthy_repo
 assert_no_repo_exit2 "issue ready" issue ready 70
-out="$(orch_no_repo issue ready abc 2>&1)"; st=$?
-assert_status "a bad issue number is refused first" "$st" 2
-assert_contains "with its usage line" "$out" "issue must be a plain issue number"
-out="$(orch_no_repo issue ready 2>&1)"; st=$?
-assert_status "a usage error is refused first" "$st" 2
-assert_contains "with its usage line" "$out" "usage: orch.sh issue ready <n>"
+assert_no_repo_refused "issue ready with a bad issue number" "issue must be a plain issue number" issue ready abc
+assert_no_repo_refused "issue ready usage error" "usage: orch.sh issue ready <n>" issue ready
 restore_suite_env
 
 # --- issue next ---------------------------------------------------------------

@@ -77,8 +77,9 @@ readonly EXCLUDED_DIRS=("$ORCH_DIR_NAME/" ".scratch/")
 # --limit. Three kinds of listing pass it. The search-backed issue listings run
 # oldest first and warn when they reach it, so a cut drops the newest. The
 # merged-PR close backstop's listing is search-backed too and runs newest
-# created first, as its search states. The other PR listings run newest first,
-# as gh lists them, and never warn, so a cut drops the oldest. Overridable
+# created first, as its search states, and never warns, so a cut there drops the
+# oldest. The other PR listings run newest first, as gh lists them, and never
+# warn, so a cut drops the oldest. Overridable
 # through the environment, like review.sh's ORCH_CI_* knobs, so a test can turn
 # it down; a raised override stops counting at ISSUE_SEARCH_CAP for every
 # search-backed listing - the issue listings and the merged-PR backstop's -

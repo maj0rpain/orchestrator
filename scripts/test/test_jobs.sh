@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Sourced by orch_test.sh, all.sh, affected.sh and
-# scripts/dev/section-durations.sh (which also starts its children through
+# scripts/dev/section-durations.sh (which also starts orch_test.sh through
 # test_jobs_run_child), so the runners never
 # disagree on how much of the machine a test run may use, or on how they stop
 # their children when signalled; by scripts/dev/lens-bench.sh, for the child
@@ -98,8 +98,9 @@
 # writes the number. <cmd>
 # is an external command.
 #
-# The suite start, which all.sh, affected.sh and section-durations.sh call
-# so no runner starts a whole suite its own way. A suite is one
+# The suite start, which all.sh and affected.sh call for every suite and
+# section-durations.sh for every suite but orch_test.sh (it starts that one
+# through test_jobs_run_child). A suite is one
 # script of a runner's suites list; each one other than orch_test.sh, whose
 # coordinator mostly sleeps while its section children hold their own slots,
 # holds a slot while it runs. It has two steps a caller can run apart:
