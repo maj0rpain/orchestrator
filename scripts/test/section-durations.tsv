@@ -360,10 +360,11 @@
 141	147	ticket reclaim (ADR-0054)	17ed22348527c35ead699f866b4bb1141afeec43
 1	1	ticket exists: no repo (#3050)	96e11c5be009acd6e59205e5f4fc683400dd9660
 22	20	trust module	cce71cee320a9a9df12b5d2fe25e74e2f6089609
-61	6	verification run	1dd42b596bc25070ec06b02925f7cb097936d741
-216	20	verification run: the run key, stale runs, the ceiling	471d2e2e39b7b63f2840777531b346f7eab120a1
-0	1	verification run in help and the CLI conventions	bcef7e4ad67e97b98e872bc1de7a617d10a78253
-112	12	wait: a call's block is wall time	db923f27504e50d0a04527b359feb487abb3665d
+61	7	verification run	b92eb55e7297141889bf3ce64de443e5c897a452
+271	19	verification run: the run key, stale runs, the ceiling	daf1ce1066d653f8357d01f788a280d1458d96df
+28	5	verification run: block naps start no awk far from the end	11d200cb64f705ede1c96b6cc4a25397d5b00583
+0	1	verification run in help and the CLI conventions	a99e8bc67b95c57562d13f68245e5c6c30dfdb5c
+99	11	wait: a call's block is wall time	db923f27504e50d0a04527b359feb487abb3665d
 686	811	hooks_test.sh	058e31b62b5c66adb779670b21daecb8f80a55e8
 196	171	docs_lint.sh	34005b94b528c3cac0c004e8e1d78930a4878f6a
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
