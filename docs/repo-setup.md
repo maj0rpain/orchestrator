@@ -52,9 +52,10 @@ it has none.
   (<file>)`; with no ticket verification it is also `ok`, reading "no 'Ticket
   verification:' line - tickets run the full verification (ADR-0058)". `warn`
   for no full verification or for two commands for one label; `FAIL` for a
-  label with no command. After those, a label with a command gets one more
-  line checking that the command's first word is installed, with backticks and
-  any leading `VAR=value` words dropped: `ok    <label> command: <word>`, or
+  label with no command. After those, a label whose command leaves a first
+  word (backticks and any leading `VAR=value` words dropped), and that has no
+  bare line elsewhere, gets one more line checking that the word is installed:
+  `ok    <label> command: <word>`, or
   `warn  <label> command <word> (from <file>) is not installed.`, which has no
   remedy. Doctor never runs the command.
 - **Branch verification**: an optional `Branch verification: <command>` line,
