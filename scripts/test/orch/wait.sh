@@ -60,17 +60,22 @@ assert_eq "and ends within the block, not a whole interval after it" \
   "$([ "$wt_took" -le 3 ] && echo yes || echo "no (${wt_took}s)")" "yes"
 
 # A rate limit the block could not hold (wait_limit_fits's mark) ends the poll
-# loop's call as still running, total kept; with no mark, the loop goes on.
+# loop's call as still running, total kept; with no mark, the loop goes on. The
+# mark is WAIT_MARK, set apart from WAIT_FILE's name here, so a check that read
+# a hard-coded "$WAIT_FILE.limited" would not see it.
 wt_wf="$(mktemp)"
 printf '1\n0\n' >"$wt_wf"
-sourced_orch_script 'WAIT_FILE=$1; WAIT_MARK=$1.limited; WAIT_START=1; wait_limited_check 0' "$wt_wf" >/dev/null 2>&1; st=$?
+sourced_orch_script 'WAIT_FILE=$1; WAIT_MARK=$1.m; WAIT_START=1; wait_limited_check 0' "$wt_wf" >/dev/null 2>&1; st=$?
 assert_status "with no mark, wait_limited_check goes on" "$st" 0
-: >"$wt_wf.limited"
-sourced_orch_script 'WAIT_FILE=$1; WAIT_MARK=$1.limited; WAIT_START=1; wait_limited_check 0' "$wt_wf" >/dev/null 2>&1; st=$?
+: >"$wt_wf.m"
+sourced_orch_script 'WAIT_FILE=$1; WAIT_MARK=$1.m; WAIT_START=1; wait_limited_check 0' "$wt_wf" >/dev/null 2>&1; st=$?
 assert_status "with the mark, it ends the call as still running" "$st" 75
 assert_eq "keeps the stored total" "$(sed -n 1p "$wt_wf")" "1"
-assert_status "and consumes the mark" "$([ -e "$wt_wf.limited" ]; echo $?)" 1
-rm -f "$wt_wf"
+assert_status "and consumes the mark" "$([ -e "$wt_wf.m" ]; echo $?)" 1
+: >"$wt_wf.m"
+sourced_orch_script 'WAIT_FILE=$1; WAIT_MARK=$1.m; wait_forget; [ ! -e "$WAIT_FILE" ] && [ ! -e "$WAIT_MARK" ]' "$wt_wf" >/dev/null 2>&1; st=$?
+assert_status "wait_forget removes the total and WAIT_MARK" "$st" 0
+rm -f "$wt_wf" "$wt_wf.m"
 
 # wait_limit_fits: the Wait module's decision on a limit wait (the mark is its)
 wt_wf="$(mktemp)"
@@ -85,23 +90,19 @@ rm -f "$wt_wf" "$wt_wf.limited"
 
 # wait_guard / wait_guard_check: the provisional guard of a read that runs
 # before the wait's key is known; its mark is WAIT_MARK, never WAIT_FILE.
-sourced_orch_script 'wait_guard 7; : >"$WAIT_MARK"; wait_guard_check' >/dev/null 2>&1; st=$?
-assert_status "wait_guard_check with the mark present ends the call as still running" "$st" 75
-sourced_orch_script 'wait_guard 7; : >"$WAIT_MARK"; (wait_guard_check) >/dev/null 2>&1 || :; [ ! -e "$WAIT_MARK" ]' >/dev/null 2>&1; st=$?
-assert_status "and consumes the mark" "$st" 0
-sourced_orch_script 'wait_guard 7; wait_guard_check' >/dev/null 2>&1; st=$?
-assert_status "with no mark wait_guard_check returns" "$st" 0
+sourced_orch_script 'wait_guard 7; : >"$WAIT_MARK"; (wait_guard_check) >/dev/null 2>&1; s=$?; [ -e "$WAIT_MARK" ] && exit 1; exit $s' >/dev/null 2>&1; st=$?
+assert_status "wait_guard_check with the mark present ends the call as still running and consumes the mark" "$st" 75
+sourced_orch_script 'unset WAIT_FILE; wait_guard 7; wait_guard_check && [ -z "${WAIT_FILE:-}" ]' >/dev/null 2>&1; st=$?
+assert_status "with no mark wait_guard_check returns, and wait_guard sets no WAIT_FILE" "$st" 0
 sourced_orch_script 'wait_guard 7; : >"$WAIT_MARK"; wait_guard 7; wait_guard_check' >/dev/null 2>&1; st=$?
 assert_status "a mark left by an earlier call is cleared by wait_guard" "$st" 0
-sourced_orch_script 'unset WAIT_FILE; wait_guard 7; [ -z "${WAIT_FILE:-}" ]' >/dev/null 2>&1; st=$?
-assert_status "wait_guard does not set WAIT_FILE" "$st" 0
 
 # After wait_guard then wait_open, the mark is the stored total's, and a limit
-# the block cannot hold leaves it there, the total kept.
-out="$(sourced_orch_script 'wait_guard 7; wait_open "wt-mark-test" s l; ORCH_WAIT_BLOCK=0; wait_limit_fits 60 && exit 9; [ -e "$WAIT_FILE.limited" ] || exit 8; [ ! -e "$ORCH/wait/pending-7.limited" ] || exit 7; wait_limited_check 0' 2>&1)"; st=$?
-assert_status "a limit the block cannot hold leaves the total's mark and wait_limited_check exits 75" "$st" 75
-sourced_orch_script 'wait_open "wt-mark-test" s l; [ -f "$WAIT_FILE" ]' >/dev/null 2>&1; st=$?
-assert_status "keeping the stored total" "$st" 0
+# the block cannot hold leaves it there; wait_limited_check then ends the call
+# as still running with the total kept (the same file, not one wait_open wrote
+# afresh): its second line is the seconds slept wait_limited_check stored.
+out="$(sourced_orch_script 'wait_guard 7; wait_open "wt-mark-test" s l; ORCH_WAIT_BLOCK=0; wait_limit_fits 60 && exit 9; [ -e "$WAIT_FILE.limited" ] || exit 8; [ ! -e "$ORCH/wait/pending-7.limited" ] || exit 7; (wait_limited_check 3) >/dev/null 2>&1; rc=$?; [ "$rc" = 75 ] || exit 6; [ "$(sed -n 1p "$WAIT_FILE")" = "$s" ] && [ "$(sed -n 2p "$WAIT_FILE")" = 3 ] || exit 5; exit 75' 2>&1)"; st=$?
+assert_status "a limit the block cannot hold leaves the total's mark and wait_limited_check exits 75 keeping the total" "$st" 75
 sourced_orch_script 'wait_open "wt-mark-test" s l; wait_forget; [ ! -e "$WAIT_FILE" ]' >/dev/null 2>&1; st=$?
 assert_status "wait_forget forgets it" "$st" 0
 

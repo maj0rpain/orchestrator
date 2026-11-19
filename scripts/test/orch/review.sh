@@ -34,12 +34,13 @@ fake_job_log() {
 # <slug> with PR #7 recorded in state and open from topic onto main in the
 # store-backed fake (fake_github), the base tip's one check run as the CI
 # evidence that keeps the grace, and the CI knobs short: ORCH_CI_GRACE=0.3,
-# ORCH_CI_TIMEOUT=1, ORCH_CI_INTERVAL=0.05. A section that calls it ends with
-# its teardown, review_ci_restore.
+# ORCH_CI_TIMEOUT=1, ORCH_CI_INTERVAL=0.05, and GH_REPO naming a repo. A
+# section that calls it ends with its teardown, review_ci_restore.
 review_ci_flow() {
   review_flow "$1"
   state_fixture pr 7
   export ORCH_CI_GRACE=0.3 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
+  export GH_REPO=acme/widgets # the Repo review ci resolves before it reads GitHub
   fake_github
   fake_pr 7 open topic main
   fake_check_run main
@@ -841,9 +842,10 @@ for bad_block in soon 0 0.0; do
   assert_status "an ORCH_WAIT_BLOCK of $bad_block is refused" "$st" 2
 done
 assert_contains "naming the variable" "$out" "ORCH_WAIT_BLOCK"
-assert_contains "help names ORCH_WAIT_BLOCK and exit 75 for review ci" "$("$ORCH" help)" "75 - run it again; the 900 s total"
-assert_contains "help says the --no-wait look writes no state, wait file or guard" "$("$ORCH" help)" "reads no total and writes no state, wait file"
-assert_contains "help says a refusal exits 2" "$("$ORCH" help)" "state) exits 2"
+help_out="$("$ORCH" help)"
+assert_contains "help names ORCH_WAIT_BLOCK and exit 75 for review ci" "$help_out" "75 - run it again; the 900 s total"
+assert_contains "help says the --no-wait look writes no state, wait file or guard" "$help_out" "reads no total and writes no state, wait file"
+assert_contains "help says a refusal exits 2" "$help_out" "state) exits 2"
 rm -f "$rc_err"
 fake_pr 7 open topic main
 fake_checks_clear
@@ -863,6 +865,19 @@ assert_contains "naming the knob it could not read" "$out" "ORCH_CI_GRACE"
 out="$(ORCH_CI_INTERVAL=0 timeout 5 "$ORCH" review ci 2>&1)"; st=$?
 assert_status "an interval of zero is refused rather than busy-polled" "$st" 2
 assert_contains "saying the interval has to be above zero" "$out" "greater than zero"
+out="$(ORCH_CI_TIMEOUT=oops timeout 5 "$ORCH" review ci 2>&1)"; st=$?
+assert_status "a timeout that is not a number is refused at exit 2" "$st" 2
+assert_contains "naming ORCH_CI_TIMEOUT" "$out" "ORCH_CI_TIMEOUT is not a number: oops"
+state_fixture_drop pr
+out="$(timeout 5 "$ORCH" review ci 2>&1)"; st=$?
+assert_status "a flow state with no pr is refused at exit 2" "$st" 2
+assert_contains "with its message unchanged" "$out" "orch: no PR recorded in state - the implement phase opens it"
+state_fixture pr 7
+mv .orchestrator/state.json .orchestrator/state.json.bak
+out="$(timeout 5 "$ORCH" review ci 2>&1)"; st=$?
+mv .orchestrator/state.json.bak .orchestrator/state.json
+assert_status "a missing flow state is refused at exit 2" "$st" 2
+assert_contains "with its message unchanged" "$out" "orch: no active flow"
 
 # The one direction this classifier must never fail in: an answer nobody could
 # read is not an answer that there is nothing to read. adapter_pr_checks fails
@@ -931,7 +946,8 @@ review_ci_restore
 
 # --- review ci --no-wait ----------------------------------------------------
 # One pass of the probe the waiting form loops on: it prints `pending` where the
-# waiting form would sleep, reads no stored total, and writes nothing.
+# waiting form would sleep, reads no stored total, and writes no state, wait
+# file or guard.
 echo
 echo "review ci --no-wait"
 review_ci_flow reviewcinowait

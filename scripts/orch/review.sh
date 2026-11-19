@@ -315,8 +315,9 @@ ci_context() {
 # widen to every check on the commit. Widening sooner is how an
 # unrelated green check gets mistaken for a required one that never
 # arrived, and the PR marked ready over it.
-# While the grace remains a pass probes the required checks alone and
-# waits on none; once it is spent or skipped, the pass reads through
+# While the grace remains a pass probes the required checks alone and reports
+# a `none` through grace_none, leaving what to do about it - wait, or print
+# pending - to the caller; once it is spent or skipped, the pass reads through
 # ci_counted, which widens to every check.
 ci_pass() {
   grace_none=0
@@ -1082,6 +1083,7 @@ cmd_review() {
         case "$pr_arg" in ''|*[!0-9]*) die2 "not a PR number: $pr_arg" ;; esac
       fi
       if [ -n "$pr_arg" ]; then pr="$pr_arg"; else require_state_read die2 pr=pr; fi
+      repo_pin || die2 "$REPO_REMEDY"
       if [ "$nowait" = 1 ]; then
         review_ci_once "$pr" "$pr_arg"
       else
