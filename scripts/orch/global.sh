@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # global.sh - orch.sh's bare global commands with no module of their own:
-# slug, status, archive and help. Its tests: scripts/test/orch/global.sh, save
-# status's, which live in scripts/test/orch/side-checkout.sh; help has none of
-# its own.
+# slug, status, archive and help. Its tests: scripts/test/orch/global.sh (slug,
+# archive and status's flow cases) and scripts/test/orch/side-checkout.sh
+# (status's listing of other checkouts); help has none of its own.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 cmd_slug() {
@@ -16,7 +16,6 @@ cmd_status() {
   if [ ! -f "$STATE" ]; then
     note "No active flow. Run $(flow_cmd start) from an approved plan."
   else
-    require_state_readable
     status_flow
   fi
   status_others
@@ -48,9 +47,8 @@ status_others() {
 # Full detail on the current checkout's flow.
 status_flow() {
   local slug phase issue branch pr iteration redo_count base base_raw budget budget_raw
-  state_get_many slug=slug phase=phase issue=issue branch=branch pr=pr \
-    iteration=iteration redo_count=redo_count base_raw=base budget_raw=budget ||
-    die "cannot read the flow's state from $STATE"
+  require_state_read slug=slug phase=phase issue=issue branch=branch pr=pr \
+    iteration=iteration redo_count=redo_count base_raw=base budget_raw=budget
   flow_base_fallback_into base "$base_raw"
   budget="$(review_budget_fallback "$budget_raw")"
   note "flow:      $slug"

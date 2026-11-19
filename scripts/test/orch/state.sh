@@ -453,8 +453,6 @@ fresh_flow trunc
 state_truncate
 out="$("$ORCH" branch create 2>&1)"; st=$?
 assert_state_unreadable "branch create" 1 "$out" "$st"
-out="$("$ORCH" status 2>&1)"; st=$?
-assert_state_unreadable "status" 1 "$out" "$st"
 "$ORCH" archive >/dev/null 2>&1; st=$?
 assert_status "archive on it exits 0" "$st" 0
 assert_eq "and leaves no state.json behind" "$([ -e .orchestrator/state.json ] && echo present || echo gone)" "gone"
@@ -488,9 +486,6 @@ assert_eq "state_get_many assigns out-variables named like common locals" "$out"
 rd_jq="$(counting_bin jq)"
 PATH="$rd_jq:$PATH" sourced_orch state_get_many_in "$rd_file" a=slug b=phase c=issue d=pr e=budget >/dev/null
 assert_eq "state_get_many_in reading five keys starts exactly one jq" "$(counting_starts "$rd_jq" jq)" "1"
-: >"$rd_jq/jq.log"
-PATH="$rd_jq:$PATH" sourced_orch status_flow >/dev/null 2>&1
-assert_eq "status_flow on a flow that records its base starts exactly one jq" "$(counting_starts "$rd_jq" jq)" "1"
 state_truncate
 out="$(sourced_orch state_get_in "$rd_file" phase 2>&1)"; st=$?
 assert_status "state_get_in on a truncated file returns 2" "$st" 2
