@@ -224,6 +224,17 @@ gh_reason() {
   printf '%s\n' "${line:-gh gave no reason}"
 }
 
+# gh_limit_warnings <stderr>: each line after the first that says the failed
+# call could not write the GitHub limit pause - the warning autopilot adds -
+# so a caller keeps it beside gh_reason's reason. Prints nothing otherwise.
+gh_limit_warnings() {
+  local rest="${1#*$'\n'}" line
+  [ "$rest" != "$1" ] || return 0
+  while IFS= read -r line; do
+    case "$line" in *"could not write the GitHub limit"*) printf '%s\n' "$line" ;; esac
+  done <<<"$rest"
+}
+
 # gh_die [--exit 2] [--hint <text>] <what> <stderr>: dies with
 # "gh could not <what>: <gh_reason of stderr>", then " - <hint>" when a hint is
 # given - through die, or through die2 under --exit 2. A bad option dies with

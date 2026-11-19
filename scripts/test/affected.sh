@@ -333,7 +333,7 @@ files_calling() {
 # core set when orch_test.sh calls it or nothing does; code outside any function
 # runs the whole suite.
 support_select() {
-  local f="$1" state="$2" diffed name reached alt hits sf sn ops n
+  local f="$1" state="$2" diffed name reached alt hits sf sn ops n closure_input
   local -a support_present
   suites_load
   support_present=("${SUPPORT_PRESENT[@]}")
@@ -344,9 +344,9 @@ support_select() {
   case $'\n'"$diffed"$'\n' in *$'\n@top\n'*) full_suite ;; esac
   # The gh fake's functions also reach through the fake's own.
   if [ "$f" = "$GH_FAKE" ] && [ -f "$GH_FAKE" ]; then support_present+=("$GH_FAKE"); fi
+  closure_input="$(for sf in "${support_present[@]}"; do echo @@FILE; cat "$sf"; done)"
   while IFS= read -r name; do
-    reached="$(awk -v mode=closure -v seeds="$name" "$SUPPORT_AWK" \
-      <(for sf in "${support_present[@]}"; do echo @@FILE; cat "$sf"; done))"
+    reached="$(awk -v mode=closure -v seeds="$name" "$SUPPORT_AWK" <<<"$closure_input")"
     alt="${reached//$'\n'/|}"
     if [ -n "$(files_calling "$alt" "$dir/orch_test.sh")" ]; then
       core=1
