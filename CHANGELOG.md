@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.31
+
+The ticket worktree code carries a ticket's facts in one caller-declared associative array that `ticket_facts` fills, guarded against an undeclared or indexed array, in place of a family of prefixed variables. `ticket merge` names its branch `wt_branch` and add and the teardown `own_branch`, `require_worktree` checks membership through `word_listed`, and the ticket tests share the switched-worktree arrangement and iterate the reclaim gone-directory cases over two plain loop variables.
+
 ## 6.8.30
 
 The Standing module removes a chain comment's temp body file in one way per path and drops the standing_comment_call wrapper. A refused re-entry marker now stops the re-entry before any write even in an `||` context, and a chain comment that cannot make its temp body file dies naming the writes that landed and that the claim stays held.
