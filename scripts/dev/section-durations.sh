@@ -24,7 +24,7 @@
 #
 # Both modes time each other suite with DOCS_LINT_RECORDING=1, which only this
 # script sets (all.sh and affected.sh unset it, CI never sets it, and
-# docs_lint.sh --fragment-only ignores it). docs_lint.sh's full run, with it
+# docs_lint.sh --base-rules ignores it). docs_lint.sh's full run, with it
 # set, skips the ledger freshness rule and the budget total rule (rules 1 and
 # 2) and says so, so it does not fail on the lines being replaced; rule 3 still
 # runs. With it unset it judges them all.

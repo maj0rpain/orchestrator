@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.35
+
+The docs lint's ledger freshness rule now reports a failure to fingerprint the test text as its own, one line naming the durations file, and judges no ledger line against partial fingerprints; `ledger_fingerprints_all` returns 2 for that failure and keeps 1 for a failed `all.sh` suite list, which is still reported with its message. `docs_lint.sh`'s narrowed mode is renamed from `--fragment-only` to `--base-rules`, since it runs suite budget rules 2 and 3 as well as the changelog fragment rule, and the fragment workflow's step is renamed `Check the changelog fragment and the suite budget`. The comments and CONTRIBUTING's suite budget paragraphs now say what the code does, including that `DOCS_LINT_RECORDING` is the one variable that narrows the full run. The section durations tests run fewer `--stale` runs, spin CPU only in the cases that read it, and, with the docs lint's recording cases, assert through `assert_ne` and `assert_contains` so a failure shows its values.
+
 ## 6.8.34
 
 `spec-review apply`'s autopilot hold run builds the held blocks in apply's own shell and passes them to `spec_round_hold <dir> <blocks>` as an argument, so a failing `awk` or a `grep` read error on batch.md dies with `could not read <dir>/batch.md - nothing written to GitHub` instead of leaving fundamental.md incomplete. Apply reads the `--host-fallbacks` file and a resumed apply's changelog.md through `file_read`, so an unreadable one dies with its own `orch:` message instead of a stray `cat:` error; the saved apply-answer moves to `file_read` as reuse only, its message unchanged. The batch.md content wrapper is renamed `spec_review_batch_content`, the offline ticket check tests for a text item in one switch, `apply_prints_one` is built on `sra_refused`, the state-precedence cases load orch.sh once, and the spec tests' "today's" labels name their message.
