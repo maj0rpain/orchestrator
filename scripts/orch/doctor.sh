@@ -556,7 +556,8 @@ readonly VERIFICATION_LABELS=("Ticket verification" "Full verification" "Branch 
 # The verification lines the agents read from the repo's instructions: a line
 # outside a fenced code block starting with `Ticket verification:`, `Full
 # verification:` or `Branch verification:` (ADR-0058). Doctor never judges
-# whether a command runs, only that each label is named once, with a command.
+# whether a command runs, only that each label is named once, with a command;
+# each label's report then ends on the installed check of that command.
 # Prints one tab-separated "<label> <file> <command>" line per verification
 # line, files in the order the agents read them, a label with no command
 # printing an empty command.
@@ -579,7 +580,8 @@ verification_lines() {
 # Reports one label by the first rule that holds: a label with no command is a
 # FAIL and the only line for it; two different commands warn; else the label is
 # found (ok) or not (warn for Full, ok naming the fallback for Ticket
-# and for Branch).
+# and for Branch). A found label's report ends on the command line, the
+# installed check of its command (doctor never runs the command).
 # $1 is the label, $2 the scan's output.
 verification_report() {
   local label="$1" lines="$2" l f cmd first_f="" first_c="" have=0 bare="" other_f="" other_c=""
@@ -619,8 +621,10 @@ verification_missing() {
       d_remedy "add the line 'Full verification: <command>' to CLAUDE.md - see $setup" ;;
     "Branch verification")
       d_ok "no 'Branch verification:' line - the combined-branch check runs the full verification" ;;
-    *)
+    "Ticket verification")
       d_ok "no 'Ticket verification:' line - tickets run the full verification (ADR-0058)" ;;
+    *)
+      d_fail "verification_missing has no arm for the label '$1'." ;;
   esac
 }
 

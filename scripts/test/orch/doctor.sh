@@ -2809,6 +2809,10 @@ assert_contains "it names both commands" "$out" "warn  Full verification is name
 assert_contains "CLAUDE.md's is the one used" "$out" "the first, 'true test', is the one used"
 assert_contains "its remedy removes the line" "$out" "remove the line 'Full verification: true other' from CONTRIBUTING.md"
 assert_contains "its remedy names the setup doc" "$out" "$vl_setup"
+assert_contains "its command line directly follows the remedy" \
+  "$(printf '%s\n' "$out" | grep -A1 -F "remove the line 'Full verification: true other'")" \
+  "/docs/repo-setup.md
+ok    Full verification command: true"
 
 writeln 'Ticket verification: a' 'Ticket verification: b' 'Full verification: true test' >CLAUDE.md
 rm -f CONTRIBUTING.md
@@ -2914,18 +2918,9 @@ out="$(vc_doctor)"
 assert_contains "a found ticket command prints its ok line" "$out" "ok    Ticket verification command: vctool"
 assert_contains "a found full command prints its ok line" "$out" "ok    Full verification command: vctool"
 
-printf 'Ticket verification: vctool test\n' >CLAUDE.md
-out="$(vc_doctor)"
 assert_contains "a label's command line directly follows its report line" \
   "$(printf '%s\n' "$out" | grep -A1 -F 'ok    Ticket verification: vctool test (CLAUDE.md)')" \
   "ok    Ticket verification: vctool test (CLAUDE.md)
-ok    Ticket verification command: vctool"
-
-printf 'Ticket verification: vctool a\nTicket verification: vctool b\n' >CLAUDE.md
-out="$(vc_doctor)"
-assert_contains "a two-commands label's command line directly follows the warn's remedy" \
-  "$(printf '%s\n' "$out" | grep -A1 -F "remove the line 'Ticket verification: vctool b'")" \
-  "/docs/repo-setup.md
 ok    Ticket verification command: vctool"
 
 printf 'Ticket verification: FOO=1 BAR=2 vctool test\n' >CLAUDE.md
