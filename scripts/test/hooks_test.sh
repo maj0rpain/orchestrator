@@ -1491,13 +1491,13 @@ assert_lt "the quoted tail decodes its candidate lines (ask)" "$(jq_count pg_dec
 assert_lt "the quoted tail decodes its candidate lines (Stop)" "$(jq_count sg_decide "")" "$(jq_count sg_decide "$TQ")"
 # An armed refusal over the full window on an unchanged transcript parses once.
 pg_full_window_refusal() { ORCH_PASTE_GUARD_WAIT='' PG_SLEEP_LOG="$PG/sleep-unchanged.log" PATH="$PG/stub:$PATH" "$@"; }
+pg_assert_slept() { if [ -s "$PG/sleep-unchanged.log" ]; then ok "$1"; else bad "$1" "sleep never called"; fi; }
 for pg_fn in pg_decide sg_decide; do
   : >"$PG/sleep-unchanged.log"
   pg_win="$(jq_count pg_full_window_refusal "$pg_fn" "$T")"
   assert_eq "an unchanged armed transcript over the full window parses as often as with no window ($pg_fn)" \
     "$pg_win" "$(jq_count "$pg_fn" "$T")"
-  if [ -s "$PG/sleep-unchanged.log" ]; then ok "and the window was waited out ($pg_fn)"
-  else bad "and the window was waited out ($pg_fn)" "sleep never called"; fi
+  pg_assert_slept "and the window was waited out ($pg_fn)"
 done
 # Truncation: the stub swaps in a shorter transcript holding the paste.
 mkdir "$PG/stub-trunc"
@@ -1591,12 +1591,16 @@ for pg_fn in pg_decide sg_decide; do
 done
 # Decision cases that pin where the decode starts.
 # Fail-open stand-ins for the new failure points, built once.
-mkdir -p "$PG/cost/failgrep" "$PG/cost/failjq1" "$PG/cost/failjq2" "$PG/cost/failtail"
+mkdir -p "$PG/cost/failgrep" "$PG/cost/failjq1" "$PG/cost/failjq2" "$PG/cost/failtail" "$PG/cost/failjq5" "$PG/cost/failwc" "$PG/cost/failwc2"
 printf '#!/bin/sh\nexit 1\n' >"$PG/cost/failtail/tail"
 printf '#!/bin/sh\nexit 2\n' >"$PG/cost/failgrep/grep"
 printf '#!/bin/sh\ncase " $* " in *" --arg needle "*) exit 3;; esac\nexec "%s" "$@"\n' "$(command -v jq)" >"$PG/cost/failjq1/jq"
 printf '#!/bin/sh\ncase " $* " in *" --arg view "*) exit 3;; esac\nexec "%s" "$@"\n' "$(command -v jq)" >"$PG/cost/failjq2/jq"
-chmod +x "$PG/cost/failtail/tail" "$PG/cost/failgrep/grep" "$PG/cost/failjq1/jq" "$PG/cost/failjq2/jq"
+printf '#!/bin/sh\ncase " $* " in *" --rawfile view "*) exit 5;; esac\nexec "%s" "$@"\n' "$(command -v jq)" >"$PG/cost/failjq5/jq"
+printf '#!/bin/sh\nexit 1\n' >"$PG/cost/failwc/wc"
+# The real wc on its first call, nothing and exit 1 on every later one.
+printf '#!/bin/sh\nif [ -e "%s/wc-called" ]; then exit 1; fi\n: >"%s/wc-called"\nexec "%s" "$@"\n' "$PG" "$PG" "$(command -v wc)" >"$PG/cost/failwc2/wc"
+chmod +x "$PG/cost/failtail/tail" "$PG/cost/failgrep/grep" "$PG/cost/failjq1/jq" "$PG/cost/failjq2/jq" "$PG/cost/failjq5/jq" "$PG/cost/failwc/wc" "$PG/cost/failwc2/wc"
 pg_line="$(pg_pass_line batch "$PG/batch/view.md")"
 # The decision transcripts and their pasted copies have the same bytes for both
 # hooks: each is built once.
@@ -1628,39 +1632,55 @@ for pg_fn in pg_decide sg_decide; do
     assert_eq "a human message holding '$pg_hm' after a live pass line disarms ($pg_fn)" "$("$pg_fn" "$PG/cost/human-quote-$pg_hi.jsonl")" allow
   done
   # Fail open on the new failure points, on a transcript armed now.
-  for pg_f in failgrep failjq1 failjq2 failtail; do
+  for pg_f in failgrep failjq1 failjq2 failtail failjq5 failwc; do
     assert_eq "armed now, a failing $pg_f allows ($pg_fn)" "$(PATH="$PG/cost/$pg_f:$PATH" "$pg_fn" "$PG/cost/pad-armed-now.jsonl")" allow
   done
+  rm -f "$PG/wc-called"; : >"$PG/sleep-unchanged.log"
+  assert_eq "armed now, a wc failing from its second call allows over a full window ($pg_fn)" \
+    "$(PATH="$PG/cost/failwc2:$PATH" pg_full_window_refusal "$pg_fn" "$PG/cost/pad-armed-now.jsonl")" allow
+  pg_assert_slept "and the allow came after the first read ($pg_fn)"
 done
 # The scan reads the apply constant and searches for both constants as JSON
 # writes them. pg_scan_with <needle> <apply> <transcript>: the view.md the scan
-# finds, with the constants set.
+# finds, with the constants set. A non-empty PG_COMPAT runs the scan under that
+# BASH_COMPAT.
 pg_scan_with() {
   local out
   # shellcheck disable=SC2034 # read by the sourced scan
-  out="$(source "$DIR/paste-guard.sh"; PASTE_GUARD_NEEDLE="$1"; PASTE_GUARD_APPLY="$2"; paste_guard_scan "$3")"
+  out="$(source "$DIR/paste-guard.sh"; [ -z "${PG_COMPAT:-}" ] || BASH_COMPAT="$PG_COMPAT"; PASTE_GUARD_NEEDLE="$1"; PASTE_GUARD_APPLY="$2"; paste_guard_scan "$3")"
   printf '%s' "${out%%$'\n'*}"
 }
-pg_two() { # <file> <needle> <command> <combined|after>
+pg_seam_transcript() { # <file> <needle> <command> <combined|after>
   local f="$1"; : >"$f"
   if [ "$4" = combined ]; then pg_bash "$f" toolu_s1 "$3"; fi
   pg_result "$f" toolu_s1 "batch.md passes: 2 items$2/tmp/x/view.md"
   if [ "$4" = after ]; then pg_bash "$f" toolu_s2 "$3"; fi
 }
+# The suite's bash must honour BASH_COMPAT=32, or the cases below pass untested:
+# the pre-fix replacement pair, copied here, leaves the backslash single.
+pg_canary="$(BASH_COMPAT=32; t='a"b\c'; t="${t//\\/\\\\}"; t="${t//\"/\\\"}"; printf '%s' "$t")"
+assert_eq "the suite's bash honours BASH_COMPAT=32" "$pg_canary" 'a\"b\c'
 for pg_mode in after combined; do
-  pg_two "$PG/cost/seam.jsonl" '; it is saved in ' 'run APPLYME now' "$pg_mode"
+  pg_seam_transcript "$PG/cost/seam.jsonl" '; it is saved in ' 'run APPLYME now' "$pg_mode"
   assert_eq "a reassigned apply literal disarms ($pg_mode)" "$(pg_scan_with '; it is saved in ' 'APPLYME' "$PG/cost/seam.jsonl")" ""
-  pg_two "$PG/cost/seam.jsonl" '; it is saved in ' 'run spec-review apply now' "$pg_mode"
+  pg_seam_transcript "$PG/cost/seam.jsonl" '; it is saved in ' 'run spec-review apply now' "$pg_mode"
   assert_eq "and the default literal no longer does ($pg_mode)" "$(pg_scan_with '; it is saved in ' 'zzz' "$PG/cost/seam.jsonl")" /tmp/x/view.md
-  pg_two "$PG/cost/seam.jsonl" '; saved "at" ' 'run A\"P"Y\ now' "$pg_mode"
-  assert_eq "an apply literal holding a backslash and a quote disarms ($pg_mode)" \
-    "$(pg_scan_with '; saved "at" ' 'A\"P"Y\' "$PG/cost/seam.jsonl")" ""
 done
-pg_two "$PG/cost/seam.jsonl" '; saved "at" ' 'noop' after
-assert_eq "a needle holding a quote arms" "$(pg_scan_with '; saved "at" ' 'A\"P"Y\' "$PG/cost/seam.jsonl")" /tmp/x/view.md
+for pg_compat in '' 32; do
+for pg_mode in after combined; do
+  pg_seam_transcript "$PG/cost/seam.jsonl" '; saved "at" ' 'run A\"P"Y\ now' "$pg_mode"
+  assert_eq "an apply literal holding a backslash and a quote disarms ($pg_mode, BASH_COMPAT=${pg_compat:-default})" \
+    "$(PG_COMPAT=$pg_compat pg_scan_with '; saved "at" ' 'A\"P"Y\' "$PG/cost/seam.jsonl")" ""
+done
+pg_seam_transcript "$PG/cost/seam.jsonl" '; saved "at" ' 'noop' after
+assert_eq "a needle holding a quote arms (BASH_COMPAT=${pg_compat:-default})" "$(PG_COMPAT=$pg_compat pg_scan_with '; saved "at" ' 'A\"P"Y\' "$PG/cost/seam.jsonl")" /tmp/x/view.md
+pg_seam_transcript "$PG/cost/seam.jsonl" 'a"b\c' 'noop' after
+assert_eq "a needle holding a quote and a backslash arms (BASH_COMPAT=${pg_compat:-default})" \
+  "$(PG_COMPAT=$pg_compat pg_scan_with 'a"b\c' 'zzz' "$PG/cost/seam.jsonl")" /tmp/x/view.md
+done
 # A line holding a raw NUL byte is not JSON: skipped, and it never hides
 # the live pass line before it.
-pg_two "$PG/cost/seam.jsonl" '; it is saved in ' 'noop' after
+pg_seam_transcript "$PG/cost/seam.jsonl" '; it is saved in ' 'noop' after
 printf 'garbage\0line\n' >>"$PG/cost/seam.jsonl"
 assert_eq "a NUL-bearing line after a live pass line still arms" "$(pg_scan_with '; it is saved in ' 'zzz' "$PG/cost/seam.jsonl")" /tmp/x/view.md
 # The needle and the real pass line.

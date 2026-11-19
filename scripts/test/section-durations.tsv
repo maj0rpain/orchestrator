@@ -365,7 +365,7 @@
 28	5	verification run: block naps start no awk far from the end	11d200cb64f705ede1c96b6cc4a25397d5b00583
 0	1	verification run in help and the CLI conventions	a99e8bc67b95c57562d13f68245e5c6c30dfdb5c
 99	11	wait: a call's block is wall time	db923f27504e50d0a04527b359feb487abb3665d
-845	924	hooks_test.sh	5d1a540e874db196c1e3d6130bee1af6e9d506e2
+893	979	hooks_test.sh	db35b0904ee1e9a9668e2c8b5f0ad41236afb0b0
 196	171	docs_lint.sh	34005b94b528c3cac0c004e8e1d78930a4878f6a
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf

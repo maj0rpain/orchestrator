@@ -40,8 +40,9 @@
 #   entries after that line, stopping at the first human message or apply call;
 #   the transcript is never parsed whole.
 # - Fails open: a missing or unreadable transcript, a view.md deleted, empty
-#   or unreadable, a transcript with no arming pass line, or a failed search or
-#   decode all allow. So does
+#   or unreadable, a transcript with no arming pass line, or a failed search,
+#   decode, size read or paste match (a jq error, not a false result) all
+#   allow. So does
 #   a human message queued mid-turn - typed while the `check` turn is still
 #   running, if the host writes it to the transcript before that turn ends: it
 #   disarms the guard early, and that turn's Stop allows without a paste.
@@ -78,6 +79,22 @@ PASTE_GUARD_JQ_DEFS='
     else [] end;
 '
 
+# paste_guard_json_escape <text>: prints <text> as JSON writes it inside a
+# string: a backslash before each backslash and double quote. One character at
+# a time, with no pattern replacement, whose quoting differs under bash 3.2,
+# and no external command.
+paste_guard_json_escape() {
+  local text="$1" out='' ch i
+  for ((i = 0; i < ${#text}; i++)); do
+    ch="${text:i:1}"
+    case "$ch" in
+      '\'|'"') out="$out\\$ch" ;;
+      *) out="$out$ch" ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
 # paste_guard_scan <transcript>: prints the armed view.md's path on its first
 # line, then one JSON array of the assistant text blocks written after its pass
 # line - or nothing when the guard is not armed: no arming pass line, or an
@@ -89,41 +106,41 @@ PASTE_GUARD_JQ_DEFS='
 # candidate disarms it; step 2 decodes the entries after that line and stops
 # at the first human message or apply call. No state is kept between calls.
 paste_guard_scan() {
-  local needle apply cands nums s1 k line view st
+  local needle_json apply_json cands nums armed pass_idx line view st
   local -a st_pipe
-  needle="${PASTE_GUARD_NEEDLE//\\/\\\\}"; needle="${needle//\"/\\\"}"
-  apply="${PASTE_GUARD_APPLY//\\/\\\\}"; apply="${apply//\"/\\\"}"
+  needle_json="$(paste_guard_json_escape "$PASTE_GUARD_NEEDLE")"
+  apply_json="$(paste_guard_json_escape "$PASTE_GUARD_APPLY")"
   # No needle, no arming: nothing is decoded.
-  grep -qaF -e "$needle" "$1" 2>/dev/null; st=$?
+  grep -qaF -e "$needle_json" "$1" 2>/dev/null; st=$?
   [ "$st" -le 1 ] || return 1
   [ "$st" -eq 0 ] || return 0
-  cands="$(grep -naF -e "$needle" -e "$apply" "$1" 2>/dev/null)"; st=$?
+  cands="$(grep -naF -e "$needle_json" -e "$apply_json" "$1" 2>/dev/null)"; st=$?
   [ "$st" -le 1 ] || return 1
   nums="$(printf '%s\n' "$cands" | cut -d: -f1)" || return 1
-  s1="$(set -o pipefail; printf '%s\n' "$cands" | cut -d: -f2- | jq -nrR \
+  armed="$(set -o pipefail; printf '%s\n' "$cands" | cut -d: -f2- | jq -nrR \
     --arg needle "$PASTE_GUARD_NEEDLE" --arg apply "$PASTE_GUARD_APPLY" "$PASTE_GUARD_JQ_DEFS"'
     def rx_escape: gsub("(?<c>[\\\\.^$|?*+()\\[\\]{}])"; "\\\(.c)");
-    reduce inputs as $raw ({i: 0, applied: [], k: null, view: null, dis: false};
+    reduce inputs as $raw ({i: 0, applied: [], pass_idx: null, view: null, disarmed: false};
       .i as $i
       | (($raw | [fromjson?][0]) as $e
         | if ($e | type) != "object" then .
-          elif ($e | human) then .dis = true
+          elif ($e | human) then .disarmed = true
           elif $e.type == "user" and ($e.message.content | type) == "array" then
             . as $st
             | reduce ($e.message.content[] | select(type == "object" and .type == "tool_result")
                     | select(((.tool_use_id // null) as $id | $id != null and ($st.applied | index($id) != null)) | not)
                     | .content | text | split("\n")[]
                     | capture("\\.md passes: .*" + ($needle | rx_escape) + "(?<p>/.*/view\\.md)$")?
-                    | .p) as $p (.; .k = $i | .view = $p | .dis = false)
-          elif ($e | apply_ids | length) > 0 then .applied += ($e | apply_ids) | .dis = true
+                    | .p) as $p (.; .pass_idx = $i | .view = $p | .disarmed = false)
+          elif ($e | apply_ids | length) > 0 then .applied += ($e | apply_ids) | .disarmed = true
           else . end)
       | .i = $i + 1)
-    | if .k != null and (.dis | not) then .k, .view else empty end
+    | if .pass_idx != null and (.disarmed | not) then .pass_idx, .view else empty end
   ' 2>/dev/null)" || return 1
-  [ -n "$s1" ] || return 0
-  k="${s1%%$'\n'*}"
-  view="${s1#*$'\n'}"
-  line="$(printf '%s\n' "$nums" | sed -n "$((k + 1))p")"
+  [ -n "$armed" ] || return 0
+  pass_idx="${armed%%$'\n'*}"
+  view="${armed#*$'\n'}"
+  line="$(printf '%s\n' "$nums" | sed -n "$((pass_idx + 1))p")"
   [ -n "$line" ] || return 1
   tail -n "+$((line + 1))" "$1" 2>/dev/null | jq -nrR \
     --arg apply "$PASTE_GUARD_APPLY" --arg view "$view" "$PASTE_GUARD_JQ_DEFS"'
@@ -146,13 +163,19 @@ paste_guard_scan() {
 # paste_guard_pasted <blocks> <view.md>: succeeds when one of the text blocks
 # (a JSON array) holds every non-blank line of the view file, whitespace
 # normalised on both sides. The blocks go in on stdin, which no argument
-# length limit caps.
+# length limit caps. Status 0: pasted. Status 1: a real no, jq answered false.
+# Status 2: jq failed (any other exit), which is no answer at all.
 paste_guard_pasted() {
   printf '%s' "$1" | jq -e --rawfile view "$2" '
     def norm: gsub("\\s+"; " ") | sub("^ "; "") | sub(" $"; "");
     [$view | split("\n")[] | norm | select(. != "")] as $lines
     | any(.[] | norm; . as $t | all($lines[]; . as $l | $t | contains($l)))
   ' >/dev/null 2>&1
+  case $? in
+    0) return 0 ;;
+    1) return 1 ;;
+    *) return 2 ;;
+  esac
 }
 
 # paste_guard_check <transcript>: succeeds - allow - when the guard is
@@ -160,7 +183,7 @@ paste_guard_pasted() {
 # refuse - otherwise, with `paste_guard_view` set in the caller's shell to the
 # armed view.md (pass it to paste_guard_instruction).
 paste_guard_check() {
-  local wait_s tries scan blocks size last_size
+  local wait_s tries scan blocks size last_size paste_st
   wait_s="$PASTE_GUARD_WAIT"
   case "${ORCH_PASTE_GUARD_WAIT:-}" in
     ''|*[!0-9]*) ;;
@@ -171,13 +194,15 @@ paste_guard_check() {
   last_size=''
   while :; do
     size="$(wc -c <"$1" 2>/dev/null | tr -d ' ')"
+    [ -n "$size" ] || return 0
     if [ "$size" != "$last_size" ]; then
       last_size="$size"
       scan="$(paste_guard_scan "$1")" || return 0
       paste_guard_view="${scan%%$'\n'*}"
       [ -n "$paste_guard_view" ] && [ -s "$paste_guard_view" ] && [ -r "$paste_guard_view" ] || return 0
       blocks="${scan#*$'\n'}"
-      paste_guard_pasted "$blocks" "$paste_guard_view" && return 0
+      paste_guard_pasted "$blocks" "$paste_guard_view"; paste_st=$?
+      [ "$paste_st" -eq 1 ] || return 0
     fi
     [ "$tries" -gt 0 ] || return 1
     tries=$((tries - 1))
