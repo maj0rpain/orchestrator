@@ -2,8 +2,9 @@
 #
 # Sourced by orch_test.sh (the orch.sh suite's runner), hooks_test.sh and
 # docs_lint.sh: the counting fixture, a stub (in a directory its caller puts
-# first on PATH) that logs one line each time a command starts and then runs
-# the real command.
+# first on PATH) that logs one line each time a command starts
+# (counting_argv_bin: each start whose arguments match) and then runs the real
+# command.
 # Sourcing it only defines functions.
 # Bash 4.2+, as the rest of the suite.
 
