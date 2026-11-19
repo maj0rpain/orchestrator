@@ -21,6 +21,8 @@ gh_reply() {
 
 # contract <operation> [args...]: runs one real adapter operation, orch.sh
 # sourced with ORCH_GH_ADAPTER unset, against whatever gh is on PATH.
+# contract eval <script>: the same, but the script runs in that one sourced
+# shell, so it can chain several operations and shell builtins.
 contract() { env -u ORCH_GH_ADAPTER bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
 
 # fake_ratelimit [stderr]: every operation but the rate_limit read fails as a
