@@ -286,7 +286,7 @@ verification_died() {
 # verification_run <command>: the verb's work.
 verification_run() {
   orch_load wait
-  require_poll_knobs ORCH_WAIT_BLOCK
+  wait_block_check
   require_poll_knobs ORCH_VERIFICATION_GRACE ORCH_VERIFICATION_INTERVAL
   local command="$1" state store d slept=0 attached="" ceiling id main_root rec stop spent nap
   ceiling="$(verification_timeout)" || exit $?

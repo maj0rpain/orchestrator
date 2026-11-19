@@ -173,7 +173,7 @@
 115	123	gh adapter contract (#280)	48e991187b762b12a4f0e536c19ac683adfe246f
 22	22	claim adapter operations (#1454)	434415cd39a7bb63f7146512c1dbdde13077c353
 2	3	label casing (#1943)	967a4a39f788b73ef75f50851a8a5e6a3aa92edb
-44	29	gh rate limits (#2577)	5fc1f17b6d8d1b663b064feacca2ff01ae03bc9f
+57	27	gh rate limits (#2577)	9219cc4b0792501f26ebae802267aa0a7cfad2aa
 9	7	gh rate limits: the GitHub pause and the hit file (#2577)	473c1e0574389227587fd9bd066c9ca6a5cc0a5a
 0	1	slug	aa1e8e6f64e5dd11e111097dfde9deca1248c258
 9	10	archive	0124b5e1112a0eae813a1e43c01b2f94b426ce16
@@ -261,28 +261,28 @@
 7	8	default-branch	0177d6e5817d4d0befacac87fc2b2a0f621ad11b
 9	10	review-pass begin (#342)	c9a9274e4ded397a8c551e3b82717cd167110d2b
 52	65	review-pass known-items	c01aa6033c8a94081955880d1ea8ecdcc49dbb05
-15	16	review ready's pointer to /orchestrator:finish (#727)	a4d191e011c795bcc6fa48ac0bdae8a0c62e6f4a
-14	15	review begin	eb1edd84f82af053c64eaeb1f84d4291fe715494
-4	5	review path	a5eb642cac7561e10d1839b70c8333a57544c3f7
-5	6	the multi-loop machinery is gone	8cbc8c9ee1a33748c9ad58440f05830134c73795
-45	49	review file	cb1f1cabf91630416daf9b520f1c1176bfa7a862
-14	15	review ready	3de42f3d7ace4ec6ce6ffa7c0883b3806733eed4
-172	68	review ci	5ef6509328fad3a18d717d658cb3ada6855986cb
-18	14	the grace counts from the push (issue #475)	4d0c2cfdd30afa8f1c8832920ff7d5c9200e747a
-25	17	review ci --no-wait	b68bb58fe105dae03de42fcb7a07621a6d9fde6e
-69	43	the grace is skipped on no evidence of CI (issue #476)	733c65c2094f5ba4c3df6f61da45096db3fd5847
-9	10	review rerun	39699a125cfcb488efe0e549d5a7f71549d25bc2
-5	6	review ci-log	062fdd89e41ebd54b3a937f0bb83e5fb59f09c4a
-24	26	review terminal	ca2ea3d29b491bbd745bc9d471c795455a3af693
-33	35	review resume	0f4c2b837b1545b7f2bef0d904efa420f0c63a08
-5	6	review retire	39a3fb75bbd6ca37b7e881bff60b30b1b862ea02
-12	13	review known-items	026eb5927e281a495509b44c8d0146fd91238213
-11	12	review ready in an autopilot flow (#1457)	d5da8fa98768371df658d1681f4e782d0a0c248b
-12	13	review known-items in an autopilot flow (#1457)	fb5b926fa63989ad8e6e0b3728a9a09d1da61b82
-13	15	review standards (#1532)	51b9dc72c38a1bbf1bf3a35d98be00be13132d18
-9	10	review ready with a failed phase write (#1931)	66843fb4a3f090b55ec0719f4827cb02043c8277
-10	11	review reads its Flow state once	858b40aedf40f33288b10e3d1bfa6544501647e9
-12	6	review ci <pr>	bdea3bdf2c713a16a841b141f14036d3356595a3
+19	17	review ready's pointer to /orchestrator:finish (#727)	0020d0c313bfe7b71761880ca2f869f2f7b204a3
+17	16	review begin	47b15508e0f1bfc550a9ad4cca44a417cec37b28
+5	5	review path	76adf5b9111a439fb3b18dbdd899d0ce5e86a569
+6	6	the multi-loop machinery is gone	59f99e3c36807eb6099334e10a56b2ff2cc1a41e
+57	47	review file	5d76ae7eb1f643ef5fa0ae6387d82a09cf87e13c
+18	16	review ready	aba02c1f44f96eb5a4b0ce0167cbc3e1c8be3073
+173	67	review ci	4515a642b1ba8d209e1c89ce89ec6270dab30a29
+18	13	the grace counts from the push (issue #475)	58612fbf355ac68c5b2f938d967f310c636daa65
+24	17	review ci --no-wait	821bdd4c243ad96f69547132415c084ebbb6aa84
+68	42	the grace is skipped on no evidence of CI (issue #476)	601daef9db53be0caf269d6e3016cc746e7e344a
+11	10	review rerun	7d1779bfc93d812c8314fe5887835a8a5d448601
+6	5	review ci-log	c8bd459d9851185f0c333ff1c7f022db069f0f94
+30	27	review terminal	fd31523ab0eeaed67264808c9e962f07eec62e2d
+41	36	review resume	c55ba42e1bed27d7fb2d2859c6c311055b5f5c0c
+6	6	review retire	0e01272795478e1913adf85975e55c8e9d8be011
+14	13	review known-items	c397e0cf62a61e679c28e97760417610fff0ddd0
+13	12	review ready in an autopilot flow (#1457)	c1321f1745707092af86620d28b3cbb4469bf2d1
+14	14	review known-items in an autopilot flow (#1457)	a462e16e9e06c42c52c8749f3c7d24aa2f0a8166
+16	14	review standards (#1532)	761a7bb47ffe6b16023f6112f96de894730d33d9
+12	11	review ready with a failed phase write (#1931)	e2ac5da0fdb7642349e578abb857a1923c6f15cb
+12	12	review reads its Flow state once	e0536b57e631c6df296ee0dc6dcc13a3a8889c90
+12	6	review ci <pr>	68611beb809c934d5ab8e46f0b6d3922e58a64f4
 2	3	route show	0e4fc7b4e544565f4d6f0cc3b311a522ccf801b0
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
 40	42	side-checkout (#722)	af2be5feb612499e9c65d765d4e385133c64fdd4
@@ -363,7 +363,7 @@
 61	6	verification run	1dd42b596bc25070ec06b02925f7cb097936d741
 216	20	verification run: the run key, stale runs, the ceiling	471d2e2e39b7b63f2840777531b346f7eab120a1
 0	1	verification run in help and the CLI conventions	bcef7e4ad67e97b98e872bc1de7a617d10a78253
-107	6	wait: a call's block is wall time	7e1c118db4ec81328a0ccab5ffdb7f32de161fa8
+112	12	wait: a call's block is wall time	db923f27504e50d0a04527b359feb487abb3665d
 686	811	hooks_test.sh	058e31b62b5c66adb779670b21daecb8f80a55e8
 196	171	docs_lint.sh	34005b94b528c3cac0c004e8e1d78930a4878f6a
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
