@@ -1493,13 +1493,13 @@ if [ "$(jq_count sg_decide "$TQ")" -gt "$(jq_count sg_decide "")" ]; then ok "th
 else bad "the quoted tail decodes its candidate lines (Stop)" "no extra jq"; fi
 # An armed refusal over the full window on an unchanged transcript parses once.
 pg_full_window_refusal() { ORCH_PASTE_GUARD_WAIT='' PG_SLEEP_LOG="$PG/sleep-unchanged.log" PATH="$PG/stub:$PATH" "$@"; }
+pg_assert_slept() { if [ -s "$PG/sleep-unchanged.log" ]; then ok "$1"; else bad "$1" "sleep never called"; fi; }
 for pg_fn in pg_decide sg_decide; do
   : >"$PG/sleep-unchanged.log"
   pg_win="$(jq_count pg_full_window_refusal "$pg_fn" "$T")"
   assert_eq "an unchanged armed transcript over the full window parses as often as with no window ($pg_fn)" \
     "$pg_win" "$(jq_count "$pg_fn" "$T")"
-  if [ -s "$PG/sleep-unchanged.log" ]; then ok "and the window was waited out ($pg_fn)"
-  else bad "and the window was waited out ($pg_fn)" "sleep never called"; fi
+  pg_assert_slept "and the window was waited out ($pg_fn)"
 done
 # Truncation: the stub swaps in a shorter transcript holding the paste.
 mkdir "$PG/stub-trunc"
@@ -1643,8 +1643,7 @@ for pg_fn in pg_decide sg_decide; do
   rm -f "$PG/wc-called"; : >"$PG/sleep-unchanged.log"
   assert_eq "armed now, a wc failing from its second call allows over a full window ($pg_fn)" \
     "$(PATH="$PG/cost/failwc2:$PATH" pg_full_window_refusal "$pg_fn" "$PG/cost/pad-armed-now.jsonl")" allow
-  if [ -s "$PG/sleep-unchanged.log" ]; then ok "and the allow came after the first read ($pg_fn)"
-  else bad "and the allow came after the first read ($pg_fn)" "sleep never called"; fi
+  pg_assert_slept "and the allow came after the first read ($pg_fn)"
 done
 # The scan reads the apply constant and searches for both constants as JSON
 # writes them. pg_scan_with <needle> <apply> <transcript>: the view.md the scan
