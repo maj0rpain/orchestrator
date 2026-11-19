@@ -1,6 +1,8 @@
 # shellcheck shell=bash
 # review.sh - orch.sh's review command, with its command-level CI logic
 # (review ci, review ci-log, review rerun) and the labels review file creates.
+# `review ci [<pr>]` reads the PR given, with no flow state, or the flow's PR;
+# its stored total is the same wait store either way.
 # `review ci --no-wait` is one pass of review ci's probe: where the waiting
 # form would sleep and look again it prints `pending`; it reads no stored
 # total, never sleeps and writes nothing (no state key, wait file or guard).
@@ -372,6 +374,16 @@ review_rerun() {
       adapter_run_rerun "$r" >/dev/null
     note "$r"
   done
+}
+
+# ci_refs_unread <refs_rc> <pr_arg> <pr> <err>: whether review ci must stop
+# because the PR it was given by number could not be read - prints
+# `unreachable` and its detail line, and returns 0; returns 1 otherwise (a read
+# that worked, or the flow's PR, whose unread refs only key its total by PR).
+ci_refs_unread() {
+  [ "$1" -ne 0 ] && [ -n "$2" ] || return 1
+  note unreachable
+  note "      could not read PR #$3: $(gh_reason "$4")"
 }
 
 # review_ci_log <pr>: the failed-step log of each failing Actions job behind
@@ -894,18 +906,21 @@ cmd_review() {
       # stored total, never sleeps and writes nothing (no state key, wait file,
       # provisional guard); where the loop would sleep it prints `pending`. A
       # rate limit is given up on at once (GH_LIMIT_NO_SLEEP).
-      local nowait=0
-      case "${1-}" in
-        "") ;;
-        --no-wait) nowait=1; shift ;;
-        *) die "usage: orch.sh review ci [--no-wait]" ;;
-      esac
-      [ $# -eq 0 ] || die "usage: orch.sh review ci [--no-wait]"
+      local nowait=0 pr_arg=""
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --no-wait) nowait=1 ;;
+          *) [ -z "$pr_arg" ] || die "usage: orch.sh review ci [--no-wait] [<pr>]"
+             pr_arg="$1" ;;
+        esac
+        shift
+      done
+      case "$pr_arg" in *[!0-9]*) die "not a PR number: $pr_arg" ;; esac
       # refs_err is pr_refs_read's error output, which ci ignores.
       # shellcheck disable=SC2034
       local pr started slept=0 blocked=0 elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
-      local no_ci=0 ci_status
-      require_state_read pr=pr
+      local no_ci=0 ci_status refs_rc=0
+      if [ -n "$pr_arg" ]; then pr="$pr_arg"; else require_state_read pr=pr; fi
       orch_load wait
       if [ "$nowait" = 1 ]; then
         is_number "$ORCH_CI_GRACE" || die "ORCH_CI_GRACE is not a number: $ORCH_CI_GRACE"
@@ -930,16 +945,20 @@ cmd_review() {
       if [ "$nowait" = 1 ]; then
         export GH_LIMIT_NO_SLEEP=1
         printf -v started "%(%s)T" -1
-        pr_refs_read "$pr" head_oid head_ref base_ref refs_err || head_oid=""
+        pr_refs_read "$pr" head_oid head_ref base_ref refs_err || refs_rc=$?
+        ci_refs_unread "$refs_rc" "$pr_arg" "$pr" "${refs_err-}" && return 1
+        [ "$refs_rc" -eq 0 ] || head_oid=""
       else
         mkdir -p "$ORCH/wait" || die "could not create $ORCH/wait"
         WAIT_FILE="$ORCH/wait/pending-$pr"
         rm -f "$WAIT_FILE.limited"
-        pr_refs_read "$pr" head_oid head_ref base_ref refs_err || head_oid=""
+        pr_refs_read "$pr" head_oid head_ref base_ref refs_err || refs_rc=$?
         if [ -e "$WAIT_FILE.limited" ]; then
           rm -f "$WAIT_FILE.limited"
           wait_exit_running
         fi
+        ci_refs_unread "$refs_rc" "$pr_arg" "$pr" "${refs_err-}" && return 1
+        [ "$refs_rc" -eq 0 ] || head_oid=""
         wait_open "review ci $pr $head_oid" started slept
         elapsed="$(wait_elapsed "$started" "$slept")"
       fi

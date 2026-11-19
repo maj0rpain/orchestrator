@@ -2221,3 +2221,51 @@ for op in begin path terminal resume "path 2" "file major t"; do
   assert_state_unreadable "review $op" 1 "$out" "$st"
 done
 restore_suite_env
+
+# --- review ci <pr> -----------------------------------------------------------
+# The PR-number form reads that PR with no flow state, and keeps its total in
+# the same wait store the flow form uses, keyed by PR and head commit.
+echo
+echo "review ci <pr>"
+new_repo >/dev/null
+fake_github
+export ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=1.5 ORCH_CI_INTERVAL=0.05
+fake_check_run main
+fake_pr 7 open topic main
+fake_pr 8 open topic main
+fake_pr_head 7 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+fake_pr_head 8 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+fake_checks 7 all pending
+fake_checks 8 all pending
+pn() { ORCH_WAIT_BLOCK=0.4 "$ORCH" review ci "$@" 2>&1; }
+pn_snap() { find "$ORCH_DIR_NAME/wait" -type f -exec cksum {} + 2>/dev/null | sort; }
+fake_checks_clear; fake_checks 7 all green
+out="$(pn 7)"; st=$?
+assert_status "a PR number reads its PR with no flow state" "$st" 0
+assert_first_line "and prints its answer" "$out" "green"
+fake_checks_clear; fake_checks 7 all pending; fake_checks 8 all pending
+out="$(pn 7 --no-wait)"
+assert_eq "--no-wait combines with a PR number, in either order" "$(pn --no-wait 7)$out" "pendingpending"
+pn 7 >/dev/null; pn 7 >/dev/null
+pn 7 >/dev/null
+before="$(pn_snap)"
+pn 7 --no-wait >/dev/null
+assert_eq "a --no-wait call leaves a PR's kept total as it was" "$(pn_snap)" "$before"
+pn 8 >/dev/null; st=$?
+assert_status "another PR keeps its own total" "$st" 75
+fake_pr_head 8 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+pn 8 >/dev/null; st=$?
+assert_status "after a new push a waiting call starts a new total" "$st" 75
+out="$(pn 7)"; st=$?
+assert_status "a second waiting call's total continues the first ones and delivers its timeout" "$st" 1
+assert_first_line "as unreachable" "$out" "unreachable"
+pn 7 >/dev/null; st=$?
+assert_status "and the delivered total is then gone" "$st" 75
+out="$("$ORCH" review ci 7x 2>&1)"; st=$?
+assert_status "a non-number argument is refused" "$st" 1
+assert_eq "with review ci-log's message shape" "$out" "orch: not a PR number: 7x"
+out="$("$ORCH" review ci 99 --no-wait 2>&1)"; st=$?
+assert_status "an unknown PR number exits as unreachable" "$st" 1
+assert_first_line "printing unreachable" "$out" "unreachable"
+assert_contains "help names the PR argument" "$("$ORCH" help)" "review ci [--no-wait] [<pr>]"
+restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL

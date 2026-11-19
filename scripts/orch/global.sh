@@ -779,7 +779,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               printed as declared, path#Heading too; an
                               entry that does not resolve, or a declaration
                               with no entries, fails with an orch: message
-  review ci [--no-wait]       classify the PR's checks: green, failing, none, or
+  review ci [--no-wait] [<pr>]
+                              classify the PR's checks - the flow's PR, or <pr>
+                              with no flow state: green, failing, none, or
                               unreachable; exits non-zero on the last two
                               Blocks at most ORCH_WAIT_BLOCK seconds (default
                               570; a value that is not a positive number is
