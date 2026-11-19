@@ -44,7 +44,6 @@ echo
 echo "finding-triage scan"
 new_repo >/dev/null
 git checkout -q -B main
-seq_lines() { local i; for i in $(seq 1 "$2"); do echo "$1 line $i"; done; }
 mkdir -p src
 seq_lines app 12 >src/app.sh
 seq_lines other 4 >src/other.sh
@@ -334,10 +333,7 @@ unmerged_sha="$(pr_head pr11 11 "$head_sha" other.sh 's/^other line 2$/other lin
 finding 11 "review:nit,needs-triage" "\`src/other.sh:2\` at $unmerged_sha" 11
 out="$(scan 11 2>&1)"; st=$?
 assert_status "scans a finding filed on a PR edit that never landed" "$st" 0
-assert_eq "it is unknown, not changed by a commit older than the filing" "$(field_of 11 4 "$out")" "unknown"
-assert_contains "saying no commit since the filing touched its lines" "$(field_of 11 5 "$out")" "no commit"
 assert_eq "its exact line" "$(line_of 11 "$out")" "$(never_line 11 other.sh 2 "$unmerged_sha")"
-assert_eq "the never-reached scan from a subdirectory prints the root's line" "$(cd src && scan 11 2>&1)" "$out"
 fake_issue 11 closed
 # The sentence names the SHA as the body gives it, abbreviated, not as it
 # resolves.

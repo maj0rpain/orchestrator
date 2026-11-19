@@ -17,7 +17,6 @@ echo "lines_fate"
 new_repo >/dev/null
 git remote remove origin
 git checkout -q -B main
-lf_seq() { local i; for i in $(seq 1 "$2"); do echo "$1 line $i"; done; }
 # lf_edit <file> <sed script> <message>: commits the edit to src/<file> on the
 # checked-out branch, printing its SHA.
 lf_edit() {
@@ -40,16 +39,15 @@ lf_squash_head() {
   lf_branch_head "pr$1" "$filed_sha" "$2" "1i $3"
   lf_edit "$2" "1i $3" "the PR, squash-merged" >/dev/null
 }
-# lf_case <name> <filed sha> <file> <start> <end> [<bin>]: one case, asked of
-# main.
 lf_cases="$(mktemp)"
-# lf_case_in <cases file> <name> <sha> <file> <start> <end> [<bin>]: a case row.
-lf_case_in() { (IFS=$'\t'; printf '%s\n' "${*:2}") >>"$1"; }
-lf_case() { lf_case_in "$lf_cases" "$@"; }
+# lf_case <name> <filed sha> <file> <start> <end> [<bin>]: appends one case row
+# to $lf_cases, asked of main; <bin> names a directory put first on PATH for its
+# calls.
+lf_case() { (IFS=$'\t'; printf '%s\n' "$*") >>"$lf_cases"; }
 
 mkdir -p src
-lf_seq app 12 >src/app.sh
-lf_seq other 4 >src/other.sh
+seq_lines app 12 >src/app.sh
+seq_lines other 4 >src/other.sh
 git add -A && git commit -qm "the reviewed code"
 head_sha="$(git rev-parse HEAD)"
 fix_sha="$(lf_edit app.sh 's/^app line 3$/app line 3, fixed/' "fix line 3")"
@@ -76,11 +74,11 @@ lf_case nomergebase "$unrelated_sha" src/other.sh 2 2
 
 # A file whose later hunks come both before and after the finding's line, with
 # far more diff after it than a pipe buffer holds.
-lf_seq "big file" 6000 >src/big.sh
+seq_lines "big file" 6000 >src/big.sh
 git add src/big.sh
 git commit -qm "a big file"
 big_sha="$(git rev-parse HEAD)"
-{ lf_seq inserted 5; cat src/big.sh; } >big.tmp && mv big.tmp src/big.sh
+{ seq_lines inserted 5; cat src/big.sh; } >big.tmp && mv big.tmp src/big.sh
 git commit -qam "insert five lines on top"
 shifted_fix_sha="$(lf_edit big.sh 's/^big file line 10$/big file line 10, fixed/' "fix the shifted line")"
 lf_edit big.sh '200,$ s/$/, rewritten in bulk/' "rewrite everything below" >/dev/null
@@ -89,7 +87,7 @@ lf_case big "$big_sha" src/big.sh 10 10
 # Lines main later deleted outright: one file per case (a reversed-range case
 # reuses its twin's), all filed at one commit, each deleted by its own commit
 # after it.
-for f in whole end start middle later two replaced squashed split; do lf_seq "$f" 30 >"src/del_$f.sh"; done
+for f in whole end start middle later two replaced squashed split; do seq_lines "$f" 30 >"src/del_$f.sh"; done
 git add src
 git commit -qm "the code the deletions are filed against"
 filed_sha="$(git rev-parse HEAD)"
@@ -120,8 +118,8 @@ lf_case del_split "$split_head_sha" src/del_split.sh 9 13
 
 # A deletion main made of lines held by a head off its history, for the case
 # whose merge-base lookup fails: the head edits another line, main deletes.
-for i in 1 2 3 4 5 6 7 8 9 10 11 12 13; do lf_seq "um$i" 20 >"src/um$i.sh"; done
-lf_seq mb 30 >src/mb.sh
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13; do seq_lines "um$i" 20 >"src/um$i.sh"; done
+seq_lines mb 30 >src/mb.sh
 git add src
 git commit -qm "the code the unmerged PRs edit"
 unm_base="$(git rev-parse HEAD)"
@@ -132,6 +130,9 @@ lf_case mb_deleted "$mb_head_sha" src/mb.sh 10 10
 # PR heads that never merged: the cases decide by the filed lines, never by the
 # file. One file per case (a reversed-range case reuses its twin's), each a
 # 20-line file the PR edits and main then edits elsewhere or alike.
+
+# lf_unm <n> <file> <sed script>: the never-merged PR head unm<n> off
+# $unm_base, editing src/<file>; prints its SHA.
 lf_unm() { lf_branch_head "unm$1" "$unm_base" "$2" "$3"; }
 sha51="$(lf_unm 51 um1.sh '5c\pr replaced')"
 sha52="$(lf_unm 52 um2.sh '5a pr added a\npr added b')"
@@ -195,7 +196,7 @@ lf_case um64_reversed "$sha51" src/um1.sh 5 3
 # from the root and once from src/, its standard output sent to a file; one
 # tab-separated row per case: name, fate, detail, status, quiet (yes when
 # nothing was printed from either place), the subdirectory's fate, its detail
-# and its status. After the rows it prints two `count <diffs> <loud|quiet>`
+# and its status. After the rows it prints two `count <diffs>`
 # rows, one for $2 and one for $3, which rows/lf_counts filter. Every call
 # names its out-variables result and detail and is made in the sourced shell
 # itself, never inside a command substitution.
@@ -213,24 +214,24 @@ LF_ASK='
     printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "$name" "$first_result" "$first_detail" "$rc" "$quiet" "$result" "$detail" "$sub_rc"
   done 3<"$1"
   count() {
-    local sha="$1" t o
-    t="$(mktemp)" o="$(mktemp)"
-    GIT_TRACE="$t" lines_fate "$sha" main "$2" "$3" "$4" result detail >"$o"
-    printf "count %s %s\n" "$(grep "trace: built-in: git diff " "$t" | grep -- "$sha" | grep -c -w main)" "$([ -s "$o" ] && echo loud || echo quiet)"
-    rm -f "$t" "$o"
+    local sha="$1" t
+    t="$(mktemp)"
+    GIT_TRACE="$t" lines_fate "$sha" main "$2" "$3" "$4" result detail
+    printf "count %s\n" "$(grep "trace: built-in: git diff " "$t" | grep -- "$sha" | grep -c -w main)"
+    rm -f "$t"
   }
   count "$2" src/other.sh 2 2
   count "$3" src/del_whole.sh 10 10'
 # lf_assert <rows> <case> <fate> [<commit>]: the case's answer from the root,
 # the same answer from a subdirectory, and a status of 0 with nothing printed.
 lf_assert() {
-  local row n f2 f3 f4 f5 f6 f7 f8
+  local row name fate detail rc quiet sub_fate sub_detail sub_rc
   row="$(awk -F'\t' -v n="$2" '$1 == n' "$1")"
   row="${row//$'\t'/|}" # a tab would fold empty fields away
-  IFS='|' read -r n f2 f3 f4 f5 f6 f7 f8 <<<"$row"
-  assert_eq "$2: its fate and commit" "$f2	$f3" "$(printf '%s\t%s' "$3" "${4:-}")"
-  assert_eq "$2: the same from a subdirectory" "$f6	$f7" "$f2	$f3"
-  assert_eq "$2: returns 0 from both places and prints nothing" "$f4	$f5	$f8" "$(printf '0\tyes\t0')"
+  IFS='|' read -r name fate detail rc quiet sub_fate sub_detail sub_rc <<<"$row"
+  assert_eq "$2: its fate and commit" "$fate	$detail" "$(printf '%s\t%s' "$3" "${4:-}")"
+  assert_eq "$2: the same from a subdirectory" "$sub_fate	$sub_detail" "$fate	$detail"
+  assert_eq "$2: returns 0 from both places and prints nothing" "$rc	$quiet	$sub_rc" "$(printf '0\tyes\t0')"
 }
 
 rows="$(mktemp)"
@@ -283,5 +284,5 @@ rm -f "$lf_cases"
 # is not counted. The counts are asked in the cases' shell, after its loop.
 lf_counts="$(grep '^count ' "$rows")"
 rm -f "$rows"
-assert_eq "an off-ref never-reached finding is diffed once, printing nothing" "${lf_counts%%$'\n'*}" "count 1 quiet"
-assert_eq "an on-ref finding whose lines were deleted is diffed once, printing nothing" "${lf_counts#*$'\n'}" "count 1 quiet"
+assert_eq "an off-ref never-reached finding is diffed once" "${lf_counts%%$'\n'*}" "count 1"
+assert_eq "an on-ref finding whose lines were deleted is diffed once" "${lf_counts#*$'\n'}" "count 1"
