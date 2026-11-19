@@ -15,7 +15,10 @@
 # SECTION_TITLE_AWK: the awk function title(s) as text, for a program to start
 # with. It drops a header's leading `# --- `, then its trailing spaces and
 # dashes. This is the one definition of a section title.
-#
+
+# shellcheck disable=SC2034 # read by the sourcing runners
+SECTION_TITLE_AWK='function title(s) { sub(/^# --- /, "", s); sub(/[ -]+$/, "", s); return s }'
+
 # suites_read <all.sh> <suite dir>: reads the suite list from the one
 # `suites=(...)` line of <all.sh> into the array SUITES, with read -a and no
 # eval, and returns 0. It returns 1, with SUITES_ERR holding a message with no
@@ -23,10 +26,6 @@
 # empty, or when a name in it is not a file in <suite dir>. A caller fails on
 # its failure: a list that came back empty would make every loop run zero
 # times.
-
-# shellcheck disable=SC2034 # read by the sourcing runners
-SECTION_TITLE_AWK='function title(s) { sub(/^# --- /, "", s); sub(/[ -]+$/, "", s); return s }'
-
 suites_read() {
   local file="$1" suite_dir="$2" n line list name
   SUITES=()
@@ -192,9 +191,7 @@ suite_budget_read() {
 # alike. Any other line is ignored, and the first line per name wins. The
 # shard dealing and the start order both start with it, so they read the file
 # one way. It also defines durations_line(), true when the current record is
-# such a line, for a program that reads every line itself. The function
-# durations_total prints, from the durations text on stdin, the CPU column
-# summed over the first line per name, in tenths of a second.
+# such a line, for a program that reads every line itself.
 #
 # SHELLCHECK_CMD: the array holding the one shellcheck invocation, run from the
 # repo root with the files to check appended. all.sh, affected.sh and
@@ -215,10 +212,14 @@ function durations_read() {
     wall[$3] = $1 + 0; cpu[$3] = $2 + 0
   }
 }'
+# durations_total: prints, from the durations text on stdin, the CPU column
+# summed over the first line per name, in tenths of a second.
 durations_total() {
   awk -F'\t' "$DURATIONS_AWK"'{ durations_read() }
     END { for (name in cpu) t += cpu[name]; print t + 0 }'
 }
+# tenths_text <tenths>: seconds with one decimal place.
+tenths_text() { printf '%d.%d' "$(($1 / 10))" "$(($1 % 10))"; }
 # The function ledger_states <fingerprints> <durations file> is the one place
 # the ledger's freshness rule is written. <fingerprints> holds the walk, one
 # "<title><TAB><fingerprint>..." line per section or suite (the output of

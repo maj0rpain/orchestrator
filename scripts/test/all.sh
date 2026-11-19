@@ -133,17 +133,16 @@ suites=(orch_test.sh hooks_test.sh docs_lint.sh version_bump_test.sh autopilot_c
 # A group other than the first runs orch_test.sh alone.
 if [ "$all_runs_rest" -eq 0 ]; then suites=(orch_test.sh); fi
 # The other suites start first, in list order, each under its slot, then
-# orch_test.sh with none; pids and the report stay in list order.
-start_order=()
-for ((suite_n = 1; suite_n < ${#suites[@]}; suite_n++)); do start_order+=("$suite_n"); done
-start_order+=(0)
-for suite_n in "${start_order[@]}"; do
+# orch_test.sh with none (the order is test_jobs_start_order's); pids and the
+# report stay in list order.
+test_jobs_start_order "${suites[@]}"
+for suite_n in "${TEST_JOBS_START_ORDER[@]}"; do
   suite="${suites[$suite_n]}"
   if [ "$suite" = orch_test.sh ]; then
-    TMPDIR="$suites_tmp" ORCH_TEST_SHARD="$all_shard" test_jobs_suite_start "$tmp/$suite" bash "$dir/$suite"
+    TMPDIR="$suites_tmp" ORCH_TEST_SHARD="$all_shard" test_jobs_suite_start bash "$dir/$suite" >"$tmp/$suite"
   else
     test_jobs_slot_wait
-    TMPDIR="$suites_tmp" test_jobs_suite_start "$tmp/$suite" bash "$dir/$suite"
+    TMPDIR="$suites_tmp" test_jobs_suite_start bash "$dir/$suite" >"$tmp/$suite"
   fi
   pids[suite_n]="$TEST_JOBS_SUITE_PID"
 done

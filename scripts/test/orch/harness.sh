@@ -2891,8 +2891,8 @@ chmod +x "$jp_stubs/shellcheck"
 # jp_runner <cpu file> <pool dir> <jobs> <script> [args...]: a runner of the
 # planted tree (all.sh or affected.sh, under scripts/test) on the pool, from
 # the tree's root, with the stub shellcheck first on PATH; its stdout is
-# $jp_dir/out, its stderr $jp_dir/errout, and a sleeper a stub left behind is
-# killed. Returns the runner's status.
+# $jp_dir/out, its stderr $jp_dir/errout, and a sleeper the planted `pool leak`
+# section left behind is killed. Returns the runner's status.
 jp_runner() {
   local cpu="$1" pool="$2" jobs="$3" script="$4" st
   shift 4
@@ -2940,6 +2940,8 @@ assert_eq "its selected stub suites all ran" "$(grep -c '^+ ' "$jp_log")" "3"
 assert_eq "its report keeps the selection order" \
   "$(grep -oE '^[a-z_]+\.sh: [0-9]+ passed' "$jp_dir/out" | cut -d: -f1 | tr '\n' ' ')" "orch_test.sh hooks_test.sh docs_lint.sh version_bump_test.sh "
 assert_contains "the verdict names the failing suite" "$(tail -n 1 "$jp_dir/out")" "affected.sh: FAIL (docs_lint.sh"
+assert_eq "affected.sh starts its other suites before any orch_test.sh section" \
+  "$(awk '/^\+ / { n++ } /^\+$/ { print n + 0; exit }' "$jp_log")" "3"
 # ORCH_TEST_JOBS narrows a pooled run's slot range to min(N, the pool's size),
 # nested runners included, so the whole all.sh run fits within N jobs.
 # The above-the-pool half is the ORCH_TEST_JOBS=4 case on the cpu2 pool above.
@@ -4414,6 +4416,52 @@ bc_out="$(set -e; source "$bc_helpers"; trap 'echo "child=[$TEST_JOBS_CHILD]"' E
 assert_status "a bare call under set -e exits 1" "$bc_st" 1
 assert_eq "with TEST_JOBS_CHILD already cleared" "$bc_out" "child=[]"
 unset bc_helpers bc_out bc_st bc_file
+
+# --- the suite start (#3582) -------------------------------------------------
+# test_jobs_start_order, test_jobs_held_marker and test_jobs_suite_start,
+# sourced in a subshell as the child start's checks above are.
+ss_helpers="$(dirname "$SUITE_SCRIPT")/test_jobs.sh"
+ss_out="$(source "$ss_helpers"; test_jobs_start_order orch_test.sh a.sh b.sh; echo "${TEST_JOBS_START_ORDER[*]}")"
+assert_eq "the start order puts orch_test.sh's index last, the others in list order" "$ss_out" "1 2 0"
+ss_out="$(source "$ss_helpers"; test_jobs_start_order a.sh b.sh c.sh; echo "${TEST_JOBS_START_ORDER[*]}")"
+assert_eq "a list without orch_test.sh keeps list order" "$ss_out" "0 1 2"
+ss_out="$(source "$ss_helpers"; test_jobs_start_order a.sh b.sh orch_test.sh; echo "${TEST_JOBS_START_ORDER[*]}")"
+assert_eq "a list with orch_test.sh already last keeps it last" "$ss_out" "0 1 2"
+ss_out="$(source "$ss_helpers"; export TEST_JOBS_POOL=/pool TEST_JOBS_SLOT_FD=8 ORCH_TEST_POOL_HELD=/other; test_jobs_held_marker; echo "[$TEST_JOBS_HELD]")"
+assert_eq "the held marker is the pool directory when a slot is held" "$ss_out" "[/pool]"
+ss_out="$(source "$ss_helpers"; TEST_JOBS_POOL=/pool ORCH_TEST_POOL_HELD=/other; test_jobs_held_marker; echo "[$TEST_JOBS_HELD]")"
+assert_eq "with none held it is the inherited marker" "$ss_out" "[/other]"
+ss_out="$(source "$ss_helpers"; unset ORCH_TEST_POOL_HELD; test_jobs_held_marker; echo "[$TEST_JOBS_HELD]")"
+assert_eq "and empty when that is unset too" "$ss_out" "[]"
+ss_file="$(mktemp)"
+ss_out="$(source "$ss_helpers"; test_jobs_suite_start bash -c 'echo "$$"; echo hi' >"$ss_file"; wait "$TEST_JOBS_SUITE_PID"; ss_wait=$?
+  echo "holder=[$TEST_JOBS_HOLDER_PID] wait=$ss_wait same=$([ "$(head -n1 "$ss_file")" = "$TEST_JOBS_SUITE_PID" ] && echo yes || echo no)"; tail -n +2 "$ss_file")"
+assert_eq "an unpooled suite start leaves the holder pid empty and records the suite's, writing to the redirect on the call" \
+  "$ss_out" "$(printf 'holder=[] wait=0 same=yes\nhi')"
+if command -v flock >/dev/null 2>&1; then
+  mkdir "$ss_file.pool"
+  ss_out="$(source "$ss_helpers"; TEST_JOBS_POOL="$ss_file.pool"
+    export TEST_JOBS_SLOTS=1; test_jobs_slot_take
+    test_jobs_suite_start true
+    if [ -n "$TEST_JOBS_HOLDER_PID" ] && [ "$TEST_JOBS_HOLDER_PID" != "$TEST_JOBS_SUITE_PID" ]; then echo pooled-ok; fi
+    wait "$TEST_JOBS_SUITE_PID"; wait "$TEST_JOBS_HOLDER_PID" 2>/dev/null
+    test_jobs_suite_start true; wait "$TEST_JOBS_SUITE_PID"
+    echo "after=[$TEST_JOBS_HOLDER_PID]")"
+  assert_eq "a pooled start sets a holder pid other than the suite's, and an unpooled start after it empties it" \
+    "$ss_out" "$(printf 'pooled-ok\nafter=[]')"
+  ss_out="$(source "$ss_helpers"; TEST_JOBS_POOL="$ss_file.pool"
+    export TEST_JOBS_SLOTS=1; test_jobs_slot_take
+    ORCH_TEST_POOL_HELD=/other test_jobs_suite_start bash -c 'echo "$ORCH_TEST_POOL_HELD"' >"$ss_file"; wait "$TEST_JOBS_SUITE_PID"; cat "$ss_file")"
+  assert_eq "a suite started with a slot held sees the pool directory as its marker" "$ss_out" "$ss_file.pool"
+  rm -rf "$ss_file.pool"
+else
+  skip "the suite start's pooled cases" "flock is not installed"
+fi
+ss_out="$(source "$ss_helpers"; export ORCH_TEST_POOL_HELD=/other
+  test_jobs_slot_take; test_jobs_suite_start bash -c 'echo "$ORCH_TEST_POOL_HELD"' >"$ss_file"; wait "$TEST_JOBS_SUITE_PID"; cat "$ss_file")"
+assert_eq "and with none held, the inherited marker" "$ss_out" "/other"
+rm -f "$ss_file"
+unset ss_helpers ss_out ss_file
 
 # --- the counting fixture's stdin counter (#3434) ----------------------------
 # counting_stdin_bin jq, fed an input far larger than any pipe buffer or tee

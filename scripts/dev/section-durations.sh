@@ -119,16 +119,15 @@ measure() {
 }
 
 # suite_run <name>: the start step and both waits of a suite under a slot the
-# caller took. The suite starts, then its pid and the slot's holder (`$!` after
-# the start step; with the slot taken it is the holder, as the take step always
-# precedes this call) are waited on, so the holder's CPU is charged to this
-# suite's line, not the next one's. The status is the suite's.
+# caller took. The suite starts, then its pid and the slot's holder
+# (TEST_JOBS_HOLDER_PID, waited on only when set) are waited on, so the
+# holder's CPU is charged to this suite's line, not the next one's. The status
+# is the suite's.
 suite_run() {
-  local holder st
-  TMPDIR="$tmp" test_jobs_suite_start - bash "$dir/$1"
-  holder=$!
+  local st
+  TMPDIR="$tmp" test_jobs_suite_start bash "$dir/$1"
   wait "$TEST_JOBS_SUITE_PID"; st=$?
-  wait "$holder" 2>/dev/null
+  [ -z "$TEST_JOBS_HOLDER_PID" ] || wait "$TEST_JOBS_HOLDER_PID"
   TEST_JOBS_SUITE_PID=""
   return "$st"
 }
@@ -139,19 +138,18 @@ suite_run() {
 stale_report() {
   local total budget
   total="$(durations_total <"$target")" || return 1
-  total="$((total / 10)).$((total % 10))"
   if suite_budget_read "$dir/suite-budget"; then
     budget="$SUITE_BUDGET CPU seconds"
   else
     budget=missing
   fi
-  echo "section-durations.sh: total $total CPU seconds, budget $budget"
+  echo "section-durations.sh: total $(tenths_text "$total") CPU seconds, budget $budget"
 }
 
-# DOCS_LINT_RECORDING=1 tells docs_lint.sh the ledger is being recorded, so it
-# does not fail on the very lines this run replaces.
 # measure_suite <name>: times the other suite <name> as the full refresh does,
 # and on a failure adds it to failed, with its report and output on stderr.
+# DOCS_LINT_RECORDING=1 tells docs_lint.sh the ledger is being recorded, so it
+# does not fail on the very lines this run replaces.
 measure_suite() {
   local suite_st
   test_jobs_slot_wait

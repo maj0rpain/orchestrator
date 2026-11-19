@@ -1,5 +1,13 @@
 # Changelog
 
+## 6.8.19
+
+The durations recorder's --stale report and the docs lint's over-budget message share one tenths formatter, and the helper index describes measure_suite, durations_total and suites_read by their own lines.
+
+## 6.8.18
+
+The test job pool's suite start keeps each rule in one place: test_jobs.sh gains test_jobs_start_order, test_jobs_held_marker and TEST_JOBS_HOLDER_PID, test_jobs_suite_start drops its outfile argument, and its header and comments describe what the code does.
+
 ## 6.8.17
 
 Clarify the triage-label reader's column-reset comment and write each doctor fixture row once.

@@ -473,8 +473,6 @@ scan_ledger_fresh() {
   done
   rm -f "$fps"
 }
-# tenths_text <tenths>: seconds with one decimal place.
-tenths_text() { printf '%d.%d' "$(($1 / 10))" "$(($1 % 10))"; }
 # scan_suite_budget <plugin root> [<base>]: rule 2, the total is within the
 # suite budget. It reports a budget file that is missing or is not one positive
 # whole number. With a <base>, it reports a total over the budget and above the
