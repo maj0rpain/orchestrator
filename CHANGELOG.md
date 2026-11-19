@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.9
+
+The audit tests drop duplicated report-reference cases and share one save-and-restore of a run's files.
+
 ## 6.8.8
 
 Write the issue-row readers' shared record, label-block walk and pair assignment once, and correct two comments and some names. No behaviour changes.
