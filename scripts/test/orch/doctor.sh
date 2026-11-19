@@ -507,10 +507,10 @@ assert_not_contains "not the canonical one" "$out" 'gh label create "ready-for-a
 # demanding that the repo create labels named after the Meaning text. Parsing to
 # nothing is the honest answer; inventing one is the worst thing a diagnostic
 # can do.
-# The width belongs to one table, and a doc may hold more than one. A second,
-# narrower table's *header* row arrives a line before the separator that would
-# correct the width, so without a reset at the end of the block that heading
-# gets read out as a label and demanded of the repo.
+# A doc may hold more than one table. Here the role table holds a role row, so
+# the end-of-role-table rule stops the read at the blank line after it, and no
+# row of the second, narrower Glossary table is read as a label and demanded
+# of the repo.
 # This healthy_repo() does earn its keep: the renamed-label check above left a
 # one-row doc behind, and every labels-doc variant below needs a clean repo so
 # the only FAIL it can produce is the one the table shape under test causes.
@@ -746,7 +746,7 @@ rota=(
   '| build | alice | none  |'
   '| ship  | bob   | none  |'
 )
-needs_row='| `needs-triage`             | `needs-triage`       | Evaluate it |'
+needs_row=('| `needs-triage`             | `needs-triage`       | Evaluate it |')
 owners=(
   '' '## Owners' ''
   '| Role            | Owner | Notes |'
@@ -771,7 +771,7 @@ assert_eq "and no cell of it is demanded of the repo" \
 # table gives ready-for-agent a custom label, so the lookup's answer provably
 # comes from it and not from the canonical fallback.
 writeln '# Rota' '' "${rota[@]}" '' "${role_head[@]}" \
-        "$needs_row" \
+        "${needs_row[@]}" \
         '| `ready-for-agent`          | `afk-ready`          | AFK-ready   |' >docs/agents/triage-labels.md
 fake_label_names
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
@@ -786,7 +786,7 @@ assert_not_contains "and not from the rota" "$out" "alice"
 # A later wide table keyed by role never answers a lookup: the role table does
 # not list the role ...
 writeln "${role_head[@]}" \
-        "$needs_row" "${owners[@]}" >docs/agents/triage-labels.md
+        "${needs_row[@]}" "${owners[@]}" >docs/agents/triage-labels.md
 fake_label_names
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "a later role-keyed table is not counted" "$out" "1 triage labels"
@@ -799,7 +799,7 @@ assert_not_contains "not the later table's cell" "$out" "carol"
 
 # ... and the role table lists it with a blank label.
 writeln "${role_head[@]}" \
-        "$needs_row" \
+        "${needs_row[@]}" \
         '| `ready-for-agent`          |                      | AFK-ready   |' \
         "${owners[@]}" >docs/agents/triage-labels.md
 fake_label_names
