@@ -13,11 +13,11 @@
 # ticket_sub_issues [--exit 2] <parent>: the parent's sub-issues as
 # adapter_sub_issues prints them - the listing the ticket commands read (#394),
 # save ticket_links_verified, which calls adapter_sub_issues itself so a failed
-# read can be retried rather than died on. Both failures die with status 1, or
-# 2 under --exit 2, in the gh failure contract's own grammar (#1106): a parent
-# that is no plain number, refused before asking GitHub, and a GitHub that
-# cannot list them. The parent check always dies through die, status 1: --exit
-# is passed on to gh_or_die as given, which checks it, and sets only its status.
+# read can be retried rather than died on. A parent that is no plain number is
+# refused before asking GitHub, always through die, status 1. A GitHub that
+# cannot list them dies in the gh failure contract's own grammar (#1106): status
+# 1, or 2 under --exit 2, which is passed on to gh_or_die as given, which checks
+# it, and sets only that status.
 ticket_sub_issues() {
   local exit_opt=()
   if [ "${1-}" = --exit ]; then

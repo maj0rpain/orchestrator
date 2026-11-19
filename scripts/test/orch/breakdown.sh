@@ -102,7 +102,7 @@ assert_not_contains "without the create message" "$out" "the create failed"
 assert_eq "the ticket is created but never linked" "$(fake_sub_issues_of 50)" ""
 restore_suite_env
 
-# A failed link read-back or listing read names the ticket, fresh or resumed.
+# A failed link read-back or listing read names the ticket.
 breakdown_fixture
 printf '@@ ticket 1 Only\nx\n@@ end\n' >"$draft"
 fake_fail_after adapter_sub_issues 1
@@ -112,7 +112,6 @@ assert_contains "naming the ticket and the link step" "$out" "ticket 1 of the dr
 assert_not_contains "never the old message" "$out" "the publish failed"
 fake_unfail
 restore_suite_env
-breakdown_fixture
 breakdown_fixture
 printf '@@ ticket 1 Only\nx\n@@ end\n' >"$draft"
 fake_fail adapter_sub_issues

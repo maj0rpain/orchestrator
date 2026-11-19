@@ -104,7 +104,7 @@
 0	1	branch: unknown op	09ccbeff10e543f91244486e12686159f5541c9f
 2	3	branch retire beside a same-named tag (#2337)	4b6ee64b25b98b5c750805fad89df265fe42adb9
 13	8	branch create and branch off beside a same-named tag (#2337)	c7cda0ea0bd3fe50a3589436dfaec771f958366f
-49	35	breakdown publish	0032b7ffa4132a0716c8c6286867ff3077a2e657
+47	33	breakdown publish	06e062e1f136bd148b926cae1ce00aa44fc8dfa3
 23	16	breakdown publish rewrites ## Blocked by	eca2fdd84bd9ad7527f6c1b3c8159b25d4c7067d
 2	3	breakdown state	3e39b6801eb24af84b286c35b744133ff1735fa8
 1	1	breakdown state: no repo (#3050)	2f1b42960d147fd5c2e2fb6b77cbd1bbe709b6fd
