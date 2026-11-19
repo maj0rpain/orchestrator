@@ -3491,19 +3491,19 @@ check "each audit skill's Hunt step runs audit begin and names area-<k>.md" \
 # filing parses (audit.sh dies on a finding without it), the same token reading
 # the linter gives flag names and the closer's labels.
 scan_audit_rank_report() {
-  local r="$1" skill cats cat section
+  local r="$1" skill cats cat report rank
   files_present "$r" "${AUDIT_SKILLS[@]}"
   for skill in "${FILES_PRESENT[@]}"; do
-    section="$(step_section "$r/$skill" Report)"
-    [[ "$section" == *'audit report'* ]] || echo "$skill: the Report step does not run audit report"
+    report="$(step_section "$r/$skill" Report)"
+    [[ "$report" == *'audit report'* ]] || echo "$skill: the Report step does not run audit report"
     case "$skill" in
       */orch-audit-docs/*) cats="documentation" ;;
       */orch-audit-code/*) cats="bug enhancement" ;;
       */orch-audit-tests/*) cats="enhancement" ;;
     esac
-    section="$(step_section "$r/$skill" Rank)"
+    rank="$(step_section "$r/$skill" Rank)"
     for cat in $cats; do
-      [[ "$section" == *"Category: $cat"* ]] || echo "$skill: the Rank step does not state Category: $cat"
+      [[ "$rank" == *"Category: $cat"* ]] || echo "$skill: the Rank step does not state Category: $cat"
     done
   done
   return 0
@@ -3926,10 +3926,9 @@ scan_lens_description_starters() {
   for lens in $lenses; do lens_files+=("agents/orch-lens-$lens.md"); done
   files_present "$r" "${lens_files[@]}"
   for f in "${FILES_PRESENT[@]}"; do
-    lens="${f#agents/orch-lens-}" lens="${lens%.md}"
     desc="$(skill_description "$r/$f")"
     for skill in orch-flow orch-quick-implement; do
-      [ "$skill" = orch-quick-implement ] && [ "$lens" = fidelity ] && continue
+      [ "$skill" = orch-quick-implement ] && [ "$f" = agents/orch-lens-fidelity.md ] && continue
       grep -qF "$skill" <<<"$desc" || echo "$f: description does not name $skill"
     done
   done
