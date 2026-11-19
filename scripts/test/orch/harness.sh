@@ -310,6 +310,9 @@ helper_copies() {
       if (kind[f] == "src") return dfile[h] == f
       return kind[dfile[h]] != "sec" || dfile[h] == f
     }
+    function in_own_def(f, k, h) {
+      return f == dfile[h] && nline[f, k] >= dstart[h] && nline[f, k] <= dend[h]
+    }
     function finish(key, h,   n, b, first, last, i, one) {
       one = FNR == dstart[h]
       dend[h] = FNR
@@ -370,7 +373,7 @@ helper_copies() {
           for (j = 1; j <= m; j++) {
             h = hs[j]
             if (!in_scope(f, h) || k + blen[h] - 1 > nn[f]) continue
-            if (f == dfile[h] && nline[f, k] >= dstart[h] && nline[f, k] <= dend[h]) continue
+            if (in_own_def(f, k, h)) continue
             for (i = 1; i < blen[h] && ntext[f, k + i] == bline[h, i]; i++) ;
             if (i == blen[h]) report(f, nline[f, k], h)
           }
@@ -381,7 +384,7 @@ helper_copies() {
           f = files[a]
           if (!in_scope(f, h)) continue
           for (k = 1; k <= nn[f]; k++) {
-            if (f == dfile[h] && nline[f, k] >= dstart[h] && nline[f, k] <= dend[h]) continue
+            if (in_own_def(f, k, h)) continue
             if (index(ntext[f, k], single[h])) report(f, nline[f, k], h)
           }
         }
@@ -3512,6 +3515,15 @@ copies_tree() {
   (cd "$PLUGIN_ROOT/scripts/test" && cp "${SOURCEABLE_TEST_HELPERS[@]}" "${d%/orch}/") || return 1
   printf '%s\n' "$d"
 }
+# copies_reset: puts setup.sh and the sourceable helpers back as copies_tree
+# made them and removes the planted zz-*.sh, so each case starts from the same
+# tree without copying scripts/test/orch/ again.
+copies_reset() {
+  cp "$copies_pristine/setup.sh" "$copies_dir/setup.sh"
+  cp "$copies_pristine"/helpers/*.sh "${copies_dir%/orch}/"
+  rm -f "$copies_dir"/zz-*.sh
+  rm -f "${copies_dir%/orch}"/zz-*.sh
+}
 # copy_msg <copy file> <line> <helper> <defined in>: helper_copies' line for a
 # copy.
 copy_msg() {
@@ -3522,11 +3534,16 @@ copy_msg() {
 # spaces stripped.
 plant_append() { sed 's/^  //' >>"$1/$2"; }
 
+copies_dir="$(copies_tree)"
+copies_pristine="$(mktemp -d)"
+mkdir "$copies_pristine/helpers"
+cp "$copies_dir/setup.sh" "$copies_pristine/"
+cp "${copies_dir%/orch}"/*.sh "$copies_pristine/helpers/"
 out="$(helper_copies "$PLUGIN_ROOT/scripts/test/orch")"; st=$?
 assert_status "the real tree has no helper body copy" "$st" 0
 assert_eq "and prints nothing" "$out" ""
 
-copies_dir="$(copies_tree)"
+copies_reset
 plant_append "$copies_dir" setup.sh <<'PLANTED'
   planted_two() {
     local a="$1"
@@ -3554,9 +3571,8 @@ out="$(helper_copies "$copies_dir")"; st=$?
 assert_eq "two copies in two files print two lines, sorted" "$out" \
   "$(copy_msg zz-a.sh 3 planted_two setup.sh)
 $(copy_msg zz-b.sh 2 planted_two setup.sh)"
-rm -rf "${copies_dir%/orch}"
 
-copies_dir="$(copies_tree)"
+copies_reset
 plant_file "$copies_dir" zz-p.sh <<'PLANTED'
   planted_pre() {
     echo one
@@ -3577,9 +3593,8 @@ plant_file "$copies_dir" zz-q.sh <<'PLANTED'
 PLANTED
 out="$(helper_copies "$copies_dir")"; st=$?
 assert_eq "and the same body in another section file is left alone" "$out" "$(copy_msg zz-p.sh 7 planted_pre zz-p.sh)"
-rm -rf "${copies_dir%/orch}"
 
-copies_dir="$(copies_tree)"
+copies_reset
 plant_file "${copies_dir%/orch}" tally.sh <<'PLANTED'
   planted_tally() {
     echo t1
@@ -3602,9 +3617,8 @@ PLANTED
 out="$(helper_copies "$copies_dir")"
 assert_eq "a copy in setup.sh is reported as setup.sh:<line>" "$(printf '%s\n' "$out" | grep -c '^setup.sh:')" "1"
 assert_contains "at its line" "$out" "$(copy_msg setup.sh "$((n + 1))" planted_tally ../tally.sh)"
-rm -rf "${copies_dir%/orch}"
 
-copies_dir="$(copies_tree)"
+copies_reset
 plant_append "$copies_dir" setup.sh <<'PLANTED'
   planted_two() {
     local a="$1"
@@ -3624,9 +3638,8 @@ PLANTED
 out="$(helper_copies "$copies_dir")"; st=$?
 assert_status "inside a sourceable helper, a copy of that file's own helper fails" "$st" 1
 assert_eq "and a copy of a setup helper there is left alone" "$out" "$(copy_msg ../fifo.sh 5 planted_fifo ../fifo.sh)"
-rm -rf "${copies_dir%/orch}"
 
-copies_dir="$(copies_tree)"
+copies_reset
 plant_file "${copies_dir%/orch}" tally.sh <<'PLANTED'
   planted_ta() {
     echo x1
@@ -3648,9 +3661,8 @@ out="$(helper_copies "$copies_dir")"; st=$?
 assert_eq "a run equal to the bodies of two helpers prints a line for each" "$out" \
   "$(copy_msg zz-m.sh 2 planted_fi ../fifo.sh)
 $(copy_msg zz-m.sh 2 planted_ta ../tally.sh)"
-rm -rf "${copies_dir%/orch}"
 
-copies_dir="$(copies_tree)"
+copies_reset
 plant_append "$copies_dir" setup.sh <<'PLANTED'
   planted_l39() { echo abcdefghijklmnopqrstuvwxyzabcdefgh; }
   planted_l40() { echo 01234567890123456789012345678901234; }
@@ -3755,13 +3767,12 @@ assert_eq "only a marker naming the helper, with a reason, on the line just befo
   "$(copy_msg zz-l.sh 13 planted_two setup.sh)
 $(copy_msg zz-l.sh 6 planted_two setup.sh)
 $(copy_msg zz-l.sh 9 planted_two setup.sh)"
-rm -rf "${copies_dir%/orch}"
 
-copies_dir="$(copies_tree)"
+copies_reset
 rm -f "${copies_dir%/orch}/counting.sh"
 out="$(helper_copies "$copies_dir")"; st=$?
 assert_status "a sourceable helper missing beside the tree is a scan failure" "$st" 2
-rm -rf "${copies_dir%/orch}"
+rm -rf "${copies_dir%/orch}" "$copies_pristine"
 
 # --- gh op placement (#1037) --------------------------------------------------
 # gh_op_placement over the real scripts/, then over copies of it, each with a
