@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.30
+
+The Standing module removes a chain comment's temp body file in one way per path and drops the standing_comment_call wrapper. A refused re-entry marker now stops the re-entry before any write even in an `||` context, and a chain comment that cannot make its temp body file dies naming the writes that landed and that the claim stays held.
+
 ## 6.8.29
 
 The dev width hook's Post bail-outs share one `drop_snapshot_and_exit` helper. `fails_bin` moves into its own failing-command fixture, `scripts/test/fails.sh`, and the bash width hook tests now use it and loops in place of hand-written stand-ins. No behaviour changes.
