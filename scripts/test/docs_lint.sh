@@ -2312,9 +2312,13 @@ echo "no pipe into a quiet grep or head (#987, #1019)"
 # a scanned script that pipes into a quiet grep or into head, <text> the raw
 # line with leading whitespace trimmed.
 scan_early_exit_pipe() {
-  local f
-  while IFS= read -r f; do
-    F="$f" awk "$SHELL_CODE_AWK"'
+  local f files=()
+  while IFS= read -r f; do files+=("$f"); done < <(cd "$1" && find scripts -name '*.sh' 2>/dev/null | sort)
+  [ "${#files[@]}" -gt 0 ] || return 0
+  # One awk over every file: the pipe-continued state resets at each file's
+  # first line, as SHELL_CODE_AWK's own does.
+  (cd "$1" && awk "$SHELL_CODE_AWK"'
+      FNR == 1 { open = 0 }
       {
         t = $0; sub(/^[[:space:]]+/, "", t)
         shell_code_line($0)
@@ -2331,17 +2335,16 @@ scan_early_exit_pipe() {
           if ((k = index(g, SUBSEP)) && k < cut) cut = k
           m = split(substr(g, 1, cut - 1), w, /[[:space:]]+/)
           j = 1; while (j <= m && w[j] == "") j++
-          if (j <= m && w[j] ~ /^head([);&|]|$)/) { print ENVIRON["F"] ":" FNR ": " t; next }
+          if (j <= m && w[j] ~ /^head([);&|]|$)/) { print FILENAME ":" FNR ": " t; next }
           if (j > m || w[j] != "grep") continue
           for (j++; j <= m; j++) {
             o = w[j]; sub(/^["\047]+/, "", o)
             if (o ~ /^-[A-Za-z0-9]*[qm]/ || o ~ /^--(quiet|silent)$/ || o ~ /^--max-count(=|$)/) {
-              print ENVIRON["F"] ":" FNR ": " t; next
+              print FILENAME ":" FNR ": " t; next
             }
           }
         }
-      }' "$1/$f"
-  done < <(cd "$1" && find scripts -name '*.sh' 2>/dev/null | sort)
+      }' "${files[@]}")
   return 0
 }
 fixture="$(new_fixture)"
@@ -2375,7 +2378,14 @@ printf '%s\n' 'grep -q y <<<"$x"' >"$fixture/scripts/orch/herestring.sh"
 printf '%s\n' 'false || grep -q y f' >"$fixture/scripts/orch/oror.sh"
 printf '%s\n' '  # never write printf "%s" "$x" | grep -q y' >"$fixture/scripts/orch/comment.sh"
 printf '%s\n' 'echo "$x" | grep -q y' 'echo "$x" | head -n 1' >"$fixture/scripts/test/runner.sh"
-out="$(scan_early_exit_pipe "$fixture")"
+# An open pipe at one script's end is not carried into the next script.
+printf '%s\n' 'echo "$x" |' >"$fixture/scripts/orch/y-open-pipe.sh"
+printf '%s\n' 'grep -q y f' >"$fixture/scripts/orch/z-starts-grep.sh"
+pipe_awk="$(TMPDIR="$FIXTURES" counting_bin awk)"
+out="$(PATH="$pipe_awk:$PATH" scan_early_exit_pipe "$fixture")"
+assert_eq "the early-exit-pipe scan starts exactly one awk" "$(counting_starts "$pipe_awk" awk)" "1"
+spares "a trailing | at a script's end is not carried into the next script" \
+  "$out" '^scripts/orch/z-starts-grep\.sh:'
 flags "a pipe into grep -q is flagged" "$out" 'scripts/orch/flagged.sh:2: printf "%s\n" "$x" | grep -q y'
 flags "a pipe into grep -qxF is flagged, its leading whitespace trimmed" \
   "$out" 'scripts/orch/flagged.sh:3: printf "%s\n" "$x" | grep -qxF y'
@@ -4113,44 +4123,58 @@ routed_nouns() {
       for (i = 1; i <= n; i++) if (names[i] !~ /^-/) print names[i]
     }' "$1"
 }
-# noun_verbs <module> <noun>: one line per verb the noun dispatches - each name
-# on a top-level arm of the first case in the module's cmd_<noun> (- mapped to
-# _), its option spellings, the catch-all and nested cases' arms left out.
+# noun_verbs <root> <noun>...: one "<noun><TAB><verb>" line per verb each named
+# noun dispatches - each name on a top-level arm of the first case in cmd_<noun>
+# (- mapped to _) of its module, scripts/orch/<noun>.sh under the root, its
+# option spellings, the catch-all and nested cases' arms left out. A noun with
+# no module yields none; when no named noun has one, no awk starts.
 noun_verbs() {
-  [ -f "$1" ] || return 0
-  F="cmd_${2//-/_}" awk "$SHELL_CODE_AWK"'
-    BEGIN { fn = ENVIRON["F"] }
+  local r="$1" noun files=()
+  shift
+  for noun in "$@"; do
+    [ -f "$r/scripts/orch/$noun.sh" ] && files+=("scripts/orch/$noun.sh")
+  done
+  [ "${#files[@]}" -gt 0 ] || return 0
+  (cd "$r" && awk "$SHELL_CODE_AWK"'
+    FNR == 1 {
+      noun = FILENAME; sub(/^.*\//, "", noun); sub(/\.sh$/, "", noun)
+      fn = "cmd_" noun; gsub(/-/, "_", fn)
+      inf = 0; fin = 0; depth = 0; started = 0
+    }
     { shell_code_line($0) }
+    fin { next }
     sc_top && index(sc_code, fn "()") == 1 { inf = 1; next }
     !inf { next }
-    sc_top && sc_code ~ /^\}/ { exit }
+    sc_top && sc_code ~ /^\}/ { fin = 1; next }
     {
       if (depth == 1 && sc_top && match(sc_code, /^[[:space:]]+[a-z-][a-z|-]*\)/)) {
         arm = substr(sc_code, RSTART, RLENGTH - 1); gsub(/[[:space:]]/, "", arm)
         n = split(arm, names, "|")
-        for (i = 1; i <= n; i++) if (names[i] !~ /^-/) print names[i]
+        for (i = 1; i <= n; i++) if (names[i] !~ /^-/) print noun "\t" names[i]
       }
       t = sc_words; opens = gsub(/(^|[;[:space:]])case[[:space:]]/, "", t)
       t = sc_words; closes = gsub(/(^|[;[:space:]])esac([;[:space:])]|$)/, "", t)
       if (opens) started = 1
       depth += opens - closes
-      if (started && depth <= 0) exit
-    }' "$1"
+      if (started && depth <= 0) fin = 1
+    }' "${files[@]}")
 }
 # scan_cli_nouns <plugin root>: each routed noun in neither the table nor the
 # Exceptions section, and each verb out of step with its noun's row or
 # Exceptions.
 scan_cli_nouns() {
   local r="$1" orch="scripts/orch.sh" doc="docs/agents/cli-conventions.md" table exceptions noun
-  local bare row row_verbs module verbs verb
+  local bare row row_verbs module verbs verb nouns=() all_verbs
   table="$(md_section "$r/$doc" "## Current nouns" | grep -E '^[[:space:]]*\|')"
   exceptions="$(md_section "$r/$doc" "## Exceptions")"
   # The "Bare global commands" bullet, up to the next bullet.
   bare="$(awk '/^- \*\*Bare global commands\*\*/ { inb = 1; print; next } inb && /^- / { exit } inb' <<<"$exceptions")"
+  while IFS= read -r noun; do [ -n "$noun" ] && nouns+=("$noun"); done < <(routed_nouns "$r/$orch")
+  all_verbs="$(noun_verbs "$r" "${nouns[@]}")"
   while IFS= read -r noun; do
     [ -n "$noun" ] || continue
     module="scripts/orch/$noun.sh"
-    verbs="$(noun_verbs "$r/$module" "$noun")"
+    verbs="$(grep -- "^$noun"$'\t' <<<"$all_verbs" | cut -f2)"
     row="$(grep -E -- "^[[:space:]]*\|[[:space:]]*\`$noun\`" <<<"$table" | awk -v n=1 'NR<=n')"
     if [ -z "$row" ]; then
       if ! grep -qE -- "\`${noun}[\` ]" <<<"$exceptions"; then
@@ -4173,7 +4197,7 @@ scan_cli_nouns() {
       grep -qxF -- "$verb" <<<"$verbs" && continue
       echo "$doc: $noun verb $verb is in its Current nouns row but $module no longer dispatches it"
     done <<<"$row_verbs"
-  done < <(routed_nouns "$r/$orch")
+  done <<<"$(printf '%s\n' "${nouns[@]}")"
   return 0
 }
 fixture="$(new_fixture)"
@@ -4222,6 +4246,14 @@ spares "nested-case arms, option spellings, the catch-all and a later case are n
 spares "a row verb, a redo <verb> in Exceptions, and a hyphenated noun's verbs are spared" \
   "$out" '(base verb (set|show) |redo verb (review|spec) |widget-thing verb )'
 spares "a bare global command in Exceptions has no verbs to check" "$out" '(doctor|routed noun) '
+# noun_verbs over the verbs fixture: one awk for every named noun, each
+# module's verbs from its own cmd_<noun>, a noun with no module none.
+verbs_awk="$(TMPDIR="$FIXTURES" counting_bin awk)"
+assert_eq "noun_verbs prints one line per verb of each module, none for a noun with no module" \
+  "$(PATH="$verbs_awk:$PATH" noun_verbs "$fixture" base redo doctor widget-thing ghost)" \
+  "$(printf '%s\t%s\n' base set base show base extra redo review redo spec redo zap \
+    doctor check widget-thing go widget-thing stop)"
+assert_eq "noun_verbs started exactly one awk" "$(counting_starts "$verbs_awk" awk)" "1"
 # Planted fixtures for the shared code rule: a case/esac in a trailing comment
 # or a quoted string, and a quoted arm pattern, inside cmd_<noun>, and an
 # arm-shaped line in a heredoc or a multi-line string in main(), change
