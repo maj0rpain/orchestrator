@@ -98,7 +98,7 @@ assert_status "set refuses with no branch" "$st" 1
 # is counted at its stand-in; a flow whose state records no base makes the
 # note read the default too.
 reads="$(mktemp)"
-counted_orch() { (export GH_REPO=o/r; counted_adapter_run "$reads" "$(counting_defs adapter_repo_default_branch branch)" "$ORCH" "$@"); }
+counted_orch() { (export GH_REPO=o/r; default_reads_run "$reads" "$ORCH" "$@"); }
 read_count() { log_count "$reads"; }
 orch_gh_failing init counted >/dev/null
 fake_github

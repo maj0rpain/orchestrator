@@ -150,6 +150,13 @@ counting_defs() {
     "$1() { printf '%s %s\\n' '$2' \"\${1-}\" >>\"\$COUNT_LOG\"; fake_$1_read \"\$@\"; }"
 }
 
+# default_reads_run <log> <cmd>...: runs <cmd> with the adapter's default-branch
+# read appending a line to <log> per call, so log_count <log> is how many times
+# <cmd> asked GitHub for it. It seeds nothing: the caller sets the fake's answer.
+default_reads_run() {
+  counted_adapter_run "$1" "$(counting_defs adapter_repo_default_branch branch)" "${@:2}"
+}
+
 # log_count <log> [<tag>]: the lines in <log>, only those starting with "<tag> "
 # when a tag is given.
 log_count() {

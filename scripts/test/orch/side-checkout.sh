@@ -858,8 +858,7 @@ fake_pr_head 50 "$(git rev-parse quick/12-c2)"
 fake_online
 pr_reads="$(mktemp)"
 fake_default_branch main
-out="$(counted_adapter_run "$pr_reads" "$(counting_defs adapter_repo_default_branch branch)" \
-  orch_gh_failing side-checkout prune 2>&1)"
+out="$(default_reads_run "$pr_reads" orch_gh_failing side-checkout prune 2>&1)"
 assert_eq "prune reaches the default-branch read exactly once" "$(log_count "$pr_reads")" "1"
 assert_contains "and still removes the first finished side checkout" "$out" "removed side checkout $c1"
 assert_contains "and the second" "$out" "removed side checkout $c2"
@@ -1554,9 +1553,9 @@ restore_suite_env
 echo
 echo "side_checkout_marker_issue_into"
 healthy_repo
-mi_wt() { # <name> <marker content as printf format, or - for no marker>: a worktree; prints its path
+mi_wt() { # <name> <marker content as printf format, or - for no marker> [<parent dir>]: a worktree; prints its path
   local p gd
-  p="$(mktemp -d)/$1"
+  p="${3:-$(mktemp -d)}/$1"
   git worktree add -q "$p" -b "mi-$1"
   gd="$(git -C "$p" rev-parse --absolute-git-dir)"
   if [ "$2" != - ]; then printf "$2" >"$gd/orchestrator-side-checkout"; fi
@@ -1605,15 +1604,21 @@ mi_for_issue() { # <issue>: empties the git/cat logs, then runs side_checkout_fo
 }
 healthy_repo  # a fresh walk: only the side checkouts below are in it
 mi_dir="$(mktemp -d)"  # one parent, so the walk reaches s1..s5 in name order
-mi_wt_in() { # <name> <issue>: a side checkout under $mi_dir recording <issue>
-  git worktree add -q "$mi_dir/$1" -b "mi-in-$1"
-  printf '%s\n' "$2" >"$(git -C "$mi_dir/$1" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
-}
-mi_wt_in s1 9001
-mi_wt_in s2 9002
+mi_wt s1 '9001\n' "$mi_dir" >/dev/null
+mi_wt s2 '9002\n' "$mi_dir" >/dev/null
 mi_for_issue 9002 >/dev/null
 mi_two="$(counting_starts "$mi_git" git)"
-for mi_n in 3 4 5; do mi_wt_in "s$mi_n" "900$mi_n"; done
+# side-checkout list: one git process more for each added flow-less side
+# checkout (its holding line's branch read), and no more cat. It runs in this
+# repo between the for-issue runs, since each run empties the logs.
+mi_list_starts() {
+  : >"$mi_git/git.log"; : >"$mi_cat/cat.log"
+  PATH="$mi_git:$mi_cat:$PATH" "$ORCH" side-checkout list >/dev/null 2>&1
+}
+mi_list_starts
+mi_git2="$(counting_starts "$mi_git" git)"
+mi_cat2="$(counting_starts "$mi_cat" cat)"
+for mi_n in 3 4 5; do mi_wt "s$mi_n" "900$mi_n\\n" "$mi_dir" >/dev/null; done
 mi_last="$(mi_for_issue 9005)"
 mi_five="$(counting_starts "$mi_git" git)"
 assert_eq "side_checkout_for_issue starts as many git processes with five side checkouts as with two" "$mi_five" "$mi_two"
@@ -1621,25 +1626,8 @@ assert_eq "and starts no cat" "$(counting_starts "$mi_cat" cat)" "0"
 assert_eq "it prints the path of the side checkout recording the asked issue" "${mi_last##*/}" "s5"
 mi_st=0; mi_for_issue 9999 >/dev/null || mi_st=$?
 assert_status "an issue no side checkout records is not found" "$mi_st" 1
-restore_suite_env
-
-# side-checkout list: one git process more for each added flow-less side
-# checkout (its holding line's branch read), and no more cat.
 echo
 echo "side-checkout list cost per side checkout"
-healthy_repo
-mi_git="$(counting_bin git)"
-mi_cat="$(counting_bin cat)"
-mi_list_starts() {
-  : >"$mi_git/git.log"; : >"$mi_cat/cat.log"
-  PATH="$mi_git:$mi_cat:$PATH" "$ORCH" side-checkout list >/dev/null 2>&1
-}
-mi_wt l1 '7001\n' >/dev/null
-mi_wt l2 '7002\n' >/dev/null
-mi_list_starts
-mi_git2="$(counting_starts "$mi_git" git)"
-mi_cat2="$(counting_starts "$mi_cat" cat)"
-for mi_n in 3 4 5; do mi_wt "l$mi_n" "700$mi_n\\n" >/dev/null; done
 mi_list_starts
 assert_eq "list starts one more git process for each added side checkout" \
   "$(counting_starts "$mi_git" git)" "$((mi_git2 + 3))"
@@ -1690,15 +1678,14 @@ sc_clone
 fake_github
 fake_default_branch main
 db_reads="$(mktemp)"
-db_defs="$(counting_defs adapter_repo_default_branch branch)"
 
 # add, no base set, nothing for the sweep to judge: one ask.
-d1="$(counted_adapter_run "$db_reads" "$db_defs" orch_gh_failing side-checkout add d1 2>/dev/null)"
+d1="$(default_reads_run "$db_reads" orch_gh_failing side-checkout add d1 2>/dev/null)"
 assert_eq "add with no base set and an idle sweep asks exactly once" "$(log_count "$db_reads")" "1"
 
 # prune with no side checkout to walk: no ask, d1 removed first.
 git worktree remove --force "$d1"
-out="$(counted_adapter_run "$db_reads" "$db_defs" orch_gh_failing side-checkout prune 2>&1)"
+out="$(default_reads_run "$db_reads" orch_gh_failing side-checkout prune 2>&1)"
 assert_eq "prune walking no side checkout asks for the default branch zero times" "$(log_count "$db_reads")" "0"
 
 # prune over a finished flow-less quick checkout whose branch records its base
@@ -1711,7 +1698,7 @@ fake_pr 61 merged quick/21-d2 main
 fake_pr_head 61 "$(git rev-parse quick/21-d2)"
 fake_issue 21 closed
 fake_online
-out="$(counted_adapter_run "$db_reads" "$db_defs" orch_gh_failing side-checkout prune 2>&1)"
+out="$(default_reads_run "$db_reads" orch_gh_failing side-checkout prune 2>&1)"
 assert_contains "the finished quick checkout is still removed" "$out" "removed side checkout $d2"
 assert_eq "prune judging a recorded-base, closed-issue checkout asks zero times" "$(log_count "$db_reads")" "0"
 
@@ -1722,13 +1709,13 @@ sp_branch_off "$d3" quick/22-d3
 fake_pr 62 merged quick/22-d3 main
 fake_pr_head 62 "$(git rev-parse quick/22-d3)"
 fake_online
-out="$(counted_adapter_run "$db_reads" "$db_defs" orch_gh_failing side-checkout add d4 2>&1)"
+out="$(default_reads_run "$db_reads" orch_gh_failing side-checkout add d4 2>&1)"
 assert_contains "the sweep ran and removed the finished checkout" "$out" "removed side checkout $d3"
 assert_eq "add whose sweep needs the default asks exactly once" "$(log_count "$db_reads")" "1"
 
 # add with a base set and an idle sweep: no ask.
 git config orchestrator.base main
-out="$(counted_adapter_run "$db_reads" "$db_defs" orch_gh_failing side-checkout add d5 2>&1)"
+out="$(default_reads_run "$db_reads" orch_gh_failing side-checkout add d5 2>&1)"
 assert_eq "add with a base set and an idle sweep asks zero times" "$(log_count "$db_reads")" "0"
 git config --unset orchestrator.base
 rm -f "$db_reads"
