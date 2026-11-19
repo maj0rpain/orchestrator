@@ -116,8 +116,8 @@ hook_bash_stdin_script_is_stdin() {
 # leading VAR=value words, is `cat` with no file argument (only options other
 # than its info options, or `-`), `read`, `python`, `python3` or `node` whose
 # script is stdin (hook_bash_stdin_script_is_stdin: no arguments, options only,
-# or `-` before any no-read option or script - the first decisive word
-# decides), or
+# none of them a no-read option, or `-` before any no-read option or script -
+# the first decisive word decides), or
 # `bash`/`sh` with `-s` first - and the head holds no `<`, which would feed it.
 # A `|` feeds only the commands after it, so only the head is judged.
 # First-word matching only.
