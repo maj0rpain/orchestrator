@@ -1016,7 +1016,8 @@ autopilot_verdict() {
 # its state and labels from the listed row. Every read comes
 # before the first line is printed, so a failed read leaves no partial list.
 autopilot_candidates_run() {
-  # autopilot_verdict runs in a command substitution: load its modules once.
+  # autopilot_verdict calls standing_phase_labels_in inside $(...), which loads
+  # handoff in a subshell on every call: load both here once, in this shell.
   orch_load standing
   orch_load handoff
   local usage="usage: orch.sh autopilot candidates [<n>... | --all | --limit <k>]"
