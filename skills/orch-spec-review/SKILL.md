@@ -232,7 +232,8 @@ Run it in the foreground and wait for it (host capability *Run a long
 command*). It is a **re-callable command**: it blocks at most a bounded time and
 exits 75, with nothing on stdout, while a lens is still missing, and the same
 command run again carries on against the same total, so run it again each time
-it exits 75; never background it and sleep, poll or kill it. It blocks until
+it exits 75, and a call the host stops at its timeout is run again as one that
+exited 75 is; never background it and sleep, poll or kill it. It blocks until
 every named lens's findings file exists, so no lens's hand-back takes a turn of
 its own, and prints one line, `lenses back: <name> <count>, ...`. On exit 0,
 read the findings files. On a host whose lenses ran in this session, the files

@@ -634,8 +634,7 @@ exiting non-zero on the last two:
   restarts the fifteen-minute wait rather than inheriting what is left of the
   first, because a rerun restarts the checks - so this one path, once per loop,
   can wait longer than the cap. A second ask that times out is **unreachable**
-  like the first, and so is one the host kills when it cannot run it again (see
-  the end of this section).
+  like the first.
 - **failing**, at **Termination** in an autopilot flow: judge it before it
   is called a reason. Read `bash "$ORCH" review ci-log <pr>`. The failure needs
   a decision, a human reason, when any of these holds: it would fail on the
@@ -650,8 +649,7 @@ exiting non-zero on the last two:
   produced claims a verification that never happened.
 
 A `review ci` the host stops at its timeout is run again, as one that exited
-75 is: the total is kept. A host that kills the call and cannot run it again
-(the Junie fallback) leaves the CI **unreachable**.
+75 is: the total is kept.
 
 ## Termination
 
