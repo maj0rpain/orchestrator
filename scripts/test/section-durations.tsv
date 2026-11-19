@@ -104,8 +104,8 @@
 0	1	branch: unknown op	09ccbeff10e543f91244486e12686159f5541c9f
 2	3	branch retire beside a same-named tag (#2337)	4b6ee64b25b98b5c750805fad89df265fe42adb9
 13	8	branch create and branch off beside a same-named tag (#2337)	c7cda0ea0bd3fe50a3589436dfaec771f958366f
-41	46	breakdown publish	b1c287a3d8454c23e2182f13cc2422c31de5c901
-21	24	breakdown publish rewrites ## Blocked by	208d1493e0f08750366be029724fef34279d6561
+47	33	breakdown publish	06e062e1f136bd148b926cae1ce00aa44fc8dfa3
+23	16	breakdown publish rewrites ## Blocked by	eca2fdd84bd9ad7527f6c1b3c8159b25d4c7067d
 2	3	breakdown state	3e39b6801eb24af84b286c35b744133ff1735fa8
 1	1	breakdown state: no repo (#3050)	2f1b42960d147fd5c2e2fb6b77cbd1bbe709b6fd
 12	13	checkout (#1078)	85b65822bd5ebac5cdac093e84c0a28d92c25cc0
@@ -340,24 +340,24 @@
 62	47	ticket-worktree (#619)	38ccb610c7bc4ec08f55e4dfcf9fd369c142667e
 1	1	a ticket branch has no upstream (#1152)	bbc5298d4013eb4f017ecb7f6c59509725053f88
 2	3	the merged check beside a same-named tag (#2337)	b3482156347488560231482575e046eb972a8f39
-15	12	ticket publish	883f4068977864cb18ed1078bf88cf9a7e04714c
+15	12	ticket publish	5585cea50f503e622bc3274efcd40b993704e4e7
 17	12	ticket publish verify-then-die	bde39f8db8154191f2c407bc67db7879abe9340a
-10	9	ticket publish rewrites ## Blocked by	a825349edae47a8ba71524b6d2e1f9e30e3f0ffb
+6	5	ticket publish rewrites ## Blocked by	8ce4e8e3f89b2b60dfe7df7c984a40b237812b87
 7	6	ticket next	a4a7d26e1b29c7548861c339b08ddc5384f32b31
 5	5	ticket list	c87d266a90f270e0236bc3f4bff8329833c6bb52
 16	12	ticket close	ca52ca491cda30f740f719708bf4064c6584e22a
 9	7	ticket reset	96c5220e1d1bdfbfda38d8be3f23c54dee2e3a4e
-14	12	ticket report	6a3944c58873bdb0bd40444a6062185a08723ba5
+15	12	ticket report	6a3944c58873bdb0bd40444a6062185a08723ba5
 4	4	ticket parent	c2b2f87317dc0edfbc1d927eb765bb68272da97e
 16	14	ticket exists	1c21c83f7b37b6c3dfcfd779fade617fc9c591b1
-71	55	ticket block	4c5c3089758386224eae6bffe979611351849a2b
-48	36	ticket unblock	565d493dd2399a86d02fd6247635208f536f2bda
+73	54	ticket block	4c5c3089758386224eae6bffe979611351849a2b
+49	37	ticket unblock	565d493dd2399a86d02fd6247635208f536f2bda
 2	2	ticket retire: breakdown save point	0772ba43e346c0377dc2c1d5ab1cf1a73d76fcce
-7	7	ticket retire: untrusted comments	63af4127d5521853eb6111e092c05b54f068d042
+7	9	ticket retire: untrusted comments	63af4127d5521853eb6111e092c05b54f068d042
 0	1	ticket: unknown op	5f4ba4d168af2ac965ec141604fb776a9a0175e1
-17	12	ticket merge (#621)	3489a9afc6a27dcdedf624b3566888b18bbbac3d
-4	4	ticket merge beside a same-named tag (#2337)	8c68070ffd52a8830d9b1fd50431fd4db0b2f68a
-177	156	ticket reclaim (ADR-0054)	337f47e242db0b7a051702f11dbbdff63657ef9c
+17	14	ticket merge (#621)	3489a9afc6a27dcdedf624b3566888b18bbbac3d
+4	2	ticket merge beside a same-named tag (#2337)	8c68070ffd52a8830d9b1fd50431fd4db0b2f68a
+185	147	ticket reclaim (ADR-0054)	337f47e242db0b7a051702f11dbbdff63657ef9c
 1	1	ticket exists: no repo (#3050)	18f290c8db8140166817738f948443cd1b9a10dd
 22	20	trust module	cce71cee320a9a9df12b5d2fe25e74e2f6089609
 61	7	verification run	b92eb55e7297141889bf3ce64de443e5c897a452
