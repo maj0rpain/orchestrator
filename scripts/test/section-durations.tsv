@@ -39,7 +39,7 @@
 2	2	the gh fake, operation by operation (#3551)	1ce7bff3167463ac98f8d773be5eadb253da52f3
 66	72	agent	cddc69e5a268c5cd6ddfed15d957b78960ef77e3
 20	22	agent sync	b39ad35449afd2ba48dfe47fd1a68a53a2d8c22b
-3	4	agent copy marker and Junie field: no command per call	2a90944570501eb9df9e004a9fab0ff67c9dac60
+3	4	agent copy marker and Junie field: no command per call	7261e94ea71b44582780d728312d592266f2e005
 8	6	audit file	6bbf361e504ccaa9a3f0d45038632b66b03acc8a
 3	3	audit file duplicates	e5be439ac2451322b83945ad891f56ab378d67ca
 9	9	audit file refusals	b1a0484287eb30f5231deffb1dc76702c14536e3
