@@ -213,23 +213,24 @@ TICKET_TEARDOWN_BRANCH_FAILED=11
 # returns its own status, TICKET_TEARDOWN_WORKTREE_FAILED or
 # TICKET_TEARDOWN_BRANCH_FAILED, leaving what already happened in place.
 ticket_worktree_teardown() {
-  local _twt_facts="" _twt_unmerged=0 _twt_discard=0 _twt_have_wt=0
+  local facts="" own_branch="" _twt_unmerged=0 _twt_discard=0 _twt_have_wt=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) _twt_unmerged=1 ;;
       --discard) _twt_discard=1 ;;
       -*) die "ticket_worktree_teardown: unknown flag: $1" ;;
-      *) [ -z "$_twt_facts" ] || die "ticket_worktree_teardown: unexpected argument: $1"; _twt_facts="$1" ;;
+      *) [ -z "$facts" ] || die "ticket_worktree_teardown: unexpected argument: $1"; facts="$1" ;;
     esac
     shift
   done
-  [ -n "$_twt_facts" ] || die "usage: ticket_worktree_teardown <array> [--unmerged] [--discard]"
-  assoc_array_require ticket_worktree_teardown "$_twt_facts" _twt_
-  ticket_facts_require_parent "$_twt_facts"
-  local _twt_n_ref="${_twt_facts}[n]" _twt_path_ref="${_twt_facts}[path]" _twt_state_ref="${_twt_facts}[worktree]" \
-    _twt_own_ref="${_twt_facts}[own_branch]" _twt_exists_ref="${_twt_facts}[own_exists]"
+  [ -n "$facts" ] || die "usage: ticket_worktree_teardown <array> [--unmerged] [--discard]"
+  assoc_array_require ticket_worktree_teardown "$facts" _twt_
+  ticket_facts_require_parent "$facts"
+  local _twt_n_ref="${facts}[n]" _twt_path_ref="${facts}[path]" _twt_state_ref="${facts}[worktree]" \
+    _twt_own_ref="${facts}[own_branch]" _twt_exists_ref="${facts}[own_exists]"
   local _twt_n="${!_twt_n_ref}" _twt_path="${!_twt_path_ref}" _twt_state="${!_twt_state_ref}" \
-    _twt_own_branch="${!_twt_own_ref}" _twt_own_exists="${!_twt_exists_ref}"
+    _twt_own_exists="${!_twt_exists_ref}"
+  own_branch="${!_twt_own_ref}"
   # Only a worktree at $_twt_path itself: a leftover t<n> directory's enclosing
   # checkout is not ours to discard, abort or remove.
   [ "$_twt_state" != occupied ] \
@@ -248,14 +249,14 @@ ticket_worktree_teardown() {
     [ "$_twt_own_exists" = yes ] \
       || die "no ticket worktree or branch for ticket $_twt_n at $_twt_path"
   fi
-  [ "$_twt_unmerged" = 1 ] || ticket_branch_merged_or_die "$_twt_own_branch" "discard it"
+  [ "$_twt_unmerged" = 1 ] || ticket_branch_merged_or_die "$own_branch" "discard it"
   if [ "$_twt_have_wt" = 1 ]; then
     git worktree remove "$_twt_path" \
       || { warn "could not remove ticket worktree $_twt_path"; return "$TICKET_TEARDOWN_WORKTREE_FAILED"; }
   fi
   if [ "$_twt_own_exists" = yes ]; then
-    git branch -q -D "$_twt_own_branch" \
-      || { warn "could not delete branch $_twt_own_branch"; return "$TICKET_TEARDOWN_BRANCH_FAILED"; }
+    git branch -q -D "$own_branch" \
+      || { warn "could not delete branch $own_branch"; return "$TICKET_TEARDOWN_BRANCH_FAILED"; }
   fi
 }
 

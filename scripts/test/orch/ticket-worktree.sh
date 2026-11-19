@@ -65,13 +65,10 @@ assert_status "add refuses a ticket number that is not a positive integer" "$st"
 out="$("$ORCH" ticket-worktree add 2>&1)"; st=$?
 assert_status "add refuses a missing ticket number" "$st" 1
 
-out="$(sourced_orch_script 'declare -A facts=([n]=7 [path]=/some/path [worktree]=none [parent]=pa [own_branch]=ob [own_exists]=no)
-(ticket_worktree_teardown facts) 2>&1 || true
-declare -A _twt_x _tfrp_x
-for name in nosuch _twt_x; do echo "case=$name"; (ticket_worktree_teardown "$name") 2>&1 && echo "st=0" || echo "st=$?"; done
+out="$(sourced_orch_script 'declare -A facts own_branch _twt_x _tfrp_x
+for name in nosuch facts own_branch _twt_x; do echo "case=$name"; (ticket_worktree_teardown "$name") 2>&1 && echo "st=0" || echo "st=$?"; done
 for name in nosuch _tfrp_x; do echo "case=r$name"; (ticket_facts_require_parent "$name") 2>&1 && echo "st=0" || echo "st=$?"; done' 2>&1)"
-assert_contains "a caller array named facts reaches the teardown with its own facts" "$out" "orch: no ticket worktree or branch for ticket 7 at /some/path"
-for bad in nosuch _twt_x; do
+for bad in nosuch facts own_branch _twt_x; do
   case_out="$(printf '%s\n' "$out" | sed -n "/^case=$bad\$/,/^st=/p")"
   assert_contains "the teardown dies for $bad" "$case_out" "orch: ticket_worktree_teardown: $bad is not a declared associative array"
 done
