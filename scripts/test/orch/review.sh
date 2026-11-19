@@ -829,14 +829,16 @@ assert_status "a head that cannot be read keys the total by the PR alone: its ca
 fake_pr 7 open topic main
 # A secondary limit on a read before the wait is keyed (the PR's refs) ends the
 # call as still running within the block, not after ORCH_GH_LIMIT_WAIT.
+rm -rf "${ORCH_DIR_NAME:?}/wait"
 printf 'You have exceeded a secondary rate limit.\n' >"$ORCH_GH_FAKE_STORE/ratelimit"
-ORCH_GH_LIMIT_WAIT=30 ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=100 ORCH_WAIT_BLOCK=0.3 timeout 10 "$ORCH" review ci >/dev/null 2>&1; st=$?
+out="$(ORCH_GH_LIMIT_WAIT=30 ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=100 ORCH_WAIT_BLOCK=0.3 timeout 10 "$ORCH" review ci 2>/dev/null)"; st=$?
 rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
 assert_status "a limit met reading the PR's refs ends the call as still running within the block" "$st" 75
+assert_eq "with stdout empty and no total stored" "$out$(ls "${ORCH_DIR_NAME:?}/wait" 2>/dev/null)" ""
 rm -rf "${ORCH_DIR_NAME:?}/wait"
 for bad_block in soon 0 0.0; do
   out="$(ORCH_WAIT_BLOCK=$bad_block timeout 5 "$ORCH" review ci 2>&1)"; st=$?
-  assert_status "an ORCH_WAIT_BLOCK of $bad_block is refused" "$st" 1
+  assert_status "an ORCH_WAIT_BLOCK of $bad_block is refused" "$st" 2
 done
 assert_contains "naming the variable" "$out" "ORCH_WAIT_BLOCK"
 assert_contains "help names ORCH_WAIT_BLOCK and exit 75 for review ci" "$("$ORCH" help)" "75 - run it again; the 900 s total"
@@ -850,14 +852,14 @@ fake_checks_clear
 # else kills it. The leash is what makes this assertable: without the fix the
 # command never returns on its own.
 out="$(ORCH_CI_GRACE=oops timeout 5 "$ORCH" review ci 2>&1)"; st=$?
-assert_status "a grace that is not a number stops the command, not the clock" "$st" 1
+assert_status "a grace that is not a number stops the command, not the clock" "$st" 2
 assert_contains "naming the knob it could not read" "$out" "ORCH_CI_GRACE"
 
 # A zero interval passes for a number and still defeats the bound: `sleep 0`
 # returns at once and never advances the clock, so the loop polls as fast as
 # GitHub answers for the whole timeout.
 out="$(ORCH_CI_INTERVAL=0 timeout 5 "$ORCH" review ci 2>&1)"; st=$?
-assert_status "an interval of zero is refused rather than busy-polled" "$st" 1
+assert_status "an interval of zero is refused rather than busy-polled" "$st" 2
 assert_contains "saying the interval has to be above zero" "$out" "greater than zero"
 
 # The one direction this classifier must never fail in: an answer nobody could
@@ -1158,7 +1160,7 @@ fake_unfail
 
 state_fixture pr null
 out="$("$ORCH" review ci 2>&1)"; st=$?
-assert_status "refuses to classify checks on a PR that does not exist yet" "$st" 1
+assert_status "refuses to classify checks on a PR that does not exist yet" "$st" 2
 # require_value dies inside a command substitution, so what stops the command is
 # `set -e` on the assignment rather than the exit itself. Asserting the message
 # is what would catch the guard degrading into an empty PR number.
@@ -2260,11 +2262,17 @@ assert_first_line "as unreachable" "$out" "unreachable"
 pn 7 >/dev/null; st=$?
 assert_status "and the delivered total is then gone" "$st" 75
 out="$("$ORCH" review ci 7x 2>&1)"; st=$?
-assert_status "a non-number argument is refused" "$st" 1
+assert_status "a non-number argument is refused" "$st" 2
 assert_eq "with review ci-log's message shape" "$out" "orch: not a PR number: 7x"
 out="$("$ORCH" review ci '' 2>&1)"; st=$?
-assert_status "an empty argument is refused" "$st" 1
+assert_status "an empty argument is refused" "$st" 2
 assert_eq "with review ci-log's message" "$out" "orch: not a PR number: "
+out="$("$ORCH" review ci 7 8 2>&1)"; st=$?
+assert_status "an extra argument is refused" "$st" 2
+assert_eq "with the usage message" "$out" "orch: usage: orch.sh review ci [--no-wait] [<pr>]"
+out="$(ORCH_CI_GRACE=oops "$ORCH" review ci --no-wait 7 2>&1)"; st=$?
+assert_status "a bad ORCH_CI_GRACE is refused under --no-wait" "$st" 2
+assert_eq "with its message" "$out" "orch: ORCH_CI_GRACE is not a number: oops"
 out="$("$ORCH" review ci 99 --no-wait 2>&1)"; st=$?
 assert_status "an unknown PR number exits as unreachable" "$st" 1
 assert_first_line "printing unreachable" "$out" "unreachable"

@@ -267,10 +267,10 @@
 5	6	the multi-loop machinery is gone	8cbc8c9ee1a33748c9ad58440f05830134c73795
 45	49	review file	cb1f1cabf91630416daf9b520f1c1176bfa7a862
 14	15	review ready	3de42f3d7ace4ec6ce6ffa7c0883b3806733eed4
-132	76	review ci	67768cd834eb07a3dda28b9d8b7520371b15af5e
+181	77	review ci	0498a1df160ca2b124a80cda2009d4edc275b8f3
 13	12	the grace counts from the push (issue #475)	eb2a643a788b9b82800270785192827a831aab40
 34	25	review ci --no-wait	7cd90c7ae55ad5b4635aea29733ec2d5b6b3c650
-51	42	the grace is skipped on no evidence of CI (issue #476)	47adf5995cd35a720b31a17a50f1a4366fc237c7
+71	44	the grace is skipped on no evidence of CI (issue #476)	aa9c4716c669ff8dc35094bbe63d429e7568c8dc
 9	10	review rerun	39699a125cfcb488efe0e549d5a7f71549d25bc2
 5	6	review ci-log	062fdd89e41ebd54b3a937f0bb83e5fb59f09c4a
 24	26	review terminal	ca2ea3d29b491bbd745bc9d471c795455a3af693
@@ -282,7 +282,7 @@
 13	15	review standards (#1532)	51b9dc72c38a1bbf1bf3a35d98be00be13132d18
 9	10	review ready with a failed phase write (#1931)	66843fb4a3f090b55ec0719f4827cb02043c8277
 10	11	review reads its Flow state once	858b40aedf40f33288b10e3d1bfa6544501647e9
-44	16	review ci <pr>	90c19285497760d57fec976cb68d5dd02543818e
+48	17	review ci <pr>	59aee549440bee64046e96deac807f7a2303572c
 2	3	route show	0e4fc7b4e544565f4d6f0cc3b311a522ccf801b0
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
 40	42	side-checkout (#722)	af2be5feb612499e9c65d765d4e385133c64fdd4
