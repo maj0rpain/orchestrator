@@ -106,8 +106,9 @@ dir_stamp() { date -u +%Y%m%d-%H%M%S; }
 # overridable and the tests turn them down to fractions of a second; bash
 # arithmetic is integer only and would read a grace of 0.3 as 0. A fractional
 # `sleep` is a GNU/BSD extension rather than POSIX, which is a line this file
-# can hold because the fractions only ever come from a test - the shipped
-# defaults are whole seconds.
+# can hold because every platform the plugin runs on (Linux, macOS, Git Bash)
+# ships a sleep that takes one: the verification poll's shipped defaults are
+# fractional (0.2 s), and the tests turn the rest down to fractions.
 float_lt()  { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'; }
 # float_add <a> <b>: prints a + b to three decimal places.
 float_add() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f\n", a + b }'; }
@@ -115,6 +116,19 @@ float_add() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f\n", a + b }'; }
 # is_positive_int <v>: whether <v> is a whole number of 1 or more, leading
 # zeros allowed ("08" is 8). Each caller keeps its own reaction to a no.
 is_positive_int() { [[ "$1" =~ ^[0-9]+$ ]] && [ "$((10#$1))" -gt 0 ]; }
+
+# is_number <v>: whether <v> is a non-negative decimal number: digits with at
+# most one point, and at least one character. Each caller keeps its reaction.
+is_number() {
+  case "$1" in
+    ''|*[!0-9.]*|*.*.*|.) return 1 ;;
+  esac
+}
+
+# is_positive_number <v>: whether <v> is a number (is_number) above zero. Zero
+# is every character a zero or the point, however it is written - a glob cannot
+# say that without also matching 0.05.
+is_positive_number() { is_number "$1" && [ -n "${1//[0.]/}" ]; }
 
 # require_poll_knobs <var>... <interval-var>: dies unless every named variable
 # holds a number and the last, the poll interval, is greater than zero.
@@ -127,16 +141,10 @@ require_poll_knobs() {
   local k v interval="${!#}"
   for k in "$@"; do
     eval "v=\$$k"
-    case "$v" in
-      ''|*[!0-9.]*|*.*.*|.) die "$k is not a number: $v" ;;
-    esac
+    is_number "$v" || die "$k is not a number: $v"
   done
   eval "v=\$$interval"
-  # Every character is a zero or the point, so the value is zero however it was
-  # written - and a glob cannot say that without also matching 0.05.
-  case "${v//[0.]/}" in
-    '') die "$interval must be greater than zero: $v" ;;
-  esac
+  is_positive_number "$v" || die "$interval must be greater than zero: $v"
 }
 # temp_file_name <var>: sets <var> to a fresh, unpredictable path under the temp
 # directory, built from $RANDOM. temp_file_make takes every name from it, so a

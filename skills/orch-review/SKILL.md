@@ -597,8 +597,11 @@ Waited on **once per loop**, at **Termination**, and never inside an
 iteration: that would block a single session for most of an hour, and the fix
 commits are pushed as they land anyway.
 
-Run `bash "$ORCH" review ci` in the foreground and wait for it (host capability
-*Run a long command*); never background it and sleep, poll or kill it.
+`review ci` is a **re-callable command**. Run `bash "$ORCH" review ci` in the
+foreground and wait for it (host capability *Run a long command*), and run the
+same command again each time it exits 75, which means still running, never a
+word below; the fifteen-minute total is kept across calls. Never background it
+and sleep, poll or kill it.
 
 `bash "$ORCH" review ci` polls the PR's checks and prints one of four words,
 exiting non-zero on the last two:
@@ -625,12 +628,13 @@ exiting non-zero on the last two:
     **bounded stop**.
 
   On exit 0, record `bash "$ORCH" state set flake_rerun_used true` and ask
-  `review ci` again, run the same way (host capability *Run a long command*). A
+  `review ci` again, run the same way: re-called while it exits 75 (host
+  capability *Run a long command*). A
   second failure is a **bounded stop**. That second ask
   restarts the fifteen-minute wait rather than inheriting what is left of the
   first, because a rerun restarts the checks - so this one path, once per loop,
-  can wait longer than the cap. A second ask that times out or is killed is
-  **unreachable** like the first.
+  can wait longer than the cap. A second ask that times out is **unreachable**
+  like the first.
 - **failing**, at **Termination** in an autopilot flow: judge it before it
   is called a reason. Read `bash "$ORCH" review ci-log <pr>`. The failure needs
   a decision, a human reason, when any of these holds: it would fail on the
@@ -644,9 +648,8 @@ exiting non-zero on the last two:
   the cap. A **bounded stop**: marking a PR ready over a result nothing ever
   produced claims a verification that never happened.
 
-A `review ci` the host moves to the background at its timeout is still waited
-for, as that row says, and never started a second time. One the host kills at
-its timeout (the Junie fallback) is **unreachable**.
+A `review ci` the host stops at its timeout is run again, as one that exited
+75 is: the total is kept.
 
 ## Termination
 

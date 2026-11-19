@@ -1094,9 +1094,10 @@ fl_seed() {
   echo body >"$o/spec-review/1244/body.md"
   echo report >"$o/review-pass/quick-9-x/pass-1.md"
   echo area >"$o/audit/docs-20300101-000000/area-1.md"
-  mkdir -p "$o/breakdown/1244" "$o/reports"
+  mkdir -p "$o/breakdown/1244" "$o/reports" "$o/verification/abc"
   echo draft >"$o/breakdown/1244/draft.md"
   echo report >"$o/reports/1244.md"
+  echo 0 >"$o/verification/abc/status"
   [ "${2:-}" = side ] && return 0
   mkdir -p "$o/autopilot/run" "$o/autopilot/logs"
   echo 123 >"$o/autopilot/run/12.pid"
@@ -1111,7 +1112,7 @@ fl_kept() {
   assert_eq "$1: review-pass/<branch>/ stays in place with its files" \
     "$(on_disk "$2/.orchestrator/review-pass/quick-9-x/pass-1.md")" "present"
   local f
-  for f in audit/docs-20300101-000000/area-1.md autopilot/run/12.pid autopilot/limit autopilot/logs/12.log breakdown/1244/draft.md reports/1244.md; do
+  for f in audit/docs-20300101-000000/area-1.md autopilot/run/12.pid autopilot/limit autopilot/logs/12.log breakdown/1244/draft.md reports/1244.md verification/abc/status; do
     assert_eq "$1: $f stays in place" "$(on_disk "$2/.orchestrator/$f")" "present"
   done
 }
@@ -1124,7 +1125,7 @@ fl_archived() {
   done
   assert_eq "$1: no spec-review/ in the archive" "$(on_disk "$2/spec-review")" "absent"
   assert_eq "$1: no review-pass/ in the archive" "$(on_disk "$2/review-pass")" "absent"
-  for e in audit autopilot breakdown reports; do
+  for e in audit autopilot breakdown reports verification; do
     assert_eq "$1: no $e/ in the archive" "$(on_disk "$2/$e")" "absent"
   done
 }

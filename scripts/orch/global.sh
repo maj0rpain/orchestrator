@@ -781,6 +781,13 @@ orch.sh - deterministic operations for the orchestrator flow
                               with no entries, fails with an orch: message
   review ci                   classify the PR's checks: green, failing, none, or
                               unreachable; exits non-zero on the last two
+                              Blocks at most ORCH_WAIT_BLOCK seconds (default
+                              570; a value that is not a positive number is
+                              refused): still waiting, it prints nothing,
+                              says "orch: still running" on stderr and exits
+                              75 - run it again; the 900 s total counts from
+                              the first call, per PR and head commit, and is
+                              forgotten once an outcome is delivered
   review rerun <pr>           rerun the failed jobs of every Actions run
                               behind the failing checks review ci counts;
                               prints each run id. Exits 1 when a failing check
@@ -918,6 +925,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               missing after ORCH_SPEC_REVIEW_WAIT_TIMEOUT
                               seconds (default 900), polling every
                               ORCH_SPEC_REVIEW_WAIT_INTERVAL (default 5)
+                              Blocks at most ORCH_WAIT_BLOCK seconds per call
+                              (default 570): still waiting, nothing on stdout,
+                              "orch: still running" on stderr, exit 75 - run
+                              it again; the total counts from the first call,
+                              per directory and lenses, forgotten once an
+                              outcome is delivered
   spec-review prompt <dir> <lens>
                               print <lens>'s whole prompt, for the session
                               to pass unchanged: one "<label>: <path>" line
@@ -1075,14 +1088,45 @@ orch.sh - deterministic operations for the orchestrator flow
                               the attempt's branch and PR are retired too
                               (branch to -redo-<n>, PR closed, redo_count
                               bumped when a branch is retired)
+  verification run <command>  run <command>, one shell command line, with
+                              bash -c detached from this call, in a process
+                              group of its own, so stopping the call stops
+                              nothing. Blocks ORCH_WAIT_BLOCK seconds
+                              (default 570; a value that is not a positive
+                              number is refused). Finished in time: prints
+                              the command's stdout and stderr whole and exits
+                              with its status; a command that itself exits 75
+                              is delivered as exit 1 with an orch: line
+                              naming its real status. Still going: stdout
+                              empty, stderr "orch: still running after <n>s -
+                              run the same command again", exit 75. The same
+                              line run again on the same checkout, HEAD and
+                              working tree attaches to the live run, never
+                              starting a second; a finished result nobody
+                              collected is delivered once, forgotten only once
+                              printed whole, and the next call starts a fresh
+                              run. Nothing about a delivered run is kept.
+                              Working tree = tracked changes and unignored
+                              untracked files, by content; ignored files never
+                              count. A result or live run whose HEAD or tree
+                              changed is stale: the result is dropped, the live
+                              run stopped by its process group (TERM, then KILL
+                              after ORCH_VERIFICATION_GRACE, default 5 s), and a
+                              fresh run starts; another command's run is left
+                              alone. orchestrator.verification.timeout (git
+                              config, default 3600 s, fractions allowed) is the
+                              ceiling: a run past it is stopped and delivered as
+                              failed with an orch: line, exit 1. Records of
+                              checkouts that no longer exist are cleared by the
+                              next call
   status                      human-readable summary of this checkout's flow,
                               then one line for every other checkout holding
                               a flow and every side checkout
   archive                     move the live flow into .orchestrator/archive/,
                               leaving the entries that belong to no flow in
                               place: archive/, checkouts/, spec-review/, audit/,
-                              review-pass/, autopilot/, breakdown/ and
-                              reports/
+                              review-pass/, autopilot/, breakdown/,
+                              reports/, verification/ and wait/
                               (refuses, naming each, while a ticket worktree
                               is left under this checkout). In a side
                               checkout, the flow moves to the main checkout's

@@ -61,14 +61,20 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    record of what it wrote, and the driver blames later findings against
    them. Done when every item is fixed or on your could-not-fix list, and
    every listed site of a pattern finding is fixed or deferred.
-2. **Verify.** Run the **ticket verification** bare. Find it in the repo's
-   instructions (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`) yourself: a line
+2. **Verify.** Run the **ticket verification**. Find
+   it in the repo's instructions (`CLAUDE.md`, `AGENTS.md`,
+   `CONTRIBUTING.md`) yourself: a line
    reading `Ticket verification: <command>`. The prompt hands you only the full
    verification command; when the instructions name no ticket verification,
    run that one.
    Run it in the foreground and wait for it (host capability *Run a long
-   command*); never background it and sleep, poll or kill it. A run the host
-   moves to the background at its timeout is still waited for, as that row says.
+   command*), through `verification run`, a **re-callable command**:
+   `bash "<orch.sh>" verification run '<command>'` at the longest timeout, and
+   run the same line again while it exits 75, which means still running, never
+   a result. Never background it and sleep, poll or kill it. A call the host
+   stops is run again, as one that exited 75 is. The `Verification` line of
+   your report names the inner command, never the `verification run` call
+   around it.
    A local test failure is reported as flaky only after its section was
    rerun alone at least 3 times and passed every time; otherwise it is a
    failure. This is not the CI **Flake rerun**, which stays one per loop.
@@ -392,7 +398,7 @@ A reviewer whose report went missing twice is
 listed there as that axis's **missing look**. The fix SHAs listed here are
 what later iterations of this loop blame against.
 
-**Verification** names the bare command step 2 ran (the ticket
+**Verification** names the inner command step 2 ran (the ticket
 verification, or the handed full command when the repo names none).
 
 Each **Waiting to be filed** bullet carries the finding's location, as the

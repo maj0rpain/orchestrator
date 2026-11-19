@@ -101,7 +101,7 @@
 #     sections naming their autopilot phrases, the six agents' `## Stdin`
 #     sections naming `</dev/null`, host-capabilities' stdin row, the Run a long
 #     command sites (verifications and blocking waits) and host-capabilities'
-#     Run a long command row,
+#     Run a long command row, and the re-callable-term sites naming re-callable,
 #     and the turn-final reply sites docs/turn-final-reply.md and the glossary's
 #     Turn-final reply entry
 #   scan_dockerignore_secrets  .dockerignore lists each pattern of .gitignore's
@@ -2578,6 +2578,20 @@ check "host-capabilities has the Run a long command row" \
   "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/host-capabilities.md' "$long_row")"
 check "the Run a long command row marks Junie Unverified" \
   "$(scan_row_unverified "$PLUGIN_ROOT" 'Run a long command')"
+# Each site that runs a re-callable command names the term (ADR-0065), by
+# structure only: the Run a long command sites minus the audit's timing run,
+# which is not re-callable, plus the quick implementation's line, which is not
+# one of the Run a long command sites.
+recall_sites='agents/orch-implementer.md
+agents/orch-fixer.md
+agents/orch-resolver.md
+skills/orch-review-pass/SKILL.md
+skills/orch-quick-implement/SKILL.md
+docs/driver-loop.md
+skills/orch-review/SKILL.md
+skills/orch-spec-review/SKILL.md'
+check "each site that runs a re-callable command names the term" \
+  "$(scan_names_phrase "$PLUGIN_ROOT" "$recall_sites" 're-callable')"
 
 # --- autopilot docs (#1497) ---------------------------------------------------
 echo

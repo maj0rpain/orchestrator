@@ -91,9 +91,10 @@ fails is reported as failed, with no cost.
 When the repo's agent files document no single-part command, fall back to the
 suite's whole-run cost only: time the full-suite command once, the same way,
 and say that no part could be measured on its own.
-Run it in the foreground and wait for it (host capability *Run a long
-command*); never background it and sleep, poll or kill it. A run the host
-moves to the background at its timeout is still waited for, as that row says.
+Run it in the foreground at the longest timeout and wait for it (host capability
+*Run a long command*); never background it and sleep, poll or kill it. If the
+host moves it to the background at its timeout, wait for its notice and never
+start a second copy; a run the host stops is a failed run.
 
 ## 3. Partition
 

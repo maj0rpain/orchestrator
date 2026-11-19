@@ -125,8 +125,12 @@ caller's numbered steps.
   Evidence.
   A failure does not stop the run: **the judge** carries it.
   Run it in the foreground and wait for it (host capability *Run a long
-  command*); never background it and sleep, poll or kill it. A run the host
-  moves to the background at its timeout is still waited for, as that row says.
+  command*), through `verification run`, a **re-callable command**:
+  `bash "$ORCH" verification run '<command>'` at the longest timeout, run again
+  while it exits 75, which means still running. The command joined above is the
+  one argument, and the record and the Evidence name it, never the wrapper.
+  Never background it and sleep, poll or kill it. A call the host stops is run
+  again, as one that exited 75 is.
 
 Once loop step f has run, go **after loop step f**.
 

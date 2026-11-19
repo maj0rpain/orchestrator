@@ -158,12 +158,15 @@ archive_root() {
 # under the main checkout for the watcher), and the breakdown save points
 # (breakdown/<parent>/) and saved ticket reports (reports/<n>.md), which are
 # keyed by issue number and shared between a flow and flow-less work in the
-# same checkout. The rule: an entry a command creates for work that belongs to
-# no flow goes on this list; every other entry is the flow's, a spec phase's
+# same checkout, the verification runs' records and checkout identity token
+# (verification/), which key a command in a checkout whatever flow it is in,
+# and the stored totals of re-callable waits (wait/), which outlive the phase
+# that started them. The rule: an entry a command creates for work that belongs
+# to no flow goes on this list; every other entry is the flow's, a spec phase's
 # freely named round directories and a flow's spec review round directories
 # (spec-rounds/<k>/) included. The round marker lives in the handoff folder, so
 # it goes with it.
-FLOW_LESS_ENTRIES=(archive checkouts spec-review review-pass audit autopilot breakdown reports)
+FLOW_LESS_ENTRIES=(archive checkouts spec-review review-pass audit autopilot breakdown reports verification wait)
 
 # side_checkout_refuse_ticket_worktrees <root>: refuses while ticket worktrees
 # are left under the checkout at <root>, the one reason this module gives.

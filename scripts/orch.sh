@@ -190,6 +190,7 @@ main() {
     ticket)        cmd_ticket "$@" ;;
     ticket-worktree) cmd_ticket_worktree "$@" ;;
     side-checkout) cmd_side_checkout "$@" ;;
+    verification)  cmd_verification "$@" ;;
     review)        cmd_review "$@" ;;
     spec)          cmd_spec "$@" ;;
     spec-review)   cmd_spec_review "$@" ;;

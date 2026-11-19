@@ -751,6 +751,99 @@ assert_status "checks still pending at the cap stop the loop" "$st" 1
 assert_first_line "rather than being read as green" "$out" "unreachable"
 assert_contains "and it says the wait ran out" "$out" "still pending"
 
+# review ci is re-callable (#3498): each call blocks at most ORCH_WAIT_BLOCK
+# seconds and, while the wait is not over, exits 75 with nothing on stdout and
+# the still-running line, against a total counted from the first call and
+# kept between calls.
+rc_err="$(mktemp)"
+rc_ci() { ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=2 ORCH_WAIT_BLOCK=0.2 "$ORCH" review ci; }
+# rc_spend: three calls of 0.4 s each, 1.2 s of one wait's total, against a
+# timeout nothing reaches. rc_probe: one call of the same wait against a 1.5 s
+# timeout - the wait with 1.2 s behind it is over within the call (exit 1);
+# a wait starting its own total is still going at the end of it (exit 75).
+rc_spend() {
+  local _
+  for _ in 1 2 3; do
+    ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=100 ORCH_WAIT_BLOCK=0.4 "$ORCH" review ci >/dev/null 2>&1
+  done
+}
+rc_probe() { ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=1.5 ORCH_WAIT_BLOCK=0.4 "$ORCH" review ci >/dev/null 2>&1; }
+fake_checks_clear; fake_checks 7 all pending
+fake_pr_head 7 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+out="$(rc_ci 2>"$rc_err")"; st=$?
+assert_status "a wait not over within ORCH_WAIT_BLOCK exits 75" "$st" 75
+assert_eq "with nothing on stdout" "$out" ""
+assert_eq "and the still-running line on stderr" "$(cat "$rc_err")" \
+  "orch: still running after 0.2s - run the same command again"
+calls_until_delivered 30 "$rc_err" rc_ci
+assert_status "the calls go on to the total's timeout outcome" "$calls_st" 1
+assert_first_line "delivered as before" "$calls_out" "unreachable"
+assert_contains "naming the total" "$calls_out" "still pending after 2s"
+[ "$calls_n" -ge 2 ] && [ "$calls_n" -le 12 ] && rc_ok=yes || rc_ok="no ($calls_n calls)"
+assert_eq "the total of 2s spans several calls and ends them: it is inherited, not restarted" "$rc_ok" "yes"
+
+out="$(rc_ci 2>/dev/null)"; st=$?
+assert_status "a review ci asked again after the outcome starts a new total" "$st" 75
+
+fake_pr_head 7 cccccccccccccccccccccccccccccccccccccccc
+rc_ci >/dev/null 2>&1
+fake_checks_clear; fake_checks 7 all green
+out="$(rc_ci 2>&1)"; st=$?
+assert_status "a pending wait finishing delivers today's output" "$st" 0
+assert_first_line "green" "$out" "green"
+fake_checks_clear; fake_checks 7 all pending
+rc_spend
+fake_checks_clear; fake_checks 7 all green
+rc_ci >/dev/null 2>&1
+fake_checks_clear; fake_checks 7 all pending
+rc_probe; st=$?
+assert_status "a delivered wait is forgotten: the next one starts its own total" "$st" 75
+
+fake_pr_head 7 dddddddddddddddddddddddddddddddddddddddd
+rc_spend
+fake_pr_head 7 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+rc_probe; st=$?
+assert_status "a new head commit starts its own total and inherits none still pending" "$st" 75
+fake_pr_head 7 dddddddddddddddddddddddddddddddddddddddd
+rc_probe; st=$?
+assert_status "and the old head's total is still there for its own calls" "$st" 1
+
+fake_pr 8 open topic main
+fake_pr_head 8 dddddddddddddddddddddddddddddddddddddddd
+fake_checks 8 all pending
+state_fixture pr 8
+rc_probe; st=$?
+assert_status "a review ci for another PR starts its own total and inherits none still pending" "$st" 75
+state_fixture pr 7
+
+rm -f "$ORCH_GH_FAKE_STORE/prs/7/head"
+rc_spend
+# Calls top the one total up until it passes the cap (a slow machine takes more
+# calls to spend the block than a quiet one): a total restarted per call, 0.4 s
+# each against 1.5 s, would never end the wait.
+for _ in 1 2 3 4 5 6 7 8; do
+  rc_probe; st=$?
+  [ "$st" -eq 75 ] || break
+done
+assert_status "a head that cannot be read keys the total by the PR alone: its calls share one" "$st" 1
+fake_pr 7 open topic main
+# A secondary limit on a read before the wait is keyed (the PR's refs) ends the
+# call as still running within the block, not after ORCH_GH_LIMIT_WAIT.
+printf 'You have exceeded a secondary rate limit.\n' >"$ORCH_GH_FAKE_STORE/ratelimit"
+ORCH_GH_LIMIT_WAIT=30 ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=100 ORCH_WAIT_BLOCK=0.3 timeout 10 "$ORCH" review ci >/dev/null 2>&1; st=$?
+rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
+assert_status "a limit met reading the PR's refs ends the call as still running within the block" "$st" 75
+rm -rf "${ORCH_DIR_NAME:?}/wait"
+for bad_block in soon 0 0.0; do
+  out="$(ORCH_WAIT_BLOCK=$bad_block timeout 5 "$ORCH" review ci 2>&1)"; st=$?
+  assert_status "an ORCH_WAIT_BLOCK of $bad_block is refused" "$st" 1
+done
+assert_contains "naming the variable" "$out" "ORCH_WAIT_BLOCK"
+assert_contains "help names ORCH_WAIT_BLOCK and exit 75 for review ci" "$("$ORCH" help)" "75 - run it again; the 900 s total"
+rm -f "$rc_err"
+fake_pr 7 open topic main
+fake_checks_clear
+
 # The clocks are compared with awk, which compares a number against a
 # non-numeric string as strings - so a mistyped knob makes every comparison
 # true, and the one command written to be bounded polls GitHub until something

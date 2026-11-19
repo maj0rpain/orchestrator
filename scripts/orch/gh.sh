@@ -69,7 +69,9 @@ gh_capture_err() {
 # temp files, through the limit retry protocol (#2724) - the one copy of it: a
 # failed call goes through gh_limit_handle, a first secondary limit (status 2)
 # is retried once, a limit given up on (status 1) fails the call with the
-# handler's message in place of the command's stderr, and any other failure
+# handler's message in place of the command's stderr - or with nothing on
+# stderr, for the silent give-up of a re-callable wait (the mark
+# gh_limit_handle leaves) - and any other failure
 # keeps its stderr as it is. The command's status passes through, and so does
 # the stdout of the deciding attempt alone - the one whose outcome the call
 # returns - byte for byte from its file, never through a shell variable; an
@@ -104,7 +106,9 @@ gh_limit_retry() {
 #
 # gh_limit_handle is the one limit handler: the guard calls it on a failed
 # call, and the test fake's failing operations call it too. It never dies: the
-# failed call returns its own status, with the distinct message on stderr.
+# failed call returns its own status, with the distinct message on stderr -
+# except the silent give-up of a re-callable wait, which leaves a mark and no
+# message.
 
 # gh_limit_kind <stderr>: secondary for GitHub's secondary-limit wording,
 # "submitted too quickly" or an HTTP 429; primary for its primary-limit
@@ -144,7 +148,14 @@ gh_limit_reset() {
 # Status 0: no limit - the caller passes its failure through untouched.
 # Status 2: a first secondary limit, waited out (ORCH_GH_LIMIT_WAIT seconds,
 # default 60) - the caller retries once and calls this again with
-# <retry spent> 1.
+# <retry spent> 1. While a re-callable wait is open (wait_open set WAIT_FILE, or
+# review ci's provisional guard set it to its pending file by hand)
+# and what is left of ORCH_WAIT_BLOCK cannot hold that wait, the rest of the
+# block is slept, the mark "$WAIT_FILE.limited" is written and the status is 1
+# with no message, nothing recorded: the wait is not over, and its poll loop
+# (wait_limited_check) ends the call as still running (exit 75, total kept);
+# under the provisional guard review ci ends it with wait_exit_running, there
+# being no total to keep.
 # Status 1: a limit to give up on - a primary one, a secondary one met again
 # after the retry, or a first secondary one on a compound write (never
 # retried, so called with <retry spent> 1), handled as a primary one. The
@@ -152,11 +163,26 @@ gh_limit_reset() {
 # reset, is on stderr; in an autopilot process the reset is also recorded
 # (autopilot_github_limit_record), a failed write being one more line on stderr.
 gh_limit_handle() {
-  local kind reset
+  local kind reset nap left
   kind="$(gh_limit_kind "$1")"
   [ -n "$kind" ] || return 0
   if [ "$kind" = secondary ] && [ "$2" = 0 ]; then
-    sleep "${ORCH_GH_LIMIT_WAIT:-60}"
+    nap="${ORCH_GH_LIMIT_WAIT:-60}"
+    # A re-callable wait is open (wait_open ran): its call never blocks past
+    # ORCH_WAIT_BLOCK, so a limit wait the block cannot hold ends the call as
+    # still running, not as a retry that meets the limit again. The wait is
+    # open only where WAIT_FILE is set, by wait_open or by review ci's
+    # provisional guard: the stubbed wait_nap of every other command is never
+    # reached.
+    if [ -n "${WAIT_FILE:-}" ]; then
+      left="$(wait_nap "$nap" "$(wait_block_spent 0)")"
+      if float_lt "$left" "$nap"; then
+        float_lt 0 "$left" && sleep "$left"
+        : >"$WAIT_FILE.limited"
+        return 1
+      fi
+    fi
+    sleep "$nap"
     return 2
   fi
   reset="$(gh_limit_reset)"

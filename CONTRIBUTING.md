@@ -52,7 +52,8 @@ for `scripts/orch/checkout.sh`, `comments.sh` for `scripts/orch/comments.sh`,
 `marked-comment.sh` for
 `scripts/orch/marked-comment.sh`, `session-log.sh` for
 `scripts/orch/session-log.sh`, `standing.sh` for
-`scripts/orch/standing.sh`, `trust.sh` for `scripts/orch/trust.sh`. A
+`scripts/orch/standing.sh`, `trust.sh` for `scripts/orch/trust.sh`,
+`wait.sh` for `scripts/orch/wait.sh`. A
 ticket's tests go in the file for the noun it touches; a new
 noun gets a new file, which the runner picks up with no edit. A noun file holds
 only `# ---` sections, optionally preceded by a preamble: the text before its
@@ -256,10 +257,11 @@ session log naming),
 `marked-comment.sh` (the Marked comment module: writing and reading
 the issue comments whose first line names their kind), `session-log.sh` (the
 Session log module: what a phase session's log says about usage limits, read
-in one pass) and `standing.sh` (the
-Standing module: an issue's label set, its read and its claims) and `trust.sh`
+in one pass), `standing.sh` (the
+Standing module: an issue's label set, its read and its claims), `trust.sh`
 (the Trust module: which comments and which PRs orch.sh reads and which issues
-autopilot runs on), live among the modules too.
+autopilot runs on) and `wait.sh` (the Wait module: a re-callable wait's stored
+total and the wall-time block of each call), live among the modules too.
 `scripts/orch/loader.sh` (beside `common.sh`, always loaded) holds the loader:
 the stub table, its per-copy cache under `~/.cache/orchestrator/`, the stub
 dispatch (`orch_stubs`, `orch_stub`), `orch_load`, which sources a module once
@@ -524,6 +526,7 @@ scripts/orch/marked-comment.sh the Marked comment module, a concept module with 
 scripts/orch/session-log.sh   the Session log module, a concept module with no noun: what a phase session's log says about usage limits - one pass over the log, its limit stop, reset, early pause and final reply
 scripts/orch/standing.sh      the Standing module, a concept module with no noun: where an autopilot flow's issue stands - the label set, the host id, the read and the claims
 scripts/orch/trust.sh         the Trust module, a concept module with no noun: which comments and which PRs orch.sh reads and which issues autopilot runs on - the one filter dropping a comment whose author is not an owner, member or collaborator, the one filter dropping a fork PR, and the issue trust check
+scripts/orch/wait.sh          the Wait module, a concept module with no noun: a re-callable wait's stored total, and the wall-time block each of its calls keeps
 scripts/orch/global.sh        the bare global commands with no module of their own (slug, status, archive, help)
 scripts/orch/common.sh        the primitives no concept owns (die, capture, ...)
 scripts/orch/loader.sh        the module loader, always loaded beside common.sh: the stub table, its per-copy cache under ~/.cache/orchestrator/, the stub dispatch (orch_stubs, orch_stub), orch_load (once per shell) and the ORCH_LOAD_TRACE load trace
@@ -573,6 +576,7 @@ scripts/test/orch/marked-comment.sh the Marked comment module's sections, named 
 scripts/test/orch/session-log.sh    the Session log module's sections, named as the module is
 scripts/test/orch/standing.sh       the Standing module's sections, named as the module is
 scripts/test/orch/trust.sh          the Trust module's sections, named as the module is
+scripts/test/orch/wait.sh           the Wait module's sections, named as the module is
 docs/how-it-works.md          the phases, every command in full, the base branch, hosts, and activation
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
 docs/driver-loop.md           the driver loop (loop steps a-f, its slots, dispatching a subagent) the implement phase and a quick implementation both run

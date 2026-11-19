@@ -1129,6 +1129,20 @@ fake_checks_clear() { rm -rf "$ORCH_GH_FAKE_STORE/checks"; }
 # scope or not; 0 when never read.
 fake_checks_reads() { fake_lines_count "$ORCH_GH_FAKE_STORE/checks/$1/reads"; }
 
+# calls_until_delivered <max> <err-file> <command>...: runs the command until
+# its status is not 75 (a re-callable command still going), at most <max>
+# times. It sets calls_n (the calls made), calls_out (the last call's stdout)
+# and calls_st (its status); the last call's stderr is left in <err-file>.
+calls_until_delivered() {
+  local max="$1" err="$2"
+  shift 2
+  calls_n=0 calls_out="" calls_st=75
+  while [ "$calls_st" = 75 ] && [ "$calls_n" -lt "$max" ]; do
+    calls_out="$("$@" 2>"$err")"; calls_st=$?
+    calls_n=$((calls_n + 1))
+  done
+}
+
 # fake_default_branch <answer>: seeds gh's answer to the repo's default branch,
 # byte for byte, so a test can seed a polluted or empty one.
 fake_default_branch() { printf '%s' "$1" >"$ORCH_GH_FAKE_STORE/default_branch"; }

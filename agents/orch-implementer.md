@@ -123,16 +123,20 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    and carry on. Before writing tests, read any test-helpers reference or
    helper index the repo's agent files (`CLAUDE.md`, `AGENTS.md`) point to.
 3. **Verify as you go**: run typechecking and single test files regularly,
-   and the repo's **ticket verification** once, at the end, bare.
+   and the repo's **ticket verification** once, at the end.
    Find the ticket verification where you find the full verification, in the
    repo's instructions (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`): a line
    reading `Ticket verification: <command>`. When they name none, run the
    repo's full verification instead, its `Full verification: <command>` line or
-   the command they document. The report's `Verification` line names the
-   command you ran.
+   the command they document.
    Run it in the foreground and wait for it (host capability *Run a long
-   command*); never background it and sleep, poll or kill it. A run the host
-   moves to the background at its timeout is still waited for, as that row says.
+   command*), through `verification run`, a **re-callable command**:
+   `bash "<orch.sh>" verification run '<command>'` at the longest timeout, and
+   run the same line again while it exits 75, which means still running, never
+   a result. Never background it and sleep, poll or kill it. A call the host
+   stops is run again, as one that exited 75 is. The `Verification` line of
+   your report names the inner command, never the `verification run` call
+   around it.
    A local test failure is reported as flaky only after its section was
    rerun alone at least 3 times and passed every time; otherwise it is a
    failure. This is not the CI **Flake rerun**, which stays one per loop.
@@ -308,7 +312,7 @@ Evidence: <test name> - <one-line red failure>; ... | None
 ```
 
 - `Commits`: your commits' short SHAs, oldest first, space-separated.
-- `Verification`: the bare ticket-verification command (the full
+- `Verification`: the inner ticket-verification command (the full
   verification when the repo names no ticket verification).
 - `Criteria`: each unmet criterion in its ticket wording, shortened to fit
   the line, after `unmet:`; then each changed source file no test exercises,

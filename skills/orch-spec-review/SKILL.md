@@ -229,13 +229,15 @@ bash "$ORCH" spec-review wait <dir> <lens>...
 ```
 
 Run it in the foreground and wait for it (host capability *Run a long
-command*); never background it and sleep, poll or kill it. A wait the host
-moves to the background at its timeout is still waited for, as that row says,
-and never started a second time. It blocks until every named lens's findings
-file exists, so no lens's hand-back takes a turn of its own, and prints one
-line, `lenses back: <name> <count>, ...`. On exit 0, read the findings files.
-On a host whose lenses ran in this session, the files already exist and it
-returns at once.
+command*). It is a **re-callable command**: it blocks at most a bounded time and
+exits 75, with nothing on stdout, while a lens is still missing, and the same
+command run again carries on against the same total, so run it again each time
+it exits 75, and a call the host stops at its timeout is run again as one that
+exited 75 is; never background it and sleep, poll or kill it. It blocks until
+every named lens's findings file exists, so no lens's hand-back takes a turn of
+its own, and prints one line, `lenses back: <name> <count>, ...`. On exit 0,
+read the findings files. On a host whose lenses ran in this session, the files
+already exist and it returns at once.
 
 | Lens | Agent | Prompt |
 |---|---|---|
@@ -258,8 +260,9 @@ during it are now visible, and each lens it names as missing has failed. A
 failed lens's findings file, if it left an unreadable one, is removed; then
 the lens is spawned once more with the same prompt, and in the same response a
 second
-`spec-review wait` names only the respawned lenses, run the same way (host
-capability *Run a long command*). A second failure makes it
+`spec-review wait` names only the respawned lenses, run the same way: a
+**re-callable command**, run again while it exits 75 (host capability *Run a
+long command*). A second failure makes it
 **not run - <reason>**: it appears that way in the batch and in the
 changelog, and the review continues on the lenses that answered. Three
 lenses and a recorded gap is a spec review; a silent gap is not.
