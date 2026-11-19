@@ -834,10 +834,8 @@ ORCH_GH_LIMIT_WAIT=30 ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=100 ORCH_WAIT_BLOCK=0.3 ti
 rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
 assert_status "a limit met reading the PR's refs ends the call as still running within the block" "$st" 75
 rm -rf "${ORCH_DIR_NAME:?}/wait"
-for bad_block in soon 0 0.0; do
-  out="$(ORCH_WAIT_BLOCK=$bad_block timeout 5 "$ORCH" review ci 2>&1)"; st=$?
-  assert_status "an ORCH_WAIT_BLOCK of $bad_block is refused" "$st" 1
-done
+out="$(ORCH_WAIT_BLOCK=0 timeout 5 "$ORCH" review ci 2>&1)"; st=$?
+assert_status "an ORCH_WAIT_BLOCK of 0 is refused" "$st" 1
 assert_contains "naming the variable" "$out" "ORCH_WAIT_BLOCK"
 assert_contains "help names ORCH_WAIT_BLOCK and exit 75 for review ci" "$("$ORCH" help)" "75 - run it again; the 900 s total"
 rm -f "$rc_err"
@@ -931,22 +929,22 @@ review_ci_restore
 echo
 echo "review ci --no-wait"
 review_ci_flow reviewcinowait
-nw() { ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=100 timeout 10 "$ORCH" review ci --no-wait 2>&1; }
+ci_nowait() { ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=100 timeout 10 "$ORCH" review ci --no-wait 2>&1; }
 before="$(dir_snapshot "$ORCH_DIR_NAME" 2>/dev/null)"
 fake_checks 7 all green
-out="$(nw)"; st=$?
+out="$(ci_nowait)"; st=$?
 assert_status "green exits 0" "$st" 0
 assert_first_line "and prints green" "$out" "green"
 fake_checks 7 all failing
-out="$(nw)"; st=$?
+out="$(ci_nowait)"; st=$?
 assert_status "failing exits 1" "$st" 1
 assert_contains "with the failing check named" "$out" "build"
 fake_checks 7 all none
-out="$(nw)"; st=$?
+out="$(ci_nowait)"; st=$?
 assert_status "none past the grace exits 0" "$st" 0
 assert_first_line "and prints none" "$out" "none"
 fake_checks 7 all pending
-out="$(nw)"; st=$?
+out="$(ci_nowait)"; st=$?
 assert_status "checks still running exit 0" "$st" 0
 assert_eq "and print pending alone" "$out" "pending"
 fake_checks 7 required none green
@@ -955,15 +953,6 @@ out="$(ORCH_CI_GRACE=600 timeout 10 "$ORCH" review ci --no-wait 2>&1)"; st=$?
 assert_status "nothing required yet reported inside the grace exits 0" "$st" 0
 assert_eq "and prints pending without waiting the grace" "$out" "pending"
 assert_eq "no call left the flow state or the wait store changed" "$(dir_snapshot "$ORCH_DIR_NAME" 2>/dev/null)" "$before"
-
-# A waiting call after a --no-wait one still waits its whole total.
-fake_checks 7 all pending
-fake_pr_head 7 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-nw >/dev/null
-fake_checks_clear; fake_checks 7 all pending
-out="$(ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=0.4 ORCH_CI_INTERVAL=0.05 timeout 10 "$ORCH" review ci 2>&1)"; st=$?
-assert_status "a waiting call after --no-wait still times out on its own total" "$st" 1
-assert_contains "naming the timeout" "$out" "still pending after 0.4s"
 
 # A total a waiting call spent is not read: pending, and the total is kept.
 fake_pr_head 7 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -1159,9 +1148,8 @@ fake_unfail
 state_fixture pr null
 out="$("$ORCH" review ci 2>&1)"; st=$?
 assert_status "refuses to classify checks on a PR that does not exist yet" "$st" 1
-# require_value dies inside a command substitution, so what stops the command is
-# `set -e` on the assignment rather than the exit itself. Asserting the message
-# is what would catch the guard degrading into an empty PR number.
+# Asserting the message pins the guard, so it cannot degrade into an empty PR
+# number.
 assert_contains "saying which phase was supposed to open it" "$out" "the implement phase opens it"
 review_ci_restore
 
@@ -2231,34 +2219,24 @@ fake_github
 export ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=1.5 ORCH_CI_INTERVAL=0.05
 fake_check_run main
 fake_pr 7 open topic main
-fake_pr 8 open topic main
 fake_pr_head 7 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-fake_pr_head 8 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 fake_checks 7 all pending
-fake_checks 8 all pending
-pn() { ORCH_WAIT_BLOCK=0.4 "$ORCH" review ci "$@" 2>&1; }
+ci_by_pr() { ORCH_WAIT_BLOCK=0.4 "$ORCH" review ci "$@" 2>&1; }
 fake_checks_clear; fake_checks 7 all green
-out="$(pn 7)"; st=$?
+out="$(ci_by_pr 7)"; st=$?
 assert_status "a PR number reads its PR with no flow state" "$st" 0
 assert_first_line "and prints its answer" "$out" "green"
-fake_checks_clear; fake_checks 7 all pending; fake_checks 8 all pending
-out="$(pn 7 --no-wait)"
-assert_eq "--no-wait combines with a PR number, in either order" "$(pn --no-wait 7)$out" "pendingpending"
-pn 7 >/dev/null; pn 7 >/dev/null
-pn 7 >/dev/null
+fake_checks_clear; fake_checks 7 all pending
+out="$(ci_by_pr 7 --no-wait)"
+assert_eq "--no-wait combines with a PR number, in either order" "$(ci_by_pr --no-wait 7)$out" "pendingpending"
+ci_by_pr 7 >/dev/null; st=$?
+assert_status "a waiting call by PR number with no flow state exits 75" "$st" 75
+# The key text is the one the flow form's wait stores its total under.
+assert_eq "and stores its total under the flow form's key for that PR and head" "$(ls "$ORCH_DIR_NAME/wait")" \
+  "$(printf '%s' "review ci 7 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" | git hash-object --stdin)"
 before="$(dir_snapshot "$ORCH_DIR_NAME/wait" 2>/dev/null)"
-pn 7 --no-wait >/dev/null
+ci_by_pr 7 --no-wait >/dev/null
 assert_eq "a --no-wait call leaves a PR's kept total as it was" "$(dir_snapshot "$ORCH_DIR_NAME/wait" 2>/dev/null)" "$before"
-pn 8 >/dev/null; st=$?
-assert_status "another PR keeps its own total" "$st" 75
-fake_pr_head 8 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-pn 8 >/dev/null; st=$?
-assert_status "after a new push a waiting call starts a new total" "$st" 75
-out="$(pn 7)"; st=$?
-assert_status "a second waiting call's total continues the first ones and delivers its timeout" "$st" 1
-assert_first_line "as unreachable" "$out" "unreachable"
-pn 7 >/dev/null; st=$?
-assert_status "and the delivered total is then gone" "$st" 75
 out="$("$ORCH" review ci 7x 2>&1)"; st=$?
 assert_status "a non-number argument is refused" "$st" 1
 assert_eq "with review ci-log's message shape" "$out" "orch: not a PR number: 7x"

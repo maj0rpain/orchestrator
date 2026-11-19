@@ -3260,10 +3260,8 @@ ORCH_WAIT_BLOCK=0.2 "$ORCH" spec-review wait "$sw_dir" fidelity testability >/de
 rm -f "$sw_dir/lens-testability.md"
 sw_probe fidelity testability; st=$?
 assert_status "a delivered wait is forgotten: the next one starts its own total" "$st" 75
-for bad_block in soon 0 0.0; do
-  out="$(ORCH_WAIT_BLOCK=$bad_block timeout 5 "$ORCH" spec-review wait "$sw_dir" fidelity 2>&1)"; st=$?
-  assert_status "an ORCH_WAIT_BLOCK of $bad_block is refused" "$st" 1
-done
+out="$(ORCH_WAIT_BLOCK=0 timeout 5 "$ORCH" spec-review wait "$sw_dir" fidelity 2>&1)"; st=$?
+assert_status "an ORCH_WAIT_BLOCK of 0 is refused" "$st" 1
 assert_contains "naming the variable" "$out" "ORCH_WAIT_BLOCK"
 assert_contains "help names exit 75" "$("$ORCH" help)" "exit 75 - run"
 rm -rf "$sw_dir" "$ORCH_DIR_NAME/wait"

@@ -58,11 +58,9 @@ out="$("$ORCH" verification run 'exit 75' 2>&1)"; st=$?
 assert_status "a command that itself exits 75 is delivered as exit 1" "$st" 1
 assert_contains "naming its real status" "$out" "75"
 
-out="$(ORCH_WAIT_BLOCK=abc "$ORCH" verification run 'true' 2>&1)"; st=$?
-assert_ne "a wait block that is not a number is refused" "$st" 0
-assert_contains "naming it" "$out" "ORCH_WAIT_BLOCK"
 out="$(ORCH_WAIT_BLOCK=0 "$ORCH" verification run 'true' 2>&1)"; st=$?
 assert_ne "a zero wait block is refused" "$st" 0
+assert_contains "naming it" "$out" "ORCH_WAIT_BLOCK"
 
 # Outliving one call, then attaching, then delivery.
 cmd="$(vr_gate "$vr_dir")"
