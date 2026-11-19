@@ -51,30 +51,33 @@ $(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)
      Remove each with orch.sh ticket-worktree remove <n> first."
 }
 
-# ticket_facts <n> <prefix>: reads everything about ticket <n> once and only
-# reports, each fact into the caller's variable <prefix>_<name> (printf -v),
-# and writes no variable outside that prefix. <n> is already validated by the
-# caller. The facts:
-#   <prefix>_n          <n>, so the helpers handed only the prefix can name it
-#   <prefix>_path       where ticket <n>'s ticket worktree lives
-#   <prefix>_worktree   the worktree state, one word: worktree (one sits at the
-#                       path), gone (git's record names the path and nothing is
-#                       there), occupied (git's record names the path and
-#                       something that is not a worktree is there) or none (a
-#                       leftover directory with no record behind it is none)
-#   <prefix>_wt_branch  the branch checked out in the ticket worktree; empty
-#                       during a rebase and in every state but worktree
-#   <prefix>_parent     this checkout's current branch; empty on a detached HEAD
-#   <prefix>_own_branch the ticket's own branch <parent>--t<n>; ""
-#                       when parent is empty
-#   <prefix>_own_exists yes or no: whether own_branch exists
+# ticket_facts <n> <array>: reads everything about ticket <n> once and only
+# reports, each fact into the caller's associative array <array> (declared
+# with `local -A`) under its fact name, and writes nothing else. A <array>
+# that is not a declared associative array dies (assoc_array_require), never
+# becoming a silent global. <n> is already validated by the caller. The facts:
+#   n          <n>, so the helpers handed only the array can name it
+#   path       where ticket <n>'s ticket worktree lives
+#   worktree   the worktree state, one word: worktree (one sits at the
+#              path), gone (git's record names the path and nothing is
+#              there), occupied (git's record names the path and
+#              something that is not a worktree is there) or none (a
+#              leftover directory with no record behind it is none)
+#   wt_branch  the branch checked out in the ticket worktree; empty
+#              during a rebase and in every state but worktree
+#   parent     this checkout's current branch; empty on a detached HEAD
+#   own_branch the ticket's own branch <parent>--t<n>; ""
+#              when parent is empty
+#   own_exists yes or no: whether own_branch exists
 # Reads git's record of the checkouts on every call and dies, exit 1, only
 # when it cannot be read, never reading that as none. Called as a bare
-# statement, so that die stops the caller.
+# statement, so that die stops the caller. Each fact is assigned by eval on
+# the validated name, its value passed by reference, never interpolated.
 ticket_facts() {
-  local _tf_n="$1" _tf_prefix="$2" _tf_path _tf_state=none _tf_wt="" _tf_parent="" _tf_own="" _tf_exists=no
+  local _tf_n="$1" _tf_array="$2" _tf_path _tf_state=none _tf_wt="" _tf_parent="" _tf_own="" _tf_exists=no
   local paths=()
   local branches=()
+  assoc_array_require ticket_facts "$_tf_array" _tf_
   _tf_path="$(ticket_worktree_path "$_tf_n")"
   checkout_parse || checkouts_unreadable
   local _tf_i=-1 _tf_k
@@ -94,43 +97,43 @@ ticket_facts() {
     _tf_own="$(branch_name_ticket "$_tf_parent" "$_tf_n")"
     if git rev-parse --verify --quiet "refs/heads/$_tf_own" >/dev/null; then _tf_exists=yes; fi
   fi
-  printf -v "${_tf_prefix}_n" %s "$_tf_n"
-  printf -v "${_tf_prefix}_path" %s "$_tf_path"
-  printf -v "${_tf_prefix}_worktree" %s "$_tf_state"
-  printf -v "${_tf_prefix}_wt_branch" %s "$_tf_wt"
-  printf -v "${_tf_prefix}_parent" %s "$_tf_parent"
-  printf -v "${_tf_prefix}_own_branch" %s "$_tf_own"
-  printf -v "${_tf_prefix}_own_exists" %s "$_tf_exists"
+  eval "${_tf_array}[n]=\$_tf_n"
+  eval "${_tf_array}[path]=\$_tf_path"
+  eval "${_tf_array}[worktree]=\$_tf_state"
+  eval "${_tf_array}[wt_branch]=\$_tf_wt"
+  eval "${_tf_array}[parent]=\$_tf_parent"
+  eval "${_tf_array}[own_branch]=\$_tf_own"
+  eval "${_tf_array}[own_exists]=\$_tf_exists"
 }
 
-# ticket_facts_require_worktree <prefix> <state>...: dies, "no ticket worktree
-# for ticket <n> at <path>", unless the worktree state in <prefix>'s facts is
+# ticket_facts_require_worktree <array> <state>...: dies, "no ticket worktree
+# for ticket <n> at <path>", unless the worktree state in <array>'s facts is
 # one of the <state>s its caller accepts.
 ticket_facts_require_worktree() {
-  local state_var="$1_worktree" n_var="$1_n" path_var="$1_path" s
+  local state_ref="${1}[worktree]" n_ref="${1}[n]" path_ref="${1}[path]"
+  local state="${!state_ref}" n="${!n_ref}" path="${!path_ref}"
   shift
-  for s in "$@"; do
-    [ "${!state_var}" != "$s" ] || return 0
-  done
-  die "no ticket worktree for ticket ${!n_var} at ${!path_var}"
+  word_listed "$*" "$state" || die "no ticket worktree for ticket $n at $path"
 }
 
-# ticket_facts_require_wt_branch <prefix>: dies unless the ticket worktree in
-# <prefix>'s facts is on a branch.
+# ticket_facts_require_wt_branch <array>: dies unless the ticket worktree in
+# <array>'s facts is on a branch.
 ticket_facts_require_wt_branch() {
-  local branch_var="$1_wt_branch" path_var="$1_path"
-  [ -n "${!branch_var}" ] \
-    || die "ticket worktree ${!path_var} is not on a branch (detached HEAD)"
+  local branch_ref="${1}[wt_branch]" path_ref="${1}[path]"
+  local wt_branch="${!branch_ref}" path="${!path_ref}"
+  [ -n "$wt_branch" ] \
+    || die "ticket worktree $path is not on a branch (detached HEAD)"
 }
 
-# ticket_facts_require_parent <prefix>: dies unless this checkout is on a
+# ticket_facts_require_parent <array>: dies unless this checkout is on a
 # branch, through current_branch_or_die so that message keeps its one home.
 # That helper assigns the caller's `branch`, so the local `branch` below takes
 # its write and no caller's variable is touched.
 ticket_facts_require_parent() {
   # shellcheck disable=SC2034 # current_branch_or_die assigns it, so it stays local
-  local parent_var="$1_parent" branch
-  [ -z "${!parent_var}" ] || return 0
+  local parent_ref="${1}[parent]" branch
+  local parent="${!parent_ref}"
+  [ -z "$parent" ] || return 0
   current_branch_or_die
 }
 
@@ -159,22 +162,23 @@ ticket_branch_merged_or_die() {
 # after that takes the worktree and the branch back out before dying.
 cmd_ticket_worktree_add() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket-worktree add <n>"
-  local n f_n f_path f_worktree f_wt_branch f_parent f_own_branch f_own_exists
+  local n
+  local -A f
   n="$(ticket_worktree_number "$1")"
   ticket_facts "$n" f
   ticket_facts_require_parent f
-  local path="$f_path" parent="$f_parent" tbranch="$f_own_branch"
+  local path="${f[path]}" parent="${f[parent]}" own_branch="${f[own_branch]}"
   [ ! -e "$path" ] || die "ticket worktree $path already exists"
-  [ "$f_own_exists" = no ] || die "branch $tbranch already exists"
+  [ "${f[own_exists]}" = no ] || die "branch $own_branch already exists"
   exclude_orch_dirs
-  git branch -q --no-track "$tbranch" HEAD || die "could not create branch $tbranch"
-  if ! git worktree add -q "$path" "$tbranch" \
-     || ! forked_from_set "$tbranch" "$parent"; then
+  git branch -q --no-track "$own_branch" HEAD || die "could not create branch $own_branch"
+  if ! git worktree add -q "$path" "$own_branch" \
+     || ! forked_from_set "$own_branch" "$parent"; then
     # A freshly added worktree holds nothing of anyone's, so no force is
     # needed to take it back out; -D deletes the branch's config section too.
     if [ -e "$path" ]; then git worktree remove "$path" 2>/dev/null || true; fi
-    git branch -q -D "$tbranch" 2>/dev/null || true
-    die "could not add ticket worktree $path - removed branch $tbranch again"
+    git branch -q -D "$own_branch" 2>/dev/null || true
+    die "could not add ticket worktree $path - removed branch $own_branch again"
   fi
   note "$path"
 }
@@ -192,9 +196,9 @@ cmd_ticket_worktree_list() {
 TICKET_TEARDOWN_WORKTREE_FAILED=10
 TICKET_TEARDOWN_BRANCH_FAILED=11
 
-# ticket_worktree_teardown <prefix> [--unmerged] [--discard]: the one site that
+# ticket_worktree_teardown <array> [--unmerged] [--discard]: the one site that
 # tears a ticket worktree down, from the facts its caller read with
-# ticket_facts into <prefix>; it reads none itself. The branch it deletes is
+# ticket_facts into <array>; it reads none itself. The branch it deletes is
 # always the ticket's own, never one the worktree merely has checked out (that
 # one is left in place). --discard first discards the work in the worktree
 # under the label "ticket #<n>". --unmerged aborts a rebase in progress there
@@ -207,21 +211,21 @@ TICKET_TEARDOWN_BRANCH_FAILED=11
 # returns its own status, TICKET_TEARDOWN_WORKTREE_FAILED or
 # TICKET_TEARDOWN_BRANCH_FAILED, leaving what already happened in place.
 ticket_worktree_teardown() {
-  local prefix="" unmerged=0 discard=0 have_wt=0
+  local facts="" unmerged=0 discard=0 have_wt=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=1 ;;
       --discard) discard=1 ;;
       -*) die "ticket_worktree_teardown: unknown flag: $1" ;;
-      *) [ -z "$prefix" ] || die "ticket_worktree_teardown: unexpected argument: $1"; prefix="$1" ;;
+      *) [ -z "$facts" ] || die "ticket_worktree_teardown: unexpected argument: $1"; facts="$1" ;;
     esac
     shift
   done
-  [ -n "$prefix" ] || die "usage: ticket_worktree_teardown <prefix> [--unmerged] [--discard]"
-  ticket_facts_require_parent "$prefix"
-  local n_var="${prefix}_n" path_var="${prefix}_path" state_var="${prefix}_worktree" \
-    own_var="${prefix}_own_branch" exists_var="${prefix}_own_exists"
-  local n="${!n_var}" path="${!path_var}" state="${!state_var}" tbranch="${!own_var}" own_exists="${!exists_var}"
+  [ -n "$facts" ] || die "usage: ticket_worktree_teardown <array> [--unmerged] [--discard]"
+  ticket_facts_require_parent "$facts"
+  local n_ref="${facts}[n]" path_ref="${facts}[path]" state_ref="${facts}[worktree]" \
+    own_ref="${facts}[own_branch]" exists_ref="${facts}[own_exists]"
+  local n="${!n_ref}" path="${!path_ref}" state="${!state_ref}" own_branch="${!own_ref}" own_exists="${!exists_ref}"
   # Only a worktree at $path itself: a leftover t<n> directory's enclosing
   # checkout is not ours to discard, abort or remove.
   [ "$state" != occupied ] \
@@ -240,14 +244,14 @@ ticket_worktree_teardown() {
     [ "$own_exists" = yes ] \
       || die "no ticket worktree or branch for ticket $n at $path"
   fi
-  [ "$unmerged" = 1 ] || ticket_branch_merged_or_die "$tbranch" "discard it"
+  [ "$unmerged" = 1 ] || ticket_branch_merged_or_die "$own_branch" "discard it"
   if [ "$have_wt" = 1 ]; then
     git worktree remove "$path" \
       || { warn "could not remove ticket worktree $path"; return "$TICKET_TEARDOWN_WORKTREE_FAILED"; }
   fi
   if [ "$own_exists" = yes ]; then
-    git branch -q -D "$tbranch" \
-      || { warn "could not delete branch $tbranch"; return "$TICKET_TEARDOWN_BRANCH_FAILED"; }
+    git branch -q -D "$own_branch" \
+      || { warn "could not delete branch $own_branch"; return "$TICKET_TEARDOWN_BRANCH_FAILED"; }
   fi
 }
 
@@ -255,8 +259,8 @@ ticket_worktree_teardown() {
 # argument parsing over ticket_worktree_teardown, dying when there is no
 # worktree and exiting 1 when either removal step fails.
 cmd_ticket_worktree_remove() {
-  # shellcheck disable=SC2034 # ticket_facts fills the f_ facts
-  local n="" unmerged=() st=0 f_n f_path f_worktree f_wt_branch f_parent f_own_branch f_own_exists
+  local n="" unmerged=() st=0
+  local -A f
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=(--unmerged) ;;

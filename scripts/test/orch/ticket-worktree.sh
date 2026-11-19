@@ -161,7 +161,7 @@ assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
 
 # teardown_of <n> [flag...]: reads ticket <n>'s facts, then calls
 # ticket_worktree_teardown on them, in one sourced shell.
-teardown_of() { sourced_orch_script 'ticket_facts "$1" f; shift; ticket_worktree_teardown f "$@"' "$@"; }
+teardown_of() { sourced_orch_script 'declare -A f; ticket_facts "$1" f; shift; ticket_worktree_teardown f "$@"' "$@"; }
 # ticket_worktree_teardown, the one site that tears a worktree down. Called
 # through teardown_of (the facts read, then the teardown); checked through
 # what git shows.
@@ -260,7 +260,7 @@ assert_contains "naming the ticket" "$out" "no ticket worktree or branch for tic
 # Strict arguments.
 out="$(sourced_orch ticket_worktree_teardown 2>&1)"; st=$?
 assert_status "teardown without a prefix dies" "$st" 1
-assert_contains "with its usage" "$out" "usage: ticket_worktree_teardown <prefix> [--unmerged] [--discard]"
+assert_contains "with its usage" "$out" "usage: ticket_worktree_teardown <array> [--unmerged] [--discard]"
 out="$(sourced_orch ticket_worktree_teardown f --bogus 2>&1)"; st=$?
 assert_status "teardown dies on an unknown flag" "$st" 1
 assert_contains "naming it" "$out" "--bogus"
@@ -452,9 +452,10 @@ assert_eq "leaving no record" "$("$ORCH" ticket-worktree list)" ""
 tw_repo
 top="$(git rev-parse --show-toplevel)"
 facts_of() {
-  sourced_orch_script 'ticket_facts "$1" f 2>&1 || exit $?
+  sourced_orch_script 'declare -A f
+ticket_facts "$1" f 2>&1 || exit $?
 for k in n path worktree wt_branch parent own_branch own_exists; do
-  v="f_$k"; printf "%s=%s\n" "$k" "${!v}"
+  printf "%s=%s\n" "$k" "${f[$k]}"
 done' "$1"
 }
 fact() {
@@ -531,10 +532,23 @@ out="$(PATH="$(worktree_list_fails_bin):$PATH" facts_of 7)"; st=$?
 assert_status "the read dies on an unreadable record, nothing at the path" "$st" 1
 assert_not_contains "never reporting none" "$out" "worktree=none"
 
-out="$(sourced_orch_script 'branch=b path=p n=n parent=pa tbranch=tb
+out="$(sourced_orch_script 'declare -A f
+branch=b path=p n=n parent=pa wt_branch=wb own_branch=ob
 ticket_facts 7 f
-printf "%s %s %s %s %s" "$branch" "$path" "$n" "$parent" "$tbranch"' 2>&1)"
-assert_eq "a caller's branch, path, n, parent and tbranch survive the read" "$out" "b p n pa tb"
+printf "%s %s %s %s %s %s" "$branch" "$path" "$n" "$parent" "$wt_branch" "$own_branch"' 2>&1)"
+assert_eq "a caller's branch, path, n, parent, wt_branch and own_branch survive the read" "$out" "b p n pa wb ob"
+
+out="$(sourced_orch_script 'ticket_facts 7 nosuch' 2>&1)"; st=$?
+assert_status "ticket_facts dies for a name that is not declared" "$st" 1
+assert_contains "naming the array" "$out" "orch: ticket_facts: nosuch is not a declared associative array"
+out="$(sourced_orch_script 'declare -a f; ticket_facts 7 f' 2>&1)"; st=$?
+assert_status "ticket_facts dies for an indexed array" "$st" 1
+assert_contains "saying so" "$out" "orch: ticket_facts: f is not a declared associative array"
+for bad in paths branches _tf_n; do
+  out="$(sourced_orch_script "declare -A $bad; ticket_facts 7 $bad" 2>&1)"; st=$?
+  assert_status "ticket_facts dies for a caller array named $bad" "$st" 1
+  assert_contains "with the guard's message for $bad" "$out" "orch: ticket_facts: $bad is not a declared associative array"
+done
 
 git checkout -q --detach
 out="$(facts_of 7)"; st=$?

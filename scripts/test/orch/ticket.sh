@@ -21,6 +21,18 @@ ticket_fixture() {
 # Shared by this file's merge, same-named tag and reclaim sections.
 commit_file() { echo "$3" >"$1/$2" && git -C "$1" add "$2" && git -C "$1" commit -qm "$2: $3"; }
 
+# switched_ticket_worktree <n>: adds ticket <n>'s worktree, switches it to
+# other-<n> with its forked-from record set to orch/5-feature and one commit,
+# and prints its path. Shared by this file's close and merge sections.
+switched_ticket_worktree() {
+  local wt
+  wt="$("$ORCH" ticket-worktree add "$1")" || return 1
+  git -C "$wt" checkout -q -b "other-$1"
+  git config "branch.other-$1.orchestrator-ticket-parent" orch/5-feature
+  commit_file "$wt" "other$1.txt" one
+  printf '%s\n' "$wt"
+}
+
 # fake_unlag: every readback fake_lag_after named is current again.
 fake_unlag() { rm -rf "$ORCH_GH_FAKE_STORE/lag"; }
 
@@ -493,10 +505,7 @@ assert_eq "leaving the issue open" "$(fake_state_of 22)" "OPEN"
 
 # A ticket worktree with another branch checked out than the ticket's own.
 fake_issue 24 open
-wt="$("$ORCH" ticket-worktree add 24)"
-git -C "$wt" checkout -q -b other-24
-git config branch.other-24.orchestrator-ticket-parent orch/5-feature
-commit_file "$wt" other24.txt one
+wt="$(switched_ticket_worktree 24)"
 out="$("$ORCH" ticket close 24 2>&1)"; st=$?
 assert_status "close asks the merged check of the checked-out branch" "$st" 1
 assert_eq "leaving the issue open" "$(fake_state_of 24)" "OPEN"
@@ -1461,7 +1470,7 @@ rm -rf "$wt"
 tip7="$(git rev-parse orch/5-feature--t7)"
 out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
 assert_status "merge refuses a ticket worktree whose directory is gone" "$st" 1
-assert_contains "saying there is no ticket worktree" "$out" "no ticket worktree"
+assert_contains "saying there is no ticket worktree" "$out" "orch: no ticket worktree for ticket 7 at $wt"
 assert_eq "git's record is unchanged" "$("$ORCH" ticket-worktree list)" "7 $wt"
 assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t7)" "$tip7"
 git worktree prune
@@ -1504,10 +1513,7 @@ assert_eq "the forked-from branch is as it was" "$(git rev-parse orch/5-feature)
 assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t23)" "$t_tip"
 
 # A ticket worktree with another branch checked out than the ticket's own.
-wt="$("$ORCH" ticket-worktree add 24)"
-git -C "$wt" checkout -q -b other-24
-git config branch.other-24.orchestrator-ticket-parent orch/5-feature
-commit_file "$wt" other24.txt one
+wt="$(switched_ticket_worktree 24)"
 own_tip="$(git rev-parse orch/5-feature--t24)"
 out="$("$ORCH" ticket merge 24 2>&1)"; st=$?
 assert_status "merge lands the checked-out branch" "$st" 0

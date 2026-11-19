@@ -235,8 +235,7 @@ cmd_ticket_list() {
 # runs. Every refusal comes before any gh call, leaving the issue open.
 cmd_ticket_close() {
   local n="" unmerged=0 usage="usage: orch.sh ticket close <n> [--unmerged]"
-  # shellcheck disable=SC2034 # ticket_facts fills them; only some are read
-  local cf_n cf_path cf_worktree cf_wt_branch cf_parent cf_own_branch cf_own_exists
+  local -A cf
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=1 ;;
@@ -249,9 +248,9 @@ cmd_ticket_close() {
   case "$n" in *[!0-9]*) die "not a plain issue number: $n" ;; esac
   if [ "$unmerged" = 0 ]; then
     ticket_facts "$n" cf
-    if [ "$cf_worktree" = worktree ]; then
+    if [ "${cf[worktree]}" = worktree ]; then
       ticket_facts_require_wt_branch cf
-      ticket_branch_merged_or_die "$cf_wt_branch" "close it anyway"
+      ticket_branch_merged_or_die "${cf[wt_branch]}" "close it anyway"
     fi
   fi
   gh_or_die "close ticket #$n" adapter_issue_close "$n"
@@ -660,9 +659,8 @@ cmd_ticket() {
 # abort that fails, which leaves the ticket worktree mid-rebase.
 cmd_ticket_merge() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket merge <n>"
-  local n path branch parent parent_checkout rebase_err unmerged said
-  # shellcheck disable=SC2034 # ticket_facts fills them; only some are read
-  local mf_n mf_path mf_worktree mf_wt_branch mf_parent mf_own_branch mf_own_exists
+  local n path wt_branch parent parent_checkout rebase_err unmerged said
+  local -A mf
   # rebase_out is set by capture and only git's stderr is read.
   # shellcheck disable=SC2034
   local rebase_out
@@ -671,15 +669,15 @@ cmd_ticket_merge() {
   ticket_facts "$n" mf
   ticket_facts_require_worktree mf worktree
   ticket_facts_require_wt_branch mf
-  path="$mf_path"
-  branch="$mf_wt_branch"
-  parent="$(forked_from_branch "$branch")" \
-    || die "branch $branch records no forked-from branch"
+  path="${mf[path]}"
+  wt_branch="${mf[wt_branch]}"
+  parent="$(forked_from_branch "$wt_branch")" \
+    || die "branch $wt_branch records no forked-from branch"
   require_clean_tree "$path" \
     "ticket worktree $path is dirty - commit or discard its changes first"
   parent_checkout="$(branch_checkout "$parent")" || exit $?
   [ -n "$parent_checkout" ] \
-    || die "$parent, the branch $branch was forked from, is checked out nowhere - check it out first"
+    || die "$parent, the branch $wt_branch was forked from, is checked out nowhere - check it out first"
   require_clean_tree "$parent_checkout" \
     "$parent_checkout, the checkout of $parent, is dirty - commit or discard its changes first"
   if ! capture rebase_out rebase_err git -C "$path" rebase -q "refs/heads/$parent"; then
@@ -691,14 +689,14 @@ cmd_ticket_merge() {
         || die "could not abort the rebase in ticket worktree $path - it is left mid-rebase"
     fi
     if [ -n "$unmerged" ]; then
-      warn "rebasing $branch onto $parent hit a conflict - aborted; both branches are as they were"
+      warn "rebasing $wt_branch onto $parent hit a conflict - aborted; both branches are as they were"
       exit 3
     fi
     said="${rebase_err%%$'\n'*}"
-    die "rebasing $branch onto $parent failed: ${said:-git gave no reason}"
+    die "rebasing $wt_branch onto $parent failed: ${said:-git gave no reason}"
   fi
-  git -C "$parent_checkout" merge -q --ff-only "refs/heads/$branch" \
-    || die "could not fast-forward $parent to $branch in $parent_checkout"
+  git -C "$parent_checkout" merge -q --ff-only "refs/heads/$wt_branch" \
+    || die "could not fast-forward $parent to $wt_branch in $parent_checkout"
 }
 
 # ticket_reclaim_close <n> <parent>: closes ticket <n> if it is still open and
@@ -712,17 +710,18 @@ ticket_reclaim_close() {
   note "closed ticket #$n"
 }
 
-# ticket_reclaim_remove <prefix>: tears down the ticket worktree and branch in
-# <prefix>'s facts, discarding the work in the worktree first, when either
+# ticket_reclaim_remove <array>: tears down the ticket worktree and branch in
+# <array>'s facts, discarding the work in the worktree first, when either
 # exists. The facts are the caller's one read, so its notes follow from them and
 # nothing is probed afterwards. The teardown runs in a subshell, so a die in it
 # cannot end this command before the line below is printed; its status says
 # which step failed. A failure dies naming the ticket and the step.
 ticket_reclaim_remove() {
-  local n_var="$1_n" path_var="$1_path" wt_var="$1_worktree" own_var="$1_own_branch" exists_var="$1_own_exists"
-  local n="${!n_var}" path="${!path_var}" had_wt=0 had_branch=0 st=0
-  [ "${!wt_var}" = none ] || had_wt=1
-  [ "${!exists_var}" != yes ] || had_branch=1
+  local n_ref="${1}[n]" path_ref="${1}[path]" wt_ref="${1}[worktree]" own_ref="${1}[own_branch]" exists_ref="${1}[own_exists]"
+  local n="${!n_ref}" path="${!path_ref}" worktree="${!wt_ref}" own_branch="${!own_ref}" own_exists="${!exists_ref}"
+  local had_wt=0 had_branch=0 st=0
+  [ "$worktree" = none ] || had_wt=1
+  [ "$own_exists" != yes ] || had_branch=1
   [ "$had_wt$had_branch" != 00 ] || return 0
   orch_load ticket-worktree
   (ticket_worktree_teardown "$1" --unmerged --discard) || st=$?
@@ -732,7 +731,7 @@ ticket_reclaim_remove() {
     die "ticket #$n: could not remove its worktree $path"
   fi
   [ "$had_wt" = 0 ] || note "removed the worktree of ticket #$n"
-  [ "$st" = 0 ] || die "ticket #$n: could not delete branch ${!own_var}"
+  [ "$st" = 0 ] || die "ticket #$n: could not delete branch $own_branch"
   [ "$had_branch" = 0 ] || note "deleted the branch of ticket #$n"
 }
 
@@ -769,8 +768,7 @@ ticket_reclaim_guard() {
 cmd_ticket_reclaim() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket reclaim <parent>"
   local parent="$1" flow recorded="" fissue="" phase="" active="" subs line worktrees n state path st reported merged nums=""
-  # shellcheck disable=SC2034 # ticket_facts fills them; only some are read
-  local rf_n rf_path rf_worktree rf_wt_branch rf_parent rf_own_branch rf_own_exists
+  local -A rf
   case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
   flow="$(checkout_branch "$ROOT")" || die "the current checkout is on no branch - nothing to reclaim onto"
   if [ -f "$STATE" ]; then
@@ -797,12 +795,12 @@ cmd_ticket_reclaim() {
   while read -r n; do
     [ -n "$n" ] || continue
     ticket_facts "$n" rf
-    path="$rf_path"
+    path="${rf[path]}"
     reported=""
     [ ! -f "$(ticket_reports_dir)/$n.md" ] || reported=1
     merged=""
-    if [ "$rf_own_exists" = yes ]; then
-      ! ticket_branch_merged "$rf_own_branch" || merged=1
+    if [ "${rf[own_exists]}" = yes ]; then
+      ! ticket_branch_merged "${rf[own_branch]}" || merged=1
     elif [ -n "$reported" ]; then
       merged=1
     fi
@@ -810,7 +808,7 @@ cmd_ticket_reclaim() {
       [ "$n" != "$parent" ] || note "ticket #$n already landed"
       ticket_reclaim_close "$n" "$parent"
       ticket_reclaim_remove rf
-    elif [ -n "$reported" ] && [ "$rf_worktree" = worktree ]; then
+    elif [ -n "$reported" ] && [ "${rf[worktree]}" = worktree ]; then
       discard_work_in "$path" "ticket #$n"
       st=0
       (cmd_ticket_merge "$n") || st=$?
