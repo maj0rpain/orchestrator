@@ -270,7 +270,7 @@ ci_unreachable() {
   note "      $1"
 }
 
-# review ci's two forms (review_ci_once, review_ci_wait) share three helpers,
+# review ci's two forms (review_ci_once, review_ci_wait) share four helpers,
 # which read and set their caller's locals through bash's dynamic scope.
 #
 # ci_refs <step>: the refs read of PR <pr> into head_oid, head_ref, base_ref,

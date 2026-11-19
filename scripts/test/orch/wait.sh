@@ -79,8 +79,8 @@ rm -f "$wt_wf" "$wt_wf.m"
 
 # wait_limit_fits: the Wait module's decision on a limit wait (the mark is its)
 wt_wf="$(mktemp)"
-sourced_orch_script 'unset WAIT_FILE WAIT_MARK; wait_limit_fits 60' >/dev/null 2>&1; st=$?
-assert_status "wait_limit_fits with no wait open fits" "$st" 0
+sourced_orch_script 'unset WAIT_FILE WAIT_MARK; ORCH_WAIT_BLOCK=0; wait_limit_fits 60' >/dev/null 2>&1; st=$?
+assert_status "wait_limit_fits with no wait open fits even under a block that cannot hold it" "$st" 0
 sourced_orch_script 'WAIT_MARK=$1.limited; ORCH_WAIT_BLOCK=570; wait_limit_fits 1' "$wt_wf" >/dev/null 2>&1; st=$?
 assert_status "a block that can hold the wait fits" "$st" 0
 assert_status "and leaves no mark" "$([ -e "$wt_wf.limited" ]; echo $?)" 1
