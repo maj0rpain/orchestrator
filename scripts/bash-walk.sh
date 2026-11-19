@@ -54,7 +54,10 @@ _hook_bash_heredoc_word() {
 }
 
 # Handles the finished word $w of _hook_bash_compound_scan (dynamic scope: w,
-# cmdpos, fn, compounds). A reserved word counts only in command position
+# cmdpos, fn_keyword, compounds). fn_keyword tracks a `function` keyword: 0, no
+# `function` keyword pending; 1, `function` seen, its name next; 2, its name
+# A reserved word counts only in command position
+# seen, so a `{` next opens the function body as a compound. A reserved word counts only in command position
 # (cmdpos 1), and the `{` after `function name` counts too; it opens or closes
 # a compound on `compounds`, one letter per open compound: `{`, `(`, `i` (if),
 # `l` (loop), `c` (case).
@@ -62,9 +65,9 @@ _hook_bash_compound_word() {
   [ -n "$w" ] || return 0
   local pos="$cmdpos" word="$w"
   w=""; cmdpos=0
-  if [ "$fn" = 1 ]; then fn=2; return 0; fi
-  if [ "$fn" = 2 ]; then
-    fn=0
+  if [ "$fn_keyword" = 1 ]; then fn_keyword=2; return 0; fi
+  if [ "$fn_keyword" = 2 ]; then
+    fn_keyword=0
     if [ "$word" = '{' ]; then compounds+='{'; cmdpos=1; return 0; fi
   fi
   [ "$pos" = 1 ] || return 0
@@ -78,7 +81,7 @@ _hook_bash_compound_word() {
     done) [[ "$compounds" == *l ]] && compounds="${compounds%?}"; cmdpos=1 ;;
     'esac') [[ "$compounds" == *c ]] && compounds="${compounds%?}"; cmdpos=1 ;;
     do|then|elif|else|'!'|time) cmdpos=1 ;;
-    function) fn=1 ;;
+    function) fn_keyword=1 ;;
   esac
   return 0
 }
@@ -88,7 +91,7 @@ _hook_bash_compound_word() {
 # does the word after `|`, `&`, `(`, `)` or a reserved word. An unquoted `(` or
 # `)` counts wherever it stands. No external command.
 _hook_bash_compound_scan() {
-  local t="$1" k=0 ch w="" cmdpos=1 fn=0 cs_rest
+  local t="$1" k=0 ch w="" cmdpos=1 fn_keyword=0 cs_rest
   while [ "$k" -lt "${#t}" ]; do
     cs_rest="${t:k}"
     if [[ "$cs_rest" =~ ^[^\\[:space:]\;\&\|\<\>\(\)]+ ]]; then
@@ -97,9 +100,9 @@ _hook_bash_compound_scan() {
     ch="${cs_rest::1}"
     case "$ch" in
       '\') w+="${cs_rest::2}"; k=$((k + 2)); continue ;;
-      '(') _hook_bash_compound_word; compounds+='('; cmdpos=1; fn=0 ;;
-      ')') _hook_bash_compound_word; [[ "$compounds" == *'(' ]] && compounds="${compounds%?}"; cmdpos=1; fn=0 ;;
-      '&'|'|') _hook_bash_compound_word; cmdpos=1; fn=0 ;;
+      '(') _hook_bash_compound_word; compounds+='('; cmdpos=1; fn_keyword=0 ;;
+      ')') _hook_bash_compound_word; [[ "$compounds" == *'(' ]] && compounds="${compounds%?}"; cmdpos=1; fn_keyword=0 ;;
+      '&'|'|') _hook_bash_compound_word; cmdpos=1; fn_keyword=0 ;;
       *) _hook_bash_compound_word ;;
     esac
     k=$((k + 1))
