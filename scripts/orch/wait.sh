@@ -11,7 +11,11 @@
 # test override still advances). A stored total belongs to one wait, named by
 # the key the caller builds, and is forgotten as soon as a call delivers an
 # outcome. Its tests: scripts/test/orch/wait.sh, and the `review ci` and
-# `spec-review wait` sections.
+# `spec-review wait` sections, and the `gh rate limits (#2577)` section of
+# scripts/test/orch/gh.sh.
+# The module also owns the limit decision - whether a GitHub rate-limit wait
+# fits in what is left of the block (wait_limit_fits) - and the ".limited" mark
+# beside the wait's file that carries a give-up out of a subshell.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 ORCH_WAIT_BLOCK="${ORCH_WAIT_BLOCK:-570}"
@@ -56,19 +60,51 @@ wait_open() {
   printf -v "$3" '%s' "$slept"
 }
 
-# wait_forget: forgets the stored total, once a call delivers an outcome.
+# wait_forget: forgets the stored total and its ".limited" mark (the Wait
+# module's, see wait_limit_fits), once a call delivers an outcome.
 wait_forget() {
   rm -f "$WAIT_FILE" "$WAIT_FILE.limited"
 }
 
 # wait_limited_check <slept>: ends the call as still running (stores <slept>,
 # exit 75) when a gh call met a rate limit the block could not hold - the mark
-# gh_limit_handle left, which a subshell's exit could not. Call it after each
+# wait_limit_fits left, which a subshell's exit could not. Call it after each
 # probe of a poll loop.
 wait_limited_check() {
   [ -e "$WAIT_FILE.limited" ] || return 0
   rm -f "$WAIT_FILE.limited"
   wait_still_running "$1"
+}
+
+# wait_limit_fits <seconds>: whether a limit wait of <seconds> fits. Returns 0
+# when no re-callable wait is open (no WAIT_FILE) or what is left of
+# ORCH_WAIT_BLOCK can hold it. Otherwise sleeps the rest of the block, leaves
+# the ".limited" mark (not checked: an unwritable mark still returns 1) and
+# returns 1.
+wait_limit_fits() {
+  local left
+  [ -n "${WAIT_FILE:-}" ] || return 0
+  left="$(wait_nap "$1" "$(wait_block_spent 0)")"
+  float_lt "$left" "$1" || return 0
+  if float_lt 0 "$left"; then sleep "$left"; fi
+  : >"$WAIT_FILE.limited" || :
+  return 1
+}
+
+# wait_provisional_open <name>: opens the provisional wait file "pending-<name>"
+# for a read that runs before the wait's key is known, clearing its mark.
+wait_provisional_open() {
+  mkdir -p "$ORCH/wait" || die "could not create $ORCH/wait"
+  WAIT_FILE="$ORCH/wait/pending-$1"
+  rm -f "$WAIT_FILE.limited"
+}
+
+# wait_provisional_check: ends the call as still running (exit 75, no total to
+# keep) when the provisional wait's mark was left.
+wait_provisional_check() {
+  [ -e "$WAIT_FILE.limited" ] || return 0
+  rm -f "$WAIT_FILE.limited"
+  wait_exit_running
 }
 
 # wait_exit_running: says on stderr that the call's wait is not over and exits
