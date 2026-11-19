@@ -663,12 +663,12 @@ fake_labelled_numbers() {
   done | sort -n | fake_search_cut
 }
 
-# fake_labelled_field <state|title> <n>: issue #n's stored state as one line, or
-# with title its state and stored title joined by a tab, as the gh adapter
-# prints them; empty where missing.
+# fake_labelled_field <state|state-title> <n>: issue #n's stored state as one
+# line, or with state-title its state and stored title joined by a tab, as the
+# gh adapter prints them; empty where missing.
 fake_labelled_field() {
   fake_read_state "$ORCH_GH_FAKE_STORE/issues/$2/state" || true
-  if [ "$1" = title ]; then
+  if [ "$1" = state-title ]; then
     fake_slurp "$ORCH_GH_FAKE_STORE/issues/$2/title" || true
     printf '%s\t%s\n' "$fake_state" "$fake_slurped"
   else
@@ -676,7 +676,7 @@ fake_labelled_field() {
   fi
 }
 
-# fake_labelled_rows <op> <all|any> <state|title> <label>...: the issues
+# fake_labelled_rows <op> <all|any> <state|state-title> <label>...: the issues
 # fake_labelled_numbers lists, each as the count-marked record the gh adapter
 # prints: number, the stored state or title, label count, labels. Lagging
 # (fake_lag) for <op>, it answers the stale answer fake_lag was given, or
@@ -719,7 +719,7 @@ adapter_issues_open_rows() {
 # first and cut at the limit, each as the count-marked record the gh adapter
 # prints: number, state and stored title tab-joined, label count, labels.
 adapter_issues_titled_rows() {
-  fake_labelled_rows adapter_issues_titled_rows all title "$@"
+  fake_labelled_rows adapter_issues_titled_rows all state-title "$@"
 }
 
 # fake_search_cut: the first lesser of ISSUE_LIST_LIMIT and ISSUE_SEARCH_CAP

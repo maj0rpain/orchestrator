@@ -606,7 +606,7 @@ adapter_issue_created_at() {
   gh issue view "$1" --json createdAt --jq '.createdAt'
 }
 
-# issue_list_limit_warn<count> <what>: warns on stderr when a listing of
+# issue_list_limit_warn <count> <what>: warns on stderr when a listing of
 # <what> (e.g. "the open issues labelled needs-human") returned <count> rows,
 # reaching its effective limit - the lesser of ISSUE_LIST_LIMIT and 1000,
 # GitHub's search cap - and names that limit. Always succeeds.
@@ -627,16 +627,21 @@ issues_labelled_limit_warn() {
   issue_list_limit_warn "$__illw_n" "$__illw_what"
 }
 
+# The record the row adapters share: --json's field list and --jq's expression
+# for number, state, label count, then one label per line.
+readonly ISSUE_ROWS_JSON=number,state,labels
+readonly ISSUE_ROWS_JQ='.[] | .number, .state, (.labels | length), (.labels[].name)'
+
 # adapter_issues_labelled_rows <label>...: the open issues carrying every label
 # named, oldest first and cut at ISSUE_LIST_LIMIT (the newest dropped),
 # each as one count-marked record: its number, its state as GitHub answered it,
 # its label count, then one label per line. The state is never assumed from the
 # listing's own open-only filter.
+# shellcheck disable=SC2120 # adapter_issues_open_rows passes no label
 adapter_issues_labelled_rows() {
   local args=() l
   for l in "$@"; do args+=(--label "$l"); done
-  gh issue list --state open ${args[@]+"${args[@]}"} --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number,state,labels \
-    --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
+  gh issue list --state open ${args[@]+"${args[@]}"} --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json "$ISSUE_ROWS_JSON" --jq "$ISSUE_ROWS_JQ"
 }
 
 # adapter_issues_any_labelled_rows <label>...: the open issues carrying any of
@@ -646,8 +651,7 @@ adapter_issues_labelled_rows() {
 adapter_issues_any_labelled_rows() {
   local any="" l
   for l in "$@"; do any="${any:+$any,}\"$l\""; done
-  gh issue list --state open --search "label:$any sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number,state,labels \
-    --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
+  gh issue list --state open --search "label:$any sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json "$ISSUE_ROWS_JSON" --jq "$ISSUE_ROWS_JQ"
 }
 
 # issues_any_labels_phrase <var> <label>...: writes the labels named, joined by
@@ -694,9 +698,10 @@ issues_any_labelled_rows_read() {
 # adapter_issues_open_rows: every open issue, oldest first and cut at
 # ISSUE_LIST_LIMIT, each as the count-marked record adapter_issues_labelled_rows
 # answers: number, state as GitHub answered it, label count, one label per line.
+# It is that adapter with no labels, kept under its own name so a test can seed
+# a failure for this listing alone.
 adapter_issues_open_rows() {
-  gh issue list --state open --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number,state,labels \
-    --jq '.[] | .number, .state, (.labels | length), (.labels[].name)'
+  adapter_issues_labelled_rows
 }
 
 # issues_open_limit_warn <count>: issue_list_limit_warn for a listing of every
@@ -722,15 +727,48 @@ adapter_issues_titled_rows() {
     --jq '.[] | .number, (.state + "\t" + .title), (.labels | length), (.labels[].name)'
 }
 
-# issues_titled_rows_read <nums_var> <titles_array> <labels_array> <err_var>
-# <label>: issues_labelled_rows_read through adapter_issues_titled_rows, the
-# second field of each record the state and the title, tab-joined, in place of a
-# bare state, the limit warning issues_labelled_limit_warn's.
+# issues_titled_rows_read <nums_var> <state_titles_array> <labels_array>
+# <err_var> <label>: issues_labelled_rows_read through
+# adapter_issues_titled_rows, the second field of each record the state and the
+# title, tab-joined, the limit warning issues_labelled_limit_warn's.
 issues_titled_rows_read() {
   issues_rows_read_via issues_titled_rows_read adapter_issues_titled_rows issues_labelled_limit_warn "$@"
 }
 
-# issues_rows_read_via <caller> <adapter> <warn> <nums_var> <states_array>
+# issues_label_block_read <lines_array> <index_var> <out_var> <count>: reads
+# <count> label lines from the indexed array <lines_array>, starting at the
+# index <index_var> holds, joins them by newlines into <out_var> and advances
+# <index_var> past them. Returns 1, writing nothing, when the lines run out
+# before <count>. The array is reached by eval, as bash 4.2 has no namerefs;
+# the names are the caller's own locals, passed literally.
+issues_label_block_read() {
+  local __ilbk_i __ilbk_total __ilbk_j __ilbk_line __ilbk_block=""
+  eval "__ilbk_i=\${$2} __ilbk_total=\${#$1[@]}"
+  for (( __ilbk_j = 0; __ilbk_j < 10#$4; __ilbk_j++ )); do
+    [ "$__ilbk_i" -lt "$__ilbk_total" ] || return 1
+    eval "__ilbk_line=\${$1[__ilbk_i]}"
+    [ "$__ilbk_j" -eq 0 ] || __ilbk_block="$__ilbk_block"$'\n'
+    __ilbk_block="$__ilbk_block$__ilbk_line"
+    __ilbk_i=$(( __ilbk_i + 1 ))
+  done
+  printf -v "$3" '%s' "$__ilbk_block"
+  printf -v "$2" '%s' "$__ilbk_i"
+}
+
+# assoc_pairs_assign <assoc_array> <keys_array> <values_array>: assigns each
+# key and value of the two parallel indexed arrays into the associative array
+# <assoc_array>, by eval on a validated name, the value by reference. Dies when
+# <assoc_array> is not a declared associative array.
+assoc_pairs_assign() {
+  assoc_array_require assoc_pairs_assign "$1" __apa_
+  local __apa_r __apa_idx
+  eval "__apa_idx=(\${!$2[@]})"
+  for __apa_r in ${__apa_idx[@]+"${__apa_idx[@]}"}; do
+    eval "$1"'[${'"$2"'[__apa_r]}]=${'"$3"'[__apa_r]}'
+  done
+}
+
+# issues_rows_read_via <caller> <adapter> <warn> <nums_var> <field_array>
 # <labels_array> <err_var> [<label>...]: the reading the readers above
 # share (the open-issue reader takes no labels), through the listing <adapter>
 # and the limit warning <warn>; <caller> names the public reader in a die
@@ -740,8 +778,8 @@ issues_rows_read_via() {
   assoc_array_require "$1" "$6" __ilrr_
   local __ilrr_adapter="$2" __ilrr_warn="$3"
   shift 3
-  local __ilrr_out __ilrr_err __ilrr_lines=() __ilrr_nums=() __ilrr_sts=() __ilrr_labs=()
-  local __ilrr_i=0 __ilrr_total __ilrr_n __ilrr_state __ilrr_count __ilrr_j __ilrr_rl __ilrr_r
+  local __ilrr_out __ilrr_err __ilrr_lines=() __ilrr_nums=() __ilrr_fields=() __ilrr_labs=()
+  local __ilrr_i=0 __ilrr_total __ilrr_n __ilrr_field __ilrr_count __ilrr_rl
   local __ilrr_bad="gh answered a listing that does not parse"
   local __ilrr_whole='^[0-9]+$'
   if ! gh_capture __ilrr_out __ilrr_err "$__ilrr_adapter" "${@:5}"; then
@@ -752,26 +790,19 @@ issues_rows_read_via() {
   __ilrr_total="${#__ilrr_lines[@]}"
   while [ "$__ilrr_i" -lt "$__ilrr_total" ]; do
     __ilrr_n="${__ilrr_lines[__ilrr_i]}"
-    __ilrr_state="${__ilrr_lines[__ilrr_i+1]-}"
+    __ilrr_field="${__ilrr_lines[__ilrr_i+1]-}"
     __ilrr_count="${__ilrr_lines[__ilrr_i+2]-}"
-    [[ $__ilrr_n =~ $__ilrr_whole && -n $__ilrr_state && $__ilrr_count =~ $__ilrr_whole ]] \
+    [[ $__ilrr_n =~ $__ilrr_whole && -n $__ilrr_field && $__ilrr_count =~ $__ilrr_whole ]] \
       || { printf -v "$4" '%s' "$__ilrr_bad"; return 1; }
     __ilrr_i=$(( __ilrr_i + 3 ))
-    __ilrr_rl=""
-    for (( __ilrr_j = 0; __ilrr_j < 10#$__ilrr_count; __ilrr_j++ )); do
-      [ "$__ilrr_i" -lt "$__ilrr_total" ] || { printf -v "$4" '%s' "$__ilrr_bad"; return 1; }
-      [ "$__ilrr_j" -eq 0 ] || __ilrr_rl="$__ilrr_rl"$'\n'
-      __ilrr_rl="$__ilrr_rl${__ilrr_lines[__ilrr_i]}"
-      __ilrr_i=$(( __ilrr_i + 1 ))
-    done
+    issues_label_block_read __ilrr_lines __ilrr_i __ilrr_rl "$__ilrr_count" \
+      || { printf -v "$4" '%s' "$__ilrr_bad"; return 1; }
     __ilrr_nums+=("$(( 10#$__ilrr_n ))")
-    __ilrr_sts+=("$__ilrr_state")
+    __ilrr_fields+=("$__ilrr_field")
     __ilrr_labs+=("$__ilrr_rl")
   done
-  for __ilrr_r in ${__ilrr_nums[@]+"${!__ilrr_nums[@]}"}; do
-    eval "$2"'[${__ilrr_nums[__ilrr_r]}]=${__ilrr_sts[__ilrr_r]}'
-    eval "$3"'[${__ilrr_nums[__ilrr_r]}]=${__ilrr_labs[__ilrr_r]}'
-  done
+  assoc_pairs_assign "$2" __ilrr_nums __ilrr_fields
+  assoc_pairs_assign "$3" __ilrr_nums __ilrr_labs
   printf -v "$1" '%s' "$(printf '%s\n' ${__ilrr_nums[@]+"${__ilrr_nums[@]}"} | grep . || true)"
   "$__ilrr_warn" "${#__ilrr_nums[@]}" "${@:5}"
 }
@@ -811,7 +842,7 @@ issues_labelled_bodies_read() {
   assoc_array_require issues_labelled_bodies_read "$2" __ilbr_
   local __ilbr_out __ilbr_err __ilbr_lines=() __ilbr_nums=() __ilbr_labs=() __ilbr_bods=()
   local __ilbr_i=0 __ilbr_total __ilbr_n __ilbr_label_count __ilbr_body_line_count
-  local __ilbr_j __ilbr_record_labels __ilbr_body __ilbr_k __ilbr_r
+  local __ilbr_record_labels __ilbr_body __ilbr_k
   local __ilbr_bad="gh answered a listing that does not parse"
   local __ilbr_whole='^[0-9]+$'
   if ! gh_capture __ilbr_out __ilbr_err adapter_issues_labelled_bodies "${@:5}"; then
@@ -826,13 +857,8 @@ issues_labelled_bodies_read() {
     [[ $__ilbr_n =~ $__ilbr_whole && $__ilbr_label_count =~ $__ilbr_whole ]] \
       || { printf -v "$4" '%s' "$__ilbr_bad"; return 1; }
     __ilbr_i=$(( __ilbr_i + 2 ))
-    __ilbr_record_labels=""
-    for (( __ilbr_j = 0; __ilbr_j < 10#$__ilbr_label_count; __ilbr_j++ )); do
-      [ "$__ilbr_i" -lt "$__ilbr_total" ] || { printf -v "$4" '%s' "$__ilbr_bad"; return 1; }
-      [ "$__ilbr_j" -eq 0 ] || __ilbr_record_labels="$__ilbr_record_labels"$'\n'
-      __ilbr_record_labels="$__ilbr_record_labels${__ilbr_lines[__ilbr_i]}"
-      __ilbr_i=$(( __ilbr_i + 1 ))
-    done
+    issues_label_block_read __ilbr_lines __ilbr_i __ilbr_record_labels "$__ilbr_label_count" \
+      || { printf -v "$4" '%s' "$__ilbr_bad"; return 1; }
     __ilbr_body_line_count="${__ilbr_lines[__ilbr_i]-}"
     [ "$__ilbr_i" -lt "$__ilbr_total" ] && [[ $__ilbr_body_line_count =~ $__ilbr_whole ]] \
       || { printf -v "$4" '%s' "$__ilbr_bad"; return 1; }
@@ -850,10 +876,8 @@ issues_labelled_bodies_read() {
     __ilbr_labs+=("$__ilbr_record_labels")
     __ilbr_bods+=("$__ilbr_body")
   done
-  for __ilbr_r in ${__ilbr_nums[@]+"${!__ilbr_nums[@]}"}; do
-    eval "$1"'[${__ilbr_nums[__ilbr_r]}]=${__ilbr_labs[__ilbr_r]}'
-    eval "$2"'[${__ilbr_nums[__ilbr_r]}]=${__ilbr_bods[__ilbr_r]}'
-  done
+  assoc_pairs_assign "$1" __ilbr_nums __ilbr_labs
+  assoc_pairs_assign "$2" __ilbr_nums __ilbr_bods
   printf -v "$3" '%s' "${#__ilbr_nums[@]}"
   issues_labelled_limit_warn "${#__ilbr_nums[@]}" "${@:5}"
 }
