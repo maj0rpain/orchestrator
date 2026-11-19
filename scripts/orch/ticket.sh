@@ -563,6 +563,7 @@ blocked_by_section_numbers() {
 # dropped, sorted numerically and de-duplicated, one per line; nothing for an
 # empty list.
 blockers_set() {
+  [ -n "$1" ] || return 0
   printf '%s\n' "$1" | sed '/^$/d' | sort -un
 }
 

@@ -115,7 +115,8 @@ breakdown_record() {
 # breakdown_publish_in <parent> <draft> <tmp>: breakdown publish's work, run in
 # a subshell so the caller can remove <tmp> however it ends.
 breakdown_publish_in() {
-  local parent="$1" draft="$2" tmp="$3" dir saved numbers k n status b blocker_n want list title order
+  # shellcheck disable=SC2034 # blocker_status is an out-param the loop does not read
+  local parent="$1" draft="$2" tmp="$3" dir saved numbers k n status blocker_status b blocker_n want list title order
   dir="$(breakdown_dir "$parent")"
   saved="$dir/draft.md"
   # A saved draft always wins over the one given.
@@ -140,7 +141,7 @@ breakdown_publish_in() {
     file_read_text list "$tmp/$k.blocked"
     if [ -n "$list" ]; then
       while IFS= read -r b; do
-        breakdown_number "$numbers" "$b" blocker_n status  # status is spent past the linked check
+        breakdown_number "$numbers" "$b" blocker_n blocker_status
         want="${want:+$want$'\n'}$blocker_n"
       done <<<"$list"
     fi
