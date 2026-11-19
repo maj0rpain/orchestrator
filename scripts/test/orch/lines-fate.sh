@@ -86,8 +86,9 @@ shifted_fix_sha="$(lf_edit big.sh 's/^big file line 10$/big file line 10, fixed/
 lf_edit big.sh '200,$ s/$/, rewritten in bulk/' "rewrite everything below" >/dev/null
 lf_case big "$big_sha" src/big.sh 10 10
 
-# Lines main later deleted outright: one file per case, all filed at one commit,
-# each deleted by its own commit after it.
+# Lines main later deleted outright: one file per case (a reversed-range case
+# reuses its twin's), all filed at one commit, each deleted by its own commit
+# after it.
 for f in whole end start middle later two replaced squashed split; do lf_seq "$f" 30 >"src/del_$f.sh"; done
 git add src
 git commit -qm "the code the deletions are filed against"
@@ -129,8 +130,8 @@ mb_del_sha="$(lf_edit mb.sh '8,12d' "delete mb's lines")"
 lf_case mb_deleted "$mb_head_sha" src/mb.sh 10 10
 
 # PR heads that never merged: the cases decide by the filed lines, never by the
-# file. One file per case, each a 20-line file the PR edits and main then edits
-# elsewhere or alike.
+# file. One file per case (a reversed-range case reuses its twin's), each a
+# 20-line file the PR edits and main then edits elsewhere or alike.
 lf_unm() { lf_branch_head "unm$1" "$unm_base" "$2" "$3"; }
 sha51="$(lf_unm 51 um1.sh '5c\pr replaced')"
 sha52="$(lf_unm 52 um2.sh '5a pr added a\npr added b')"
