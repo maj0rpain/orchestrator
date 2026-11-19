@@ -24,18 +24,45 @@
 # The changed set is that range plus uncommitted changes, untracked files
 # included. What a changed file selects:
 #   scripts/orch/<m>.sh               the sections of scripts/test/orch/<m>.sh
-#   scripts/test/orch/<n>.sh          its own sections
+#   scripts/test/orch/<n>.sh          its own sections (common.sh's included)
 #   hook-*.sh, hooks/hooks.json       hooks_test.sh
 #   version-bump.sh, autopilot-container.sh, autopilot-up.sh, and the suites
 #   themselves, scripts/dev/lens-bench.sh and lens_bench_test.sh included
 #                                     their own test file
+#   the lens bench's fixture directories (scripts/dev/lens-bench/,
+#   scripts/test/lens-bench/), markdown files included
+#                                     lens_bench_test.sh (wins over *.md)
+#   flow-state.sh                     the core set, plus the state, init and
+#                                     side-checkout sections
+#   host.sh                           the core set, plus the doctor sections
+#   bash-walk.sh                      hooks_test.sh
+#   paste-guard.sh                    hooks_test.sh, plus the spec-review
+#                                     sections
+#   planning-allowlist.sh             hooks_test.sh, plus the doctor sections
+#   triage-labels.sh                  hooks_test.sh, plus the doctor and issue
+#                                     sections
+#   scripts/dev/ other than the lens bench, hook-edit-width.sh, width.sh
+#                                     the harness section file's sections
+#   hook-edit-width.sh, width.sh, shell_code.awk
+#                                     the harness sections, plus hooks_test.sh
+#   docker/, .dockerignore            autopilot_container_test.sh and
+#                                     autopilot_up_test.sh
+#   .claude-plugin/                   version_bump_test.sh, autopilot_up_test.sh
+#   .shellcheckrc                     shellcheck over every scripts/**/*.sh,
+#                                     plus the harness sections
 #   skills, agents, docs, markdown, changelog fragments, the durations file
-#   (section-durations.tsv) and the budget file (suite-budget, beside it)
+#   (section-durations.tsv) and the budget file (suite-budget, beside it), the
+#   workflow files, .gitignore, .gitattributes, .ignore, LICENSE and
+#   .claude/settings.json
 #                                     nothing beyond the always-run checks
-#   anything else, orch.sh, orch/common.sh, orch/loader.sh, the shared test
-#   setup, the runners, the gh fake, test_jobs.sh, report.sh, test_tree.sh
-#                                     all.sh (this row wins)
-# A deleted module or section file runs all.sh too.
+#   anything else                     all.sh
+#   scripts/test/orch/setup.sh, the gh fake
+#                                     all.sh (for now)
+# The core set is the sections of the harness and loader section files and
+# every suite but orch_test.sh. It is selected, together with the rest of the
+# diff's selection, by orch.sh, orch/common.sh (plus its own section file),
+# orch/loader.sh, orch_test.sh, all.sh, affected.sh, test_jobs.sh, report.sh,
+# test_tree.sh, git_env.sh, and a deleted module or section file.
 #
 # The base worked out above, a ticket branch's own included, is handed to
 # docs_lint.sh in DOCS_LINT_BASE, the
@@ -156,31 +183,64 @@ deleted="$(git_raw_paths diff --no-renames --name-only --diff-filter=D "$merge_b
 want=()        # suites to run besides orch_test.sh and docs_lint.sh
 sec_files=()   # scripts/test/orch/<n>.sh files whose sections run
 sc_files=()    # the lint targets
+core=0         # 1 when the core set is selected
+sc_all=0       # 1 when every file the full verification lints is a lint target
+
+# sections_of <name>...: select the sections of scripts/test/orch/<name>.sh.
+sections_of() {
+  local n
+  for n in "$@"; do sec_files+=("scripts/test/orch/$n.sh"); done
+}
 
 # classify <file> <present|deleted>: record what the file selects, or run the
 # full suite when its reach is unclear.
 classify() {
   local f="$1" state="$2" file_name
   file_name="$(basename "$f")"
+  # The core set: the harness and loader section files' sections and every
+  # suite but orch_test.sh, together with whatever the rest of the diff selects.
   case "$f" in
-    scripts/orch.sh | scripts/orch/common.sh | scripts/orch/loader.sh | scripts/test/orch/common.sh | \
-      scripts/test/orch/setup.sh | scripts/test/all.sh | scripts/test/orch_test.sh | \
-      scripts/test/affected.sh | scripts/test/test_jobs.sh | scripts/test/report.sh | scripts/test/test_tree.sh | scripts/test/gh_adapter_fake.sh)
+    scripts/orch.sh | scripts/orch/common.sh | scripts/orch/loader.sh | scripts/test/git_env.sh | \
+      scripts/test/all.sh | scripts/test/orch_test.sh | scripts/test/affected.sh | \
+      scripts/test/test_jobs.sh | scripts/test/report.sh | scripts/test/test_tree.sh)
+      core=1 ;;
+    scripts/orch/*.sh | scripts/test/orch/*.sh)
+      [ "$state" = deleted ] && core=1 ;;
+  esac
+  case "$f" in
+    scripts/test/orch/setup.sh | scripts/test/gh_adapter_fake.sh)
       full_suite ;;
+    scripts/orch.sh | scripts/test/all.sh | scripts/test/orch_test.sh | scripts/test/affected.sh | \
+      scripts/test/test_jobs.sh | scripts/test/report.sh | scripts/test/test_tree.sh | scripts/test/git_env.sh) ;;
+    scripts/flow-state.sh) core=1; sections_of state init side-checkout ;;
+    scripts/host.sh) core=1; sections_of doctor ;;
+    scripts/bash-walk.sh) want+=(hooks_test.sh) ;;
+    scripts/paste-guard.sh) want+=(hooks_test.sh); sections_of spec-review ;;
+    scripts/planning-allowlist.sh) want+=(hooks_test.sh); sections_of doctor ;;
+    scripts/triage-labels.sh) want+=(hooks_test.sh); sections_of doctor issue ;;
     scripts/orch/*.sh)
-      [ "$state" = deleted ] && full_suite
-      [ -f "scripts/test/orch/$file_name" ] || full_suite
-      sec_files+=("scripts/test/orch/$file_name") ;;
+      if [ "$state" != deleted ]; then
+        [ -f "scripts/test/orch/$file_name" ] || full_suite
+        sec_files+=("scripts/test/orch/$file_name")
+      fi ;;
     scripts/test/orch/*.sh)
-      [ "$state" = deleted ] && full_suite
-      sec_files+=("$f") ;;
+      [ "$state" = deleted ] || sec_files+=("$f") ;;
     scripts/hook-*.sh | hooks/hooks.json) want+=(hooks_test.sh) ;;
     scripts/test/hooks_test.sh) want+=(hooks_test.sh) ;;
     scripts/version-bump.sh | scripts/test/version_bump_test.sh) want+=(version_bump_test.sh) ;;
     scripts/autopilot-container.sh | scripts/test/autopilot_container_test.sh)
       want+=(autopilot_container_test.sh) ;;
     scripts/autopilot-up.sh | scripts/test/autopilot_up_test.sh) want+=(autopilot_up_test.sh) ;;
-    scripts/dev/lens-bench.sh | scripts/test/lens_bench_test.sh) want+=(lens_bench_test.sh) ;;
+    scripts/dev/lens-bench.sh | scripts/test/lens_bench_test.sh | \
+      scripts/dev/lens-bench/* | scripts/test/lens-bench/*)
+      want+=(lens_bench_test.sh) ;;
+    scripts/dev/hook-edit-width.sh | scripts/dev/width.sh | scripts/test/shell_code.awk)
+      want+=(hooks_test.sh); sections_of harness ;;
+    scripts/dev/*) sections_of harness ;;
+    docker/* | .dockerignore) want+=(autopilot_container_test.sh autopilot_up_test.sh) ;;
+    .claude-plugin/*) want+=(version_bump_test.sh autopilot_up_test.sh) ;;
+    .shellcheckrc) sc_all=1; sections_of harness ;;
+    .github/workflows/* | .gitignore | .gitattributes | .ignore | LICENSE | .claude/settings.json) return 0 ;;
     scripts/test/docs_lint.sh) ;;
     scripts/test/section-durations.tsv | scripts/test/suite-budget) return 0 ;;
     skills/* | agents/* | docs/* | changelog.d/* | *.md) return 0 ;;
@@ -200,6 +260,14 @@ done <<<"$deleted"
 
 # shellcheck source=test_tree.sh
 source "$dir/test_tree.sh"
+
+if [ "$core" -eq 1 ]; then
+  sections_of harness loader
+fi
+if [ "$sc_all" -eq 1 ]; then
+  shellcheck_files "$root"
+  for f in "${SHELLCHECK_FILES[@]}"; do sc_files+=("${f#"$root/"}"); done
+fi
 
 # A section file's titles: its `# --- ` lines, read by test_tree.sh's
 # SECTION_TITLE_AWK, as orch_test.sh's walk reads them.
@@ -225,6 +293,7 @@ if [ -f "$harness" ]; then
 fi
 if [ "${#sec_files[@]}" -gt 0 ]; then
   while IFS= read -r sf; do
+    [ -f "$sf" ] || continue
     while IFS= read -r t; do
       add_title "$t"
     done < <(titles_of "$sf")
@@ -244,6 +313,7 @@ for suite in "${suites[@]}"; do
   case "$suite" in
     orch_test.sh | docs_lint.sh) selected+=("$suite") ;;
     *)
+      [ "$core" -eq 1 ] && { selected+=("$suite"); continue; }
       for w in "${want[@]}"; do
         [ "$w" = "$suite" ] && { selected+=("$suite"); break; }
       done ;;

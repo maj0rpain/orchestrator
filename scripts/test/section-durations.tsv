@@ -31,7 +31,7 @@
 2	3	runner git isolation (#1905)	71ce11eb3b493cb1b633d406d98c545e982c78ee
 0	1	the background child start (#3025)	cd1314d985f5640647f7e529b8de66a56c83b085
 2	3	the counting fixture's stdin counter (#3434)	ff596769dbc0e83db12708e2a0ed7e4e348bd7fc
-38	34	affected.sh, the ticket verification (#2023)	5db508f75f697992c81592150d6f06e9a943002d
+48	45	affected.sh, the ticket verification (#2023)	1214e218696fcf2458ba7ae07d5f19ebc0919788
 66	72	agent	cddc69e5a268c5cd6ddfed15d957b78960ef77e3
 20	22	agent sync	b39ad35449afd2ba48dfe47fd1a68a53a2d8c22b
 3	4	agent copy marker and Junie field: no command per call	2a90944570501eb9df9e004a9fab0ff67c9dac60

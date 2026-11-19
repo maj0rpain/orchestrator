@@ -4055,11 +4055,19 @@ af_put scripts/test/orch/harness.sh '# --- isolation ---' \
   '# --- marked comment prelude placement (#1853) ---' '# --- the parallel runner (#780) ---'
 af_put scripts/test/orch/branch.sh 'x=1' '# --- branch create ---' '# --- branch (x.y) retire ---'
 af_put scripts/test/orch/state.sh '# --- state ---'
+af_put scripts/test/orch/common.sh '# --- common one ---'
+af_put scripts/test/orch/loader.sh '# --- loader one ---'
+for af_f in doctor init issue side-checkout spec-review; do
+  af_put "scripts/test/orch/$af_f.sh" "# --- $af_f s ---"
+done
 for af_f in scripts/orch.sh scripts/orch/common.sh scripts/orch/branch.sh \
-  scripts/orch/state.sh scripts/test/orch/common.sh scripts/test/orch/setup.sh \
+  scripts/orch/state.sh scripts/test/orch/setup.sh \
   scripts/test/orch_test.sh scripts/test/gh_adapter_fake.sh scripts/hook-guard.sh \
   scripts/version-bump.sh scripts/autopilot-container.sh scripts/autopilot-up.sh \
   scripts/dev/lens-bench.sh scripts/dev/other.sh scripts/test/docs_lint.sh \
+  scripts/flow-state.sh scripts/host.sh scripts/bash-walk.sh scripts/paste-guard.sh \
+  scripts/planning-allowlist.sh scripts/triage-labels.sh scripts/dev/hook-edit-width.sh \
+  scripts/dev/width.sh scripts/test/shell_code.awk \
   hooks/hooks.json docs/a.md skills/s/SKILL.md agents/a.md changelog.d/1.md Makefile; do
   af_put "$af_f"
 done
@@ -4093,6 +4101,8 @@ af_plan() {
 af_placement="test-helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853)"
 af_gate="orch_test.sh,$af_placement"
 af_branch_titles="branch create,branch (x.y) retire"
+af_core="$af_gate,isolation,the parallel runner (#780),loader one"
+af_core_s="hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh"
 
 af_reset
 assert_eq "a change to a doc selects only the always-run checks" \
@@ -4143,24 +4153,99 @@ af_row "autopilot-up.sh selects its test file" scripts/autopilot-up.sh \
   "$af_gate,docs_lint.sh,autopilot_up_test.sh,scripts/autopilot-up.sh"
 af_row "the lens-bench script selects its test file" scripts/dev/lens-bench.sh \
   "$af_gate,docs_lint.sh,lens_bench_test.sh,scripts/dev/lens-bench.sh"
-af_row "a lens-bench fixture script falls back to all.sh" scripts/dev/lens-bench/case.sh "all.sh"
-af_row "a lens-bench test fixture falls back to all.sh" scripts/test/lens-bench/case.txt "all.sh"
-af_row "a markdown lens-bench fixture selects nothing more" scripts/dev/lens-bench/case.md \
-  "$af_gate,docs_lint.sh"
+af_row "a lens-bench fixture script selects its test file" scripts/dev/lens-bench/case.sh \
+  "$af_gate,docs_lint.sh,lens_bench_test.sh,scripts/dev/lens-bench/case.sh"
+af_row "a lens-bench test fixture selects its test file" scripts/test/lens-bench/case.txt \
+  "$af_gate,docs_lint.sh,lens_bench_test.sh"
+af_row "a markdown lens-bench fixture selects the lens bench suite" scripts/dev/lens-bench/case.md \
+  "$af_gate,docs_lint.sh,lens_bench_test.sh"
+af_row "a markdown lens-bench test fixture selects the lens bench suite" scripts/test/lens-bench/run-1/map.md \
+  "$af_gate,docs_lint.sh,lens_bench_test.sh"
 af_row "a skill selects nothing more" skills/s/SKILL.md "$af_gate,docs_lint.sh"
 af_row "an agent selects nothing more" agents/a.md "$af_gate,docs_lint.sh"
 af_row "a non-markdown file under commands falls back to all.sh" commands/x.txt "all.sh"
 af_row "a changelog fragment selects nothing more" changelog.d/2.md "$af_gate,docs_lint.sh"
 af_row "a markdown file selects nothing more" README.md "$af_gate,docs_lint.sh"
-for af_f in scripts/orch.sh scripts/orch/common.sh scripts/test/orch/common.sh \
-  scripts/test/orch/setup.sh scripts/test/all.sh scripts/test/orch_test.sh \
-  scripts/test/gh_adapter_fake.sh scripts/test/test_jobs.sh scripts/test/report.sh scripts/test/test_tree.sh scripts/dev/other.sh Makefile; do
+for af_f in scripts/test/orch/setup.sh scripts/test/gh_adapter_fake.sh Makefile; do
   af_row "$af_f falls back to all.sh" "$af_f" "all.sh"
 done
 af_reset
 af_put scripts/orch/branch.sh 'z=3'
-af_put scripts/orch.sh 'z=3'
+af_put Makefile 'z=3'
 assert_eq "an unmapped file wins over a module" "$(af_plan origin/rel)" "all.sh"
+
+# The core set (#3548): the harness and loader sections and every suite but
+# orch_test.sh, together with the rest of the diff's selection.
+af_core_row() {
+  af_reset
+  af_put "$2" changed
+  assert_eq "$1" "$(af_plan origin/rel)" "$3"
+}
+af_core_row "orch.sh selects the core set" scripts/orch.sh "$af_core,$af_core_s,scripts/orch.sh"
+af_core_row "the common module selects the core set and its own section file" scripts/orch/common.sh \
+  "$af_gate,common one,isolation,the parallel runner (#780),loader one,$af_core_s,scripts/orch/common.sh"
+af_core_row "the loader module selects the core set" scripts/orch/loader.sh \
+  "$af_core,$af_core_s,scripts/orch/loader.sh"
+for af_f in all.sh git_env.sh; do
+  af_reset
+  printf '# touched\n' >>"$af/scripts/test/$af_f"
+  assert_eq "$af_f selects the core set" "$(af_plan origin/rel)" "$af_core,$af_core_s,scripts/test/$af_f"
+done
+for af_f in orch_test.sh affected.sh test_jobs.sh report.sh test_tree.sh; do
+  af_reset
+  printf '# touched\n' >>"$af/scripts/test/$af_f"
+  assert_eq "$af_f selects the core set" "$(af_plan origin/rel)" "$af_core,$af_core_s,scripts/test/$af_f"
+done
+af_reset
+af_put scripts/orch.sh changed
+af_put scripts/orch/branch.sh 'z=3'
+af_put scripts/test/orch/zz-new.sh '# --- zz new ---'
+assert_eq "the core set comes together with the rest of the diff's selection" "$(af_plan origin/rel)" \
+  "$af_gate,$af_branch_titles,isolation,the parallel runner (#780),loader one,zz new,$af_core_s,scripts/orch.sh,scripts/orch/branch.sh,scripts/test/orch/zz-new.sh"
+af_reset
+af_put scripts/orch.sh changed
+af_put docs/a.md again
+assert_eq "a doc beside the core set adds nothing" "$(af_plan origin/rel)" "$af_core,$af_core_s,scripts/orch.sh"
+af_reset
+af_put scripts/test/orch/common.sh '# --- common one ---' '# --- common two ---'
+assert_eq "the common module's section file selects its own sections alone" "$(af_plan origin/rel)" \
+  "$af_gate,common one,common two,docs_lint.sh,scripts/test/orch/common.sh"
+
+# The new rows (#3548).
+af_hooks_s="hooks_test.sh,docs_lint.sh"
+af_row "flow-state.sh selects the core set and the state, init and side-checkout sections" scripts/flow-state.sh \
+  "$af_gate,isolation,the parallel runner (#780),init s,loader one,side-checkout s,state,$af_core_s,scripts/flow-state.sh"
+af_row "host.sh selects the core set and the doctor sections" scripts/host.sh \
+  "$af_gate,doctor s,isolation,the parallel runner (#780),loader one,$af_core_s,scripts/host.sh"
+af_row "bash-walk.sh selects the hooks suite" scripts/bash-walk.sh "$af_gate,$af_hooks_s,scripts/bash-walk.sh"
+af_row "paste-guard.sh selects the hooks suite and the spec-review sections" scripts/paste-guard.sh \
+  "$af_gate,spec-review s,$af_hooks_s,scripts/paste-guard.sh"
+af_row "planning-allowlist.sh selects the hooks suite and the doctor sections" scripts/planning-allowlist.sh \
+  "$af_gate,doctor s,$af_hooks_s,scripts/planning-allowlist.sh"
+af_row "triage-labels.sh selects the hooks suite and the doctor and issue sections" scripts/triage-labels.sh \
+  "$af_gate,doctor s,issue s,$af_hooks_s,scripts/triage-labels.sh"
+af_row "a dev script other than the lens bench selects the harness sections" scripts/dev/other.sh \
+  "$af_gate,isolation,the parallel runner (#780),docs_lint.sh,scripts/dev/other.sh"
+af_row "the edit width hook selects the harness sections and the hooks suite" scripts/dev/hook-edit-width.sh \
+  "$af_gate,isolation,the parallel runner (#780),$af_hooks_s,scripts/dev/hook-edit-width.sh"
+af_row "width.sh selects the harness sections and the hooks suite" scripts/dev/width.sh \
+  "$af_gate,isolation,the parallel runner (#780),$af_hooks_s,scripts/dev/width.sh"
+af_row "the shell-code awk program selects the harness sections and the hooks suite" scripts/test/shell_code.awk \
+  "$af_gate,isolation,the parallel runner (#780),$af_hooks_s"
+af_row "a docker file selects the container and up suites" docker/Dockerfile \
+  "$af_gate,docs_lint.sh,autopilot_container_test.sh,autopilot_up_test.sh"
+af_row ".dockerignore selects the container and up suites" .dockerignore \
+  "$af_gate,docs_lint.sh,autopilot_container_test.sh,autopilot_up_test.sh"
+af_row "a plugin manifest file selects the version bump and up suites" .claude-plugin/plugin.json \
+  "$af_gate,docs_lint.sh,version_bump_test.sh,autopilot_up_test.sh"
+for af_f in .github/workflows/test.yml .gitignore .gitattributes .ignore LICENSE .claude/settings.json; do
+  af_row "$af_f selects nothing more" "$af_f" "$af_gate,docs_lint.sh"
+done
+af_reset
+af_put .shellcheckrc changed
+af_sc_all="$(cd "$af" && shopt -s globstar && printf '%s\n' scripts/**/*.sh | LC_ALL=C sort -u | paste -sd, -)"
+assert_eq ".shellcheckrc selects the harness sections and shellchecks every script" "$(af_plan origin/rel)" \
+  "$af_gate,isolation,the parallel runner (#780),docs_lint.sh,$af_sc_all"
 
 # The line order, with every kind of change at once.
 af_reset
@@ -4179,10 +4264,10 @@ rm "$af/scripts/hook-guard.sh"
 assert_eq "a deleted shell file is not shellchecked" "$(af_plan origin/rel)" \
   "$af_gate,hooks_test.sh,docs_lint.sh"
 rm "$af/scripts/orch/state.sh"
-assert_eq "a deleted module falls back to all.sh" "$(af_plan origin/rel)" "all.sh"
+assert_eq "a deleted module selects the core set" "$(af_plan origin/rel)" "$af_core,$af_core_s"
 af_reset
 af_git rm -q scripts/test/orch/state.sh
-assert_eq "a deleted section file falls back to all.sh" "$(af_plan origin/rel)" "all.sh"
+assert_eq "a deleted section file selects the core set" "$(af_plan origin/rel)" "$af_core,$af_core_s"
 
 # The ref.
 af_reset
@@ -4314,6 +4399,7 @@ af_put scripts/test/docs_lint.sh "echo \"lint base=\${DOCS_LINT_BASE-unset}\" >\
 : >"$af.log"
 af_out="$(cd "$af" && DOCS_LINT_BASE=stale PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"
 assert_contains "the narrow selection hands docs_lint.sh the base it works out" "$(cat "$af.log")" "lint base=$af_base"
+af_put Makefile changed
 af_put scripts/test/all.sh 'echo "all base=${DOCS_LINT_BASE-unset}"'
 af_out="$(cd "$af" && DOCS_LINT_BASE=stale bash scripts/test/affected.sh HEAD 2>&1)"
 assert_eq "the full-suite fallback hands all.sh the base it works out" "$af_out" "all base=$af_base"
@@ -4354,6 +4440,7 @@ af_put scripts/test/docs_lint.sh "echo \"lint base=\${DOCS_LINT_BASE-unset}\" >\
 af_out="$(cd "$af" && DOCS_LINT_BASE=stale PATH="$af_sc:$PATH" bash scripts/test/affected.sh 2>&1)"
 assert_contains "on a ticket branch the narrow selection hands docs_lint.sh the parent's base" \
   "$(cat "$af.log")" "lint base=$af_own"
+af_put Makefile changed
 af_put scripts/test/all.sh 'echo "all base=${DOCS_LINT_BASE-unset}"'
 af_out="$(cd "$af" && DOCS_LINT_BASE=stale bash scripts/test/affected.sh 2>&1)"
 assert_eq "on a ticket branch the fallback hands all.sh the parent's base" "$af_out" "all base=$af_own"
@@ -4450,7 +4537,7 @@ af_verdict_run -- HEAD
 assert_eq "a selection with no changed shell file counts shellcheck's line" \
   "$(printf '%s\n' "$af_out" | tail -n 1)" "affected.sh: PASS (3 parts)"
 # The full-suite fallback ends on all.sh's verdict.
-af_put scripts/orch.sh 'echo changed'
+af_put Makefile 'echo changed'
 af_verdict_run -- HEAD
 assert_eq "a full-suite fallback ends on all.sh's verdict, never affected.sh's" \
   "$(printf '%s\n' "$af_out" | tail -n 1)" "all.sh: PASS ($((${#SUITES[@]} + 1)) parts)"
@@ -4477,7 +4564,7 @@ printf '%s\n' '#!/usr/bin/env bash' "echo \"shard=\${ORCH_TEST_SHARD:-unset}\" >
 af_verdict_run ORCH_TEST_SHARD=2/4 -- HEAD
 assert_eq "affected.sh's mapped path runs orch_test.sh with the shard setting unset" \
   "$(grep "^shard=" "$af.log" | sort -u)" "shard=unset"
-af_put scripts/orch.sh 'echo changed'
+af_put Makefile 'echo changed'
 : >"$af.log"
 af_verdict_run ORCH_TEST_SHARD=2/4 -- HEAD
 assert_eq "and its fallback to all.sh runs the whole suite, the setting unset" \
