@@ -52,10 +52,17 @@ ci_probe() {
 # adapter_pr_checks answer - its status, its TSV and its stderr - so a caller
 # that read the checks itself (ci_counted) classifies them the same way.
 ci_classify() {
-  local rc="$1" out="$2" err="$3" failed="" pending="" line bucket name
+  local rc="$1" out="$2" err="$3" failed="" pending="" line bucket name rest
   if [ "$rc" -ne 0 ]; then
     note unreachable
     note "      $(gh_reason "$err")"
+    # A further line is a warning the failed call added (the GitHub limit pause
+    # it could not write), kept beside the reason.
+    rest="${err#*$'\n'}"
+    [ "$rest" != "$err" ] || rest=""
+    while IFS= read -r line; do
+      case "$line" in *"could not write the GitHub limit"*) note "      $line" ;; esac
+    done <<<"$rest"
     return 0
   fi
   if [ -z "$out" ]; then note none; return 0; fi
@@ -906,16 +913,18 @@ cmd_review() {
       # stored total, never sleeps and writes nothing (no state key, wait file,
       # provisional guard); where the loop would sleep it prints `pending`. A
       # rate limit is given up on at once (GH_LIMIT_NO_SLEEP).
-      local nowait=0 pr_arg=""
+      local nowait=0 pr_arg="" pr_given=0
       while [ $# -gt 0 ]; do
         case "$1" in
           --no-wait) nowait=1 ;;
-          *) [ -z "$pr_arg" ] || die "usage: orch.sh review ci [--no-wait] [<pr>]"
-             pr_arg="$1" ;;
+          *) [ "$pr_given" = 0 ] || die "usage: orch.sh review ci [--no-wait] [<pr>]"
+             pr_given=1; pr_arg="$1" ;;
         esac
         shift
       done
-      case "$pr_arg" in *[!0-9]*) die "not a PR number: $pr_arg" ;; esac
+      if [ "$pr_given" = 1 ]; then
+        case "$pr_arg" in ''|*[!0-9]*) die "not a PR number: $pr_arg" ;; esac
+      fi
       # blocked and slept are read by wait_tick through bash's dynamic scope;
       # refs_err is pr_refs_read's error output, which ci_refs_unread reports.
       # shellcheck disable=SC2034

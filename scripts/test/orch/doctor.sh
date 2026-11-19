@@ -2743,8 +2743,9 @@ assert_contains "the remedy names the setup doc" "$out" "docs/repo-setup.md"
 restore_suite_env
 
 # --- doctor --env: verification lines -----------------------------------------
-# The Ticket verification: and Full verification: lines the agents read from
-# the repo's instructions: each label is reported on its own.
+# The Ticket verification:, Branch verification: and Full verification: lines
+# the agents read from the repo's instructions: each label is reported on its
+# own.
 echo
 echo "doctor --env: verification lines"
 healthy_repo
@@ -2871,7 +2872,8 @@ assert_not_contains "--flow does not run the check" "$out" "verification"
 restore_suite_env
 
 # --- doctor --env: verification commands (#3346) ------------------------------
-# The first word of each `Ticket verification:` and `Full verification:` line
+# The first word of each `Ticket verification:`, `Branch verification:` and
+# `Full verification:` line
 # is looked up; a missing one warns, never fails. Each case asserts what doctor
 # --env prints; the exit status is asserted once, for the missing-command case.
 echo

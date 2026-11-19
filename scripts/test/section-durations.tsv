@@ -31,10 +31,10 @@
 2	3	runner git isolation (#1905)	893c92f930403219776e8e81c210fa88b82a78dc
 0	1	the background child start (#3025)	afcd21067c7aecaf71c2ec5e94c089ef132e4b31
 2	3	the counting fixture's stdin counter (#3434)	aafb6dd76954786ebd8a66bcb6c3100fa0ca5fe4
-49	47	affected.sh, the ticket verification (#2023)	64b45630a4cfc762736336c0a9015a6809d33929
+49	46	affected.sh, the ticket verification (#2023)	caa6ac1aa7e4746c8d94baca433f40af48bc5b32
 3	4	the row rule (#3549)	18a8bf984386a20eba53c0d904b82f8cd71dc228
 3	4	the shared test support, function by function (#3550)	38bfb5000ebc56726787059e0b7a14bf55923712
-2	3	the gh fake, operation by operation (#3551)	1da41d9db25c757824c616d02c265959b497d081
+3	4	the gh fake, operation by operation (#3551)	f7fcc7b6927b02ecfe1b2e027ec743f40e2bcd91
 66	72	agent	cddc69e5a268c5cd6ddfed15d957b78960ef77e3
 20	22	agent sync	b39ad35449afd2ba48dfe47fd1a68a53a2d8c22b
 3	4	agent copy marker and Junie field: no command per call	2a90944570501eb9df9e004a9fab0ff67c9dac60
@@ -152,8 +152,8 @@
 11	13	doctor --env: Standards declaration check (#3358)	e65aafea5b03bb784dff7ce1c2c4cafdbfdafffc
 8	9	doctor --env: glossary check (#3358)	1da032d3f5869f75b6dd3d5b7bb81c6163d44549
 7	9	doctor --env: ADR directory check (#3358)	bfb05745053379020206a54151bb3e09663f0ebf
-37	42	doctor --env: verification lines	02f8e20bf86adb4242f0f148f2050002066a0ab7
-41	46	doctor --env: verification commands (#3346)	dd37e452ded2c66124e91f00b28737906e79e127
+37	41	doctor --env: verification lines	c5de88b42e78f420dd14c559eb5b74d4c020d161
+42	45	doctor --env: verification commands (#3346)	42671345c4d2bce4f45ffc6226048963ef3d83e0
 0	1	is_filed_severity	41fb54217cc90b7a75a37b3ee336945167710410
 1	2	severity table	cbcec87893fb4d691f66b67cb960e1bc2f27d3d3
 2	3	category table	936a5e8b2f00a434df3adb306e2542dd71c175f9
@@ -267,7 +267,7 @@
 14	15	review ready	3de42f3d7ace4ec6ce6ffa7c0883b3806733eed4
 132	76	review ci	67768cd834eb07a3dda28b9d8b7520371b15af5e
 13	12	the grace counts from the push (issue #475)	eb2a643a788b9b82800270785192827a831aab40
-23	21	review ci --no-wait	22a910bf707698bdbde8978eaecd69e2a88b14cb
+23	21	review ci --no-wait	351fee2ec2cb925d6c0047abc20d9a04c17e3cd9
 51	42	the grace is skipped on no evidence of CI (issue #476)	47adf5995cd35a720b31a17a50f1a4366fc237c7
 9	10	review rerun	39699a125cfcb488efe0e549d5a7f71549d25bc2
 5	6	review ci-log	062fdd89e41ebd54b3a937f0bb83e5fb59f09c4a
@@ -280,7 +280,7 @@
 13	15	review standards (#1532)	51b9dc72c38a1bbf1bf3a35d98be00be13132d18
 9	10	review ready with a failed phase write (#1931)	66843fb4a3f090b55ec0719f4827cb02043c8277
 10	11	review reads its Flow state once	858b40aedf40f33288b10e3d1bfa6544501647e9
-33	19	review ci <pr>	199499b140d0fa6f5425f56979db4aa30df1e1c3
+31	18	review ci <pr>	f2b2a3adbb970ec69759ceb26fef180548c9c230
 2	3	route show	0e4fc7b4e544565f4d6f0cc3b311a522ccf801b0
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
 40	42	side-checkout (#722)	af2be5feb612499e9c65d765d4e385133c64fdd4

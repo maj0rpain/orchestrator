@@ -295,7 +295,8 @@ plan or from what the previous loop left instead of asking.
    When that record's `## CI` section reads `failing`, it enters this first
    triage as a blocking finding too, alongside any open blocking finding: name
    the failing check, and run `bash "$ORCH" review ci-log <pr>` yourself for the
-   log excerpt (the record holds none).
+   log excerpt (the record holds none), and mark it CI-found in the fixable
+   list with that excerpt.
    Every iteration's triage also looks at CI once, without waiting: run
    `bash "$ORCH" review ci --no-wait` (one pass of the probe, never a wait,
    writing nothing). Only `failing` matters: read `bash "$ORCH" review ci-log

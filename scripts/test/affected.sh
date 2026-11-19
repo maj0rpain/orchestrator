@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# This repo's ticket verification: affected.sh [--plan] [<ref>]. It maps the
-# files changed since the branch's base to the test suites and orch_test.sh
-# sections that cover them, always runs the cheap broad checks, and runs the
-# full suite (all.sh) wherever a change's reach is unclear. CI is the one place
-# the whole suite always runs.
+# This repo's ticket and branch verification: affected.sh [--plan] [<ref>] or
+# affected.sh --row <path>... It maps the files changed since the branch's base
+# to the test suites and orch_test.sh sections that cover them, always runs
+# the cheap broad checks, and runs the full suite (all.sh) wherever a change's
+# reach is unclear. CI is the one place the whole suite always runs.
 #
 # The base is the merge-base of HEAD with <ref> when one is given. On a ticket
 # branch that records branch.<b>.orchestrator-ticket-parent it is the
@@ -128,7 +128,8 @@
 # each failed part named by its summary line's prefix, n counting the summary
 # lines printed (shellcheck's included, whatever it printed). The full-suite
 # fallback ends on all.sh's verdict instead. Usage errors, an unknown ref, an
-# invalid ORCH_TEST_POOL_PERCENT, an INT or TERM stop and --plan print none.
+# invalid ORCH_TEST_POOL_PERCENT, an INT or TERM stop, --plan and
+# --row print none.
 # An invalid ORCH_TEST_JOBS is not checked here: the orch_test.sh child fails
 # on it, so the run still ends on "affected.sh: FAIL (orch_test.sh)".
 
@@ -381,7 +382,7 @@ support_select() {
 # full suite when its reach is unclear.
 classify() {
   local f="$1" state="$2" file_name
-  file_name="$(basename "$f")"
+  file_name="${f##*/}"
   # The core set: the harness and loader section files' sections and every
   # suite but orch_test.sh, together with whatever the rest of the diff selects.
   case "$f" in

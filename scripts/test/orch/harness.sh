@@ -4228,18 +4228,15 @@ af_reset
 af_put scripts/orch/branch.sh 'z=3'
 af_put Makefile 'z=3'
 assert_eq "an unmapped file wins over a module" "$(af_plan origin/rel)" "all.sh"
+af_row "a module with no section file of its own falls back to all.sh" \
+  scripts/orch/zz-no-section.sh "all.sh"
 
 # The core set (#3548): the harness and loader sections and every suite but
 # orch_test.sh, together with the rest of the diff's selection.
-af_core_row() {
-  af_reset
-  af_put "$2" changed
-  assert_eq "$1" "$(af_plan origin/rel)" "$3"
-}
-af_core_row "orch.sh selects the core set" scripts/orch.sh "$af_core,$af_core_s,scripts/orch.sh"
-af_core_row "the common module selects the core set and its own section file" scripts/orch/common.sh \
+af_row "orch.sh selects the core set" scripts/orch.sh "$af_core,$af_core_s,scripts/orch.sh"
+af_row "the common module selects the core set and its own section file" scripts/orch/common.sh \
   "$af_gate,common one,isolation,the parallel runner (#780),loader one,$af_core_s,scripts/orch/common.sh"
-af_core_row "the loader module selects the core set" scripts/orch/loader.sh \
+af_row "the loader module selects the core set" scripts/orch/loader.sh \
   "$af_core,$af_core_s,scripts/orch/loader.sh"
 for af_f in all.sh git_env.sh orch_test.sh affected.sh test_jobs.sh report.sh test_tree.sh; do
   af_reset
@@ -4741,6 +4738,7 @@ gf_put() { tr_put "$gf" "$@"; }
 gf_plan() { tr_plan "$gf"; }
 gf_reset() { tr_reset "$gf"; }
 gf_fake=scripts/test/gh_adapter_fake.sh
+gf_setup_body='echo s'
 # gf_fake_put <op-a-body> <helper-body> <lonely-body> [<extra-line>...]
 gf_fake_put() {
   local a="$1" h="$2" l="$3"
@@ -4750,6 +4748,7 @@ gf_fake_put() {
     'adapter_op_b() {' '  # calls fake_help' '  fake_help' '}' \
     "fake_help() { $h; }" \
     "fake_shared() { $h; }" \
+    "fake_setup() { $gf_setup_body; }" \
     "fake_lonely() { $l; }" "$@"
 }
 gf_put scripts/test/hooks_test.sh 'x=1'
@@ -4759,10 +4758,10 @@ gf_put scripts/orch/branch.sh 'adapter_op_a "$1"'
 gf_put scripts/orch/state.sh '# adapter_op_a only in a comment' 'adapter_op_b "$1"'
 gf_put scripts/orch/pr.sh 'x=1'
 gf_put scripts/test/orch/gh.sh '# --- gh one ---'
-gf_put scripts/test/orch/branch.sh '# --- branch one ---'
+gf_put scripts/test/orch/branch.sh '# --- branch one ---' 'setup_x'
 gf_put scripts/test/orch/state.sh '# --- state one ---'
 gf_put scripts/test/orch/pr.sh '# --- pr one ---' 'fake_shared'
-gf_put scripts/test/orch/setup.sh 'setup_x() { :; }'
+gf_put scripts/test/orch/setup.sh 'setup_x() { fake_setup; }'
 tr_commit "$gf"
 
 gf_fake_put 'echo A' 'echo h' 'echo l'
@@ -4777,11 +4776,17 @@ gf_fake_put 'echo a' 'echo h' 'echo L'
 assert_eq "a gh fake function nothing reaches selects the core set" \
   "$(gf_plan)" "$TR_GATE,$TR_CORE,$gf_fake"
 gf_reset
+gf_setup_body='echo S'
+gf_fake_put 'echo a' 'echo h' 'echo l'
+assert_eq "a gh fake function shared test support calls directly selects as a shared helper" \
+  "$(gf_plan)" "$TR_GATE,branch one,docs_lint.sh,$gf_fake"
+gf_setup_body='echo s'
+gf_reset
 gf_fake_put 'echo a' 'echo h' 'echo l' '# a new comment' ''
 gf_put "$gf_fake" '# a changed comment' '' \
   'adapter_op_a() { echo a; }' \
   'adapter_op_b() {' '  fake_help' '' '}' \
-  'fake_help() { echo h; }' 'fake_shared() { echo h; }' 'fake_lonely() { echo l; }'
+  'fake_help() { echo h; }' 'fake_shared() { echo h; }' 'fake_setup() { echo s; }' 'fake_lonely() { echo l; }'
 assert_eq "a comment-only and a blank-line-only change select nothing more" \
   "$(gf_plan)" "$TR_GATE,docs_lint.sh,$gf_fake"
 gf_reset

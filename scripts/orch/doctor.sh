@@ -572,7 +572,8 @@ verification_lines() {
 
 # Reports one label by the first rule that holds: a label with no command is a
 # FAIL and the only line for it; two different commands warn; else the label is
-# found (ok) or not (warn for Full, ok naming the fallback for Ticket).
+# found (ok) or not (warn for Full, ok naming the fallback for Ticket
+# and for Branch).
 # $1 is the label, $2 the scan's output.
 verification_report() {
   local label="$1" lines="$2" l f cmd first_f="" first_c="" have=0 bare="" other_f="" other_c=""

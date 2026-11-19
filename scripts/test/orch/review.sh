@@ -996,6 +996,7 @@ mkdir -p "$top/.orchestrator/autopilot/github-limit"
 out="$(ORCH_AUTOPILOT=1 ORCH_GH_LIMIT_WAIT=30 timeout 10 "$ORCH" review ci --no-wait 2>&1)"; st=$?
 assert_first_line "a pause that cannot be written still prints unreachable" "$out" "unreachable"
 assert_status "with its exit status" "$st" 1
+assert_contains "and adds the warning line" "$out" "could not write the GitHub limit pause"
 rm -rf "$top/.orchestrator/autopilot/github-limit" "$ORCH_GH_FAKE_STORE/ratelimit"
 review_ci_restore
 
@@ -2260,6 +2261,9 @@ assert_status "and the delivered total is then gone" "$st" 75
 out="$("$ORCH" review ci 7x 2>&1)"; st=$?
 assert_status "a non-number argument is refused" "$st" 1
 assert_eq "with review ci-log's message shape" "$out" "orch: not a PR number: 7x"
+out="$("$ORCH" review ci '' 2>&1)"; st=$?
+assert_status "an empty argument is refused" "$st" 1
+assert_eq "with review ci-log's message" "$out" "orch: not a PR number: "
 out="$("$ORCH" review ci 99 --no-wait 2>&1)"; st=$?
 assert_status "an unknown PR number exits as unreachable" "$st" 1
 assert_first_line "printing unreachable" "$out" "unreachable"
