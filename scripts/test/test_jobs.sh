@@ -388,6 +388,7 @@ test_jobs_slot_wait() {
   done
 }
 
+# shellcheck disable=SC2034 # read by the sourcing runners
 test_jobs_slot_release() {
   TEST_JOBS_HOLDER_PID=""
   [ -z "$TEST_JOBS_SLOT_FD" ] && return 0

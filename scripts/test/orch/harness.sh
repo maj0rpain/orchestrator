@@ -4055,11 +4055,11 @@ rm -rf "$ss_file.pool"
 assert_eq "a pooled start sets a holder pid other than the suite's, and an unpooled start after it empties it" \
   "$ss_out" "$(printf 'pooled-ok\nafter=[]')"
 ss_out="$(source "$ss_helpers"; TEST_JOBS_POOL="$ss_file.pool"; mkdir -p "$TEST_JOBS_POOL"
-  eval "exec $TEST_JOBS_FD>>\"\$TEST_JOBS_POOL/slot.1\""; TEST_JOBS_SLOT_FD="$TEST_JOBS_FD"
+  TEST_JOBS_SLOTS=1; test_jobs_slot_take
   ORCH_TEST_POOL_HELD=/other test_jobs_suite_start bash -c 'echo "$ORCH_TEST_POOL_HELD"' >"$ss_file"; wait "$TEST_JOBS_SUITE_PID"; cat "$ss_file")"
 rm -rf "$ss_file.pool"
 assert_eq "a suite started with a slot held sees the pool directory as its marker" "$ss_out" "$ss_file.pool"
-ss_out="$(source "$ss_helpers"; export ORCH_TEST_POOL_HELD=/other; TEST_JOBS_SLOT_FD=""
+ss_out="$(source "$ss_helpers"; export ORCH_TEST_POOL_HELD=/other
   test_jobs_slot_take; test_jobs_suite_start bash -c 'echo "$ORCH_TEST_POOL_HELD"' >"$ss_file"; wait "$TEST_JOBS_SUITE_PID"; cat "$ss_file")"
 assert_eq "and with none held, the inherited marker" "$ss_out" "/other"
 rm -f "$ss_file"
