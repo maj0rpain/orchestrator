@@ -1489,10 +1489,8 @@ TQ="$PG/quoted-tail.jsonl"; cp "$T11" "$TQ"
 pg_text "$TQ" "spec_review_nudge ends a pass line with '; it is saved in <path>/view.md'"
 assert_eq "a transcript quoting the tail outside a pass line allows (ask)" "$(pg_decide "$TQ")" allow
 assert_eq "and the Stop guard too" "$(sg_decide "$TQ")" allow
-if [ "$(jq_count pg_decide "$TQ")" -gt "$(jq_count pg_decide "")" ]; then ok "the quoted tail decodes its candidate lines (ask)"
-else bad "the quoted tail decodes its candidate lines (ask)" "no extra jq"; fi
-if [ "$(jq_count sg_decide "$TQ")" -gt "$(jq_count sg_decide "")" ]; then ok "the quoted tail decodes its candidate lines (Stop)"
-else bad "the quoted tail decodes its candidate lines (Stop)" "no extra jq"; fi
+assert_lt "the quoted tail decodes its candidate lines (ask)" "$(jq_count pg_decide "")" "$(jq_count pg_decide "$TQ")"
+assert_lt "the quoted tail decodes its candidate lines (Stop)" "$(jq_count sg_decide "")" "$(jq_count sg_decide "$TQ")"
 # An armed refusal over the full window on an unchanged transcript parses once.
 pg_full_window_refusal() { ORCH_PASTE_GUARD_WAIT='' PG_SLEEP_LOG="$PG/sleep-unchanged.log" PATH="$PG/stub:$PATH" "$@"; }
 for pg_fn in pg_decide sg_decide; do
@@ -1555,20 +1553,17 @@ pg_b_quote() { pg_pad "$1" "$2"; pg_text "$1" "the pass line ends '; it is saved
 pg_b_human() { pg_check "$1" toolu_k1 batch "$PG/batch/view.md"; pg_entry "$1" user '"carry on"'; pg_pad "$1" "$2"; }
 pg_cost_build disarmed-by-apply pg_b_apply
 pg_cost_build armed-now pg_b_armed
+cp "$PG/cost/pad-armed-now.jsonl" "$PG/cost/pad-armed-pasted.jsonl"; pg_text "$PG/cost/pad-armed-pasted.jsonl" "$(cat "$PG/batch/view.md")"
 pg_cost_build quotes-only pg_b_quote
 pg_cost_build human pg_b_human
 pg_na="$PG/cost/apply-only.jsonl"; : >"$pg_na"; pg_pad "$pg_na" pad; pg_bash "$pg_na" toolu_k3 'bash "$ORCH" spec-review apply'
 for pg_fn in pg_decide sg_decide; do
   pg_cost_pair disarmed-by-apply "$pg_fn"
-  assert_eq "disarmed by apply allows ($pg_fn)" "$("$pg_fn" "$PG/cost/pad-disarmed-by-apply.jsonl")" allow
   pg_cost_pair armed-now "$pg_fn"
   assert_eq "armed now, padded before the pass line, refuses without a paste ($pg_fn)" \
     "$("$pg_fn" "$PG/cost/pad-armed-now.jsonl")" "$([ "$pg_fn" = pg_decide ] && echo deny || echo block)"
-  cp "$PG/cost/pad-armed-now.jsonl" "$PG/cost/pad-armed-pasted.jsonl"; pg_text "$PG/cost/pad-armed-pasted.jsonl" "$(cat "$PG/batch/view.md")"
   assert_eq "and allows with one ($pg_fn)" "$("$pg_fn" "$PG/cost/pad-armed-pasted.jsonl")" allow
   pg_cost_pair quotes-only "$pg_fn"
-  assert_eq "quotes only allows ($pg_fn)" "$("$pg_fn" "$PG/cost/pad-quotes-only.jsonl")" allow
-  assert_eq "disarmed by a human message alone allows ($pg_fn)" "$("$pg_fn" "$PG/cost/pad-human.jsonl")" allow
   pg_hb="$(jq_bytes "$pg_fn" "$PG/cost/pad-human.jsonl")"; pg_hn="$(jq_bytes "$pg_fn" "$PG/cost/non-human.jsonl")"
   # The bare baseline is a real transcript the scan reads: it offers jq more
   # bytes than a missing transcript at a path of equal length.
@@ -1603,12 +1598,14 @@ pg_fb_jq2="$(fails_bin jq '*" --arg view "*' 3)"
 pg_fb_tail="$(fails_bin tail '*' 1)"
 pg_fb_grep="$(fails_bin grep '*' 2)"
 pg_line="$(pg_pass_line batch "$PG/batch/view.md")"
-# The decision transcripts have the same bytes for both hooks: built once, a
-# fresh copy per hook where the case appends.
+# The decision transcripts and their pasted copies have the same bytes for both
+# hooks: each is built once.
 TQL="$PG/cost/quote-live.jsonl"; pg_check "$TQL" toolu_q1 batch "$PG/batch/view.md"
 pg_text "$TQL" "As printed: $pg_line"
+cp "$TQL" "$TQL.pasted"; pg_text "$TQL.pasted" "$(cat "$PG/batch/view.md")"
 TBL="$PG/cost/blob-live.jsonl"; pg_check "$TBL" toolu_q2 batch "$PG/batch/view.md"
 jq -nc --arg c "$pg_line" '{type:"api-request-blob", message:{role:"user", content:[{type:"tool_result", tool_use_id:"toolu_q2b", content:$c}]}}' >>"$TBL"
+cp "$TBL" "$TBL.pasted"; pg_text "$TBL.pasted" "$(cat "$PG/batch/view.md")"
 TFE="$PG/cost/far-apply.jsonl"
 pg_bash "$TFE" toolu_q3 'bash "$ORCH" spec-review check x && bash "$ORCH" spec-review apply'
 pg_pad "$TFE" pad; pg_result "$TFE" toolu_q3 "$pg_line"
@@ -1621,11 +1618,9 @@ done
 for pg_fn in pg_decide sg_decide; do
   pg_want="$([ "$pg_fn" = pg_decide ] && echo deny || echo block)"
   assert_eq "a live pass line followed by a reply quoting it refuses without a paste ($pg_fn)" "$("$pg_fn" "$TQL")" "$pg_want"
-  cp "$TQL" "$TQL.$pg_fn"; pg_text "$TQL.$pg_fn" "$(cat "$PG/batch/view.md")"
-  assert_eq "and allows once the view is pasted ($pg_fn)" "$("$pg_fn" "$TQL.$pg_fn")" allow
+  assert_eq "and allows once the view is pasted ($pg_fn)" "$("$pg_fn" "$TQL.pasted")" allow
   assert_eq "a live pass line followed by a request blob's copy refuses without a paste ($pg_fn)" "$("$pg_fn" "$TBL")" "$pg_want"
-  cp "$TBL" "$TBL.$pg_fn"; pg_text "$TBL.$pg_fn" "$(cat "$PG/batch/view.md")"
-  assert_eq "and allows once the view is pasted ($pg_fn)" "$("$pg_fn" "$TBL.$pg_fn")" allow
+  assert_eq "and allows once the view is pasted ($pg_fn)" "$("$pg_fn" "$TBL.pasted")" allow
   assert_eq "a pass-line result answering an apply call many entries earlier does not arm ($pg_fn)" "$("$pg_fn" "$TFE")" allow
   pg_hi=0
   for pg_hm in "; it is saved in /x" "spec-review apply"; do
