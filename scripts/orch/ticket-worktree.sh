@@ -130,10 +130,12 @@ ticket_facts_require_wt_branch() {
 # That helper assigns the caller's `branch`, so the local `branch` below takes
 # its write and no caller's variable is touched.
 ticket_facts_require_parent() {
+  local _tfrp_ref="${1}[parent]" _tfrp_parent
+  assoc_array_require ticket_facts_require_parent "$1" _tfrp_
+  _tfrp_parent="${!_tfrp_ref}"
+  [ -z "$_tfrp_parent" ] || return 0
   # shellcheck disable=SC2034 # current_branch_or_die assigns it, so it stays local
-  local parent_ref="${1}[parent]" branch
-  local parent="${!parent_ref}"
-  [ -z "$parent" ] || return 0
+  local branch
   current_branch_or_die
 }
 
@@ -211,47 +213,49 @@ TICKET_TEARDOWN_BRANCH_FAILED=11
 # returns its own status, TICKET_TEARDOWN_WORKTREE_FAILED or
 # TICKET_TEARDOWN_BRANCH_FAILED, leaving what already happened in place.
 ticket_worktree_teardown() {
-  local facts="" unmerged=0 discard=0 have_wt=0
+  local _twt_facts="" _twt_unmerged=0 _twt_discard=0 _twt_have_wt=0
   while [ $# -gt 0 ]; do
     case "$1" in
-      --unmerged) unmerged=1 ;;
-      --discard) discard=1 ;;
+      --unmerged) _twt_unmerged=1 ;;
+      --discard) _twt_discard=1 ;;
       -*) die "ticket_worktree_teardown: unknown flag: $1" ;;
-      *) [ -z "$facts" ] || die "ticket_worktree_teardown: unexpected argument: $1"; facts="$1" ;;
+      *) [ -z "$_twt_facts" ] || die "ticket_worktree_teardown: unexpected argument: $1"; _twt_facts="$1" ;;
     esac
     shift
   done
-  [ -n "$facts" ] || die "usage: ticket_worktree_teardown <array> [--unmerged] [--discard]"
-  ticket_facts_require_parent "$facts"
-  local n_ref="${facts}[n]" path_ref="${facts}[path]" state_ref="${facts}[worktree]" \
-    own_ref="${facts}[own_branch]" exists_ref="${facts}[own_exists]"
-  local n="${!n_ref}" path="${!path_ref}" state="${!state_ref}" own_branch="${!own_ref}" own_exists="${!exists_ref}"
-  # Only a worktree at $path itself: a leftover t<n> directory's enclosing
+  [ -n "$_twt_facts" ] || die "usage: ticket_worktree_teardown <array> [--unmerged] [--discard]"
+  assoc_array_require ticket_worktree_teardown "$_twt_facts" _twt_
+  ticket_facts_require_parent "$_twt_facts"
+  local _twt_n_ref="${_twt_facts}[n]" _twt_path_ref="${_twt_facts}[path]" _twt_state_ref="${_twt_facts}[worktree]" \
+    _twt_own_ref="${_twt_facts}[own_branch]" _twt_exists_ref="${_twt_facts}[own_exists]"
+  local _twt_n="${!_twt_n_ref}" _twt_path="${!_twt_path_ref}" _twt_state="${!_twt_state_ref}" \
+    _twt_own_branch="${!_twt_own_ref}" _twt_own_exists="${!_twt_exists_ref}"
+  # Only a worktree at $_twt_path itself: a leftover t<n> directory's enclosing
   # checkout is not ours to discard, abort or remove.
-  [ "$state" != occupied ] \
-    || die "ticket worktree path $path holds something that is not a worktree, though git's record names it - delete it and run the command again"
-  [ "$state" = none ] || have_wt=1
+  [ "$_twt_state" != occupied ] \
+    || die "ticket worktree path $_twt_path holds something that is not a worktree, though git's record names it - delete it and run the command again"
+  [ "$_twt_state" = none ] || _twt_have_wt=1
   # A record with its directory gone has nothing to discard, abort or check.
-  if [ "$state" = worktree ]; then
-    [ "$discard" = 0 ] || discard_work_in "$path" "ticket #$n"
-    if [ "$unmerged" = 1 ] && rebase_in_progress "$path"; then
-      git -C "$path" rebase --abort \
-        || die "could not abort the rebase in progress in ticket worktree $path"
+  if [ "$_twt_state" = worktree ]; then
+    [ "$_twt_discard" = 0 ] || discard_work_in "$_twt_path" "ticket #$_twt_n"
+    if [ "$_twt_unmerged" = 1 ] && rebase_in_progress "$_twt_path"; then
+      git -C "$_twt_path" rebase --abort \
+        || die "could not abort the rebase in progress in ticket worktree $_twt_path"
     fi
-    require_clean_tree "$path" \
-      "ticket worktree $path is dirty - commit or discard its changes first; it is never removed with force"
-  elif [ "$state" = none ]; then
-    [ "$own_exists" = yes ] \
-      || die "no ticket worktree or branch for ticket $n at $path"
+    require_clean_tree "$_twt_path" \
+      "ticket worktree $_twt_path is dirty - commit or discard its changes first; it is never removed with force"
+  elif [ "$_twt_state" = none ]; then
+    [ "$_twt_own_exists" = yes ] \
+      || die "no ticket worktree or branch for ticket $_twt_n at $_twt_path"
   fi
-  [ "$unmerged" = 1 ] || ticket_branch_merged_or_die "$own_branch" "discard it"
-  if [ "$have_wt" = 1 ]; then
-    git worktree remove "$path" \
-      || { warn "could not remove ticket worktree $path"; return "$TICKET_TEARDOWN_WORKTREE_FAILED"; }
+  [ "$_twt_unmerged" = 1 ] || ticket_branch_merged_or_die "$_twt_own_branch" "discard it"
+  if [ "$_twt_have_wt" = 1 ]; then
+    git worktree remove "$_twt_path" \
+      || { warn "could not remove ticket worktree $_twt_path"; return "$TICKET_TEARDOWN_WORKTREE_FAILED"; }
   fi
-  if [ "$own_exists" = yes ]; then
-    git branch -q -D "$own_branch" \
-      || { warn "could not delete branch $own_branch"; return "$TICKET_TEARDOWN_BRANCH_FAILED"; }
+  if [ "$_twt_own_exists" = yes ]; then
+    git branch -q -D "$_twt_own_branch" \
+      || { warn "could not delete branch $_twt_own_branch"; return "$TICKET_TEARDOWN_BRANCH_FAILED"; }
   fi
 }
 
