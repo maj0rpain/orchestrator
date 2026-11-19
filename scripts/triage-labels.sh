@@ -40,10 +40,11 @@ triage_table_rows() {
       sub(/[[:space:]]+$/, "", s)
       return s
     }
-    # A table ends where the pipes stop. Without this, cols still holds the
-    # previous table width when the next table begins - a header row arrives a
-    # line before the separator that would correct it - so a narrower table
-    # holding a role row, after a wider table holding none, would be read.
+    # A table ends where the pipes stop. Without this, cols keeps the previous
+    # table width until the next table separator row corrects it. So
+    # after a table of three or more columns holding no role row, two things
+    # would be read: a table with no separator row, or a header row (the row
+    # before the separator) whose left cell names a role.
     !/^[[:space:]]*\|/ {
       cols = 0
       # The role table has ended: read nothing after it.

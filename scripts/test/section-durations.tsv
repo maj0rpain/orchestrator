@@ -125,7 +125,7 @@
 0	1	die_hinted and die_opt_check	a31d5ea9ef99f315cf022f51ad5894482feffb9e
 0	1	host detection (host.sh, #281)	9d7272356d7fbf0f5fdca9c46ffa86f8c5c036cd
 5	6	doctor.sh is a one-way dependency (#281)	b86ca6ac46faa586b4d718a1aa26e9018e2539ea
-228	182	doctor	4e7be995252027e6d3e003e27f9472a3c5e1fc93
+214	151	doctor	1a397ae1fde9b77cc986b59e7a3fef9dd251ae56
 36	40	doctor: host (#128)	0ff10dbdae9d20ee078396950c793cb2ec3a2d69
 97	105	doctor --flow	ec6c0771cdbf7af4d034b080907fded56e7409f3
 41	45	doctor --env: finished side checkouts (#727)	409b7fb136865798294e217b184517a077d5b12c
