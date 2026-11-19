@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.14
+
+The glossary's Driver loop and Driver entries now say a stop report is not saved and its ticket neither merged nor closed, and a new Stop report entry defines the term.
+
 ## 6.8.13
 
 Internal refactor: the base module's out-variable note helper is replaced by a no-argument printer, `base_note`, so `base show` and `base clear` no longer declare a variable they drop. What `orch.sh base` prints is unchanged.
