@@ -383,14 +383,6 @@ support_select() {
   done <<<"$diffed"
 }
 
-# listed <word> <item>...: succeeds when the word equals one of the items.
-listed() {
-  local word="$1" item
-  shift
-  for item in "$@"; do [ "$item" = "$word" ] && return 0; done
-  return 1
-}
-
 # The files that select the core set and have no row of their own.
 CORE_FILES=(scripts/orch.sh scripts/test/git_env.sh scripts/test/all.sh scripts/test/orch_test.sh scripts/test/affected.sh scripts/test/test_jobs.sh scripts/test/report.sh scripts/test/test_tree.sh)
 
