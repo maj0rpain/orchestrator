@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.34
+
+`spec-review apply`'s autopilot hold run builds the held blocks in apply's own shell and passes them to `spec_round_hold <dir> <blocks>` as an argument, so a failing `awk` or a `grep` read error on batch.md dies with `could not read <dir>/batch.md - nothing written to GitHub` instead of leaving fundamental.md incomplete. Apply reads the `--host-fallbacks` file and a resumed apply's changelog.md through `file_read`, so an unreadable one dies with its own `orch:` message instead of a stray `cat:` error; the saved apply-answer moves to `file_read` as reuse only, its message unchanged. The batch.md content wrapper is renamed `spec_review_batch_content`, the offline ticket check tests for a text item in one switch, `apply_prints_one` is built on `sra_refused`, the state-precedence cases load orch.sh once, and the spec tests' "today's" labels name their message.
+
 ## 6.8.33
 
 The ticket-linking code normalizes a blocker set in one helper, `blockers_set`, and rewrites a ticket's `## Blocked by` section through one helper, `ticket_blocked_by_rewrite`. `ticket_sub_issues` no longer carries a die2 branch nothing reaches, `ticket_link` no longer sorts a list its caller already sorted, and the orch-to-tickets skill now says what a failed publish names and what a rerun rewrites. The breakdown publish and ticket publish tests fold their resume and refusal cases into existing fixtures and drop the cases another section already covers. Nothing `ticket publish`, `breakdown publish`, `ticket block`/`unblock` or `ticket exists` prints, writes or exits with changes.
