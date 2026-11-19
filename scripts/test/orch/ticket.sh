@@ -1834,35 +1834,37 @@ restore_suite_env
 
 # a leftover whose directory is gone: its record is cleared through the
 # teardown, with and without a ticket branch, reported-and-merged or not
-for rc_case in merged-branch merged-nobranch unreported-branch unreported-nobranch; do
+for rc_report_state in merged unreported; do
+for rc_branch_state in branch nobranch; do
+  rc_case="$rc_report_state-$rc_branch_state"
   rc_setup 1
-  if [ "$rc_case" = merged-branch ]; then
+  if [ "$rc_report_state" = merged ] && [ "$rc_branch_state" = branch ]; then
     stale_wt="$(mktemp -d)/stale"
     git worktree add -q -b rc-stale "$stale_wt"
     rm -rf "$stale_wt"
   fi
-  case "$rc_case" in
-    merged-*) rc_report 7; "$ORCH" ticket merge 7 >/dev/null 2>&1 ;;
-  esac
-  case "$rc_case" in
-    *-nobranch)
-      case "$rc_case" in unreported-*) commit_file . other.txt x ;; esac
-      git -C "$(rc_wt 7)" checkout -q --detach
-      git branch -q -D orch/5-feature--t7
-      ;;
-  esac
+  if [ "$rc_report_state" = merged ]; then
+    rc_report 7; "$ORCH" ticket merge 7 >/dev/null 2>&1
+  fi
+  if [ "$rc_branch_state" = nobranch ]; then
+    [ "$rc_report_state" = unreported ] && commit_file . other.txt x
+    git -C "$(rc_wt 7)" checkout -q --detach
+    git branch -q -D orch/5-feature--t7
+  fi
   rm -rf "$(rc_wt 7)"
   out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
   assert_status "reclaim of a gone-directory leftover ($rc_case) succeeds" "$st" 0
   assert_contains "printing the worktree line ($rc_case)" "$out" "removed the worktree of ticket #7"
-  case "$rc_case" in
-    merged-*) assert_contains "printing the close ($rc_case)" "$out" "closed ticket #7" ;;
-    unreported-*) assert_contains "printing the discard ($rc_case)" "$out" "discarded ticket #7" ;;
-  esac
-  case "$rc_case" in
-    *-branch) assert_contains "printing the branch line ($rc_case)" "$out" "deleted the branch of ticket #7" ;;
-    *-nobranch) assert_not_contains "printing no branch line ($rc_case)" "$out" "deleted the branch of ticket #7" ;;
-  esac
+  if [ "$rc_report_state" = merged ]; then
+    assert_contains "printing the close ($rc_case)" "$out" "closed ticket #7"
+  else
+    assert_contains "printing the discard ($rc_case)" "$out" "discarded ticket #7"
+  fi
+  if [ "$rc_branch_state" = branch ]; then
+    assert_contains "printing the branch line ($rc_case)" "$out" "deleted the branch of ticket #7"
+  else
+    assert_not_contains "printing no branch line ($rc_case)" "$out" "deleted the branch of ticket #7"
+  fi
   assert_eq "leaving no record ($rc_case)" "$("$ORCH" ticket-worktree list)" ""
   assert_eq "and no ticket branch ($rc_case)" "$(rc_has_branch 7)" "no"
   if [ "$rc_case" = merged-branch ]; then
@@ -1871,6 +1873,7 @@ for rc_case in merged-branch merged-nobranch unreported-branch unreported-nobran
     git worktree prune
     git branch -q -D rc-stale
   fi
+done
 done
 
 # a plain directory at the recorded path: the teardown's refusal, then the

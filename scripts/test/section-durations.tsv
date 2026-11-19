@@ -357,7 +357,7 @@
 0	1	ticket: unknown op	5f4ba4d168af2ac965ec141604fb776a9a0175e1
 17	12	ticket merge (#621)	3489a9afc6a27dcdedf624b3566888b18bbbac3d
 4	4	ticket merge beside a same-named tag (#2337)	8c68070ffd52a8830d9b1fd50431fd4db0b2f68a
-180	149	ticket reclaim (ADR-0054)	ec45300d4b881bd6b06b479e02b56a3936daf033
+176	158	ticket reclaim (ADR-0054)	0c306569a791b86f3b6580373dcdb03d087367b7
 1	1	ticket exists: no repo (#3050)	18f290c8db8140166817738f948443cd1b9a10dd
 22	20	trust module	cce71cee320a9a9df12b5d2fe25e74e2f6089609
 61	7	verification run	b92eb55e7297141889bf3ce64de443e5c897a452
