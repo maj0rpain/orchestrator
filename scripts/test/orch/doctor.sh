@@ -424,15 +424,7 @@ fake_local_default ""
 savepath="$PATH"; gh_fixture; PATH="$savepath"
 # A git wrapper logs each read of origin's URL: the failed resolution is
 # memoised, so one doctor run reads origin twice (#3147).
-git_log_dir="$(mktemp -d)"
-git_real="$(command -v git)"
-cat >"$git_log_dir/git" <<GIT
-#!/usr/bin/env bash
-if [ "\$*" = "remote get-url origin" ]; then echo x >>"$git_log_dir/origin_reads"; fi
-exec "$git_real" "\$@"
-GIT
-chmod +x "$git_log_dir/git"
-: >"$git_log_dir/origin_reads"
+git_log_dir="$(counting_argv_bin git "remote get-url origin")"
 out="$(PATH="$git_log_dir:$PATH" orch_no_repo doctor --env 2>&1)"; st=$?
 assert_status "no resolvable repo fails doctor" "$st" 1
 assert_contains "names the missing repo as a FAIL, with no remedy in it" "$out" \
@@ -445,7 +437,7 @@ assert_eq "counts the later GitHub checks on the skip line, naming the bare caus
 assert_contains "still reaches the summary line" "$(printf '%s\n' "$out" | tail -1)" " FAIL"
 assert_eq "makes no gh call without a repo to pin it to" "$(gh_calls)" "0"
 assert_eq "a failed resolution is memoised: origin is read twice in a doctor run" \
-  "$(wc -l <"$git_log_dir/origin_reads" | tr -d ' ')" "2"
+  "$(counting_starts "$git_log_dir" git)" "2"
 unset GH_FIXTURE
 
 # The plugin depends on no other plugin (ADR-0028): doctor says nothing of

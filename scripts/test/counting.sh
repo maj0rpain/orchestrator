@@ -22,6 +22,17 @@ counting_bin() {
 # counting_starts <dir> <cmd>: how many times the <cmd> in <dir> has started.
 counting_starts() { wc -l <"$1/$2.log" | tr -d ' '; }
 
+# counting_argv_bin <cmd> <args>: like counting_bin, but a start is logged only
+# when its arguments, joined by spaces, equal <args>. Prints the dir.
+counting_argv_bin() {
+  local dir
+  dir="$(mktemp -d)"
+  printf '#!/bin/sh\n[ "$*" = "%s" ] && echo x >>"%s/%s.log"\nexec "%s" "$@"\n' "$2" "$dir" "$1" "$(command -v "$1")" >"$dir/$1"
+  chmod +x "$dir/$1"
+  : >"$dir/$1.log"
+  printf '%s\n' "$dir"
+}
+
 # counting_stdin_bin <cmd>: like counting_bin, and each start also appends one
 # line to <dir>/<cmd>.bytes: the bytes the <cmd> was offered on standard input.
 # Its stdin passes through tee into a file, so a command that stops reading

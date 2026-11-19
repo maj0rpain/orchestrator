@@ -124,7 +124,7 @@
 0	1	die_hinted and die_opt_check	a31d5ea9ef99f315cf022f51ad5894482feffb9e
 0	1	host detection (host.sh, #281)	9d7272356d7fbf0f5fdca9c46ffa86f8c5c036cd
 5	6	doctor.sh is a one-way dependency (#281)	b86ca6ac46faa586b4d718a1aa26e9018e2539ea
-222	158	doctor	e72da5fef90df0c71d801ec7202223bfdf6896b3
+218	174	doctor	65cf03819b9502be2e8d9139ae6ac5e3dc4a39ae
 36	40	doctor: host (#128)	0ff10dbdae9d20ee078396950c793cb2ec3a2d69
 97	105	doctor --flow	ec6c0771cdbf7af4d034b080907fded56e7409f3
 41	45	doctor --env: finished side checkouts (#727)	409b7fb136865798294e217b184517a077d5b12c
@@ -162,7 +162,7 @@
 38	43	finding-triage scan	fd4fbc9227aa9354a58b85c9fe13419f5fe7e36e
 91	105	finding-triage apply	8ef1b718be7569dccc002d3db335be58da2354c1
 114	134	finding-triage bundle	01854aee6fc7a32daed655eb528f22d32c6a6bce
-11	13	every gh call pinned to the repo (#520)	a6b441ceef50674bb874457642352bc9d4ffbf2e
+16	13	every gh call pinned to the repo (#520)	1eb11e16b7f53cdc4bbd6ec78423c2ed06b9d15e
 1	2	gh_reason and capture_err (#846)	3f9cdf25735ea6df18c44dff188643475c4bc8e3
 1	1	label_listed	56177c00bcc468d90ca6e59cbb9a5064b76a3c0b
 19	21	gh failure verb and readers (#1022)	93ed95ee34e426bcae583346b5fd33e7e92643fc
