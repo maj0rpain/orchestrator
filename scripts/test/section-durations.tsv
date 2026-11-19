@@ -161,7 +161,7 @@
 2	3	category table	936a5e8b2f00a434df3adb306e2542dd71c175f9
 1	2	axis table	e40740a4628929a0916a63a510c2590c3efae4a6
 9	10	finding body	5696eec5199d748658645aa3edd3f64bf40a7c35
-38	43	finding-triage scan	fd4fbc9227aa9354a58b85c9fe13419f5fe7e36e
+58	41	finding-triage scan	342c6006bbdf721f2803384daa7755f93eb916bd
 91	105	finding-triage apply	8ef1b718be7569dccc002d3db335be58da2354c1
 114	134	finding-triage bundle	01854aee6fc7a32daed655eb528f22d32c6a6bce
 16	13	every gh call pinned to the repo (#520)	1eb11e16b7f53cdc4bbd6ec78423c2ed06b9d15e
@@ -221,7 +221,7 @@
 1	1	issue ready: no repo (#3050)	e01486b40160e00af62e89a2858de8cf2edc7580
 10	12	issue next	5197d781f049be338dec1b6be44187961f50c651
 3	4	known-items module	822bb4b7d6bc24d8ddf679e4aa02e11d5f0562a4
-28	31	lines_fate	3f28c1b61ac2edc2cbd2ae3ea48725ec6ce87220
+44	28	lines_fate	c73d7a7aefe5abd41c8307a146c6c672a724276d
 16	18	Liveness module	f71ef4d425c6def34b457620a2ff649d11f57faa
 8	10	orch_load	d6672871a4845b357d7ec3785e7b285cfddc1e25
 9	11	on-demand loading	6f5f8fdb61e60028685965dbdd5c3eb5ae8397b7
