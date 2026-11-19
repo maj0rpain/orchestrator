@@ -56,13 +56,19 @@
 #   .claude/settings.json
 #                                     nothing beyond the always-run checks
 #   anything else                     all.sh
-#   scripts/test/orch/setup.sh, the gh fake
+#   scripts/test/orch/setup.sh, the gh fake, counting.sh, fifo.sh, tally.sh
 #                                     all.sh (for now)
 # The core set is the sections of the harness and loader section files and
 # every suite but orch_test.sh. It is selected, together with the rest of the
 # diff's selection, by orch.sh, orch/common.sh (plus its own section file),
 # orch/loader.sh, orch_test.sh, all.sh, affected.sh, test_jobs.sh, report.sh,
 # test_tree.sh, git_env.sh, and a deleted module or section file.
+#
+# --row <path>...: runs nothing and prints "<path>", a tab, and "named" when a
+# row other than the catch-all takes the path, or "none" for a path only the
+# catch-all takes and for a scripts/orch/ module with no section file of its
+# own. It exits 0 either way, matches a path by name whether or not it exists,
+# and is refused (exit 2) beside --plan or a <ref>.
 #
 # The base worked out above, a ticket branch's own included, is handed to
 # docs_lint.sh in DOCS_LINT_BASE, the
@@ -109,15 +115,23 @@ unset ORCH_TEST_SHARD
 root="$(cd "$dir/../.." && pwd)"
 
 plan=0
+row=0
+row_paths=()
+usage="usage: affected.sh [--plan] [<ref>] | affected.sh --row <path>..."
 ref=""
 have_ref=0
 for arg in "$@"; do
   case "$arg" in
+    --row) row=1 ;;
     --plan) plan=1 ;;
-    -*) echo "usage: affected.sh [--plan] [<ref>]" >&2; exit 2 ;;
+    -*) echo "$usage" >&2; exit 2 ;;
     *)
+      if [ "$row" -eq 1 ]; then
+        row_paths+=("$arg")
+        continue
+      fi
       if [ "$have_ref" -eq 1 ]; then
-        echo "usage: affected.sh [--plan] [<ref>]" >&2
+        echo "$usage" >&2
         exit 2
       fi
       ref="$arg"
@@ -126,11 +140,18 @@ for arg in "$@"; do
   esac
 done
 
+if [ "$row" -eq 1 ] && { [ "$plan" -eq 1 ] || [ "$have_ref" -eq 1 ] || [ "${#row_paths[@]}" -eq 0 ]; }; then
+  echo "$usage" >&2
+  exit 2
+fi
+
 cd "$root" || exit 1
 git_raw_paths() { git -c core.quotepath=off "$@"; }
 
 # full_suite: the fallback - the whole of all.sh, or its name on --plan.
 full_suite() {
+  # A row of its own names the path, though it runs the whole suite.
+  [ "$row" -eq 1 ] && exit 0
   if [ "$plan" -eq 1 ]; then
     echo "all.sh"
     exit 0
@@ -172,14 +193,6 @@ resolve_base() {
   git merge-base HEAD "$target" 2>/dev/null || true
 }
 
-merge_base="$(resolve_base)" || exit $?
-[ -n "$merge_base" ] || full_suite
-
-# changed: files present now (tracked changes and untracked); deleted: gone.
-changed="$( { git_raw_paths diff --no-renames --name-only --diff-filter=d "$merge_base" --
-  git_raw_paths ls-files --others --exclude-standard; } | LC_ALL=C sort -u)"
-deleted="$(git_raw_paths diff --no-renames --name-only --diff-filter=D "$merge_base" -- | LC_ALL=C sort -u)"
-
 want=()        # suites to run besides orch_test.sh and docs_lint.sh
 sec_files=()   # scripts/test/orch/<n>.sh files whose sections run
 sc_files=()    # the lint targets
@@ -190,6 +203,15 @@ sc_all=0       # 1 when every file the full verification lints is a lint target
 sections_of() {
   local n
   for n in "$@"; do sec_files+=("scripts/test/orch/$n.sh"); done
+}
+
+# unnamed: a path only the catch-all row takes, or a scripts/orch/ module with
+# no section file of its own: the whole suite, or in the --row form the exit
+# status ROW_NONE.
+ROW_NONE=77
+unnamed() {
+  [ "$row" -eq 1 ] && exit "$ROW_NONE"
+  full_suite
 }
 
 # classify <file> <present|deleted>: record what the file selects, or run the
@@ -208,7 +230,8 @@ classify() {
       [ "$state" = deleted ] && core=1 ;;
   esac
   case "$f" in
-    scripts/test/orch/setup.sh | scripts/test/gh_adapter_fake.sh)
+    scripts/test/orch/setup.sh | scripts/test/gh_adapter_fake.sh | scripts/test/counting.sh | \
+      scripts/test/fifo.sh | scripts/test/tally.sh)
       full_suite ;;
     scripts/orch.sh | scripts/test/all.sh | scripts/test/orch_test.sh | scripts/test/affected.sh | \
       scripts/test/test_jobs.sh | scripts/test/report.sh | scripts/test/test_tree.sh | scripts/test/git_env.sh) ;;
@@ -220,7 +243,7 @@ classify() {
     scripts/triage-labels.sh) want+=(hooks_test.sh); sections_of doctor issue ;;
     scripts/orch/*.sh)
       if [ "$state" != deleted ]; then
-        [ -f "scripts/test/orch/$file_name" ] || full_suite
+        [ -f "scripts/test/orch/$file_name" ] || unnamed
         sec_files+=("scripts/test/orch/$file_name")
       fi ;;
     scripts/test/orch/*.sh)
@@ -244,12 +267,34 @@ classify() {
     scripts/test/docs_lint.sh) ;;
     scripts/test/section-durations.tsv | scripts/test/suite-budget) return 0 ;;
     skills/* | agents/* | docs/* | changelog.d/* | *.md) return 0 ;;
-    *) full_suite ;;
+    *) unnamed ;;
   esac
   if [ "$state" = present ]; then
     case "$f" in scripts/*.sh) sc_files+=("$f") ;; esac
   fi
 }
+
+# Row form: print each path with `named` or `none`, run nothing.
+if [ "$row" -eq 1 ]; then
+  for f in "${row_paths[@]}"; do
+    status=0
+    (classify "$f" present) >/dev/null 2>&1 || status=$?
+    if [ "$status" -eq "$ROW_NONE" ]; then
+      printf '%s\tnone\n' "$f"
+    else
+      printf '%s\tnamed\n' "$f"
+    fi
+  done
+  exit 0
+fi
+
+merge_base="$(resolve_base)" || exit $?
+[ -n "$merge_base" ] || full_suite
+
+# changed: files present now (tracked changes and untracked); deleted: gone.
+changed="$( { git_raw_paths diff --no-renames --name-only --diff-filter=d "$merge_base" --
+  git_raw_paths ls-files --others --exclude-standard; } | LC_ALL=C sort -u)"
+deleted="$(git_raw_paths diff --no-renames --name-only --diff-filter=D "$merge_base" -- | LC_ALL=C sort -u)"
 
 while IFS= read -r f; do
   [ -n "$f" ] && classify "$f" present

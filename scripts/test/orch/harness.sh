@@ -132,6 +132,21 @@ files_marks() {
 # The test-helper placement rule, as helper_placement's message states it.
 HELPER_PLACEMENT_RULE="The test-helper placement rule: a test helper used by more than one file, or only by setup.sh's own code, lives in setup.sh; one used by only one file lives in that file's preamble; one already defined inside a section stays there; a helper never moves into a section."
 
+# The row rule, as row_rule's message states it.
+ROW_RULE="The row rule: every tracked file under the scripts directory has a row in the ticket verification, so a path no row names, and a scripts/orch/ module with no section file of its own, are never the committed state; add the path's row to scripts/test/affected.sh, or the module's section file under scripts/test/orch/."
+
+# row_rule: reads paths on stdin, asks affected.sh --row about all of them, and
+# fails with the rule's message, naming each path it prints `none` for.
+row_rule() {
+  local paths=() p none
+  while IFS= read -r p; do paths+=("$p"); done
+  [ "${#paths[@]}" -gt 0 ] || return 0
+  none="$(bash "$PLUGIN_ROOT/scripts/test/affected.sh" --row "${paths[@]}" </dev/null | awk -F'\t' '$2 == "none" { printf "%s ", $1 }')"
+  [ -z "$none" ] && return 0
+  printf '%sno row: %s\n' "$ROW_RULE " "${none% }"
+  return 1
+}
+
 # FN_TRACK_AWK: an awk fragment, appended after SHELL_CODE_AWK, that tracks the
 # function a line is in, as helper_placement and orch_load_reads read it.
 # track(words) takes a line's words view (sc_words), after shell_code_line has
@@ -4575,3 +4590,45 @@ af_reset
 rm -rf "$af_bin" "$af_sc" "$af.pid" "$af.stdout"
 rm -rf "$af" "$af.log"
 unset -f af_git af_put af_reset af_plan af_row
+
+# --- the row rule (#3549) -----------------------------------------------------
+# affected.sh --row over a path of each kind in the table, then the structural
+# check over the real tracked tree and over planted paths.
+echo
+echo "the row rule (#3549)"
+af_row="$PLUGIN_ROOT/scripts/test/affected.sh"
+out="$(bash "$af_row" --row scripts/orch/branch.sh scripts/flow-state.sh scripts/dev/helpers.sh \
+  scripts/test/hooks_test.sh scripts/test/orch/setup.sh scripts/test/section-durations.tsv \
+  scripts/nothing.txt scripts/orch/zz-no-section.sh scripts/orch/zz-gone.sh </dev/null)"; st=$?
+assert_status "--row exits 0 whether it prints named or none" "$st" 0
+assert_eq "--row prints named for each kind of row and none for an unnamed path" "$out" "scripts/orch/branch.sh	named
+scripts/flow-state.sh	named
+scripts/dev/helpers.sh	named
+scripts/test/hooks_test.sh	named
+scripts/test/orch/setup.sh	named
+scripts/test/section-durations.tsv	named
+scripts/nothing.txt	none
+scripts/orch/zz-no-section.sh	none
+scripts/orch/zz-gone.sh	none"
+out="$(bash "$af_row" --row scripts/test/orch/zz-nonexistent.sh </dev/null)"
+assert_eq "--row matches a path that does not exist by name" "$out" "scripts/test/orch/zz-nonexistent.sh	named"
+out="$(bash "$af_row" --row --plan scripts/orch/branch.sh 2>&1 </dev/null)"; st=$?
+assert_status "--row beside --plan is refused" "$st" 2
+assert_contains "--row beside --plan prints the usage" "$out" "usage: affected.sh"
+out="$(bash "$af_row" HEAD --row scripts/orch/branch.sh 2>&1 </dev/null)"; st=$?
+assert_status "--row beside a <ref> is refused" "$st" 2
+out="$(bash "$af_row" --row 2>&1 </dev/null)"; st=$?
+assert_status "--row with no path is refused" "$st" 2
+
+out="$(git -C "$PLUGIN_ROOT" ls-files scripts | row_rule)"; st=$?
+if [ "$st" -eq 0 ] && [ -z "$out" ]; then
+  ok "every tracked file under the scripts directory has a row"
+else
+  bad "every tracked file under the scripts directory has a row" "$out"
+fi
+out="$({ git -C "$PLUGIN_ROOT" ls-files scripts; echo scripts/planted-notes.txt; } | row_rule)"; st=$?
+assert_status "a planted script with no row fails" "$st" 1
+assert_eq "naming it and the rule" "$out" "$ROW_RULE no row: scripts/planted-notes.txt"
+out="$({ git -C "$PLUGIN_ROOT" ls-files scripts; echo scripts/orch/planted-module.sh; } | row_rule)"; st=$?
+assert_status "a planted module with no section file fails" "$st" 1
+assert_eq "naming it and the rule for a module" "$out" "$ROW_RULE no row: scripts/orch/planted-module.sh"
