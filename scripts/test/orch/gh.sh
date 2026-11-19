@@ -174,7 +174,7 @@ assert_eq "a command that only captures a local git command runs no ssh -G" \
 # On an https origin, a git wrapper logs each read of origin's URL.
 git remote set-url origin https://github.com/fork/widgets.git
 origin_wrap="$(counting_argv_bin git "remote get-url origin")"
-rm -f "$triage_dir/edited"
+: >"$origin_wrap/git.log"; rm -f "$triage_dir/edited"
 out="$(PATH="$origin_wrap:$triage_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" issue triage 5 2>&1)"; st=$?
 assert_status "issue triage on an https origin runs" "$st" 0
 assert_eq "and reads origin once" "$(counting_starts "$origin_wrap" git)" "1"

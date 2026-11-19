@@ -162,7 +162,7 @@
 38	43	finding-triage scan	fd4fbc9227aa9354a58b85c9fe13419f5fe7e36e
 91	105	finding-triage apply	8ef1b718be7569dccc002d3db335be58da2354c1
 114	134	finding-triage bundle	01854aee6fc7a32daed655eb528f22d32c6a6bce
-16	13	every gh call pinned to the repo (#520)	a26849607a20671ae1fc4da7d4caa261fe7c2bcc
+16	13	every gh call pinned to the repo (#520)	1eb11e16b7f53cdc4bbd6ec78423c2ed06b9d15e
 1	2	gh_reason and capture_err (#846)	3f9cdf25735ea6df18c44dff188643475c4bc8e3
 1	1	label_listed	56177c00bcc468d90ca6e59cbb9a5064b76a3c0b
 19	21	gh failure verb and readers (#1022)	93ed95ee34e426bcae583346b5fd33e7e92643fc
