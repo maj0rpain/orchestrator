@@ -778,7 +778,7 @@ review_standards() {
 # reported - never parsed a second time. A declaration it dies on is a FAIL
 # carrying its own message.
 check_standards_declaration() {
-  local resolved err list first entry=""
+  local resolved err list first decl_file entry=""
   if ! capture resolved err review_standards_resolve_source; then
     d_fail "$(err_line "$err")"
     # The died resolution left its stdout: the declaring file, then the entries
