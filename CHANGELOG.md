@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.5
+
+The audit module is cleaned up without changing what it prints: a resolved finding's record is split by one helper, the steering fields, the refusal remedy and the page markup are each held once, the open-issue listing and the needs-triage label step use shared helpers (the latter now in the Filed finding module, also called by `review file`), the drift line calls the Filed finding module's location check, and the module's variables are named for what they hold. The `audit file --run` help now says an already-open issue with an existing Related paragraph still gets one, its numbers kept.
+
 ## 6.8.4
 
 Add a harness check that fails when an orch test file writes out a shared, sourceable or preamble test helper's whole body instead of calling it, naming the helper to call; a deliberate repeat is exempted by a `# copy-of <helper>: <reason>` comment. The implementer's and fixer's briefs now tell the agent to run the repo's helper-index command before writing the first test and to call a listed helper rather than copying its body.
