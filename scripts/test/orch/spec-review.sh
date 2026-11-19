@@ -33,15 +33,11 @@ sra_refused() {
     "$(cat "$d/spec.md"; echo; cat "$d/changelog.md" "$d/settled.md" 2>/dev/null)" "$before"
   assert_eq "$label: no GitHub write" "$(fake_snapshot)" "$snap"
 }
-# apply_prints_one <label> <dir> <stderr>: plain apply on <dir> refuses with
-# exactly the one line <stderr> and writes nothing.
+# apply_prints_one <label> <dir> <stderr>: plain apply on <dir> is refused with
+# exactly the one line <stderr>, and writes nothing.
 apply_prints_one() {
-  local before
-  before="$(cat "$2/spec.md")"
-  sra "$2" recommended
-  assert_status "$1: apply refuses" "$st" 1
-  assert_eq "$1: apply prints the single line it prints today" "$out" "$3"
-  assert_eq "$1: apply writes nothing" "$(cat "$2/spec.md")" "$before"
+  sra_refused "$1" "$2" "$3" recommended
+  assert_eq "$1: apply prints the single line" "$out" "$3"
 }
 # check_refused <runner> <label> <dir> <stderr>: <runner> <dir> - a check
 # run that sets out, err and st - exits 1 with exactly <stderr>, nothing on
@@ -3298,7 +3294,7 @@ sw_probe fidelity testability; st=$?
 assert_status "and the first wait's total is still there for its own calls" "$st" 1
 printf '@@ none\n' >"$sw_dir/lens-fidelity.md"
 out="$(ORCH_WAIT_BLOCK=0.2 "$ORCH" spec-review wait "$sw_dir" fidelity 2>&1)"; st=$?
-assert_status "a lens arriving ends the wait with today's output" "$st" 0
+assert_status "a lens arriving ends the wait with the lenses-back summary" "$st" 0
 assert_eq "the summary line" "$out" "lenses back: fidelity 0"
 sw_spend fidelity testability
 printf '@@ none\n' >"$sw_dir/lens-testability.md"

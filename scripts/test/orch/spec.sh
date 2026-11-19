@@ -612,19 +612,22 @@ echo "spec round directory owner (#3078)"
 fresh_flow rdowner
 top="$(git rev-parse --show-toplevel)"
 od="$(mktemp -d)"
-for combo in "" a f c af ac fc afc; do
-  rm -rf "$od/d"; mkdir "$od/d"
-  case "$combo" in *a*) : >"$od/d/apply-answer" ;; esac
-  case "$combo" in *f*) : >"$od/d/fundamental.md" ;; esac
-  case "$combo" in *c*) : >"$od/d/round-complete" ;; esac
-  case "$combo" in
-    *a*) want=applying ;; *f*) want=waiting ;; *c*) want=complete ;; *) want=open ;;
-  esac
-  out="$(sourced_orch_script 'spec_round_state "$1" s; echo "$s"' "$od/d")"
-  assert_eq "spec_round_state of a directory holding '$combo' is $want" "$out" "$want"
+combos=(none a f c af ac fc afc)
+wants=(open applying waiting complete applying applying waiting applying)
+dirs=()
+for combo in "${combos[@]}"; do
+  mkdir "$od/$combo"; dirs+=("$od/$combo")
+  case "$combo" in *a*) : >"$od/$combo/apply-answer" ;; esac
+  case "$combo" in *f*) : >"$od/$combo/fundamental.md" ;; esac
+  case "$combo" in *c*) : >"$od/$combo/round-complete" ;; esac
 done
-out="$(sourced_orch_script 'spec_round_state "$1" s; echo "$s"' "$od/missing")"
-assert_eq "spec_round_state of a missing directory is open" "$out" "open"
+out="$(sourced_orch_script 'for d; do spec_round_state "$d" s; echo "$s"; done' "${dirs[@]}" "$od/missing")"
+mapfile -t got <<<"$out"
+for n in "${!combos[@]}"; do
+  assert_eq "spec_round_state of a directory holding '${combos[$n]}' is ${wants[$n]}" "${got[$n]}" "${wants[$n]}"
+done
+assert_eq "spec_round_state of a missing directory is open" "${got[${#combos[@]}]}" "open"
+mkdir "$od/d"
 : >"$od/d/fundamental.md"
 sourced_orch spec_round_held "$od/d"; st=$?
 assert_status "spec_round_held succeeds beside fundamental.md" "$st" 0
@@ -665,11 +668,11 @@ sourced_orch spec_round_complete "$od/d" "## Spec review" nothing; st=$?
 assert_status "and runs again" "$st" 0
 assert_eq "leaving the changelog once" "$(grep -c '^## Spec review$' "$od/d/settled.md")" 1
 assert_eq "and round-complete written" "$(on_disk "$od/d/round-complete")" present
-# A fundamental.md it cannot remove: today's message, no round-complete.
+# An unremovable fundamental.md: the could-not-remove message, no round-complete
 rm -rf "$od/d"; mkdir -p "$od/d/fundamental.md"; : >"$od/d/fundamental.md/x"
 out="$(sourced_orch spec_round_complete "$od/d" "## Spec review" landed-x 2>&1)"; st=$?
 assert_status "spec_round_complete over an unremovable fundamental.md dies" "$st" 1
-assert_contains "with today's message" "$out" \
+assert_contains "with the could-not-remove message" "$out" \
   "could not remove $od/d/fundamental.md - every GitHub write landed and settled.md is appended: landed-x"
 assert_eq "writing no round-complete" "$(on_disk "$od/d/round-complete")" absent
 # spec_round_hold writes its argument byte for byte (#3757).
