@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.23
+
+`orch.sh review ci` now exits 2 on a usage, knob or state refusal, so exit 1 means a `failing` or `unreachable` verdict, or one of the Wait module's storage deaths (could not key, create or store the wait), which stay at 1. Its `ci` arm hands over to a one-pass form and a waiting form that share their helpers instead of testing a `--no-wait` flag. The Wait module owns the provisional guard (`wait_guard`/`wait_guard_check`), the limit mark's own `WAIT_MARK` and the `ORCH_WAIT_BLOCK` check (`wait_block_check`). The no-wait marker is renamed `NO_WAIT_CALL`. The help and the review skill now say the `--no-wait` look writes no state, wait file or guard.
+
 ## 6.8.22
 
 Hold the re-callable wait's state in the wait module: `wait_open` takes only the key text, `wait_still_running` is now `wait_store_and_exit`, and `review ci` and `spec-review wait` keep none of the wait's state. No behaviour change.
