@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.8
+
+Write the issue-row readers' shared record, label-block walk and pair assignment once, and correct two comments and some names. No behaviour changes.
+
 ## 6.8.7
 
 Doctor's sub-issues warning now names the sub-issue listing read as the step breakdown publish fails at. Each verification label's command line comes last in that label's report, the verification labels and the command choice are spelled out once inside doctor, and the remedy rule and the repo-setup doc describe what doctor prints.
