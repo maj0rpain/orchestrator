@@ -456,8 +456,8 @@ rmdir "$TD"
 
 # stop: a body temp file that cannot be made dies as a chain, the label landed
 tr_seed 71 orch:spec orch:running
-out="$(sourced_rc 'eval "$(declare -f temp_file_make | sed "1s/temp_file_make/temp_file_make_orig/")"
-temp_file_make() { [ "$1" != body ] || return 1; temp_file_make_orig "$@"; }
+out="$(sourced_rc 'eval "orig_$(declare -f temp_file_make)"
+temp_file_make() { [ "$1" != body ] || return 1; orig_temp_file_make "$@"; }
 standing_stop 71 failure spec boom')"
 assert_contains "a stop whose body temp file cannot be made dies naming the landed writes" "$out" "orch: could not create a temp file to post the failure comment - writes that landed: added needs-human, removed orch:limited; the claim stays held"
 assert_eq "and the claim stays held" "$(fake_claim_held 71)" held
