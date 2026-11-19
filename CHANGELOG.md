@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.32
+
+Tidy the docs linter's audit scans: the subagent-pool scan gets its own section, each step section is read once per skill, and the "stands alone" and removed-flags pins are dropped.
+
 ## 6.8.31
 
 The ticket worktree code carries a ticket's facts in one caller-declared associative array that `ticket_facts` fills, guarded against an undeclared or indexed array, in place of a family of prefixed variables. `ticket merge` names its branch `wt_branch` and add and the teardown `own_branch`, `require_worktree` checks membership through `word_listed`, and the ticket tests share the switched-worktree arrangement and iterate the reclaim gone-directory cases over two plain loop variables.
