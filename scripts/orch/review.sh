@@ -916,8 +916,6 @@ cmd_review() {
       if [ "$pr_given" = 1 ]; then
         case "$pr_arg" in ''|*[!0-9]*) die "not a PR number: $pr_arg" ;; esac
       fi
-      # refs_err is pr_refs_read's error output, which ci_refs_unread reports.
-      # shellcheck disable=SC2034
       local pr elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
       local no_ci=0 ci_status refs_rc=0
       if [ -n "$pr_arg" ]; then pr="$pr_arg"; else require_state_read pr=pr; fi
