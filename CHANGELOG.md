@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.6
+
+The autopilot test section and four other test section files lose repeated shapes: one shared assertion checks every no-Repo refusal, three claims-read cases fold into ticks the suite already runs, and stale comments, labels, dead assignments and duplicate assertions go, with no change to orch.sh behaviour.
+
 ## 6.8.5
 
 The audit module is cleaned up without changing what it prints: a resolved finding's record is split by one helper, the steering fields, the refusal remedy and the page markup are each held once, the open-issue listing and the needs-triage label step use shared helpers (the latter now in the Filed finding module, also called by `review file`), the drift line calls the Filed finding module's location check, and the module's variables are named for what they hold. The `audit file --run` help now says an already-open issue with an existing Related paragraph still gets one, its numbers kept.
