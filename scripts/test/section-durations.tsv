@@ -51,11 +51,11 @@
 33	38	autopilot reenter	9f551d768335d7d0af0835fa7b4f8705fab0e6d1
 49	56	autopilot tick and run	4e690c21c5372a6dcc598ee93ade8e7faf21cb8f
 10	11	autopilot tick: started by a relative path (#3055)	d9dd0213e6dd303dc497f3a29838e810cd898ed6
-27	30	autopilot tick: the flow-issue read at the issue-list limit	3e390b9e07495bee55e2e5a5b37bf2ef1721fff1
+39	33	autopilot tick: the flow-issue read at the issue-list limit	8f47b14f4bdd9b5b0b0b2839a3173964f3b90228
 22	26	autopilot tick: the direct read before each claim	a20ed11001100a2786efc83540270687ac0a161b
 139	150	autopilot tick: the cap, lost claims and the order	67b423ea7891cc3d10ea5c8b26ec3066429c4c95
-95	106	autopilot tick: side checkouts, refusals and failed steps	5b173ce70df88fa74a6a8c13f6388c1df5895dfb
-17	6	autopilot watch	3e1464cc5b50e6c6ec8464f3ae6c1d8be3821b54
+140	121	autopilot tick: side checkouts, refusals and failed steps	1aa92e8d7d488673c7c6a9a17bc6f1e45c9fd64f
+26	7	autopilot watch	f8ebd62e40841558f499d7278d3f783f629c0bc6
 28	32	autopilot tick: the usage limit	c9216462a629b00d7c7549d3e550e46180653ac6
 82	93	autopilot tick: limited issues	0fcd2511a7f3362e1b1771a349b24c9dd2804687
 72	86	autopilot questions, reply and resume	4da805d6b6928f4d16586d347eb40405f8ad8d2c
@@ -71,16 +71,16 @@
 116	128	autopilot tick: pickup rank and sync slots	330a67583d22dd486e90247cb07c64e6f9f7c521
 28	31	autopilot tick: sync request auto-detection (#2325)	8ff499aa276dd447c6ed361f0f3f232be3e16d37
 16	18	autopilot tick: the merged-PR close backstop (#2478)	0033359ed474b5dd950f56f500c4fc9a6cd673ca
-27	31	autopilot tick: one read of the done issues (#2559)	33b1a23377feeb67968a78124334fc0e686d8870
+40	31	autopilot tick: one read of the done issues (#2559)	97a136d2c4f927f2762892c8a812756b644683eb
 11	12	autopilot sync-finish, sync-dropped and sync-fail	78c02accdbb1a0a1177162e2b7cac98d10519259
-10	12	autopilot tick: the GitHub limit pause (#2577)	7859c0e60f54f3b05e718131c8b415c35402e4df
-29	33	autopilot tick: a pickup that meets a GitHub limit (#2577)	cf6405837677d3c5fc7483d58c25769a2d220657
-70	78	autopilot tick: stops that cannot land are contained (#3052)	19dee40f3783fc53d8d0f79aa1651a361ff27832
-19	21	autopilot tick: one read of the claims on origin (#3062)	10f5da2bbcb4f6d78991827f639c97f6d82823de
+15	13	autopilot tick: the GitHub limit pause (#2577)	88e0746af43ccddb5015e049b5371eae1d66a9c6
+44	36	autopilot tick: a pickup that meets a GitHub limit (#2577)	b7506990f8e031e132734d5df6c4f88f4da1e243
+102	80	autopilot tick: stops that cannot land are contained (#3052)	7ec5cf27cf36197447177e1aebd51a80f7b8c9e0
+18	15	autopilot tick: one read of the claims on origin (#3062)	f500de4dd86cbabdf5452405fa18f36de6021d97
 16	18	autopilot run: a start-up read that meets a GitHub limit (#2577)	929190161e7c50cff18ab6e7bccb60001583384b
-31	34	autopilot tick: the early GitHub pause (#2577)	dbe5f3006be3555ef39ed0883ecdd66df21c29f3
+47	38	autopilot tick: the early GitHub pause (#2577)	6e6a9b751bcc70cda56db94edf32dd17761c940e
 17	19	autopilot run: the session log's GitHub usage line (#2577)	6bda132d04146540ce70f9650992e428ac2afb59
-19	22	autopilot candidates	00377fd660d3dc947942a9c725916ffec05759e7
+27	22	autopilot candidates	65cc481838127495cdb87f132a2d0b2f1ca8802e
 7	7	autopilot answer: no repo (#3050)	43b2e7d2c6f7ae2f2e566aafa0fd64850f14e34a
 4	5	autopilot session ops read the issue in one jq	c951be202d457a4ea4c00d130cfba0b2f8ae5aeb
 11	12	base	57ecdb1a5a0345f71d06015c379e962ff1d3fc4f

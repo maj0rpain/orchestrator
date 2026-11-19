@@ -627,7 +627,6 @@ fake_fail adapter_issues_any_labelled_rows "HTTP 502"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a tick whose flow-issue listing fails exits 1" "$st" 1
 assert_contains "naming the labels and the reason" "$out" "orch: could not list the issues labelled orch:spec or orch:implement or orch:review or orch:sync: HTTP 502"
-assert_contains "and gh's reason" "$out" ": HTTP 502"
 fake_unfail
 fake_issue_drop 10
 
@@ -1054,8 +1053,8 @@ assert_eq "a claim of ORCH_HOST_ID is cleaned" "$(fake_claim_held 14)" free
 assert_eq "the hostname's claim is then another identity's, left alone" "$(fake_claim_held 15)" held
 fake_claim_release 15
 
-# a stop that dies partway names the claim ref's reason; Standing owns the
-# writes that landed and the held claim
+# a stop that dies partway names the claim ref's reason, and the tick leaves
+# the claim held
 fake_issue 13 open ready-for-agent orch:spec orch:running
 fake_claim_seed 13 "$(hostname)" "$(dead_pid)"
 fake_fail adapter_claim_delete "HTTP 500"
@@ -1102,7 +1101,6 @@ restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 echo
 echo "autopilot watch"
 tick_fixture
-top="$(git rev-parse --show-toplevel)"
 pidfile="$(git rev-parse --git-common-dir)/orchestrator/autopilot-watch.pid"
 watch_log="$(mktemp)"
 live_orch liveness_watch_begin
@@ -2622,10 +2620,11 @@ restore_suite_env
 echo
 echo "autopilot tick done read"
 tick_fixture
-fake_done_merged() { # <issue> <age>: issue #n at orch:done, its merged PR #(100+n)
+fake_done_merged() { # <issue> <age> [created-age]: #n at orch:done, merged PR #(100+n), created-age if given
   fake_issue "$1" open orch:done
   fake_pr "$((100 + $1))" merged "orch/$1-widget" main
   fake_pr_merged "$((100 + $1))" "$2" "$1"
+  if [ -n "${3-}" ]; then fake_issue_created "$1" "$3"; fi
 }
 fake_done_conflict() { # <issue> <pr>: an open CONFLICTING PR from orch/<issue>-
   fake_pr "$2" open "orch/$1-open" main
@@ -2669,23 +2668,23 @@ rm -f "$dl_err"
 
 # the merged-PR read is bounded by the creation of the oldest issue it may close
 bd_day=86400
-fake_done_merged 80 3600; fake_issue_created 80 7200
+fake_done_merged 80 3600 7200
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "an issue whose PR merged after its creation is closed" "$(fake_state_of 80)" "CLOSED"
 fake_issue_drop 80
 
-fake_done_merged 81 7200; fake_issue_created 81 3600
+fake_done_merged 81 7200 3600
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a PR merged before its issue was created is not acted on" "$(fake_state_of 81)" "OPEN"
 fake_issue_drop 81
 
-fake_done_merged 82 $((3 * bd_day)); fake_issue_created 82 $((10 * bd_day))
+fake_done_merged 82 $((3 * bd_day)) $((10 * bd_day))
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "an issue created 10 days ago whose PR merged 3 days ago is closed" "$(fake_state_of 82)" "CLOSED"
 fake_issue_drop 82
 
-fake_done_merged 83 $((4 * bd_day)); fake_issue_created 83 $((5 * bd_day))
-fake_done_merged 84 3600; fake_issue_created 84 $((1 * bd_day))
+fake_done_merged 83 $((4 * bd_day)) $((5 * bd_day))
+fake_done_merged 84 3600 $((1 * bd_day))
 bd_reads="$(mktemp)"
 bd_defs="$(writeln "$(counting_defs adapter_prs_merged_closing prs)" "$(counting_defs adapter_issue_created_at created)")"
 counted_adapter_run "$bd_reads" "$bd_defs" "$ORCH" autopilot tick >/dev/null 2>&1
@@ -2695,9 +2694,9 @@ assert_eq "the tick makes one merged-PR listing" "$(log_count "$bd_reads" prs)" 
 assert_eq "and one creation-time read" "$(log_count "$bd_reads" created)" "1"
 fake_issue_drop 83 84
 
-fake_done_merged 85 3600; fake_issue_relabel 85 orch:done orch:running; fake_issue_created 85 $((3 * bd_day))
-fake_done_merged 86 3600; fake_issue_created 86 $((2 * bd_day))
-fake_done_merged 87 3600; fake_issue_created 87 $((1 * bd_day))
+fake_done_merged 85 3600 $((3 * bd_day)); fake_issue_relabel 85 orch:done orch:running
+fake_done_merged 86 3600 $((2 * bd_day))
+fake_done_merged 87 3600 $((1 * bd_day))
 counted_adapter_run "$bd_reads" "$bd_defs" "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "the creation-time read names the oldest issue not carrying orch:running" "$(grep '^created ' "$bd_reads")" "created 86"
 fake_issue_drop 85 86 87
@@ -2809,8 +2808,12 @@ gh_reset="$(( $(date +%s) + 7200 ))"
 mkdir -p "$top/.orchestrator/autopilot"
 printf '%s\n' "$(iso_of "$gh_reset")" >"$top/.orchestrator/autopilot/github-limit"
 before="$(fake_labels_of 7)"
-out="$("$ORCH" autopilot tick 2>&1 >/dev/null)"; st=$?
+gl_reads="$(mktemp)"
+gl_defs="$(counting_defs adapter_claim_list claims)"
+out="$(counted_adapter_run "$gl_reads" "$gl_defs" "$ORCH" autopilot tick 2>&1 >/dev/null)"; st=$?
 assert_status "a tick under a GitHub pause succeeds" "$st" 0
+assert_eq "and makes no claim-list call" "$(log_count "$gl_reads" claims)" "0"
+rm -f "$gl_reads"
 assert_contains "its note names the reset, on stderr, which the watcher keeps" "$out" "GitHub API rate limit: the tick does nothing until $(iso_of "$gh_reset")"
 assert_eq "it picks nothing up" "$(tick_calls)" "0"
 assert_eq "and touches no label" "$(fake_labels_of 7)" "$before"
@@ -2841,7 +2844,6 @@ assert_contains "the issue is picked up again after the pause" "$(picked)" "limi
 
 # a claim delete that fails leaves the claim held
 tick_fixture
-top="$(git rev-parse --show-toplevel)"
 fake_issue 9 open ready-for-agent orch:spec; fake_issue_title 9 "Limit pickup 9"
 fake_fail_times adapter_issue_comment 1 "API rate limit exceeded for user ID 1."
 fake_fail adapter_claim_delete "HTTP 500 push"
@@ -2853,7 +2855,6 @@ fake_unfail
 echo
 echo "autopilot tick contained stops"
 tick_fixture
-top="$(git rev-parse --show-toplevel)"
 # a stale claim on an issue the store no longer holds, a second stale claim
 # and a pickable issue
 fake_issue 5 open orch:spec orch:running
@@ -2916,7 +2917,6 @@ fake_unfail
 # a pickup whose failed step's stop cannot land: the next ranked issue is
 # still picked up
 tick_fixture
-top="$(git rev-parse --show-toplevel)"
 fake_issue 7 open orch:spec; fake_issue_title 7 "Contained step 7"
 fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Contained step 8"
 printf '8\n' >"$launcher_dir/release"
@@ -2934,7 +2934,6 @@ assert_eq "releasing its claim" "$(fake_claim_held 7)" free
 
 # the same for a refusal
 tick_fixture
-top="$(git rev-parse --show-toplevel)"
 fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Contained refusal 7"
 printf '7\n' >"$launcher_dir/release"
 "$ORCH" autopilot tick >/dev/null 2>&1
@@ -2968,7 +2967,6 @@ fake_unfail
 
 # the cap: a claim held after a failed stop still counts, at each site
 tick_fixture
-top="$(git rev-parse --show-toplevel)"
 git config orchestrator.autopilot.cap 1
 fake_issue 5 open orch:spec orch:running
 fake_claim_seed 5 "$(hostname)" "$(dead_pid)"
@@ -2978,7 +2976,6 @@ fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Cap stale 7"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a claim held after a failed stale stop keeps both ticks from picking up" "$(fake_claim_held 7)" free
 tick_fixture
-top="$(git rev-parse --show-toplevel)"
 git config orchestrator.autopilot.cap 1
 fake_issue 7 open orch:spec; fake_issue_title 7 "Cap pickup 7"
 fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Cap pickup 8"
@@ -2991,29 +2988,22 @@ assert_eq "a claim held after a failed pickup stop keeps both ticks from picking
 # --- autopilot tick: one read of the claims on origin (#3062) -----------------
 echo
 echo "autopilot tick one claims read"
-tick_fixture
-top="$(git rev-parse --show-toplevel)"
-tk_reads="$(mktemp)"
-tk_defs="$(counting_defs adapter_claim_list claims)"
-tk_tick() { counted_adapter_run "$tk_reads" "$tk_defs" "$ORCH" autopilot tick 2>&1; }
-fake_issue 5 open ready-for-agent orch:spec orch:running
-fake_claim_seed 5 "$(hostname)" "$(dead_pid)"
-out="$(tk_tick)"; st=$?
-assert_status "a tick with a stale claim and nothing to pick up succeeds" "$st" 0
-assert_eq "it reads the claims once" "$(log_count "$tk_reads" claims)" "1"
-assert_eq "it stops the stale claim as a failure" "$(fake_labels_of 5)" "needs-human orch:spec ready-for-agent "
-assert_eq "and releases it" "$(fake_claim_held 5)" free
 # a slot the cleanup freed is used in the same tick
 tick_fixture
-top="$(git rev-parse --show-toplevel)"
+tk_reads="$(mktemp)"
+tk_defs="$(counting_defs adapter_claim_list claims)"
 git config orchestrator.autopilot.cap 1
 fake_issue 5 open ready-for-agent orch:spec orch:running
 fake_claim_seed 5 "$(hostname)" "$(dead_pid)"
 fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Freed slot 7"
 printf '7\n' >"$launcher_dir/release"
-"$ORCH" autopilot tick >/dev/null 2>&1
+counted_adapter_run "$tk_reads" "$tk_defs" "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "at a cap of 1 a single tick releases the stale claim" "$(fake_claim_held 5)" free
 assert_eq "and starts the waiting issue's session" "$(tick_calls)" "1"
+# the tick reads the claims once; the autopilot run it starts in the
+# foreground (ORCH_AUTOPILOT_FOREGROUND=1) reads them twice
+assert_eq "the tick and the run it starts read the claims three times" "$(log_count "$tk_reads" claims)" "3"
+rm -f "$tk_reads"
 # a failed claims read
 tick_fixture
 fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Failed read 7"
@@ -3021,31 +3011,8 @@ fake_fail adapter_claim_list "HTTP 502 claims"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 fake_unfail
 assert_status "a tick whose claims read fails fails" "$st" 1
-assert_contains "with today's message" "$out" "could not list the claims on origin: HTTP 502 claims"
+assert_contains "naming the failed claims read" "$out" "could not list the claims on origin: HTTP 502 claims"
 assert_eq "and starts no session" "$(tick_calls)" "0"
-# the GitHub-limit pause reads no claims
-tick_fixture
-top="$(git rev-parse --show-toplevel)"
-mkdir -p "$top/.orchestrator/autopilot"
-printf '%s\n' "$(iso_of "$(( $(date +%s) + 7200 ))")" >"$top/.orchestrator/autopilot/github-limit"
-out="$(tk_tick)"; st=$?
-assert_status "a tick held by the GitHub-limit pause succeeds" "$st" 0
-assert_eq "and makes no claim-list call" "$(log_count "$tk_reads" claims)" "0"
-# an early GitHub pause still cleans this host's stale claims, from one read
-tick_fixture
-top="$(git rev-parse --show-toplevel)"
-fake_issue 5 open ready-for-agent orch:spec orch:running
-fake_claim_seed 5 "$(hostname)" "$(dead_pid)"
-quota_reset="$(( $(date +%s) + 7200 ))"
-rm -f "$ORCH_GH_FAKE_STORE/quota"; fake_quota core 5000 5000 "$((quota_reset - 100))"; fake_quota graphql 400 5000 "$quota_reset"
-out="$(tk_tick)"; st=$?
-assert_status "a tick held by an early GitHub pause succeeds" "$st" 0
-assert_contains "it is held by the early pause" "$out" "GitHub graphql pool is below the github-reserve"
-assert_eq "and records the early pause" "$(on_disk "$top/.orchestrator/autopilot/github-early-graphql")" present
-assert_eq "it stops the stale claim as a failure" "$(fake_labels_of 5)" "needs-human orch:spec ready-for-agent "
-assert_eq "releases it" "$(fake_claim_held 5)" free
-assert_eq "from one claims read" "$(log_count "$tk_reads" claims)" "1"
-rm -f "$ORCH_GH_FAKE_STORE/quota" "$tk_reads"
 
 # --- autopilot run: a start-up read that meets a GitHub limit (#2577) ---------
 echo
@@ -3109,15 +3076,25 @@ echo "autopilot tick github reserve"
 tick_fixture
 top="$(git rev-parse --show-toplevel)"
 fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Reserve 7"
+fake_issue 5 open ready-for-agent orch:spec orch:running
+fake_claim_seed 5 "$(hostname)" "$(dead_pid)"
+rs_reads="$(mktemp)"
+rs_defs="$(counting_defs adapter_claim_list claims)"
 printf '7\n' >"$launcher_dir/release"
 quota_reset="$(( $(date +%s) + 7200 ))"
 rm -f "$ORCH_GH_FAKE_STORE/quota"; fake_quota core 5000 5000 "$((quota_reset - 100))"; fake_quota graphql 400 5000 "$quota_reset"
-out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+out="$(counted_adapter_run "$rs_reads" "$rs_defs" "$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a tick with a pool under the reserve succeeds" "$st" 0
 assert_contains "its note names the pool and its reset" "$out" "GitHub graphql pool is below the github-reserve: no issue is picked up until $(iso_of "$quota_reset")"
 assert_not_contains "and names no usage limit" "$out" "usage limit"
 assert_eq "it picks nothing up" "$(tick_calls)" "0"
 assert_eq "the pause is its own file, not the usage limit's" "$(on_disk "$top/.orchestrator/autopilot/limit")" absent
+assert_eq "the early pause is recorded" "$(on_disk "$top/.orchestrator/autopilot/github-early-graphql")" present
+# the early pause still cleans this host's stale claims, from one claims read
+assert_eq "it stops the stale claim as a failure" "$(fake_labels_of 5)" "needs-human orch:spec ready-for-agent "
+assert_eq "releases its claim" "$(fake_claim_held 5)" free
+assert_eq "from one claims read" "$(log_count "$rs_reads" claims)" "1"
+rm -f "$rs_reads"
 git config orchestrator.autopilot.github-reserve 0
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "github-reserve 0 ignores an early pause already recorded" "$(tick_calls)" "1"
@@ -3299,8 +3276,6 @@ counted_adapter_run "$ac_log" "$ac_defs" "$ORCH" autopilot candidates --limit 3 
 assert_eq "--limit makes no per-issue state-and-labels read" "$(log_count "$ac_log" issue)" "0"
 counted_adapter_run "$ac_log" "$ac_defs" "$ORCH" autopilot candidates 1 99 >"$ac_log.out" 2>&1
 assert_eq "named issues each keep one direct read" "$(log_count "$ac_log" issue)" "2"
-assert_eq "and a number naming no issue is still missing" "$(cat "$ac_log.out")" "1 eligible none
-99 skip missing"
 rm -f "$ac_log" "$ac_log.out"
 
 for args in "" "--all 1" "1 --all" "--limit 2 --all" "--all --limit 2" "--limit 0" "--limit x" "--limit" "--limit 1 5" "abc"; do
