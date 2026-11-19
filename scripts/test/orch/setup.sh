@@ -152,7 +152,7 @@ counting_defs() {
 
 # default_reads_run <log> <cmd>...: runs <cmd> with the adapter's default-branch
 # read appending a line to <log> per call, so log_count <log> is how many times
-# <cmd> asked GitHub for it. It seeds nothing: the caller sets the fake's answer.
+# <cmd> asked GitHub for it. It seeds nothing: the caller sets the fake's reply.
 default_reads_run() {
   counted_adapter_run "$1" "$(counting_defs adapter_repo_default_branch branch)" "${@:2}"
 }
