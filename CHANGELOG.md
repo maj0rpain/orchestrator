@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.17
+
+Clarify the triage-label reader's column-reset comment and write each doctor fixture row once.
+
 ## 6.8.16
 
 When an autopilot process gives up on a GitHub rate limit and cannot record the pause or hit file, the failure now joins the one rate-limit line, so every reporting site (review ci in both forms, doctor, stop comments) keeps it. The Wait module now owns the limit wait decision and its mark.
