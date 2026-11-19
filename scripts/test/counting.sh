@@ -2,8 +2,9 @@
 #
 # Sourced by orch_test.sh (the orch.sh suite's runner), hooks_test.sh and
 # docs_lint.sh: the counting fixture, a stub (in a directory its caller puts
-# first on PATH) that logs one line each time a command starts and then runs
-# the real command.
+# first on PATH) that logs one line each time a command starts
+# (counting_argv_bin: each start whose arguments match) and then runs the real
+# command.
 # Sourcing it only defines functions.
 # Bash 4.2+, as the rest of the suite.
 
@@ -21,6 +22,15 @@ counting_bin() {
 
 # counting_starts <dir> <cmd>: how many times the <cmd> in <dir> has started.
 counting_starts() { wc -l <"$1/$2.log" | tr -d ' '; }
+
+# counting_argv_bin <cmd> <args>: like counting_bin, but a start is logged only
+# when its arguments, joined by spaces, equal <args>. Prints the dir.
+counting_argv_bin() {
+  local dir
+  dir="$(counting_bin "$1")"
+  printf '#!/bin/sh\n[ "$*" = "%s" ] && echo x >>"%s/%s.log"\nexec "%s" "$@"\n' "$2" "$dir" "$1" "$(command -v "$1")" >"$dir/$1"
+  printf '%s\n' "$dir"
+}
 
 # counting_stdin_bin <cmd>: like counting_bin, and each start also appends one
 # line to <dir>/<cmd>.bytes: the bytes the <cmd> was offered on standard input.

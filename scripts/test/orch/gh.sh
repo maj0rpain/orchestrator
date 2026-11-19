@@ -173,17 +173,11 @@ assert_eq "a command that only captures a local git command runs no ssh -G" \
   "$(grep -c "^-G " "$ssh_calls")" "0"
 # On an https origin, a git wrapper logs each read of origin's URL.
 git remote set-url origin https://github.com/fork/widgets.git
-origin_wrap="$(mktemp -d)"
-cat >"$origin_wrap/git" <<GIT
-#!/usr/bin/env bash
-case "\$*" in "remote get-url origin") echo x >>"$origin_wrap/get-url.log" ;; esac
-exec "$(command -v git)" "\$@"
-GIT
-chmod +x "$origin_wrap/git"
-: >"$origin_wrap/get-url.log"; rm -f "$triage_dir/edited"
+origin_wrap="$(counting_argv_bin git "remote get-url origin")"
+: >"$origin_wrap/git.log"; rm -f "$triage_dir/edited"
 out="$(PATH="$origin_wrap:$triage_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" issue triage 5 2>&1)"; st=$?
 assert_status "issue triage on an https origin runs" "$st" 0
-assert_eq "and reads origin once" "$(wc -l <"$origin_wrap/get-url.log" | tr -d ' ')" "1"
+assert_eq "and reads origin once" "$(counting_starts "$origin_wrap" git)" "1"
 # The whole section's gh calls: none inherited a memo variable.
 assert_eq "no gh call inherited a REPO_ variable: the repo memo is never exported" \
   "$(cat "$GH_FIXTURE/repo_vars.log" 2>/dev/null)" ""
