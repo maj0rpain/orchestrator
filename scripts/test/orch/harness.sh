@@ -4033,29 +4033,28 @@ ss_out="$(source "$ss_helpers"; test_jobs_start_order a.sh b.sh c.sh; echo "${TE
 assert_eq "a list without orch_test.sh keeps list order" "$ss_out" "0 1 2"
 ss_out="$(source "$ss_helpers"; test_jobs_start_order a.sh b.sh orch_test.sh; echo "${TEST_JOBS_START_ORDER[*]}")"
 assert_eq "a list with orch_test.sh already last keeps it last" "$ss_out" "0 1 2"
-ss_out="$(source "$ss_helpers"; TEST_JOBS_POOL=/pool TEST_JOBS_SLOT_FD=8 ORCH_TEST_POOL_HELD=/other; test_jobs_held_marker; echo "[$TEST_JOBS_HELD]")"
+ss_out="$(source "$ss_helpers"; export TEST_JOBS_POOL=/pool TEST_JOBS_SLOT_FD=8 ORCH_TEST_POOL_HELD=/other; test_jobs_held_marker; echo "[$TEST_JOBS_HELD]")"
 assert_eq "the held marker is the pool directory when a slot is held" "$ss_out" "[/pool]"
-ss_out="$(source "$ss_helpers"; TEST_JOBS_POOL=/pool TEST_JOBS_SLOT_FD="" ORCH_TEST_POOL_HELD=/other; test_jobs_held_marker; echo "[$TEST_JOBS_HELD]")"
+ss_out="$(source "$ss_helpers"; TEST_JOBS_POOL=/pool ORCH_TEST_POOL_HELD=/other; test_jobs_held_marker; echo "[$TEST_JOBS_HELD]")"
 assert_eq "with none held it is the inherited marker" "$ss_out" "[/other]"
-ss_out="$(source "$ss_helpers"; unset ORCH_TEST_POOL_HELD; TEST_JOBS_SLOT_FD=""; test_jobs_held_marker; echo "[$TEST_JOBS_HELD]")"
+ss_out="$(source "$ss_helpers"; unset ORCH_TEST_POOL_HELD; test_jobs_held_marker; echo "[$TEST_JOBS_HELD]")"
 assert_eq "and empty when that is unset too" "$ss_out" "[]"
 ss_file="$(mktemp)"
-ss_out="$(source "$ss_helpers"; TEST_JOBS_SLOT_FD=""; test_jobs_suite_start echo hi >"$ss_file"; wait "$TEST_JOBS_SUITE_PID"; echo "holder=[$TEST_JOBS_HOLDER_PID] suite=[${TEST_JOBS_SUITE_PID:+set}]"; cat "$ss_file")"
+ss_out="$(source "$ss_helpers"; test_jobs_suite_start echo hi >"$ss_file"; wait "$TEST_JOBS_SUITE_PID"; echo "holder=[$TEST_JOBS_HOLDER_PID] suite=[${TEST_JOBS_SUITE_PID:+set}]"; cat "$ss_file")"
 assert_eq "an unpooled suite start leaves the holder pid empty and records the suite's, writing to the redirect on the call" \
   "$ss_out" "$(printf 'holder=[] suite=[set]\nhi')"
 ss_out="$(source "$ss_helpers"; TEST_JOBS_POOL="$ss_file.pool"; mkdir -p "$TEST_JOBS_POOL"
-  eval "exec $TEST_JOBS_FD>>\"\$TEST_JOBS_POOL/slot.1\""; TEST_JOBS_SLOT_FD="$TEST_JOBS_FD"
+  export TEST_JOBS_SLOTS=1; test_jobs_slot_take
   test_jobs_suite_start sleep 0.3
   if [ -n "$TEST_JOBS_HOLDER_PID" ] && [ "$TEST_JOBS_HOLDER_PID" != "$TEST_JOBS_SUITE_PID" ]; then echo pooled-ok; fi
   wait "$TEST_JOBS_SUITE_PID"; wait "$TEST_JOBS_HOLDER_PID" 2>/dev/null
-  TEST_JOBS_SLOT_FD=""
   test_jobs_suite_start true; wait "$TEST_JOBS_SUITE_PID"
   echo "after=[$TEST_JOBS_HOLDER_PID]")"
 rm -rf "$ss_file.pool"
 assert_eq "a pooled start sets a holder pid other than the suite's, and an unpooled start after it empties it" \
   "$ss_out" "$(printf 'pooled-ok\nafter=[]')"
 ss_out="$(source "$ss_helpers"; TEST_JOBS_POOL="$ss_file.pool"; mkdir -p "$TEST_JOBS_POOL"
-  TEST_JOBS_SLOTS=1; test_jobs_slot_take
+  export TEST_JOBS_SLOTS=1; test_jobs_slot_take
   ORCH_TEST_POOL_HELD=/other test_jobs_suite_start bash -c 'echo "$ORCH_TEST_POOL_HELD"' >"$ss_file"; wait "$TEST_JOBS_SUITE_PID"; cat "$ss_file")"
 rm -rf "$ss_file.pool"
 assert_eq "a suite started with a slot held sees the pool directory as its marker" "$ss_out" "$ss_file.pool"
