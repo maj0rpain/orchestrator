@@ -2275,6 +2275,10 @@ out="$(ORCH_AUTOPILOT=1 ORCH_GH_LIMIT_WAIT=30 timeout 10 "$ORCH" review ci 7 --n
 assert_first_line "a PR number whose read meets a limit pause that cannot be written prints unreachable" "$out" "unreachable"
 assert_status "with its exit status" "$st" 1
 assert_contains "and adds the warning line" "$out" "could not write the GitHub limit pause"
+printf 'API rate limit exceeded for user.\n' >"$ORCH_GH_FAKE_STORE/ratelimit"
+out="$(ORCH_AUTOPILOT=1 timeout 10 "$ORCH" review ci 7 2>&1)"
+assert_first_line "a waiting call that meets a primary limit prints unreachable" "$out" "unreachable"
+assert_not_contains "and not the pause warning line" "$out" "could not write the GitHub limit pause"
 rm -rf "$top/.orchestrator/autopilot/github-limit" "$ORCH_GH_FAKE_STORE/ratelimit"
 assert_contains "help names the PR argument" "$("$ORCH" help)" "review ci [--no-wait] [<pr>]"
 restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL

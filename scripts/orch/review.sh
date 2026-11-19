@@ -48,6 +48,16 @@ ci_probe() {
   ci_classify "$rc" "$out" "$err"
 }
 
+# ci_nowait_warnings <stderr>: the warning lines a failed call added (the GitHub
+# limit pause it could not write), indented beside the reason. Only a
+# `review ci --no-wait` call (GH_LIMIT_NO_SLEEP set) prints them; the waiting
+# form, the ready gate and doctor print the reason alone.
+ci_nowait_warnings() {
+  local line
+  [ -n "${GH_LIMIT_NO_SLEEP:-}" ] || return 0
+  while IFS= read -r line; do note "      $line"; done < <(gh_limit_warnings "$1")
+}
+
 # ci_classify <rc> <checks> <stderr>: ci_probe's classification of one
 # adapter_pr_checks answer - its status, its TSV and its stderr - so a caller
 # that read the checks itself (ci_counted) classifies them the same way.
@@ -56,9 +66,7 @@ ci_classify() {
   if [ "$rc" -ne 0 ]; then
     note unreachable
     note "      $(gh_reason "$err")"
-    # A further line is a warning the failed call added (the GitHub limit pause
-    # it could not write), kept beside the reason.
-    while IFS= read -r line; do note "      $line"; done < <(gh_limit_warnings "$err")
+    ci_nowait_warnings "$err"
     return 0
   fi
   if [ -z "$out" ]; then note none; return 0; fi
@@ -384,11 +392,10 @@ review_rerun() {
 # `unreachable` and its detail line, and returns 0; returns 1 otherwise (a read
 # that worked, or the flow's PR, whose unread refs only key its total by PR).
 ci_refs_unread() {
-  local line
   [ "$1" -ne 0 ] && [ -n "$2" ] || return 1
   note unreachable
   note "      could not read PR #$3: $(gh_reason "$4")"
-  while IFS= read -r line; do note "      $line"; done < <(gh_limit_warnings "$4")
+  ci_nowait_warnings "$4"
 }
 
 # review_ci_log <pr>: the failed-step log of each failing Actions job behind
