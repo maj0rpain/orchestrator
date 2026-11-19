@@ -172,7 +172,7 @@
 18	19	claim adapter operations (#1454)	789d0acedda7f5894bb4754db20a69aed25c5e36
 2	3	label casing (#1943)	967a4a39f788b73ef75f50851a8a5e6a3aa92edb
 44	29	gh rate limits (#2577)	5fc1f17b6d8d1b663b064feacca2ff01ae03bc9f
-4	6	gh rate limits: the GitHub pause and the hit file (#2577)	0e88478b202415efeddd56917630a4c349f9c021
+10	9	gh rate limits: the GitHub pause and the hit file (#2577)	49d4848e448e7b205475dce5785b5baa4fc9d7e3
 0	1	slug	aa1e8e6f64e5dd11e111097dfde9deca1248c258
 9	10	archive	0124b5e1112a0eae813a1e43c01b2f94b426ce16
 0	1	mp-skill	80c8160f5b342b489904f400b93e09e618b8ee00
@@ -280,7 +280,7 @@
 13	15	review standards (#1532)	51b9dc72c38a1bbf1bf3a35d98be00be13132d18
 9	10	review ready with a failed phase write (#1931)	66843fb4a3f090b55ec0719f4827cb02043c8277
 10	11	review reads its Flow state once	858b40aedf40f33288b10e3d1bfa6544501647e9
-34	20	review ci <pr>	e73ef9306c59bab6322ad75c39e6dba0592ed993
+57	24	review ci <pr>	a6aa0236326a2570c215b2333665987b56c25c7b
 2	3	route show	0e4fc7b4e544565f4d6f0cc3b311a522ccf801b0
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
 40	42	side-checkout (#722)	af2be5feb612499e9c65d765d4e385133c64fdd4
@@ -361,7 +361,7 @@
 48	7	verification run	60a21967681dc4d52f5e7454aaa13fb421327ec2
 216	20	verification run: the run key, stale runs, the ceiling	471d2e2e39b7b63f2840777531b346f7eab120a1
 0	1	verification run in help and the CLI conventions	bcef7e4ad67e97b98e872bc1de7a617d10a78253
-58	4	wait: a call's block is wall time	685e7591341f125a56a0600e3192feafb61282bf
+97	6	wait: a call's block is wall time	6c1cd665a3a708e73a87694d76075ad6c158603c
 686	811	hooks_test.sh	058e31b62b5c66adb779670b21daecb8f80a55e8
 137	164	docs_lint.sh	639956f3502e2967ff8bf8de403047bd539d9506
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65

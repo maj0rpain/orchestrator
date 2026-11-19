@@ -812,19 +812,21 @@ autopilot_github_pause_file() { printf '%s/github-limit\n' "$(autopilot_dir "$1"
 # session wrapper, each by a flag of its own, or a session (ORCH_AUTOPILOT=1) -
 # writes the GitHub pause, extended only to the later of two resets; in a
 # session, which has the wrapper's hit file path, writes the reset there too. An
-# interactive call writes nothing. Never fails: a write that fails is a warning.
+# interactive call writes and prints nothing. Never fails and never warns: each
+# write that fails prints one clause on stdout, for gh_limit_handle to join onto
+# its one limit line.
 autopilot_github_limit_record() {
   local main_root
   [ "${ORCH_AUTOPILOT:-}" = 1 ] || [ -n "${ORCH_AUTOPILOT_TICK:-}${ORCH_AUTOPILOT_RUN:-}" ] || return 0
   if main_root="$(main_checkout_or_die 2>/dev/null)" && [ -n "$main_root" ]; then
     autopilot_pause_put "$(autopilot_github_pause_file "$main_root")" "$1" ||
-      warn "could not write the GitHub limit pause under $main_root"
+      echo "could not write the GitHub limit pause under $main_root"
   else
-    warn "could not write the GitHub limit pause: the main checkout is unreadable"
+    echo "could not write the GitHub limit pause: the main checkout is unreadable"
   fi
   if [ "${ORCH_AUTOPILOT:-}" = 1 ] && [ -n "${ORCH_AUTOPILOT_HIT_FILE:-}" ]; then
     autopilot_pause_put "$ORCH_AUTOPILOT_HIT_FILE" "$1" ||
-      warn "could not write the GitHub limit hit file $ORCH_AUTOPILOT_HIT_FILE"
+      echo "could not write the GitHub limit hit file $ORCH_AUTOPILOT_HIT_FILE"
   fi
   return 0
 }

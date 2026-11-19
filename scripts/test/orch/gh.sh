@@ -2226,12 +2226,24 @@ out="$(ORCH_AUTOPILOT=1 ORCH_AUTOPILOT_HIT_FILE="$hit_file" sourced_orch adapter
 assert_status "a failed hit file write still fails the call" "$st" 1
 assert_contains "with the distinct message" "$out" "orch: GitHub API rate limit reached"
 assert_contains "and a line on the write" "$out" "could not write the GitHub limit hit file $hit_file"
+assert_contains "the first line holds the write too" "${out%%$'\n'*}" " - could not write the GitHub limit hit file $hit_file"
 rmdir "$hit_file"
 rm -f "$pause_file"; mkdir "$pause_file"
 out="$(ORCH_AUTOPILOT=1 sourced_orch adapter_issue_body 5 2>&1)"; st=$?
 assert_status "a failed pause write still fails the call" "$st" 1
 assert_contains "with the distinct message" "$out" "orch: GitHub API rate limit reached"
 assert_contains "and a line on the write" "$out" "could not write the GitHub limit pause"
+assert_contains "the first line holds the write too" "${out%%$'\n'*}" " - could not write the GitHub limit pause"
 rmdir "$pause_file"
+mkdir -p "$hit_file"; mkdir "$pause_file"
+out="$(ORCH_AUTOPILOT=1 ORCH_AUTOPILOT_HIT_FILE="$hit_file" sourced_orch adapter_issue_body 5 2>&1 >/dev/null)"
+assert_contains "both failed writes are joined by a semicolon on the first line" "${out%%$'\n'*}" "pause under $top; could not write the GitHub limit hit file $hit_file"
+rmdir "$hit_file" "$pause_file"
+out="$(ORCH_AUTOPILOT=1 sourced_orch adapter_issue_body 5 2>&1 >/dev/null)"
+assert_not_contains "no failed write leaves no clause on the first line" "${out%%$'\n'*}" "could not write"
+out="$(sourced_orch adapter_issue_body 5 2>&1 >/dev/null)"
+assert_not_contains "an interactive call's first line is the rate-limit message alone" "${out%%$'\n'*}" "after the reset. -"
+out="$(ORCH_AUTOPILOT=1 sourced_orch adapter_issue_body 5 2>/dev/null)"
+assert_not_contains "no clause reaches stdout" "$out" "could not write"
 rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
 restore_suite_env
