@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.27
+
+The Liveness module reads an issue's run and tick records without starting `cat`, and the run-record liveness helper is renamed `liveness_file_alive`. No behaviour changes.
+
 ## 6.8.26
 
 The Lines fate and finding-triage scan test sections drop duplicated checks and share one numbered-lines helper, `seq_lines`, in the shared test setup.

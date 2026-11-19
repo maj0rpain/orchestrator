@@ -53,10 +53,10 @@ liveness_record_alive() {
   [ "$current" = "$start" ]
 }
 
-# liveness_marker_alive <pid> <file>: whether the file holds the record of that
+# liveness_file_alive <pid> <file>: whether the file holds the record of that
 # pid, alive by the record-alive rule. An empty, malformed or unreadable file,
 # or a record naming another pid, is stale.
-liveness_marker_alive() {
+liveness_file_alive() {
   local record
   file_read record "$2" 2>/dev/null || return 1
   [ "${record%% *}" = "$1" ] && liveness_record_alive "$record"
@@ -121,17 +121,19 @@ liveness_run_begin() {
 liveness_run_end() {
   local dir
   dir="$(liveness_subdir run)" || return $?
-  liveness_marker_alive "$$" "$dir/$1.pid" || return 0
+  liveness_file_alive "$$" "$dir/$1.pid" || return 0
   rm -f "$dir/$1.pid"
 }
 
 # liveness_issue_record <issue>: the issue's record text - the run record's when
 # there is one, else the tick record's, else nothing.
 liveness_issue_record() {
-  local dir
+  local dir file text
   dir="$(liveness_subdir run)" || return $?
-  if [ -f "$dir/$1.pid" ]; then cat "$dir/$1.pid"
-  elif [ -f "$dir/$1.tick" ]; then cat "$dir/$1.tick"; fi
+  if [ -f "$dir/$1.pid" ]; then file="$dir/$1.pid"
+  elif [ -f "$dir/$1.tick" ]; then file="$dir/$1.tick"
+  else return 0; fi
+  ! file_read text "$file" || printf '%s' "$text"
   return 0
 }
 
