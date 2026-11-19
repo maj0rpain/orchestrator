@@ -149,7 +149,7 @@
 11	13	doctor --env: Standards declaration check (#3358)	e65aafea5b03bb784dff7ce1c2c4cafdbfdafffc
 8	9	doctor --env: glossary check (#3358)	1da032d3f5869f75b6dd3d5b7bb81c6163d44549
 7	9	doctor --env: ADR directory check (#3358)	bfb05745053379020206a54151bb3e09663f0ebf
-25	28	doctor --env: verification lines	69e2d1518a93f13333ba935fea4bb774bc108e35
+37	42	doctor --env: verification lines	02f8e20bf86adb4242f0f148f2050002066a0ab7
 41	46	doctor --env: verification commands (#3346)	dd37e452ded2c66124e91f00b28737906e79e127
 0	1	is_filed_severity	41fb54217cc90b7a75a37b3ee336945167710410
 1	2	severity table	cbcec87893fb4d691f66b67cb960e1bc2f27d3d3
@@ -358,7 +358,7 @@
 0	1	verification run in help and the CLI conventions	bcef7e4ad67e97b98e872bc1de7a617d10a78253
 58	4	wait: a call's block is wall time	685e7591341f125a56a0600e3192feafb61282bf
 686	811	hooks_test.sh	058e31b62b5c66adb779670b21daecb8f80a55e8
-134	159	docs_lint.sh	d985f88abc6de09e499877c7f24ef07b6c97f5ec
+135	161	docs_lint.sh	232777877fca9a46d65de917bd4c80d846f74b12
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 8	8	autopilot_up_test.sh	25eb01b693309e8b681fe96ca4c386c741b9ecd8

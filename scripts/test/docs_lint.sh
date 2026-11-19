@@ -189,6 +189,8 @@
 #     four numbered route options
 #   scan_repo_verification  this repo's CLAUDE.md Testing section names a
 #     Ticket verification: and a Full verification: command
+#   scan_branch_verification  CLAUDE.md's Branch verification: line, if any,
+#     has a command and sits in the Testing section
 # <<< rules
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -5397,6 +5399,37 @@ flags "verification lines outside the Testing section are flagged" \
   "$(scan_repo_verification "$fixture")" "no 'Ticket verification: <command>' line"
 check "CLAUDE.md's Testing section names a Ticket verification and a Full verification" \
   "$(scan_repo_verification "$PLUGIN_ROOT")"
+
+# A `Branch verification:` line, when CLAUDE.md has one, is well formed (a
+# command after the label) and sits in the Testing section (#3544).
+# scan_branch_verification <plugin root>: one line per fault. Structure only,
+# never wording (ADR-0027). No line at all is not a fault.
+scan_branch_verification() {
+  local r="$1" all body bad_lines
+  all="$(grep -E '^Branch verification:' "$r/CLAUDE.md" 2>/dev/null || true)"
+  [ -n "$all" ] || return 0
+  bad_lines="$(grep -vE '^Branch verification:[[:space:]]*[^[:space:]]' <<<"$all" || true)"
+  [ -z "$bad_lines" ] || echo "CLAUDE.md: a 'Branch verification:' line has no command"
+  body="$(md_section "$r/CLAUDE.md" "## Testing" 2>/dev/null || true)"
+  [ "$(grep -cE '^Branch verification:' <<<"$body" || true)" = "$(wc -l <<<"$all")" ] ||
+    echo "CLAUDE.md: a 'Branch verification:' line is outside the ## Testing section"
+  return 0
+}
+fixture="$(new_fixture)"
+printf '# C\n\n## Testing\n\nFull verification: b.sh\n' >"$fixture/CLAUDE.md"
+assert_empty "no Branch verification line is not flagged" \
+  "$(scan_branch_verification "$fixture")"
+printf '# C\n\n## Testing\n\nBranch verification: c.sh\n\n## Next\n' >"$fixture/CLAUDE.md"
+assert_empty "a well-formed Branch verification line in Testing is not flagged" \
+  "$(scan_branch_verification "$fixture")"
+printf '# C\n\n## Testing\n\nBranch verification:\n' >"$fixture/CLAUDE.md"
+flags "a Branch verification line with no command is flagged" \
+  "$(scan_branch_verification "$fixture")" "has no command"
+printf '# C\n\n## Testing\n\n## Next\n\nBranch verification: c.sh\n' >"$fixture/CLAUDE.md"
+flags "a Branch verification line outside Testing is flagged" \
+  "$(scan_branch_verification "$fixture")" "outside the ## Testing section"
+check "CLAUDE.md's Branch verification line, if any, is well formed in Testing" \
+  "$(scan_branch_verification "$PLUGIN_ROOT")"
 
 
 # >>> summary

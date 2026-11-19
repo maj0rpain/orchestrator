@@ -547,11 +547,12 @@ check_sub_issues() {
 }
 
 # The verification lines the agents read from the repo's instructions: a line
-# outside a fenced code block starting with `Ticket verification:` or `Full
-# verification:` (ADR-0058). Doctor never judges whether a command runs, only
-# that each label is named once, with a command. Prints one tab-separated
-# "<label> <file> <command>" line per verification line, files in the order
-# the agents read them, a label with no command printing an empty command.
+# outside a fenced code block starting with `Ticket verification:`, `Full
+# verification:` or `Branch verification:` (ADR-0058). Doctor never judges
+# whether a command runs, only that each label is named once, with a command.
+# Prints one tab-separated "<label> <file> <command>" line per verification
+# line, files in the order the agents read them, a label with no command
+# printing an empty command.
 verification_lines() {
   local f line cmd label
   for f in CLAUDE.md AGENTS.md CONTRIBUTING.md; do
@@ -560,6 +561,7 @@ verification_lines() {
       case "$line" in
         'Ticket verification:'*) label="Ticket verification"; cmd="${line#Ticket verification:}" ;;
         'Full verification:'*)   label="Full verification";   cmd="${line#Full verification:}" ;;
+        'Branch verification:'*) label="Branch verification"; cmd="${line#Branch verification:}" ;;
         *) continue ;;
       esac
       trim_split "$cmd" cmd
@@ -600,6 +602,10 @@ verification_report() {
     d_remedy "add the line 'Full verification: <command>' to CLAUDE.md - see $setup"
     return 0
   fi
+  if [ "$label" = "Branch verification" ]; then
+    d_ok "no 'Branch verification:' line - the combined-branch check runs the full verification"
+    return 0
+  fi
   d_ok "no 'Ticket verification:' line - tickets run the full verification (ADR-0058)"
 }
 
@@ -608,6 +614,7 @@ check_verification_lines() {
   lines="$(verification_lines)" || lines=""
   verification_report "Ticket verification" "$lines"
   verification_report "Full verification" "$lines"
+  verification_report "Branch verification" "$lines"
 }
 
 check_git_exclude() {
@@ -703,7 +710,7 @@ d_verification_found() {
 check_verification_commands() {
   local label word from_file bare lines l f cmd
   lines="$(verification_lines)" || lines=""
-  for label in "Ticket verification" "Full verification"; do
+  for label in "Ticket verification" "Full verification" "Branch verification"; do
     from_file="" word="" bare=""
     while IFS=$'\t' read -r l f cmd; do
       [ "$l" = "$label" ] || continue
