@@ -261,28 +261,28 @@
 7	8	default-branch	0177d6e5817d4d0befacac87fc2b2a0f621ad11b
 9	10	review-pass begin (#342)	c9a9274e4ded397a8c551e3b82717cd167110d2b
 52	65	review-pass known-items	c01aa6033c8a94081955880d1ea8ecdcc49dbb05
-19	17	review ready's pointer to /orchestrator:finish (#727)	0020d0c313bfe7b71761880ca2f869f2f7b204a3
-17	16	review begin	47b15508e0f1bfc550a9ad4cca44a417cec37b28
-5	5	review path	76adf5b9111a439fb3b18dbdd899d0ce5e86a569
-6	6	the multi-loop machinery is gone	59f99e3c36807eb6099334e10a56b2ff2cc1a41e
-57	47	review file	5d76ae7eb1f643ef5fa0ae6387d82a09cf87e13c
-18	16	review ready	aba02c1f44f96eb5a4b0ce0167cbc3e1c8be3073
-173	67	review ci	4515a642b1ba8d209e1c89ce89ec6270dab30a29
-18	13	the grace counts from the push (issue #475)	58612fbf355ac68c5b2f938d967f310c636daa65
-24	17	review ci --no-wait	821bdd4c243ad96f69547132415c084ebbb6aa84
-68	42	the grace is skipped on no evidence of CI (issue #476)	601daef9db53be0caf269d6e3016cc746e7e344a
-11	10	review rerun	7d1779bfc93d812c8314fe5887835a8a5d448601
-6	5	review ci-log	c8bd459d9851185f0c333ff1c7f022db069f0f94
-30	27	review terminal	fd31523ab0eeaed67264808c9e962f07eec62e2d
-41	36	review resume	c55ba42e1bed27d7fb2d2859c6c311055b5f5c0c
-6	6	review retire	0e01272795478e1913adf85975e55c8e9d8be011
-14	13	review known-items	c397e0cf62a61e679c28e97760417610fff0ddd0
-13	12	review ready in an autopilot flow (#1457)	c1321f1745707092af86620d28b3cbb4469bf2d1
-14	14	review known-items in an autopilot flow (#1457)	a462e16e9e06c42c52c8749f3c7d24aa2f0a8166
-16	14	review standards (#1532)	761a7bb47ffe6b16023f6112f96de894730d33d9
-12	11	review ready with a failed phase write (#1931)	e2ac5da0fdb7642349e578abb857a1923c6f15cb
-12	12	review reads its Flow state once	e0536b57e631c6df296ee0dc6dcc13a3a8889c90
-12	6	review ci <pr>	68611beb809c934d5ab8e46f0b6d3922e58a64f4
+20	17	review ready's pointer to /orchestrator:finish (#727)	e8d2ed095a35df98ab05ed3f22261da9f491025c
+17	15	review begin	c4a68a37d613f9f5992ecf1b159a2ce1f9ba6bca
+4	5	review path	c78a5b250d2bed63c97a669e2cbac1fe74e42940
+6	5	the multi-loop machinery is gone	56222b7e078261fd8d6c1ca2c7e63d3117ecc435
+59	48	review file	1709efef973387fdb6f67c7ed37d9262de56c3e5
+18	16	review ready	7f56a2d5a8fa9d475c2f6a7cdaa4cd8b0cf7a7d9
+168	69	review ci	c5b16e5abda05f2554ab2e1bf0261e29ba453297
+19	14	the grace counts from the push (issue #475)	83357513a7a03b0a0d3fda1e7854f5673a097608
+23	17	review ci --no-wait	e235335de49ce1f76db6573c702c3277c14cf817
+65	43	the grace is skipped on no evidence of CI (issue #476)	13cb1ba5f6dfcd8ac4ba5933a14b020bb5a61031
+12	9	review rerun	125c5474891fa92f544fa60f5cb34af9c2975eb0
+6	5	review ci-log	37606d939180e23d494938b9fae5102bac479d37
+32	26	review terminal	d94be37e86c973cc2de12eef65acf7e71440d853
+44	37	review resume	75d11794dcb0d28edb3db1c3cf140f8efbd99625
+5	5	review retire	990ced2eda246eff493769e5debf8f5279a1e8a9
+15	14	review known-items	bdb25be812bff7d8bae1260508495ad5ba8d5ef1
+14	12	review ready in an autopilot flow (#1457)	cc1e7b3dac576a83544970705048308fa5b533c3
+15	15	review known-items in an autopilot flow (#1457)	1863aaadacbd252693177211ee326374b4967cd3
+17	16	review standards (#1532)	1815ab348b75d5b5acc0ed9523215d753520ea43
+12	10	review ready with a failed phase write (#1931)	ed1ef3a1e5d648b72a5b543383eec3fe6f47142d
+13	12	review reads its Flow state once	c7fc8289608d227fd729a49beb321266082d92c8
+13	6	review ci <pr>	839ad07c48adf7f820c0db0cebb5d3959fcbefd3
 2	3	route show	0e4fc7b4e544565f4d6f0cc3b311a522ccf801b0
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
 40	42	side-checkout (#722)	af2be5feb612499e9c65d765d4e385133c64fdd4

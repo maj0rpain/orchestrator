@@ -27,7 +27,7 @@ pushed_head() {
 # that cannot be read.
 fake_job_log() {
   mkdir -p "$ORCH_GH_FAKE_STORE/job_logs"
-  seq 1 "$2" | sed 's/^/log line /' >"$ORCH_GH_FAKE_STORE/job_logs/$1"
+  seq_lines log "$2" >"$ORCH_GH_FAKE_STORE/job_logs/$1"
 }
 
 # review_ci_flow <slug>: a review ci section's starting point - review_flow
