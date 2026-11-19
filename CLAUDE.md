@@ -67,7 +67,10 @@ section file named as it is). Sections run in parallel, so every section must
 pass on its own. The runners share one job pool, holding 75% of the usable CPUs
 unless `ORCH_TEST_POOL_PERCENT` sets another share (see CONTRIBUTING.md).
 Test-helper placement is checked by harness.sh's test-helper placement
-section; its failure message states the rule. Before writing or reusing a
+section; its failure message states the rule. A test that writes out the
+whole body of a shared or preamble test helper it could call is failed by
+harness.sh's helper body copies section: call the helper, or mark a deliberate
+repeat with `# copy-of <helper>: <reason>`. Before writing or reusing a
 helper, run
 `scripts/dev/helpers.sh` (orch.sh's modules), `scripts/dev/helpers.sh --tests`
 (the shared test setup, the gh fake, the tally, the FIFO wait and the

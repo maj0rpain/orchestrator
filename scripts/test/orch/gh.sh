@@ -1811,6 +1811,7 @@ claim_contract() {
   assert_status "$who: a delete frees the issue for a new create" "$st" 0
 }
 
+# copy-of contract: contract is redefined below; this stays the real one
 claim_op() { env -u ORCH_GH_ADAPTER bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
 claim_contract "origin"
 assert_eq "a claim is a ref on origin that holds the empty tree" \
