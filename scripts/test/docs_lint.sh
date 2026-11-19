@@ -140,21 +140,19 @@
 #   scan_report_capability  docs/host-capabilities.md has a row for opening the
 #     report and a Markdown-summary fallback
 #   scan_hand_off_batch  an audit skill's Hand off step files through audit
-#     file --run, passing no per-finding --category, --finding-file, --location
+#     file --run
 #   scan_audit_hunt  each audit skill's Hunt step names agent get auditor and it
 #     runs no agent sync
 #   scan_audit_hunt_run  each audit skill's Hunt step runs audit begin and names
 #     the area-<k>.md findings file
 #   scan_audit_rank_report  each audit skill's Report step runs audit report and
 #     its Rank step states its category as Category: <c>
-#   scan_audit_stands_alone  each auditor brief's Reporting rules say a
-#     finding stands alone
+#   scan_quality_rule_home  orch-audit-tests' opening names the test auditor's
+#     brief and that brief's Brief section holds the quality rule
 #   scan_subagent_pool  docs/host-capabilities.md has a Run a subagent pool row
 #     and a Fallbacks subsection naming foreground batches, and each pool site
 #     (orch-quick-autopilot's step 3, each audit's Hunt step) names the
 #     capability
-#   scan_quality_rule_home  orch-audit-tests' opening names the test auditor's
-#     brief and that brief's Brief section holds the quality rule
 #   scan_review_pass_self_contained  orch-review-pass refers into no orch-review
 #     section and starts its own reviewers
 #   scan_skill_description_length  no skill's frontmatter description is over
@@ -221,6 +219,18 @@ skill_md_files() {
     [ -f "$f" ] && printf '%s\n' "$f"
   done
   return 0
+}
+
+# files_present <plugin root> <path>...: prints one `<path>: missing` line per
+# path with no file under the plugin root, and leaves the paths that exist, in
+# order, in FILES_PRESENT.
+files_present() {
+  local r="$1" f
+  shift
+  FILES_PRESENT=()
+  for f in "$@"; do
+    if [ -f "$r/$f" ]; then FILES_PRESENT+=("$f"); else echo "$f: missing"; fi
+  done
 }
 
 # md_section <file> <heading>: the lines after the first line that is exactly
@@ -3264,28 +3274,38 @@ scan_audit_tests() {
   scan_skill_steps "$r" audit-tests "$audit_tests_skill" "$audit_tests_steps"
   return 0
 }
-# scan_capability_fallback <plugin root> <capability> <phrase> <what the
-# fallback must name>: one line when docs/host-capabilities.md has no row for
-# the capability, one when its Fallbacks have no subsection of that name, and
-# one when that subsection lacks the phrase (case-insensitive), ending in the
-# given words.
+# scan_capability_fallback <plugin root> <capability> <phrase> <complaint>: one
+# line when docs/host-capabilities.md has no row for the capability, one when
+# its Fallbacks have no subsection of that name, and one when that subsection
+# lacks the phrase (case-insensitive), ending in the complaint words.
 scan_capability_fallback() {
-  local r="$1" cap="$2" phrase="$3" what="$4" doc="docs/host-capabilities.md" fallback flat
+  local r="$1" cap="$2" phrase="$3" complaint="$4" doc="docs/host-capabilities.md" fallback flat
   grep -qF -- "| $cap |" "$r/$doc" 2>/dev/null || echo "$doc: no row for $cap"
   if ! fallback="$(md_section "$r/$doc" "### $cap" 2>/dev/null)"; then
     echo "$doc: no fallback for $cap"
   elif flat="$(flat_text <<<"$fallback")"; ! grep -qiF -- "$phrase" <<<"$flat"; then
-    echo "$doc: the fallback for $cap $what"
+    echo "$doc: the fallback for $cap $complaint"
   fi
   return 0
 }
-# step_names <skill file> <step name> <phrase>: status 0 when the skill's
-# numbered step of that name has a section naming the phrase.
-step_names() {
-  local file="$1" step="$2" phrase="$3" heading section
+# step_section <skill file> <step name>: the section of the skill's numbered
+# step of that name, on one line. Status 1 when the step heading is absent.
+step_section() {
+  local file="$1" step="$2" heading section
   heading="$(numbered_heading "$file" "$step")" &&
-    section="$(md_section "$file" "$heading" 2>/dev/null)" &&
-    grep -qF -- "$phrase" <<<"$(flat_text <<<"$section")"
+    section="$(md_section "$file" "$heading" 2>/dev/null)" || return 1
+  flat_text <<<"$section"
+}
+# step_names_phrase <plugin root> <skill file> <step name> <phrase>: prints
+# `<skill>: missing` and returns 1 when the skill file is absent; otherwise
+# prints `<skill>: the <step> step does not name <phrase>` when the step's
+# section lacks the phrase, and returns 0.
+step_names_phrase() {
+  local r="$1" skill="$2" step="$3" phrase="$4" section
+  [ -f "$r/$skill" ] || { echo "$skill: missing"; return 1; }
+  section="$(step_section "$r/$skill" "$step")"
+  [[ "$section" == *"$phrase"* ]] || echo "$skill: the $step step does not name $phrase"
+  return 0
 }
 # scan_report_capability <plugin root>: one line when docs/host-capabilities.md
 # has no row for opening the report, and one when its Fallbacks have no
@@ -3357,16 +3377,12 @@ numbered_heading() {
   printf '%s\n' "$h"
 }
 # scan_hand_off_batch <plugin root> <skill file>: one line when the skill's Hand
-# off step does not file its picks through the batch form (audit file --run), or
-# still passes a per-finding --category, --finding-file or --location.
+# off step does not file its picks through the batch form (audit file --run).
 scan_hand_off_batch() {
-  local r="$1" skill="$2" flag
-  step_names "$r/$skill" "Hand off" 'audit file --run' \
+  local r="$1" skill="$2" section
+  section="$(step_section "$r/$skill" "Hand off")"
+  [[ "$section" == *'audit file --run'* ]] \
     || echo "$skill: the Hand off step does not file through audit file --run"
-  for flag in --category --finding-file --location; do
-    ! step_names "$r/$skill" "Hand off" "$flag" \
-      || echo "$skill: the Hand off step passes $flag, which the batch form takes from the run"
-  done
   return 0
 }
 fixture="$(new_fixture)"
@@ -3375,10 +3391,6 @@ printf '# A\n\n## 6. Hand off\n\nRun `audit file "<t>" --category bug --finding-
 out="$(scan_hand_off_batch "$fixture" "$audit_docs_skill")"
 flags "a hand off that files one finding at a time is flagged" \
   "$out" "$audit_docs_skill: the Hand off step does not file through audit file --run"
-flags "a hand off passing --category is flagged" \
-  "$out" "$audit_docs_skill: the Hand off step passes --category, which the batch form takes from the run"
-flags "a hand off passing --finding-file is flagged" \
-  "$out" "$audit_docs_skill: the Hand off step passes --finding-file, which the batch form takes from the run"
 printf '# A\n\n## 6. Hand off\n\nRun `audit file --run <run> 3,7`.\n' >"$fixture/$audit_docs_skill"
 assert_empty "a hand off through the batch form is accepted" \
   "$(scan_hand_off_batch "$fixture" "$audit_docs_skill")"
@@ -3391,17 +3403,6 @@ check "orch-audit-docs has its command and its six step headings in order" \
 check "orch-audit-docs hands off through audit file --run" \
   "$(scan_hand_off_batch "$PLUGIN_ROOT" "$audit_docs_skill")"
 
-# audit_present <plugin root> <path>...: prints one `<path>: missing` line per
-# path with no file under the plugin root, and leaves the paths that exist, in
-# order, in AUDIT_PRESENT.
-audit_present() {
-  local r="$1" f
-  shift
-  AUDIT_PRESENT=()
-  for f in "$@"; do
-    if [ -f "$r/$f" ]; then AUDIT_PRESENT+=("$f"); else echo "$f: missing"; fi
-  done
-}
 AUDIT_SKILLS=(skills/orch-audit-docs/SKILL.md skills/orch-audit-code/SKILL.md skills/orch-audit-tests/SKILL.md)
 
 # scan_audit_hunt <plugin root>: one line per audit skill (orch-audit-docs,
@@ -3410,11 +3411,8 @@ AUDIT_SKILLS=(skills/orch-audit-docs/SKILL.md skills/orch-audit-code/SKILL.md sk
 # it runs none is allowed.
 scan_audit_hunt() {
   local r="$1" skill
-  audit_present "$r" "${AUDIT_SKILLS[@]}"
-  for skill in "${AUDIT_PRESENT[@]}"; do
-    if ! step_names "$r/$skill" Hunt 'agent get auditor'; then
-      echo "$skill: the Hunt step does not name agent get auditor"
-    fi
+  for skill in "${AUDIT_SKILLS[@]}"; do
+    step_names_phrase "$r" "$skill" Hunt 'agent get auditor' || continue
     if grep -qF '"$ORCH" agent sync' <<<"$(flat_text "$r/$skill")"; then
       echo "$skill: runs an agent sync command"
     fi
@@ -3429,6 +3427,7 @@ printf '# A\n\n## 3. Hunt\n\nRead `agent get auditor`. Run `bash "$ORCH" agent s
 out="$(scan_audit_hunt "$fixture")"
 flags "an audit Hunt step that reads no agent get auditor is flagged" \
   "$out" "skills/orch-audit-docs/SKILL.md: the Hunt step does not name agent get auditor"
+flags "an absent audit skill is flagged as missing" "$out" "skills/orch-audit-tests/SKILL.md: missing"
 flags "an audit skill running an agent sync command is flagged" \
   "$out" "skills/orch-audit-code/SKILL.md: runs an agent sync command"
 spares "an audit Hunt step reading agent get auditor is accepted" "$out" 'audit-code/SKILL.md: the Hunt'
@@ -3455,11 +3454,12 @@ check "each audit skill's Hunt step reads agent get auditor and runs no agent sy
 # begin, and one per skill whose Hunt step does not name the area-<k>.md
 # findings file (ADR-0064).
 scan_audit_hunt_run() {
-  local r="$1" skill
-  audit_present "$r" "${AUDIT_SKILLS[@]}"
-  for skill in "${AUDIT_PRESENT[@]}"; do
-    step_names "$r/$skill" Hunt 'audit begin' || echo "$skill: the Hunt step does not name audit begin"
-    step_names "$r/$skill" Hunt 'area-<k>.md' \
+  local r="$1" skill section
+  files_present "$r" "${AUDIT_SKILLS[@]}"
+  for skill in "${FILES_PRESENT[@]}"; do
+    section="$(step_section "$r/$skill" Hunt)"
+    [[ "$section" == *'audit begin'* ]] || echo "$skill: the Hunt step does not name audit begin"
+    [[ "$section" == *'area-<k>.md'* ]] \
       || echo "$skill: the Hunt step does not name the area-<k>.md findings file"
   done
   return 0
@@ -3486,19 +3486,24 @@ check "each audit skill's Hunt step runs audit begin and names area-<k>.md" \
 # scan_audit_rank_report <plugin root>: one line per audit skill whose Report
 # step does not run audit report, and one per skill whose Rank step does not
 # state its category in the literal form Category: <c>, for each category the
-# skill files under.
+# skill files under. The Category: check is structural under ADR-0027:
+# Category: is a field of the ranked-findings body format that orch.sh's audit
+# filing parses (audit.sh dies on a finding without it), the same token reading
+# the linter gives flag names and the closer's labels.
 scan_audit_rank_report() {
-  local r="$1" skill cats cat
-  audit_present "$r" "${AUDIT_SKILLS[@]}"
-  for skill in "${AUDIT_PRESENT[@]}"; do
-    step_names "$r/$skill" Report 'audit report' || echo "$skill: the Report step does not run audit report"
+  local r="$1" skill cats cat section
+  files_present "$r" "${AUDIT_SKILLS[@]}"
+  for skill in "${FILES_PRESENT[@]}"; do
+    section="$(step_section "$r/$skill" Report)"
+    [[ "$section" == *'audit report'* ]] || echo "$skill: the Report step does not run audit report"
     case "$skill" in
       */orch-audit-docs/*) cats="documentation" ;;
       */orch-audit-code/*) cats="bug enhancement" ;;
       */orch-audit-tests/*) cats="enhancement" ;;
     esac
+    section="$(step_section "$r/$skill" Rank)"
     for cat in $cats; do
-      step_names "$r/$skill" Rank "Category: $cat" || echo "$skill: the Rank step does not state Category: $cat"
+      [[ "$section" == *"Category: $cat"* ]] || echo "$skill: the Rank step does not state Category: $cat"
     done
   done
   return 0
@@ -3523,99 +3528,6 @@ flags "and audit report outside the Report step" \
   "$out" "skills/orch-audit-tests/SKILL.md: the Report step does not run audit report"
 check "each audit skill's Report runs audit report and its Rank states the category" \
   "$(scan_audit_rank_report "$PLUGIN_ROOT")"
-
-# scan_audit_stands_alone <plugin root>: one line per auditor brief whose
-# Reporting rules do not say a finding stands alone (ADR-0064).
-scan_audit_stands_alone() {
-  local r="$1" f text
-  audit_present "$r" agents/orch-code-auditor.md agents/orch-doc-auditor.md agents/orch-test-auditor.md
-  for f in "${AUDIT_PRESENT[@]}"; do
-    text="$(md_section "$r/$f" "## Reporting rules" 2>/dev/null | flat_text)"
-    grep -qF 'stands alone' <<<"$text" || echo "$f: the Reporting rules do not say a finding stands alone"
-  done
-  return 0
-}
-fixture="$(new_fixture)"
-mkdir -p "$fixture/agents"
-printf '# A\n\n## Reporting rules\n\n- A finding stands alone.\n\n## Next\n' >"$fixture/agents/orch-code-auditor.md"
-printf '# A\n\n## Reporting rules\n\n- Report findings.\n\n## Next\n\nA finding stands alone.\n' >"$fixture/agents/orch-doc-auditor.md"
-printf '# A\n\n## Reporting rules\n\n- Each finding stands\n  alone.\n' >"$fixture/agents/orch-test-auditor.md"
-out="$(scan_audit_stands_alone "$fixture")"
-spares "a brief whose Reporting rules say it is accepted" "$out" 'orch-code-auditor.md'
-flags "a brief saying it outside its Reporting rules is flagged" \
-  "$out" "agents/orch-doc-auditor.md: the Reporting rules do not say a finding stands alone"
-spares "a rule wrapped over two lines is accepted" "$out" 'orch-test-auditor.md'
-check "each auditor brief says a finding stands alone" \
-  "$(scan_audit_stands_alone "$PLUGIN_ROOT")"
-
-# scan_subagent_pool <plugin root>: one line when docs/host-capabilities.md has
-# no Run a subagent pool row, one when its Fallbacks have no subsection of that
-# name, one when that subsection names no foreground batches, and one per pool
-# site (orch-quick-autopilot's step 3, the Hunt step of each audit skill, each
-# read as that one section) that does not name Run a subagent pool. Structure
-# only, never a site's wording (ADR-0027).
-scan_subagent_pool() {
-  local r="$1" cap="Run a subagent pool" site skill step
-  scan_capability_fallback "$r" "$cap" 'foreground batches' 'names no foreground batches'
-  for site in quick-autopilot:"Run one agent per issue" audit-code:Hunt audit-docs:Hunt audit-tests:Hunt; do
-    skill="skills/orch-${site%%:*}/SKILL.md" step="${site#*:}"
-    if [ ! -f "$r/$skill" ]; then
-      echo "$skill: missing"
-    elif ! step_names "$r/$skill" "$step" "$cap"; then
-      echo "$skill: the $step step does not name $cap"
-    fi
-  done
-  return 0
-}
-fixture="$(new_fixture)"
-mkdir -p "$fixture/docs" "$fixture/skills/orch-quick-autopilot" "$fixture/skills/orch-audit-code" \
-  "$fixture/skills/orch-audit-docs" "$fixture/skills/orch-audit-tests"
-printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
-  '| Ask | `AskUserQuestion`. | `ask_user`. |' '' '## Fallbacks' '' '### Ask' '' 'Ask.' \
-  >"$fixture/docs/host-capabilities.md"
-printf '# A\n\n## 3. Run one agent per issue\n\nStart them.\n\n## 4. Summarise\n' \
-  >"$fixture/skills/orch-quick-autopilot/SKILL.md"
-printf '# A\n\n## 3. Hunt\n\nStart them.\n\n## 4. Rank\n' >"$fixture/skills/orch-audit-code/SKILL.md"
-printf '# A\n\n## 3. Hunt\n\nStart them.\n\n## 4. Rank\n' >"$fixture/skills/orch-audit-docs/SKILL.md"
-printf '# A\n\n## 4. Hunt\n\nStart them.\n\n## 5. Rank\n' >"$fixture/skills/orch-audit-tests/SKILL.md"
-out="$(scan_subagent_pool "$fixture")"
-flags "a reference with no subagent pool row is flagged" \
-  "$out" "docs/host-capabilities.md: no row for Run a subagent pool"
-flags "a reference with no subagent pool fallback is flagged" \
-  "$out" "docs/host-capabilities.md: no fallback for Run a subagent pool"
-flags "a quick autopilot step 3 not naming the capability is flagged" \
-  "$out" "skills/orch-quick-autopilot/SKILL.md: the Run one agent per issue step does not name Run a subagent pool"
-flags "an audit-code Hunt step not naming the capability is flagged" \
-  "$out" "skills/orch-audit-code/SKILL.md: the Hunt step does not name Run a subagent pool"
-flags "an audit-docs Hunt step not naming the capability is flagged" \
-  "$out" "skills/orch-audit-docs/SKILL.md: the Hunt step does not name Run a subagent pool"
-flags "an audit-tests Hunt step not naming the capability is flagged" \
-  "$out" "skills/orch-audit-tests/SKILL.md: the Hunt step does not name Run a subagent pool"
-printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
-  '| Run a subagent pool | Background. | None. **Fallback**. |' '' '## Fallbacks' '' \
-  '### Run a subagent pool' '' 'One at a time.' >"$fixture/docs/host-capabilities.md"
-out="$(scan_subagent_pool "$fixture")"
-flags "a pool fallback naming no foreground batches is flagged" \
-  "$out" "docs/host-capabilities.md: the fallback for Run a subagent pool names no foreground batches"
-spares "a reference with the row and the subsection has neither flagged" "$out" 'docs/host-capabilities.md: no '
-printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
-  '| Run a subagent pool | Background. | None. **Fallback**. |' '' '## Fallbacks' '' \
-  '### Run a subagent pool' '' 'Foreground' 'batches next.' >"$fixture/docs/host-capabilities.md"
-printf '# A\n\n## 3. Run one agent per issue\n\nHost capability *Run a subagent pool*, at most 4.\n\n## 4. Summarise\n' \
-  >"$fixture/skills/orch-quick-autopilot/SKILL.md"
-printf '# A\n\n## 3. Hunt\n\nHost capability *Run a\nsubagent pool*.\n\n## 4. Rank\n' >"$fixture/skills/orch-audit-code/SKILL.md"
-printf '# A\n\n## 3. Hunt\n\nRun a subagent pool.\n\n## 4. Rank\n' >"$fixture/skills/orch-audit-docs/SKILL.md"
-printf '# A\n\n## 4. Hunt\n\nRun a subagent pool.\n\n## 5. Rank\n' >"$fixture/skills/orch-audit-tests/SKILL.md"
-assert_empty "a conforming reference and four conforming sites are not flagged" \
-  "$(scan_subagent_pool "$fixture")"
-printf '# A\n\nRun a subagent pool.\n\n## 3. Hunt\n\nStart them.\n\n## 4. Rank\n' >"$fixture/skills/orch-audit-docs/SKILL.md"
-flags "a capability named outside the Hunt step is flagged" \
-  "$(scan_subagent_pool "$fixture")" "skills/orch-audit-docs/SKILL.md: the Hunt step does not name Run a subagent pool"
-rm "$fixture/skills/orch-audit-tests/SKILL.md"
-flags "a missing pool site skill is flagged" \
-  "$(scan_subagent_pool "$fixture")" "skills/orch-audit-tests/SKILL.md: missing"
-check "the reference and each pool site name Run a subagent pool" \
-  "$(scan_subagent_pool "$PLUGIN_ROOT")"
 
 # scan_quality_rule_home <plugin root>: one line when orch-audit-tests' opening
 # (its text before the first numbered step heading) does not name
@@ -3673,6 +3585,74 @@ check "orch-audit-code hands off through audit file --run" \
   "$(scan_hand_off_batch "$PLUGIN_ROOT" "$audit_code_skill")"
 check "orch-audit-tests hands off through audit file --run" \
   "$(scan_hand_off_batch "$PLUGIN_ROOT" "$audit_tests_skill")"
+
+# --- subagent pool (#3118) ----------------------------------------------------
+echo
+echo "subagent pool (#3118)"
+# scan_subagent_pool <plugin root>: one line when docs/host-capabilities.md has
+# no Run a subagent pool row, one when its Fallbacks have no subsection of that
+# name, one when that subsection names no foreground batches, and one per pool
+# site (orch-quick-autopilot's step 3, the Hunt step of each audit skill, each
+# read as that one section) that does not name Run a subagent pool. Structure
+# only, never a site's wording (ADR-0027).
+scan_subagent_pool() {
+  local r="$1" cap="Run a subagent pool" site skill step
+  scan_capability_fallback "$r" "$cap" 'foreground batches' 'names no foreground batches'
+  for site in quick-autopilot:"Run one agent per issue" audit-code:Hunt audit-docs:Hunt audit-tests:Hunt; do
+    skill="skills/orch-${site%%:*}/SKILL.md" step="${site#*:}"
+    step_names_phrase "$r" "$skill" "$step" "$cap" || true
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/docs" "$fixture/skills/orch-quick-autopilot" "$fixture/skills/orch-audit-code" \
+  "$fixture/skills/orch-audit-docs" "$fixture/skills/orch-audit-tests"
+printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
+  '| Ask | `AskUserQuestion`. | `ask_user`. |' '' '## Fallbacks' '' '### Ask' '' 'Ask.' \
+  >"$fixture/docs/host-capabilities.md"
+printf '# A\n\n## 3. Run one agent per issue\n\nStart them.\n\n## 4. Summarise\n' \
+  >"$fixture/skills/orch-quick-autopilot/SKILL.md"
+printf '# A\n\n## 3. Hunt\n\nStart them.\n\n## 4. Rank\n' >"$fixture/skills/orch-audit-code/SKILL.md"
+printf '# A\n\n## 3. Hunt\n\nStart them.\n\n## 4. Rank\n' >"$fixture/skills/orch-audit-docs/SKILL.md"
+printf '# A\n\n## 4. Hunt\n\nStart them.\n\n## 5. Rank\n' >"$fixture/skills/orch-audit-tests/SKILL.md"
+out="$(scan_subagent_pool "$fixture")"
+flags "a reference with no subagent pool row is flagged" \
+  "$out" "docs/host-capabilities.md: no row for Run a subagent pool"
+flags "a reference with no subagent pool fallback is flagged" \
+  "$out" "docs/host-capabilities.md: no fallback for Run a subagent pool"
+flags "a quick autopilot step 3 not naming the capability is flagged" \
+  "$out" "skills/orch-quick-autopilot/SKILL.md: the Run one agent per issue step does not name Run a subagent pool"
+flags "an audit-code Hunt step not naming the capability is flagged" \
+  "$out" "skills/orch-audit-code/SKILL.md: the Hunt step does not name Run a subagent pool"
+flags "an audit-docs Hunt step not naming the capability is flagged" \
+  "$out" "skills/orch-audit-docs/SKILL.md: the Hunt step does not name Run a subagent pool"
+flags "an audit-tests Hunt step not naming the capability is flagged" \
+  "$out" "skills/orch-audit-tests/SKILL.md: the Hunt step does not name Run a subagent pool"
+printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
+  '| Run a subagent pool | Background. | None. **Fallback**. |' '' '## Fallbacks' '' \
+  '### Run a subagent pool' '' 'One at a time.' >"$fixture/docs/host-capabilities.md"
+out="$(scan_subagent_pool "$fixture")"
+flags "a pool fallback naming no foreground batches is flagged" \
+  "$out" "docs/host-capabilities.md: the fallback for Run a subagent pool names no foreground batches"
+spares "a reference with the row and the subsection has neither flagged" "$out" 'docs/host-capabilities.md: no '
+printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
+  '| Run a subagent pool | Background. | None. **Fallback**. |' '' '## Fallbacks' '' \
+  '### Run a subagent pool' '' 'Foreground' 'batches next.' >"$fixture/docs/host-capabilities.md"
+printf '# A\n\n## 3. Run one agent per issue\n\nHost capability *Run a subagent pool*, at most 4.\n\n## 4. Summarise\n' \
+  >"$fixture/skills/orch-quick-autopilot/SKILL.md"
+printf '# A\n\n## 3. Hunt\n\nHost capability *Run a\nsubagent pool*.\n\n## 4. Rank\n' >"$fixture/skills/orch-audit-code/SKILL.md"
+printf '# A\n\n## 3. Hunt\n\nRun a subagent pool.\n\n## 4. Rank\n' >"$fixture/skills/orch-audit-docs/SKILL.md"
+printf '# A\n\n## 4. Hunt\n\nRun a subagent pool.\n\n## 5. Rank\n' >"$fixture/skills/orch-audit-tests/SKILL.md"
+assert_empty "a conforming reference and four conforming sites are not flagged" \
+  "$(scan_subagent_pool "$fixture")"
+printf '# A\n\nRun a subagent pool.\n\n## 3. Hunt\n\nStart them.\n\n## 4. Rank\n' >"$fixture/skills/orch-audit-docs/SKILL.md"
+flags "a capability named outside the Hunt step is flagged" \
+  "$(scan_subagent_pool "$fixture")" "skills/orch-audit-docs/SKILL.md: the Hunt step does not name Run a subagent pool"
+rm "$fixture/skills/orch-audit-tests/SKILL.md"
+flags "a missing pool site skill is flagged" \
+  "$(scan_subagent_pool "$fixture")" "skills/orch-audit-tests/SKILL.md: missing"
+check "the reference and each pool site name Run a subagent pool" \
+  "$(scan_subagent_pool "$PLUGIN_ROOT")"
 
 # --- review pass skill (#1138) ------------------------------------------------
 echo
@@ -3942,10 +3922,11 @@ check "Junie's custom-agent block names orch-review-pass's reviewers" \
 # capability filter sees the description, so it must name the skill that runs
 # the spec review.
 scan_lens_description_starters() {
-  local r="$1" lens f desc skill
-  for lens in $lenses; do
-    f="agents/orch-lens-$lens.md"
-    if [ ! -f "$r/$f" ]; then echo "$f: missing"; continue; fi
+  local r="$1" lens f desc skill lens_files=()
+  for lens in $lenses; do lens_files+=("agents/orch-lens-$lens.md"); done
+  files_present "$r" "${lens_files[@]}"
+  for f in "${FILES_PRESENT[@]}"; do
+    lens="${f#agents/orch-lens-}" lens="${lens%.md}"
     desc="$(skill_description "$r/$f")"
     for skill in orch-flow orch-quick-implement; do
       [ "$skill" = orch-quick-implement ] && [ "$lens" = fidelity ] && continue
