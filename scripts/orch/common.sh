@@ -130,7 +130,8 @@ is_number() {
 # say that without also matching 0.05.
 is_positive_number() { is_number "$1" && [ -n "${1//[0.]/}" ]; }
 
-# require_poll_knobs <var>... <interval-var>: dies unless every named variable
+# require_poll_knobs [die|die2] <var>... <interval-var>: dies (through the dier
+# given, as require_state_read takes it) unless every named variable
 # holds a number and the last, the poll interval, is greater than zero.
 # awk compares a number against a non-numeric string as strings, which makes
 # every `float_lt` true and a poll loop endless. A zero interval is the same
@@ -138,13 +139,14 @@ is_positive_number() { is_number "$1" && [ -n "${1//[0.]/}" ]; }
 # clock the loop sleeps on, leaving it to poll as fast as it can. A poll loop's
 # knobs are read once, here, before anything sleeps on one of them.
 require_poll_knobs() {
-  local k v interval="${!#}"
+  local k v interval="${!#}" __rpk_die=die
+  case "${1:-}" in die | die2) __rpk_die="$1"; shift ;; esac
   for k in "$@"; do
     eval "v=\$$k"
-    is_number "$v" || die "$k is not a number: $v"
+    is_number "$v" || "$__rpk_die" "$k is not a number: $v"
   done
   eval "v=\$$interval"
-  is_positive_number "$v" || die "$interval must be greater than zero: $v"
+  is_positive_number "$v" || "$__rpk_die" "$interval must be greater than zero: $v"
 }
 # temp_file_name <var>: sets <var> to a fresh, unpredictable path under the temp
 # directory, built from $RANDOM. temp_file_make takes every name from it, so a

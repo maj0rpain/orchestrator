@@ -5,7 +5,7 @@
 # its stored total is the same wait store either way.
 # `review ci --no-wait` is one pass of review ci's probe: where the waiting
 # form would sleep and look again it prints `pending`; it reads no stored
-# total, never sleeps and writes nothing (no state key, wait file or guard).
+# total, never sleeps and writes no state, wait file or guard.
 # Its tests: scripts/test/orch/review.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -54,8 +54,7 @@ ci_probe() {
 ci_classify() {
   local rc="$1" out="$2" err="$3" failed="" pending="" line bucket name
   if [ "$rc" -ne 0 ]; then
-    note unreachable
-    note "      $(gh_reason "$err")"
+    ci_unreachable "$(gh_reason "$err")"
     return 0
   fi
   if [ -z "$out" ]; then note none; return 0; fi
@@ -263,6 +262,173 @@ ci_tick() {
   elapsed="$(wait_taken)"
 }
 
+# ci_unreachable <detail>: the `unreachable` verdict and its indented detail
+# line, the one spelling of both.
+ci_unreachable() {
+  note unreachable
+  note "      $1"
+}
+
+# review ci's two forms (review_ci_once, review_ci_wait) share four helpers,
+# which read and set their caller's locals through bash's dynamic scope.
+#
+# ci_refs <step>: the refs read of PR <pr> into head_oid, head_ref, base_ref,
+# refs_err and refs_rc, then <step> (a command its caller supplies: `:` or
+# wait_guard_check, which may end the call at 75), then the stop for a PR given
+# by number that could not be read: returns 1 after its `unreachable` lines.
+# A refs read that failed leaves head_oid empty.
+ci_refs() {
+  pr_refs_read "$pr" head_oid head_ref base_ref refs_err || refs_rc=$?
+  "$1"
+  ci_refs_unread "$refs_rc" "$pr_arg" "$pr" "${refs_err-}" && return 1
+  [ "$refs_rc" -eq 0 ] || head_oid=""
+  return 0
+}
+
+# ci_context: how long before WAIT_START the head was pushed (push_age, zero
+# when unknown) and whether the PR has no evidence of CI anywhere (no_ci).
+ci_context() {
+  [ -n "$head_oid" ] || return 0
+  local pushed
+  pushed="$(ci_push_time "$head_oid" "$head_ref")"
+  case "$pushed" in
+    ''|*[!0-9]*) ;;
+    *) [ "$pushed" -ge "$WAIT_START" ] || push_age=$(( WAIT_START - pushed )) ;;
+  esac
+  # With no evidence of CI anywhere, there is nothing for the grace to
+  # wait on. It replaces only the wait: the unfiltered probe still runs,
+  # so a check already reported on the head gives its verdict as before.
+  if no_ci_evidence "$head_oid" "$base_ref" "$pr"; then
+    no_ci=1
+  fi
+}
+
+# ci_pass: one probe of the PR's checks into res, its first line in verdict, and
+# grace_none (1 when the answer was `none` from the required checks while the
+# grace remains). It prints and acts on nothing.
+# Branch protection's required checks decide it wherever it names any.
+# When nothing required has reported, gh's message cannot tell
+# "this repo requires nothing" from
+# "what it requires has not registered yet" - so the grace is spent
+# waiting on the required set, and only once it runs out does the net
+# widen to every check on the commit. Widening sooner is how an
+# unrelated green check gets mistaken for a required one that never
+# arrived, and the PR marked ready over it.
+# While the grace remains a pass probes the required checks alone and reports
+# a `none` through grace_none, leaving what to do about it - wait, or print
+# pending - to the caller; once it is spent or skipped, the pass reads through
+# ci_counted, which widens to every check.
+ci_pass() {
+  grace_none=0
+  if [ "$no_ci" = 0 ] && float_lt "$(float_add "$push_age" "$elapsed")" "$ORCH_CI_GRACE"; then
+    res="$(ci_probe "$pr" required)"
+    [ "${res%%$'\n'*}" != none ] || grace_none=1
+  else
+    res="$(ci_counted_probe "$pr")"
+  fi
+  verdict="${res%%$'\n'*}"
+}
+
+# ci_deliver: prints a terminal verdict's lines (res) and sets ci_status to its
+# status, returning 0; returns 1, printing nothing, for `pending`.
+ci_deliver() {
+  case "$verdict" in
+    green)       printf '%s\n' "$res"; ci_status=0 ;;
+    # Reported, not fixed: which failure is worth a flake rerun is a
+    # judgement, and the budget for it belongs to the flow.
+    failing)     printf '%s\n' "$res"; ci_status=1 ;;
+    unreachable) printf '%s\n' "$res"; ci_status=1 ;;
+    # Only reachable with the grace spent or skipped: nothing required
+    # reported, and then nothing at all reported either. The detail line
+    # says which, here rather than in ci_probe, so doctor's lines are
+    # unchanged.
+    none)
+      printf '%s\n' "$res"
+      if [ "$no_ci" = 1 ]; then
+        note "      no CI signals found: no workflow files in the head, no required checks on $base_ref, no checks or statuses on earlier PR commits or the $base_ref tip"
+      else
+        note "      nothing reported before the ${ORCH_CI_GRACE}s grace ran out"
+      fi
+      ci_status=0 ;;
+    pending) return 1 ;;
+    # Unreachable while ci_probe prints one of the five words above, and
+    # the arm that keeps it that way: an unrecognised answer with no arm
+    # would fall through to the next pass with nothing to wait on, and
+    # spin the waiting form silently on the one command built to be bounded.
+    *)
+      ci_unreachable "unrecognised answer from gh pr checks: $verdict"
+      ci_status=1 ;;
+  esac
+}
+
+# review_ci_once <pr> <pr_arg>: `review ci --no-wait`, one pass of the probe
+# the waiting form repeats: it reads no total, never sleeps and writes no
+# state, wait file or guard; where the loop would sleep it prints `pending`.
+# A rate limit is given up on at once (NO_WAIT_CALL).
+# It sets WAIT_START to this call's start, as no total is open.
+review_ci_once() {
+  local pr="$1" pr_arg="$2" elapsed=0 res verdict refs_err head_oid head_ref base_ref push_age=0
+  local no_ci=0 ci_status refs_rc=0 grace_none
+  is_number "$ORCH_CI_GRACE" || die2 "ORCH_CI_GRACE is not a number: $ORCH_CI_GRACE"
+  export NO_WAIT_CALL=1
+  orch_load wait
+  WAIT_START="$WAIT_CALL_START"
+  ci_refs : || return 1
+  ci_context
+  ci_pass
+  if [ "$grace_none" = 1 ]; then note pending; return 0; fi
+  ci_deliver || { printf '%s\n' "$res"; ci_status=0; }
+  return "$ci_status"
+}
+
+# review_ci_wait <pr> <pr_arg>: `review ci`, the loop: polls until a verdict or
+# ORCH_CI_TIMEOUT. Two clocks: the timeout counts from the wait's first call
+# (the stored total), the grace from the push. By the time the loop ends the
+# fixer's last push is usually minutes old, and a CI that has not registered a
+# check in that time is not about to. `push_age` is how long before the wait's
+# first call the push landed; a PR that will not say what its head is, or a
+# head with no reflog entry, leaves it at zero, and the grace counts from the
+# first call.
+# The total is stored from the first call: a wait belongs to this PR and head
+# commit, or to the PR alone when the head cannot be read, and is forgotten
+# once a call delivers an outcome (wait.sh).
+# The refs read runs before the wait's key is known, so a provisional guard
+# stands in for it: a limit the block cannot hold is slept short and marked
+# there (wait_guard, wait_guard_check), and ends the call as still running with
+# no total yet.
+review_ci_wait() {
+  local pr="$1" pr_arg="$2"
+  local elapsed=0 res verdict refs_err head_oid head_ref base_ref push_age=0
+  local no_ci=0 ci_status refs_rc=0 grace_none
+  require_poll_knobs die2 ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
+  wait_block_check die2
+  wait_guard "$pr"
+  ci_refs wait_guard_check || return 1
+  wait_open "review ci $pr $head_oid"
+  elapsed="$(wait_taken)"
+  ci_context
+  [ -z "$head_oid" ] || wait_limited_check
+  while :; do
+    ci_pass
+    wait_limited_check
+    if [ "$grace_none" = 1 ]; then ci_tick; continue; fi
+    if ! ci_deliver; then
+      if float_lt "$elapsed" "$ORCH_CI_TIMEOUT"; then ci_tick; continue; fi
+      # Still pending at the cap is an answer we do not have, not a green
+      # one. The loop stops rather than marking a PR ready over something
+      # nothing ever verified.
+      ci_unreachable "checks were still pending after ${ORCH_CI_TIMEOUT}s"
+      ci_status=1
+    fi
+    break
+  done
+  # Every terminal verdict leaves the loop with its status, and only a pending
+  # verdict, or `none` while the grace remains, continues, so the stored total
+  # is forgotten in this one place.
+  wait_forget
+  return "$ci_status"
+}
+
 # When the PR's head was pushed, in epoch seconds: the newest reflog entry of
 # the head branch's remote-tracking ref whose new value is the head SHA. Prints
 # nothing when there is no such entry - pushed from another machine, or a
@@ -381,8 +547,7 @@ review_rerun() {
 # that worked, or the flow's PR, whose unread refs only key its total by PR).
 ci_refs_unread() {
   [ "$1" -ne 0 ] && [ -n "$2" ] || return 1
-  note unreachable
-  note "      could not read PR #$3: $(gh_reason "$4")"
+  ci_unreachable "could not read PR #$3: $(gh_reason "$4")"
 }
 
 # review_ci_log <pr>: the failed-step log of each failing Actions job behind
@@ -900,140 +1065,30 @@ cmd_review() {
       fi
       ;;
     ci)
-      # `--no-wait` is one pass of the probe the loop below repeats: it reads no
-      # stored total, never sleeps and writes nothing (no state key, wait file,
-      # provisional guard); where the loop would sleep it prints `pending`. A
-      # rate limit is given up on at once (GH_LIMIT_NO_SLEEP).
-      local nowait=0 pr_arg="" pr_given=0
+      local nowait=0 pr_arg="" pr_given=0 pr
       while [ $# -gt 0 ]; do
         case "$1" in
           --no-wait) nowait=1 ;;
-          *) [ "$pr_given" = 0 ] || die "usage: orch.sh review ci [--no-wait] [<pr>]"
+          *) [ "$pr_given" = 0 ] || die2 "usage: orch.sh review ci [--no-wait] [<pr>]"
              pr_given=1; pr_arg="$1" ;;
         esac
         shift
       done
       if [ "$pr_given" = 1 ]; then
-        case "$pr_arg" in ''|*[!0-9]*) die "not a PR number: $pr_arg" ;; esac
+        case "$pr_arg" in ''|*[!0-9]*) die2 "not a PR number: $pr_arg" ;; esac
       fi
-      local pr elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
-      local no_ci=0 ci_status refs_rc=0
-      if [ -n "$pr_arg" ]; then pr="$pr_arg"; else require_state_read pr=pr; fi
-      orch_load wait
-      if [ "$nowait" = 1 ]; then
-        is_number "$ORCH_CI_GRACE" || die "ORCH_CI_GRACE is not a number: $ORCH_CI_GRACE"
+      if [ -n "$pr_arg" ]; then
+        pr="$pr_arg"
       else
-        require_poll_knobs ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
-        require_poll_knobs ORCH_WAIT_BLOCK
+        require_state_read die2 pr=pr
+        require_value pr "$pr" die2
       fi
-      require_value pr "$pr"
-      # Two clocks: the timeout counts from the wait's first call (the stored
-      # total), the grace from the push.
-      # By the time the loop ends the fixer's last push is usually minutes old,
-      # and a CI that has not registered a check in that time is not about to.
-      # `push_age` is how long before the wait's first call the push landed; a
-      # PR that will not say what its head is, or a head with no reflog entry,
-      # leaves it at zero, and the grace counts from the first call.
-      # The total is stored from the first call: a wait belongs to this PR and
-      # head commit, or to the PR alone when the head cannot be read, and is
-      # forgotten once a call delivers an outcome (wait.sh).
-      # The refs read runs before the wait's key is known, so a provisional
-      # guard stands in for it: a limit the block cannot hold is slept short
-      # and marked there (wait_provisional_open, wait_provisional_check), and
-      # ends the call as still running with no total yet.
+      repo_pin || die2 "$REPO_REMEDY"
       if [ "$nowait" = 1 ]; then
-        export GH_LIMIT_NO_SLEEP=1
-        WAIT_START="$WAIT_CALL_START"
+        review_ci_once "$pr" "$pr_arg"
       else
-        wait_provisional_open "$pr"
+        review_ci_wait "$pr" "$pr_arg"
       fi
-      pr_refs_read "$pr" head_oid head_ref base_ref refs_err || refs_rc=$?
-      [ "$nowait" = 1 ] || wait_provisional_check
-      ci_refs_unread "$refs_rc" "$pr_arg" "$pr" "${refs_err-}" && return 1
-      [ "$refs_rc" -eq 0 ] || head_oid=""
-      if [ "$nowait" != 1 ]; then
-        wait_open "review ci $pr $head_oid"
-        elapsed="$(wait_taken)"
-      fi
-      if [ -n "$head_oid" ]; then
-        pushed="$(ci_push_time "$head_oid" "$head_ref")"
-        case "$pushed" in
-          ''|*[!0-9]*) ;;
-          *) [ "$pushed" -ge "$WAIT_START" ] || push_age=$(( WAIT_START - pushed )) ;;
-        esac
-        # With no evidence of CI anywhere, there is nothing for the grace to
-        # wait on. It replaces only the wait: the unfiltered probe still runs,
-        # so a check already reported on the head gives its verdict as before.
-        if no_ci_evidence "$head_oid" "$base_ref" "$pr"; then
-          no_ci=1
-        fi
-        [ "$nowait" = 1 ] || wait_limited_check
-      fi
-      while :; do
-        # Branch protection's required checks decide it wherever it names any.
-        # When nothing required has reported, gh's message cannot tell
-        # "this repo requires nothing" from
-        # "what it requires has not registered yet" - so the grace is spent
-        # waiting on the required set, and only once it runs out does the net
-        # widen to every check on the commit. Widening sooner is how an
-        # unrelated green check gets mistaken for a required one that never
-        # arrived, and the PR marked ready over it.
-        # While the grace remains a pass probes the required checks alone and
-        # waits on none; once it is spent or skipped, the pass reads through
-        # ci_counted, which widens to every check.
-        if [ "$no_ci" = 0 ] && float_lt "$(float_add "$push_age" "$elapsed")" "$ORCH_CI_GRACE"; then
-          res="$(ci_probe "$pr" required)"
-          [ "$nowait" = 1 ] || wait_limited_check
-          if [ "${res%%$'\n'*}" = none ]; then
-            if [ "$nowait" = 1 ]; then note pending; ci_status=0; break; fi
-            ci_tick; continue
-          fi
-        else
-          res="$(ci_counted_probe "$pr")"
-          [ "$nowait" = 1 ] || wait_limited_check
-        fi
-        verdict="${res%%$'\n'*}"
-        case "$verdict" in
-          green)       printf '%s\n' "$res"; ci_status=0; break ;;
-          # Reported, not fixed: which failure is worth a flake rerun is a
-          # judgement, and the budget for it belongs to the flow.
-          failing)     printf '%s\n' "$res"; ci_status=1; break ;;
-          unreachable) printf '%s\n' "$res"; ci_status=1; break ;;
-          # Only reachable with the grace spent or skipped: nothing required
-          # reported, and then nothing at all reported either. The detail line
-          # says which, here rather than in ci_probe, so doctor's lines are
-          # unchanged.
-          none)
-            printf '%s\n' "$res"
-            if [ "$no_ci" = 1 ]; then
-              note "      no CI signals found: no workflow files in the head, no required checks on $base_ref, no checks or statuses on earlier PR commits or the $base_ref tip"
-            else
-              note "      nothing reported before the ${ORCH_CI_GRACE}s grace ran out"
-            fi
-            ci_status=0; break ;;
-          pending)
-            if [ "$nowait" = 1 ]; then printf "%s\n" "$res"; ci_status=0; break; fi
-            if float_lt "$elapsed" "$ORCH_CI_TIMEOUT"; then ci_tick; continue; fi
-            # Still pending at the cap is an answer we do not have, not a green
-            # one. The loop stops rather than marking a PR ready over something
-            # nothing ever verified.
-            note unreachable
-            note "      checks were still pending after ${ORCH_CI_TIMEOUT}s"
-            ci_status=1; break ;;
-          # Unreachable while ci_probe prints one of the five words above, and
-          # the arm that keeps it that way: an unrecognised answer with no arm
-          # would fall through to the next pass with nothing to wait on, and
-          # spin this loop silently on the one command built to be bounded.
-          *)
-            note unreachable
-            note "      unrecognised answer from gh pr checks: $verdict"
-            ci_status=1; break ;;
-        esac
-      done
-      # Every terminal arm leaves the loop with its status and only pending
-      # continues, so the stored total is forgotten in this one place.
-      [ "$nowait" = 1 ] || wait_forget
-      return "$ci_status"
       ;;
     known-items)
       require_state

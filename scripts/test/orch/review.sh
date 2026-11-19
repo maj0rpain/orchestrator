@@ -34,12 +34,13 @@ fake_job_log() {
 # <slug> with PR #7 recorded in state and open from topic onto main in the
 # store-backed fake (fake_github), the base tip's one check run as the CI
 # evidence that keeps the grace, and the CI knobs short: ORCH_CI_GRACE=0.3,
-# ORCH_CI_TIMEOUT=1, ORCH_CI_INTERVAL=0.05. A section that calls it ends with
-# its teardown, review_ci_restore.
+# ORCH_CI_TIMEOUT=1, ORCH_CI_INTERVAL=0.05, and GH_REPO naming a repo. A
+# section that calls it ends with its teardown, review_ci_restore.
 review_ci_flow() {
   review_flow "$1"
   state_fixture pr 7
   export ORCH_CI_GRACE=0.3 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
+  export GH_REPO=acme/widgets # the Repo review ci resolves before it reads GitHub
   fake_github
   fake_pr 7 open topic main
   fake_check_run main
@@ -829,15 +830,20 @@ assert_status "a head that cannot be read keys the total by the PR alone: its ca
 fake_pr 7 open topic main
 # A secondary limit on a read before the wait is keyed (the PR's refs) ends the
 # call as still running within the block, not after ORCH_GH_LIMIT_WAIT.
+rm -rf "${ORCH_DIR_NAME:?}/wait"
 printf 'You have exceeded a secondary rate limit.\n' >"$ORCH_GH_FAKE_STORE/ratelimit"
-ORCH_GH_LIMIT_WAIT=30 ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=100 ORCH_WAIT_BLOCK=0.3 timeout 10 "$ORCH" review ci >/dev/null 2>&1; st=$?
+out="$(ORCH_GH_LIMIT_WAIT=30 ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=100 ORCH_WAIT_BLOCK=0.3 timeout 10 "$ORCH" review ci 2>/dev/null)"; st=$?
 rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
 assert_status "a limit met reading the PR's refs ends the call as still running within the block" "$st" 75
+assert_eq "with stdout empty and no total stored" "$out$(ls "${ORCH_DIR_NAME:?}/wait" 2>/dev/null)" ""
 rm -rf "${ORCH_DIR_NAME:?}/wait"
 out="$(ORCH_WAIT_BLOCK=0 timeout 5 "$ORCH" review ci 2>&1)"; st=$?
-assert_status "an ORCH_WAIT_BLOCK of 0 is refused" "$st" 1
+assert_status "an ORCH_WAIT_BLOCK of 0 is refused" "$st" 2
 assert_contains "naming the variable" "$out" "ORCH_WAIT_BLOCK"
-assert_contains "help names ORCH_WAIT_BLOCK and exit 75 for review ci" "$("$ORCH" help)" "75 - run it again; the 900 s total"
+help_out="$("$ORCH" help)"
+assert_contains "help names ORCH_WAIT_BLOCK and exit 75 for review ci" "$help_out" "75 - run it again; the 900 s total"
+assert_contains "help says the --no-wait look writes no state, wait file or guard" "$help_out" "reads no total and writes no state, wait file"
+assert_contains "help says a refusal exits 2" "$help_out" "state) exits 2"
 rm -f "$rc_err"
 fake_pr 7 open topic main
 fake_checks_clear
@@ -848,15 +854,28 @@ fake_checks_clear
 # else kills it. The leash is what makes this assertable: without the fix the
 # command never returns on its own.
 out="$(ORCH_CI_GRACE=oops timeout 5 "$ORCH" review ci 2>&1)"; st=$?
-assert_status "a grace that is not a number stops the command, not the clock" "$st" 1
+assert_status "a grace that is not a number stops the command, not the clock" "$st" 2
 assert_contains "naming the knob it could not read" "$out" "ORCH_CI_GRACE"
 
 # A zero interval passes for a number and still defeats the bound: `sleep 0`
 # returns at once and never advances the clock, so the loop polls as fast as
 # GitHub answers for the whole timeout.
 out="$(ORCH_CI_INTERVAL=0 timeout 5 "$ORCH" review ci 2>&1)"; st=$?
-assert_status "an interval of zero is refused rather than busy-polled" "$st" 1
+assert_status "an interval of zero is refused rather than busy-polled" "$st" 2
 assert_contains "saying the interval has to be above zero" "$out" "greater than zero"
+out="$(ORCH_CI_TIMEOUT=oops timeout 5 "$ORCH" review ci 2>&1)"; st=$?
+assert_status "a timeout that is not a number is refused at exit 2" "$st" 2
+assert_contains "naming ORCH_CI_TIMEOUT" "$out" "ORCH_CI_TIMEOUT is not a number: oops"
+state_fixture_drop pr
+out="$(timeout 5 "$ORCH" review ci 2>&1)"; st=$?
+assert_status "a flow state with no pr is refused at exit 2" "$st" 2
+assert_contains "with its message unchanged" "$out" "orch: no PR recorded in state - the implement phase opens it"
+state_fixture pr 7
+mv .orchestrator/state.json .orchestrator/state.json.bak
+out="$(timeout 5 "$ORCH" review ci 2>&1)"; st=$?
+mv .orchestrator/state.json.bak .orchestrator/state.json
+assert_status "a missing flow state is refused at exit 2" "$st" 2
+assert_contains "with its message unchanged" "$out" "orch: no active flow"
 
 # The one direction this classifier must never fail in: an answer nobody could
 # read is not an answer that there is nothing to read. adapter_pr_checks fails
@@ -932,7 +951,8 @@ review_ci_restore
 
 # --- review ci --no-wait ----------------------------------------------------
 # One pass of the probe the waiting form loops on: it prints `pending` where the
-# waiting form would sleep, reads no stored total, and writes nothing.
+# waiting form would sleep, reads no stored total, and writes no state, wait
+# file or guard.
 echo
 echo "review ci --no-wait"
 review_ci_flow reviewcinowait
@@ -1154,7 +1174,7 @@ fake_unfail
 
 state_fixture pr null
 out="$("$ORCH" review ci 2>&1)"; st=$?
-assert_status "refuses to classify checks on a PR that does not exist yet" "$st" 1
+assert_status "refuses to classify checks on a PR that does not exist yet" "$st" 2
 # Asserting the message pins the guard, so it cannot degrade into an empty PR
 # number.
 assert_contains "saying which phase was supposed to open it" "$out" "the implement phase opens it"
@@ -2245,11 +2265,17 @@ before="$(dir_snapshot "$ORCH_DIR_NAME/wait" 2>/dev/null)"
 ci_by_pr 7 --no-wait >/dev/null
 assert_eq "a --no-wait call leaves a PR's kept total as it was" "$(dir_snapshot "$ORCH_DIR_NAME/wait" 2>/dev/null)" "$before"
 out="$("$ORCH" review ci 7x 2>&1)"; st=$?
-assert_status "a non-number argument is refused" "$st" 1
+assert_status "a non-number argument is refused" "$st" 2
 assert_eq "with review ci-log's message shape" "$out" "orch: not a PR number: 7x"
 out="$("$ORCH" review ci '' 2>&1)"; st=$?
-assert_status "an empty argument is refused" "$st" 1
+assert_status "an empty argument is refused" "$st" 2
 assert_eq "with review ci-log's message" "$out" "orch: not a PR number: "
+out="$("$ORCH" review ci 7 8 2>&1)"; st=$?
+assert_status "an extra argument is refused" "$st" 2
+assert_eq "with the usage message" "$out" "orch: usage: orch.sh review ci [--no-wait] [<pr>]"
+out="$(ORCH_CI_GRACE=oops "$ORCH" review ci --no-wait 7 2>&1)"; st=$?
+assert_status "a bad ORCH_CI_GRACE is refused under --no-wait" "$st" 2
+assert_eq "with its message" "$out" "orch: ORCH_CI_GRACE is not a number: oops"
 out="$("$ORCH" review ci 99 --no-wait 2>&1)"; st=$?
 assert_status "an unknown PR number exits as unreachable" "$st" 1
 assert_first_line "printing unreachable" "$out" "unreachable"

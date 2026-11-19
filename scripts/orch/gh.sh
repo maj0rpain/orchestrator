@@ -156,10 +156,10 @@ gh_limit_reset() {
 # default 60) - the caller retries once and calls this again with
 # <retry spent> 1. While a re-callable wait is open and wait_limit_fits says
 # what is left of ORCH_WAIT_BLOCK cannot hold that wait (the Wait module alone
-# decides, and leaves its own mark), the status is 1 with no message, nothing
-# recorded: the wait is not over, and the Wait module's checks end the call as
-# still running.
-# While GH_LIMIT_NO_SLEEP is set (review ci --no-wait) a first secondary limit
+# decides from WAIT_MARK, and leaves its own mark there), the status is 1
+# with no message, nothing recorded: the wait is not over, and the Wait
+# module's checks end the call as still running.
+# While NO_WAIT_CALL is set (review ci --no-wait) a first secondary limit
 # is given up on at once too, as a primary one.
 # Status 1: a limit to give up on - a primary one, a secondary one met again
 # after the retry, or a first secondary one on a compound write (never
@@ -172,7 +172,7 @@ gh_limit_handle() {
   local kind reset nap clauses="" clause msg
   kind="$(gh_limit_kind "$1")"
   [ -n "$kind" ] || return 0
-  if [ "$kind" = secondary ] && [ "$2" = 0 ] && [ -z "${GH_LIMIT_NO_SLEEP:-}" ]; then
+  if [ "$kind" = secondary ] && [ "$2" = 0 ] && [ -z "${NO_WAIT_CALL:-}" ]; then
     nap="${ORCH_GH_LIMIT_WAIT:-60}"
     wait_limit_fits "$nap" || return 1
     sleep "$nap"

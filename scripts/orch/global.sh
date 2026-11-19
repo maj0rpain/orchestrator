@@ -795,8 +795,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               forgotten once an outcome is delivered.
                               --no-wait makes one pass: it prints pending
                               where the waiting form would wait, never sleeps,
-                              reads no total and writes nothing; a GitHub
-                              rate limit prints unreachable at once
+                              reads no total and writes no state, wait file
+                              or guard; a GitHub rate limit prints
+                              unreachable at once. A refusal (usage, knob or
+                              state) exits 2
   review rerun <pr>           rerun the failed jobs of every Actions run
                               behind the failing checks review ci counts;
                               prints each run id. Exits 1 when a failing check

@@ -312,7 +312,7 @@ verification_stoppable() {
 # verification_run <command>: the verb's work.
 verification_run() {
   orch_load wait
-  require_poll_knobs ORCH_WAIT_BLOCK
+  wait_block_check
   require_poll_knobs ORCH_VERIFICATION_GRACE ORCH_VERIFICATION_INTERVAL
   # shellcheck disable=SC2034 # wait_block_nap reads and sets them
   local command="$1" state store d blocked=0 block_fast="" attached="" ceiling id main_root rec stop

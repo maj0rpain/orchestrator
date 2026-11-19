@@ -66,8 +66,8 @@ repo_owner_name() {
 # exporting nothing, when nothing resolves, and never dies: each caller picks
 # its own exit: the gh guard's subshell signal or die, or review ci-log's die
 # (exit 1), or die2 in a command that reserves exit 1 and so resolves the repo
-# itself (review rerun, issue ready, ticket exists, the open-PR reader,
-# autopilot answer).
+# itself (review ci, review rerun, issue ready, ticket exists, the open-PR
+# reader, autopilot answer).
 repo_pin() {
   local preset="${GH_REPO:-}"
   repo_resolve || return 1

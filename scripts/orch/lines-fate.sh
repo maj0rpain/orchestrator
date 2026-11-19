@@ -55,18 +55,19 @@ rows_deleted() {
   done <<<"$1"
 }
 
-# rows_differ <rows> <start> <end>: prints 1 when lines <start>-<end> differ -
+# rows_differ <rows> <start> <end>: succeeds when lines <start>-<end> differ -
 # a hunk of <rows> removes or replaces one of them, or inserts lines between
-# two of them - and nothing otherwise. Lines inserted before the first line or
+# two of them - and fails otherwise. Lines inserted before the first line or
 # after the last do not make the range differ.
 rows_differ() {
   local a b c d
   while read -r a b c d; do
     [ -n "$d" ] || continue
     if ((a <= $3 && (b > 0 && a + b - 1 >= $2 || b == 0 && a >= $2 && a < $3))); then
-      echo 1; return 0
+      return 0
     fi
   done <<<"$1"
+  return 1
 }
 
 # deleted_ranges <old sha> <new ref> <file> <start> <end>: the parts of lines
@@ -84,20 +85,20 @@ deleted_ranges() {
 # newline-separated "<from>,<to>" <ranges> leave out, one "<from>,<to>" per
 # run, or nothing.
 range_segments() {
-  local l range hit open=false st last
+  local l range hit open=false run_start run_end
   for ((l = $1; l <= $2; l++)); do
     hit=false
     for range in $3; do
       if [ "$l" -ge "${range%,*}" ] && [ "$l" -le "${range#*,}" ]; then hit=true; break; fi
     done
     if ! $hit; then
-      $open || { st="$l"; open=true; }
-      last="$l"
+      $open || { run_start="$l"; open=true; }
+      run_end="$l"
     elif $open; then
-      printf '%s,%s\n' "$st" "$last"; open=false
+      printf '%s,%s\n' "$run_start" "$run_end"; open=false
     fi
   done
-  if $open; then printf '%s,%s\n' "$st" "$last"; fi
+  if $open; then printf '%s,%s\n' "$run_start" "$run_end"; fi
 }
 
 # held_lines <old sha> <commit> <file> <ranges>: succeeds when <commit> holds
@@ -114,20 +115,13 @@ held_lines() {
   return 1
 }
 
-# merge_base_holds <old sha> <ref> <file> <ranges>: succeeds when the merge
-# base of <old sha> and <ref> holds some line of the <ranges>, lines of <file>
-# at <old sha>.
-merge_base_holds() {
-  local base
-  base="$(git -C "$ROOT" merge-base "$1" "$2" 2>/dev/null)" && held_lines "$1" "$base" "$3" "$4"
-}
 
 # ever_held <old sha> <ref> <file> <ranges>: succeeds when some line of the
 # <ranges>, lines of <file> at <old sha>, a commit off <ref>, was held by the
 # merge base of the two or by a commit on <ref> since it - fails for lines
 # that never reached <ref>. A lookup that fails (no merge base, a log that
 # cannot run) succeeds too: it proves nothing about the lines, so the caller
-# keeps its stand-in.
+# takes the lines as deleted.
 ever_held() {
   local old="$1" ref="$2" file="$3" ranges="$4" base commits commit
   base="$(git -C "$ROOT" merge-base "$old" "$ref" 2>/dev/null)" || return 0
@@ -142,11 +136,11 @@ ever_held() {
 # squash_deleting_commit <old sha> <ref> <file> <ranges>: the commit on
 # <ref>'s first-parent line that deleted the newest of the <ranges> - lines of
 # <file> at <old sha>, a commit off <ref>, deleted by <ref> - or nothing. Off
-# the default branch, the lines reached it through a squash commit, so the
+# <ref>, the lines reached it through a squash commit, so the
 # deleting commit is the newest one since which every line stays deleted:
 # walking back, the one after the first commit that still holds one of them.
 squash_deleting_commit() {
-  local old="$1" ref="$2" file="$3" ranges="$4" commits commit after=""
+  local old="$1" ref="$2" file="$3" ranges="$4" commits commit after="" base
   commits="$(git -C "$ROOT" log --first-parent --format=%H "$ref" "^$old" -- "$file" 2>/dev/null)" || return 0
   for commit in $commits; do
     if held_lines "$old" "$commit" "$file" "$ranges"; then printf '%s\n' "$after"; return 0; fi
@@ -154,7 +148,7 @@ squash_deleting_commit() {
   done
   # No commit since the merge base holds any of them: the merge base held them
   # when the oldest commit touching the file deleted them.
-  if merge_base_holds "$old" "$ref" "$file" "$ranges"; then printf '%s\n' "$after"; fi
+  if base="$(git -C "$ROOT" merge-base "$old" "$ref" 2>/dev/null)" && held_lines "$old" "$base" "$file" "$ranges"; then printf '%s\n' "$after"; fi
 }
 
 # deleting_commit <old sha> <ref> <file> <ranges>: the commit that deleted
@@ -196,14 +190,17 @@ deleting_commit() {
 # <ref>), unchanged, changed (the detail is the full SHA of a commit that
 # touched or deleted the lines, or stands in for lines that cannot be
 # followed) or never-reached (the lines differ only by commits that never
-# reached <ref>) - and the detail, empty unless changed. Returns 0 whatever
+# reached <ref>) - and the detail, empty unless changed. A reversed range
+# (<end> before <start>) is taken as its start line alone. Returns 0 whatever
 # git does; each git failure takes its stand-in, as the comments below say.
 # Its locals carry a __lf_ prefix so a caller's variable names never collide.
 lines_fate() {
   local __lf_old="$1" __lf_ref="$2" __lf_file="$3" __lf_start="$4" __lf_end="$5"
   local __lf_fate="" __lf_detail="" __lf_file_commit __lf_log_out __lf_deleted __lf_seg
-  local __lf_new_start __lf_new_end __lf_off_default=false __lf_standin=false __lf_diff __lf_rows __lf_diff_rc=0
-  local -a __lf_largs=()
+  local __lf_new_start __lf_new_end __lf_off_ref=false __lf_detail_settled=false __lf_diff __lf_rows __lf_diff_rc=0
+  local -a __lf_follow_args=()
+  # Normalised once, so every reader below sees the start line alone.
+  [ "$__lf_end" -ge "$__lf_start" ] || __lf_end="$__lf_start"
   if ! git cat-file -e "$__lf_ref:$__lf_file" 2>/dev/null; then
     __lf_fate=gone
   else
@@ -223,37 +220,36 @@ lines_fate() {
     __lf_file_commit="$(git -C "$ROOT" log -1 --format=%H "$__lf_ref" "^$__lf_old" -- "$__lf_file" 2>/dev/null)" || true
     # Off the ref's history, a difference no commit on it made is the filed
     # SHA's own commits, never on it: the finding's lines decide, not its file.
-    git merge-base --is-ancestor "$__lf_old" "$__lf_ref" 2>/dev/null || __lf_off_default=true
+    git merge-base --is-ancestor "$__lf_old" "$__lf_ref" 2>/dev/null || __lf_off_ref=true
     # Filed lines deleted outright are changed, whatever the lines around them
     # say: named by the commit that deleted them, or, when that lookup fails,
     # by the newest commit touching the file - unless an off-ref SHA's deleted
     # lines no commit on the ref ever held: then the rest of the lines are
     # followed, and a lookup finding no commit is never-reached.
     __lf_deleted="$(rows_deleted "$__lf_rows" "$__lf_start" "$__lf_end")"
-    if [ -n "$__lf_deleted" ] && { ! $__lf_off_default || ever_held "$__lf_old" "$__lf_ref" "$__lf_file" "$__lf_deleted"; }; then
+    if [ -n "$__lf_deleted" ] && { ! $__lf_off_ref || ever_held "$__lf_old" "$__lf_ref" "$__lf_file" "$__lf_deleted"; }; then
       __lf_detail="$(deleting_commit "$__lf_old" "$__lf_ref" "$__lf_file" "$__lf_deleted")"
       __lf_detail="${__lf_detail:-$__lf_file_commit}"
-      __lf_standin=true
+      __lf_detail_settled=true
     else
       # The runs of lines no deletion took (no deletion: the whole range) are
       # followed, a deleted part no commit on the ref ever held left out.
-      # A reversed range (start past end) follows its start line alone.
-      for __lf_seg in $(range_segments "$__lf_start" "$(( __lf_end < __lf_start ? __lf_start : __lf_end ))" "$__lf_deleted"); do
+      for __lf_seg in $(range_segments "$__lf_start" "$__lf_end" "$__lf_deleted"); do
         __lf_new_start="$(rows_map_line "$__lf_rows" "${__lf_seg%,*}")"
         __lf_new_end="$(rows_map_line "$__lf_rows" "${__lf_seg#*,}")"
         [ "$__lf_new_end" -ge "$__lf_new_start" ] || __lf_new_end="$__lf_new_start"
-        __lf_largs+=(-L "$__lf_new_start,$__lf_new_end:$__lf_file")
+        __lf_follow_args+=(-L "$__lf_new_start,$__lf_new_end:$__lf_file")
       done
-      if [ -n "$__lf_deleted" ] && [ "${#__lf_largs[@]}" -eq 0 ]; then __lf_fate=never-reached; fi
+      if [ -n "$__lf_deleted" ] && [ "${#__lf_follow_args[@]}" -eq 0 ]; then __lf_fate=never-reached; fi
     fi
-    if [ -z "$__lf_fate" ] && ! $__lf_standin; then
+    if [ -z "$__lf_fate" ] && ! $__lf_detail_settled; then
       # The newest commit since the filing that touched the finding's lines.
-      if __lf_log_out="$(git -C "$ROOT" log -1 --format=%H "${__lf_largs[@]}" "$__lf_ref" "^$__lf_old" 2>/dev/null)"; then
+      if __lf_log_out="$(git -C "$ROOT" log -1 --format=%H "${__lf_follow_args[@]}" "$__lf_ref" "^$__lf_old" 2>/dev/null)"; then
         __lf_detail="${__lf_log_out%%$'\n'*}"
         [[ $__lf_detail =~ ^[0-9a-f]{40}$ ]] || __lf_detail=""
         if [ -n "$__lf_detail" ]; then
           __lf_fate=changed
-        elif $__lf_off_default && [ -n "$(rows_differ "$__lf_rows" "$__lf_start" "$__lf_end")" ]; then
+        elif $__lf_off_ref && rows_differ "$__lf_rows" "$__lf_start" "$__lf_end"; then
           # The lines were followed and nothing since the filing touched them,
           # but the lines themselves differ, by commits that never reached the
           # ref.
@@ -266,11 +262,11 @@ lines_fate() {
         # A range starting past the file's end can't be followed: the newest
         # commit touching the file stands in.
         __lf_detail="$__lf_file_commit"
-        __lf_standin=true
+        __lf_detail_settled=true
       fi
     fi
-    # A stand-in is changed when a commit stands in, else never-reached.
-    if $__lf_standin; then
+    # A settled detail is changed when it names a commit, else never-reached.
+    if $__lf_detail_settled; then
       if [ -n "$__lf_detail" ]; then __lf_fate=changed; else __lf_fate=never-reached; fi
     fi
   fi
