@@ -124,7 +124,7 @@
 0	1	die_hinted and die_opt_check	a31d5ea9ef99f315cf022f51ad5894482feffb9e
 0	1	host detection (host.sh, #281)	9d7272356d7fbf0f5fdca9c46ffa86f8c5c036cd
 5	6	doctor.sh is a one-way dependency (#281)	b86ca6ac46faa586b4d718a1aa26e9018e2539ea
-160	176	doctor	11cdf2b207e70dd6b7154187e93967b8d9703549
+222	158	doctor	e72da5fef90df0c71d801ec7202223bfdf6896b3
 36	40	doctor: host (#128)	0ff10dbdae9d20ee078396950c793cb2ec3a2d69
 97	105	doctor --flow	ec6c0771cdbf7af4d034b080907fded56e7409f3
 41	45	doctor --env: finished side checkouts (#727)	409b7fb136865798294e217b184517a077d5b12c
@@ -139,8 +139,8 @@
 9	11	doctor: agent settings check (#1358)	b648ff23c80cb03c31f597e4a99c84fbfac07cf4
 28	32	doctor: Junie session and log (#1449)	b852e2465d7e45f58704d21f310b80a3f7ebcb7b
 19	22	doctor: Junie agent settings check (#1448)	4f3a5171f61efb62e2a9e477ac0cfe4827e1b8e7
-28	30	doctor: autopilot phase label and claims (#1457)	bb6c1b78e6fc09792fa7fa20ed3938ebf0536d50
-12	13	doctor: autopilot side-checkout flows	504fb9a9962bb5c14e2a74a89f10c2e544279165
+40	31	doctor: autopilot phase label and claims (#1457)	69f776c54d8a5eb795415bc4ece7f7d994514165
+17	13	doctor: autopilot side-checkout flows	54d9e4367b18a9844022ac993cc49397bc0c7a22
 38	43	doctor --flow: autopilot handoff comments (#1457)	f1299660b5d44d158a70a2a690e818196f8df5dc
 5	6	doctor: phase label in the repo's casing (#1943)	d415e6f6fca6a22696312118ea11a0b1ec5ab5ae
 5	6	doctor --flow: a deleted flow branch beside a same-named tag (#2337)	fb7c9171c3870e1e16989282c2b741ed4d138b61
@@ -149,11 +149,11 @@
 43	47	doctor: one issue read and one PR read per run (#2554)	90c9a132f70999084a01af55f6622dc3f26a5495
 0	1	triage_label_into: parse once, later lookups start no command	207f2125d38fa532ae4552e00b7cf5168815af97
 8	6	doctor --env: git processes per worktree	916024b571106425e62a6e376fe1d1909f1af56f
-11	13	doctor --env: Standards declaration check (#3358)	e65aafea5b03bb784dff7ce1c2c4cafdbfdafffc
-8	9	doctor --env: glossary check (#3358)	1da032d3f5869f75b6dd3d5b7bb81c6163d44549
-7	9	doctor --env: ADR directory check (#3358)	bfb05745053379020206a54151bb3e09663f0ebf
-37	41	doctor --env: verification lines	c5de88b42e78f420dd14c559eb5b74d4c020d161
-42	45	doctor --env: verification commands (#3346)	42671345c4d2bce4f45ffc6226048963ef3d83e0
+11	10	doctor --env: Standards declaration check (#3358)	db8ddf96af0952ab923f7cf7dd0cf95391a3537e
+10	9	doctor --env: glossary check (#3358)	4172d39e3dea88c444bbb7d3c631acd77046832e
+10	7	doctor --env: ADR directory check (#3358)	109f685c4bfd5cad8897ef55f9d3141822d4e817
+33	23	doctor --env: verification lines	16703be931f2917cb37b7a8da58549904f223f4c
+60	43	doctor --env: verification commands (#3346)	9623c866cc0318dd77e1153884a6b4a0807d8ff8
 0	1	is_filed_severity	41fb54217cc90b7a75a37b3ee336945167710410
 1	2	severity table	cbcec87893fb4d691f66b67cb960e1bc2f27d3d3
 2	3	category table	936a5e8b2f00a434df3adb306e2542dd71c175f9
@@ -347,7 +347,7 @@
 7	8	ticket reset	e768f3fcea661a567d7ff3a5ae4022d3880e9e8b
 11	13	ticket report	2e2c37f2fedb13b72eaaf0ca49be29502e355378
 3	4	ticket parent	184e3b14ba397f96504fcb4f1d30614d8499ab59
-12	14	ticket exists	267cc35c6fc6e05a865df0bb1558b449c2930246
+18	14	ticket exists	f94950bc7abaad95af2d585ebd72cef6595dd1d5
 55	62	ticket block	9abf46ce888718f1b4d477a06630b0a8a3e49dee
 38	42	ticket unblock	31db4d71860925eced7c937d9a46703ef233e195
 1	2	ticket retire: breakdown save point	94fb1fb3c46c39214b9a1e607aee31c81fd57e30

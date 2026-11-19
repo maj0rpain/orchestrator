@@ -717,6 +717,9 @@ assert_status "a ## Ticket in a ~~~~ fence holding a backtick fence line stays f
 fake_issue_body 99 "$(writeln '  ```md' '## Ticket' '  ```')"
 "$ORCH" ticket exists 99 >/dev/null 2>&1; st=$?
 assert_status "a ## Ticket inside a fence indented by 2 spaces stays fenced" "$st" 1
+fake_issue_body 99 "$(writeln '   ~~~' '## Ticket' '   ~~~')"
+"$ORCH" ticket exists 99 >/dev/null 2>&1; st=$?
+assert_status "a ## Ticket inside a fence indented by 3 spaces stays fenced" "$st" 1
 fake_issue_body 99 "$(writeln '````' '```' '## Ticket' '````')"
 "$ORCH" ticket exists 99 >/dev/null 2>&1; st=$?
 assert_status "a ## Ticket in a four-backtick fence holding a three-backtick line stays fenced" "$st" 1
