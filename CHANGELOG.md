@@ -1,5 +1,11 @@
 # Changelog
 
+## 6.8.1
+
+Restore the role-name list (IMPLEMENTER, LENS, REVIEWER, FIXER, CLOSER, RESOLVER, AUDITOR) to the autopilot container entrypoint's header comment, which a rewrite of the setting-variable description had dropped.
+
+Rename the claim-list sentinel flag `seen` to `sentinel_read` in the gh adapter, a pure rename.
+
 ## 6.8.0
 
 A repo's instructions may now name a **branch verification**, a `Branch verification: <command>` line beside `Ticket verification:` and `Full verification:`. The combined-branch check (the driver loop's step f, in a flow and in a quick implementation) runs it in place of the full verification, so CI is the only full run of the suite; a repo that names none runs its full verification there as before. Doctor reports the new line as it reports the other two, `docs/repo-setup.md` describes it, and the docs lint checks it. `review ci` gains `--no-wait`, one pass of the CI probe, which the review loop's triage takes as a look at CI, and an optional PR number, which the quick implementation uses once its PR opens; a CI-found failure is handed to the fixer marked as such. This repo's ticket verification, `scripts/test/affected.sh`, verifies a ticket branch against its local parent's merge-base, selects a core set where it ran the whole suite for the shared harness files, adds rows for the remaining paths, selects function by function for the shared test support and operation by operation for the gh fake, and gains `--row` with a structural check that every script has a row. This repo names `scripts/test/affected.sh` as its branch verification and drops the before-a-PR whole-suite rule. "Branch verification" has a glossary entry, and ADR-0066 records the decision, superseding part of ADR-0058.
