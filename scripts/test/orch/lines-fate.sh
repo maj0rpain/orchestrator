@@ -57,6 +57,7 @@ reword_sha="$(lf_edit app.sh 's/^app line 11$/app line 11, reworded/' "reword li
 lf_case fixed "$head_sha" src/app.sh 3 3
 lf_case untouched "$head_sha" src/app.sh 6 6
 lf_case reversed "$head_sha" src/app.sh 3 1
+lf_case reversed_between "$head_sha" src/app.sh 6 3
 lf_case pastend "$head_sha" src/app.sh 40 41
 
 # A PR head that edited the file and never reached the default branch.
@@ -110,6 +111,7 @@ lf_case del_end "$filed_sha" src/del_end.sh 10 20
 lf_case del_start "$filed_sha" src/del_start.sh 10 20
 lf_case del_middle "$filed_sha" src/del_middle.sh 10 20
 lf_case del_later "$filed_sha" src/del_later.sh 10 10
+lf_case del_reversed "$filed_sha" src/del_later.sh 10 8
 lf_case del_two "$filed_sha" src/del_two.sh 10 20
 lf_case del_replaced "$filed_sha" src/del_replaced.sh 10 10
 lf_case del_squashed "$squash_head_sha" src/del_squashed.sh 11 11
@@ -117,7 +119,7 @@ lf_case del_split "$split_head_sha" src/del_split.sh 9 13
 
 # A deletion main made of lines held by a head off its history, for the case
 # whose merge-base lookup fails: the head edits another line, main deletes.
-for i in 1 2 3 4 5 6 7 8 9 10 11 12 13; do lf_seq "um$i" 20 >"src/um$i.sh"; done
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do lf_seq "um$i" 20 >"src/um$i.sh"; done
 lf_seq mb 30 >src/mb.sh
 git add src
 git commit -qm "the code the unmerged PRs edit"
@@ -145,6 +147,8 @@ sha62="$(lf_unm 62 um12.sh '2c\pr replaced')"
 # um13 is um5's twin that main never edits: no commit on the ref touched the
 # file since the filed SHA, so the differs-at-all test alone decides.
 sha63="$(lf_unm 63 um13.sh $'8i pr above\n9a pr below')"
+# um14 is filed with a reversed range whose start line only the head changed.
+sha64="$(lf_unm 64 um14.sh '5c\pr replaced')"
 lf_edit um1.sh 's/^um1 line 15$/um1 line 15, reworded/' "an unrelated edit to um1" >/dev/null
 lf_edit um2.sh 's/^um2 line 15$/um2 line 15, reworded/' "an unrelated edit to um2" >/dev/null
 lf_edit um3.sh 's/^um3 line 15$/um3 line 15, reworded/' "an unrelated edit to um3" >/dev/null
@@ -172,6 +176,7 @@ lf_case um60 "$sha60" src/um10.sh 8 9
 lf_case um61 "$sha61" src/um11.sh 25 25
 lf_case um62 "$sha62" src/um12.sh 25 25
 lf_case um63 "$sha63" src/um13.sh 9 10
+lf_case um64_reversed "$sha64" src/um14.sh 5 3
 
 # A git whose every command of one kind fails: lines_fate still returns 0, each
 # failure taking its stand-in. Each case's calls run under its own stand-in git
@@ -235,6 +240,7 @@ assert_eq "every case is answered" "$(grep -vc '^count ' "$rows")" "$(wc -l <"$l
 lf_assert "$rows" fixed changed "$fix_sha"
 lf_assert "$rows" untouched unchanged
 lf_assert "$rows" reversed changed "$fix_sha"
+lf_assert "$rows" reversed_between unchanged
 lf_assert "$rows" pastend changed "$reword_sha"
 lf_assert "$rows" unmerged never-reached
 lf_assert "$rows" nomergebase changed "$head_sha"
@@ -244,6 +250,7 @@ lf_assert "$rows" del_end changed "$end_sha"
 lf_assert "$rows" del_start changed "$start_sha"
 lf_assert "$rows" del_middle changed "$middle_sha"
 lf_assert "$rows" del_later changed "$later_del_sha"
+lf_assert "$rows" del_reversed changed "$later_del_sha"
 lf_assert "$rows" del_two changed "$two_sha"
 lf_assert "$rows" del_replaced changed "$replaced_sha"
 lf_assert "$rows" del_squashed changed "$squashed_sha"
@@ -263,6 +270,7 @@ lf_assert "$rows" um60 changed "$um10_del_sha"
 lf_assert "$rows" um61 never-reached
 lf_assert "$rows" um62 changed "$um12_sha"
 lf_assert "$rows" um63 unchanged
+lf_assert "$rows" um64_reversed never-reached
 lf_assert "$rows" mb_deleted changed "$mb_del_sha"
 lf_assert "$rows" fail_diff changed "$fix_sha"
 lf_assert "$rows" fail_blame changed "$later_edit_sha"

@@ -221,7 +221,7 @@
 1	1	issue ready: no repo (#3050)	e01486b40160e00af62e89a2858de8cf2edc7580
 10	12	issue next	5197d781f049be338dec1b6be44187961f50c651
 3	4	known-items module	822bb4b7d6bc24d8ddf679e4aa02e11d5f0562a4
-28	31	lines_fate	3f28c1b61ac2edc2cbd2ae3ea48725ec6ce87220
+39	26	lines_fate	f78b15c36353c399539f4fb0f6c517ceeacf29d5
 16	18	Liveness module	f71ef4d425c6def34b457620a2ff649d11f57faa
 8	10	orch_load	d6672871a4845b357d7ec3785e7b285cfddc1e25
 9	11	on-demand loading	6f5f8fdb61e60028685965dbdd5c3eb5ae8397b7
