@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.26
+
+The Lines fate and finding-triage scan test sections drop duplicated checks and share one numbered-lines helper, `seq_lines`, in the shared test setup.
+
 ## 6.8.25
 
 Make `orch.sh verification run` cheaper and more uniform: a poll or grace-wait turn starts no `awk` while the call's block is far from spent, one block turn (`wait_block_nap`) and one grace-wait helper serve every verification wait, every usage or infrastructure death exits 1 with an `orch:` line, and the record's marks and state are written through `file_write_atomic`, so a mark never brings back a removed record.
