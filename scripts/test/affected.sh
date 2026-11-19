@@ -68,7 +68,19 @@
 #                                     Code outside any function runs all.sh; a
 #                                     change to comments or blank lines alone
 #                                     selects nothing more
-#   the gh fake                       all.sh (for now)
+#   the gh fake (gh_adapter_fake.sh)  function by function, as above, operations
+#                                     first: a changed function selects the
+#                                     sections of the gh section file and of
+#                                     the section file of every scripts/orch/
+#                                     module whose code calls the adapter_*
+#                                     operation of that name, or any operation
+#                                     that calls the function; and, as a shared
+#                                     helper does, the section files and suites
+#                                     that call it directly or through those;
+#                                     the core set when nothing reaches it.
+#                                     Code outside any function runs all.sh; a
+#                                     change to comments or blank lines alone
+#                                     selects nothing more
 # The core set is the sections of the harness and loader section files and
 # every suite but orch_test.sh. It is selected, together with the rest of the
 # diff's selection, by orch.sh, orch/common.sh (plus its own section file),
@@ -277,13 +289,16 @@ SUPPORT_AWK='
     for (r in reached) print r
   }'
 
-# support_select <file> <present|deleted>: one of SUPPORT_FILES changed. Each
+GH_FAKE=scripts/test/gh_adapter_fake.sh
+
+# support_select <file> <present|deleted>: one of SUPPORT_FILES, or the gh fake,
+# changed. Each
 # function whose code differs between the base (merge_base) and the tree selects
 # the sections of the section files and the suites that call it, or the core
 # set when only orch_test.sh or nothing does; code outside any function runs
 # the whole suite.
 support_select() {
-  local f="$1" state="$2" diffed name reached alt re hits sf sn w
+  local f="$1" state="$2" diffed name reached alt re hits sf sn w ops op_re mods
   local -a sf_all=() support_present=() callers=()
   diffed="$(awk -v mode=diff "$SUPPORT_AWK" <(
     echo @@FILE; git show "$merge_base:$f" 2>/dev/null || true
@@ -291,6 +306,8 @@ support_select() {
   [ -n "$diffed" ] || return 0
   case $'\n'"$diffed"$'\n' in *$'\n@top\n'*) full_suite ;; esac
   for sf in "${SUPPORT_FILES[@]}"; do [ -f "$sf" ] && support_present+=("$sf"); done
+  # The gh fake's functions also reach through the fake's own.
+  if [ "$f" = "$GH_FAKE" ] && [ -f "$GH_FAKE" ]; then support_present+=("$GH_FAKE"); fi
   for sf in scripts/test/orch/*.sh; do
     [ "$sf" = scripts/test/orch/setup.sh ] || sf_all+=("$sf")
   done
@@ -308,8 +325,22 @@ support_select() {
     if awk -v re="$re" '$0 !~ /^[ \t]*#/ && $0 ~ re { found = 1; exit } END { exit !found }' "$dir/orch_test.sh"; then
       core=1
     fi
+    ops=""
+    if [ "$f" = "$GH_FAKE" ]; then
+      # An adapter operation reached: the gh section file, and the section file
+      # of every module whose code calls it.
+      ops="$(printf '%s\n' "$reached" | grep '^adapter_' | paste -sd'|' - || true)"
+      if [ -n "$ops" ]; then
+        sections_of gh
+        op_re="(^|[^A-Za-z0-9_])($ops)([^A-Za-z0-9_]|\$)"
+        mods="$(awk -v re="$op_re" 'FNR == 1 { done = 0 } !done && $0 !~ /^[ \t]*#/ && $0 ~ re { print FILENAME; done = 1 }' scripts/orch/*.sh)"
+        while IFS= read -r sf; do
+          [ -n "$sf" ] && sections_of "$(basename "$sf" .sh)"
+        done <<<"$mods"
+      fi
+    fi
     hits="$(awk -v re="$re" 'FNR == 1 { done = 0 } !done && $0 !~ /^[ \t]*#/ && $0 ~ re { print FILENAME; done = 1 }' "${callers[@]}")"
-    if [ -z "$hits" ]; then core=1; continue; fi
+    if [ -z "$hits" ]; then [ -n "$ops" ] || core=1; continue; fi
     while IFS= read -r sf; do
       case "$sf" in
         scripts/test/orch/*.sh) sn="${sf##*/}"; sections_of "${sn%.sh}" ;;
@@ -335,8 +366,7 @@ classify() {
       [ "$state" = deleted ] && core=1 ;;
   esac
   case "$f" in
-    scripts/test/gh_adapter_fake.sh) full_suite ;;
-    scripts/test/orch/setup.sh | scripts/test/counting.sh | scripts/test/fifo.sh | scripts/test/tally.sh)
+    scripts/test/gh_adapter_fake.sh | scripts/test/orch/setup.sh | scripts/test/counting.sh | scripts/test/fifo.sh | scripts/test/tally.sh)
       support_select "$f" "$state" ;;
     scripts/orch.sh | scripts/test/all.sh | scripts/test/orch_test.sh | scripts/test/affected.sh | \
       scripts/test/test_jobs.sh | scripts/test/report.sh | scripts/test/test_tree.sh | scripts/test/git_env.sh) ;;

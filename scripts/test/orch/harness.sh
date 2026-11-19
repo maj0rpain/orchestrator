@@ -4716,3 +4716,86 @@ assert_eq "code outside any function in a shared test support file runs the whol
   "$(sf_plan)" "all.sh"
 rm -rf "$sf"
 unset -f sf_git sf_put sf_plan sf_reset
+
+# --- the gh fake, operation by operation (#3551) --------------------------
+# affected.sh --plan in a throwaway repo whose gh fake holds a few planted
+# operations and helpers, called by planted modules, section files and suites.
+echo
+echo "the gh fake, operation by operation (#3551)"
+gf_tests="$(dirname "$SUITE_SCRIPT")"
+suites_read "$gf_tests/all.sh" "$gf_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
+gf="$(mktemp -d)"
+gf_git() { git -C "$gf" -c user.name=t -c user.email=t@example.com "$@"; }
+# gf_put <path> [<line>...]: write a file with a shebang and the lines.
+gf_put() {
+  local path="$1"
+  shift
+  mkdir -p "$gf/$(dirname "$path")"
+  printf '%s\n' '#!/usr/bin/env bash' "$@" >"$gf/$path"
+}
+gf_plan() { (cd "$gf" && bash scripts/test/affected.sh --plan origin/main 2>&1) | paste -sd, -; }
+gf_fake=scripts/test/gh_adapter_fake.sh
+# gf_fake_put <op-a-body> <helper-body> <lonely-body> [<extra-line>...]
+gf_fake_put() {
+  local a="$1" h="$2" l="$3"
+  shift 3
+  gf_put "$gf_fake" '# adapter_op_b is a comment here.' \
+    "adapter_op_a() { $a; }" \
+    'adapter_op_b() {' '  # calls fake_help' '  fake_help' '}' \
+    "fake_help() { $h; }" \
+    "fake_shared() { $h; }" \
+    "fake_lonely() { $l; }" "$@"
+}
+gf_git init -q -b main
+mkdir -p "$gf/scripts/test/orch" "$gf/scripts/orch"
+(cd "$gf_tests" && cp "${ALL_RUNNER_FILES[@]}" affected.sh git_env.sh "$gf/scripts/test/")
+for gf_s in "${SUITES[@]}"; do
+  [ -e "$gf/scripts/test/$gf_s" ] || gf_put "scripts/test/$gf_s"
+done
+gf_put scripts/test/hooks_test.sh 'x=1'
+gf_fake_put 'echo a' 'echo h' 'echo l'
+gf_put scripts/orch/gh.sh 'x=1'
+gf_put scripts/orch/branch.sh 'adapter_op_a "$1"'
+gf_put scripts/orch/state.sh '# adapter_op_a only in a comment' 'adapter_op_b "$1"'
+gf_put scripts/orch/pr.sh 'x=1'
+gf_put scripts/test/orch/gh.sh '# --- gh one ---'
+gf_put scripts/test/orch/branch.sh '# --- branch one ---'
+gf_put scripts/test/orch/state.sh '# --- state one ---'
+gf_put scripts/test/orch/pr.sh '# --- pr one ---' 'fake_shared'
+gf_put scripts/test/orch/setup.sh 'setup_x() { :; }'
+gf_put scripts/test/orch/harness.sh '# --- isolation ---' \
+  '# --- test-helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
+  '# --- marked comment prelude placement (#1853) ---' '# --- comment reader placement (#3085) ---'
+gf_put scripts/test/orch/loader.sh '# --- loader one ---'
+gf_git add -A
+gf_git commit -qm init
+gf_git update-ref refs/remotes/origin/main HEAD
+gf_gate="orch_test.sh,test-helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853),comment reader placement (#3085)"
+gf_core="isolation,loader one,hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh"
+gf_reset() { gf_git reset -q --hard HEAD; gf_git clean -qfd; }
+
+gf_fake_put 'echo A' 'echo h' 'echo l'
+assert_eq "a changed operation selects the gh sections and its calling modules' sections" \
+  "$(gf_plan)" "$gf_gate,branch one,gh one,docs_lint.sh,$gf_fake"
+gf_reset
+gf_fake_put 'echo a' 'echo H' 'echo l'
+assert_eq "a changed helper selects through its operations and as a shared helper" \
+  "$(gf_plan)" "$gf_gate,gh one,pr one,state one,docs_lint.sh,$gf_fake"
+gf_reset
+gf_fake_put 'echo a' 'echo h' 'echo L'
+assert_eq "a gh fake function nothing reaches selects the core set" \
+  "$(gf_plan)" "$gf_gate,$gf_core,$gf_fake"
+gf_reset
+gf_fake_put 'echo a' 'echo h' 'echo l' '# a new comment' ''
+gf_put "$gf_fake" '# a changed comment' '' \
+  'adapter_op_a() { echo a; }' \
+  'adapter_op_b() {' '  fake_help' '' '}' \
+  'fake_help() { echo h; }' 'fake_shared() { echo h; }' 'fake_lonely() { echo l; }'
+assert_eq "a comment-only and a blank-line-only change select nothing more" \
+  "$(gf_plan)" "$gf_gate,docs_lint.sh,$gf_fake"
+gf_reset
+gf_fake_put 'echo a' 'echo h' 'echo l' 'x=1'
+assert_eq "code outside any function in the gh fake runs the whole suite" \
+  "$(gf_plan)" "all.sh"
+rm -rf "$gf"
+unset -f gf_git gf_put gf_plan gf_fake_put gf_reset

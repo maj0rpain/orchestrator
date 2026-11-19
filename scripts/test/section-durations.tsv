@@ -33,7 +33,8 @@
 2	3	the counting fixture's stdin counter (#3434)	5fa4a3c44ea99d35cd475bc0fe66f2669e813b95
 49	45	affected.sh, the ticket verification (#2023)	288d7ed3d730e4577e13bbbc28af5b60565ed41b
 8	9	the row rule (#3549)	b766a266093eb764879804b8aa7563077b925be8
-3	4	the shared test support, function by function (#3550)	a4bd73fe3b2508d31a26d28db63fd792c9880f30
+3	4	the shared test support, function by function (#3550)	98813f881747013fe7f1527748b479bbd2fddd83
+2	4	the gh fake, operation by operation (#3551)	8e9ac41014e40acaaffecbb418b334f255554981
 66	72	agent	cddc69e5a268c5cd6ddfed15d957b78960ef77e3
 20	22	agent sync	b39ad35449afd2ba48dfe47fd1a68a53a2d8c22b
 3	4	agent copy marker and Junie field: no command per call	2a90944570501eb9df9e004a9fab0ff67c9dac60
