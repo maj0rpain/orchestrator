@@ -4632,3 +4632,87 @@ assert_eq "naming it and the rule" "$out" "$ROW_RULE no row: scripts/planted-not
 out="$({ git -C "$PLUGIN_ROOT" ls-files scripts; echo scripts/orch/planted-module.sh; } | row_rule)"; st=$?
 assert_status "a planted module with no section file fails" "$st" 1
 assert_eq "naming it and the rule for a module" "$out" "$ROW_RULE no row: scripts/orch/planted-module.sh"
+
+# --- the shared test support, function by function (#3550) ---------------
+# affected.sh --plan in a throwaway repo whose shared test support files hold a
+# few planted functions, and whose section files and suites call them.
+echo
+echo "the shared test support, function by function (#3550)"
+af_tests="$(dirname "$SUITE_SCRIPT")"
+suites_read "$af_tests/all.sh" "$af_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
+sf="$(mktemp -d)"
+sf_git() { git -C "$sf" -c user.name=t -c user.email=t@example.com "$@"; }
+# sf_put <path> [<line>...]: write a file with a shebang and the lines.
+sf_put() {
+  local path="$1"
+  shift
+  mkdir -p "$sf/$(dirname "$path")"
+  printf '%s\n' '#!/usr/bin/env bash' "$@" >"$sf/$path"
+}
+sf_plan() { (cd "$sf" && bash scripts/test/affected.sh --plan origin/main 2>&1) | paste -sd, -; }
+sf_git init -q -b main
+mkdir -p "$sf/scripts/test/orch"
+(cd "$af_tests" && cp "${ALL_RUNNER_FILES[@]}" affected.sh git_env.sh "$sf/scripts/test/")
+for sf_s in "${SUITES[@]}"; do
+  [ -e "$sf/scripts/test/$sf_s" ] || sf_put "scripts/test/$sf_s"
+done
+sf_put scripts/test/hooks_test.sh 'fifo_probe'
+sf_put scripts/test/orch/setup.sh '# helper_a is called by branch.sh.' \
+  'helper_a() { echo a; }' \
+  'helper_b() {' '  # calls helper_a' '  helper_a' '}' \
+  'helper_lonely() { echo l; }'
+sf_put scripts/test/tally.sh 'tally_init() {' '  :' '}'
+sf_put scripts/test/fifo.sh 'fifo_probe() { :; }'
+sf_put scripts/test/counting.sh 'counting_probe() { :; }'
+sf_put scripts/test/orch/branch.sh '# --- branch one ---' 'helper_a'
+sf_put scripts/test/orch/state.sh '# --- state one ---' 'helper_b'
+sf_put scripts/test/orch/harness.sh '# --- isolation ---' \
+  '# --- test-helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
+  '# --- marked comment prelude placement (#1853) ---' '# --- comment reader placement (#3085) ---'
+sf_put scripts/test/orch/loader.sh '# --- loader one ---'
+sf_git add -A
+sf_git commit -qm init
+sf_git update-ref refs/remotes/origin/main HEAD
+sf_gate="orch_test.sh,test-helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853),comment reader placement (#3085)"
+sf_core="isolation,loader one,hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh"
+sf_setup=scripts/test/orch/setup.sh
+sf_reset() { sf_git reset -q --hard HEAD; sf_git clean -qfd; }
+
+sf_put "$sf_setup" '# helper_a is called by branch.sh.' \
+  'helper_a() { echo A; }' \
+  'helper_b() {' '  # calls helper_a' '  helper_a' '}' \
+  'helper_lonely() { echo l; }'
+assert_eq "a changed helper selects the section files that call it, directly and through another helper" \
+  "$(sf_plan)" "$sf_gate,branch one,state one,docs_lint.sh,$sf_setup"
+sf_reset
+sf_put "$sf_setup" 'helper_b() {' '  helper_a' '}' 'helper_lonely() { echo l; }'
+assert_eq "a removed helper selects the files that still call it" \
+  "$(sf_plan)" "$sf_gate,branch one,state one,docs_lint.sh,$sf_setup"
+sf_reset
+sf_put scripts/test/fifo.sh 'fifo_probe() { :; :; }'
+assert_eq "a changed helper selects the suites that call it" \
+  "$(sf_plan)" "$sf_gate,hooks_test.sh,docs_lint.sh,scripts/test/fifo.sh"
+sf_reset
+sf_put "$sf_setup" '# helper_a is called by branch.sh.' \
+  'helper_a() { echo a; }' \
+  'helper_b() {' '  # calls helper_a' '  helper_a' '}' \
+  'helper_lonely() { echo L; }'
+assert_eq "a helper nothing reaches selects the core set" \
+  "$(sf_plan)" "$sf_gate,$sf_core,$sf_setup"
+sf_reset
+sf_put scripts/test/tally.sh 'tally_init() {' '  :; :' '}'
+assert_eq "a helper the section runner calls outside any section selects the core set" \
+  "$(sf_plan)" "$sf_gate,$sf_core,scripts/test/tally.sh"
+sf_reset
+sf_put "$sf_setup" '# a new comment' '# helper_a is called by branch.sh.' \
+  'helper_a() { echo a; }' \
+  'helper_b() {' '  # calls helper_a, a changed comment' '' '  helper_a' '}' \
+  '' 'helper_lonely() { echo l; }'
+assert_eq "a comment-only and a blank-line-only change select nothing more" \
+  "$(sf_plan)" "$sf_gate,docs_lint.sh,$sf_setup"
+sf_reset
+sf_put scripts/test/counting.sh 'counting_probe() { :; }' 'x=1'
+assert_eq "code outside any function in a shared test support file runs the whole suite" \
+  "$(sf_plan)" "all.sh"
+rm -rf "$sf"
+unset -f sf_git sf_put sf_plan sf_reset

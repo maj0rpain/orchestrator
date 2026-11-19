@@ -56,8 +56,19 @@
 #   .claude/settings.json
 #                                     nothing beyond the always-run checks
 #   anything else                     all.sh
-#   scripts/test/orch/setup.sh, the gh fake, counting.sh, fifo.sh, tally.sh
-#                                     all.sh (for now)
+#   scripts/test/orch/setup.sh, counting.sh, fifo.sh, tally.sh
+#                                     function by function: each function whose
+#                                     code differs from the base selects the
+#                                     sections of every section file, and every
+#                                     suite but orch_test.sh, that calls it,
+#                                     directly or through another of these
+#                                     helpers (a removed one selects the files
+#                                     that still call it); the core set when
+#                                     only orch_test.sh or nothing calls it.
+#                                     Code outside any function runs all.sh; a
+#                                     change to comments or blank lines alone
+#                                     selects nothing more
+#   the gh fake                       all.sh (for now)
 # The core set is the sections of the harness and loader section files and
 # every suite but orch_test.sh. It is selected, together with the rest of the
 # diff's selection, by orch.sh, orch/common.sh (plus its own section file),
@@ -193,6 +204,9 @@ resolve_base() {
   git merge-base HEAD "$target" 2>/dev/null || true
 }
 
+# shellcheck source=test_tree.sh
+source "$dir/test_tree.sh"
+
 want=()        # suites to run besides orch_test.sh and docs_lint.sh
 sec_files=()   # scripts/test/orch/<n>.sh files whose sections run
 sc_files=()    # the lint targets
@@ -214,6 +228,97 @@ unnamed() {
   full_suite
 }
 
+# The shared test support: the files whose functions select by call.
+SUPPORT_FILES=(scripts/test/orch/setup.sh scripts/test/counting.sh scripts/test/fifo.sh scripts/test/tally.sh)
+
+# SUPPORT_AWK reads files each introduced by a "@@FILE" line. A function is a
+# column-0 `name() {` line to the next column-0 `}` line, or that line alone
+# when it does not end in `{`; its body leaves out comment-only and blank lines.
+# Mode diff (two files, old then new) prints the names of the functions whose
+# body differs or that only one holds, and "@top" when the code outside any
+# function differs. Mode closure prints the names in -v seeds and every
+# function of the files that calls one, directly or through another.
+SUPPORT_AWK='
+  function words(s) { gsub(/[^A-Za-z0-9_]+/, " ", s); return " " s " " }
+  BEGIN { fi = (mode == "diff") ? 0 : 1 }
+  /^@@FILE/ { if (mode == "diff") fi++; infn = 0; next }
+  {
+    if (infn) {
+      if ($0 !~ /^[ \t]*(#.*)?$/) body[fi, name] = body[fi, name] "\n" $0
+      if ($0 ~ /^}/) infn = 0
+      next
+    }
+    if ($0 ~ /^[A-Za-z_][A-Za-z0-9_]*\(\)[ \t]*\{/) {
+      name = $0; sub(/\(.*/, "", name)
+      names[name] = 1; body[fi, name] = $0
+      infn = ($0 ~ /\{[ \t]*$/)
+      next
+    }
+    if ($0 !~ /^[ \t]*(#.*)?$/) top[fi] = top[fi] "\n" $0
+  }
+  END {
+    if (mode == "diff") {
+      if (top[1] != top[2]) print "@top"
+      for (n in names)
+        if (((1, n) in body) != ((2, n) in body) || body[1, n] != body[2, n]) print n
+      exit
+    }
+    n_seeds = split(seeds, seed_list, " ")
+    for (i = 1; i <= n_seeds; i++) reached[seed_list[i]] = 1
+    for (n in names) w[n] = words(body[1, n])
+    do {
+      grew = 0
+      for (n in names) {
+        if (n in reached) continue
+        for (r in reached)
+          if (index(w[n], " " r " ")) { reached[n] = 1; grew = 1; break }
+      }
+    } while (grew)
+    for (r in reached) print r
+  }'
+
+# support_select <file> <present|deleted>: one of SUPPORT_FILES changed. Each
+# function whose code differs between the base (merge_base) and the tree selects
+# the sections of the section files and the suites that call it, or the core
+# set when only orch_test.sh or nothing does; code outside any function runs
+# the whole suite.
+support_select() {
+  local f="$1" state="$2" diffed name reached alt re hits sf sn w
+  local -a sf_all=() support_present=() callers=()
+  diffed="$(awk -v mode=diff "$SUPPORT_AWK" <(
+    echo @@FILE; git show "$merge_base:$f" 2>/dev/null || true
+    echo @@FILE; if [ "$state" = present ]; then cat "$f"; fi))"
+  [ -n "$diffed" ] || return 0
+  case $'\n'"$diffed"$'\n' in *$'\n@top\n'*) full_suite ;; esac
+  for sf in "${SUPPORT_FILES[@]}"; do [ -f "$sf" ] && support_present+=("$sf"); done
+  for sf in scripts/test/orch/*.sh; do
+    [ "$sf" = scripts/test/orch/setup.sh ] || sf_all+=("$sf")
+  done
+  suites_read "$dir/all.sh" "$dir" || {
+    echo "affected.sh: $SUITES_ERR" >&2
+    exit 1
+  }
+  for w in "${SUITES[@]}"; do [ "$w" = orch_test.sh ] || callers+=("$dir/$w"); done
+  callers+=("${sf_all[@]}")
+  while IFS= read -r name; do
+    reached="$(awk -v mode=closure -v seeds="$name" "$SUPPORT_AWK" \
+      <(for sf in "${support_present[@]}"; do echo @@FILE; cat "$sf"; done))"
+    alt="$(printf '%s\n' "$reached" | paste -sd'|' -)"
+    re="(^|[^A-Za-z0-9_])($alt)([^A-Za-z0-9_]|\$)"
+    if awk -v re="$re" '$0 !~ /^[ \t]*#/ && $0 ~ re { found = 1; exit } END { exit !found }' "$dir/orch_test.sh"; then
+      core=1
+    fi
+    hits="$(awk -v re="$re" 'FNR == 1 { done = 0 } !done && $0 !~ /^[ \t]*#/ && $0 ~ re { print FILENAME; done = 1 }' "${callers[@]}")"
+    if [ -z "$hits" ]; then core=1; continue; fi
+    while IFS= read -r sf; do
+      case "$sf" in
+        scripts/test/orch/*.sh) sn="${sf##*/}"; sections_of "${sn%.sh}" ;;
+        *) want+=("${sf##*/}") ;;
+      esac
+    done <<<"$hits"
+  done <<<"$diffed"
+}
+
 # classify <file> <present|deleted>: record what the file selects, or run the
 # full suite when its reach is unclear.
 classify() {
@@ -230,9 +335,9 @@ classify() {
       [ "$state" = deleted ] && core=1 ;;
   esac
   case "$f" in
-    scripts/test/orch/setup.sh | scripts/test/gh_adapter_fake.sh | scripts/test/counting.sh | \
-      scripts/test/fifo.sh | scripts/test/tally.sh)
-      full_suite ;;
+    scripts/test/gh_adapter_fake.sh) full_suite ;;
+    scripts/test/orch/setup.sh | scripts/test/counting.sh | scripts/test/fifo.sh | scripts/test/tally.sh)
+      support_select "$f" "$state" ;;
     scripts/orch.sh | scripts/test/all.sh | scripts/test/orch_test.sh | scripts/test/affected.sh | \
       scripts/test/test_jobs.sh | scripts/test/report.sh | scripts/test/test_tree.sh | scripts/test/git_env.sh) ;;
     scripts/flow-state.sh) core=1; sections_of state init side-checkout ;;
