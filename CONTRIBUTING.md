@@ -173,7 +173,11 @@ and still builds the image from the PR's commit; group 4 also writes the cache,
 and a cold or unreadable cache costs time only. A push to `main` runs `all.sh`
 unsplit on the runner (the container suite does not run there) and, in a
 separate job, builds the image from scratch with no cache read and writes the
-cache, so every PR's first run starts warm. The suite runs on a
+cache, so every PR's first run starts warm. Both jobs that run the suite
+start it with SIGPIPE ignored (`trap '' PIPE`), so the PR gate sees what main's
+run sees and the ignored disposition catches write-error bugs; the default
+disposition is covered by local runs where the shell starts at it (a WSL shell
+may not). The suite runs on a
 PR's `opened`, `synchronize` and `reopened`; a newer run for the same PR
 cancels the older one, and a push to `main` is never cancelled. The changelog
 fragment check has its own workflow (see the fragment paragraph below).
@@ -221,7 +225,8 @@ among the active runs; no size is recorded there.
 A slot bounds jobs, not cores: to cap cores outright use CPU affinity, for
 example `taskset -c 0-7 <command>`.
 Test-helper placement is checked by `scripts/test/orch/harness.sh`'s
-test-helper placement section; its failure message states the rule.
+test-helper placement section; its failure message states the rule. Copying a
+helper's whole body is checked too: see Test helpers below.
 
 orch.sh's own code is laid out the same way: `scripts/orch/<noun>.sh` holds one
 noun's code, named as that noun's test file is, and a helper lives in the
@@ -229,7 +234,8 @@ module of the concept it serves, whichever modules call it.
 `scripts/orch/common.sh` holds only the primitives no concept owns (die, warn,
 note, capture and the like) and calls nothing a noun module defines; its test
 section checks this. The gh adapter layer stays whole in `gh.sh`, whoever
-calls it. A GitHub operation is captured through the gh module's pair
+calls it. A command that reaches GitHub - a GitHub operation, or a function or
+whole command that makes one - is captured through the gh module's pair
 `gh_capture` and `gh_capture_err`, never through bare `capture` or
 `capture_err`: the pair resolves the Repo in the caller's shell first, so that
 shell resolves it once (a subshell that resolves first does so for itself and
@@ -421,6 +427,20 @@ module, as the code it runs may replace or name any function. Only
 harness section on the on-demand sourcing variable (#2820) fails on any other
 test file naming it.
 
+A test file may not write out a helper's whole body either: harness.sh's helper
+body copies section runs `helper_copies` over the orch suite's section files,
+`setup.sh` and the sourceable test helpers, and fails with one line per copy,
+naming the copy's file and line, the helper and the file defining it. The
+helpers checked are those at the top level of `setup.sh`, of each sourceable
+test helper and of each section file's preamble (a preamble helper only in its
+own file). A copy is a run of lines equal to the body once blank and
+comment-only lines are dropped and each line is trimmed, a trailing comment and
+heredoc bodies not counted; a one-line body also matches inside a longer line.
+A body is checked from 2 lines, or 1 line of at least 40 characters; a
+near-copy or a partial copy stays with review. Replace the copy with a call, or
+exempt a deliberate repeat with a comment on the line just before it,
+`# copy-of <helper>: <reason>`, naming that helper and giving a reason.
+
 The fixtures to reach for first:
 
 - `fake_flow <slug>`: a section's usual starting point - a fresh repo, the
@@ -520,7 +540,7 @@ scripts/orch/comments.sh      the Comments module, a concept module with no noun
 scripts/orch/filed-finding.sh the Filed finding module, a concept module with no noun: a filed finding's severities and labels, rendering and parsing its issue body, the finding categories, and the input checks `review file`, `audit file` and `audit report` share
 scripts/orch/issue-timeline.sh the Issue timeline module, a concept module with no noun: an issue's comment history, read once and asked for its newest question, latest stop, limit stops, re-entry comments and live handoffs
 scripts/orch/known-items.sh   the Known items module, a concept module with no noun: a known-items file's entries, tagged bullets and writing
-scripts/orch/lines-fate.sh      the Lines fate module, a concept module with no noun: what became of a range of a file's lines at a ref since a commit filed them - the existence check, the test that the file differs at all, the line mapping, deleted ranges, deleting-commit lookup and the never-reached rule, behind `lines_fate`
+scripts/orch/lines-fate.sh    the Lines fate module, a concept module with no noun: what became of a range of a file's lines at a ref since a commit filed them - the existence check, the test that the file differs at all, the line mapping, deleted ranges, deleting-commit lookup and its squash walk, the range expander (`range_segments`) and the never-reached rule, behind `lines_fate`
 scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a record (a claim, a watch) is alive - the run records, the start-time reader, the record-alive rule, the watch pidfile, the session log names
 scripts/orch/marked-comment.sh the Marked comment module, a concept module with no noun: the kinds of marked issue comment, writing their first line and reading them
 scripts/orch/session-log.sh   the Session log module, a concept module with no noun: what a phase session's log says about usage limits - one pass over the log, its limit stop, reset, early pause and final reply
@@ -555,9 +575,9 @@ scripts/test/                 shell tests: the suites in all.sh's `suites` list 
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
 scripts/test/tally.sh         the assertion tally every suite sources: ok, bad and skip append to a per-run file, so an assertion inside a subshell counts; tally_summary is the ending each standalone suite calls
 scripts/test/counting.sh      the counting fixture the orch.sh suite's runner, hooks_test.sh and docs_lint.sh source: counting_bin makes a directory holding a stub, which its caller puts first on PATH, that logs one line per start and runs the real command, counting_starts reads the count, counting_stdin_bin makes the same stub also recording the bytes offered on its stdin, counting_bytes sums them
-scripts/test/test_jobs.sh     the job-count, job pool and priority helpers orch_test.sh, all.sh, affected.sh and section-durations.sh all source: the default ORCH_TEST_JOBS (ORCH_TEST_POOL_PERCENT) and the renice to 10, and the signal-reachable child start (test_jobs_run_child, with its INT/TERM stop) that section-durations.sh and lens-bench.sh use, and the suite start (test_jobs_suite_start, with its start order test_jobs_start_order and children marker test_jobs_held_marker) the three runners start each suite through
+scripts/test/test_jobs.sh     the job-count, job pool and priority helpers orch_test.sh, all.sh, affected.sh and section-durations.sh all source: the default ORCH_TEST_JOBS (ORCH_TEST_POOL_PERCENT) and the renice to 10, and the signal-reachable child start (test_jobs_run_child, with its INT/TERM stop) that section-durations.sh and lens-bench.sh use, and the suite start (test_jobs_suite_start, with its start order test_jobs_start_order and children marker test_jobs_held_marker) all.sh and affected.sh start each suite through, and section-durations.sh each suite but orch_test.sh
 scripts/test/report.sh       the report helpers all.sh, affected.sh and section-durations.sh source: a suite's FAIL block and summary line, the shellcheck summary, the temp-files failure record, and the run's verdict line, whose PASS or FAIL comes from the failed parts recorded
-scripts/test/test_tree.sh    how the runners read the test tree, which orch_test.sh, all.sh, affected.sh, docs_lint.sh and section-durations.sh source (harness.sh reaches it through orch_test.sh): SECTION_TITLE_AWK, the section-title rule, suites_read, the reader of all.sh's suite list, section_files, the noun files of the walk, ledger_fingerprints and ledger_fingerprints_all, the ledger's fingerprints, ledger_states, the ledger's freshness rule, suite_budget_read, the reader of the suite budget, durations_total, shellcheck_files, SHELLCHECK_CMD, shellcheck_start and shellcheck_join (the pooled shellcheck step), TENTHS_AWK and DURATIONS_AWK
+scripts/test/test_tree.sh    how the runners read the test tree, which orch_test.sh, all.sh, affected.sh, docs_lint.sh and section-durations.sh source (harness.sh reaches it through orch_test.sh): SECTION_TITLE_AWK, the section-title rule, suites_read, the reader of all.sh's suite list, suites_unlisted, the runners all.sh's list leaves out, section_files, the noun files of the walk, ledger_fingerprints and ledger_fingerprints_all, the ledger's fingerprints, ledger_states, the ledger's freshness rule, titles_regex, the anchored ORCH_TEST_ONLY pattern for a list of titles, suite_budget_read, the reader of the suite budget, durations_total, shellcheck_files, SHELLCHECK_CMD, shellcheck_start and shellcheck_join (the pooled shellcheck step), TENTHS_AWK and DURATIONS_AWK
 scripts/test/git_env.sh      `test_git_env_clear`, which every suite runner sources and calls first: it unsets git's repo-local variables and the commit-identity variables, so a suite run from a git hook never writes to the caller's repository
 scripts/test/shell_code.awk    the SHELL_CODE_AWK library, the one rule of what counts as code in a shell file: setup.sh, docs_lint.sh, width.sh and the helper index each load it whole
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary

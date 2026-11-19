@@ -171,6 +171,10 @@ is a deviation, named on the finding's line under **Findings** in the record.
 
 - **One test per blocking behaviour finding**, at a seam the repo's existing
   tests already use.
+- **Reuse the repo's test helpers.** Before writing the test, run any
+  helper-index command the repo's agent files (`CLAUDE.md`, `AGENTS.md`) name,
+  and read any test-helpers reference they point to; then call a listed helper
+  or fixture rather than writing its body again.
 - **Watch it fail on the unfixed code.** That failure is the proof the
   problem was real. Note the test's name and its failure, in one line, as
   the run printed it: the record's **Evidence** carries it.
