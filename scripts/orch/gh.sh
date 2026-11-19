@@ -16,10 +16,12 @@
 # with GH_HOST beside it, by repo_gh_host's one rule, whenever the repo itself
 # decides its host - so the call - `gh api`'s {owner}/{repo} placeholders and
 # host included - is pinned to it, never to gh's own default repo, which in a
-# fork is the upstream. That export, like the memo, lives in the shell the
-# guard runs in: a process whose calls start from its main shell resolves once,
-# but a subshell that resolves first (a whole command run under a capture)
-# resolves once for itself and cannot hand the memo back. With no repo it dies
+# fork is the upstream. The export lives in the shell the guard runs in. The
+# memo lives in the shell that resolves (repo_resolve) - usually the caller's,
+# through gh_capture/gh_capture_err or a `repo_resolve || :` ahead of a
+# substitution, before the guard's subshell forks - and every subshell that
+# shell forks afterwards inherits it; a subshell that resolves first resolves
+# once for itself and cannot hand the memo back. With no repo it dies
 # naming GH_REPO; that death exits 1 whatever the command reserved, so a command
 # that reserves exit 1 for a "no" resolves the repo itself first (repo_pin, then
 # die2 with REPO_REMEDY). Inside a command substitution `die` would end only
@@ -49,13 +51,15 @@ gh() {
 
 # gh_capture <out-var> <err-var> <command...> and gh_capture_err <err-var>
 # <command...>: capture and capture_err for a GitHub operation - an adapter_*
-# operation or gh itself. Each runs the memoising resolver (repo_resolve) in the
+# operation, gh itself, or a function or whole command whose first GitHub call
+# would otherwise resolve the Repo in the capture's subshell (standing_claim,
+# cmd_ticket_exists). Each runs the memoising resolver (repo_resolve) in the
 # caller's shell first, ignoring its status, so the Repo is resolved once for
 # the shell that calls it, rather than once per subshell the call runs in; a
 # failed resolution is left to the guard, which dies with the remedy as it
 # always did.
-# Defined ahead of the ORCH_GH_ADAPTER seam. A command that is not a GitHub
-# operation goes through capture or capture_err.
+# Defined ahead of the ORCH_GH_ADAPTER seam. A command that reaches no GitHub
+# goes through capture or capture_err.
 gh_capture() {
   repo_resolve || :
   capture "$@"
@@ -503,8 +507,8 @@ adapter_issue_state_labels() {
 # line left into the last. Non-zero when the read fails, writing none of them,
 # and writing gh's stderr into <err_var>: the caller keeps its own failure
 # message. gh's stderr is captured, never passed through. Out-params through
-# `printf -v`, as require_field's, its locals prefixed so no caller's
-# variable name is shadowed.
+# `printf -v`, as capture's (which it calls through gh_capture), its locals
+# prefixed so no caller's variable name is shadowed.
 gh_lines_read() {
   local __glr_out __glr_err
   if ! gh_capture __glr_out __glr_err "$1" "$2"; then
