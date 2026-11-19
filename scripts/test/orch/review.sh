@@ -2229,7 +2229,7 @@ assert_first_line "and prints its answer" "$out" "green"
 fake_checks_clear; fake_checks 7 all pending
 out="$(ci_by_pr 7 --no-wait)"
 assert_eq "--no-wait combines with a PR number, in either order" "$(ci_by_pr --no-wait 7)$out" "pendingpending"
-ci_by_pr 7 >/dev/null; st=$?
+ORCH_CI_INTERVAL=1 ci_by_pr 7 >/dev/null; st=$?
 assert_status "a waiting call by PR number with no flow state exits 75" "$st" 75
 # The key text is the one the flow form's wait stores its total under.
 assert_eq "and stores its total under the flow form's key for that PR and head" "$(ls "$ORCH_DIR_NAME/wait")" \
