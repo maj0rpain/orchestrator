@@ -173,7 +173,7 @@
 117	125	gh adapter contract (#280)	cc39c05926f818a5507f2842688f5a157ab6a73f
 19	20	claim adapter operations (#1454)	e38d5ba7a6cc558f697cc9b45c94994637c720bf
 2	3	label casing (#1943)	c0b2710909262227f7983fc382544e2c13a57e55
-45	29	gh rate limits (#2577)	cb4177ca617a40cc3b0dd63731260cab1e75b2e3
+45	28	gh rate limits (#2577)	41ea1a9243d7cfb38a94d8b87258f1dbe0625d74
 6	7	gh rate limits: the GitHub pause and the hit file (#2577)	79123add1578c1d705a7a3da968448b63570cf10
 0	1	slug	aa1e8e6f64e5dd11e111097dfde9deca1248c258
 9	10	archive	0124b5e1112a0eae813a1e43c01b2f94b426ce16

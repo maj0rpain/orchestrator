@@ -2003,7 +2003,7 @@ assert_eq "stdout ending in blank lines passes through byte for byte" "$(od -An 
 retry_script 'gh_limit_retry printf "no newline"' >"$rt_tmp.o"
 assert_eq "stdout with no final newline passes through byte for byte" "$(<"$rt_tmp.o")|$(wc -c <"$rt_tmp.o" | tr -d ' ')" "no newline|10"
 assert_eq "no temp file is left after a success" "$(ls -A "$rt_tmp")" ""
-out="$(retry_script 'f() { echo partial; echo "HTTP 502: Bad Gateway" >&2; return 3; }; gh_limit_retry f' 2>"$rt_tmp.e")"; st=$?
+out="$(retry_script 'f() { echo partial; echo "HTTP 502: Bad Gateway" >&2; return 3; }; gh_limit_retry f' 2>"$rt_tmp.e")"
 assert_eq "a failure that is no limit keeps its stdout" "$out" "partial"
 assert_eq "a failure that is no limit leaves no temp file" "$(ls -A "$rt_tmp")" ""
 out="$(retry_script 'gh_limit_handle() { echo "handler" >&2; return 1; }; f() { echo kept; echo "secondary rate limit" >&2; return 1; }; gh_limit_retry f' 2>"$rt_tmp.e")"; st=$?
