@@ -1610,8 +1610,9 @@ mi_wt s2 '9002\n' "$mi_dir" >/dev/null
 mi_for_issue 9002 >/dev/null
 mi_two="$(counting_starts "$mi_git" git)"
 # side-checkout list: one git process more for each added flow-less side
-# checkout (its holding line's branch read), and no more cat. It runs in this
-# repo between the for-issue runs, since each run empties the logs.
+# checkout (its holding line's branch read), and no more cat. The first call
+# runs between the for-issue runs and saves mi_git2/mi_cat2 before
+# mi_for_issue 9005 empties the logs; the second runs after them.
 mi_list_starts() { mi_counted "$ORCH" side-checkout list >/dev/null 2>&1; }
 mi_list_starts
 mi_git2="$(counting_starts "$mi_git" git)"
