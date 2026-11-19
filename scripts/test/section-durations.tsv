@@ -322,8 +322,8 @@
 7	8	spec ops read the flow's state once (#3063)	1ac4cb1881c14fda5d71d28175a34c212f051d4d
 9	10	spec round directory owner (#3078)	15bcf060fe1245d496d4e31d5a67a77363b5cdb9
 4	5	spec fetch drift line (#3458)	c71d2f327c2168a6b7f8593078ff7fe1849a0a52
-31	27	Standing module	fa1ba0fec2e341507294079f2067a8e1081ee7ba
-128	113	Standing transitions	d3858dc6f2e4721b7c1820fe3f5212ceed7633b8
+29	28	Standing module	70b58b65274ccbcb12483d917eb3b42f0d4ebc4c
+124	116	Standing transitions	e3c0a23ff66b6510a311858f95e66c9dd767450e
 2	3	standing_ask reads the issue in one jq	323242a91458cfdc0852ce80bf275f3a21daf5f0
 19	21	state	8f8a6d0c9ed66193eb8616169bbf206ccea0a741
 21	20	a flow from before the budget shipped	b21908c018f434ba989362b0c10b86ed3addcc32

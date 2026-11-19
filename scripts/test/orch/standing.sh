@@ -41,11 +41,11 @@ rc=0"
 dump='echo "$STANDING_STATE|$STANDING_LABELS|$STANDING_PHASE|$STANDING_PHASE_LABELS|$STANDING_RUNNING|$STANDING_HUMAN|$STANDING_LIMITED|$STANDING_SYNC"'
 pair_cmd=""
 for n in 5 6 7; do
-  pair_cmd+="echo \"read $n: \$(standing_read $n && $dump)\"; echo \"set $n: \$(standing_set \"\$(cat '$ORCH_GH_FAKE_STORE/issues/$n/state')\" \"\$(cat '$ORCH_GH_FAKE_STORE/issues/$n/labels')\" && $dump)\"; "
+  pair_cmd+="[ \"\$(standing_read $n && $dump)\" = \"\$(standing_set \"\$(cat '$ORCH_GH_FAKE_STORE/issues/$n/state')\" \"\$(cat '$ORCH_GH_FAKE_STORE/issues/$n/labels')\" && $dump)\" ] && echo \"same $n\" || echo \"differs $n\"; "
 done
 pair_out="$(sourced_rc "$pair_cmd")"
 for n in 5 6 7; do
-  assert_eq "standing_set from issue $n's state and labels equals standing_read of it" "$(grep "^set $n: " <<<"$pair_out" | cut -d' ' -f3-)" "$(grep "^read $n: " <<<"$pair_out" | cut -d' ' -f3-)"
+  assert_contains "standing_set from issue $n's state and labels equals standing_read of it" "$pair_out" "same $n"
 done
 fake_fail adapter_issue_state_labels "HTTP 502"
 out="$(sourced_rc 'standing_read 5; echo "reason=$STANDING_REASON"')"
@@ -447,8 +447,9 @@ rmdir "$TD"
 # a successful ask leaves no temp file behind
 ask_seed 70 orch:spec orch:running
 TD="$(mktemp -d)"
-sourced_rc "TMPDIR='$TD' standing_ask spec Q" >/dev/null
-assert_eq "a successful ask leaves its temp directory empty" "$(ls -A "$TD")" ""
+out="$(sourced_rc "TMPDIR='$TD' standing_ask spec Q")"
+assert_contains "a successful ask succeeds" "$out" "rc=0"
+assert_eq "and leaves its temp directory empty" "$(ls -A "$TD")" ""
 rmdir "$TD"
 
 # stop: a body temp file that cannot be made dies as a chain, the label landed
@@ -480,7 +481,7 @@ assert_contains "ask with a blank phase dies" "$out" "rc=1"
 assert_eq "and writes nothing: claim held, no comment, no label added" "$(fake_claim_held 68)|$(fake_comments_of 68)|$(fake_labels_of 68)" "held||orch:running orch:spec "
 
 # reenter: a refused marker ends it before any write, in an || context
-ask_seed 72 orch:spec orch:running
+tr_seed 72 orch:spec orch:running
 out="$(sourced_rc 'standing_reenter 72 " " Q')"
 assert_eq "reenter with a blank phase dies with the marker writer's refusal" "$out" "orch: marked comment: reentry needs an argument without whitespace
 rc=1"
