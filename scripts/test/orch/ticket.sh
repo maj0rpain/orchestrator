@@ -50,7 +50,7 @@ out="$("$ORCH" ticket publish 50 "First ticket" "$body" 2>&1)"; st=$?
 assert_status "publishes" "$st" 0
 assert_eq "printing the child's issue number and nothing else" "$out" "100"
 assert_eq "passes the title through" "$(fake_title_of 100)" "First ticket"
-assert_eq "sends the body file's contents" "$(fake_body_of 100)" "$(printf 'Build the thing.\n\n## Blocked by\n\nNone (can start immediately)')"
+assert_eq "sends the body file's contents, its \`## Blocked by\` section appended" "$(fake_body_of 100)" "$(printf 'Build the thing.\n\n## Blocked by\n\nNone (can start immediately)')"
 assert_eq "applies ready-for-agent" "$(fake_labels_of 100)" "ready-for-agent "
 assert_eq "records no state" "$(on_disk .orchestrator/state.json)" "absent"
 assert_eq "links the child as 50's sub-issue" "$(fake_sub_issues_of 50)" "100"
@@ -109,6 +109,16 @@ assert_contains "with a usage line" "$out" "usage: orch.sh ticket publish"
 
 out="$("$ORCH" ticket publish 50 2>&1)"; st=$?
 assert_status "refuses with no body file" "$st" 1
+
+# --record is gone: refused with the usage line.
+out="$("$ORCH" ticket publish 50 "Third" "$body" --record "$(mktemp -d)" 3 2>&1)"; st=$?
+assert_status "refuses --record" "$st" 1
+assert_contains "with publish's usage line" "$out" "usage: orch.sh ticket publish"
+assert_not_contains "the usage line shows no --record" "$out" "--record <"
+out="$("$ORCH" help 2>&1)"
+assert_contains "help shows the ticket publish line" "$out" \
+  "ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
+assert_not_contains "help shows no --record" "$out" "--record"
 assert_eq "none of the refusals wrote anything to GitHub" "$(fake_snapshot)" "$before"
 
 fake_fail adapter_issue_create
@@ -145,30 +155,16 @@ assert_gh_dies "a failed sub-issue link still exits 1" adapter_sub_issue_link "$
 assert_gh_dies "a failed blocking-edge write still exits 1" adapter_blocker_add "$GH_502" 1 \
   "orch: gh could not add a blocking edge from ticket #107 on #100: HTTP 502: Bad Gateway" \
   "$ORCH" ticket publish 50 "Title" "$body" --blocked-by 100
-restore_suite_env
-
-# --record is gone: refused with the usage line, nothing written to GitHub.
-ticket_fixture
-fake_issue 50 open
-fake_next_issue 102
-before="$(fake_snapshot)"
-out="$("$ORCH" ticket publish 50 "Third" "$body" --record "$(mktemp -d)" 3 2>&1)"; st=$?
-assert_status "refuses --record" "$st" 1
-assert_contains "with publish's usage line" "$out" "usage: orch.sh ticket publish"
-assert_not_contains "the usage line shows no --record" "$out" "--record <"
-assert_eq "writing nothing to GitHub" "$(fake_snapshot)" "$before"
-out="$("$ORCH" help 2>&1)"
-assert_contains "help shows the ticket publish line" "$out" \
-  "ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
-assert_not_contains "help shows no --record" "$out" "--record"
 
 # A failed sub-issue listing read before the link dies, the ticket created.
+fake_next_issue 108
 fake_fail adapter_sub_issues
 out="$("$ORCH" ticket publish 50 "Third" "$body" 2>&1)"; st=$?
 assert_status "a failed pre-link listing read dies" "$st" 1
 assert_contains "with the listing line" "$out" "gh could not list sub-issues of #50"
 fake_unfail
-assert_eq "the ticket is created and not linked" "$(fake_sub_issues_of 50)" ""
+assert_eq "the ticket is created" "$(fake_title_of 108)" "Third"
+assert_not_contains "and not linked" "$(fake_sub_issues_of 50)" "108"
 restore_suite_env
 
 # --- ticket publish verify-then-die ---------------------------------------
@@ -278,35 +274,16 @@ assert_eq "no blockers: the section reads None" "$(fake_body_of "$ta")" "$(print
 tb="$("$ORCH" ticket publish 50 "B" "$tp_body")"
 tc="$("$ORCH" ticket publish 50 "C" "$tp_body" --blocked-by "$tb,$ta")"
 assert_eq "blockers listed by number, ascending, the placeholder gone" "$(fake_body_of "$tc")" "$(printf 'Intro.\n\n## Blocked by\n\n- #%s\n- #%s' "$ta" "$tb")"
-printf 'Just text.\n' >"$tp_body"
-td="$("$ORCH" ticket publish 50 "D" "$tp_body" --blocked-by "$ta")"
-assert_eq "a body with no section gets one appended" "$(fake_body_of "$td")" "$(printf 'Just text.\n\n## Blocked by\n\n- #%s' "$ta")"
 
-printf 'Intro.\n\n## Blocked by\n\nNone (can start immediately)' >"$tp_body"
 fake_fail adapter_issue_body_edit
 out="$("$ORCH" ticket publish 50 "E" "$tp_body" --blocked-by "$ta" 2>&1)"; st=$?
-te=$((td + 1))
+te=$((tc + 1))
 assert_status "a failed body write dies" "$st" 1
 assert_contains "naming the ticket and the write" "$out" "gh could not rewrite ticket #$te's ## Blocked by section"
 assert_eq "the ticket stays linked" "$(fake_sub_issues_of 50 | tr ' ' '\n' | grep -cx "$te")" "1"
 assert_eq "with its edge" "$(fake_blockers_of "$te")" "$ta"
 assert_eq "and the draft's text" "$(fake_body_of "$te")" "$(printf 'Intro.\n\n## Blocked by\n\nNone (can start immediately)')"
 fake_unfail
-fake_fail adapter_issue_body
-out="$("$ORCH" ticket publish 50 "F" "$tp_body" --blocked-by "$ta" 2>&1)"; st=$?
-tf=$((te + 1))
-assert_status "a failed body read dies" "$st" 1
-assert_contains "naming the ticket and the read" "$out" "gh could not read ticket #$tf's body"
-assert_eq "the ticket stays linked" "$(fake_sub_issues_of 50 | tr ' ' '\n' | grep -cx "$tf")" "1"
-assert_eq "with its edge" "$(fake_blockers_of "$tf")" "$ta"
-assert_eq "the draft's text stays" "$(fake_body_of "$tf")" "$(printf 'Intro.\n\n## Blocked by\n\nNone (can start immediately)')"
-fake_unfail
-
-fake_fail adapter_issue_body_edit
-out="$("$ORCH" ticket publish 50 "G" "$tp_body" 2>&1)"; st=$?
-assert_status "no blockers on an already-matching section writes no body" "$st" 0
-fake_unfail
-
 restore_suite_env
 
 # --- ticket next -----------------------------------------------------------

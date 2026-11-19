@@ -104,8 +104,8 @@
 0	1	branch: unknown op	09ccbeff10e543f91244486e12686159f5541c9f
 2	3	branch retire beside a same-named tag (#2337)	4b6ee64b25b98b5c750805fad89df265fe42adb9
 13	8	branch create and branch off beside a same-named tag (#2337)	c7cda0ea0bd3fe50a3589436dfaec771f958366f
-41	46	breakdown publish	b1c287a3d8454c23e2182f13cc2422c31de5c901
-21	24	breakdown publish rewrites ## Blocked by	208d1493e0f08750366be029724fef34279d6561
+49	35	breakdown publish	0032b7ffa4132a0716c8c6286867ff3077a2e657
+23	16	breakdown publish rewrites ## Blocked by	eca2fdd84bd9ad7527f6c1b3c8159b25d4c7067d
 2	3	breakdown state	3e39b6801eb24af84b286c35b744133ff1735fa8
 1	1	breakdown state: no repo (#3050)	2f1b42960d147fd5c2e2fb6b77cbd1bbe709b6fd
 12	13	checkout (#1078)	85b65822bd5ebac5cdac093e84c0a28d92c25cc0
@@ -340,9 +340,9 @@
 44	47	ticket-worktree (#619)	fbb26a8bf6a99557b7ad9346478c9677ccb74b25
 1	1	a ticket branch has no upstream (#1152)	bbc5298d4013eb4f017ecb7f6c59509725053f88
 2	3	the merged check beside a same-named tag (#2337)	b3482156347488560231482575e046eb972a8f39
-12	14	ticket publish	536140daf683e0c4e881a6d505a2323d393c68b1
+14	12	ticket publish	b83cbb7975b3969abedea1576423b485207fa5ee
 14	16	ticket publish verify-then-die	032f3411326fae39a964514e6c1c2cabb1999198
-8	10	ticket publish rewrites ## Blocked by	ccbedc7e8202d89b2afc01658b5f9969163daef0
+6	5	ticket publish rewrites ## Blocked by	bd41800def218d400b37b62b96fe62c5ea7cf872
 6	7	ticket next	ea7d1c01a3008a293aa087702ecd8fac8c4bd4ee
 4	5	ticket list	b333642afc03ce2b57edef8650c35d1b433b8565
 12	14	ticket close	244b3427c3be464a6b50bf225690104fc77b4676
