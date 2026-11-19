@@ -184,8 +184,8 @@ d_probe_gh() {
 d_probe() {
   local scope="$1" view err budget_raw
   if command -v jq >/dev/null 2>&1; then D_JQ=ok; fi
-  # A state file that is not a JSON object - unparseable, or valid JSON of
-  # another type - invalidates every flow check at once. Judged by the Flow
+  # A state file holding anything but exactly one JSON object invalidates
+  # every flow check at once. Judged by the Flow
   # state module's own predicate, so doctor and the hooks agree on it.
   # Settled here so that d_run_flow can report it once, ahead of the list, and
   # the checks that would each have run jq at the same broken file never run.
