@@ -268,7 +268,7 @@
 57	47	review file	5d76ae7eb1f643ef5fa0ae6387d82a09cf87e13c
 18	16	review ready	aba02c1f44f96eb5a4b0ce0167cbc3e1c8be3073
 173	67	review ci	4515a642b1ba8d209e1c89ce89ec6270dab30a29
-17	12	the grace counts from the push (issue #475)	fa04bc9842a510401183fb57e243c0c591d98f6a
+18	13	the grace counts from the push (issue #475)	58612fbf355ac68c5b2f938d967f310c636daa65
 24	17	review ci --no-wait	821bdd4c243ad96f69547132415c084ebbb6aa84
 68	42	the grace is skipped on no evidence of CI (issue #476)	601daef9db53be0caf269d6e3016cc746e7e344a
 11	10	review rerun	7d1779bfc93d812c8314fe5887835a8a5d448601
@@ -363,7 +363,7 @@
 61	6	verification run	1dd42b596bc25070ec06b02925f7cb097936d741
 216	20	verification run: the run key, stale runs, the ceiling	471d2e2e39b7b63f2840777531b346f7eab120a1
 0	1	verification run in help and the CLI conventions	bcef7e4ad67e97b98e872bc1de7a617d10a78253
-83	11	wait: a call's block is wall time	2131667b4a01e6f561167884f6b4394f20ebf646
+112	12	wait: a call's block is wall time	db923f27504e50d0a04527b359feb487abb3665d
 686	811	hooks_test.sh	058e31b62b5c66adb779670b21daecb8f80a55e8
 196	171	docs_lint.sh	34005b94b528c3cac0c004e8e1d78930a4878f6a
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65

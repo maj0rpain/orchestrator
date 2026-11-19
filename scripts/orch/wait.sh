@@ -34,18 +34,25 @@ printf -v WAIT_CALL_START '%(%s)T' -1
 # sleep total alone ignores however long each `gh` call took, which would
 # stretch a 15-minute cap well past 15 minutes on a slow connection.
 wait_elapsed() {
-  local now
-  printf -v now '%(%s)T' -1
-  awk -v w="$(( now - $1 ))" -v s="$2" 'BEGIN { print (w > s) ? w : s }'
+  local wall
+  printf -v wall '%(%s)T' -1
+  awk -v w="$(( wall - $1 ))" -v s="$2" 'BEGIN { print (w > s) ? w : s }'
 }
 
-# wait_open <key-text> <start-var> <slept-var>: finds or creates the stored
-# total for the wait <key-text> names, and sets the two variables to the
-# epoch second of its first call and the seconds slept so far (0 when new).
-# It sets WAIT_FILE (the stored total, set nowhere else), WAIT_MARK (its limit
-# mark) and WAIT_START, the epoch second of the wait's first call.
+# The wait's state, named here. wait_open sets it, wait_guard sets WAIT_MARK
+# alone, and wait_tick advances it:
+#   WAIT_FILE     the stored total's file
+#   WAIT_MARK     the limit mark wait_limit_fits leaves: the stored total's
+#                 ".limited" file, or the provisional guard's
+#   WAIT_START    the epoch second of the wait's first call
+#   WAIT_SLEPT    seconds slept across every call
+#   WAIT_BLOCKED  seconds this call has blocked
+
+# wait_open <key-text>: finds or creates the stored total for the wait
+# <key-text> names, and sets WAIT_FILE, WAIT_MARK, WAIT_START and WAIT_SLEPT
+# (0 when new) from it, and WAIT_BLOCKED to 0.
 wait_open() {
-  local key epoch start="" slept=""
+  local key start="" slept=""
   key="$(printf '%s' "$1" | git hash-object --stdin)" || die "could not key the wait"
   mkdir -p "$ORCH/wait" || die "could not create $ORCH/wait"
   WAIT_FILE="$ORCH/wait/$key"
@@ -56,15 +63,18 @@ wait_open() {
   case "$start" in ''|*[!0-9]*) start="" ;; esac
   is_number "$slept" || slept=""
   if [ -z "$start" ] || [ -z "$slept" ]; then
-    epoch="$(date +%s)"
-    start="$epoch"
+    printf -v start '%(%s)T' -1
     slept=0
     file_write_atomic "$WAIT_FILE" "$start"$'\n'"$slept"$'\n' || die "could not store the wait"
   fi
   WAIT_START="$start"
-  printf -v "$2" '%s' "$start"
-  printf -v "$3" '%s' "$slept"
+  WAIT_SLEPT="$slept"
+  WAIT_BLOCKED=0
 }
+
+# wait_taken: prints the open wait's elapsed time (wait_elapsed over WAIT_START
+# and WAIT_SLEPT).
+wait_taken() { wait_elapsed "$WAIT_START" "$WAIT_SLEPT"; }
 
 # wait_forget: forgets the stored total and its mark (the Wait
 # module's, see wait_limit_fits), once a call delivers an outcome.
@@ -72,14 +82,14 @@ wait_forget() {
   rm -f "${WAIT_FILE:-}" "${WAIT_MARK:-}"
 }
 
-# wait_limited_check <slept>: ends the call as still running (stores <slept>,
+# wait_limited_check: ends the call as still running (stores WAIT_SLEPT,
 # exit 75) when a gh call met a rate limit the block could not hold - the mark
 # wait_limit_fits left, which a subshell's exit could not. Call it after each
 # probe of a poll loop.
 wait_limited_check() {
   [ -e "${WAIT_MARK:-}" ] || return 0
   rm -f "$WAIT_MARK"
-  wait_still_running "$1"
+  wait_store_and_exit
 }
 
 # wait_limit_fits <seconds>: whether a limit wait of <seconds> fits. Returns 0
@@ -139,28 +149,27 @@ wait_nap() {
   awk -v i="$1" -v b="$ORCH_WAIT_BLOCK" -v s="$2" 'BEGIN { r = b - s; print (r < i) ? r : i }'
 }
 
-# wait_still_running <slept>: stores the seconds slept so far, says the wait is
-# not over, and exits 75.
-wait_still_running() {
-  file_write_atomic "$WAIT_FILE" "$WAIT_START"$'\n'"$1"$'\n' || die "could not store the wait"
+# wait_store_and_exit: stores WAIT_START and WAIT_SLEPT in WAIT_FILE, says the
+# wait is not over, and exits 75. wait_exit_running, which stores nothing, is
+# the ending where there is no total to keep.
+wait_store_and_exit() {
+  file_write_atomic "$WAIT_FILE" "$WAIT_START"$'\n'"$WAIT_SLEPT"$'\n' || die "could not store the wait"
   wait_exit_running
 }
 
 # wait_tick <interval>: one turn of a poll loop's wait. A call that has blocked
 # ORCH_WAIT_BLOCK seconds (wait_block_spent) stores the total and exits 75
 # instead of sleeping on; otherwise it sleeps <interval>, or what is left of the
-# block when that is less, and adds it to the caller's `slept` (across every
-# call) and `blocked` (this call), which bash scopes dynamically - threading
-# two counters back out through a subshell's stdout would cost more than it
-# explains. A call whose sleep spent the block exits 75 at once, so the caller
-# runs no further probe past ORCH_WAIT_BLOCK.
+# block when that is less, and adds it to WAIT_SLEPT (across every call) and
+# WAIT_BLOCKED (this call). A call whose sleep spent the block exits 75 at
+# once, so the caller runs no further probe past ORCH_WAIT_BLOCK.
 wait_tick() {
   local spent nap
-  spent="$(wait_block_spent "$blocked")"
-  float_lt "$spent" "$ORCH_WAIT_BLOCK" || wait_still_running "$slept"
+  spent="$(wait_block_spent "$WAIT_BLOCKED")"
+  float_lt "$spent" "$ORCH_WAIT_BLOCK" || wait_store_and_exit
   nap="$(wait_nap "$1" "$spent")"
   sleep "$nap"
-  slept="$(float_add "$slept" "$nap")"
-  blocked="$(float_add "$blocked" "$nap")"
-  float_lt "$(wait_block_spent "$blocked")" "$ORCH_WAIT_BLOCK" || wait_still_running "$slept"
+  WAIT_SLEPT="$(float_add "$WAIT_SLEPT" "$nap")"
+  WAIT_BLOCKED="$(float_add "$WAIT_BLOCKED" "$nap")"
+  float_lt "$(wait_block_spent "$WAIT_BLOCKED")" "$ORCH_WAIT_BLOCK" || wait_store_and_exit
 }

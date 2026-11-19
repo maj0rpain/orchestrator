@@ -256,11 +256,10 @@ review_terminal_state() {
 }
 
 # One turn of the poll loop: wait (wait_tick), then advance `elapsed`. It
-# assigns to the caller's `slept`, `blocked` and `elapsed`, which bash scopes
-# dynamically.
+# assigns to the caller's `elapsed`, which bash scopes dynamically.
 ci_tick() {
   wait_tick "$ORCH_CI_INTERVAL"
-  elapsed="$(wait_elapsed "$started" "$slept")"
+  elapsed="$(wait_taken)"
 }
 
 # ci_unreachable <detail>: the `unreachable` verdict and its indented detail
@@ -286,7 +285,7 @@ ci_refs() {
   return 0
 }
 
-# ci_context: how long before <started> the head was pushed (push_age, zero
+# ci_context: how long before WAIT_START the head was pushed (push_age, zero
 # when unknown) and whether the PR has no evidence of CI anywhere (no_ci).
 ci_context() {
   [ -n "$head_oid" ] || return 0
@@ -294,7 +293,7 @@ ci_context() {
   pushed="$(ci_push_time "$head_oid" "$head_ref")"
   case "$pushed" in
     ''|*[!0-9]*) ;;
-    *) [ "$pushed" -ge "$started" ] || push_age=$(( started - pushed )) ;;
+    *) [ "$pushed" -ge "$WAIT_START" ] || push_age=$(( WAIT_START - pushed )) ;;
   esac
   # With no evidence of CI anywhere, there is nothing for the grace to
   # wait on. It replaces only the wait: the unfiltered probe still runs,
@@ -366,12 +365,14 @@ ci_deliver() {
 # the waiting form repeats: it reads no total, never sleeps and writes no
 # state, wait file or guard; where the loop would sleep it prints `pending`.
 # A rate limit is given up on at once (NO_WAIT_CALL).
+# It sets WAIT_START to this call's start, as no total is open.
 review_ci_once() {
-  local pr="$1" pr_arg="$2" started elapsed=0 res verdict refs_err head_oid head_ref base_ref push_age=0
+  local pr="$1" pr_arg="$2" elapsed=0 res verdict refs_err head_oid head_ref base_ref push_age=0
   local no_ci=0 ci_status refs_rc=0 grace_none
   is_number "$ORCH_CI_GRACE" || die2 "ORCH_CI_GRACE is not a number: $ORCH_CI_GRACE"
   export NO_WAIT_CALL=1
-  printf -v started "%(%s)T" -1
+  orch_load wait
+  WAIT_START="$WAIT_CALL_START"
   ci_refs : || return 1
   ci_context
   ci_pass
@@ -397,22 +398,19 @@ review_ci_once() {
 # no total yet.
 review_ci_wait() {
   local pr="$1" pr_arg="$2"
-  # blocked and slept are read by wait_tick through bash's dynamic scope;
-  # refs_err is pr_refs_read's error output, which ci_refs_unread reports.
-  # shellcheck disable=SC2034
-  local started slept=0 blocked=0 elapsed=0 res verdict refs_err head_oid head_ref base_ref push_age=0
+  local elapsed=0 res verdict refs_err head_oid head_ref base_ref push_age=0
   local no_ci=0 ci_status refs_rc=0 grace_none
   require_poll_knobs die2 ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
   wait_block_check die2
   wait_guard "$pr"
   ci_refs wait_guard_check || return 1
-  wait_open "review ci $pr $head_oid" started slept
-  elapsed="$(wait_elapsed "$started" "$slept")"
+  wait_open "review ci $pr $head_oid"
+  elapsed="$(wait_taken)"
   ci_context
-  [ -z "$head_oid" ] || wait_limited_check "$slept"
+  [ -z "$head_oid" ] || wait_limited_check
   while :; do
     ci_pass
-    wait_limited_check "$slept"
+    wait_limited_check
     if [ "$grace_none" = 1 ]; then ci_tick; continue; fi
     if ! ci_deliver; then
       if float_lt "$elapsed" "$ORCH_CI_TIMEOUT"; then ci_tick; continue; fi
