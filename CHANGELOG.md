@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.22
+
+Hold the re-callable wait's state in the wait module: `wait_open` takes only the key text, `wait_still_running` is now `wait_store_and_exit`, and `review ci` and `spec-review wait` keep none of the wait's state. No behaviour change.
+
 ## 6.8.21
 
 The `review ci` tests are cheaper and clearer: the ORCH_WAIT_BLOCK refusal tests check one bad value, the `--no-wait` and `review ci <pr>` sections make fewer waiting calls, and a comment and two helper names say what they mean.
