@@ -368,6 +368,9 @@ assert_eq "a grace wait over a group that lasts a second starts no more awk than
 # no more.
 bn_rec="$(mktemp -d)"
 printf '%s\n' "$(( $(printf '%(%s)T' -1) - 10 ))" >"$bn_rec/waiting"
+ORCH_WAIT_BLOCK=60 ORCH_VERIFICATION_GRACE=1 sourced_orch_script \
+  "orch_load verification; verification_wait_state '$bn_rec'" >/dev/null 2>&1; st=$?
+assert_status "a record with no state and a 10 s old mark under a 1 s grace returns 1, never exit 75" "$st" 1
 bn_t0=$SECONDS
 ORCH_WAIT_BLOCK=60 ORCH_VERIFICATION_GRACE=3 sourced_orch_script \
   "orch_load verification; verification_wait_state '$bn_rec'" >/dev/null 2>&1; st=$?
