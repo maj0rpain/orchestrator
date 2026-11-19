@@ -8,12 +8,12 @@ Standards: `CONTRIBUTING.md#Develop`, `docs/agents/cli-conventions.md`,
 
 ## Layout
 
-`orch.sh` is a thin entry point: each noun's code lives in
+`scripts/orch.sh` is a thin entry point: each noun's code lives in
 `scripts/orch/<noun>.sh`, each helper in the module of the concept it serves,
-and only the primitives no concept owns in `scripts/orch/common.sh`; `common.sh`
-and the module loader `loader.sh` are the two files every start loads. See
-CONTRIBUTING.md's Layout for the full map. There is no top-level `tests/`, and
-`hooks/` holds only `hooks.json`.
+and only the primitives no concept owns in `scripts/orch/common.sh`;
+`common.sh` and the module loader `loader.sh` are the two files every start
+loads. See CONTRIBUTING.md's Layout for the full map. There is no top-level
+`tests/`, and `hooks/` holds only `hooks.json`.
 
 ## Agent skills
 
@@ -66,12 +66,12 @@ it touches (a new noun gets a new file; a concept module with no noun gets a
 section file named as it is). Sections run in parallel, so every section must
 pass on its own. The runners share one job pool, holding 75% of the usable CPUs
 unless `ORCH_TEST_POOL_PERCENT` sets another share (see CONTRIBUTING.md).
-Test-helper placement is checked by harness.sh's test-helper placement
-section; its failure message states the rule. A test that writes out the
-whole body of a shared or preamble test helper it could call is failed by
-harness.sh's helper body copies section: call the helper, or mark a deliberate
-repeat with `# copy-of <helper>: <reason>`. Before writing or reusing a
-helper, run
+Test-helper placement is checked by `scripts/test/orch/harness.sh`'s
+test-helper placement section; its failure message states the rule. A test that
+writes out the whole body of a shared or preamble test helper it could call is
+failed by harness.sh's helper body copies section: call the helper, or mark a
+deliberate repeat with `# copy-of <helper>: <reason>`. Before writing or reusing
+a helper, run
 `scripts/dev/helpers.sh` (orch.sh's modules), `scripts/dev/helpers.sh --tests`
 (the shared test setup, the gh fake, the tally, the FIFO wait and the
 counting fixture), or `scripts/dev/helpers.sh <file>` (any

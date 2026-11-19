@@ -220,8 +220,8 @@ all contend for the low ones, and concurrency is bounded by the largest size
 among the active runs; no size is recorded there.
 A slot bounds jobs, not cores: to cap cores outright use CPU affinity, for
 example `taskset -c 0-7 <command>`.
-Test-helper placement is checked by harness.sh's test-helper placement
-section; its failure message states the rule.
+Test-helper placement is checked by `scripts/test/orch/harness.sh`'s
+test-helper placement section; its failure message states the rule.
 
 A test file may not write out a helper's whole body either: harness.sh's helper
 body copies section runs `helper_copies` over the orch suite's section files,
