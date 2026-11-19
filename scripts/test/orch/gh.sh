@@ -512,29 +512,6 @@ lagging adapter_label_create; assert_status "an operation with no lag is current
 # fake_failing, so even a seeded failure does not mask it. No converted caller
 # sends a bad option, so the fake is sourced alone and the operation called.
 faked() { bash -c 'source "$1"; shift; "$@"' _ "$GH_ADAPTER_FAKE" "$@"; }
-# The optional check_runs and statuses lists read as empty with nothing on
-# stderr, and the snapshot hides every read-side file but no countdown.
-rs_store="$ORCH_GH_FAKE_STORE"
-fake_github
-new_repo >/dev/null
-fake_pr 71 open feat main
-assert_eq "commits checked with no check_runs or statuses seeded prints nothing on stderr" \
-  "$(sourced_orch_script 'adapter_pr_commits_checked 71' 2>&1 >/dev/null)" ""
-fake_checks 71 all green
-rs_before="$(fake_snapshot)"
-faked adapter_pr_checks 71 all >/dev/null 2>&1
-assert_eq "a scripted checks read leaves the snapshot as it was" "$(fake_snapshot)" "$rs_before"
-fake_fail adapter_issue_body
-fake_fail_after adapter_issue_body 2
-rs_before="$(fake_snapshot)"
-faked adapter_issue_body 5 >/dev/null 2>&1
-assert_ne "a call consuming a fail countdown changes the snapshot" "$(fake_snapshot)" "$rs_before"
-fake_lag adapter_issue_title_labels 2
-rs_before="$(fake_snapshot)"
-faked adapter_issue_title_labels 5 >/dev/null 2>&1
-assert_ne "a call consuming a lag countdown changes the snapshot" "$(fake_snapshot)" "$rs_before"
-assert_eq "log_count of an absent log is 0 in its tagged form" "$(log_count "$ORCH_GH_FAKE_STORE/nope" tag)" "0"
-ORCH_GH_FAKE_STORE="$rs_store"
 fake_issue 14 open
 fake_fail adapter_issue_relabel
 fake_fail adapter_issue_close
@@ -581,6 +558,28 @@ assert_eq "as --reason missing its value, with no unknown option" "$err" \
 rm -f "$pbody"
 assert_eq "and a refused close left the issue open" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/state")" "OPEN"
 assert_eq "and a refused relabel left its labels unchanged" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/labels")" ""
+# The optional check_runs and statuses lists read as empty with nothing on
+# stderr, and the snapshot hides every read-side file but no countdown.
+rs_store="$ORCH_GH_FAKE_STORE"
+fake_github
+new_repo >/dev/null
+fake_pr 71 open feat main
+assert_eq "commits checked with no check_runs or statuses seeded prints nothing on stderr" \
+  "$(sourced_orch_script 'adapter_pr_commits_checked 71' 2>&1 >/dev/null)" ""
+fake_checks 71 all green
+rs_before="$(fake_snapshot)"
+faked adapter_pr_checks 71 all >/dev/null 2>&1
+assert_eq "a scripted checks read leaves the snapshot as it was" "$(fake_snapshot)" "$rs_before"
+fake_fail_after adapter_issue_body 2
+rs_before="$(fake_snapshot)"
+faked adapter_issue_body 5 >/dev/null 2>&1
+assert_ne "a call consuming a fail countdown changes the snapshot" "$(fake_snapshot)" "$rs_before"
+fake_lag adapter_issue_title_labels 2
+rs_before="$(fake_snapshot)"
+faked adapter_issue_title_labels 5 >/dev/null 2>&1
+assert_ne "a call consuming a lag countdown changes the snapshot" "$(fake_snapshot)" "$rs_before"
+assert_eq "log_count of an absent log is 0 in its tagged form" "$(log_count "$ORCH_GH_FAKE_STORE/nope" tag)" "0"
+ORCH_GH_FAKE_STORE="$rs_store"
 # A value that only begins with - or -- is a value: the fake refuses by option
 # name, never by prefix. A fresh store, with no failure seeded.
 fake_github
