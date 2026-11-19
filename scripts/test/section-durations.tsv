@@ -39,13 +39,13 @@
 66	72	agent	cddc69e5a268c5cd6ddfed15d957b78960ef77e3
 20	22	agent sync	b39ad35449afd2ba48dfe47fd1a68a53a2d8c22b
 3	4	agent copy marker and Junie field: no command per call	2a90944570501eb9df9e004a9fab0ff67c9dac60
-5	7	audit file	e97f4bcf770e6f84652afee83c052a5ae0585f1a
-2	3	audit file duplicates	73913f6f2897becbffd2e3a03b14f265e780bba0
-8	9	audit file refusals	e065509389876d325ba7a19b4233858047b6779d
-1	2	audit file failures	36da66fe7e1963a63d248c9eefd0530932ced2f6
-7	8	audit begin	9277e95ea24eb4fc6e267ab64ed38ff470cc2550
-18	20	audit report	4a48bf1e65833c424d6e185968d4ca2cb6099862
-29	32	audit file batch	b8cec2882b163e468be28a8f291c8d1d68829f5b
+8	6	audit file	6bbf361e504ccaa9a3f0d45038632b66b03acc8a
+3	3	audit file duplicates	e5be439ac2451322b83945ad891f56ab378d67ca
+9	9	audit file refusals	b1a0484287eb30f5231deffb1dc76702c14536e3
+2	3	audit file failures	38189780fbe7595a2d3ce0122efa77904e26306c
+9	9	audit begin	eda1af9627a75a5db715c16d299179de30b2060e
+29	23	audit report	ae10a47e1f0db257b716316a4f7800b193c68623
+38	30	audit file batch	a1786986c75fd179a95f4411e35e32ab075dc8f0
 9	10	autopilot	0de8834cdf8bd2ccc871a51e5abda748144d0337
 19	22	autopilot rounds, budget and start	41829146970a3ee47b79d27ccf9e27f2ba60d4f1
 40	46	autopilot ask and answer	646445929ad04febc7c3cdb6d5d7cdfc421084b0
