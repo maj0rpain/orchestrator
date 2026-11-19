@@ -205,7 +205,7 @@ source "$PLUGIN_ROOT/scripts/test/test_tree.sh"
 assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi; }
 assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected no output, got: $2"; fi; }
 # assert_contains <label> <output> <text>: passes when output holds the text.
-assert_contains() { if [[ "$2" == *"$3"* ]]; then ok "$1"; else bad "$1" "expected output to contain '$3', got: $2"; fi; }
+assert_contains() { case "$2" in *"$3"*) ok "$1" ;; *) bad "$1" "missing '$3' in: $2" ;; esac; }
 
 # flat_text [file]: the file, or stdin when given none, on one line with
 # every whitespace run collapsed to one space.
@@ -453,9 +453,11 @@ BUDGET_FILE=scripts/test/suite-budget
 # scan_ledger_fresh <plugin root>: rule 1, the ledger is fresh. One line per
 # section or suite with no line, per line with no section or suite, per stale
 # line (no fingerprint, or one that no longer matches the text), per title on
-# two lines, and one for a missing shellcheck line. Each names the command that
-# fixes it: scripts/dev/section-durations.sh --stale, or the full refresh for
-# the missing line of shellcheck, which only a full refresh writes. The
+# two lines, and one for a missing shellcheck line. Each of these names the
+# command that fixes it: scripts/dev/section-durations.sh --stale, or the full
+# refresh for the missing line of shellcheck, which only a full refresh writes.
+# A failed all.sh suite list or a failed fingerprinting prints one line saying
+# so, and no line is judged. The
 # fingerprints come from test_tree.sh's ledger_fingerprints, a fixed number of
 # processes whatever the number of sections.
 scan_ledger_fresh() {
@@ -4939,7 +4941,7 @@ assert_eq "a failure to fingerprint is one line naming the durations file" \
 fixture="$(ledger_fixture)"
 printf '%s\n' 'suites=()' >"$fixture/scripts/test/all.sh"
 out="$(scan_ledger_fresh "$fixture")"
-flags "an empty suites list is reported as an all.sh line" "$out" "scripts/test/all.sh: "
+flags "an empty suites list is reported as an all.sh line" "$out" "holds an empty suites list"
 spares "an empty suites list is not a fingerprinting failure" "$out" 'fingerprint'
 # A ledger of many sections costs no more processes than one of three: the
 # counted commands are the ones the scan runs, at the docs lint seam.
