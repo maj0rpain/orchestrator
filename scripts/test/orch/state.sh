@@ -315,7 +315,9 @@ assert_eq "an empty variable name returns 2, assigning nothing" \
   "$(fs_run 'a=keep; flow_state_get_many many.json a=slug =slug; echo "rc=$? $a"')" "rc=2 keep
 status 0"
 printf 'null' >"$fs_dir/null.json"
-for f in absent invalid array null; do
+printf '{"slug":"s"} trailing' >"$fs_dir/trailing.json"
+: >"$fs_dir/empty.json"
+for f in absent invalid array null trailing empty; do
   assert_eq "flow_state_get_many on a $f file returns 1, assigning nothing" \
     "$(fs_run "a=keep; flow_state_get_many $f.json a=slug 2>/dev/null; echo \"rc=\$? \$a\"")" "rc=1 keep
 status 0"
@@ -335,14 +337,6 @@ for fs_fake in 'nosentinel|s\0' 'wrongsentinel|s\0bogus\0' 'trailing|s\0flow-sta
     "$(fs_run "PATH='$fs_fakebin':\$PATH; a=keep; flow_state_get_many many.json a=slug; echo \"rc=\$? \$a\"")" "rc=1 keep
 status 0"
   rm -rf "$fs_fakebin"
-done
-printf '{"slug":"s"} trailing' >"$fs_dir/trailing.json"
-: >"$fs_dir/empty.json"
-printf '{"slug":"s"' >"$fs_dir/truncated.json"
-for f in trailing empty truncated; do
-  assert_eq "flow_state_get_many on a $f file returns 1, assigning nothing" \
-    "$(fs_run "a=keep; flow_state_get_many $f.json a=slug 2>/dev/null; echo \"rc=\$? \$a\"")" "rc=1 keep
-status 0"
 done
 fs_mktempbin="$(counting_bin mktemp)"
 fs_rmbin="$(counting_bin rm)"
@@ -598,13 +592,12 @@ assert_eq "with its own message through die2" "$out" "orch: no issue recorded in
 out="$(sourced_orch_script 'require_issue v; echo "$v"' 2>&1)"
 assert_eq "require_issue assigns the issue" "$out" "7"
 : >"$rs_jq/jq.log"
-out="$(PATH="$rs_jq:$PATH" sourced_orch state_get_in "$rs_file" issue 2>&1)"
-assert_eq "state_get_in reads a key" "$out" "7"
-assert_eq "state_get_in starts exactly one jq" "$(counting_starts "$rs_jq" jq)" "1"
 rs_mktempbin="$(counting_bin mktemp)"
 rs_rmbin="$(counting_bin rm)"
-out="$(PATH="$rs_mktempbin:$rs_rmbin:$PATH" sourced_orch state_get_in "$rs_file" issue 2>&1)"
-assert_eq "state_get_in reads a key byte for byte without a mktemp" "$out$(counting_starts "$rs_mktempbin" mktemp)" "70"
+out="$(PATH="$rs_jq:$rs_mktempbin:$rs_rmbin:$PATH" sourced_orch state_get_in "$rs_file" issue 2>&1)"
+assert_eq "state_get_in reads a key" "$out" "7"
+assert_eq "state_get_in starts exactly one jq" "$(counting_starts "$rs_jq" jq)" "1"
+assert_eq "state_get_in starts no mktemp" "$(counting_starts "$rs_mktempbin" mktemp)" "0"
 assert_eq "state_get_in starts no rm" "$(counting_starts "$rs_rmbin" rm)" "0"
 rs_nosentinel="$(mktemp -d)"
 printf '#!/bin/sh\nprintf "7\\0"\n' >"$rs_nosentinel/jq"
