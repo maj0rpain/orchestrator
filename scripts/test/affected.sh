@@ -56,7 +56,7 @@
 #   .claude/settings.json
 #                                     nothing beyond the always-run checks
 #   anything else                     all.sh
-#   scripts/test/orch/setup.sh, counting.sh, fifo.sh, tally.sh
+#   scripts/test/orch/setup.sh, counting.sh, fails.sh, fifo.sh, tally.sh
 #                                     function by function: each function whose
 #                                     code differs from the base selects the
 #                                     sections of every section file, and every
@@ -245,7 +245,7 @@ unnamed() {
 }
 
 # The shared test support: the files whose functions select by call.
-SUPPORT_FILES=(scripts/test/orch/setup.sh scripts/test/counting.sh scripts/test/fifo.sh scripts/test/tally.sh)
+SUPPORT_FILES=(scripts/test/orch/setup.sh scripts/test/counting.sh scripts/test/fails.sh scripts/test/fifo.sh scripts/test/tally.sh)
 
 # SUPPORT_AWK reads files each introduced by a "@@FILE" line. A function is a
 # column-0 `name() {` line to the next column-0 `}` line, or that line alone
@@ -394,7 +394,7 @@ classify() {
       [ "$state" = deleted ] && core=1 ;;
   esac
   case "$f" in
-    scripts/test/gh_adapter_fake.sh | scripts/test/orch/setup.sh | scripts/test/counting.sh | scripts/test/fifo.sh | scripts/test/tally.sh)
+    scripts/test/gh_adapter_fake.sh | scripts/test/orch/setup.sh | scripts/test/counting.sh | scripts/test/fails.sh | scripts/test/fifo.sh | scripts/test/tally.sh)
       # The row form asks only which row takes the path, never what it selects.
       [ "$row" -eq 1 ] || support_select "$f" "$state" ;;
     scripts/orch.sh | scripts/test/all.sh | scripts/test/orch_test.sh | scripts/test/affected.sh | \

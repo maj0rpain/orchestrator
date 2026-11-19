@@ -96,6 +96,13 @@ report_and_exit() {
   exit 2
 }
 
+# drop_snapshot_and_exit SNAPSHOT: removes SNAPSHOT quietly and exits 0 whether
+# or not the removal succeeds. Never returns.
+drop_snapshot_and_exit() {
+  rm -f "$1" 2>/dev/null
+  exit 0
+}
+
 payload="$(cat 2>/dev/null)" || exit 0
 tool="$(jq -r '.tool_name // empty' <<<"$payload" 2>/dev/null)" || exit 0
 
@@ -125,7 +132,7 @@ case "$event" in
     # moved the session's cwd into another checkout.
     { printf 'root\t%s\n' "$root" &&
       { [ -z "$list" ] || printf '%s\n' "$list"; }; } 2>/dev/null \
-      >"$snap" || rm -f "$snap" 2>/dev/null
+      >"$snap" || drop_snapshot_and_exit "$snap"
     exit 0
     ;;
   PostToolUse | PostToolUseFailure) ;;
@@ -141,11 +148,10 @@ cwd_root=""
 # any repo, or a cwd in another checkout than Pre's drops the snapshot and
 # stays silent.
 if [ -z "$cwd" ] || [ "$root" = "$head" ] || [ ! -d "$root" ] || [ "$cwd_root" != "$root" ]; then
-  rm -f "$snap" 2>/dev/null
-  exit 0
+  drop_snapshot_and_exit "$snap"
 fi
 # A listing or comparison that fails drops the snapshot and stays silent.
-new="$(dirty_hashes "$root")" || { rm -f "$snap" 2>/dev/null; exit 0; }
+new="$(dirty_hashes "$root")" || drop_snapshot_and_exit "$snap"
 findings=""
 if [ -n "$new" ]; then
   # One grep (-a: a name invalid in the locale is still a line): the listed
@@ -153,8 +159,7 @@ if [ -n "$new" ]; then
   # line, the normal case of a call that changed no listed file.
   changed="$(printf '%s\n' "$new" | grep -a -vxFf "$snap" 2>/dev/null)"
   if [ "$?" -gt 1 ]; then
-    rm -f "$snap" 2>/dev/null
-    exit 0
+    drop_snapshot_and_exit "$snap"
   fi
   while IFS=$'\t' read -r _ path; do
     [ -n "$path" ] || continue

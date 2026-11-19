@@ -63,6 +63,8 @@ source "$TEST_DIR/tally.sh"
 source "$TEST_DIR/fifo.sh"
 # shellcheck source=counting.sh
 source "$TEST_DIR/counting.sh"
+# shellcheck source=fails.sh
+source "$TEST_DIR/fails.sh"
 SETUP_FILE="$SECTION_DIR/setup.sh"
 
 # The temp root. Every invocation - the parallel runner, each of its children,
