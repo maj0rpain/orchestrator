@@ -119,7 +119,7 @@ lf_case del_split "$split_head_sha" src/del_split.sh 9 13
 
 # A deletion main made of lines held by a head off its history, for the case
 # whose merge-base lookup fails: the head edits another line, main deletes.
-for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do lf_seq "um$i" 20 >"src/um$i.sh"; done
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13; do lf_seq "um$i" 20 >"src/um$i.sh"; done
 lf_seq mb 30 >src/mb.sh
 git add src
 git commit -qm "the code the unmerged PRs edit"
@@ -147,8 +147,6 @@ sha62="$(lf_unm 62 um12.sh '2c\pr replaced')"
 # um13 is um5's twin that main never edits: no commit on the ref touched the
 # file since the filed SHA, so the differs-at-all test alone decides.
 sha63="$(lf_unm 63 um13.sh $'8i pr above\n9a pr below')"
-# um14 is filed with a reversed range whose start line only the head changed.
-sha64="$(lf_unm 64 um14.sh '5c\pr replaced')"
 lf_edit um1.sh 's/^um1 line 15$/um1 line 15, reworded/' "an unrelated edit to um1" >/dev/null
 lf_edit um2.sh 's/^um2 line 15$/um2 line 15, reworded/' "an unrelated edit to um2" >/dev/null
 lf_edit um3.sh 's/^um3 line 15$/um3 line 15, reworded/' "an unrelated edit to um3" >/dev/null
@@ -176,7 +174,7 @@ lf_case um60 "$sha60" src/um10.sh 8 9
 lf_case um61 "$sha61" src/um11.sh 25 25
 lf_case um62 "$sha62" src/um12.sh 25 25
 lf_case um63 "$sha63" src/um13.sh 9 10
-lf_case um64_reversed "$sha64" src/um14.sh 5 3
+lf_case um64_reversed "$sha51" src/um1.sh 5 3
 
 # A git whose every command of one kind fails: lines_fate still returns 0, each
 # failure taking its stand-in. Each case's calls run under its own stand-in git
