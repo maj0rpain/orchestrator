@@ -110,7 +110,7 @@ A new doc, `docs/repo-setup.md`, lists everything orch.sh reads from a repo: the
 
 ## 6.0.1
 
-The ticket commands now read one ticket's facts once through `ticket_facts <n> <prefix>`, which sets the ticket worktree's path and state, its checked-out branch, the checkout's branch, and the ticket's own branch and whether it exists in variables the caller names, and writes no other variable; the refusals live in require helpers that read those facts. The teardown takes the facts its caller read and reports which removal step failed, so `ticket reclaim` words its per-ticket lines without probing again. `ticket close <n>` (without `--unmerged`) and `ticket-worktree add <n>` now die before acting where git's record of the checkouts cannot be read, and `ticket merge <n>`, which already died there, now dies earlier, before its forked-from and dirty-tree refusals; nothing else a user of `orch.sh` can observe changes.
+The ticket commands now read one ticket's facts once through `ticket_facts <n> <prefix>`, which sets the ticket worktree's path and state, its checked-out branch, the checkout's branch, and the ticket's own branch and whether it exists in variables the caller names, and writes no other variable; the refusals live in require helpers that read those facts. The teardown takes the facts its caller read and reports which removal step failed, so `ticket reclaim` words its per-ticket lines without probing again. `ticket close <n>` (without `--unmerged`) and `ticket-worktree add <n>` now die before acting where git's record of the checkouts cannot be read, and `ticket merge <n>`, which already died there, now dies earlier, before its forked-from and dirty-tree refusals, and `ticket-worktree remove <n>` with a ticket worktree at its path, which before went ahead without reading that record, now dies there too; nothing else a user of `orch.sh` can observe changes.
 
 ## 6.0.0
 
@@ -118,7 +118,7 @@ Breaking: the plugin no longer measures suite cost (#3381, ADR-0063). The `orch.
 
 ## 5.3.3
 
-Every read of an issue's or a PR's comments now goes through one reader of trusted comments, which drops untrusted comments in one place and returns rather than dies on a failed or unparseable read. A structural test fails when orch.sh's own scripts read comments any other way. Nothing orch.sh prints or does changes.
+Every read of an issue's or a PR's comments now goes through one reader of trusted comments, which drops untrusted comments in one place and returns rather than dies on a failed or unparseable read. A structural test fails when orch.sh's own scripts read comments any other way. The exceptions are two failures of `issue fetch --json`: it reads its comments in a second gh call, which can fail on its own (`orch: gh could not read the comments of issue #<n>: <reason>`), and an issue answer that is not an issue object now dies as `orch: could not read issue #<n>: it did not parse` instead of `its comments did not parse`. Nothing else orch.sh prints or does changes.
 
 ## 5.3.2
 
@@ -251,7 +251,7 @@ The autopilot container now holds `orchestrator.autopilot.auto-sync` and `.githu
 
 ## 5.2.72
 
-The Bash hook no longer denies `node --test`, `python3 -c1`, `python3 -mpytest` and other interpreter commands whose options give the program its code, module or mode, or make it print and exit, as stdin reads; a real stdin read, including an option after a lone `-` script, is still denied.
+The Bash hook no longer denies `node --test`, `python3 -c1`, `python3 -mpytest` and other interpreter commands whose options give the program its code, module or mode, or make it print and exit, as stdin reads; a real stdin read is still denied, and an option after a lone `-` script (`python3 - --help`), which passed before, is now denied as one.
 
 ## 5.2.71
 
