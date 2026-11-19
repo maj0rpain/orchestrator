@@ -221,7 +221,8 @@ among the active runs; no size is recorded there.
 A slot bounds jobs, not cores: to cap cores outright use CPU affinity, for
 example `taskset -c 0-7 <command>`.
 Test-helper placement is checked by `scripts/test/orch/harness.sh`'s
-test-helper placement section; its failure message states the rule.
+test-helper placement section; its failure message states the rule. Copying a
+helper's whole body is checked too: see Test helpers below.
 
 orch.sh's own code is laid out the same way: `scripts/orch/<noun>.sh` holds one
 noun's code, named as that noun's test file is, and a helper lives in the
@@ -420,6 +421,20 @@ module, as the code it runs may replace or name any function. Only
 `sourced_orch` sets the variable outside the loader's own section file: the
 harness section on the on-demand sourcing variable (#2820) fails on any other
 test file naming it.
+
+A test file may not write out a helper's whole body either: harness.sh's helper
+body copies section runs `helper_copies` over the orch suite's section files,
+`setup.sh` and the sourceable test helpers, and fails with one line per copy,
+naming the copy's file and line, the helper and the file defining it. The
+helpers checked are those at the top level of `setup.sh`, of each sourceable
+test helper and of each section file's preamble (a preamble helper only in its
+own file). A copy is a run of lines equal to the body once blank and
+comment-only lines are dropped and each line is trimmed, a trailing comment and
+heredoc bodies not counted; a one-line body also matches inside a longer line.
+A body is checked from 2 lines, or 1 line of at least 40 characters; a
+near-copy or a partial copy stays with review. Replace the copy with a call, or
+exempt a deliberate repeat with a comment on the line just before it,
+`# copy-of <helper>: <reason>`, naming that helper and giving a reason.
 
 The fixtures to reach for first:
 

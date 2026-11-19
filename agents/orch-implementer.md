@@ -120,8 +120,10 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
 2. **Build the ticket test-first**, per **Test-driven development** below,
    at those seams. A test that needs a seam the Testing Decisions do
    not name is a deviation: pick the most defensible seam, record it,
-   and carry on. Before writing tests, read any test-helpers reference or
-   helper index the repo's agent files (`CLAUDE.md`, `AGENTS.md`) point to.
+   and carry on. Before writing the first test, run any helper-index
+   command the repo's agent files (`CLAUDE.md`, `AGENTS.md`) name, and read any
+   test-helpers reference they point to; then call a listed helper or fixture
+   rather than writing its body again.
 3. **Verify as you go**: run typechecking and single test files regularly,
    and the repo's **ticket verification** once, at the end.
    Find the ticket verification where you find the full verification, in the
