@@ -8,7 +8,7 @@
 # "<file>: <problem>", and nothing when the root obeys it. Each rule runs first
 # against fixture plugin roots that break it, so a rule that stops flagging
 # anything fails here too, then once against the real plugin root.
-# Run with no argument it runs everything; --fragment-only runs the fragment
+# Run with no argument it runs everything; --base-rules runs the fragment
 # rule and the two suite budget rules that judge a change against a base
 # (scan_suite_budget and scan_suite_budget_alone) against the real plugin root
 # and nothing else, which is all the fragment workflow needs; any other
@@ -204,6 +204,8 @@ source "$PLUGIN_ROOT/scripts/test/test_tree.sh"
 
 assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi; }
 assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected no output, got: $2"; fi; }
+# assert_contains <label> <output> <text>: passes when output holds the text.
+assert_contains() { if [[ "$2" == *"$3"* ]]; then ok "$1"; else bad "$1" "expected output to contain '$3', got: $2"; fi; }
 
 # flat_text [file]: the file, or stdin when given none, on one line with
 # every whitespace run collapsed to one space.
@@ -283,18 +285,19 @@ spares() {
   if [ -z "$hits" ]; then ok "$1"; else bad "$1" "expected no finding matching '$3', got: $hits"; fi
 }
 
-# The one optional argument, --fragment-only, narrows the run to the changelog
+# The one optional argument, --base-rules, narrows the run to the changelog
 # fragment rule and the suite budget rules 2 and 3. It is an argument, never an
 # environment variable, so the runners that start this file with none can never
-# narrow a full run. The one variable the full run reads is DOCS_LINT_RECORDING,
-# which only section-durations.sh sets: it skips the ledger freshness rule and
-# rule 2 while the ledger is recorded, and all.sh and affected.sh unset it.
-FRAGMENT_ONLY=0
+# narrow a full run. The one variable that narrows the full run is
+# DOCS_LINT_RECORDING, which only section-durations.sh sets: it skips the
+# ledger freshness rule and rule 2 while the ledger is recorded, and all.sh and
+# affected.sh unset it.
+BASE_RULES=0
 if [ "$#" -gt 0 ]; then
-  if [ "$#" -eq 1 ] && [ "$1" = --fragment-only ]; then
-    FRAGMENT_ONLY=1
+  if [ "$#" -eq 1 ] && [ "$1" = --base-rules ]; then
+    BASE_RULES=1
   else
-    echo "docs_lint.sh: usage: docs_lint.sh [--fragment-only]" >&2
+    echo "docs_lint.sh: usage: docs_lint.sh [--base-rules]" >&2
     exit 2
   fi
 fi
@@ -348,7 +351,7 @@ SHELL_CODE_AWK="$(<"$PLUGIN_ROOT/scripts/test/shell_code.awk")"
   echo "docs_lint.sh: scripts/test/shell_code.awk is missing or empty" >&2; exit 1; }
 
 # The changelog fragment rule and the helpers it reaches, defined before the
-# --fragment-only run below needs them; its fixture self-tests are in the
+# --base-rules run below needs them; its fixture self-tests are in the
 # version and CHANGELOG section.
 # version_field: the version field of the plugin.json on stdin, empty when
 # there is none. The linter needs no jq: plugin.json keeps it on one line.
@@ -432,7 +435,7 @@ issue_parent_url() {
 # check_real_changelog_fragments: the changelog fragment rule against the real
 # plugin root, once: the PR against CHANGELOG_BASE, honouring NO_VERSION_BUMP,
 # or a pass naming the skip when CHANGELOG_BASE is unset. The full run and the
-# --fragment-only run both call it.
+# --base-rules run both call it.
 check_real_changelog_fragments() {
   if [ -n "${CHANGELOG_BASE+set}" ]; then
     check "the PR adds one changelog fragment and bumps nothing by hand" \
@@ -539,13 +542,13 @@ scan_suite_budget_alone() {
 # check_real_suite_budget: rules 2 and 3 against the real plugin root, once,
 # judged against DOCS_LINT_BASE, else CHANGELOG_BASE, else neither: the
 # comparison with the base and rule 3 are then skipped, and say so. The full
-# run (after the ledger check) and the --fragment-only run both call it.
+# run (after the ledger check) and the --base-rules run both call it.
 check_real_suite_budget() {
   local base="${DOCS_LINT_BASE:-${CHANGELOG_BASE:-}}"
   # While section-durations.sh records the ledger (DOCS_LINT_RECORDING), the
   # budget file may be missing or malformed and the recording still goes on, so
   # rule 2 is not judged in the full run; the budget-alone rule still is.
-  if [ "$FRAGMENT_ONLY" = 0 ] && [ -n "${DOCS_LINT_RECORDING:-}" ]; then
+  if [ "$BASE_RULES" = 0 ] && [ -n "${DOCS_LINT_RECORDING:-}" ]; then
     ok "the recorded total is not judged against the suite budget while the durations file is being recorded"
   else
     check "the recorded total is within the suite budget" "$(scan_suite_budget "$PLUGIN_ROOT" "$base")"
@@ -560,7 +563,7 @@ check_real_suite_budget() {
 # check_real_ledger_fresh: rule 1 against the real plugin root, once. While
 # section-durations.sh records the ledger (DOCS_LINT_RECORDING=1) the freshness
 # rule is not judged, and the pass says so: it would fail on the very lines
-# being replaced. Only the full run calls it, never --fragment-only.
+# being replaced. Only the full run calls it, never --base-rules.
 check_real_ledger_fresh() {
   if [ -n "${DOCS_LINT_RECORDING:-}" ]; then
     ok "the durations file's freshness is not judged while it is being recorded"
@@ -569,11 +572,11 @@ check_real_ledger_fresh() {
       "$(scan_ledger_fresh "$PLUGIN_ROOT")"
   fi
 }
-# --fragment-only: the changelog fragment rule and the suite budget rules 2 and
+# --base-rules: the changelog fragment rule and the suite budget rules 2 and
 # 3 against the real plugin root and nothing else: no section heading, no
 # fixture self-test, no other rule. It starts here, once the helpers the rules
 # reach are defined, and ends on the same summary line as the full run.
-if [ "$FRAGMENT_ONLY" = 1 ]; then
+if [ "$BASE_RULES" = 1 ]; then
   check_real_changelog_fragments
   check_real_suite_budget
   tally_summary
@@ -4547,7 +4550,7 @@ check "the glossary defines Turn-final reply" \
 # real root only when CHANGELOG_BASE holds main's commit, and waives its
 # one-fragment part when NO_VERSION_BUMP is set; the workflow's "Read main's
 # commit" step (.github/workflows/fragment.yml) sets both, and its check step
-# runs the fragment rule and the suite budget rules 2 and 3 (--fragment-only)
+# runs the fragment rule and the suite budget rules 2 and 3 (--base-rules)
 # with the GH_TOKEN its parent lookup reads issues with.
 echo
 echo "version and CHANGELOG (CLAUDE.md Versioning)"
@@ -4787,18 +4790,18 @@ spares "with NO_VERSION_BUMP, no parent lookup runs" \
   "$(issue_parent_url() { echo "lookup ran"; return 1; }; scan_changelog_fragments "$fixture" main 1)" '.'
 eval "$real_issue_parent_url"
 check_real_changelog_fragments
-# The --fragment-only switch, run as a child of this file. Each fragment-only
+# The --base-rules switch, run as a child of this file. Each base-rules
 # child has CHANGELOG_BASE, DOCS_LINT_BASE and NO_VERSION_BUMP set or unset
 # here, whatever this run inherited, and shows its ok lines though this run may
-# be quiet. A fragment-only child runs no self-tests, so it starts no child of
+# be quiet. A base-rules child runs no self-tests, so it starts no child of
 # its own.
-# fragment_only_child [<env words>...]: runs the
+# base_rules_child [<env words>...]: runs the
 # child under env with those words, its status, stdout and stderr landing in
 # child_status, child_out and child_err.
-fragment_only_child() {
+base_rules_child() {
   local errfile="$FIXTURES/child.err" out st
   out="$(cd "$FIXTURES" && env -u CHANGELOG_BASE -u NO_VERSION_BUMP -u DOCS_LINT_BASE ORCH_TEST_QUIET= "$@" \
-    bash "$PLUGIN_ROOT/scripts/test/docs_lint.sh" --fragment-only 2>"$errfile")"
+    bash "$PLUGIN_ROOT/scripts/test/docs_lint.sh" --base-rules 2>"$errfile")"
   st=$?
   child_status="$st" child_out="$out" child_err="$(<"$errfile")"
 }
@@ -4809,46 +4812,46 @@ assert_child_fails() {
   # shellcheck disable=SC2053 # $3 is a glob on purpose
   if [[ "$child_out" == $3 ]]; then ok "$2"; else bad "$2" "got: $child_out"; fi
 }
-fragment_only_child
-assert_eq "--fragment-only with no base set exits 0" "$child_status" 0
-assert_eq "--fragment-only with no base set prints the three skipped or passing lines and a summary alone" \
+base_rules_child
+assert_eq "--base-rules with no base set exits 0" "$child_status" 0
+assert_eq "--base-rules with no base set prints the three skipped or passing lines and a summary alone" \
   "$child_out" "$(printf '  ok   the changelog fragment rule skipped (CHANGELOG_BASE unset)\n  ok   the recorded total is within the suite budget\n  ok   the suite budget comparison with the base and the budget-alone rule skipped (DOCS_LINT_BASE and CHANGELOG_BASE unset)\n\n3 passed, 0 failed')"
-assert_empty "--fragment-only with no base set prints nothing on stderr" "$child_err"
-fragment_only_child CHANGELOG_BASE=no-such-ref
-assert_child_fails "--fragment-only with a base with no merge-base exits non-zero" \
-  "--fragment-only names a base with no merge-base in all three rules and counts three failed" \
+assert_empty "--base-rules with no base set prints nothing on stderr" "$child_err"
+base_rules_child CHANGELOG_BASE=no-such-ref
+assert_child_fails "--base-rules with a base with no merge-base exits non-zero" \
+  "--base-rules names a base with no merge-base in all three rules and counts three failed" \
   "*FAIL*CHANGELOG_BASE: no merge-base with HEAD for 'no-such-ref'*section-durations.tsv: no merge-base with HEAD for 'no-such-ref'*suite-budget: no merge-base with HEAD for 'no-such-ref'*0 passed, 3 failed"
 if git -C "$PLUGIN_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   child_head="$(git -C "$PLUGIN_ROOT" rev-parse HEAD)"
-  fragment_only_child CHANGELOG_BASE="$child_head"
-  assert_child_fails "--fragment-only fails a PR adding no fragment" \
-    "--fragment-only says no changelog fragment added" \
+  base_rules_child CHANGELOG_BASE="$child_head"
+  assert_child_fails "--base-rules fails a PR adding no fragment" \
+    "--base-rules says no changelog fragment added" \
     "*no changelog fragment added*, 1 failed"
-  fragment_only_child CHANGELOG_BASE="$child_head" NO_VERSION_BUMP=1
-  assert_eq "--fragment-only honours NO_VERSION_BUMP" "$child_status:${child_out##*$'\n'}" "0:3 passed, 0 failed"
-  fragment_only_child DOCS_LINT_BASE="$child_head"
-  assert_eq "--fragment-only with only the budget base set skips the changelog rule and judges the budget rules" \
+  base_rules_child CHANGELOG_BASE="$child_head" NO_VERSION_BUMP=1
+  assert_eq "--base-rules honours NO_VERSION_BUMP" "$child_status:${child_out##*$'\n'}" "0:3 passed, 0 failed"
+  base_rules_child DOCS_LINT_BASE="$child_head"
+  assert_eq "--base-rules with only the budget base set skips the changelog rule and judges the budget rules" \
     "$child_status:$child_out" "0:$(printf '  ok   the changelog fragment rule skipped (CHANGELOG_BASE unset)\n  ok   the recorded total is within the suite budget\n  ok   the suite budget file changes alone\n\n3 passed, 0 failed')"
-  fragment_only_child DOCS_LINT_BASE=no-such-ref CHANGELOG_BASE="$child_head" NO_VERSION_BUMP=1
-  assert_child_fails "--fragment-only judges the budget rules against their own base before the changelog's" \
-    "--fragment-only names the budget base, not the changelog's, in both budget rules" \
+  base_rules_child DOCS_LINT_BASE=no-such-ref CHANGELOG_BASE="$child_head" NO_VERSION_BUMP=1
+  assert_child_fails "--base-rules judges the budget rules against their own base before the changelog's" \
+    "--base-rules names the budget base, not the changelog's, in both budget rules" \
     "*section-durations.tsv: no merge-base with HEAD for 'no-such-ref'*suite-budget: no merge-base with HEAD for 'no-such-ref'*1 passed, 2 failed"
 else
-  skip "--fragment-only with CHANGELOG_BASE at HEAD" "the plugin root is not a git work tree"
+  skip "--base-rules with CHANGELOG_BASE at HEAD" "the plugin root is not a git work tree"
 fi
-child_out="$(bash "$PLUGIN_ROOT/scripts/test/docs_lint.sh" --fragment-onyl 2>"$FIXTURES/child.err")"
+child_out="$(bash "$PLUGIN_ROOT/scripts/test/docs_lint.sh" --base-rulez 2>"$FIXTURES/child.err")"
 child_status=$?
 assert_eq "an unknown argument exits 2" "$child_status" 2
 assert_empty "an unknown argument prints nothing on stdout" "$child_out"
 assert_eq "an unknown argument prints the usage line alone on stderr" \
-  "$(<"$FIXTURES/child.err")" "docs_lint.sh: usage: docs_lint.sh [--fragment-only]"
+  "$(<"$FIXTURES/child.err")" "docs_lint.sh: usage: docs_lint.sh [--base-rules]"
 
 # --- suite budget rules (#3180) -----------------------------------------------
 # The three rules over fixture roots holding a scripts/test tree:
 # scan_ledger_fresh (rule 1), scan_suite_budget (rule 2) and
 # scan_suite_budget_alone (rule 3). The real root is checked by the full run's
 # own calls of check_real_ledger_fresh and check_real_suite_budget, below, and
-# by the real-root runs of check_real_suite_budget in the --fragment-only child
+# by the real-root runs of check_real_suite_budget in the --base-rules child
 # tests above.
 echo
 echo "suite budget rules (#3180)"
@@ -5053,33 +5056,37 @@ assert_empty "with no base, the budget-alone rule is skipped" "$(scan_suite_budg
 fixture="$(budget_fixture none)"
 out="$(ORCH_TEST_QUIET='' tally_file=/dev/null PLUGIN_ROOT="$fixture" DOCS_LINT_BASE='' CHANGELOG_BASE='' \
   DOCS_LINT_RECORDING=1 check_real_suite_budget)"
-assert_eq "a missing budget file is not judged while the ledger is recorded" \
-  "$([[ "$out" == *"ok   the recorded total is not judged against the suite budget"* ]] && echo yes)" yes
+assert_contains "a missing budget file is not judged while the ledger is recorded" \
+  "$out" "ok   the recorded total is not judged against the suite budget"
 out="$(ORCH_TEST_QUIET='' tally_file=/dev/null PLUGIN_ROOT="$fixture" DOCS_LINT_BASE='' CHANGELOG_BASE='' \
   DOCS_LINT_RECORDING='' check_real_suite_budget)"
-assert_eq "and is judged when the ledger is not being recorded" \
-  "$([[ "$out" == *"FAIL the recorded total is within the suite budget"* ]] && echo yes)" yes
+assert_contains "and is judged when the ledger is not being recorded" \
+  "$out" "FAIL the recorded total is within the suite budget"
 # section-durations.sh measures this file with DOCS_LINT_RECORDING=1 while it
 # replaces the ledger's lines, so the freshness rule would fail on the very
 # lines being recorded; only that script sets it, and rule 2 reads it too. The
 # full run's own call stands at column 0 here and nowhere else, as below, so the
 # two cases that follow, the function with it set and unset, are the full run's.
+# They call the function in-process, a deliberate exception to asserting what a
+# caller observes: a full-run child costs about 16 CPU seconds per run, and
+# inside docs_lint.sh it would recurse or, guarded off while recording,
+# under-count this file's own ledger line.
 fixture="$(ledger_fixture)"
 printf '%s\n' '# --- a two ---' 'echo 4' >>"$fixture/scripts/test/orch/a.sh"
 out="$(ORCH_TEST_QUIET='' tally_file=/dev/null PLUGIN_ROOT="$fixture" \
   DOCS_LINT_RECORDING=1 check_real_ledger_fresh)"
-assert_eq "a stale ledger's freshness is not judged while the ledger is recorded, and says so" \
-  "$([[ "$out" == *"ok   the durations file's freshness is not judged while it is being recorded"* ]] && echo yes)" yes
+assert_contains "a stale ledger's freshness is not judged while the ledger is recorded, and says so" \
+  "$out" "ok   the durations file's freshness is not judged while it is being recorded"
 out="$(ORCH_TEST_QUIET='' tally_file=/dev/null PLUGIN_ROOT="$fixture" \
   DOCS_LINT_RECORDING='' check_real_ledger_fresh)"
-assert_eq "and is judged when the ledger is not being recorded" \
-  "$([[ "$out" == *"FAIL the durations file has one fresh line"* ]] && echo yes)" yes
+assert_contains "and is judged when the ledger is not being recorded" \
+  "$out" "FAIL the durations file has one fresh line"
 assert_eq "the full run calls check_real_ledger_fresh" \
   "$(grep -c '^check_real_ledger_fresh$' "$PLUGIN_ROOT/scripts/test/docs_lint.sh")" 1
 check_real_ledger_fresh
 # The full run judges the suite budget rules 2 and 3 as well, so a ticket
 # verification enforces them before a push. The call stands at column 0 here
-# and nowhere else; the --fragment-only call is indented.
+# and nowhere else; the --base-rules call is indented.
 assert_eq "the full run calls check_real_suite_budget" \
   "$(grep -c '^check_real_suite_budget$' "$PLUGIN_ROOT/scripts/test/docs_lint.sh")" 1
 check_real_suite_budget

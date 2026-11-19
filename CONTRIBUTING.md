@@ -124,7 +124,7 @@ file unchanged and exits 1; it refuses `ORCH_TEST_JOBS=1`.
 
 Both modes time every other suite with `DOCS_LINT_RECORDING=1`, which only
 `section-durations.sh` sets (`all.sh` and `affected.sh` unset it, CI never sets
-it, and `docs_lint.sh --fragment-only` ignores it). With it set, the full run
+it, and `docs_lint.sh --base-rules` ignores it). With it set, the full run
 of `docs_lint.sh` skips the ledger freshness rule and the suite budget total
 rule (rule 2) and says so, so the suite it is measuring does not fail on the
 very lines being replaced; the budget-alone rule (rule 3) still runs. With it
@@ -373,7 +373,7 @@ it.
 CI enforces the rule through its own workflow, `.github/workflows/fragment.yml`,
 which runs the fragment rule and the suite budget's two rules with a base (the
 total within the budget, the budget file changing alone) through
-`docs_lint.sh --fragment-only`, and reruns on a PR's body and label edits; the
+`docs_lint.sh --base-rules`, and reruns on a PR's body and label edits; the
 ledger's freshness rule runs in the suite's whole lint, on a push to `main`
 too, where the budget comparison is skipped: a PR
 to `main` adds exactly one
