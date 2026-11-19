@@ -38,14 +38,16 @@ fake_issue 7 open Orch:Spec Needs-Human Orch:Running orch:Limited
 out="$(sourced_rc 'standing_read 7 && echo "$STANDING_PHASE|$STANDING_RUNNING|$STANDING_HUMAN|$STANDING_LIMITED"')"
 assert_eq "standing_read finds the phase and the three flags under any label casing" "$out" "spec|1|1|1
 rc=0"
-dump='echo "$STANDING_STATE|$STANDING_LABELS|$STANDING_PHASE|$STANDING_PHASE_LABELS|$STANDING_RUNNING|$STANDING_HUMAN|$STANDING_LIMITED|$STANDING_SYNC"'
+dump='echo "$STANDING_STATE|${STANDING_LABELS//$'"'"'\n'"'"'/,}|$STANDING_PHASE|$STANDING_PHASE_LABELS|$STANDING_RUNNING|$STANDING_HUMAN|$STANDING_LIMITED|$STANDING_SYNC"'
 pair_cmd=""
 for n in 5 6 7; do
-  pair_cmd+="[ \"\$(standing_read $n && $dump)\" = \"\$(standing_set \"\$(cat '$ORCH_GH_FAKE_STORE/issues/$n/state')\" \"\$(cat '$ORCH_GH_FAKE_STORE/issues/$n/labels')\" && $dump)\" ] && echo \"same $n\" || echo \"differs $n\"; "
+  pair_cmd+="echo \"read $n: \$(standing_read $n && $dump)\"; echo \"set $n: \$(standing_set \"\$(cat '$ORCH_GH_FAKE_STORE/issues/$n/state')\" \"\$(cat '$ORCH_GH_FAKE_STORE/issues/$n/labels')\" && $dump)\"; "
 done
 pair_out="$(sourced_rc "$pair_cmd")"
 for n in 5 6 7; do
-  assert_contains "standing_set from issue $n's state and labels equals standing_read of it" "$pair_out" "same $n"
+  read_line="$(grep "^read $n: " <<<"$pair_out")"
+  set_line="$(grep "^set $n: " <<<"$pair_out")"
+  assert_eq "standing_set from issue $n's state and labels equals standing_read of it, every field" "${set_line#set $n: }" "${read_line#read $n: }"
 done
 fake_fail adapter_issue_state_labels "HTTP 502"
 out="$(sourced_rc 'standing_read 5; echo "reason=$STANDING_REASON"')"
