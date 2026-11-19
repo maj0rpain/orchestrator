@@ -1,5 +1,11 @@
 # Changelog
 
+## 6.8.29
+
+The dev width hook's Post bail-outs share one `drop_snapshot_and_exit` helper. `fails_bin` moves into its own failing-command fixture, `scripts/test/fails.sh`, and the bash width hook tests now use it and loops in place of hand-written stand-ins. No behaviour changes.
+
+Correct the Bash stdin guard's docs: the reader check comment qualifies its options-only case, the walker's `function` flag is renamed `fn_keyword` with its values documented, and the host capabilities row names the multi-line command substitution false negative.
+
 ## 6.8.28
 
 The paste guard now allows when its size read or paste match fails, escapes its needle and apply literals the same under bash 3.2 and 5.2, and names its scan locals for what they hold.
