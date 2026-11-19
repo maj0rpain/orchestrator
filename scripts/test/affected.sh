@@ -556,27 +556,21 @@ trap 'test_jobs_stop_children "${pids[@]}"' INT TERM
 trap 'rm -rf "$tmp"' EXIT
 
 # The suites other than orch_test.sh start first, in selection order, each under
-# its slot, then orch_test.sh with none; pids and the report stay in selection
-# order.
-start_order=()
-for suite_n in "${!selected[@]}"; do
-  [ "${selected[$suite_n]}" = orch_test.sh ] || start_order+=("$suite_n")
-done
-for suite_n in "${!selected[@]}"; do
-  [ "${selected[$suite_n]}" = orch_test.sh ] && start_order+=("$suite_n")
-done
-for suite_n in "${start_order[@]}"; do
+# its slot, then orch_test.sh with none (the order is test_jobs_start_order's);
+# pids and the report stay in selection order.
+test_jobs_start_order "${selected[@]}"
+for suite_n in "${TEST_JOBS_START_ORDER[@]}"; do
   suite="${selected[$suite_n]}"
   if [ "$suite" = orch_test.sh ] && [ -n "$only" ]; then
-    ORCH_TEST_ONLY="$only" test_jobs_suite_start "$tmp/$suite" bash "$dir/$suite"
+    ORCH_TEST_ONLY="$only" test_jobs_suite_start bash "$dir/$suite" >"$tmp/$suite"
   elif [ "$suite" = docs_lint.sh ]; then
     unset ORCH_TEST_ONLY
     test_jobs_slot_wait
-    DOCS_LINT_BASE="$merge_base" test_jobs_suite_start "$tmp/$suite" bash "$dir/$suite"
+    DOCS_LINT_BASE="$merge_base" test_jobs_suite_start bash "$dir/$suite" >"$tmp/$suite"
   else
     unset ORCH_TEST_ONLY
     [ "$suite" = orch_test.sh ] || test_jobs_slot_wait
-    test_jobs_suite_start "$tmp/$suite" bash "$dir/$suite"
+    test_jobs_suite_start bash "$dir/$suite" >"$tmp/$suite"
   fi
   pids[suite_n]="$TEST_JOBS_SUITE_PID"
 done

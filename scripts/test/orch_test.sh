@@ -494,7 +494,8 @@ if [ "$orch_jobs" -eq 1 ]; then
   # One shell, one slot for the whole run; the runners its sections start
   # run under it.
   test_jobs_slot_wait
-  [ -z "$TEST_JOBS_SLOT_FD" ] || export ORCH_TEST_POOL_HELD="$TEST_JOBS_POOL"
+  test_jobs_held_marker
+  export ORCH_TEST_POOL_HELD="$TEST_JOBS_HELD"
   # The slot stays with this shell, not with what its sections leave running.
   test_jobs_slot_release "$$"
   tally_init
@@ -570,10 +571,9 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     orch_k=$((orch_order[orch_started] - 1))
     orch_pos="${orch_sections[$orch_k]}"
     # A child of a slot marks its pool; an unpooled run passes its marker on.
-    orch_held="$TEST_JOBS_POOL"
-    [ -n "$TEST_JOBS_SLOT_FD" ] || orch_held="${ORCH_TEST_POOL_HELD:-}"
+    test_jobs_held_marker
     ORCH_TEST_CHILD_SEED="$orch_seed_dir" ORCH_TEST_CHILD_SECTION="$orch_pos" ORCH_TEST_CHILD_COUNTS="$orch_buf/$orch_pos.counts" \
-      ORCH_TEST_CHILD_TIMES="${orch_durations_out:+$orch_buf/$orch_pos.times}" ORCH_TEST_JOBS=1 ORCH_TEST_POOL_HELD="$orch_held" \
+      ORCH_TEST_CHILD_TIMES="${orch_durations_out:+$orch_buf/$orch_pos.times}" ORCH_TEST_JOBS=1 ORCH_TEST_POOL_HELD="$TEST_JOBS_HELD" \
       test_jobs_job bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" 2>"$orch_buf/$orch_pos.err" &
     orch_pids[orch_k]=$!
     orch_starts[orch_k]=$SECONDS
