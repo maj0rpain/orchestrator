@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.2
+
+Name `scripts/orch.sh` and `scripts/test/orch/harness.sh` by their repo-relative paths in CLAUDE.md and CONTRIBUTING.md.
+
 ## 6.8.1
 
 Restore the role-name list (IMPLEMENTER, LENS, REVIEWER, FIXER, CLOSER, RESOLVER, AUDITOR) to the autopilot container entrypoint's header comment, which a rewrite of the setting-variable description had dropped.
