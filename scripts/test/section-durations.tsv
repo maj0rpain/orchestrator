@@ -84,7 +84,7 @@
 28	22	autopilot candidates	8592ae15d07de5fdedc7f071630838ec706c1f4d
 7	7	autopilot answer: no repo (#3050)	43b2e7d2c6f7ae2f2e566aafa0fd64850f14e34a
 4	5	autopilot session ops read the issue in one jq	c951be202d457a4ea4c00d130cfba0b2f8ae5aeb
-11	12	base	57ecdb1a5a0345f71d06015c379e962ff1d3fc4f
+15	13	base	1d30c92ace82dbeb31bd2bb0af57badfdbedaf1c
 37	38	a flow's base branch	45475caadc481a9fbcda51773787f44333982e42
 3	4	base set on a truncated state.json (#1929)	de4767097a86d163c76e27f57e97f2f368040804
 23	18	branch create	5dc2fd66c97350a6d7b0913facf3518aef7ef412
