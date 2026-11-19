@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.12
+
+Correct stale doc comments about the gh capture pair, the gh guard's memo and `gh_lines_read`'s prior art, and the matching CONTRIBUTING.md sentence. No behaviour changes.
+
 ## 6.8.11
 
 Reword the Layout map, the Testing section and three script headers that had drifted from the code they describe: the Lines fate entry, the job helpers and test-tree reader rows and headers, and the job pool sentence. Docs and comments only.
