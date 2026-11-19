@@ -321,15 +321,34 @@ for f in absent invalid array null; do
 status 0"
 done
 fs_jq_usage_error_bin="$(fails_bin jq '*' 2 'jq: usage error')"
-fs_tmpdir="$(mktemp -d)"
-assert_eq "flow_state_get_many returns 1 when jq exits 2, passing its text through and leaving TMPDIR empty" \
-  "$(fs_run "PATH='$fs_jq_usage_error_bin':\$PATH; a=keep; TMPDIR='$fs_tmpdir' flow_state_get_many many.json a=slug; echo \"rc=\$? \$a\"; ls -A '$fs_tmpdir'")" "jq: usage error
+assert_eq "flow_state_get_many returns 1 when jq exits 2, passing its text through" \
+  "$(fs_run "PATH='$fs_jq_usage_error_bin':\$PATH; a=keep; flow_state_get_many many.json a=slug; echo \"rc=\$? \$a\"")" "jq: usage error
 rc=1 keep
 status 0"
-assert_eq "flow_state_get_many returns 1 when mktemp exits 3, assigning nothing" \
-  "$(fs_run "PATH='$(fails_bin mktemp '*' 3)':\$PATH; a=keep; flow_state_get_many many.json a=slug; echo \"rc=\$? \$a\"")" "rc=1 keep
+# A fake jq writing records by hand: every value but no sentinel, a wrong
+# sentinel, and a record after the sentinel are each a failed read.
+for fs_fake in 'nosentinel|s\0' 'wrongsentinel|s\0bogus\0' 'trailing|s\0flow-state-end\0extra\0'; do
+  fs_fakebin="$(mktemp -d)"
+  printf '#!/bin/sh\nprintf "%s"\n' "${fs_fake#*|}" >"$fs_fakebin/jq"
+  chmod +x "$fs_fakebin/jq"
+  assert_eq "flow_state_get_many returns 1, assigning nothing, on a jq giving ${fs_fake%%|*}" \
+    "$(fs_run "PATH='$fs_fakebin':\$PATH; a=keep; flow_state_get_many many.json a=slug; echo \"rc=\$? \$a\"")" "rc=1 keep
 status 0"
-rm -rf "$fs_tmpdir"
+  rm -rf "$fs_fakebin"
+done
+printf '{"slug":"s"} trailing' >"$fs_dir/trailing.json"
+: >"$fs_dir/empty.json"
+printf '{"slug":"s"' >"$fs_dir/truncated.json"
+for f in trailing empty truncated; do
+  assert_eq "flow_state_get_many on a $f file returns 1, assigning nothing" \
+    "$(fs_run "a=keep; flow_state_get_many $f.json a=slug 2>/dev/null; echo \"rc=\$? \$a\"")" "rc=1 keep
+status 0"
+done
+fs_mktempbin="$(counting_bin mktemp)"
+fs_rmbin="$(counting_bin rm)"
+fs_run "PATH=$fs_mktempbin:$fs_rmbin:\$PATH; flow_state_get_many many.json a=slug b=issue" >/dev/null
+assert_eq "flow_state_get_many starts no mktemp" "$(counting_starts "$fs_mktempbin" mktemp)" "0"
+assert_eq "and no rm" "$(counting_starts "$fs_rmbin" rm)" "0"
 fs_jqbin="$(counting_bin jq)"
 fs_run "PATH=$fs_jqbin:\$PATH; flow_state_get_many many.json a=slug b=issue c=phase d=pr e=budget" >/dev/null
 assert_eq "a five-key read starts exactly one jq" "$(counting_starts "$fs_jqbin" jq)" "1"
@@ -582,10 +601,15 @@ assert_eq "require_issue assigns the issue" "$out" "7"
 out="$(PATH="$rs_jq:$PATH" sourced_orch state_get_in "$rs_file" issue 2>&1)"
 assert_eq "state_get_in reads a key" "$out" "7"
 assert_eq "state_get_in starts exactly one jq" "$(counting_starts "$rs_jq" jq)" "1"
-rs_nomktemp="$(mktemp -d)"
-writeln '#!/bin/sh' 'exit 1' >"$rs_nomktemp/mktemp"
-chmod +x "$rs_nomktemp/mktemp"
-out="$(PATH="$rs_nomktemp:$PATH" sourced_orch state_get_in "$rs_file" issue 2>&1)"; st=$?
+rs_mktempbin="$(counting_bin mktemp)"
+rs_rmbin="$(counting_bin rm)"
+out="$(PATH="$rs_mktempbin:$rs_rmbin:$PATH" sourced_orch state_get_in "$rs_file" issue 2>&1)"
+assert_eq "state_get_in reads a key byte for byte without a mktemp" "$out$(counting_starts "$rs_mktempbin" mktemp)" "70"
+assert_eq "state_get_in starts no rm" "$(counting_starts "$rs_rmbin" rm)" "0"
+rs_nosentinel="$(mktemp -d)"
+printf '#!/bin/sh\nprintf "7\\0"\n' >"$rs_nosentinel/jq"
+chmod +x "$rs_nosentinel/jq"
+out="$(PATH="$rs_nosentinel:$PATH" sourced_orch state_get_in "$rs_file" issue 2>&1)"; st=$?
 assert_status "state_get_in of a failed read on a readable file returns non-zero" "$st" 1
 assert_eq "printing nothing" "$out" ""
 out="$(sourced_orch flow_holding_phase nobranch 2>&1)"; st=$?

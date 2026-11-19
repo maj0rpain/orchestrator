@@ -332,11 +332,11 @@
 16	17	the state writer accepts exactly the table's phases	8483d2441e21e1e5f965968522b0c3e00737359d
 7	8	state.json schema	425162b3d7cb59537674814f30ff0da8c11d57c4
 4	5	state set on a corrupt state.json	0813b93dd6fb8875d3936903ca0134a8792b0b9e
-27	29	the Flow state module, sourced alone	d5092a6f188e3ca5aef3a75f6ab6e4e6a960bc01
+36	34	the Flow state module, sourced alone	77a3e4a47d7a1d5a8abc46304c17c71bc4e45932
 4	4	commands on a truncated state.json (#1929)	13c01774543bda78ec2ac6965ee2467a5c58787b
 7	7	the shared and own-checkout readers on a truncated state.json	84f251301621e7e0eb35e16ed869c67daa50b697
 7	8	state set with a failed write (#1931)	277ecff0e3af2ccabe12e9fd2aebcc95a83b9bc3
-17	19	the entry read and the required-field helpers	421a88c5d4ef5960e3bcb0921ecf3a81e02d5083
+22	19	the entry read and the required-field helpers	df336df1c6caa27f9d0cf1b601d1334814845215
 5	6	review_terminal_record fallback reads once	7f3fae7b01b9f68087b38c343c292315a4f86624
 44	47	ticket-worktree (#619)	fbb26a8bf6a99557b7ad9346478c9677ccb74b25
 1	1	a ticket branch has no upstream (#1152)	bbc5298d4013eb4f017ecb7f6c59509725053f88

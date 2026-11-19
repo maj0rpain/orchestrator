@@ -48,7 +48,8 @@ state_get() {
 # key). A failed read tells the causes apart, readability first: an unreadable
 # <file> returns status 2 and prints nothing - no jq text, so a caller
 # scanning other checkouts can skip it, a key outside the table included - and
-# a key outside the table beside a readable file dies "unknown state key".
+# a key outside the table beside a readable file dies "unknown state key"; a
+# failed read on a readable file returns 1 and prints nothing.
 state_get_in() {
   local __sgi_v __sgi_rc
   flow_state_get_many "$1" __sgi_v="$2" 2>/dev/null && {
