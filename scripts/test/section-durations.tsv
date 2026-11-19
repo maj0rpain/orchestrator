@@ -366,7 +366,7 @@
 0	1	verification run in help and the CLI conventions	a99e8bc67b95c57562d13f68245e5c6c30dfdb5c
 99	11	wait: a call's block is wall time	db923f27504e50d0a04527b359feb487abb3665d
 882	983	hooks_test.sh	8dec8318df78d1487d2d11c16c6ac962831bc14c
-170	132	docs_lint.sh	17128733037977453e699d610dac2cf4ddb67591
+160	129	docs_lint.sh	a1fe6f2bdd1e9492863752105797b3f0639ce951
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 8	8	autopilot_up_test.sh	25eb01b693309e8b681fe96ca4c386c741b9ecd8

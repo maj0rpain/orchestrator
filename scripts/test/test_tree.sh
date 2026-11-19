@@ -143,7 +143,7 @@ ledger_fingerprints() {
 # of it but orch_test.sh, and prints ledger_fingerprints of <test dir> and
 # those suites. A caller that wants LEDGER_OTHERS calls it with no pipe or
 # command substitution. It returns 1 when suites_read fails, SUITES_ERR then
-# holding its message, else ledger_fingerprints's status.
+# holding its message, 2 when ledger_fingerprints fails, and 0 otherwise.
 ledger_fingerprints_all() {
   local suite
   suites_read "$1/all.sh" "$1" || return 1
@@ -151,7 +151,7 @@ ledger_fingerprints_all() {
   for suite in "${SUITES[@]}"; do
     [ "$suite" = orch_test.sh ] || LEDGER_OTHERS+=("$suite")
   done
-  ledger_fingerprints "$1" ${LEDGER_OTHERS[@]+"${LEDGER_OTHERS[@]}"}
+  ledger_fingerprints "$1" ${LEDGER_OTHERS[@]+"${LEDGER_OTHERS[@]}"} || return 2
 }
 
 # The function titles_regex prints, from section titles on stdin, one per line,

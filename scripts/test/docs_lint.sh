@@ -470,6 +470,10 @@ scan_ledger_fresh() {
     echo "scripts/test/all.sh: $SUITES_ERR"
     rm -f "$fps"
     return 0
+  elif [ "$st" -eq 2 ]; then
+    echo "$LEDGER_FILE: could not fingerprint the test text, so no line is judged"
+    rm -f "$fps"
+    return 0
   fi
   ledger_states "$fps" "$r/$LEDGER_FILE" | while IFS=$'\t' read -r t state n; do
     case "$state" in
@@ -4928,6 +4932,15 @@ out="$(scan_ledger_fresh "$fixture")"
 flags "a missing shellcheck line is flagged, naming the full refresh" \
   "$out" "no shellcheck line; run the full refresh (scripts/dev/section-durations.sh with no argument)"
 spares "a missing shellcheck line does not name --stale" "$out" 'shellcheck.*--stale'
+fixture="$(ledger_fixture)"
+out="$(ledger_fingerprints() { return 1; }; scan_ledger_fresh "$fixture")"
+assert_eq "a failure to fingerprint is one line naming the durations file" \
+  "$out" "$LEDGER_FILE: could not fingerprint the test text, so no line is judged"
+fixture="$(ledger_fixture)"
+printf '%s\n' 'suites=()' >"$fixture/scripts/test/all.sh"
+out="$(scan_ledger_fresh "$fixture")"
+flags "an empty suites list is reported as an all.sh line" "$out" "scripts/test/all.sh: "
+spares "an empty suites list is not a fingerprinting failure" "$out" 'fingerprint'
 # A ledger of many sections costs no more processes than one of three: the
 # counted commands are the ones the scan runs, at the docs lint seam.
 count_cmds=(awk git grep sort)
