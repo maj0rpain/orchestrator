@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.28
+
+The paste guard now allows when its size read or paste match fails, escapes its needle and apply literals the same under bash 3.2 and 5.2, and names its scan locals for what they hold.
+
 ## 6.8.27
 
 The Liveness module reads an issue's run and tick records without starting `cat`, and the run-record liveness helper is renamed `liveness_file_alive`. No behaviour changes.
