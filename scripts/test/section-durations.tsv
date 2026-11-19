@@ -357,7 +357,7 @@
 2	3	ticket merge beside a same-named tag (#2337)	64b469daf950986e38a72590124c5bd03441d1b3
 141	147	ticket reclaim (ADR-0054)	17ed22348527c35ead699f866b4bb1141afeec43
 1	2	ticket exists: no repo (#3050)	291d750cc4efbe9e118a0494a09f83666294d0d8
-22	22	trust module	b1d2d6781a564b604b5b40ac7393c4dcc3247003
+22	20	trust module	cce71cee320a9a9df12b5d2fe25e74e2f6089609
 48	7	verification run	60a21967681dc4d52f5e7454aaa13fb421327ec2
 216	20	verification run: the run key, stale runs, the ceiling	471d2e2e39b7b63f2840777531b346f7eab120a1
 0	1	verification run in help and the CLI conventions	bcef7e4ad67e97b98e872bc1de7a617d10a78253

@@ -66,10 +66,10 @@ fake_comment 8 someone "2026-09-02T10:00:00Z" "said by empty" ""
 printf '\n' >"$ORCH_GH_FAKE_STORE/issues/8/comments/2/association"
 "$ORCH" issue comments 8 "$tr_file" >/dev/null 2>&1
 # Saved now: tr_fetch below overwrites $tr_file with issue 7's fetch.
-tr_text="$(cat "$tr_file")"
+tr_case_text="$(cat "$tr_file")"
 for tr_a in owner ""; do
   tr_label="${tr_a:-empty}"
-  tr_kept=no; [[ "$tr_text" != *"said by $tr_label"* ]] || tr_kept=yes
+  tr_kept=no; [[ "$tr_case_text" != *"said by $tr_label"* ]] || tr_kept=yes
   tr_checked=no; [ -n "$(tr_fetch stranger "$tr_a")" ] || tr_checked=yes
   assert_eq "association '$tr_label': the filter and the issue check agree" "$tr_kept" "$tr_checked"
   assert_eq "association '$tr_label' is not trusted" "$tr_kept" no
