@@ -34,7 +34,8 @@ wait_elapsed() {
   awk -v w="$(( wall - $1 ))" -v s="$2" 'BEGIN { print (w > s) ? w : s }'
 }
 
-# The wait's state, held here alone (wait_open sets it, wait_tick advances it):
+# The wait's state, named here. wait_open and wait_provisional_open set it,
+# wait_tick advances it, and `review ci --no-wait` sets WAIT_START alone:
 #   WAIT_FILE     the stored total's file
 #   WAIT_START    the epoch second the wait's clock counts from: the first
 #                 call's, or, under `review ci --no-wait`, which opens none,

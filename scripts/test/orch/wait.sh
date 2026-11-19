@@ -83,8 +83,8 @@ rm -f "$wt_wf" "$wt_wf.limited"
 rm -rf "${ORCH_DIR_NAME:?}/wait"
 wt_lens="$(mktemp -d)"
 wt_run() {
-  ORCH_SPEC_REVIEW_WAIT_TIMEOUT=100 ORCH_SPEC_REVIEW_WAIT_INTERVAL=1 \
-    ORCH_WAIT_BLOCK=1 "$ORCH" spec-review wait "$wt_lens" fidelity >/dev/null 2>&1
+  ORCH_SPEC_REVIEW_WAIT_TIMEOUT=100 ORCH_SPEC_REVIEW_WAIT_INTERVAL=0.1 \
+    ORCH_WAIT_BLOCK=0.3 "$ORCH" spec-review wait "$wt_lens" fidelity >/dev/null 2>&1
 }
 wt_run; st=$?
 assert_status "a first spec-review wait call exits 75" "$st" 75
