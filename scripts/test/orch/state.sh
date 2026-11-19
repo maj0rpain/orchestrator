@@ -605,6 +605,19 @@ chmod +x "$rs_nosentinel/jq"
 out="$(PATH="$rs_nosentinel:$PATH" sourced_orch state_get_in "$rs_file" issue 2>&1)"; st=$?
 assert_status "state_get_in of a failed read on a readable file returns non-zero" "$st" 1
 assert_eq "printing nothing" "$out" ""
+rs_gi_dir="$(mktemp -d)"
+printf '{"slug":"a\\tb\\nc\\\\d"}' >"$rs_gi_dir/bytes.json"
+out="$(sourced_orch state_get_in "$rs_gi_dir/bytes.json" slug | od -An -c | tr -s ' ')"
+assert_eq "state_get_in reads tab, newline and backslash byte for byte" "$out" " a \\t b \\n c \\ d \\n"
+printf 'null' >"$rs_gi_dir/null.json"
+printf '{"slug":"s"} trailing' >"$rs_gi_dir/trailing.json"
+: >"$rs_gi_dir/empty.json"
+for f in null trailing empty; do
+  out="$(sourced_orch state_get_in "$rs_gi_dir/$f.json" slug 2>&1)"; st=$?
+  assert_status "state_get_in on a $f file returns 2" "$st" 2
+  assert_eq "state_get_in on a $f file prints nothing" "$out" ""
+done
+rm -rf "$rs_gi_dir"
 out="$(sourced_orch flow_holding_phase nobranch 2>&1)"; st=$?
 assert_status "flow_holding_phase of a branch the flow does not hold returns 1" "$st" 1
 : >"$rs_jq/jq.log"
