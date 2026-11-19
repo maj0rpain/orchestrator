@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.15
+
+The CHANGELOG's 5.2.72, 5.3.3 and 6.0.1 entries now name the caller-visible changes they hid: the option after a lone `-` script (`python3 - --help`) the Bash hook newly denies, the two new failures of `issue fetch --json`, and `ticket-worktree remove <n>` dying where git's record of the checkouts cannot be read. No behaviour changes.
+
 ## 6.8.14
 
 The glossary's Driver loop and Driver entries now say a stop report is not saved and its ticket neither merged nor closed, and a new Stop report entry defines the term.
