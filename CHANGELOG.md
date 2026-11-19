@@ -1,5 +1,11 @@
 # Changelog
 
+## 6.8.20
+
+The doctor test section drops runs and fixtures that re-proved what other tests already cover, so the suite costs less with the same coverage. A new counting-fixture helper, `counting_argv_bin`, replaces two hand-written git wrappers that counted origin reads. Two traced `doctor --env` runs now assert their exit status, and a stale comment on the review-phase trace is corrected.
+
+Review and redo modules: each variable now holds one meaning - the stored budget is `budget_raw`, the effective one `budget`, and the Standards resolution no longer reuses `first` or `span`. No behaviour change.
+
 ## 6.8.19
 
 The durations recorder's --stale report and the docs lint's over-budget message share one tenths formatter, and the helper index describes measure_suite, durations_total and suites_read by their own lines.

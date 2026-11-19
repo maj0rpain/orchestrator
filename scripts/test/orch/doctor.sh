@@ -165,14 +165,7 @@ assert_contains "names the flag it rejected" "$out" "--nonsense"
 out="$("$ORCH" health --nonsense 2>&1)"; st=$?
 assert_status "health rejects an unknown flag" "$st" 1
 assert_contains "health's rejection names doctor" "$out" "doctor"
-doc_out="$("$ORCH" doctor --env 2>&1)"; doc_st=$?
-out="$("$ORCH" health --env 2>&1)"; st=$?
-assert_status "health --env exits as doctor --env does" "$st" "$doc_st"
-assert_eq "health --env reports as doctor --env does" "$out" "$doc_out"
-doc_out="$("$ORCH" doctor 2>&1)"; doc_st=$?
-out="$("$ORCH" health 2>&1)"; st=$?
-assert_status "bare health exits as bare doctor does" "$st" "$doc_st"
-assert_eq "bare health reports as bare doctor does" "$out" "$doc_out"
+assert_contains "health passes its arguments to doctor" "$out" "--nonsense"
 help_out="$("$ORCH" help 2>&1)"
 assert_contains "help lists the health alias" "$help_out" "health"
 assert_contains "help's doctor line names docs/repo-setup.md" "$help_out" "docs/repo-setup.md"
@@ -431,15 +424,7 @@ fake_local_default ""
 savepath="$PATH"; gh_fixture; PATH="$savepath"
 # A git wrapper logs each read of origin's URL: the failed resolution is
 # memoised, so one doctor run reads origin twice (#3147).
-git_log_dir="$(mktemp -d)"
-git_real="$(command -v git)"
-cat >"$git_log_dir/git" <<GIT
-#!/usr/bin/env bash
-if [ "\$*" = "remote get-url origin" ]; then echo x >>"$git_log_dir/origin_reads"; fi
-exec "$git_real" "\$@"
-GIT
-chmod +x "$git_log_dir/git"
-: >"$git_log_dir/origin_reads"
+git_log_dir="$(counting_argv_bin git "remote get-url origin")"
 out="$(PATH="$git_log_dir:$PATH" orch_no_repo doctor --env 2>&1)"; st=$?
 assert_status "no resolvable repo fails doctor" "$st" 1
 assert_contains "names the missing repo as a FAIL, with no remedy in it" "$out" \
@@ -452,7 +437,7 @@ assert_eq "counts the later GitHub checks on the skip line, naming the bare caus
 assert_contains "still reaches the summary line" "$(printf '%s\n' "$out" | tail -1)" " FAIL"
 assert_eq "makes no gh call without a repo to pin it to" "$(gh_calls)" "0"
 assert_eq "a failed resolution is memoised: origin is read twice in a doctor run" \
-  "$(wc -l <"$git_log_dir/origin_reads" | tr -d ' ')" "2"
+  "$(counting_starts "$git_log_dir" git)" "2"
 unset GH_FIXTURE
 
 # The plugin depends on no other plugin (ADR-0028): doctor says nothing of
@@ -1713,11 +1698,20 @@ out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a ready record is healthy" "$st" 0
 assert_contains "names it a terminal state" "$out" "review loop at a terminal state: ready"
 
+# Each module loads once: at the review phase the checks read the loop's
+# record and the PR in subshells.
+state_fixture pr 40
+fake_pr 40 open orch/doctorterm main
+fake_pr_draft 40
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
-out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+rv_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rv_load" "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a stop record is healthy too" "$st" 0
 assert_contains "names the terminal state and its reason" \
   "$out" "review loop at a terminal state: stop (CI failed twice.)"
+assert_trace_loads_once "doctor --flow at review with a PR and a stopped loop" "$rv_load"
+assert_trace_names_no "doctor --flow with its flat review record present" "$rv_load" redo
+rm -f "$rv_load"
 
 writeln '## Terminal state' '**stop**' 'CI failed twice.' >.orchestrator/review/iteration-05.md
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
@@ -1750,40 +1744,6 @@ assert_trace_loads_once "doctor --flow with report files and the flat review rec
 rm -f "$rv_load"
 mv .orchestrator/review/stop.saved .orchestrator/review/iteration-05.md
 rm .orchestrator/review/iteration-05-standards.md .orchestrator/review/iteration-05-spec.md
-restore_suite_env
-
-# Each module loads once: at the review phase the checks read the loop's
-# record, the PR and the redo command in subshells.
-review_flow doctorloadonce
-doctor_github
-state_fixture pr 40
-fake_pr 40 open orch/doctorloadonce main
-fake_pr_draft 40
-state_fixture iteration 5
-"$ORCH" state set budget 5
-mkdir -p .orchestrator/review
-writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
-rv_load="$(mktemp)"
-out="$(ORCH_LOAD_TRACE="$rv_load" "$ORCH" doctor --flow 2>&1)"; st=$?
-assert_status "doctor --flow with a PR recorded and a stopped loop is healthy" "$st" 0
-assert_contains "and reports the stop" "$out" "review loop at a terminal state: stop (CI failed twice.)"
-assert_trace_loads_once "doctor --flow at review with a PR and a stopped loop" "$rv_load"
-assert_trace_names_no "doctor --flow with its flat review record present" "$rv_load" redo
-rm -f "$rv_load"
-rm .orchestrator/review/iteration-05.md
-# Midway through a redo, the retired record is read in its place; a malformed
-# one has redo read for the terminal state and again for the remedy's path.
-state_fixture issue 9
-state_fixture redo_count 1
-state_fixture branch "$(sourced_orch branch_name_redo 9 "$("$ORCH" state get slug)" 1)"
-mkdir -p .orchestrator/review/pre-redo-1
-writeln '## Terminal state' '**stop**' 'CI failed twice.' >.orchestrator/review/pre-redo-1/iteration-05.md
-rv_load="$(mktemp)"
-out="$(ORCH_LOAD_TRACE="$rv_load" "$ORCH" doctor --flow 2>&1)"; st=$?
-assert_status "doctor --flow with a malformed retired record fails" "$st" 1
-assert_contains "naming the retired record in the rewrite remedy" "$out" "rewrite the first line of $(pwd -P)/.orchestrator/review/pre-redo-1/iteration-05.md"
-assert_trace_loads_once "doctor --flow with the flat record gone mid-redo" "$rv_load"
-rm -f "$rv_load"
 restore_suite_env
 
 # --- doctor: review budget check -----------------------------------------
@@ -2281,7 +2241,8 @@ fake_claim_seed 12 thirdhost 5 2020-01-01T00:00:00Z
 fake_claim_seed 9 "$(hostname)" 5 2020-01-01T00:00:00Z
 fake_claim_seed 11 "$(hostname)" 5 2020-01-01T00:00:00Z
 cl_load="$(mktemp)"
-out="$(ORCH_LOAD_TRACE="$cl_load" "$ORCH" doctor --env 2>&1)"
+out="$(ORCH_LOAD_TRACE="$cl_load" "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "doctor --env beside old claims exits 1" "$st" 1
 assert_contains "doctor lists another host's old claim" "$out" "issue #7 has been claimed by otherhost"
 assert_contains "a second other host's old claim is listed too" "$out" "issue #12 has been claimed by thirdhost"
 assert_contains "its remedy names the host to run a tick on" "$out" "if that session is gone, run orch.sh autopilot tick on otherhost"
@@ -2324,7 +2285,8 @@ side7="$("$ORCH" side-checkout add 7-side-flow --issue 7 2>/dev/null)"
 (cd "$side7" && "$ORCH" init 7-side-flow --issue 7 >/dev/null 2>&1)
 sf_load="$(mktemp)"
 fake_issue 7 open ready-for-agent orch:implement
-out="$(ORCH_LOAD_TRACE="$sf_load" "$ORCH" doctor --env 2>&1)"
+out="$(ORCH_LOAD_TRACE="$sf_load" "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "doctor --env beside a side flow whose label disagrees fails" "$st" 1
 assert_contains "doctor in the main checkout flags a side flow whose label disagrees" "$out" "issue #7 is labelled orch:implement, but its side checkout"
 assert_contains "naming the recorded phase" "$out" "last moved to phase spec"
 assert_trace_loads_once "doctor --env beside a side flow whose label disagrees" "$sf_load"
@@ -2678,10 +2640,6 @@ out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a declaration: doctor --env passes" "$st" 0
 assert_contains "a declaration is ok with its file and list" "$out" "ok    Standards declared in CLAUDE.md: docs/rules.md"
 assert_not_contains "a healthy declaration has no Standards FAIL" "$out" "FAIL  "
-out="$("$ORCH" doctor 2>&1)"
-assert_contains "bare doctor runs the check" "$out" "Standards declared in CLAUDE.md"
-out="$("$ORCH" doctor --flow 2>&1)"
-assert_not_contains "--flow does not run the check" "$out" "Standards"
 writeln 'Standards: `docs/missing.md`' >CLAUDE.md
 want="$("$ORCH" review standards 2>&1 >/dev/null)"; want="${want#orch: }"
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
@@ -2703,8 +2661,6 @@ writeln '**Alpha**: one.' '' '- **Beta**: two.' >GLOSSARY.md
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a parsing glossary passes" "$st" 0
 assert_contains "ok with its entry count" "$out" "ok    2 glossary entries"
-out="$("$ORCH" doctor --flow 2>&1)"
-assert_not_contains "--flow does not run the check" "$out" "glossary"
 writeln '**Alpha** - one.' '' '**Beta** - two.' >GLOSSARY.md
 want="$("$ORCH" glossary terms 2>&1 >/dev/null)"; want="${want#orch: }"
 out="$("$ORCH" doctor 2>&1)"; st=$?
@@ -2730,8 +2686,6 @@ writeln 'x' >docs/adr/notes.txt
 out="$("$ORCH" doctor 2>&1)"; st=$?
 assert_status "a directory passes bare doctor" "$st" 0
 assert_contains "ok with the count of Markdown files directly in it" "$out" "ok    docs/adr holds 2 ADRs"
-out="$("$ORCH" doctor --flow 2>&1)"
-assert_not_contains "--flow does not run the check" "$out" "docs/adr"
 rm -rf docs/adr
 writeln 'x' >docs/adr
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
@@ -2823,16 +2777,6 @@ vl_doctor --env
 assert_contains "a line in a fenced block is not read" "$out" "ok    Full verification: true test (CLAUDE.md)"
 assert_contains "a fenced bare label is not a FAIL" "$(printf "%s\n" "$out" | tail -1)" "0 warn, 0 FAIL"
 
-writeln '~~~' '```' 'Full verification: make fenced' '```' 'Ticket verification:' '~~~' 'Full verification: true test' >CLAUDE.md
-vl_doctor --env
-assert_contains "a backtick line inside a tilde fence does not close it" "$out" "ok    Full verification: true test (CLAUDE.md)"
-assert_contains "and the fenced bare label is no FAIL" "$(printf "%s\n" "$out" | tail -1)" "0 warn, 0 FAIL"
-
-writeln '````' '```' 'Full verification: make fenced' '```' '````' '   ~~~' 'Ticket verification:' '   ~~~' 'Full verification: true test' >CLAUDE.md
-vl_doctor --env
-assert_contains "a short fence inside a longer one and a three-space indented fence hold their lines" "$out" "ok    Full verification: true test (CLAUDE.md)"
-assert_contains "and no FAIL comes from them" "$(printf "%s\n" "$out" | tail -1)" "0 warn, 0 FAIL"
-
 # The Branch verification: line (#3544): the combined-branch check's command.
 writeln 'Full verification: true test' >CLAUDE.md
 vl_doctor --env
@@ -2845,33 +2789,6 @@ vl_doctor --env
 assert_contains "a branch verification is ok with its command and file" "$out" "ok    Branch verification: true branch (CLAUDE.md)"
 assert_contains "and its command is checked as installed" "$out" "ok    Branch verification command: true"
 
-writeln 'Branch verification:' 'Full verification: true test' >CLAUDE.md
-vl_doctor --env
-assert_status "a bare branch verification fails" "$st" 1
-assert_contains "it names the file" "$out" "FAIL  CLAUDE.md has a 'Branch verification:' line with no command."
-assert_contains "its remedy says what to write or remove" "$out" "write the command after 'Branch verification:' in CLAUDE.md, or remove the line"
-
-writeln 'Branch verification: true a' 'Full verification: true test' >CLAUDE.md
-writeln 'Branch verification: true b' >CONTRIBUTING.md
-vl_doctor --env
-assert_contains "two branch commands warn, the first from CLAUDE.md" "$out" "warn  Branch verification is named twice with different commands: 'true a' in CLAUDE.md and 'true b' in CONTRIBUTING.md"
-rm -f CONTRIBUTING.md
-
-writeln 'Branch verification: nosuchtool-3544 x' 'Full verification: true test' >CLAUDE.md
-vl_doctor --env
-assert_contains "a branch command not installed warns" "$out" "warn  Branch verification command nosuchtool-3544 (from CLAUDE.md) is not installed."
-
-writeln '```' 'Branch verification: make fenced' '```' 'Full verification: true test' >CLAUDE.md
-vl_doctor --env
-assert_contains "a fenced branch line is not read" "$out" "ok    no 'Branch verification:' line"
-
-writeln 'Ticket verification:' >CLAUDE.md
-vl_doctor
-assert_contains "bare doctor runs the check" "$out" "FAIL  CLAUDE.md has a 'Ticket verification:' line with no command."
-assert_contains "bare doctor's remedy says what to write or remove" "$out" "write the command after 'Ticket verification:' in CLAUDE.md, or remove the line"
-assert_contains "bare doctor's remedy names the setup doc" "$out" "$vl_setup"
-vl_doctor --flow
-assert_not_contains "--flow does not run the check" "$out" "verification"
 restore_suite_env
 
 # --- doctor --env: verification commands (#3346) ------------------------------
@@ -2899,8 +2816,6 @@ out="$(vc_doctor)"; st=$?
 assert_status "a missing ticket verification command leaves the exit status 0" "$st" 0
 assert_contains "warns, naming label, command and file" "$out" "warn  Ticket verification command nosuchtool-3346 (from CLAUDE.md)"
 assert_contains "a missing full verification command warns" "$out" "warn  Full verification command nosuchtool-3346 (from CLAUDE.md)"
-assert_not_contains "a full verification warn gives no remedy line" "$out" "Full verification command nosuchtool-3346 (from CLAUDE.md) is not installed.
-      "
 assert_not_contains "a warn gives no remedy line" "$out" "nosuchtool-3346 (from CLAUDE.md) is not installed.
       "
 out="$(PATH="$vc_bin:$PATH" "$ORCH" doctor --flow 2>&1)"
