@@ -4,7 +4,7 @@
 9	5	quiet mode (ORCH_TEST_QUIET, #614)	fe8a8a94caef1de7a5d0e0aa6e7b0481014534bf
 304	56	the parallel runner (ORCH_TEST_JOBS, #780)	c229e4950ab07deff911fb02b6d5493fe3ca3b78
 17	9	the parallel runner's start order (#2857)	99486a03af20356a33042d340887e03d858bc799
-131	41	the shard setting (#2859)	b151c3b638e093dad32fdaa7113ad3e0f6dded05
+102	51	the shard setting (#2859)	98ba160dccef2ca6f95500b158b2b542366162d9
 11	6	the seeded start (stub cache)	a47a33ec2b4f96a52b9b0525c635630459ec2d22
 357	154	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	98152c2acc7f515e8548b2d7f4ec03eabc89eccf
 4	2	assertions in a subshell (#1904)	a9486bddc95711ae74421ea25a19a3e113e3c64a
@@ -33,7 +33,7 @@
 0	0	the background child start (#3025)	f220e015537065a2c163be79d07de2b762404f7e
 2	1	the suite start (#3582)	2bbcc72545bb8c86426bb97cbb0200ce5cada1da
 2	3	the counting fixture's stdin counter (#3434)	f29dc9334a3bfe8fd184f087a5b2aafdd8ac7a1d
-63	33	affected.sh, the ticket verification (#2023)	fffaf872132f1df75c3832750a1c24b201f24b77
+50	44	affected.sh, the ticket verification (#2023)	899241a6f644b4bbcec2b6dafd3489c79ed6720c
 1	1	the row rule (#3549)	d5025ef93fc07a442c5bbb184cebe1cf567c2cfc
 4	4	the shared test support, function by function (#3550)	a8668a1f16717d12d05ad6ab2787f81d50be6898
 2	2	the gh fake, operation by operation (#3551)	1ce7bff3167463ac98f8d773be5eadb253da52f3
@@ -169,7 +169,7 @@
 1	1	label_listed	56177c00bcc468d90ca6e59cbb9a5064b76a3c0b
 19	21	gh failure verb and readers (#1022)	93ed95ee34e426bcae583346b5fd33e7e92643fc
 4	4	verify_twice (#2658)	ebc9ff6baf1226bdf15c2acb47aa32db65757deb
-9	11	gh fake (#280)	3feb382cd0286cad32c7fa877c4a8f109df136c3
+9	11	gh fake (#280)	808a9e1d8c29a7d2b128752ffda60f90504ef603
 115	123	gh adapter contract (#280)	48e991187b762b12a4f0e536c19ac683adfe246f
 22	22	claim adapter operations (#1454)	434415cd39a7bb63f7146512c1dbdde13077c353
 2	3	label casing (#1943)	967a4a39f788b73ef75f50851a8a5e6a3aa92edb
