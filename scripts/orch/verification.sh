@@ -44,9 +44,9 @@ cmd_verification() {
   shift || true
   case "$op" in
     run)
-      [ $# -eq 1 ] && [ -n "$1" ] || die2 "usage: orch.sh verification run <command>"
+      [ $# -eq 1 ] && [ -n "$1" ] || die "usage: orch.sh verification run <command>"
       verification_run "$1" ;;
-    *) die2 "usage: orch.sh verification run <command>" ;;
+    *) die "usage: orch.sh verification run <command>" ;;
   esac
 }
 
@@ -137,10 +137,8 @@ verification_epoch_in() {
 # verification_mark <file>: records the current epoch second in <file> unless it
 # already holds one, so a grace is counted across calls, from the first.
 verification_mark() {
-  [ ! -f "$1" ] || return 0
-  if printf '%(%s)T\n' -1 >"$1.tmp" 2>/dev/null; then
-    mv -f "$1.tmp" "$1" 2>/dev/null || true
-  fi
+  [ ! -f "$1" ] && [ -d "${1%/*}" ] || return 0
+  file_write_atomic "$1" "$(printf '%(%s)T' -1)"$'\n' 2>/dev/null || true
 }
 
 # verification_wait_gone <pid> [<epoch>]: waits until ORCH_VERIFICATION_GRACE
@@ -213,6 +211,9 @@ verification_start() {
         echo "$?" >"$d/status.tmp"
         mv "$d/status.tmp" "$d/status"
       ) &
+      # The ceiling stop is inline, not verification_stop: the runner is a member
+      # of the group it stops, it has no call block to end a wait by, and it
+      # keeps no cross-call termed or killed marks.
       until [ -f "$d/status" ]; do
         if [ "$(( $(printf "%(%s)T" -1) - start ))" -ge "$limit" ]; then
           trap "" TERM
@@ -260,8 +261,8 @@ verification_deliver() {
       verification_wait_gone "$group" "$(verification_epoch_in "$d/killed")" || gone=""
     fi
   fi
-  cat "$d/out" || exit 1
-  cat "$d/err" >&2 || exit 1
+  cat "$d/out" || die "could not read $d/out"
+  cat "$d/err" >&2 || die "could not read $d/err"
   if [ -f "$d/overrun" ]; then
     if [ -z "$gone" ]; then
       warn "the run was still going after the ceiling of ${ceiling}s (orchestrator.verification.timeout) and its process group $group is left running - stop it by hand"
@@ -281,6 +282,14 @@ verification_deliver() {
 # status: it has a process record that is no longer alive, and no status.
 verification_died() {
   [ ! -f "$1/status" ] && [ -f "$1/pid" ] && ! liveness_record_alive "$(<"$1/pid")"
+}
+
+# verification_stoppable <dir>: whether the run in <dir> has a group to stop: no
+# status, a process record, and either termed (its leader may be dead, its group
+# still there) or a live leader.
+verification_stoppable() {
+  [ ! -f "$1/status" ] && [ -f "$1/pid" ] &&
+    { [ -f "$1/termed" ] || liveness_record_alive "$(<"$1/pid")"; }
 }
 
 # verification_run <command>: the verb's work.
@@ -317,8 +326,7 @@ verification_run() {
     fi
     # A TERMed run whose leader died still has its group to KILL: its record
     # says termed, whatever the liveness record says.
-    if [ -n "$stop" ] && [ ! -f "$d/status" ] && [ -f "$d/pid" ] &&
-       { [ -f "$d/termed" ] || liveness_record_alive "$(<"$d/pid")"; }; then
+    if [ -n "$stop" ] && verification_stoppable "$d"; then
       rec="$(<"$d/pid")"
       verification_stop "${rec%% *}" "$d" || die "the stale run of this command (process group ${rec%% *}) could not be stopped - stop it by hand"
     fi
@@ -327,9 +335,8 @@ verification_run() {
   if [ -z "$attached" ]; then
     printf '%s\n' "$ROOT" >"$d/root"
     printf '%s\n' "$id" >"$d/id"
-    printf '%s\n' "$state" >"$d/state.tmp"
     verification_start "$d" "$command" "$ceiling"
-    mv "$d/state.tmp" "$d/state"
+    file_write_atomic "$d/state" "$state"$'\n' || die "could not write the state of the run in $d"
   fi
   while [ ! -f "$d/status" ]; do
     if verification_died "$d"; then
