@@ -43,15 +43,29 @@ SHELL_CODE_AWK="$(<"$ROOT/scripts/test/shell_code.awk")" || SHELL_CODE_AWK=""
 [ -n "$SHELL_CODE_AWK" ] || {
   echo "helpers.sh: scripts/test/shell_code.awk is missing or empty" >&2; exit 1; }
 
-# index <path> <header>: the listing of one file. A line opens a definition
+# index <headers> <path>...: the listing of every <path>, in one awk. <headers>
+# is the files' `# <path>` header texts, tab-joined and ended by a tab, in the
+# same order. A line opens a definition
 # only at column 0 of a line that starts at top level, and a comment line
 # counts toward a description block only when it starts at top level too:
 # shell_code_line, from SHELL_CODE_AWK, says whether a line starts outside any
 # open quote, substitution, arithmetic or heredoc, so the scan keeps no state
-# of its own.
+# of its own. The comment-block state resets at each file's first line, and a
+# file with no line, of which awk reads no record, is still headed.
 index() {
-  awk -v header="$2" "$SHELL_CODE_AWK"'
-    BEGIN { print "# " header }
+  local headers="$1"
+  shift
+  awk -v headers="$headers" "$SHELL_CODE_AWK"'
+    BEGIN { split(headers, hdr, "\t"); nextf = 1 }
+    # head_upto(last): print the header of each file not yet headed, up to
+    # file number <last>, a blank line before each but the first.
+    function head_upto(last) {
+      while (nextf <= last) {
+        if (nextf > 1) print ""
+        print "# " hdr[nextf]
+        nextf++
+      }
+    }
     # describe(name): the first line of the comment block directly above, its
     # `#` and any `<name> <args>:` signature dropped - or the second line
     # of the block, where the signature filled the first; - when there is none.
@@ -70,6 +84,11 @@ index() {
       sub(/^[ \t]*#[ \t]*/, "", line)
       return line
     }
+    FNR == 1 {
+      for (fileno = nextf; fileno < ARGC && ARGV[fileno] != FILENAME; fileno++) ;
+      head_upto(fileno)
+      incomment = 0
+    }
     {
       shell_code_line($0)
       if (!sc_top) { incomment = 0; next }
@@ -84,11 +103,12 @@ index() {
       } else {
         incomment = 0
       }
-    }' "$1"
+    }
+    END { head_upto(ARGC - 1) }' "$@"
 }
 
 if [ -n "$file" ]; then
-  index "$file" "$file"
+  index "$file"$'\t' "$file"
   exit 0
 fi
 
@@ -99,9 +119,10 @@ else
   for f in "$ROOT"/scripts/orch/*.sh; do files+=("scripts/orch/${f##*/}"); done
 fi
 
-sep=""
+headers=""
+paths=()
 for rel in "${files[@]}"; do
-  printf '%s' "$sep"
-  index "$ROOT/$rel" "$rel"
-  sep=$'\n'
+  headers+="$rel"$'\t'
+  paths+=("$ROOT/$rel")
 done
+index "$headers" "${paths[@]}"
