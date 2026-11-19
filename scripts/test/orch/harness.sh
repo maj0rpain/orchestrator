@@ -4931,6 +4931,55 @@ af_git checkout -q -f feat
 af_git branch -q -D feat--t1 par orphan-par
 af_reset
 
+# With a merge in progress, the base's incoming commits count as part of the
+# base (#3796): only the branch's own change and the uncommitted resolution
+# select. The branch is behind origin/rel (the initial commit plus the branch
+# module change), changes a doc, and merges rel with --no-commit.
+af_reset
+af_git checkout -q -b behind "$af_c0"
+af_put docs/a.md changed
+af_git commit -qam doc
+af_git merge -q --no-commit --no-ff origin/rel >/dev/null 2>&1
+af_put scripts/orch/state.sh 'resolved=1'
+af_resolved="$af_gate,state,docs_lint.sh,scripts/orch/state.sh"
+assert_eq "a merge of the base in progress selects the branch's change and the resolution, not the base's incoming files" \
+  "$(af_plan origin/rel)" "$af_resolved"
+af_put scripts/dev/new.sh
+assert_eq "an untracked file in a merge in progress is selected too" \
+  "$(af_plan origin/rel)" "$af_gate,isolation,the parallel runner (#780),state,docs_lint.sh,scripts/dev/new.sh,scripts/orch/state.sh"
+rm -f "$af/scripts/dev/new.sh"
+assert_eq "--row is unchanged by a merge in progress" \
+  "$(cd "$af" && bash scripts/test/affected.sh --row scripts/orch/branch.sh)" "scripts/orch/branch.sh	named"
+af_git merge --abort
+af_git reset -q --hard
+af_git checkout -q -f feat
+af_git branch -q -D behind
+# The control: with no merge in progress, the selection is today's.
+af_git checkout -q -b behind "$af_c0"
+af_put docs/a.md changed
+af_git commit -qam doc
+assert_eq "with no merge in progress a branch behind its base selects its own change" \
+  "$(af_plan origin/rel)" "$af_gate,docs_lint.sh"
+# The ticket branch's second merge-base lookup: the merge brings in its parent.
+af_git checkout -q -f feat
+af_git branch -q -D behind
+af_git branch -q par "$(af_git rev-parse origin/rel)"
+af_git checkout -q -b feat--t1 "$af_c0"
+af_put docs/a.md changed
+af_git commit -qam doc
+af_git config branch.feat--t1.orchestrator-ticket-parent par
+af_git merge -q --no-commit --no-ff par >/dev/null 2>&1
+af_put scripts/orch/state.sh 'resolved=1'
+assert_eq "a ticket branch merging its parent selects the ticket's change and the resolution" \
+  "$(af_plan)" "$af_resolved"
+af_git merge --abort
+af_git reset -q --hard
+assert_eq "a ticket branch with no merge in progress selects its own change" \
+  "$(af_plan)" "$af_gate,docs_lint.sh"
+af_git checkout -q -f feat
+af_git branch -q -D feat--t1 par
+af_reset
+
 # An invalid ORCH_TEST_POOL_PERCENT is refused before anything runs.
 : >"$af.log"
 af_out="$(cd "$af" && env -u CI ORCH_TEST_POOL_PERCENT=abc bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
