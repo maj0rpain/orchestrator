@@ -740,20 +740,27 @@ role_head=(
   '| Label in mattpocock/skills | Label in our tracker | Meaning     |'
   '| -------------------------- | -------------------- | ----------- |'
 )
-role_rows=(
-  "${role_head[@]}"
-  '| `needs-triage`             | `needs-triage`       | Evaluate it |'
-  '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |'
-)
 rota=(
   '| Step  | Owner | Notes |'
   '| ----- | ----- | ----- |'
   '| build | alice | none  |'
   '| ship  | bob   | none  |'
 )
+needs_row='| `needs-triage`             | `needs-triage`       | Evaluate it |'
+owners=(
+  '' '## Owners' ''
+  '| Role            | Owner | Notes |'
+  '| --------------- | ----- | ----- |'
+  '| ready-for-agent | carol | none  |'
+)
+variant_rows=(
+  '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |'
+  '| `Needs-Triage`             | `variant-label`      | Evaluate it |'
+)
 
-# A wide table after the role table (the reported case).
-writeln "${role_rows[@]}" '' '## Rota' '' "${rota[@]}" >docs/agents/triage-labels.md
+# A wide table after the role table (the reported case), appended to the doc
+# healthy_repo wrote.
+writeln '' '## Rota' '' "${rota[@]}" >>docs/agents/triage-labels.md
 fake_label_names
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "a wide table after the role table: the count is the role table's" "$out" "2 triage labels"
@@ -764,7 +771,7 @@ assert_eq "and no cell of it is demanded of the repo" \
 # table gives ready-for-agent a custom label, so the lookup's answer provably
 # comes from it and not from the canonical fallback.
 writeln '# Rota' '' "${rota[@]}" '' "${role_head[@]}" \
-        '| `needs-triage`             | `needs-triage`       | Evaluate it |' \
+        "$needs_row" \
         '| `ready-for-agent`          | `afk-ready`          | AFK-ready   |' >docs/agents/triage-labels.md
 fake_label_names
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
@@ -779,11 +786,7 @@ assert_not_contains "and not from the rota" "$out" "alice"
 # A later wide table keyed by role never answers a lookup: the role table does
 # not list the role ...
 writeln "${role_head[@]}" \
-        '| `needs-triage`             | `needs-triage`       | Evaluate it |' \
-        '' '## Owners' '' \
-        '| Role            | Owner | Notes |' \
-        '| --------------- | ----- | ----- |' \
-        '| ready-for-agent | carol | none  |' >docs/agents/triage-labels.md
+        "$needs_row" "${owners[@]}" >docs/agents/triage-labels.md
 fake_label_names
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "a later role-keyed table is not counted" "$out" "1 triage labels"
@@ -796,12 +799,9 @@ assert_not_contains "not the later table's cell" "$out" "carol"
 
 # ... and the role table lists it with a blank label.
 writeln "${role_head[@]}" \
-        '| `needs-triage`             | `needs-triage`       | Evaluate it |' \
+        "$needs_row" \
         '| `ready-for-agent`          |                      | AFK-ready   |' \
-        '' '## Owners' '' \
-        '| Role            | Owner | Notes |' \
-        '| --------------- | ----- | ----- |' \
-        '| ready-for-agent | carol | none  |' >docs/agents/triage-labels.md
+        "${owners[@]}" >docs/agents/triage-labels.md
 fake_label_names
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "a blank label in the role table is still skipped" "$out" "1 triage labels"
@@ -814,17 +814,14 @@ assert_not_contains "not the later table's cell" "$out" "carol"
 # A row of the role table whose left cell names no canonical role, a case
 # variant included, contributes no label and never answers its lookup.
 writeln "${role_head[@]}" \
-        '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |' \
-        '| `Needs-Triage`             | `variant-label`      | Evaluate it |' \
+        "${variant_rows[@]}" \
         '| `stray`                    | `stray-label`        | none        |' >docs/agents/triage-labels.md
 fake_label_names
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "non-role rows are not counted" "$out" "1 triage labels"
 assert_eq "and their labels are not demanded" \
   "$(printf '%s\n' "$out" | grep -c -e 'variant-label' -e 'stray-label')" "0"
-writeln "${role_head[@]}" \
-        '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |' \
-        '| `Needs-Triage`             | `variant-label`      | Evaluate it |' >docs/agents/triage-labels.md
+writeln "${role_head[@]}" "${variant_rows[@]}" >docs/agents/triage-labels.md
 out="$(bash -c 'ROOT="$1"; source "$2"; triage_label_for needs-triage' _ "$PWD" "$(dirname "$ORCH")/triage-labels.sh" 2>&1)"
 assert_eq "the needs-triage lookup is not answered from a case variant" "$out" "needs-triage"
 
