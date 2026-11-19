@@ -1,5 +1,13 @@
 # Changelog
 
+## 6.8.17
+
+Clarify the triage-label reader's column-reset comment and write each doctor fixture row once.
+
+## 6.8.16
+
+When an autopilot process gives up on a GitHub rate limit and cannot record the pause or hit file, the failure now joins the one rate-limit line, so every reporting site (review ci in both forms, doctor, stop comments) keeps it. The Wait module now owns the limit wait decision and its mark.
+
 ## 6.8.15
 
 The CHANGELOG's 5.2.72, 5.3.3 and 6.0.1 entries now name the caller-visible changes they hid: the option after a lone `-` script (`python3 - --help`) the Bash hook newly denies, the two new failures of `issue fetch --json`, and `ticket-worktree remove <n>` dying where git's record of the checkouts cannot be read. No behaviour changes.

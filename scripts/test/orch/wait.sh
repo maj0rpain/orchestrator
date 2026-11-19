@@ -59,7 +59,7 @@ assert_status "spec-review wait with an interval past the block exits 75" "$st" 
 assert_eq "and ends within the block, not a whole interval after it" \
   "$([ "$wt_took" -le 3 ] && echo yes || echo "no (${wt_took}s)")" "yes"
 
-# A rate limit the block could not hold (gh_limit_handle's mark) ends the poll
+# A rate limit the block could not hold (wait_limit_fits's mark) ends the poll
 # loop's call as still running, total kept; with no mark, the loop goes on.
 wt_wf="$(mktemp)"
 printf '1\n0\n' >"$wt_wf"
@@ -71,3 +71,14 @@ assert_status "with the mark, it ends the call as still running" "$st" 75
 assert_eq "keeps the stored total" "$(sed -n 1p "$wt_wf")" "1"
 assert_status "and consumes the mark" "$([ -e "$wt_wf.limited" ]; echo $?)" 1
 rm -f "$wt_wf"
+
+# wait_limit_fits: the Wait module's decision on a limit wait (the mark is its)
+wt_wf="$(mktemp)"
+sourced_orch_script 'unset WAIT_FILE; wait_limit_fits 60' >/dev/null 2>&1; st=$?
+assert_status "wait_limit_fits with no wait open fits" "$st" 0
+sourced_orch_script 'WAIT_FILE=$1; ORCH_WAIT_BLOCK=570; wait_limit_fits 1' "$wt_wf" >/dev/null 2>&1; st=$?
+assert_status "a block that can hold the wait fits" "$st" 0
+assert_status "and leaves no mark" "$([ -e "$wt_wf.limited" ]; echo $?)" 1
+sourced_orch_script 'WAIT_FILE=$1; WAIT_START=1; ORCH_WAIT_BLOCK=0; wait_limit_fits 60 && exit 9; wait_limited_check 0' "$wt_wf" >/dev/null 2>&1; st=$?
+assert_status "a block that cannot hold it does not fit, and wait_limited_check ends the call as still running" "$st" 75
+rm -f "$wt_wf" "$wt_wf.limited"

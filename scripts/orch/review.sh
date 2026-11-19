@@ -48,16 +48,6 @@ ci_probe() {
   ci_classify "$rc" "$out" "$err"
 }
 
-# ci_nowait_warnings <stderr>: the warning lines a failed call added (the GitHub
-# limit pause it could not write), indented beside the reason. Only a
-# `review ci --no-wait` call (GH_LIMIT_NO_SLEEP set) prints them; the waiting
-# form, the ready gate and doctor print the reason alone.
-ci_nowait_warnings() {
-  local line
-  [ -n "${GH_LIMIT_NO_SLEEP:-}" ] || return 0
-  while IFS= read -r line; do note "      $line"; done < <(gh_limit_warnings "$1")
-}
-
 # ci_classify <rc> <checks> <stderr>: ci_probe's classification of one
 # adapter_pr_checks answer - its status, its TSV and its stderr - so a caller
 # that read the checks itself (ci_counted) classifies them the same way.
@@ -66,7 +56,6 @@ ci_classify() {
   if [ "$rc" -ne 0 ]; then
     note unreachable
     note "      $(gh_reason "$err")"
-    ci_nowait_warnings "$err"
     return 0
   fi
   if [ -z "$out" ]; then note none; return 0; fi
@@ -395,7 +384,6 @@ ci_refs_unread() {
   [ "$1" -ne 0 ] && [ -n "$2" ] || return 1
   note unreachable
   note "      could not read PR #$3: $(gh_reason "$4")"
-  ci_nowait_warnings "$4"
 }
 
 # review_ci_log <pr>: the failed-step log of each failing Actions job behind
@@ -955,20 +943,16 @@ cmd_review() {
       # forgotten once a call delivers an outcome (wait.sh).
       # The refs read runs before the wait's key is known, so a provisional
       # guard stands in for it: a limit the block cannot hold is slept short
-      # and marked there, and ends the call as still running with no total yet.
+      # and marked there (wait_provisional_open, wait_provisional_check), and
+      # ends the call as still running with no total yet.
       if [ "$nowait" = 1 ]; then
         export GH_LIMIT_NO_SLEEP=1
         printf -v started "%(%s)T" -1
       else
-        mkdir -p "$ORCH/wait" || die "could not create $ORCH/wait"
-        WAIT_FILE="$ORCH/wait/pending-$pr"
-        rm -f "$WAIT_FILE.limited"
+        wait_provisional_open "$pr"
       fi
       pr_refs_read "$pr" head_oid head_ref base_ref refs_err || refs_rc=$?
-      if [ "$nowait" != 1 ] && [ -e "$WAIT_FILE.limited" ]; then
-        rm -f "$WAIT_FILE.limited"
-        wait_exit_running
-      fi
+      [ "$nowait" = 1 ] || wait_provisional_check
       ci_refs_unread "$refs_rc" "$pr_arg" "$pr" "${refs_err-}" && return 1
       [ "$refs_rc" -eq 0 ] || head_oid=""
       if [ "$nowait" != 1 ]; then
