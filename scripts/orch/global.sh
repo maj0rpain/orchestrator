@@ -779,15 +779,22 @@ orch.sh - deterministic operations for the orchestrator flow
                               printed as declared, path#Heading too; an
                               entry that does not resolve, or a declaration
                               with no entries, fails with an orch: message
-  review ci                   classify the PR's checks: green, failing, none, or
-                              unreachable; exits non-zero on the last two
+  review ci [--no-wait] [<pr>]
+                              classify the PR's checks - the flow's PR, or <pr>
+                              with no flow state: green, failing, none, or
+                              unreachable (pending too with --no-wait); exits
+                              non-zero on failing and unreachable
                               Blocks at most ORCH_WAIT_BLOCK seconds (default
                               570; a value that is not a positive number is
                               refused): still waiting, it prints nothing,
                               says "orch: still running" on stderr and exits
                               75 - run it again; the 900 s total counts from
                               the first call, per PR and head commit, and is
-                              forgotten once an outcome is delivered
+                              forgotten once an outcome is delivered.
+                              --no-wait makes one pass: it prints pending
+                              where the waiting form would wait, never sleeps,
+                              reads no total and writes nothing; a GitHub
+                              rate limit prints unreachable at once
   review rerun <pr>           rerun the failed jobs of every Actions run
                               behind the failing checks review ci counts;
                               prints each run id. Exits 1 when a failing check

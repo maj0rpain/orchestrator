@@ -37,7 +37,8 @@ it has none.
   flow, to find the command to run.
 - **Format**: a line outside a fenced code block, in the root `CLAUDE.md`,
   `AGENTS.md` or `CONTRIBUTING.md` (read in that order), starting
-  `Ticket verification:` or `Full verification:`, followed by the command.
+  `Ticket verification:` or `Full verification:`, followed by the command (an
+  optional `Branch verification:` line is below).
   Example: `Full verification: scripts/test/all.sh`.
 - **Missing**: no ticket verification means tickets run the full verification
   (ADR-0058). No full verification means agents use the command the
@@ -51,6 +52,17 @@ it has none.
   tickets run the full verification (ADR-0058)". `warn` for no full
   verification or for two commands for one label; `FAIL` for a label with no
   command. Doctor never runs the command.
+- **Branch verification**: an optional `Branch verification: <command>` line,
+  read from the same files in the same order, outside a fenced code block. It
+  is the command the combined-branch check runs; with no such line that check
+  runs the full verification. Doctor reports it as it reports the other two
+  labels: `ok` reading `Branch verification: <command> (<file>)`, or, with no
+  line, `ok` reading "no 'Branch verification:' line - the combined-branch
+  check runs the full verification"; `warn` for two different commands;
+  `FAIL` for the label with no command. Its command's first word is checked
+  as installed, as for the other two. This plugin's own docs lint checks,
+  by structure only, that its own `CLAUDE.md` line is well formed and sits in
+  the Testing section; no such placement is required of your repo.
 
 ## Glossary
 

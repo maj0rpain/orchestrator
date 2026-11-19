@@ -128,7 +128,8 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
    repo's instructions (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`): a line
    reading `Ticket verification: <command>`. When they name none, run the
    repo's full verification instead, its `Full verification: <command>` line or
-   the command they document.
+   the command they document - never a `Branch verification:` line, which is
+   loop step f's.
    Run it in the foreground and wait for it (host capability *Run a long
    command*), through `verification run`, a **re-callable command**:
    `bash "<orch.sh>" verification run '<command>'` at the longest timeout, and

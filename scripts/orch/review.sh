@@ -1,6 +1,11 @@
 # shellcheck shell=bash
 # review.sh - orch.sh's review command, with its command-level CI logic
 # (review ci, review ci-log, review rerun) and the labels review file creates.
+# `review ci [<pr>]` reads the PR given, with no flow state, or the flow's PR;
+# its stored total is the same wait store either way.
+# `review ci --no-wait` is one pass of review ci's probe: where the waiting
+# form would sleep and look again it prints `pending`; it reads no stored
+# total, never sleeps and writes nothing (no state key, wait file or guard).
 # Its tests: scripts/test/orch/review.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -43,6 +48,16 @@ ci_probe() {
   ci_classify "$rc" "$out" "$err"
 }
 
+# ci_nowait_warnings <stderr>: the warning lines a failed call added (the GitHub
+# limit pause it could not write), indented beside the reason. Only a
+# `review ci --no-wait` call (GH_LIMIT_NO_SLEEP set) prints them; the waiting
+# form, the ready gate and doctor print the reason alone.
+ci_nowait_warnings() {
+  local line
+  [ -n "${GH_LIMIT_NO_SLEEP:-}" ] || return 0
+  while IFS= read -r line; do note "      $line"; done < <(gh_limit_warnings "$1")
+}
+
 # ci_classify <rc> <checks> <stderr>: ci_probe's classification of one
 # adapter_pr_checks answer - its status, its TSV and its stderr - so a caller
 # that read the checks itself (ci_counted) classifies them the same way.
@@ -51,6 +66,7 @@ ci_classify() {
   if [ "$rc" -ne 0 ]; then
     note unreachable
     note "      $(gh_reason "$err")"
+    ci_nowait_warnings "$err"
     return 0
   fi
   if [ -z "$out" ]; then note none; return 0; fi
@@ -369,6 +385,17 @@ review_rerun() {
       adapter_run_rerun "$r" >/dev/null
     note "$r"
   done
+}
+
+# ci_refs_unread <refs_rc> <pr_arg> <pr> <err>: whether review ci must stop
+# because the PR it was given by number could not be read - prints
+# `unreachable` and its detail line, and returns 0; returns 1 otherwise (a read
+# that worked, or the flow's PR, whose unread refs only key its total by PR).
+ci_refs_unread() {
+  [ "$1" -ne 0 ] && [ -n "$2" ] || return 1
+  note unreachable
+  note "      could not read PR #$3: $(gh_reason "$4")"
+  ci_nowait_warnings "$4"
 }
 
 # review_ci_log <pr>: the failed-step log of each failing Actions job behind
@@ -887,14 +914,35 @@ cmd_review() {
       fi
       ;;
     ci)
-      # refs_err is pr_refs_read's error output, which ci ignores.
+      # `--no-wait` is one pass of the probe the loop below repeats: it reads no
+      # stored total, never sleeps and writes nothing (no state key, wait file,
+      # provisional guard); where the loop would sleep it prints `pending`. A
+      # rate limit is given up on at once (GH_LIMIT_NO_SLEEP).
+      local nowait=0 pr_arg="" pr_given=0
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --no-wait) nowait=1 ;;
+          *) [ "$pr_given" = 0 ] || die "usage: orch.sh review ci [--no-wait] [<pr>]"
+             pr_given=1; pr_arg="$1" ;;
+        esac
+        shift
+      done
+      if [ "$pr_given" = 1 ]; then
+        case "$pr_arg" in ''|*[!0-9]*) die "not a PR number: $pr_arg" ;; esac
+      fi
+      # blocked and slept are read by wait_tick through bash's dynamic scope;
+      # refs_err is pr_refs_read's error output, which ci_refs_unread reports.
       # shellcheck disable=SC2034
       local pr started slept=0 blocked=0 elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
-      local no_ci=0 ci_status
-      require_state_read pr=pr
+      local no_ci=0 ci_status refs_rc=0
+      if [ -n "$pr_arg" ]; then pr="$pr_arg"; else require_state_read pr=pr; fi
       orch_load wait
-      require_poll_knobs ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
-      require_poll_knobs ORCH_WAIT_BLOCK
+      if [ "$nowait" = 1 ]; then
+        is_number "$ORCH_CI_GRACE" || die "ORCH_CI_GRACE is not a number: $ORCH_CI_GRACE"
+      else
+        require_poll_knobs ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
+        require_poll_knobs ORCH_WAIT_BLOCK
+      fi
       require_value pr "$pr"
       # Two clocks: the timeout counts from the wait's first call (the stored
       # total), the grace from the push.
@@ -909,16 +957,25 @@ cmd_review() {
       # The refs read runs before the wait's key is known, so a provisional
       # guard stands in for it: a limit the block cannot hold is slept short
       # and marked there, and ends the call as still running with no total yet.
-      mkdir -p "$ORCH/wait" || die "could not create $ORCH/wait"
-      WAIT_FILE="$ORCH/wait/pending-$pr"
-      rm -f "$WAIT_FILE.limited"
-      pr_refs_read "$pr" head_oid head_ref base_ref refs_err || head_oid=""
-      if [ -e "$WAIT_FILE.limited" ]; then
+      if [ "$nowait" = 1 ]; then
+        export GH_LIMIT_NO_SLEEP=1
+        printf -v started "%(%s)T" -1
+      else
+        mkdir -p "$ORCH/wait" || die "could not create $ORCH/wait"
+        WAIT_FILE="$ORCH/wait/pending-$pr"
+        rm -f "$WAIT_FILE.limited"
+      fi
+      pr_refs_read "$pr" head_oid head_ref base_ref refs_err || refs_rc=$?
+      if [ "$nowait" != 1 ] && [ -e "$WAIT_FILE.limited" ]; then
         rm -f "$WAIT_FILE.limited"
         wait_exit_running
       fi
-      wait_open "review ci $pr $head_oid" started slept
-      elapsed="$(wait_elapsed "$started" "$slept")"
+      ci_refs_unread "$refs_rc" "$pr_arg" "$pr" "${refs_err-}" && return 1
+      [ "$refs_rc" -eq 0 ] || head_oid=""
+      if [ "$nowait" != 1 ]; then
+        wait_open "review ci $pr $head_oid" started slept
+        elapsed="$(wait_elapsed "$started" "$slept")"
+      fi
       if [ -n "$head_oid" ]; then
         pushed="$(ci_push_time "$head_oid" "$head_ref")"
         case "$pushed" in
@@ -931,7 +988,7 @@ cmd_review() {
         if no_ci_evidence "$head_oid" "$base_ref" "$pr"; then
           no_ci=1
         fi
-        wait_limited_check "$slept"
+        [ "$nowait" = 1 ] || wait_limited_check "$slept"
       fi
       while :; do
         # Branch protection's required checks decide it wherever it names any.
@@ -947,11 +1004,14 @@ cmd_review() {
         # ci_counted, which widens to every check.
         if [ "$no_ci" = 0 ] && float_lt "$(float_add "$push_age" "$elapsed")" "$ORCH_CI_GRACE"; then
           res="$(ci_probe "$pr" required)"
-          wait_limited_check "$slept"
-          if [ "${res%%$'\n'*}" = none ]; then ci_tick; continue; fi
+          [ "$nowait" = 1 ] || wait_limited_check "$slept"
+          if [ "${res%%$'\n'*}" = none ]; then
+            if [ "$nowait" = 1 ]; then note pending; ci_status=0; break; fi
+            ci_tick; continue
+          fi
         else
           res="$(ci_counted_probe "$pr")"
-          wait_limited_check "$slept"
+          [ "$nowait" = 1 ] || wait_limited_check "$slept"
         fi
         verdict="${res%%$'\n'*}"
         case "$verdict" in
@@ -973,6 +1033,7 @@ cmd_review() {
             fi
             ci_status=0; break ;;
           pending)
+            if [ "$nowait" = 1 ]; then printf "%s\n" "$res"; ci_status=0; break; fi
             if float_lt "$elapsed" "$ORCH_CI_TIMEOUT"; then ci_tick; continue; fi
             # Still pending at the cap is an answer we do not have, not a green
             # one. The loop stops rather than marking a PR ready over something
@@ -992,7 +1053,7 @@ cmd_review() {
       done
       # Every terminal arm leaves the loop with its status and only pending
       # continues, so the stored total is forgotten in this one place.
-      wait_forget
+      [ "$nowait" = 1 ] || wait_forget
       return "$ci_status"
       ;;
     known-items)

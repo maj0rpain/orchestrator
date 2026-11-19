@@ -17,6 +17,46 @@ ALL_RUNNER_FILES=(all.sh test_jobs.sh report.sh test_tree.sh)
 # of `declare -F`. The planted minimal tree, the quiet-mode cut-down copy and
 # the helper index check all read it. git_env.sh, the runners' isolation
 # preamble, is not a helper and stays out.
+
+# The throwaway repo the affected.sh support sections plan in: tr_init <dir>
+# makes it - git init, a copy of the runner files, a stub of every suite and the
+# harness and loader section files - then the section plants its own files and
+# calls tr_commit <dir>, which commits them and records origin/main. tr_put
+# writes a file with a shebang and the lines, tr_git runs git in it, tr_plan
+# prints affected.sh's --plan against origin/main on one line, and tr_reset
+# drops the tree's changes. TR_GATE and TR_CORE are the plan's always-run items
+# and the core set.
+TR_GATE="orch_test.sh,test-helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853),comment reader placement (#3085)"
+TR_CORE="isolation,loader one,hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh"
+tr_git() { local dir="$1"; shift; git -C "$dir" -c user.name=t -c user.email=t@example.com "$@"; }
+tr_put() {
+  local dir="$1" path="$2"
+  shift 2
+  mkdir -p "$dir/$(dirname "$path")"
+  printf '%s\n' '#!/usr/bin/env bash' "$@" >"$dir/$path"
+}
+tr_plan() { (cd "$1" && bash scripts/test/affected.sh --plan origin/main 2>&1) | paste -sd, -; }
+tr_reset() { tr_git "$1" reset -q --hard HEAD; tr_git "$1" clean -qfd; }
+tr_init() {
+  local dir="$1" tests s
+  tests="$(dirname "$SUITE_SCRIPT")"
+  suites_read "$tests/all.sh" "$tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
+  tr_git "$dir" init -q -b main
+  mkdir -p "$dir/scripts/test/orch" "$dir/scripts/orch"
+  (cd "$tests" && cp "${ALL_RUNNER_FILES[@]}" affected.sh git_env.sh "$dir/scripts/test/")
+  for s in "${SUITES[@]}"; do
+    [ -e "$dir/scripts/test/$s" ] || tr_put "$dir" "scripts/test/$s"
+  done
+  tr_put "$dir" scripts/test/orch/harness.sh '# --- isolation ---' \
+    '# --- test-helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
+    '# --- marked comment prelude placement (#1853) ---' '# --- comment reader placement (#3085) ---'
+  tr_put "$dir" scripts/test/orch/loader.sh '# --- loader one ---'
+}
+tr_commit() {
+  tr_git "$1" add -A
+  tr_git "$1" commit -qm init
+  tr_git "$1" update-ref refs/remotes/origin/main HEAD
+}
 SOURCEABLE_TEST_HELPERS=(gh_adapter_fake.sh tally.sh fifo.sh counting.sh)
 
 # count_lines [<grep flag>...] <pattern> <text>: prints how many lines of
@@ -131,6 +171,21 @@ files_marks() {
 
 # The test-helper placement rule, as helper_placement's message states it.
 HELPER_PLACEMENT_RULE="The test-helper placement rule: a test helper used by more than one file, or only by setup.sh's own code, lives in setup.sh; one used by only one file lives in that file's preamble; one already defined inside a section stays there; a helper never moves into a section."
+
+# The row rule, as row_rule's message states it.
+ROW_RULE="The row rule: every tracked file under the scripts directory has a row in the ticket verification, so a path no row names, and a scripts/orch/ module with no section file of its own, are never the committed state; add the path's row to scripts/test/affected.sh, or the module's section file under scripts/test/orch/."
+
+# row_rule: reads paths on stdin, asks affected.sh --row about all of them, and
+# fails with the rule's message, naming each path it prints `none` for.
+row_rule() {
+  local paths=() p none
+  while IFS= read -r p; do paths+=("$p"); done
+  [ "${#paths[@]}" -gt 0 ] || return 0
+  none="$(bash "$PLUGIN_ROOT/scripts/test/affected.sh" --row "${paths[@]}" </dev/null | awk -F'\t' '$2 == "none" { printf "%s ", $1 }')"
+  [ -z "$none" ] && return 0
+  printf '%sno row: %s\n' "$ROW_RULE " "${none% }"
+  return 1
+}
 
 # FN_TRACK_AWK: an awk fragment, appended after SHELL_CODE_AWK, that tracks the
 # function a line is in, as helper_placement and orch_load_reads read it.
@@ -4055,11 +4110,19 @@ af_put scripts/test/orch/harness.sh '# --- isolation ---' \
   '# --- marked comment prelude placement (#1853) ---' '# --- the parallel runner (#780) ---'
 af_put scripts/test/orch/branch.sh 'x=1' '# --- branch create ---' '# --- branch (x.y) retire ---'
 af_put scripts/test/orch/state.sh '# --- state ---'
+af_put scripts/test/orch/common.sh '# --- common one ---'
+af_put scripts/test/orch/loader.sh '# --- loader one ---'
+for af_f in doctor init issue side-checkout spec-review; do
+  af_put "scripts/test/orch/$af_f.sh" "# --- $af_f s ---"
+done
 for af_f in scripts/orch.sh scripts/orch/common.sh scripts/orch/branch.sh \
-  scripts/orch/state.sh scripts/test/orch/common.sh scripts/test/orch/setup.sh \
+  scripts/orch/state.sh scripts/test/orch/setup.sh \
   scripts/test/orch_test.sh scripts/test/gh_adapter_fake.sh scripts/hook-guard.sh \
   scripts/version-bump.sh scripts/autopilot-container.sh scripts/autopilot-up.sh \
   scripts/dev/lens-bench.sh scripts/dev/other.sh scripts/test/docs_lint.sh \
+  scripts/flow-state.sh scripts/host.sh scripts/bash-walk.sh scripts/paste-guard.sh \
+  scripts/planning-allowlist.sh scripts/triage-labels.sh scripts/dev/hook-edit-width.sh \
+  scripts/dev/width.sh scripts/test/shell_code.awk \
   hooks/hooks.json docs/a.md skills/s/SKILL.md agents/a.md changelog.d/1.md Makefile; do
   af_put "$af_f"
 done
@@ -4093,6 +4156,8 @@ af_plan() {
 af_placement="test-helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853)"
 af_gate="orch_test.sh,$af_placement"
 af_branch_titles="branch create,branch (x.y) retire"
+af_core="$af_gate,isolation,the parallel runner (#780),loader one"
+af_core_s="hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh"
 
 af_reset
 assert_eq "a change to a doc selects only the always-run checks" \
@@ -4143,24 +4208,91 @@ af_row "autopilot-up.sh selects its test file" scripts/autopilot-up.sh \
   "$af_gate,docs_lint.sh,autopilot_up_test.sh,scripts/autopilot-up.sh"
 af_row "the lens-bench script selects its test file" scripts/dev/lens-bench.sh \
   "$af_gate,docs_lint.sh,lens_bench_test.sh,scripts/dev/lens-bench.sh"
-af_row "a lens-bench fixture script falls back to all.sh" scripts/dev/lens-bench/case.sh "all.sh"
-af_row "a lens-bench test fixture falls back to all.sh" scripts/test/lens-bench/case.txt "all.sh"
-af_row "a markdown lens-bench fixture selects nothing more" scripts/dev/lens-bench/case.md \
-  "$af_gate,docs_lint.sh"
+af_row "a lens-bench fixture script selects its test file" scripts/dev/lens-bench/case.sh \
+  "$af_gate,docs_lint.sh,lens_bench_test.sh,scripts/dev/lens-bench/case.sh"
+af_row "a lens-bench test fixture selects its test file" scripts/test/lens-bench/case.txt \
+  "$af_gate,docs_lint.sh,lens_bench_test.sh"
+af_row "a markdown lens-bench fixture selects the lens bench suite" scripts/dev/lens-bench/case.md \
+  "$af_gate,docs_lint.sh,lens_bench_test.sh"
+af_row "a markdown lens-bench test fixture selects the lens bench suite" scripts/test/lens-bench/run-1/map.md \
+  "$af_gate,docs_lint.sh,lens_bench_test.sh"
 af_row "a skill selects nothing more" skills/s/SKILL.md "$af_gate,docs_lint.sh"
 af_row "an agent selects nothing more" agents/a.md "$af_gate,docs_lint.sh"
 af_row "a non-markdown file under commands falls back to all.sh" commands/x.txt "all.sh"
 af_row "a changelog fragment selects nothing more" changelog.d/2.md "$af_gate,docs_lint.sh"
 af_row "a markdown file selects nothing more" README.md "$af_gate,docs_lint.sh"
-for af_f in scripts/orch.sh scripts/orch/common.sh scripts/test/orch/common.sh \
-  scripts/test/orch/setup.sh scripts/test/all.sh scripts/test/orch_test.sh \
-  scripts/test/gh_adapter_fake.sh scripts/test/test_jobs.sh scripts/test/report.sh scripts/test/test_tree.sh scripts/dev/other.sh Makefile; do
+for af_f in scripts/test/orch/setup.sh scripts/test/gh_adapter_fake.sh Makefile; do
   af_row "$af_f falls back to all.sh" "$af_f" "all.sh"
 done
 af_reset
 af_put scripts/orch/branch.sh 'z=3'
-af_put scripts/orch.sh 'z=3'
+af_put Makefile 'z=3'
 assert_eq "an unmapped file wins over a module" "$(af_plan origin/rel)" "all.sh"
+af_row "a module with no section file of its own falls back to all.sh" \
+  scripts/orch/zz-no-section.sh "all.sh"
+
+# The core set (#3548): the harness and loader sections and every suite but
+# orch_test.sh, together with the rest of the diff's selection.
+af_row "orch.sh selects the core set" scripts/orch.sh "$af_core,$af_core_s,scripts/orch.sh"
+af_row "the common module selects the core set and its own section file" scripts/orch/common.sh \
+  "$af_gate,common one,isolation,the parallel runner (#780),loader one,$af_core_s,scripts/orch/common.sh"
+af_row "the loader module selects the core set" scripts/orch/loader.sh \
+  "$af_core,$af_core_s,scripts/orch/loader.sh"
+for af_f in all.sh git_env.sh orch_test.sh affected.sh test_jobs.sh report.sh test_tree.sh; do
+  af_reset
+  printf '# touched\n' >>"$af/scripts/test/$af_f"
+  assert_eq "$af_f selects the core set" "$(af_plan origin/rel)" "$af_core,$af_core_s,scripts/test/$af_f"
+done
+af_reset
+af_put scripts/orch.sh changed
+af_put scripts/orch/branch.sh 'z=3'
+af_put scripts/test/orch/zz-new.sh '# --- zz new ---'
+assert_eq "the core set comes together with the rest of the diff's selection" "$(af_plan origin/rel)" \
+  "$af_gate,$af_branch_titles,isolation,the parallel runner (#780),loader one,zz new,$af_core_s,scripts/orch.sh,scripts/orch/branch.sh,scripts/test/orch/zz-new.sh"
+af_reset
+af_put scripts/orch.sh changed
+af_put docs/a.md again
+assert_eq "a doc beside the core set adds nothing" "$(af_plan origin/rel)" "$af_core,$af_core_s,scripts/orch.sh"
+af_reset
+af_put scripts/test/orch/common.sh '# --- common one ---' '# --- common two ---'
+assert_eq "the common module's section file selects its own sections alone" "$(af_plan origin/rel)" \
+  "$af_gate,common one,common two,docs_lint.sh,scripts/test/orch/common.sh"
+
+# The new rows (#3548).
+af_hooks_s="hooks_test.sh,docs_lint.sh"
+af_row "flow-state.sh selects the core set and the state, init and side-checkout sections" scripts/flow-state.sh \
+  "$af_gate,isolation,the parallel runner (#780),init s,loader one,side-checkout s,state,$af_core_s,scripts/flow-state.sh"
+af_row "host.sh selects the core set and the doctor sections" scripts/host.sh \
+  "$af_gate,doctor s,isolation,the parallel runner (#780),loader one,$af_core_s,scripts/host.sh"
+af_row "bash-walk.sh selects the hooks suite" scripts/bash-walk.sh "$af_gate,$af_hooks_s,scripts/bash-walk.sh"
+af_row "paste-guard.sh selects the hooks suite and the spec-review sections" scripts/paste-guard.sh \
+  "$af_gate,spec-review s,$af_hooks_s,scripts/paste-guard.sh"
+af_row "planning-allowlist.sh selects the hooks suite and the doctor sections" scripts/planning-allowlist.sh \
+  "$af_gate,doctor s,$af_hooks_s,scripts/planning-allowlist.sh"
+af_row "triage-labels.sh selects the hooks suite and the doctor and issue sections" scripts/triage-labels.sh \
+  "$af_gate,doctor s,issue s,$af_hooks_s,scripts/triage-labels.sh"
+af_row "a dev script other than the lens bench selects the harness sections" scripts/dev/other.sh \
+  "$af_gate,isolation,the parallel runner (#780),docs_lint.sh,scripts/dev/other.sh"
+af_row "the edit width hook selects the harness sections and the hooks suite" scripts/dev/hook-edit-width.sh \
+  "$af_gate,isolation,the parallel runner (#780),$af_hooks_s,scripts/dev/hook-edit-width.sh"
+af_row "width.sh selects the harness sections and the hooks suite" scripts/dev/width.sh \
+  "$af_gate,isolation,the parallel runner (#780),$af_hooks_s,scripts/dev/width.sh"
+af_row "the shell-code awk program selects the harness sections and the hooks suite" scripts/test/shell_code.awk \
+  "$af_gate,isolation,the parallel runner (#780),$af_hooks_s"
+af_row "a docker file selects the container and up suites" docker/Dockerfile \
+  "$af_gate,docs_lint.sh,autopilot_container_test.sh,autopilot_up_test.sh"
+af_row ".dockerignore selects the container and up suites" .dockerignore \
+  "$af_gate,docs_lint.sh,autopilot_container_test.sh,autopilot_up_test.sh"
+af_row "a plugin manifest file selects the version bump and up suites" .claude-plugin/plugin.json \
+  "$af_gate,docs_lint.sh,version_bump_test.sh,autopilot_up_test.sh"
+for af_f in .github/workflows/test.yml .gitignore .gitattributes .ignore LICENSE .claude/settings.json; do
+  af_row "$af_f selects nothing more" "$af_f" "$af_gate,docs_lint.sh"
+done
+af_reset
+af_put .shellcheckrc changed
+af_sc_all="$(cd "$af" && shopt -s globstar && printf '%s\n' scripts/**/*.sh | LC_ALL=C sort -u | paste -sd, -)"
+assert_eq ".shellcheckrc selects the harness sections and shellchecks every script" "$(af_plan origin/rel)" \
+  "$af_gate,isolation,the parallel runner (#780),docs_lint.sh,$af_sc_all"
 
 # The line order, with every kind of change at once.
 af_reset
@@ -4179,10 +4311,10 @@ rm "$af/scripts/hook-guard.sh"
 assert_eq "a deleted shell file is not shellchecked" "$(af_plan origin/rel)" \
   "$af_gate,hooks_test.sh,docs_lint.sh"
 rm "$af/scripts/orch/state.sh"
-assert_eq "a deleted module falls back to all.sh" "$(af_plan origin/rel)" "all.sh"
+assert_eq "a deleted module selects the core set" "$(af_plan origin/rel)" "$af_core,$af_core_s"
 af_reset
 af_git rm -q scripts/test/orch/state.sh
-assert_eq "a deleted section file falls back to all.sh" "$(af_plan origin/rel)" "all.sh"
+assert_eq "a deleted section file selects the core set" "$(af_plan origin/rel)" "$af_core,$af_core_s"
 
 # The ref.
 af_reset
@@ -4314,12 +4446,53 @@ af_put scripts/test/docs_lint.sh "echo \"lint base=\${DOCS_LINT_BASE-unset}\" >\
 : >"$af.log"
 af_out="$(cd "$af" && DOCS_LINT_BASE=stale PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"
 assert_contains "the narrow selection hands docs_lint.sh the base it works out" "$(cat "$af.log")" "lint base=$af_base"
+af_put Makefile changed
 af_put scripts/test/all.sh 'echo "all base=${DOCS_LINT_BASE-unset}"'
 af_out="$(cd "$af" && DOCS_LINT_BASE=stale bash scripts/test/affected.sh HEAD 2>&1)"
 assert_eq "the full-suite fallback hands all.sh the base it works out" "$af_out" "all base=$af_base"
 af_git symbolic-ref --delete refs/remotes/origin/HEAD
 af_out="$(cd "$af" && DOCS_LINT_BASE=stale bash scripts/test/affected.sh 2>&1)"
 assert_eq "with no base the fallback hands on none, whatever it inherited" "$af_out" "all base=unset"
+af_reset
+
+# A ticket branch's base is its parent branch as the local repository has it,
+# never origin's copy (#3547). origin/lag is the initial commit, the local
+# parent is main plus the branch module change, and the ticket adds a doc.
+af_reset
+af_git update-ref refs/remotes/origin/lag "$af_c0"
+af_git branch -q par "$(af_git rev-parse origin/rel)"
+af_git checkout -q -b feat--t1 par
+af_put docs/a.md changed
+af_git commit -qam doc
+af_git config branch.feat--t1.orchestrator-ticket-parent par
+assert_eq "a ticket branch selects from its own diff where origin's copy of its parent lags" \
+  "$(af_plan)" "$af_from_rel"
+af_git config branch.feat--t1.orchestrator-base lag
+assert_eq "the local parent beats a base recorded on the ticket branch" \
+  "$(af_plan)" "$af_from_rel"
+assert_eq "a <ref> wins over the local parent" "$(af_plan origin/main)" "$af_from_main"
+af_git config branch.feat--t1.orchestrator-ticket-parent nosuch
+af_git config branch.feat--t1.orchestrator-base lag
+assert_eq "a parent missing locally falls back to the recorded base" "$(af_plan)" "$af_from_main"
+af_git config --unset branch.feat--t1.orchestrator-ticket-parent
+assert_eq "no recorded parent falls back to the recorded base" "$(af_plan)" "$af_from_main"
+af_git branch -q orphan-par "$(af_git commit-tree "$af_tree" -m orphan)"
+af_git config branch.feat--t1.orchestrator-ticket-parent orphan-par
+assert_eq "a parent with no merge-base falls back to the recorded base" "$(af_plan)" "$af_from_main"
+# The docs lint gets the base the selection used, narrow and fallback alike.
+af_git config branch.feat--t1.orchestrator-ticket-parent par
+af_own="$(af_git merge-base HEAD par)"
+af_put scripts/test/docs_lint.sh "echo \"lint base=\${DOCS_LINT_BASE-unset}\" >\"$af.log\"" 'echo; echo "1 passed, 0 failed"'
+: >"$af.log"
+af_out="$(cd "$af" && DOCS_LINT_BASE=stale PATH="$af_sc:$PATH" bash scripts/test/affected.sh 2>&1)"
+assert_contains "on a ticket branch the narrow selection hands docs_lint.sh the parent's base" \
+  "$(cat "$af.log")" "lint base=$af_own"
+af_put Makefile changed
+af_put scripts/test/all.sh 'echo "all base=${DOCS_LINT_BASE-unset}"'
+af_out="$(cd "$af" && DOCS_LINT_BASE=stale bash scripts/test/affected.sh 2>&1)"
+assert_eq "on a ticket branch the fallback hands all.sh the parent's base" "$af_out" "all base=$af_own"
+af_git checkout -q -f feat
+af_git branch -q -D feat--t1 par orphan-par
 af_reset
 
 # An invalid ORCH_TEST_POOL_PERCENT is refused before anything runs.
@@ -4411,7 +4584,7 @@ af_verdict_run -- HEAD
 assert_eq "a selection with no changed shell file counts shellcheck's line" \
   "$(printf '%s\n' "$af_out" | tail -n 1)" "affected.sh: PASS (3 parts)"
 # The full-suite fallback ends on all.sh's verdict.
-af_put scripts/orch.sh 'echo changed'
+af_put Makefile 'echo changed'
 af_verdict_run -- HEAD
 assert_eq "a full-suite fallback ends on all.sh's verdict, never affected.sh's" \
   "$(printf '%s\n' "$af_out" | tail -n 1)" "all.sh: PASS ($((${#SUITES[@]} + 1)) parts)"
@@ -4438,7 +4611,7 @@ printf '%s\n' '#!/usr/bin/env bash' "echo \"shard=\${ORCH_TEST_SHARD:-unset}\" >
 af_verdict_run ORCH_TEST_SHARD=2/4 -- HEAD
 assert_eq "affected.sh's mapped path runs orch_test.sh with the shard setting unset" \
   "$(grep "^shard=" "$af.log" | sort -u)" "shard=unset"
-af_put scripts/orch.sh 'echo changed'
+af_put Makefile 'echo changed'
 : >"$af.log"
 af_verdict_run ORCH_TEST_SHARD=2/4 -- HEAD
 assert_eq "and its fallback to all.sh runs the whole suite, the setting unset" \
@@ -4449,3 +4622,176 @@ af_reset
 rm -rf "$af_bin" "$af_sc" "$af.pid" "$af.stdout"
 rm -rf "$af" "$af.log"
 unset -f af_git af_put af_reset af_plan af_row
+
+# --- the row rule (#3549) -----------------------------------------------------
+# affected.sh --row over a path of each kind in the table, then the structural
+# check over the real tracked tree and over planted paths.
+echo
+echo "the row rule (#3549)"
+af_script="$PLUGIN_ROOT/scripts/test/affected.sh"
+out="$(bash "$af_script" --row scripts/orch/branch.sh scripts/flow-state.sh scripts/dev/helpers.sh \
+  scripts/test/hooks_test.sh scripts/test/orch/setup.sh scripts/test/section-durations.tsv \
+  scripts/nothing.txt scripts/orch/zz-no-section.sh scripts/orch/zz-gone.sh </dev/null)"; st=$?
+assert_status "--row exits 0 whether it prints named or none" "$st" 0
+assert_eq "--row prints named for each kind of row and none for an unnamed path" "$out" "scripts/orch/branch.sh	named
+scripts/flow-state.sh	named
+scripts/dev/helpers.sh	named
+scripts/test/hooks_test.sh	named
+scripts/test/orch/setup.sh	named
+scripts/test/section-durations.tsv	named
+scripts/nothing.txt	none
+scripts/orch/zz-no-section.sh	none
+scripts/orch/zz-gone.sh	none"
+out="$(bash "$af_script" --row scripts/test/orch/zz-nonexistent.sh </dev/null)"
+assert_eq "--row matches a path that does not exist by name" "$out" "scripts/test/orch/zz-nonexistent.sh	named"
+out="$(bash "$af_script" --row --plan scripts/orch/branch.sh 2>&1 </dev/null)"; st=$?
+assert_status "--row beside --plan is refused" "$st" 2
+assert_contains "--row beside --plan prints the usage" "$out" "usage: affected.sh"
+out="$(bash "$af_script" HEAD --row scripts/orch/branch.sh 2>&1 </dev/null)"; st=$?
+assert_status "--row beside a <ref> is refused" "$st" 2
+out="$(bash "$af_script" --row 2>&1 </dev/null)"; st=$?
+assert_status "--row with no path is refused" "$st" 2
+
+out="$(git -C "$PLUGIN_ROOT" ls-files scripts | row_rule)"; st=$?
+if [ "$st" -eq 0 ] && [ -z "$out" ]; then
+  ok "every tracked file under the scripts directory has a row"
+else
+  bad "every tracked file under the scripts directory has a row" "$out"
+fi
+out="$(echo scripts/planted-notes.txt | row_rule)"; st=$?
+assert_status "a planted script with no row fails" "$st" 1
+assert_eq "naming it and the rule" "$out" "$ROW_RULE no row: scripts/planted-notes.txt"
+out="$(echo scripts/orch/planted-module.sh | row_rule)"; st=$?
+assert_status "a planted module with no section file fails" "$st" 1
+assert_eq "naming it and the rule for a module" "$out" "$ROW_RULE no row: scripts/orch/planted-module.sh"
+
+# --- the shared test support, function by function (#3550) ---------------
+# affected.sh --plan in a throwaway repo whose shared test support files hold a
+# few planted functions, and whose section files and suites call them.
+echo
+echo "the shared test support, function by function (#3550)"
+sf="$(mktemp -d)"
+tr_init "$sf"
+sf_put() { tr_put "$sf" "$@"; }
+sf_plan() { tr_plan "$sf"; }
+sf_reset() { tr_reset "$sf"; }
+sf_put scripts/test/hooks_test.sh 'fifo_probe'
+sf_put scripts/test/orch/setup.sh '# helper_a is called by branch.sh.' \
+  'helper_a() { echo a; }' \
+  'helper_b() {' '  # calls helper_a' '  helper_a' '}' \
+  'helper_lonely() { echo l; }'
+sf_put scripts/test/tally.sh 'tally_init() {' '  :' '}'
+sf_put scripts/test/fifo.sh 'fifo_probe() { :; }'
+sf_put scripts/test/counting.sh 'counting_probe() { :; }'
+sf_put scripts/test/orch/branch.sh '# --- branch one ---' 'helper_a'
+sf_put scripts/test/orch/state.sh '# --- state one ---' 'helper_b'
+tr_commit "$sf"
+sf_setup=scripts/test/orch/setup.sh
+
+sf_put "$sf_setup" '# helper_a is called by branch.sh.' \
+  'helper_a() { echo A; }' \
+  'helper_b() {' '  # calls helper_a' '  helper_a' '}' \
+  'helper_lonely() { echo l; }'
+assert_eq "a changed helper selects the section files that call it, directly and through another helper" \
+  "$(sf_plan)" "$TR_GATE,branch one,state one,docs_lint.sh,$sf_setup"
+sf_reset
+sf_put "$sf_setup" 'helper_b() {' '  helper_a' '}' 'helper_lonely() { echo l; }'
+assert_eq "a removed helper selects the files that still call it" \
+  "$(sf_plan)" "$TR_GATE,branch one,state one,docs_lint.sh,$sf_setup"
+sf_reset
+sf_put scripts/test/fifo.sh 'fifo_probe() { :; :; }'
+assert_eq "a changed helper selects the suites that call it" \
+  "$(sf_plan)" "$TR_GATE,hooks_test.sh,docs_lint.sh,scripts/test/fifo.sh"
+sf_reset
+sf_put "$sf_setup" '# helper_a is called by branch.sh.' \
+  'helper_a() { echo a; }' \
+  'helper_b() {' '  # calls helper_a' '  helper_a' '}' \
+  'helper_lonely() { echo L; }'
+assert_eq "a helper nothing reaches selects the core set" \
+  "$(sf_plan)" "$TR_GATE,$TR_CORE,$sf_setup"
+sf_reset
+sf_put scripts/test/tally.sh 'tally_init() {' '  :; :' '}'
+assert_eq "a helper the section runner calls outside any section selects the core set" \
+  "$(sf_plan)" "$TR_GATE,$TR_CORE,scripts/test/tally.sh"
+sf_reset
+sf_put "$sf_setup" '# a new comment' '# helper_a is called by branch.sh.' \
+  'helper_a() { echo a; }' \
+  'helper_b() {' '  # calls helper_a, a changed comment' '' '  helper_a' '}' \
+  '' 'helper_lonely() { echo l; }'
+assert_eq "a comment-only and a blank-line-only change select nothing more" \
+  "$(sf_plan)" "$TR_GATE,docs_lint.sh,$sf_setup"
+sf_reset
+sf_put scripts/test/counting.sh 'counting_probe() { :; }' 'x=1'
+assert_eq "code outside any function in a shared test support file runs the whole suite" \
+  "$(sf_plan)" "all.sh"
+rm -rf "$sf"
+unset -f sf_put sf_plan sf_reset
+
+# --- the gh fake, operation by operation (#3551) --------------------------
+# affected.sh --plan in a throwaway repo whose gh fake holds a few planted
+# operations and helpers, called by planted modules, section files and suites.
+echo
+echo "the gh fake, operation by operation (#3551)"
+gf="$(mktemp -d)"
+tr_init "$gf"
+gf_put() { tr_put "$gf" "$@"; }
+gf_plan() { tr_plan "$gf"; }
+gf_reset() { tr_reset "$gf"; }
+gf_fake=scripts/test/gh_adapter_fake.sh
+gf_setup_body='echo s'
+# gf_fake_put <op-a-body> <helper-body> <lonely-body> [<extra-line>...]
+gf_fake_put() {
+  local a="$1" h="$2" l="$3"
+  shift 3
+  gf_put "$gf_fake" '# adapter_op_b is a comment here.' \
+    "adapter_op_a() { $a; }" \
+    'adapter_op_b() {' '  # calls fake_help' '  fake_help' '}' \
+    "fake_help() { $h; }" \
+    "fake_shared() { $h; }" \
+    "fake_setup() { $gf_setup_body; }" \
+    "fake_lonely() { $l; }" "$@"
+}
+gf_put scripts/test/hooks_test.sh 'x=1'
+gf_fake_put 'echo a' 'echo h' 'echo l'
+gf_put scripts/orch/gh.sh 'x=1'
+gf_put scripts/orch/branch.sh 'adapter_op_a "$1"'
+gf_put scripts/orch/state.sh '# adapter_op_a only in a comment' 'adapter_op_b "$1"'
+gf_put scripts/orch/pr.sh 'x=1'
+gf_put scripts/test/orch/gh.sh '# --- gh one ---'
+gf_put scripts/test/orch/branch.sh '# --- branch one ---' 'setup_x'
+gf_put scripts/test/orch/state.sh '# --- state one ---'
+gf_put scripts/test/orch/pr.sh '# --- pr one ---' 'fake_shared'
+gf_put scripts/test/orch/setup.sh 'setup_x() { fake_setup; }'
+tr_commit "$gf"
+
+gf_fake_put 'echo A' 'echo h' 'echo l'
+assert_eq "a changed operation selects the gh sections and its calling modules' sections" \
+  "$(gf_plan)" "$TR_GATE,branch one,gh one,docs_lint.sh,$gf_fake"
+gf_reset
+gf_fake_put 'echo a' 'echo H' 'echo l'
+assert_eq "a changed helper selects through its operations and as a shared helper" \
+  "$(gf_plan)" "$TR_GATE,gh one,pr one,state one,docs_lint.sh,$gf_fake"
+gf_reset
+gf_fake_put 'echo a' 'echo h' 'echo L'
+assert_eq "a gh fake function nothing reaches selects the core set" \
+  "$(gf_plan)" "$TR_GATE,$TR_CORE,$gf_fake"
+gf_reset
+gf_setup_body='echo S'
+gf_fake_put 'echo a' 'echo h' 'echo l'
+assert_eq "a gh fake function shared test support calls directly selects as a shared helper" \
+  "$(gf_plan)" "$TR_GATE,branch one,docs_lint.sh,$gf_fake"
+gf_setup_body='echo s'
+gf_reset
+gf_fake_put 'echo a' 'echo h' 'echo l' '# a new comment' ''
+gf_put "$gf_fake" '# a changed comment' '' \
+  'adapter_op_a() { echo a; }' \
+  'adapter_op_b() {' '  fake_help' '' '}' \
+  'fake_help() { echo h; }' 'fake_shared() { echo h; }' 'fake_setup() { echo s; }' 'fake_lonely() { echo l; }'
+assert_eq "a comment-only and a blank-line-only change select nothing more" \
+  "$(gf_plan)" "$TR_GATE,docs_lint.sh,$gf_fake"
+gf_reset
+gf_fake_put 'echo a' 'echo h' 'echo l' 'x=1'
+assert_eq "code outside any function in the gh fake runs the whole suite" \
+  "$(gf_plan)" "all.sh"
+rm -rf "$gf"
+unset -f gf_put gf_plan gf_fake_put gf_reset

@@ -122,7 +122,9 @@ plan or from what the previous loop left instead of asking.
 2. Take three facts from those sections, and take them from nowhere else:
    the **PR**, the **spec issue**, and the **verification command** - the
    **Verification** section's first line, alone; any line after it records a
-   result, not part of the command. State holds the PR as well, and holds the
+   result, not part of the command. In a repo that names a branch
+   verification that line is the branch verification, as the handoff records
+   it. State holds the PR as well, and holds the
    same value; one authority is what keeps every loop of a flow reviewing
    the same change. The **base SHA** is the exception: every iteration's base
    sync moves it, so each iteration reads it from state after its sync (step
@@ -293,7 +295,21 @@ plan or from what the previous loop left instead of asking.
    When that record's `## CI` section reads `failing`, it enters this first
    triage as a blocking finding too, alongside any open blocking finding: name
    the failing check, and run `bash "$ORCH" review ci-log <pr>` yourself for the
-   log excerpt (the record holds none). Apply the two
+   log excerpt (the record holds none), and mark it CI-found in the fixable
+   list with that excerpt.
+   Every iteration's triage also looks at CI once, without waiting: run
+   `bash "$ORCH" review ci --no-wait` (one pass of the probe, never a wait,
+   writing nothing). Only `failing` matters: read `bash "$ORCH" review ci-log
+   <pr>` and judge the failure by the rule **Termination** applies in an
+   autopilot flow (**CI**), here in every flow. A failure the change can fix is
+   a blocking finding of this iteration, marked CI-found in the fixable list
+   with the log excerpt. A failure that looks flaky rather than caused by the
+   change, or that needs a decision by that rule, raises nothing and is left to
+   **Termination**, which alone may spend the flake rerun. On a re-entry's
+   first iteration, a failure the previous record's `## CI` section brought in
+   and the look shows again is one finding, not two. `green`, `none`, `pending`
+   and `unreachable` raise nothing, and an iteration whose look printed
+   `pending` can still be clean. **Termination** is unchanged. Apply the two
    demotions under **Authority** first, then the **Severity** rubric, then
    give each finding one disposition:
    - **Fix** - every blocking finding, every major that needs no decision,
@@ -474,11 +490,11 @@ Spec issue: #<spec issue>
 Re-entry budget: <autopilot re-entry's first iteration only, step 5; else omit>
 Base SHA: <this iteration's base SHA>
 Merge resolutions: <step 2's, per Merge resolutions in agents/orch-resolver.md>
-Fixable list: <each finding: axis, severity, file:line, sites, claim>
+Fixable list: <each finding: axis, severity, file:line, sites, claim; a CI-found finding marked so, with its `review ci-log` excerpt>
 Triaged out: <each other finding: axis, severity, file:line, sites, claim, disposition>
 Fix SHAs: <this loop's earlier fix commits, or none>
 Iteration: <NN> of budget <budget>
-Verification command: <command>
+Verification command: <command - the branch verification in a repo that names one>
 Host fallbacks: <this iteration's, or none>
 Missing looks: <each axis whose reviewer failed twice, or none>
 Record path: <bash "$ORCH" review path>
@@ -595,7 +611,10 @@ nobody merging can see is indistinguishable from a defect.
 
 Waited on **once per loop**, at **Termination**, and never inside an
 iteration: that would block a single session for most of an hour, and the fix
-commits are pushed as they land anyway.
+commits are pushed as they land anyway. Each iteration's triage only looks at
+it, once, with `review ci --no-wait`, which never waits and writes nothing, so
+the flake rerun and the stored wait total are as they were (see **The
+iteration**, step 4).
 
 `review ci` is a **re-callable command**. Run `bash "$ORCH" review ci` in the
 foreground and wait for it (host capability *Run a long command*), and run the

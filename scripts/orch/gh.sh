@@ -156,6 +156,8 @@ gh_limit_reset() {
 # (wait_limited_check) ends the call as still running (exit 75, total kept);
 # under the provisional guard review ci ends it with wait_exit_running, there
 # being no total to keep.
+# While GH_LIMIT_NO_SLEEP is set (review ci --no-wait) a first secondary limit
+# is given up on at once too, as a primary one.
 # Status 1: a limit to give up on - a primary one, a secondary one met again
 # after the retry, or a first secondary one on a compound write (never
 # retried, so called with <retry spent> 1), handled as a primary one. The
@@ -166,7 +168,7 @@ gh_limit_handle() {
   local kind reset nap left
   kind="$(gh_limit_kind "$1")"
   [ -n "$kind" ] || return 0
-  if [ "$kind" = secondary ] && [ "$2" = 0 ]; then
+  if [ "$kind" = secondary ] && [ "$2" = 0 ] && [ -z "${GH_LIMIT_NO_SLEEP:-}" ]; then
     nap="${ORCH_GH_LIMIT_WAIT:-60}"
     # A re-callable wait is open (wait_open ran): its call never blocks past
     # ORCH_WAIT_BLOCK, so a limit wait the block cannot hold ends the call as
@@ -220,6 +222,17 @@ label_listed() {
 gh_reason() {
   local line="${1%%$'\n'*}"
   printf '%s\n' "${line:-gh gave no reason}"
+}
+
+# gh_limit_warnings <stderr>: each line after the first that says the failed
+# call could not write the GitHub limit pause - the warning autopilot adds -
+# so a caller keeps it beside gh_reason's reason. Prints nothing otherwise.
+gh_limit_warnings() {
+  local rest="${1#*$'\n'}" line
+  [ "$rest" != "$1" ] || return 0
+  while IFS= read -r line; do
+    case "$line" in *"could not write the GitHub limit"*) printf '%s\n' "$line" ;; esac
+  done <<<"$rest"
 }
 
 # gh_die [--exit 2] [--hint <text>] <what> <stderr>: dies with

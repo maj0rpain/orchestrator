@@ -1,37 +1,40 @@
-0	1	isolation	e96f3858af6af277f8d9136392d4a0ce2951cce8
-24	19	isolation under a git hook (#1905)	23bcd3f23a0914c4f463bff6f6953242cdc00a58
-8	10	the section filter (ORCH_TEST_ONLY, #612)	e92ee748c12a1ab5ced4707afc03c791f44066c8
-5	6	quiet mode (ORCH_TEST_QUIET, #614)	c29d039a4ae9e28052ce30723b4775500ffa76f4
-225	36	the parallel runner (ORCH_TEST_JOBS, #780)	9538bf9cf56be45decc3457ee66a482078e542c4
-13	12	the parallel runner's start order (#2857)	fc6bd901e809c854c4f24de349833375b37da878
-106	52	the shard setting (#2859)	e458e8b2e5e96585f1fa1c17550dcaf16af69a8d
-9	9	the seeded start (stub cache)	4d395568422b51808c584e5f2eeb5e45e4fd9245
-287	203	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	3e880431f4bd5e89385aeac6c6a96e842d608ed7
-2	2	assertions in a subshell (#1904)	0452522e28fb1c4c3c38be4bdc01164d38083a6d
-0	1	the standalone suites' tally (#1904)	3ef63a2498ce5575744c59c536feb59e722c4808
-9	9	the section files (#932)	ae9bc054f49c95a75fd421f36ed5090445872826
-348	23	the suite's temp root (#807)	7af2fdb61da17c300771e1f419fea14a2797e999
-0	1	the real-gh guard (#779)	cb366aae66d730bb97a674ba01e295c93f12d26a
-34	18	all.sh, the single entry point (#615)	cbe1d524a6b0c5e8446ad5d14a4283396dd83df6
-0	1	all.sh's suite list holds every runner (#1941)	72f68870b0dcef725db33ae64cd3f6b7c9c780ae
-464	66	the job pool (#2022)	2da4b824fbaa748fa0275be5930002bb2a80349b
-0	1	the slot fd contract (#2300)	170fbdd751e6da0f3ffd08890c7437d351f296c3
-57	13	the test runners' CPU load (#1586)	e9b695c7a03e0905f9e1cd1400539a487043a2e1
-0	1	shell code (#1411)	72a46bd82b6cf7860201472d6413e791e2a36552
-54	55	test-helper placement (#1006)	82d5ced2b9774c79703c60b039be657b64a49324
-31	32	gh op placement (#1037)	e0a78a2e4a9d8ef0639fad03a731bbc593585ef7
-4	5	marked comment prelude placement (#1853)	7f9ca460705f5759ca92ad266966297a584df144
-13	14	comment reader placement (#3085)	f7120137284848ac309222e5c4d59d3069d26520
-12	12	orch_load before cross-module reads (#2868)	ef74a5c37bd9fda8c8224f0638c85e3902415973
-3	4	on-demand sourcing variable (#2820)	17c0c86622127db06a077ab5ddce1a9e101f3673
-0	1	declaration substitutions (#1327)	80768e8f01978f1afce127c21a95b0705ccc9a7f
-9	13	the helper index (#1144)	5b6bf97b113ab7424775c595147efcd56b113b67
-0	1	stand-in adapter (#2465)	9f2982825e94109b910ef415a2f7eaba0203fb6b
-0	1	git env clear (#1905)	224acb8edff4488c3e674065235224a7c73a72ba
-2	3	runner git isolation (#1905)	71ce11eb3b493cb1b633d406d98c545e982c78ee
-0	1	the background child start (#3025)	cd1314d985f5640647f7e529b8de66a56c83b085
-2	3	the counting fixture's stdin counter (#3434)	ff596769dbc0e83db12708e2a0ed7e4e348bd7fc
-36	32	affected.sh, the ticket verification (#2023)	fa90f1d104cb9a278d7c450d3bdd5504608822ea
+1	2	isolation	885efd43e8f365c7b4fd393f534b2b9289cec525
+28	19	isolation under a git hook (#1905)	294cf4a965346ae84784955d598201b460c99936
+15	10	the section filter (ORCH_TEST_ONLY, #612)	454c0348c754daefec48e62b2ed8a0525bcaaebc
+7	6	quiet mode (ORCH_TEST_QUIET, #614)	42bcb46e5c20ead6a2dbbe1ed5b1957c4ae8b99b
+232	52	the parallel runner (ORCH_TEST_JOBS, #780)	41fd050173c1309fabfcc662a793374f30d94eef
+13	11	the parallel runner's start order (#2857)	8fdec542826adec0e2b1b9d585848ec346d90dc1
+102	50	the shard setting (#2859)	c9718eab70d1bcd7438aa2031ae1975fccb2c785
+9	9	the seeded start (stub cache)	0afd9a889afccf05115344ab14549431af6f886a
+284	193	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	db4af5326f46e0c7c11e6c7d6bedc3f456976738
+3	3	assertions in a subshell (#1904)	f41f51b8275586b97632856a0b22a573fd44d8b1
+0	1	the standalone suites' tally (#1904)	1290cbbc5c15c6415f8bfec772552a0ddfe61f76
+11	9	the section files (#932)	57a7e2ab140472ebef68517c31d442d613e7e5ac
+337	27	the suite's temp root (#807)	2488eac3bca2fecff8268b5268ee0f29ad52d7d4
+0	1	the real-gh guard (#779)	76caa241e52ece4e542050449423638d272c44ae
+33	18	all.sh, the single entry point (#615)	e5692e4dcf14e625371298468b97e9fbfbaaaa18
+0	1	all.sh's suite list holds every runner (#1941)	16bc007855975d1903a68b35b2d483d3331c960b
+464	67	the job pool (#2022)	a207afb1e1baedf1aecec08f028beef833e51331
+0	1	the slot fd contract (#2300)	0c272db3def81796975ba5856be469f7d5187ff1
+54	13	the test runners' CPU load (#1586)	c15f6a0c6c7161d529a41c82a0c99a322212fba7
+0	1	shell code (#1411)	dd5b0d2b56b149afafc4fb3f920eb0bb6ef4a97e
+56	56	test-helper placement (#1006)	eea72e64478d4f4441fe1e71ccd1ee93264f261c
+31	32	gh op placement (#1037)	b72fb59d2d916ccdf4fb965ed5e4cb24a9e3a46b
+4	5	marked comment prelude placement (#1853)	6a01579bb756d950e0ac904ab86cf8879260bed5
+13	14	comment reader placement (#3085)	fe79463daeb01fc5ad1a9cfed99073f4476e133c
+12	13	orch_load before cross-module reads (#2868)	c5ebd1602334def0867d0e2d3f79d763f68e732f
+3	4	on-demand sourcing variable (#2820)	85ea64f5c66d70503606d14c9c399b7b292dc3eb
+1	1	declaration substitutions (#1327)	dcd85090a29cea057a315432bd00be0473777add
+10	13	the helper index (#1144)	0db6d6c4a02031bd37eddb80b4d4b0d1e5665933
+0	1	stand-in adapter (#2465)	b3cbaa373ccd02603f1a067e593b6c307e7cd2c7
+0	1	git env clear (#1905)	6f872bd7ca236a4dd3a32b63b36aa68e59074256
+2	3	runner git isolation (#1905)	893c92f930403219776e8e81c210fa88b82a78dc
+0	1	the background child start (#3025)	afcd21067c7aecaf71c2ec5e94c089ef132e4b31
+2	3	the counting fixture's stdin counter (#3434)	aafb6dd76954786ebd8a66bcb6c3100fa0ca5fe4
+49	46	affected.sh, the ticket verification (#2023)	caa6ac1aa7e4746c8d94baca433f40af48bc5b32
+3	4	the row rule (#3549)	18a8bf984386a20eba53c0d904b82f8cd71dc228
+3	4	the shared test support, function by function (#3550)	38bfb5000ebc56726787059e0b7a14bf55923712
+3	4	the gh fake, operation by operation (#3551)	f7fcc7b6927b02ecfe1b2e027ec743f40e2bcd91
 66	72	agent	cddc69e5a268c5cd6ddfed15d957b78960ef77e3
 20	22	agent sync	b39ad35449afd2ba48dfe47fd1a68a53a2d8c22b
 3	4	agent copy marker and Junie field: no command per call	2a90944570501eb9df9e004a9fab0ff67c9dac60
@@ -149,8 +152,8 @@
 11	13	doctor --env: Standards declaration check (#3358)	e65aafea5b03bb784dff7ce1c2c4cafdbfdafffc
 8	9	doctor --env: glossary check (#3358)	1da032d3f5869f75b6dd3d5b7bb81c6163d44549
 7	9	doctor --env: ADR directory check (#3358)	bfb05745053379020206a54151bb3e09663f0ebf
-25	28	doctor --env: verification lines	69e2d1518a93f13333ba935fea4bb774bc108e35
-41	46	doctor --env: verification commands (#3346)	dd37e452ded2c66124e91f00b28737906e79e127
+37	41	doctor --env: verification lines	c5de88b42e78f420dd14c559eb5b74d4c020d161
+42	45	doctor --env: verification commands (#3346)	42671345c4d2bce4f45ffc6226048963ef3d83e0
 0	1	is_filed_severity	41fb54217cc90b7a75a37b3ee336945167710410
 1	2	severity table	cbcec87893fb4d691f66b67cb960e1bc2f27d3d3
 2	3	category table	936a5e8b2f00a434df3adb306e2542dd71c175f9
@@ -264,6 +267,7 @@
 14	15	review ready	3de42f3d7ace4ec6ce6ffa7c0883b3806733eed4
 132	76	review ci	67768cd834eb07a3dda28b9d8b7520371b15af5e
 13	12	the grace counts from the push (issue #475)	eb2a643a788b9b82800270785192827a831aab40
+23	21	review ci --no-wait	351fee2ec2cb925d6c0047abc20d9a04c17e3cd9
 51	42	the grace is skipped on no evidence of CI (issue #476)	47adf5995cd35a720b31a17a50f1a4366fc237c7
 9	10	review rerun	39699a125cfcb488efe0e549d5a7f71549d25bc2
 5	6	review ci-log	062fdd89e41ebd54b3a937f0bb83e5fb59f09c4a
@@ -275,7 +279,8 @@
 12	13	review known-items in an autopilot flow (#1457)	fb5b926fa63989ad8e6e0b3728a9a09d1da61b82
 13	15	review standards (#1532)	51b9dc72c38a1bbf1bf3a35d98be00be13132d18
 9	10	review ready with a failed phase write (#1931)	66843fb4a3f090b55ec0719f4827cb02043c8277
-10	11	review reads its Flow state once	200dd493efe90a87e9c9dcb2c1dcc0b586e93393
+10	11	review reads its Flow state once	858b40aedf40f33288b10e3d1bfa6544501647e9
+34	20	review ci <pr>	e73ef9306c59bab6322ad75c39e6dba0592ed993
 2	3	route show	0e4fc7b4e544565f4d6f0cc3b311a522ccf801b0
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
 40	42	side-checkout (#722)	af2be5feb612499e9c65d765d4e385133c64fdd4
@@ -358,7 +363,7 @@
 0	1	verification run in help and the CLI conventions	bcef7e4ad67e97b98e872bc1de7a617d10a78253
 58	4	wait: a call's block is wall time	685e7591341f125a56a0600e3192feafb61282bf
 686	811	hooks_test.sh	058e31b62b5c66adb779670b21daecb8f80a55e8
-134	159	docs_lint.sh	d985f88abc6de09e499877c7f24ef07b6c97f5ec
+137	164	docs_lint.sh	639956f3502e2967ff8bf8de403047bd539d9506
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 8	8	autopilot_up_test.sh	25eb01b693309e8b681fe96ca4c386c741b9ecd8

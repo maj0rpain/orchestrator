@@ -205,7 +205,8 @@ Build the linked issue's ticket frontier with the driver loop in
 
 The split is the flow's: each ticket subagent runs the repo's ticket
 verification (`Ticket verification:` in its instructions), and loop step f
-runs the full verification once (`Full verification:`), each through
+runs the branch verification once (`Branch verification:`), else the full
+verification (`Full verification:`), each through
 `verification run`, a **re-callable command**.
 
 As each implementer's report is recorded, its `Deviation` line goes under
@@ -337,6 +338,13 @@ ruling, not on a loop: the human resumes with a standalone review pass
 (`/orchestrator:review-pass <issue>`), which asks the questions and marks the PR
 ready once every one is ruled. See
 `docs/adr/0043-a-spec-question-met-in-a-review-pass-reaches-a-human-before-the-pr-is-ready.md`.
+
+After the PR opens, run `bash "$ORCH" review ci <pr>` for it, in the
+foreground, as a re-callable command: wait for it (host capability *Run a long
+command*) and run the same command again each time it exits 75, or when the
+host stops it. Never background it and sleep, poll or kill it. Your final reply
+carries the word it printed and its detail lines. It fixes nothing, spends no
+flake rerun and changes no PR state on any word.
 
 ## Starting in a side checkout
 

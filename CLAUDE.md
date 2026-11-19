@@ -55,9 +55,10 @@ the suite budget (`scripts/test/suite-budget`), make cheaper only the tests the
 change added or edited, then record again; still over, stop for the human (a
 session that cannot ask reports it and changes nothing more; the session that
 started it asks). Never raise the budget in a feature change.
-Run `scripts/test/affected.sh` before each commit, and `scripts/test/all.sh`
-once before opening a PR.
+Run `scripts/test/affected.sh` before each commit. CI runs the whole suite on
+every PR, through `scripts/test/all.sh`.
 Ticket verification: scripts/test/affected.sh
+Branch verification: scripts/test/affected.sh
 Full verification: scripts/test/all.sh
 orch_test.sh is only the runner: its `# ---` sections live in
 `scripts/test/orch/<noun>.sh`, and a ticket's tests go in the file for the noun

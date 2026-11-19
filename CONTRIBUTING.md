@@ -17,7 +17,7 @@ label it `needs-triage` if it isn't already.
 claude --plugin-dir /path/to/orchestrator     # load the working tree directly
 claude plugin validate .
 scripts/test/affected.sh                      # the suites a change maps to; run before each commit
-scripts/test/all.sh                           # every suite; run once before opening a PR
+scripts/test/all.sh                           # every suite; the command CI runs on a PR
 ```
 
 While iterating, run only the section you are working on, in quiet mode:
@@ -25,8 +25,8 @@ While iterating, run only the section you are working on, in quiet mode:
 `<section>` is an extended regex matched, ignoring case, against the `# ---`
 section titles (every top-level branch of an alternation must match a section),
 e.g. `ORCH_TEST_ONLY='^branch create$'` or `ORCH_TEST_ONLY='^ticket'`. Run
-`scripts/test/affected.sh` before each commit, and `scripts/test/all.sh` once
-before opening a PR: all.sh starts its other suites one by one, each waiting for
+`scripts/test/affected.sh` before each commit. CI runs the whole suite on every
+PR through all.sh, which starts its other suites one by one, each waiting for
 a pool slot when none is free, then orch_test.sh, then shellcheck over every
 shell file, so they overlap, carries on past a
 failing one, and once all have finished prints each suite's FAIL lines and a
@@ -551,7 +551,7 @@ scripts/test/suite-budget     the suite budget: one positive whole number of CPU
 scripts/dev/width.sh          the line-width rule, whole: which files it covers and which lines are past 80 columns; docs_lint.sh's scan_line_width wraps it (Develop)
 scripts/dev/hook-edit-width.sh the project's edit hook, registered in .claude/settings.json: width.sh and shellcheck on each edited file and each file a Bash call changed (Develop)
 scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per lens: its spec body, baseline map and snapshot commit
-scripts/test/                 shell tests: the suites in all.sh's `suites` list (orch_test.sh is the orch.sh suite's runner), all.sh and affected.sh
+scripts/test/                 shell tests: the suites in all.sh's `suites` list (orch_test.sh is the orch.sh suite's runner), all.sh, and affected.sh, the ticket and branch verification, which runs what a change selects and falls back to all.sh only in the cases its header lists
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
 scripts/test/tally.sh         the assertion tally every suite sources: ok, bad and skip append to a per-run file, so an assertion inside a subshell counts; tally_summary is the ending each standalone suite calls
 scripts/test/counting.sh      the counting fixture the orch.sh suite's runner, hooks_test.sh and docs_lint.sh source: counting_bin makes a directory holding a stub, which its caller puts first on PATH, that logs one line per start and runs the real command, counting_starts reads the count, counting_stdin_bin makes the same stub also recording the bytes offered on its stdin, counting_bytes sums them

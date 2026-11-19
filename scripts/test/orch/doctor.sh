@@ -2743,8 +2743,9 @@ assert_contains "the remedy names the setup doc" "$out" "docs/repo-setup.md"
 restore_suite_env
 
 # --- doctor --env: verification lines -----------------------------------------
-# The Ticket verification: and Full verification: lines the agents read from
-# the repo's instructions: each label is reported on its own.
+# The Ticket verification:, Branch verification: and Full verification: lines
+# the agents read from the repo's instructions: each label is reported on its
+# own.
 echo
 echo "doctor --env: verification lines"
 healthy_repo
@@ -2829,6 +2830,38 @@ vl_doctor --env
 assert_contains "a short fence inside a longer one and a three-space indented fence hold their lines" "$out" "ok    Full verification: true test (CLAUDE.md)"
 assert_contains "and no FAIL comes from them" "$(printf "%s\n" "$out" | tail -1)" "0 warn, 0 FAIL"
 
+# The Branch verification: line (#3544): the combined-branch check's command.
+writeln 'Full verification: true test' >CLAUDE.md
+vl_doctor --env
+assert_contains "no branch verification is ok naming the full verification" "$out" \
+  "ok    no 'Branch verification:' line - the combined-branch check runs the full verification"
+assert_not_contains "and no branch command line is reported" "$out" "Branch verification command"
+
+writeln 'Branch verification: true branch' 'Full verification: true test' >CLAUDE.md
+vl_doctor --env
+assert_contains "a branch verification is ok with its command and file" "$out" "ok    Branch verification: true branch (CLAUDE.md)"
+assert_contains "and its command is checked as installed" "$out" "ok    Branch verification command: true"
+
+writeln 'Branch verification:' 'Full verification: true test' >CLAUDE.md
+vl_doctor --env
+assert_status "a bare branch verification fails" "$st" 1
+assert_contains "it names the file" "$out" "FAIL  CLAUDE.md has a 'Branch verification:' line with no command."
+assert_contains "its remedy says what to write or remove" "$out" "write the command after 'Branch verification:' in CLAUDE.md, or remove the line"
+
+writeln 'Branch verification: true a' 'Full verification: true test' >CLAUDE.md
+writeln 'Branch verification: true b' >CONTRIBUTING.md
+vl_doctor --env
+assert_contains "two branch commands warn, the first from CLAUDE.md" "$out" "warn  Branch verification is named twice with different commands: 'true a' in CLAUDE.md and 'true b' in CONTRIBUTING.md"
+rm -f CONTRIBUTING.md
+
+writeln 'Branch verification: nosuchtool-3544 x' 'Full verification: true test' >CLAUDE.md
+vl_doctor --env
+assert_contains "a branch command not installed warns" "$out" "warn  Branch verification command nosuchtool-3544 (from CLAUDE.md) is not installed."
+
+writeln '```' 'Branch verification: make fenced' '```' 'Full verification: true test' >CLAUDE.md
+vl_doctor --env
+assert_contains "a fenced branch line is not read" "$out" "ok    no 'Branch verification:' line"
+
 writeln 'Ticket verification:' >CLAUDE.md
 vl_doctor
 assert_contains "bare doctor runs the check" "$out" "FAIL  CLAUDE.md has a 'Ticket verification:' line with no command."
@@ -2839,7 +2872,8 @@ assert_not_contains "--flow does not run the check" "$out" "verification"
 restore_suite_env
 
 # --- doctor --env: verification commands (#3346) ------------------------------
-# The first word of each `Ticket verification:` and `Full verification:` line
+# The first word of each `Ticket verification:`, `Branch verification:` and
+# `Full verification:` line
 # is looked up; a missing one warns, never fails. Each case asserts what doctor
 # --env prints; the exit status is asserted once, for the missing-command case.
 echo
