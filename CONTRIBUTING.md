@@ -230,7 +230,8 @@ module of the concept it serves, whichever modules call it.
 `scripts/orch/common.sh` holds only the primitives no concept owns (die, warn,
 note, capture and the like) and calls nothing a noun module defines; its test
 section checks this. The gh adapter layer stays whole in `gh.sh`, whoever
-calls it. A GitHub operation is captured through the gh module's pair
+calls it. A command that reaches GitHub - a GitHub operation, or a function or
+whole command that makes one - is captured through the gh module's pair
 `gh_capture` and `gh_capture_err`, never through bare `capture` or
 `capture_err`: the pair resolves the Repo in the caller's shell first, so that
 shell resolves it once (a subshell that resolves first does so for itself and

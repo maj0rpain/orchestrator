@@ -176,12 +176,13 @@ temp_file_make() {
 # stderr byte for byte, and returns its status. It leaves stdout alone, to the
 # caller's own redirect: a body streamed to a file through
 # `capture_err err cat "$file" >"$copy"` keeps its trailing
-# newlines, which capture's strip would remove. A GitHub operation goes through
-# gh_capture_err instead, which resolves the Repo first. The stderr goes through
-# one temp file capture_err makes with temp_file_make and reads back with
-# file_read; only the final rm, and the cat of a failed file_read, start an
-# external command. Call it in the current
-# shell, never inside $(...): it sets the caller's variable with printf -v. Its
+# newlines, which capture's strip would remove. A command that reaches GitHub -
+# a GitHub operation, or a function or command that makes one - goes through
+# gh_capture_err instead, which resolves the Repo first. The stderr goes
+# through one temp file capture_err makes with temp_file_make and reads back
+# with file_read; only the final rm, and the cat of a failed file_read, start an
+# external command. Call it in the current shell, never inside $(...): it sets
+# the caller's variable with printf -v. Its
 # locals carry a _capture_err_ prefix, so they shadow no caller's variable. The
 # command runs in a subshell: the gh guard's no-repo death then signals the
 # main shell, whose USR1 trap dies with the remedy on the real stderr, rather
