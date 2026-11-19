@@ -391,19 +391,18 @@ autopilot_epoch_iso() {
   date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ
 }
 
-# autopilot_self: the absolute path of this orch.sh, fixed once at load, before
+# AUTOPILOT_SELF: the absolute path of this orch.sh, fixed once at load, before
 # any change of directory. It derives from the loader's module directory, which
 # the loader makes absolute at start; orch.sh sits in the directory above it.
 # It may keep a `.` or `..` part: it is only ever started as a command.
 AUTOPILOT_SELF="${ORCH_MODULE_DIR%/*}/orch.sh"
-autopilot_self() { printf '%s\n' "$AUTOPILOT_SELF"; }
 
 # autopilot_orch_in <dir> <orch.sh args>...: runs orch.sh itself in <dir>,
 # stdout dropped and stderr left for the caller's capture.
 autopilot_orch_in() {
   local dir="$1"
   shift
-  cd "$dir" && "$(autopilot_self)" "$@" >/dev/null
+  cd "$dir" && "$AUTOPILOT_SELF" "$@" >/dev/null
 }
 
 # autopilot_labels_ensure: the labels exist with their colour and
@@ -473,9 +472,9 @@ autopilot_post_minimal_plan() {
 # the main checkout. ORCH_AUTOPILOT_FOREGROUND=1, set by tests, waits for it.
 autopilot_spawn_run() {
   if [ "${ORCH_AUTOPILOT_FOREGROUND:-}" = 1 ]; then
-    "$(autopilot_self)" autopilot run "$1" >/dev/null 2>&1 || true
+    "$AUTOPILOT_SELF" autopilot run "$1" >/dev/null 2>&1 || true
   else
-    ( nohup "$(autopilot_self)" autopilot run "$1" >/dev/null 2>&1 </dev/null & )
+    ( nohup "$AUTOPILOT_SELF" autopilot run "$1" >/dev/null 2>&1 </dev/null & )
   fi
 }
 
@@ -960,54 +959,54 @@ autopilot_flow_ranked() {
   printf -v "$1" '%s' "$(printf '%s' "$_ranked" | sort -k1,1n -k2,2n)"
 }
 
-# autopilot_verdict <issue> <named> <var> [<state> <labels>]: the quick
+# autopilot_verdict <issue> <var> [<state> <labels>]: the quick
 # autopilot's verdict on one issue, into <var>: `eligible <none|move|override>`
 # or `skip <reason>`, the
 # first exclusion in the fixed order (closed, missing, untrusted, phase,
-# wontfix, needs-info, ticket, untriaged-finding). <named> is true for an issue
-# the caller named, the only kind that can be `missing`: gh's not-found reason
-# for a listed one, like any other failed read, dies. Given <state> and <labels>
-# (a listed row's, the labels one per line, possibly none) it reads neither.
+# wontfix, needs-info, ticket, untriaged-finding). Only an issue read here (a
+# named one, with no <state> <labels> given) can be `missing`, on gh's not-found
+# reason. Given <state> and <labels> (a listed row's, the labels one per line,
+# possibly none) it reads neither.
 # Writes nothing.
 autopilot_verdict() {
   orch_load trust
-  local issue="$1" named="$2" state labels err parent phase label role st=0 ready human
-  if [ "$#" -ge 5 ]; then
-    state="$4"; labels="$5"
+  local issue="$1" state labels err parent phase label role st=0 ready human
+  if [ "$#" -ge 4 ]; then
+    state="$3"; labels="$4"
   elif ! issue_state_labels_read "$issue" state labels err; then
-    if [ "$named" = true ] && gh_issue_not_found "$err"; then
-      printf -v "$3" '%s' "skip missing"
+    if gh_issue_not_found "$err"; then
+      printf -v "$2" '%s' "skip missing"
       return 0
     fi
     die "could not read issue #$issue: $(gh_reason "$err")"
   fi
-  if [ "$state" != OPEN ]; then printf -v "$3" '%s' "skip closed"; return 0; fi
+  if [ "$state" != OPEN ]; then printf -v "$2" '%s' "skip closed"; return 0; fi
   trust_issue_check "$issue" || st=$?
   case "$st" in
     0) ;;
-    1) printf -v "$3" 'skip untrusted %s' "$TRUST_WRITER"; return 0 ;;
+    1) printf -v "$2" 'skip untrusted %s' "$TRUST_WRITER"; return 0 ;;
     *) die "could not check the trust of issue #$issue: $TRUST_REASON" ;;
   esac
   for phase in $(standing_phase_labels_in "$labels"); do
-    printf -v "$3" 'skip phase %s' "$phase"
+    printf -v "$2" 'skip phase %s' "$phase"
     return 0
   done
   for role in wontfix needs-info; do
     triage_label_into label "$role"
-    if label_listed "$labels" "$label"; then printf -v "$3" 'skip %s' "$role"; return 0; fi
+    if label_listed "$labels" "$label"; then printf -v "$2" 'skip %s' "$role"; return 0; fi
   done
   gh_or_die --out parent "read issue #$issue's parent" adapter_issue_parent "$issue"
-  if [ -n "$parent" ]; then printf -v "$3" 'skip ticket #%s' "$parent"; return 0; fi
+  if [ -n "$parent" ]; then printf -v "$2" 'skip ticket #%s' "$parent"; return 0; fi
   triage_label_into ready ready-for-agent
   triage_label_into human ready-for-human
   # A filed finding finding triage has not yet triaged: the issue triage gate.
   if finding_untriaged "$labels"; then
-    printf -v "$3" '%s' "skip untriaged-finding"
+    printf -v "$2" '%s' "skip untriaged-finding"
     return 0
   fi
-  if label_listed "$labels" "$ready"; then printf -v "$3" '%s' "eligible none"
-  elif label_listed "$labels" "$human"; then printf -v "$3" '%s' "eligible override"
-  else printf -v "$3" '%s' "eligible move"; fi
+  if label_listed "$labels" "$ready"; then printf -v "$2" '%s' "eligible none"
+  elif label_listed "$labels" "$human"; then printf -v "$2" '%s' "eligible override"
+  else printf -v "$2" '%s' "eligible move"; fi
 }
 
 # autopilot_candidates_run <arg>...: orch.sh autopilot candidates. One line per
@@ -1017,7 +1016,8 @@ autopilot_verdict() {
 # its state and labels from the listed row. Every read comes
 # before the first line is printed, so a failed read leaves no partial list.
 autopilot_candidates_run() {
-  # autopilot_verdict runs in a command substitution: load its modules once.
+  # autopilot_verdict calls standing_phase_labels_in inside $(...), which loads
+  # handoff in a subshell on every call: load both here once, in this shell.
   orch_load standing
   orch_load handoff
   local usage="usage: orch.sh autopilot candidates [<n>... | --all | --limit <k>]"
@@ -1036,11 +1036,9 @@ autopilot_candidates_run() {
     esac
   done
   [ -n "$mode" ] || die "$usage"
-  local n verdict report="" eligible=0 named=false
+  local n verdict report="" eligible=0
   local -A listed_states=() listed_labels=()
-  if [ "$mode" = named ]; then
-    named=true
-  else
+  if [ "$mode" != named ]; then
     local listed list_err
     issues_open_rows_read listed listed_states listed_labels list_err ||
       gh_die "list the open issues" "$list_err"
@@ -1048,8 +1046,8 @@ autopilot_candidates_run() {
   fi
   for n in ${issues[@]+"${issues[@]}"}; do
     if [ "$mode" = limit ] && [ "$eligible" -ge "$limit" ]; then break; fi
-    if [ "$named" = true ]; then autopilot_verdict "$n" "$named" verdict
-    else autopilot_verdict "$n" "$named" verdict "${listed_states[$n]}" "${listed_labels[$n]}"; fi
+    if [ "$mode" = named ]; then autopilot_verdict "$n" verdict
+    else autopilot_verdict "$n" verdict "${listed_states[$n]}" "${listed_labels[$n]}"; fi
     case "$verdict" in eligible*) eligible=$((eligible + 1)) ;; esac
     report="$report$n $verdict"$'\n'
   done
@@ -1092,7 +1090,7 @@ autopilot_done_read() {
 # and skips that issue only.
 autopilot_sync_detect() {
   orch_load standing
-  local raw="" prs="" gh_err issue running sync human pr_lines head_prefix count reason="" lines_extra mergeable
+  local raw="" prs="" gh_err issue running sync human pr_lines head_prefix count reason="" pr_newlines mergeable
   [ -n "$1" ] || return 0
   if gh_capture raw gh_err adapter_prs_open_mergeability; then
     prs="$(printf '%s\n' "$raw" | trust_filter_prs "the open PRs")" || reason="the open PRs could not be read: a malformed line"
@@ -1109,8 +1107,8 @@ autopilot_sync_detect() {
     branch_name_flow_into head_prefix "$issue" ""
     pr_lines_by_prefix "$prs" "$head_prefix" pr_lines
     [ -n "$pr_lines" ] || continue
-    lines_extra="${pr_lines//[^$'\n']/}"
-    count=$(( ${#lines_extra} + 1 ))
+    pr_newlines="${pr_lines//[^$'\n']/}"
+    count=$(( ${#pr_newlines} + 1 ))
     if [ "$count" -gt 1 ]; then
       warn "issue #$issue has $count open PRs from a branch starting $head_prefix - sync detection skips it"
       continue
@@ -1134,15 +1132,15 @@ autopilot_sync_detect() {
 # stopping the tick. Writes into the caller-named <table-var> the table minus
 # every issue it closed: the whole table when the merged-PR read fails.
 autopilot_close_missed() {
-  local prs issue running sync human default bound="" kept="" head_prefix issue_prs
+  local prs issue running sync human default bound_issue="" kept="" head_prefix issue_prs
   printf -v "$2" '%s' "$1"
   [ -n "$1" ] || return 0
   while read -r issue running sync human; do
     [ -n "$issue" ] && [ "$running" = 0 ] || continue
-    bound="$issue"; break
+    bound_issue="$issue"; break
   done <<<"$1"
-  [ -n "$bound" ] || return 0
-  pr_merged_closing_read default prs "no merged-PR close this tick" "$bound" || return 0
+  [ -n "$bound_issue" ] || return 0
+  pr_merged_closing_read default prs "no merged-PR close this tick" "$bound_issue" || return 0
   while read -r issue running sync human; do
     [ -n "$issue" ] || continue
     if [ "$running" = 0 ]; then
@@ -1387,7 +1385,7 @@ AUTOPILOT_BG_WAIT_MS=7200000
 autopilot_review_budget_record() {
   local budget
   cd "$1" || return
-  budget="$("$(autopilot_self)" autopilot budget)" || return
+  budget="$("$AUTOPILOT_SELF" autopilot budget)" || return
   autopilot_orch_in "$1" state set budget "$budget"
 }
 
@@ -1508,7 +1506,7 @@ autopilot_watch() {
   trap "liveness_watch_end" EXIT
   while :; do
     rc=0
-    "$(autopilot_self)" autopilot tick >/dev/null &
+    "$AUTOPILOT_SELF" autopilot tick >/dev/null &
     AUTOPILOT_WATCH_CHILD=$!
     wait "$AUTOPILOT_WATCH_CHILD" || rc=$?
     AUTOPILOT_WATCH_CHILD=""

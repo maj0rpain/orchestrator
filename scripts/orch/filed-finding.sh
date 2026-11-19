@@ -144,6 +144,13 @@ triage_label_ensure() {
   adapter_label_create "$1" e4e669 "Not yet triaged" 2>/dev/null || true
 }
 
+# needs_triage_label_ready <var>: the repo's needs-triage label into <var>,
+# made if it is missing, with triage_label_ensure's handling of a failed create.
+needs_triage_label_ready() {
+  triage_label_into "$1" needs-triage
+  triage_label_ensure "${!1}"
+}
+
 # category_for_axis <axis>: the category a finding filed on that review axis
 # starts in, from the axis table, whatever the axis's case. Prints nothing and
 # fails for any other axis; the caller words its own error.

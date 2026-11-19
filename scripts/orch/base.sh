@@ -125,10 +125,11 @@ recorded_base_into() {
   return 0
 }
 
-# Reads the current base into the named variable and notes "<base> (<source>)".
-base_note_into() {
-  base_branch_into "$1"
-  note "${!1} ($(base_source))"
+# Prints the base note, "<base> (<source>)". Sets nothing in the caller's shell.
+base_note() {
+  local base
+  base_branch_into base
+  note "$base ($(base_source))"
 }
 # base_source: prints `set` when a base branch is configured, else `default`.
 base_source() { if [ -n "$(base_setting)" ]; then echo set; else echo default; fi; }
@@ -205,26 +206,25 @@ cmd_base() {
       else
         git config orchestrator.base "$b"
       fi
-      local cur
-      base_note_into cur
+      base_note
       # The setting only reaches flows started after it; say so rather than
       # let the active flow's PR surprise anyone by targeting its old base.
       if [ "$fphase" != "done" ]; then
-        local fb; flow_base_fallback_into fb "$fbase"
+        local cur fb
+        base_branch_into cur
+        flow_base_fallback_into fb "$fbase"
         [ "$fb" = "$cur" ] ||
           note "note: the active flow $fslug keeps its own base branch: $fb"
       fi
       ;;
     show)
       [ $# -eq 0 ] || die "usage: orch.sh base show"
-      local cur
-      base_note_into cur
+      base_note
       ;;
     clear)
       [ $# -eq 0 ] || die "usage: orch.sh base clear"
       git config --unset orchestrator.base 2>/dev/null || true
-      local cur
-      base_note_into cur
+      base_note
       ;;
     *) die "unknown base op: ${op:-<none>} (want set|show|clear)" ;;
   esac

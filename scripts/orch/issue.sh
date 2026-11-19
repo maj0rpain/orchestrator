@@ -297,14 +297,13 @@ cmd_issue_next() {
   orch_load standing
   orch_load handoff
   local ready nums n err parent open_count blockers line state title
-  local -A titles=() labels=()
+  local -A state_titles=() labels=()
   repo_pin || die2 "$REPO_REMEDY"
   triage_label_into ready ready-for-agent
-  issues_titled_rows_read nums titles labels err "$ready" \
+  issues_titled_rows_read nums state_titles labels err "$ready" \
     || gh_die --exit 2 "list the open issues labelled $ready" "$err"
   for n in $nums; do
-    # each title is "<state><TAB><title>", the state as GitHub answered it.
-    [ "${titles[$n]%%$'\t'*}" = OPEN ] || continue
+    [ "${state_titles[$n]%%$'\t'*}" = OPEN ] || continue
     [ -z "$(standing_phase_labels_in "${labels[$n]}")" ] || continue
     gh_or_die --exit 2 --out parent "read the parent of issue #$n" adapter_issue_parent "$n"
     [ -z "$parent" ] || continue
@@ -319,7 +318,7 @@ cmd_issue_next() {
       done <<<"$blockers"
     fi
     [ "$open_count" -eq 0 ] || continue
-    title="${titles[$n]#*$'\t'}"
+    title="${state_titles[$n]#*$'\t'}"
     printf '%s\t%s\n' "$n" "$title"
     return 0
   done

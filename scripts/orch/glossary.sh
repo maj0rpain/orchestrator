@@ -179,7 +179,7 @@ check_glossary() {
     d_ok "$n glossary entries read from GLOSSARY.md"
     return 0
   fi
-  d_fail "${err#orch: }"
+  d_fail "$(err_line "$err")"
   d_remedy 'write each entry as a **Term**: line, e.g. "**Doctor**: the diagnostic command." (optionally after a "- " bullet)' \
     "see docs/repo-setup.md under the plugin root"
 }
