@@ -133,13 +133,13 @@ verification_grace_tenths() {
 # VERIFICATION_GRACE_TENTHS. The nap count is local, never the caller's
 # `blocked`, which wait_block_nap's fast path leaves unsummed.
 verification_grace_wait() {
-  local since="$1" naps=0 now spent
+  local since="$1" naps=0 wall spent
   shift
   orch_load wait
   verification_grace_tenths
   while "$@"; do
-    printf -v now '%(%s)T' -1
-    spent=$(( (now - since) * 10 ))
+    printf -v wall '%(%s)T' -1
+    spent=$(( (wall - since) * 10 ))
     [ "$spent" -ge "$naps" ] || spent="$naps"
     [ "$spent" -lt "$VERIFICATION_GRACE_TENTHS" ] || return 1
     wait_block_nap 0.1
@@ -162,7 +162,8 @@ verification_epoch_in() {
 }
 
 # verification_mark <file>: records the current epoch second in <file> unless it
-# already holds one, so a grace is counted across calls, from the first.
+# already holds one (so a grace is counted across calls, from the first) or its
+# directory is gone (so a mark never brings back a removed record).
 verification_mark() {
   [ ! -f "$1" ] && [ -d "${1%/*}" ] || return 0
   file_write_atomic "$1" "$(printf '%(%s)T' -1)"$'\n' 2>/dev/null || true

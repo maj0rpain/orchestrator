@@ -151,12 +151,12 @@ wait_nap() {
 # the fast naps are not in
 # `blocked`), and adds its nap to the caller's `blocked`, read as ${blocked:-0}.
 wait_block_nap() {
-  local now whole up="${1%%.*}" frac="" spent nap
+  local wall whole up="${1%%.*}" frac="" spent nap
   [[ "$1" != *.* ]] || frac="${1#*.}"
   [ -z "${frac//0/}" ] || up=$(( 10#${up:-0} + 1 ))
   whole="${ORCH_WAIT_BLOCK%%.*}"
-  printf -v now '%(%s)T' -1
-  if [ $(( now - WAIT_CALL_START + 1 + 10#${up:-0} )) -le "$(( 10#${whole:-0} ))" ]; then
+  printf -v wall '%(%s)T' -1
+  if [ $(( wall - WAIT_CALL_START + 1 + 10#${up:-0} )) -le "$(( 10#${whole:-0} ))" ]; then
     block_fast=1
     sleep "$1"
     return 0
