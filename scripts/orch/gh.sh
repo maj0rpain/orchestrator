@@ -148,11 +148,14 @@ gh_limit_reset() {
 # Status 0: no limit - the caller passes its failure through untouched.
 # Status 2: a first secondary limit, waited out (ORCH_GH_LIMIT_WAIT seconds,
 # default 60) - the caller retries once and calls this again with
-# <retry spent> 1. While a re-callable wait is open (wait_open set WAIT_FILE)
+# <retry spent> 1. While a re-callable wait is open (wait_open set WAIT_FILE, or
+# review ci's provisional guard set it to its pending file by hand)
 # and what is left of ORCH_WAIT_BLOCK cannot hold that wait, the rest of the
 # block is slept, the mark "$WAIT_FILE.limited" is written and the status is 1
 # with no message, nothing recorded: the wait is not over, and its poll loop
-# (wait_limited_check) ends the call as still running (exit 75, total kept).
+# (wait_limited_check) ends the call as still running (exit 75, total kept);
+# under the provisional guard review ci ends it with wait_exit_running, there
+# being no total to keep.
 # Status 1: a limit to give up on - a primary one, a secondary one met again
 # after the retry, or a first secondary one on a compound write (never
 # retried, so called with <retry spent> 1), handled as a primary one. The
@@ -168,8 +171,9 @@ gh_limit_handle() {
     # A re-callable wait is open (wait_open ran): its call never blocks past
     # ORCH_WAIT_BLOCK, so a limit wait the block cannot hold ends the call as
     # still running, not as a retry that meets the limit again. The wait is
-    # open only where wait_open set WAIT_FILE: the stubbed wait_nap of every
-    # other command is never reached.
+    # open only where WAIT_FILE is set, by wait_open or by review ci's
+    # provisional guard: the stubbed wait_nap of every other command is never
+    # reached.
     if [ -n "${WAIT_FILE:-}" ]; then
       left="$(wait_nap "$nap" "$(wait_block_spent 0)")"
       if float_lt "$left" "$nap"; then

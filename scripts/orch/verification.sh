@@ -14,7 +14,11 @@
 # id (the checkout and its identity token), state (HEAD and the
 # working-tree state: tracked changes, staged or not, and unignored untracked
 # files, by content), pid (a liveness record), out, err, status
-# (written once the run ends) and overrun (a run stopped at the ceiling). A
+# (written once the run ends), overrun (a run stopped at the ceiling), termed
+# (when TERM was sent to a stale run's group), killed (when KILL was sent, by
+# the stop, the delivery or the runner) and waiting (when a record with no state
+# was first seen); the last three hold an epoch, so the grace counts across
+# calls. A
 # finished result or a live run whose state no
 # longer matches is stale: the result is discarded undelivered, the live run
 # stopped by its process group (TERM, then KILL after
