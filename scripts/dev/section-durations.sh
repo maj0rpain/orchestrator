@@ -139,19 +139,18 @@ suite_run() {
 stale_report() {
   local total budget
   total="$(durations_total <"$target")" || return 1
-  total="$((total / 10)).$((total % 10))"
   if suite_budget_read "$dir/suite-budget"; then
     budget="$SUITE_BUDGET CPU seconds"
   else
     budget=missing
   fi
-  echo "section-durations.sh: total $total CPU seconds, budget $budget"
+  echo "section-durations.sh: total $(tenths_text "$total") CPU seconds, budget $budget"
 }
 
-# DOCS_LINT_RECORDING=1 tells docs_lint.sh the ledger is being recorded, so it
-# does not fail on the very lines this run replaces.
 # measure_suite <name>: times the other suite <name> as the full refresh does,
 # and on a failure adds it to failed, with its report and output on stderr.
+# DOCS_LINT_RECORDING=1 tells docs_lint.sh the ledger is being recorded, so it
+# does not fail on the very lines this run replaces.
 measure_suite() {
   local suite_st
   test_jobs_slot_wait
