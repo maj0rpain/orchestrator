@@ -87,7 +87,7 @@
 # fd. The job alone keeps the slot: a runner starts the job through
 # test_jobs_job, so no process the job leaves running holds the lock after the
 # job is gone, and the kernel still frees it should the holder die. Records the
-# holder's pid in TEST_JOBS_HOLDER_PID, which is empty when no slot was held.
+# holder's pid in TEST_JOBS_HOLDER_PID.
 #
 # test_jobs_job <cmd>...: closes the slot fd and execs <cmd> in place of the
 # calling subshell, so the job's exit status is <cmd>'s. A runner starts every
@@ -122,9 +122,13 @@
 # reaches the suite) in the background through test_jobs_job, its children
 # marked ORCH_TEST_POOL_HELD from test_jobs_held_marker, and hands the slot to a
 # holder that keeps it until the suite exits. Records the suite's pid in
-# TEST_JOBS_SUITE_PID and the holder's in TEST_JOBS_HOLDER_PID (empty when no
-# slot was held, as in an unpooled run or a start with no take step first),
-# which the caller reads, never `$!`.
+# TEST_JOBS_SUITE_PID and the holder's in TEST_JOBS_HOLDER_PID, which the caller
+# reads, never `$!`.
+#
+# TEST_JOBS_HOLDER_PID: the pid of the holder process that
+# test_jobs_slot_release (and so test_jobs_suite_start) started, for the caller
+# to wait on. It is empty when no slot was held, as in an unpooled run or a
+# start with no take step first.
 #
 # test_jobs_stop_children <pid>...: a runner's INT/TERM handler. Sends TERM to
 # every pid given, waits for each one, and exits 130, so the runner's EXIT trap
