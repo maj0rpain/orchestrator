@@ -3,7 +3,8 @@
 # Sourced by orch_test.sh, all.sh, affected.sh, docs_lint.sh and
 # scripts/dev/section-durations.sh, and by harness.sh through orch_test.sh, so
 # the runners read the test tree one way: all.sh's suite list, the runners
-# that list leaves out (`suites_unlisted`), a section file's titles, the
+# that list leaves out (`suites_unlisted`), the membership test of a word in
+# a list (`listed`), a section file's titles, the
 # section files, the files shellcheck checks, the shellcheck command, the
 # pooled shellcheck step (`shellcheck_start` / `shellcheck_join`), the tenths
 # conversion, the durations-file grammar, the suite budget, the ledger's
