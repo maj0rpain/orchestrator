@@ -687,30 +687,29 @@ echo
 echo "issue labels"
 healthy_repo
 fake_github
-labels_of() { "$ORCH" issue labels "$@"; }
 
 fake_issue 90 open bug orch:running
-out="$(labels_of 90 2>&1)"; st=$?
+out="$("$ORCH" issue labels 90 2>&1)"; st=$?
 assert_status "one issue exits 0" "$st" 0
 assert_eq "and prints its number, state and labels" "$out" "90 open bug, orch:running"
 
 fake_issue 91 closed ready-for-agent
 fake_issue 92 open
-out="$(labels_of 92 90 91 2>&1)"
+out="$("$ORCH" issue labels 92 90 91 2>&1)"
 assert_eq "several issues print in the order named, closed and unlabelled as such" \
   "$out" $'92 open\n90 open bug, orch:running\n91 closed ready-for-agent'
 
 snap="$(fake_snapshot)"
-out="$(labels_of 2>&1)"; st=$?
+out="$("$ORCH" issue labels 2>&1)"; st=$?
 assert_status "no number is a usage error" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh issue labels <n>..."
-out="$(labels_of 90 abc 2>&1)"; st=$?
+out="$("$ORCH" issue labels 90 abc 2>&1)"; st=$?
 assert_status "a number that is not plain is a usage error" "$st" 1
 assert_not_contains "raised before any read, so nothing printed" "$out" "90 open"
 assert_eq "and the store is untouched" "$(fake_snapshot)" "$snap"
 
 fake_fail_after adapter_issue_state_labels 1 "$GH_502"
-out="$(labels_of 90 91 92 2>&1)"; st=$?
+out="$("$ORCH" issue labels 90 91 92 2>&1)"; st=$?
 assert_status "a failed read partway exits 1" "$st" 1
 assert_eq "earlier line printed, then the error naming the issue, no later issue" \
   "$out" $'90 open bug, orch:running\norch: gh could not read issue #91: HTTP 502: Bad Gateway'
@@ -1362,10 +1361,9 @@ df_sha="$(git rev-parse HEAD)"
 printf 'A finding.\n' >"$df_dir/finding"
 # df_body <sha> <file>:<line>...: an audit body, rendered by the audit module.
 df_body() {
-  local sha="$1" l ls=()
+  local sha="$1"
   shift
-  for l in "$@"; do ls+=("$l"); done
-  sourced_orch audit_body_render "$df_dir/finding" "$sha" "${ls[@]}"
+  sourced_orch audit_body_render "$df_dir/finding" "$sha" "$@"
 }
 df_fetch() { "$ORCH" issue fetch 23 "$df_dir/out.md" 2>&1; }
 want_none="cited files changed since $df_sha: none"
@@ -1454,8 +1452,8 @@ fake_issue_body 23 "$df_one_body"
 "$ORCH" issue fetch 23 "$df_dir/out.json" --json >"$df_dir/stdout" 2>&1
 assert_eq "--json prints nothing new" "$(cat "$df_dir/stdout")" ""
 
-# Fetching an ordinary body loads nothing and starts no git; three cited files
-# start git as many times as one.
+# Fetching an ordinary body loads no audit module and starts no git beyond the
+# dispatch's; three cited files start git as many times as one.
 df_git="$(counting_bin git)"
 fake_issue_body 23 "Just text."
 : >"$df_git/git.log"

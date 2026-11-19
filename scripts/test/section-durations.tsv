@@ -211,13 +211,13 @@
 24	28	issue triage	35104602a6dc67c6a5b055ec9fbef989793ffefc
 15	18	issue triage --check	564f12ed763e0da2d5050a9f33e1d37403c81e97
 3	4	issue ready	fb83751d2b18b2562947725eb2ec3faeb24a3a24
-2	3	issue labels	2660a93084add5e8c79be829041de52212aedfaf
+2	3	issue labels	9354d102c3ac71107563416e1618ae7138cd3de6
 4	5	issue close	31642c9eef64b5d17aea977702d7884852078fee
 89	102	issue fetch/update	757d89d57752cf31da76d1a7277bd0ea0a65a9c7
 0	1	outside a checkout (#931)	062b9b295a023794605c84086a2187d40ba593df
 6	7	issue fetch trust warning	3bfa7f95a6e73bcaa9c194dc1197ddbe0030538b
 4	5	issue fetch writes LF lines (#1916)	33c6a8168242000311c27c47957c82c5cb0a1df5
-16	18	issue fetch drift line (#3458)	ed2b3c91f9fe31b2d39ee7dbff2c91f10cbde9be
+16	18	issue fetch drift line (#3458)	b92eb616e695504f3224a8b053f69180086d0db5
 1	1	issue ready: no repo (#3050)	e01486b40160e00af62e89a2858de8cf2edc7580
 10	12	issue next	5197d781f049be338dec1b6be44187961f50c651
 3	4	known-items module	822bb4b7d6bc24d8ddf679e4aa02e11d5f0562a4
