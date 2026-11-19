@@ -4498,7 +4498,7 @@ assert_eq "the fallback counter passes the command's stdout through" "$csb_out" 
 assert_status "and its exit status" "$csb_st" 0
 printf '{"a":false}\n' | PATH="$csb_path" jq -e .a >/dev/null 2>&1; csb_st=$?
 assert_status "and a failing command's exit status" "$csb_st" 1
-assert_eq "and records one count per start" "$(wc -l <"$csb_fb/jq.bytes" | tr -d ' ')" "2"
+assert_eq "and records one count per start" "$(log_count "$csb_fb/jq.bytes")" "2"
 if [ "$csb_has_ds" = yes ]; then
   : >"$csb_fb/jq.bytes"
   PATH="$csb_path" "$csb_env" --default-signal=PIPE jq -nR "$csb_prog" <"$csb_in" >/dev/null

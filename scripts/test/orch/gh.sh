@@ -155,7 +155,7 @@ triage_gh
 out="$(PATH="$triage_dir:$ssh_stub_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" issue triage 5 2>&1)"; st=$?
 assert_status "issue triage on an SSH-alias origin runs" "$st" 0
 assert_eq "and ssh is called once for its read, relabel and read back" \
-  "$(wc -l <"$ssh_calls" | tr -d ' ')" "1"
+  "$(log_count "$ssh_calls")" "1"
 assert_eq "and every one of its gh calls carried the repo and its host" \
   "$(grep -cv '^GH_REPO=ghe.example.com/fork/widgets GH_HOST=ghe.example.com ' "$GH_FIXTURE/env.log")" "0"
 assert_eq "and it made more than one gh call" \
@@ -512,6 +512,29 @@ lagging adapter_label_create; assert_status "an operation with no lag is current
 # fake_failing, so even a seeded failure does not mask it. No converted caller
 # sends a bad option, so the fake is sourced alone and the operation called.
 faked() { bash -c 'source "$1"; shift; "$@"' _ "$GH_ADAPTER_FAKE" "$@"; }
+# The optional check_runs and statuses lists read as empty with nothing on
+# stderr, and the snapshot hides every read-side file but no countdown.
+rs_store="$ORCH_GH_FAKE_STORE"
+fake_github
+new_repo >/dev/null
+fake_pr 71 open feat main
+assert_eq "commits checked with no check_runs or statuses seeded prints nothing on stderr" \
+  "$(sourced_orch_script 'adapter_pr_commits_checked 71' 2>&1 >/dev/null)" ""
+fake_checks 71 all green
+rs_before="$(fake_snapshot)"
+faked adapter_pr_checks 71 all >/dev/null 2>&1
+assert_eq "a scripted checks read leaves the snapshot as it was" "$(fake_snapshot)" "$rs_before"
+fake_fail adapter_issue_body
+fake_fail_after adapter_issue_body 2
+rs_before="$(fake_snapshot)"
+faked adapter_issue_body 5 >/dev/null 2>&1
+assert_ne "a call consuming a fail countdown changes the snapshot" "$(fake_snapshot)" "$rs_before"
+fake_lag adapter_issue_title_labels 2
+rs_before="$(fake_snapshot)"
+faked adapter_issue_title_labels 5 >/dev/null 2>&1
+assert_ne "a call consuming a lag countdown changes the snapshot" "$(fake_snapshot)" "$rs_before"
+assert_eq "log_count of an absent log is 0 in its tagged form" "$(log_count "$ORCH_GH_FAKE_STORE/nope" tag)" "0"
+ORCH_GH_FAKE_STORE="$rs_store"
 fake_issue 14 open
 fake_fail adapter_issue_relabel
 fake_fail adapter_issue_close
@@ -2057,7 +2080,7 @@ bare_case() {
   : >"$GH_FIXTURE/once2/calls"
   PATH="$GH_FIXTURE/once2:$PATH" contract "$@" >/dev/null 2>&1; st=$?
   assert_status "$name meeting a secondary limit the retry clears succeeds" "$st" 0
-  assert_eq "$name calls gh twice" "$(wc -l <"$GH_FIXTURE/once2/calls" | tr -d ' ')" "2"
+  assert_eq "$name calls gh twice" "$(log_count "$GH_FIXTURE/once2/calls")" "2"
 }
 compound_case "an issue close with a comment" issue close 5 --reason completed --comment 'done' -- \
   adapter_issue_close 5 --reason completed --comment 'done'
@@ -2074,7 +2097,7 @@ bare_case "an unmarked write (a comment)" adapter_pr_comment 7 "$GH_FIXTURE/body
 limit_once_gh "$GH_FIXTURE/once2" '' 'ok' 3
 out="$(ORCH_GH_LIMIT_WAIT=0 PATH="$GH_FIXTURE/once2:$PATH" env -u ORCH_GH_ADAPTER bash -c 'source "$1"; adapter_pr_close 7 bye || true; adapter_pr_comment 7 "$2"; echo "status $?"' _ "$ORCH" "$GH_FIXTURE/body.md" 2>&1)"
 assert_contains "a call made after a compound write is retried and succeeds" "$out" "status 0"
-assert_eq "and gh is called for the later call twice" "$(wc -l <"$GH_FIXTURE/once2/calls" | tr -d ' ')" "4"
+assert_eq "and gh is called for the later call twice" "$(log_count "$GH_FIXTURE/once2/calls")" "4"
 # a compound write failing on no limit passes stderr and status through
 gh_reply 1 '' 'HTTP 502: Bad Gateway' pr close 7 --comment bye
 out="$(contract adapter_pr_close 7 bye 2>&1)"; st=$?

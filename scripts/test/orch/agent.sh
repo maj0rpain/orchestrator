@@ -623,10 +623,10 @@ ajs_run() { : >"$ajs_home/count"; HOME="$ajs_home" AJS_COUNT="$ajs_home/count" s
 ajs_out="$(ajs_run)"
 assert_eq "the Junie session report names each agent's last run, with no tail on PATH" \
   "$(grep -c 'ran model m2, effort low' <<<"$ajs_out")" 3
-ajs_greps="$(wc -l <"$ajs_home/count")"
+ajs_greps="$(log_count "$ajs_home/count")"
 printf 's1\nINFO Executing agent custom_agent_orch-fixer_1 with parameters AgentParams(model=m1, effort=null, reasoningEffort=low)\n' >"$ajs_home/.junie/logs/log-1.log"
 ajs_run >/dev/null
-assert_eq "and starts no more greps for three agents than for one" "$ajs_greps" "$(wc -l <"$ajs_home/count")"
+assert_eq "and starts no more greps for three agents than for one" "$ajs_greps" "$(log_count "$ajs_home/count")"
 rm -rf "$ajs_home"
 unset ajs_home ajs_bin ajs_c ajs_root ajs_n ajs_a ajs_out ajs_greps
 unset -f ajs_run
