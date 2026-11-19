@@ -395,7 +395,8 @@ classify() {
   esac
   case "$f" in
     scripts/test/gh_adapter_fake.sh | scripts/test/orch/setup.sh | scripts/test/counting.sh | scripts/test/fifo.sh | scripts/test/tally.sh)
-      support_select "$f" "$state" ;;
+      # The row form asks only which row takes the path, never what it selects.
+      [ "$row" -eq 1 ] || support_select "$f" "$state" ;;
     scripts/orch.sh | scripts/test/all.sh | scripts/test/orch_test.sh | scripts/test/affected.sh | \
       scripts/test/test_jobs.sh | scripts/test/report.sh | scripts/test/test_tree.sh | scripts/test/git_env.sh) ;;
     scripts/flow-state.sh) core=1; sections_of state init side-checkout ;;
