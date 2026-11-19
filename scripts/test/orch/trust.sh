@@ -60,13 +60,16 @@ assert_eq "the array is built at load, with no process on PATH" "$tr_json" '["OW
 
 # The comment filter and the issue check agree on a lower-case association and
 # an empty one (the trusted ones and NONE are asserted above).
+fake_issue 8 open ready-for-agent orch:spec
+fake_comment 8 someone "2026-09-01T10:00:00Z" "said by owner" owner
+fake_comment 8 someone "2026-09-02T10:00:00Z" "said by empty" ""
+printf '\n' >"$ORCH_GH_FAKE_STORE/issues/8/comments/2/association"
+"$ORCH" issue comments 8 "$tr_file" >/dev/null 2>&1
+# Saved now: tr_fetch below overwrites $tr_file with issue 7's fetch.
+tr_case_text="$(cat "$tr_file")"
 for tr_a in owner ""; do
   tr_label="${tr_a:-empty}"
-  fake_issue 8 open ready-for-agent orch:spec
-  fake_comment 8 someone "2026-09-01T10:00:00Z" "said by $tr_label" "$tr_a"
-  [ -n "$tr_a" ] || printf '\n' >"$ORCH_GH_FAKE_STORE/issues/8/comments/1/association"
-  "$ORCH" issue comments 8 "$tr_file" >/dev/null 2>&1
-  tr_kept=no; ! grep -q "said by $tr_label" "$tr_file" || tr_kept=yes
+  tr_kept=no; [[ "$tr_case_text" != *"said by $tr_label"* ]] || tr_kept=yes
   tr_checked=no; [ -n "$(tr_fetch stranger "$tr_a")" ] || tr_checked=yes
   assert_eq "association '$tr_label': the filter and the issue check agree" "$tr_kept" "$tr_checked"
   assert_eq "association '$tr_label' is not trusted" "$tr_kept" no
