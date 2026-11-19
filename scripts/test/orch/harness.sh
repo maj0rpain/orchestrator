@@ -14,8 +14,9 @@ ALL_RUNNER_FILES=(all.sh test_jobs.sh report.sh test_tree.sh)
 # scripts/test/, that source cleanly and that `helpers.sh --tests` lists, in its
 # header order. setup.sh is kept out: sourcing it runs the suite's setup, which
 # is why the helper index check pairs setup.sh with the column-0 grep instead
-# of `declare -F`. The planted minimal tree, the quiet-mode cut-down copy and
-# the helper index check all read it. git_env.sh, the runners' isolation
+# of `declare -F`. The planted minimal tree, the quiet-mode cut-down copy, the
+# helper index check, helper_copies and the helper body copies section's
+# copies_tree fixture all read it. git_env.sh, the runners' isolation
 # preamble, is not a helper and stays out.
 
 # The throwaway repo the affected.sh support sections plan in: tr_init <dir>
@@ -26,7 +27,7 @@ ALL_RUNNER_FILES=(all.sh test_jobs.sh report.sh test_tree.sh)
 # prints affected.sh's --plan against origin/main on one line, and tr_reset
 # drops the tree's changes. TR_GATE and TR_CORE are the plan's always-run items
 # and the core set.
-TR_GATE="orch_test.sh,test-helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853),comment reader placement (#3085)"
+TR_GATE="orch_test.sh,test-helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853),comment reader placement (#3085),helper body copies (#3170)"
 TR_CORE="isolation,loader one,hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh"
 tr_git() { local dir="$1"; shift; git -C "$dir" -c user.name=t -c user.email=t@example.com "$@"; }
 tr_put() {
@@ -49,7 +50,8 @@ tr_init() {
   done
   tr_put "$dir" scripts/test/orch/harness.sh '# --- isolation ---' \
     '# --- test-helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
-    '# --- marked comment prelude placement (#1853) ---' '# --- comment reader placement (#3085) ---'
+    '# --- marked comment prelude placement (#1853) ---' '# --- comment reader placement (#3085) ---' \ \
+    '# --- helper body copies (#3170) ---'
   tr_put "$dir" scripts/test/orch/loader.sh '# --- loader one ---'
 }
 tr_commit() {
@@ -3696,7 +3698,28 @@ assert_eq "comment and blank lines inside a copy, and a trailing comment on one,
   "$(copy_msg zz-l.sh 2 planted_two setup.sh)
 $(copy_msg zz-m.sh 2 planted_two setup.sh)"
 rm -f "$copies_dir/zz-m.sh"
+rm -f "$copies_dir/zz-l.sh"
+plant_append "$copies_dir" setup.sh <<'PLANTED'
+  planted_cmt() {
+    echo c1  # a trailing comment
+    echo c2
+  }
+PLANTED
+plant_file "$copies_dir" zz-m.sh <<'PLANTED'
+  # --- planted m
+  echo c1
+  echo c2
+PLANTED
+out="$(helper_copies "$copies_dir")"
+assert_eq "a copy that drops a helper line's trailing comment still fails" "$out" "$(copy_msg zz-m.sh 2 planted_cmt setup.sh)"
+rm -f "$copies_dir/zz-m.sh"
 plant_file "$copies_dir" zz-l.sh <<'PLANTED'
+  cat <<'EOF'
+  planted_fake() {
+    echo z1
+    echo z2
+  }
+  EOF
   # --- planted l
   cat <<'EOF'
   local a="$1"
@@ -3705,12 +3728,6 @@ plant_file "$copies_dir" zz-l.sh <<'PLANTED'
   cat <<EOF
   local a="$1"
   printf '%s\n' "$a"
-  EOF
-  cat <<'EOF'
-  planted_fake() {
-    echo z1
-    echo z2
-  }
   EOF
   echo z1
   echo z2
