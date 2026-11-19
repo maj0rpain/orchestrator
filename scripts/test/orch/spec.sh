@@ -672,6 +672,15 @@ assert_status "spec_round_complete over an unremovable fundamental.md dies" "$st
 assert_contains "with today's message" "$out" \
   "could not remove $od/d/fundamental.md - every GitHub write landed and settled.md is appended: landed-x"
 assert_eq "writing no round-complete" "$(on_disk "$od/d/round-complete")" absent
+# spec_round_hold writes its argument byte for byte (#3757).
+rm -rf "$od/d"; mkdir "$od/d"
+sourced_orch spec_round_hold "$od/d" $'@@ item 1\nbody\n\n'; st=$?
+assert_status "spec_round_hold succeeds" "$st" 0
+assert_eq "it writes the blocks with the trailing blank line" "$(od -An -c "$od/d/fundamental.md" | tr -s ' ')" "$(printf '@@ item 1\nbody\n\n' | od -An -c | tr -s ' ')"
+rm -rf "$od/d"; mkdir -p "$od/d/fundamental.md"
+out="$(sourced_orch spec_round_hold "$od/d" x 2>&1)"; st=$?
+assert_status "spec_round_hold over a directory dies" "$st" 1
+assert_contains "with the write message" "$out" "could not write $od/d/fundamental.md - nothing written to GitHub"
 rm -rf "$od"
 restore_suite_env
 

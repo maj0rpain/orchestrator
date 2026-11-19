@@ -1082,6 +1082,25 @@ ORCH_AUTOPILOT=1 sra "$hd" recommended
 assert_status "a hold of an item followed by another item" "$st" 0
 assert_eq "fundamental.md ends with the held item's blank line" "$(tail -n 1 "$hd/fundamental.md" | wc -c | tr -d ' ')" 1
 
+# The hold run reads batch.md with every failure checked (#3757).
+for hf in "awk|*\"-v\"*|1" "grep|*\"@@ lens\"*|2"; do
+  IFS="|" read -r hcmd hpat hst <<<"$hf"
+  hd="$(sra_dir)"
+  sed -i 's/^@@ item 4 testability apply minor$/@@ item 4 testability apply fundamental/' "$hd/batch.md"
+  sed -i 's/^@@ finding testability 2$/&\n@@ why held back/' "$hd/batch.md"
+  snap="$(fake_snapshot)"
+  PATH="$(fails_bin "$hcmd" "$hpat" "$hst"):$PATH" ORCH_AUTOPILOT=1 sra "$hd" recommended
+  assert_status "a hold run whose $hcmd fails dies" "$st" 1
+  assert_eq "$hcmd failure: exactly the one line" "$out" "orch: could not read $hd/batch.md - nothing written to GitHub"
+  assert_eq "$hcmd failure: no fundamental.md" "$(on_disk "$hd/fundamental.md")" absent
+  assert_eq "$hcmd failure: no write" "$(fake_snapshot)" "$snap"
+done
+hd="$(sra_dir)"
+sed -i 's/^@@ item 4 testability apply minor$/@@ item 4 testability apply fundamental/' "$hd/batch.md"
+sed -i 's/^@@ finding testability 2$/&\n@@ why held back/' "$hd/batch.md"
+PATH="$(fails_bin grep '*"@@ lens"*' 1):$PATH" ORCH_AUTOPILOT=1 sra "$hd" recommended
+assert_status "a hold run whose lens grep matches nothing holds" "$st" 0
+
 ORCH_AUTOPILOT=1 sra "$d" 1C
 assert_status "the resumed apply refuses an option the item lacks" "$st" 1
 ORCH_AUTOPILOT=1 sra "$d" -4

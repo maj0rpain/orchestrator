@@ -301,7 +301,7 @@
 6	7	spec-review begin (#224)	94bb432792131696ac40f28aa83506faaca0b2a7
 5	7	spec-review begin --carry (#1141, #1185)	3c4ecf7256076ba81a70a615f6bd2f3d72443614
 0	1	quick implementation runs an unattended spec review (#237)	6b4e233546f10516272fc682b9f7b6edd022a545
-453	340	spec-review apply (#1117)	6d17588dd9453eb3c926029220f64b04879fac51
+440	361	spec-review apply (#1117)	a6db6d5b9c78306ed757f90c43f82484f6f912cb
 62	69	spec-review check (#1137)	f1f762bffccdd6172b075a3b7ffa216acb03bd91
 1	2	spec-review check literal item numbers (#1339)	f6bfd387c1a4973b7ac5420ac8ec62f9e4184fd7
 16	19	spec-review check --tickets (#1226)	d8614203d8b91ab4a785e6dde9a6778876bf5110
@@ -320,7 +320,7 @@
 5	6	spec pause --round in an autopilot flow (#1457)	538a0f0c05ff3eae5986077aea943807f8278613
 3	3	spec fetch on a truncated state.json (#1929)	60f3d67efe5d3d495d1adc47c8b0aea7008f5965
 7	8	spec ops read the flow's state once (#3063)	1ac4cb1881c14fda5d71d28175a34c212f051d4d
-9	10	spec round directory owner (#3078)	15bcf060fe1245d496d4e31d5a67a77363b5cdb9
+11	10	spec round directory owner (#3078)	cda4075427734faeb9643342f2b32165ea885958
 4	5	spec fetch drift line (#3458)	c71d2f327c2168a6b7f8593078ff7fe1849a0a52
 30	26	Standing module	7360efe83df71e2983783f4ce7fefa500261a7d4
 124	117	Standing transitions	545e34fbb2e91632de6484af07eb526577b4f311
