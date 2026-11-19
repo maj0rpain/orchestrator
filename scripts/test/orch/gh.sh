@@ -564,7 +564,7 @@ fake_github
 new_repo >/dev/null
 fake_pr 71 open feat main
 assert_eq "commits checked with no check_runs or statuses seeded prints nothing on stderr" \
-  "$(sourced_orch_script 'adapter_pr_commits_checked 71' 2>&1 >/dev/null)" ""
+  "$(sourced_orch adapter_pr_commits_checked 71 2>&1 >/dev/null)" ""
 fake_checks 71 all green
 rs_before="$(fake_snapshot)"
 faked adapter_pr_checks 71 all >/dev/null 2>&1
