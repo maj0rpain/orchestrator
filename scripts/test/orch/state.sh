@@ -329,22 +329,21 @@ rc=1 keep
 status 0"
 # A fake jq writing records by hand: every value but no sentinel, a wrong
 # sentinel, and a record after the sentinel are each a failed read.
+fs_fakebin="$(mktemp -d)"
 for fs_fake in 'nosentinel|s\0' 'wrongsentinel|s\0bogus\0' 'trailing|s\0flow-state-end\0extra\0'; do
-  fs_fakebin="$(mktemp -d)"
   printf '#!/bin/sh\nprintf "%s"\n' "${fs_fake#*|}" >"$fs_fakebin/jq"
   chmod +x "$fs_fakebin/jq"
   assert_eq "flow_state_get_many returns 1, assigning nothing, on a jq giving ${fs_fake%%|*}" \
     "$(fs_run "PATH='$fs_fakebin':\$PATH; a=keep; flow_state_get_many many.json a=slug; echo \"rc=\$? \$a\"")" "rc=1 keep
 status 0"
-  rm -rf "$fs_fakebin"
 done
+rm -rf "$fs_fakebin"
 fs_mktempbin="$(counting_bin mktemp)"
 fs_rmbin="$(counting_bin rm)"
-fs_run "PATH=$fs_mktempbin:$fs_rmbin:\$PATH; flow_state_get_many many.json a=slug b=issue" >/dev/null
+fs_jqbin="$(counting_bin jq)"
+fs_run "PATH=$fs_jqbin:$fs_mktempbin:$fs_rmbin:\$PATH; flow_state_get_many many.json a=slug b=issue c=phase d=pr e=budget" >/dev/null
 assert_eq "flow_state_get_many starts no mktemp" "$(counting_starts "$fs_mktempbin" mktemp)" "0"
 assert_eq "and no rm" "$(counting_starts "$fs_rmbin" rm)" "0"
-fs_jqbin="$(counting_bin jq)"
-fs_run "PATH=$fs_jqbin:\$PATH; flow_state_get_many many.json a=slug b=issue c=phase d=pr e=budget" >/dev/null
 assert_eq "a five-key read starts exactly one jq" "$(counting_starts "$fs_jqbin" jq)" "1"
 assert_eq "flow_state_key_field returns 2 for an unknown column, printing nothing" \
   "$(fs_run 'flow_state_key_field slug bogus')" "status 2"
