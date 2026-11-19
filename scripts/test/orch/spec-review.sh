@@ -627,7 +627,7 @@ assert_eq "settled.md written" "$(sra_cmp "$d/settled.md" "$d/changelog.md")" sa
 assert_eq "round-complete written" "$(on_disk "$d/round-complete")" present
 assert_eq "apply-answer removed" "$(on_disk "$d/apply-answer")" absent
 
-# Unreadable files in apply: each dies with its own message and no cat: line.
+# An unreadable --host-fallbacks file dies with its own message, no cat: line.
 if [ "$(id -u)" -ne 0 ]; then
   d="$(sra_dir)"
   printf 'host\n' >"$d/hosts"
