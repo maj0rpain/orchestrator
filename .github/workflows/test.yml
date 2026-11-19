@@ -5,6 +5,12 @@ name: test
 # the runner. The changelog fragment rule lives in fragment.yml. The grouping
 # and the suite list live in the scripts: this file is wiring only.
 #
+# Both jobs that run the suite run it with SIGPIPE ignored (`trap '' PIPE`).
+# The ignored disposition is the one that catches write-error bugs, and the PR
+# gate must see what main sees, or a failure that depends on the disposition
+# passes its PR and turns main red after the merge. The default disposition is
+# covered by local runs, where the shell starts at it (a WSL shell may not).
+#
 # The autopilot image's base-tools layer (apt packages, gh, Claude Code) is
 # kept in the repo's GitHub Actions cache. Each of a PR's four groups restores
 # it, then still builds the image from the PR's own commit, so only the layer
@@ -34,7 +40,12 @@ env:
 jobs:
   # A push to main: the whole suite on the runner's own tools, unsplit, so
   # drift on that side is seen within one merge. The container suite does not
-  # run on a push.
+  # run on a push. Both this job and the container job run the suite with
+  # SIGPIPE ignored: the ignored disposition is the one that catches
+  # write-error bugs, and the PR gate must see what main sees. Its verify step
+  # states SIGPIPE ignored itself, so a change in what the runner hands the job
+  # cannot move it. The default disposition is covered by local runs, where the
+  # shell starts at it (a WSL shell may not).
   runner:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -45,7 +56,9 @@ jobs:
         with:
           fetch-depth: 0
       - name: Verify
-        run: scripts/test/all.sh
+        run: |
+          trap '' PIPE
+          scripts/test/all.sh
 
   # A push to main: builds the autopilot image from scratch, with no cache
   # read, and writes the base-tools layer to the cache, so every PR's first run
@@ -83,7 +96,12 @@ jobs:
   # bookworm's mawk, git 2.39, its shellcheck), so tool-version drift and
   # environment leaks are caught on the PR rather than in an autopilot run, as
   # 4 jobs, each one ORCH_TEST_SHARD group. It runs the runner's checkout, not
-  # the image's baked-in copy, which has no .git.
+  # the image's baked-in copy, which has no .git. The suite starts with SIGPIPE
+  # ignored, set inside the container (the docker CLI's disposition does not
+  # reach it), so this gate sees what the runner job sees on main: both jobs
+  # run ignored because that is the disposition that catches write-error bugs,
+  # and the gate must see what main sees. The default disposition is covered
+  # by local runs, where the shell starts at it (a WSL shell may not).
   container:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -186,7 +204,7 @@ jobs:
             -e ORCH_MODEL_IMPLEMENTER=sonnet \
             -e ORCH_EFFORT=high \
             -e ORCH_TEST_SHARD \
-            orchestrator-autopilot scripts/test/all.sh
+            orchestrator-autopilot -c "trap '' PIPE; exec scripts/test/all.sh"
 
   # The one result for a PR's suite: passes only when all four groups did, and
   # runs whether or not they passed, but not when the run was cancelled.

@@ -173,7 +173,11 @@ and still builds the image from the PR's commit; group 4 also writes the cache,
 and a cold or unreadable cache costs time only. A push to `main` runs `all.sh`
 unsplit on the runner (the container suite does not run there) and, in a
 separate job, builds the image from scratch with no cache read and writes the
-cache, so every PR's first run starts warm. The suite runs on a
+cache, so every PR's first run starts warm. Both jobs that run the suite
+start it with SIGPIPE ignored (`trap '' PIPE`), so the PR gate sees what main's
+run sees and the ignored disposition catches write-error bugs; the default
+disposition is covered by local runs where the shell starts at it (a WSL shell
+may not). The suite runs on a
 PR's `opened`, `synchronize` and `reopened`; a newer run for the same PR
 cancels the older one, and a push to `main` is never cancelled. The changelog
 fragment check has its own workflow (see the fragment paragraph below).
