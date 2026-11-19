@@ -462,6 +462,16 @@ standing_stop 71 failure spec boom')"
 assert_contains "a stop whose body temp file cannot be made dies naming the landed writes" "$out" "orch: could not create a temp file to post the failure comment - writes that landed: added needs-human, removed orch:limited; the claim stays held"
 assert_eq "and the claim stays held" "$(fake_claim_held 71)" held
 
+# stop: a body that cannot be written dies as a chain, posts no comment
+tr_seed 72 orch:spec orch:running
+TD="$(mktemp -d)"
+out="$(sourced_rc 'eval "orig_$(declare -f temp_file_make)"
+temp_file_make() { [ "$1" != body ] || { printf -v "$1" "%s" "'"$TD"'/missing/body"; return 0; }; orig_temp_file_make "$@"; }
+standing_stop 72 failure spec boom')"
+assert_contains "a stop whose body cannot be written dies naming the landed writes" "$out" "orch: could not write the temp file to post the failure comment - writes that landed: added needs-human, removed orch:limited; the claim stays held"
+assert_eq "and the claim stays held, no comment posted, no body file left" "$(fake_claim_held 72)|$(fake_comments_of 72)|$(ls -A "$TD")" "held||"
+rmdir "$TD"
+
 # ask: a stderr temp file that fails after the body was made leaves no body
 ask_seed 69 orch:spec orch:running
 TD="$(mktemp -d)"

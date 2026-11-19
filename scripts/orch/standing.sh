@@ -395,7 +395,8 @@ standing_chain_relabel() {
 # skipped. When the state file records that an earlier attempt tried it, the
 # issue's comments are read first: a trusted comment whose body is <text>,
 # trailing whitespace aside, counts as landed with no post, and a failed read
-# dies with no post. Otherwise the try is recorded, then the post goes through
+# dies with no post. Otherwise the temp body file is made and written (a failure
+# of either dies), the try is recorded, then the post goes through
 # standing_chain_step, then the temp body file is removed and STANDING_BODY_FILE
 # cleared; a death removes it through standing_landed_die. This is the
 # one place a try is recorded. See the resumable chain comment.
@@ -413,7 +414,7 @@ standing_chain_comment() {
   fi
   temp_file_make body || standing_landed_die "could not create a temp file to $what"
   STANDING_BODY_FILE="$body"
-  printf '%s' "$4" >"$body"
+  printf '%s' "$4" >"$body" || standing_landed_die "could not write the temp file to $what"
   standing_state_put tried "$landed"
   standing_chain_step "$landed" "$what" "$issue" adapter_issue_comment "$issue" "$body"
   rm -f "$body"

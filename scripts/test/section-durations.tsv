@@ -323,7 +323,7 @@
 9	10	spec round directory owner (#3078)	15bcf060fe1245d496d4e31d5a67a77363b5cdb9
 4	5	spec fetch drift line (#3458)	c71d2f327c2168a6b7f8593078ff7fe1849a0a52
 30	26	Standing module	7360efe83df71e2983783f4ce7fefa500261a7d4
-127	110	Standing transitions	21ed48ff8460e9fd4186d50cbc61b01e42c56a13
+124	117	Standing transitions	545e34fbb2e91632de6484af07eb526577b4f311
 2	3	standing_ask reads the issue in one jq	323242a91458cfdc0852ce80bf275f3a21daf5f0
 19	21	state	8f8a6d0c9ed66193eb8616169bbf206ccea0a741
 21	20	a flow from before the budget shipped	b21908c018f434ba989362b0c10b86ed3addcc32
