@@ -172,7 +172,7 @@
 18	19	claim adapter operations (#1454)	789d0acedda7f5894bb4754db20a69aed25c5e36
 2	3	label casing (#1943)	967a4a39f788b73ef75f50851a8a5e6a3aa92edb
 44	29	gh rate limits (#2577)	5fc1f17b6d8d1b663b064feacca2ff01ae03bc9f
-9	7	gh rate limits: the GitHub pause and the hit file (#2577)	3d44e96b13f3bbf6d6dddb954b6f0dc8e0bd5a78
+9	7	gh rate limits: the GitHub pause and the hit file (#2577)	228f22ad07946a3d27a9e171906880dd63a0bc62
 0	1	slug	aa1e8e6f64e5dd11e111097dfde9deca1248c258
 9	10	archive	0124b5e1112a0eae813a1e43c01b2f94b426ce16
 0	1	mp-skill	80c8160f5b342b489904f400b93e09e618b8ee00

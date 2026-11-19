@@ -2204,9 +2204,15 @@ fake_quota core 0 5000 2000000000
 fake_ratelimit
 out="$(sourced_orch adapter_issue_body 5 2>&1 >/dev/null)"
 assert_eq "an interactive call writes no pause" "$(on_disk "$pause_file")" absent
-assert_not_contains "an interactive call's first line is the rate-limit message alone" "${out%%$'\n'*}" "after the reset. -"
+first="${out%%$'\n'*}"
+assert_contains "an interactive call's first line is the rate-limit message" "$first" "orch: GitHub API rate limit reached - it resets at"
+assert_eq "and it ends with the message, no write clause after it" "${first##*the watcher picks the work up after the reset.}" ""
+assert_contains "and carries the whole message" "$first" "the watcher picks the work up after the reset."
 out="$(ORCH_AUTOPILOT=1 ORCH_AUTOPILOT_HIT_FILE="$hit_file" sourced_orch adapter_issue_body 5 2>&1 >/dev/null)"
-assert_not_contains "a written pause and hit file leave no clause on the first line" "${out%%$'\n'*}" "could not write"
+first="${out%%$'\n'*}"
+assert_contains "a written pause and hit file leave the rate-limit message first" "$first" "orch: GitHub API rate limit reached - it resets at"
+assert_eq "and the first line ends with the message, no write clause" "${first##*the watcher picks the work up after the reset.}" ""
+assert_contains "and carries the whole message" "$first" "the watcher picks the work up after the reset."
 assert_eq "a session writes the pause" "$(cat "$pause_file")" "2033-05-18T03:33:20Z"
 assert_eq "and the hit file" "$(cat "$hit_file")" "2033-05-18T03:33:20Z"
 rm -f "$pause_file" "$hit_file"
