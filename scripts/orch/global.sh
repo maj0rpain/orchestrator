@@ -782,7 +782,8 @@ orch.sh - deterministic operations for the orchestrator flow
   review ci [--no-wait] [<pr>]
                               classify the PR's checks - the flow's PR, or <pr>
                               with no flow state: green, failing, none, or
-                              unreachable; exits non-zero on the last two
+                              unreachable (pending too with --no-wait); exits
+                              non-zero on failing and unreachable
                               Blocks at most ORCH_WAIT_BLOCK seconds (default
                               570; a value that is not a positive number is
                               refused): still waiting, it prints nothing,

@@ -425,7 +425,7 @@ listed there as that axis's **missing look**. The fix SHAs listed here are
 what later iterations of this loop blame against.
 
 **Verification** names the inner command step 2 ran (the ticket
-verification, or the handed full command when the repo names none).
+verification, else the `Full verification:` line, else the handed command).
 
 Each **Waiting to be filed** bullet carries the finding's location, as the
 template shows, with `-` in its place when the finding gave `-`: later

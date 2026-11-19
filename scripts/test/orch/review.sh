@@ -931,11 +931,8 @@ review_ci_restore
 echo
 echo "review ci --no-wait"
 review_ci_flow reviewcinowait
-# nw_snap: every file under the state directory, with its checksum - the flow
-# state file and the wait store as they stand.
-nw_snap() { find "$ORCH_DIR_NAME" -type f -exec cksum {} + 2>/dev/null | sort; }
 nw() { ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=100 timeout 10 "$ORCH" review ci --no-wait 2>&1; }
-before="$(nw_snap)"
+before="$(dir_snapshot "$ORCH_DIR_NAME" 2>/dev/null)"
 fake_checks 7 all green
 out="$(nw)"; st=$?
 assert_status "green exits 0" "$st" 0
@@ -957,7 +954,7 @@ fake_checks 7 all failing
 out="$(ORCH_CI_GRACE=600 timeout 10 "$ORCH" review ci --no-wait 2>&1)"; st=$?
 assert_status "nothing required yet reported inside the grace exits 0" "$st" 0
 assert_eq "and prints pending without waiting the grace" "$out" "pending"
-assert_eq "no call left the flow state or the wait store changed" "$(nw_snap)" "$before"
+assert_eq "no call left the flow state or the wait store changed" "$(dir_snapshot "$ORCH_DIR_NAME" 2>/dev/null)" "$before"
 
 # A waiting call after a --no-wait one still waits its whole total.
 fake_checks 7 all pending
@@ -973,22 +970,22 @@ fake_pr_head 7 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 fake_checks_clear; fake_checks 7 all pending
 ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=100 ORCH_WAIT_BLOCK=0.3 "$ORCH" review ci >/dev/null 2>&1
 fake_checks_clear; fake_checks 7 all pending
-before="$(nw_snap)"
+before="$(dir_snapshot "$ORCH_DIR_NAME" 2>/dev/null)"
 out="$(ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=0.1 timeout 10 "$ORCH" review ci --no-wait 2>&1)"; st=$?
 assert_status "where an earlier waiting call's total is spent, pending exits 0" "$st" 0
 assert_eq "and prints pending" "$out" "pending"
-assert_eq "leaving the wait store as it was" "$(nw_snap)" "$before"
+assert_eq "leaving the wait store as it was" "$(dir_snapshot "$ORCH_DIR_NAME" 2>/dev/null)" "$before"
 rm -rf "${ORCH_DIR_NAME:?}/wait"
 
 # A rate limit: unreachable at once, no sleep, nothing written.
 fake_checks_clear; fake_checks 7 all pending
-before="$(nw_snap)"
+before="$(dir_snapshot "$ORCH_DIR_NAME" 2>/dev/null)"
 printf 'You have exceeded a secondary rate limit.\n' >"$ORCH_GH_FAKE_STORE/ratelimit"
 out="$(ORCH_GH_LIMIT_WAIT=30 timeout 10 "$ORCH" review ci --no-wait 2>&1)"; st=$?
 assert_status "a rate limit makes it exit as unreachable, within the timeout" "$st" 1
 assert_first_line "printing unreachable" "$out" "unreachable"
 assert_contains "with a detail line naming the limit" "$out" "rate limit"
-assert_eq "writing no state, wait file or guard" "$(nw_snap)" "$before"
+assert_eq "writing no state, wait file or guard" "$(dir_snapshot "$ORCH_DIR_NAME" 2>/dev/null)" "$before"
 top="$(git rev-parse --show-toplevel)"
 assert_eq "and recording no pause outside autopilot" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" absent
 out="$(ORCH_AUTOPILOT=1 ORCH_GH_LIMIT_WAIT=30 timeout 10 "$ORCH" review ci --no-wait 2>&1)"; st=$?
@@ -2238,7 +2235,6 @@ fake_pr_head 8 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 fake_checks 7 all pending
 fake_checks 8 all pending
 pn() { ORCH_WAIT_BLOCK=0.4 "$ORCH" review ci "$@" 2>&1; }
-pn_snap() { find "$ORCH_DIR_NAME/wait" -type f -exec cksum {} + 2>/dev/null | sort; }
 fake_checks_clear; fake_checks 7 all green
 out="$(pn 7)"; st=$?
 assert_status "a PR number reads its PR with no flow state" "$st" 0
@@ -2248,9 +2244,9 @@ out="$(pn 7 --no-wait)"
 assert_eq "--no-wait combines with a PR number, in either order" "$(pn --no-wait 7)$out" "pendingpending"
 pn 7 >/dev/null; pn 7 >/dev/null
 pn 7 >/dev/null
-before="$(pn_snap)"
+before="$(dir_snapshot "$ORCH_DIR_NAME/wait" 2>/dev/null)"
 pn 7 --no-wait >/dev/null
-assert_eq "a --no-wait call leaves a PR's kept total as it was" "$(pn_snap)" "$before"
+assert_eq "a --no-wait call leaves a PR's kept total as it was" "$(dir_snapshot "$ORCH_DIR_NAME/wait" 2>/dev/null)" "$before"
 pn 8 >/dev/null; st=$?
 assert_status "another PR keeps its own total" "$st" 75
 fake_pr_head 8 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb

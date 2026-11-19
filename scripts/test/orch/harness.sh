@@ -17,6 +17,46 @@ ALL_RUNNER_FILES=(all.sh test_jobs.sh report.sh test_tree.sh)
 # of `declare -F`. The planted minimal tree, the quiet-mode cut-down copy and
 # the helper index check all read it. git_env.sh, the runners' isolation
 # preamble, is not a helper and stays out.
+
+# The throwaway repo the affected.sh support sections plan in: tr_init <dir>
+# makes it - git init, a copy of the runner files, a stub of every suite and the
+# harness and loader section files - then the section plants its own files and
+# calls tr_commit <dir>, which commits them and records origin/main. tr_put
+# writes a file with a shebang and the lines, tr_git runs git in it, tr_plan
+# prints affected.sh's --plan against origin/main on one line, and tr_reset
+# drops the tree's changes. TR_GATE and TR_CORE are the plan's always-run items
+# and the core set.
+TR_GATE="orch_test.sh,test-helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853),comment reader placement (#3085)"
+TR_CORE="isolation,loader one,hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh"
+tr_git() { local dir="$1"; shift; git -C "$dir" -c user.name=t -c user.email=t@example.com "$@"; }
+tr_put() {
+  local dir="$1" path="$2"
+  shift 2
+  mkdir -p "$dir/$(dirname "$path")"
+  printf '%s\n' '#!/usr/bin/env bash' "$@" >"$dir/$path"
+}
+tr_plan() { (cd "$1" && bash scripts/test/affected.sh --plan origin/main 2>&1) | paste -sd, -; }
+tr_reset() { tr_git "$1" reset -q --hard HEAD; tr_git "$1" clean -qfd; }
+tr_init() {
+  local dir="$1" tests s
+  tests="$(dirname "$SUITE_SCRIPT")"
+  suites_read "$tests/all.sh" "$tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
+  tr_git "$dir" init -q -b main
+  mkdir -p "$dir/scripts/test/orch" "$dir/scripts/orch"
+  (cd "$tests" && cp "${ALL_RUNNER_FILES[@]}" affected.sh git_env.sh "$dir/scripts/test/")
+  for s in "${SUITES[@]}"; do
+    [ -e "$dir/scripts/test/$s" ] || tr_put "$dir" "scripts/test/$s"
+  done
+  tr_put "$dir" scripts/test/orch/harness.sh '# --- isolation ---' \
+    '# --- test-helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
+    '# --- marked comment prelude placement (#1853) ---' '# --- comment reader placement (#3085) ---'
+  tr_put "$dir" scripts/test/orch/loader.sh '# --- loader one ---'
+}
+tr_commit() {
+  tr_git "$1" add -A
+  tr_git "$1" commit -qm init
+  tr_git "$1" update-ref refs/remotes/origin/main HEAD
+}
 SOURCEABLE_TEST_HELPERS=(gh_adapter_fake.sh tally.sh fifo.sh counting.sh)
 
 # count_lines [<grep flag>...] <pattern> <text>: prints how many lines of
@@ -4201,12 +4241,7 @@ af_core_row "the common module selects the core set and its own section file" sc
   "$af_gate,common one,isolation,the parallel runner (#780),loader one,$af_core_s,scripts/orch/common.sh"
 af_core_row "the loader module selects the core set" scripts/orch/loader.sh \
   "$af_core,$af_core_s,scripts/orch/loader.sh"
-for af_f in all.sh git_env.sh; do
-  af_reset
-  printf '# touched\n' >>"$af/scripts/test/$af_f"
-  assert_eq "$af_f selects the core set" "$(af_plan origin/rel)" "$af_core,$af_core_s,scripts/test/$af_f"
-done
-for af_f in orch_test.sh affected.sh test_jobs.sh report.sh test_tree.sh; do
+for af_f in all.sh git_env.sh orch_test.sh affected.sh test_jobs.sh report.sh test_tree.sh; do
   af_reset
   printf '# touched\n' >>"$af/scripts/test/$af_f"
   assert_eq "$af_f selects the core set" "$(af_plan origin/rel)" "$af_core,$af_core_s,scripts/test/$af_f"
@@ -4596,8 +4631,8 @@ unset -f af_git af_put af_reset af_plan af_row
 # check over the real tracked tree and over planted paths.
 echo
 echo "the row rule (#3549)"
-af_row="$PLUGIN_ROOT/scripts/test/affected.sh"
-out="$(bash "$af_row" --row scripts/orch/branch.sh scripts/flow-state.sh scripts/dev/helpers.sh \
+af_script="$PLUGIN_ROOT/scripts/test/affected.sh"
+out="$(bash "$af_script" --row scripts/orch/branch.sh scripts/flow-state.sh scripts/dev/helpers.sh \
   scripts/test/hooks_test.sh scripts/test/orch/setup.sh scripts/test/section-durations.tsv \
   scripts/nothing.txt scripts/orch/zz-no-section.sh scripts/orch/zz-gone.sh </dev/null)"; st=$?
 assert_status "--row exits 0 whether it prints named or none" "$st" 0
@@ -4610,14 +4645,14 @@ scripts/test/section-durations.tsv	named
 scripts/nothing.txt	none
 scripts/orch/zz-no-section.sh	none
 scripts/orch/zz-gone.sh	none"
-out="$(bash "$af_row" --row scripts/test/orch/zz-nonexistent.sh </dev/null)"
+out="$(bash "$af_script" --row scripts/test/orch/zz-nonexistent.sh </dev/null)"
 assert_eq "--row matches a path that does not exist by name" "$out" "scripts/test/orch/zz-nonexistent.sh	named"
-out="$(bash "$af_row" --row --plan scripts/orch/branch.sh 2>&1 </dev/null)"; st=$?
+out="$(bash "$af_script" --row --plan scripts/orch/branch.sh 2>&1 </dev/null)"; st=$?
 assert_status "--row beside --plan is refused" "$st" 2
 assert_contains "--row beside --plan prints the usage" "$out" "usage: affected.sh"
-out="$(bash "$af_row" HEAD --row scripts/orch/branch.sh 2>&1 </dev/null)"; st=$?
+out="$(bash "$af_script" HEAD --row scripts/orch/branch.sh 2>&1 </dev/null)"; st=$?
 assert_status "--row beside a <ref> is refused" "$st" 2
-out="$(bash "$af_row" --row 2>&1 </dev/null)"; st=$?
+out="$(bash "$af_script" --row 2>&1 </dev/null)"; st=$?
 assert_status "--row with no path is refused" "$st" 2
 
 out="$(git -C "$PLUGIN_ROOT" ls-files scripts | row_rule)"; st=$?
@@ -4626,10 +4661,10 @@ if [ "$st" -eq 0 ] && [ -z "$out" ]; then
 else
   bad "every tracked file under the scripts directory has a row" "$out"
 fi
-out="$({ git -C "$PLUGIN_ROOT" ls-files scripts; echo scripts/planted-notes.txt; } | row_rule)"; st=$?
+out="$(echo scripts/planted-notes.txt | row_rule)"; st=$?
 assert_status "a planted script with no row fails" "$st" 1
 assert_eq "naming it and the rule" "$out" "$ROW_RULE no row: scripts/planted-notes.txt"
-out="$({ git -C "$PLUGIN_ROOT" ls-files scripts; echo scripts/orch/planted-module.sh; } | row_rule)"; st=$?
+out="$(echo scripts/orch/planted-module.sh | row_rule)"; st=$?
 assert_status "a planted module with no section file fails" "$st" 1
 assert_eq "naming it and the rule for a module" "$out" "$ROW_RULE no row: scripts/orch/planted-module.sh"
 
@@ -4638,24 +4673,11 @@ assert_eq "naming it and the rule for a module" "$out" "$ROW_RULE no row: script
 # few planted functions, and whose section files and suites call them.
 echo
 echo "the shared test support, function by function (#3550)"
-af_tests="$(dirname "$SUITE_SCRIPT")"
-suites_read "$af_tests/all.sh" "$af_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
 sf="$(mktemp -d)"
-sf_git() { git -C "$sf" -c user.name=t -c user.email=t@example.com "$@"; }
-# sf_put <path> [<line>...]: write a file with a shebang and the lines.
-sf_put() {
-  local path="$1"
-  shift
-  mkdir -p "$sf/$(dirname "$path")"
-  printf '%s\n' '#!/usr/bin/env bash' "$@" >"$sf/$path"
-}
-sf_plan() { (cd "$sf" && bash scripts/test/affected.sh --plan origin/main 2>&1) | paste -sd, -; }
-sf_git init -q -b main
-mkdir -p "$sf/scripts/test/orch"
-(cd "$af_tests" && cp "${ALL_RUNNER_FILES[@]}" affected.sh git_env.sh "$sf/scripts/test/")
-for sf_s in "${SUITES[@]}"; do
-  [ -e "$sf/scripts/test/$sf_s" ] || sf_put "scripts/test/$sf_s"
-done
+tr_init "$sf"
+sf_put() { tr_put "$sf" "$@"; }
+sf_plan() { tr_plan "$sf"; }
+sf_reset() { tr_reset "$sf"; }
 sf_put scripts/test/hooks_test.sh 'fifo_probe'
 sf_put scripts/test/orch/setup.sh '# helper_a is called by branch.sh.' \
   'helper_a() { echo a; }' \
@@ -4666,74 +4688,58 @@ sf_put scripts/test/fifo.sh 'fifo_probe() { :; }'
 sf_put scripts/test/counting.sh 'counting_probe() { :; }'
 sf_put scripts/test/orch/branch.sh '# --- branch one ---' 'helper_a'
 sf_put scripts/test/orch/state.sh '# --- state one ---' 'helper_b'
-sf_put scripts/test/orch/harness.sh '# --- isolation ---' \
-  '# --- test-helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
-  '# --- marked comment prelude placement (#1853) ---' '# --- comment reader placement (#3085) ---'
-sf_put scripts/test/orch/loader.sh '# --- loader one ---'
-sf_git add -A
-sf_git commit -qm init
-sf_git update-ref refs/remotes/origin/main HEAD
-sf_gate="orch_test.sh,test-helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853),comment reader placement (#3085)"
-sf_core="isolation,loader one,hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh"
+tr_commit "$sf"
 sf_setup=scripts/test/orch/setup.sh
-sf_reset() { sf_git reset -q --hard HEAD; sf_git clean -qfd; }
 
 sf_put "$sf_setup" '# helper_a is called by branch.sh.' \
   'helper_a() { echo A; }' \
   'helper_b() {' '  # calls helper_a' '  helper_a' '}' \
   'helper_lonely() { echo l; }'
 assert_eq "a changed helper selects the section files that call it, directly and through another helper" \
-  "$(sf_plan)" "$sf_gate,branch one,state one,docs_lint.sh,$sf_setup"
+  "$(sf_plan)" "$TR_GATE,branch one,state one,docs_lint.sh,$sf_setup"
 sf_reset
 sf_put "$sf_setup" 'helper_b() {' '  helper_a' '}' 'helper_lonely() { echo l; }'
 assert_eq "a removed helper selects the files that still call it" \
-  "$(sf_plan)" "$sf_gate,branch one,state one,docs_lint.sh,$sf_setup"
+  "$(sf_plan)" "$TR_GATE,branch one,state one,docs_lint.sh,$sf_setup"
 sf_reset
 sf_put scripts/test/fifo.sh 'fifo_probe() { :; :; }'
 assert_eq "a changed helper selects the suites that call it" \
-  "$(sf_plan)" "$sf_gate,hooks_test.sh,docs_lint.sh,scripts/test/fifo.sh"
+  "$(sf_plan)" "$TR_GATE,hooks_test.sh,docs_lint.sh,scripts/test/fifo.sh"
 sf_reset
 sf_put "$sf_setup" '# helper_a is called by branch.sh.' \
   'helper_a() { echo a; }' \
   'helper_b() {' '  # calls helper_a' '  helper_a' '}' \
   'helper_lonely() { echo L; }'
 assert_eq "a helper nothing reaches selects the core set" \
-  "$(sf_plan)" "$sf_gate,$sf_core,$sf_setup"
+  "$(sf_plan)" "$TR_GATE,$TR_CORE,$sf_setup"
 sf_reset
 sf_put scripts/test/tally.sh 'tally_init() {' '  :; :' '}'
 assert_eq "a helper the section runner calls outside any section selects the core set" \
-  "$(sf_plan)" "$sf_gate,$sf_core,scripts/test/tally.sh"
+  "$(sf_plan)" "$TR_GATE,$TR_CORE,scripts/test/tally.sh"
 sf_reset
 sf_put "$sf_setup" '# a new comment' '# helper_a is called by branch.sh.' \
   'helper_a() { echo a; }' \
   'helper_b() {' '  # calls helper_a, a changed comment' '' '  helper_a' '}' \
   '' 'helper_lonely() { echo l; }'
 assert_eq "a comment-only and a blank-line-only change select nothing more" \
-  "$(sf_plan)" "$sf_gate,docs_lint.sh,$sf_setup"
+  "$(sf_plan)" "$TR_GATE,docs_lint.sh,$sf_setup"
 sf_reset
 sf_put scripts/test/counting.sh 'counting_probe() { :; }' 'x=1'
 assert_eq "code outside any function in a shared test support file runs the whole suite" \
   "$(sf_plan)" "all.sh"
 rm -rf "$sf"
-unset -f sf_git sf_put sf_plan sf_reset
+unset -f sf_put sf_plan sf_reset
 
 # --- the gh fake, operation by operation (#3551) --------------------------
 # affected.sh --plan in a throwaway repo whose gh fake holds a few planted
 # operations and helpers, called by planted modules, section files and suites.
 echo
 echo "the gh fake, operation by operation (#3551)"
-gf_tests="$(dirname "$SUITE_SCRIPT")"
-suites_read "$gf_tests/all.sh" "$gf_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
 gf="$(mktemp -d)"
-gf_git() { git -C "$gf" -c user.name=t -c user.email=t@example.com "$@"; }
-# gf_put <path> [<line>...]: write a file with a shebang and the lines.
-gf_put() {
-  local path="$1"
-  shift
-  mkdir -p "$gf/$(dirname "$path")"
-  printf '%s\n' '#!/usr/bin/env bash' "$@" >"$gf/$path"
-}
-gf_plan() { (cd "$gf" && bash scripts/test/affected.sh --plan origin/main 2>&1) | paste -sd, -; }
+tr_init "$gf"
+gf_put() { tr_put "$gf" "$@"; }
+gf_plan() { tr_plan "$gf"; }
+gf_reset() { tr_reset "$gf"; }
 gf_fake=scripts/test/gh_adapter_fake.sh
 # gf_fake_put <op-a-body> <helper-body> <lonely-body> [<extra-line>...]
 gf_fake_put() {
@@ -4746,12 +4752,6 @@ gf_fake_put() {
     "fake_shared() { $h; }" \
     "fake_lonely() { $l; }" "$@"
 }
-gf_git init -q -b main
-mkdir -p "$gf/scripts/test/orch" "$gf/scripts/orch"
-(cd "$gf_tests" && cp "${ALL_RUNNER_FILES[@]}" affected.sh git_env.sh "$gf/scripts/test/")
-for gf_s in "${SUITES[@]}"; do
-  [ -e "$gf/scripts/test/$gf_s" ] || gf_put "scripts/test/$gf_s"
-done
 gf_put scripts/test/hooks_test.sh 'x=1'
 gf_fake_put 'echo a' 'echo h' 'echo l'
 gf_put scripts/orch/gh.sh 'x=1'
@@ -4763,28 +4763,19 @@ gf_put scripts/test/orch/branch.sh '# --- branch one ---'
 gf_put scripts/test/orch/state.sh '# --- state one ---'
 gf_put scripts/test/orch/pr.sh '# --- pr one ---' 'fake_shared'
 gf_put scripts/test/orch/setup.sh 'setup_x() { :; }'
-gf_put scripts/test/orch/harness.sh '# --- isolation ---' \
-  '# --- test-helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
-  '# --- marked comment prelude placement (#1853) ---' '# --- comment reader placement (#3085) ---'
-gf_put scripts/test/orch/loader.sh '# --- loader one ---'
-gf_git add -A
-gf_git commit -qm init
-gf_git update-ref refs/remotes/origin/main HEAD
-gf_gate="orch_test.sh,test-helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853),comment reader placement (#3085)"
-gf_core="isolation,loader one,hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh"
-gf_reset() { gf_git reset -q --hard HEAD; gf_git clean -qfd; }
+tr_commit "$gf"
 
 gf_fake_put 'echo A' 'echo h' 'echo l'
 assert_eq "a changed operation selects the gh sections and its calling modules' sections" \
-  "$(gf_plan)" "$gf_gate,branch one,gh one,docs_lint.sh,$gf_fake"
+  "$(gf_plan)" "$TR_GATE,branch one,gh one,docs_lint.sh,$gf_fake"
 gf_reset
 gf_fake_put 'echo a' 'echo H' 'echo l'
 assert_eq "a changed helper selects through its operations and as a shared helper" \
-  "$(gf_plan)" "$gf_gate,gh one,pr one,state one,docs_lint.sh,$gf_fake"
+  "$(gf_plan)" "$TR_GATE,gh one,pr one,state one,docs_lint.sh,$gf_fake"
 gf_reset
 gf_fake_put 'echo a' 'echo h' 'echo L'
 assert_eq "a gh fake function nothing reaches selects the core set" \
-  "$(gf_plan)" "$gf_gate,$gf_core,$gf_fake"
+  "$(gf_plan)" "$TR_GATE,$TR_CORE,$gf_fake"
 gf_reset
 gf_fake_put 'echo a' 'echo h' 'echo l' '# a new comment' ''
 gf_put "$gf_fake" '# a changed comment' '' \
@@ -4792,10 +4783,10 @@ gf_put "$gf_fake" '# a changed comment' '' \
   'adapter_op_b() {' '  fake_help' '' '}' \
   'fake_help() { echo h; }' 'fake_shared() { echo h; }' 'fake_lonely() { echo l; }'
 assert_eq "a comment-only and a blank-line-only change select nothing more" \
-  "$(gf_plan)" "$gf_gate,docs_lint.sh,$gf_fake"
+  "$(gf_plan)" "$TR_GATE,docs_lint.sh,$gf_fake"
 gf_reset
 gf_fake_put 'echo a' 'echo h' 'echo l' 'x=1'
 assert_eq "code outside any function in the gh fake runs the whole suite" \
   "$(gf_plan)" "all.sh"
 rm -rf "$gf"
-unset -f gf_git gf_put gf_plan gf_fake_put gf_reset
+unset -f gf_put gf_plan gf_fake_put gf_reset

@@ -916,7 +916,8 @@ cmd_review() {
         shift
       done
       case "$pr_arg" in *[!0-9]*) die "not a PR number: $pr_arg" ;; esac
-      # refs_err is pr_refs_read's error output, which ci ignores.
+      # blocked and slept are read by wait_tick through bash's dynamic scope;
+      # refs_err is pr_refs_read's error output, which ci_refs_unread reports.
       # shellcheck disable=SC2034
       local pr started slept=0 blocked=0 elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
       local no_ci=0 ci_status refs_rc=0
@@ -945,20 +946,19 @@ cmd_review() {
       if [ "$nowait" = 1 ]; then
         export GH_LIMIT_NO_SLEEP=1
         printf -v started "%(%s)T" -1
-        pr_refs_read "$pr" head_oid head_ref base_ref refs_err || refs_rc=$?
-        ci_refs_unread "$refs_rc" "$pr_arg" "$pr" "${refs_err-}" && return 1
-        [ "$refs_rc" -eq 0 ] || head_oid=""
       else
         mkdir -p "$ORCH/wait" || die "could not create $ORCH/wait"
         WAIT_FILE="$ORCH/wait/pending-$pr"
         rm -f "$WAIT_FILE.limited"
-        pr_refs_read "$pr" head_oid head_ref base_ref refs_err || refs_rc=$?
-        if [ -e "$WAIT_FILE.limited" ]; then
-          rm -f "$WAIT_FILE.limited"
-          wait_exit_running
-        fi
-        ci_refs_unread "$refs_rc" "$pr_arg" "$pr" "${refs_err-}" && return 1
-        [ "$refs_rc" -eq 0 ] || head_oid=""
+      fi
+      pr_refs_read "$pr" head_oid head_ref base_ref refs_err || refs_rc=$?
+      if [ "$nowait" != 1 ] && [ -e "$WAIT_FILE.limited" ]; then
+        rm -f "$WAIT_FILE.limited"
+        wait_exit_running
+      fi
+      ci_refs_unread "$refs_rc" "$pr_arg" "$pr" "${refs_err-}" && return 1
+      [ "$refs_rc" -eq 0 ] || head_oid=""
+      if [ "$nowait" != 1 ]; then
         wait_open "review ci $pr $head_oid" started slept
         elapsed="$(wait_elapsed "$started" "$slept")"
       fi

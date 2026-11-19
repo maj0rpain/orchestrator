@@ -63,8 +63,8 @@
 #                                     suite but orch_test.sh, that calls it,
 #                                     directly or through another of these
 #                                     helpers (a removed one selects the files
-#                                     that still call it); the core set when
-#                                     only orch_test.sh or nothing calls it.
+#                                     that still call it); and the core set when
+#                                     orch_test.sh or nothing calls it.
 #                                     Code outside any function runs all.sh; a
 #                                     change to comments or blank lines alone
 #                                     selects nothing more
@@ -81,6 +81,9 @@
 #                                     Code outside any function runs all.sh; a
 #                                     change to comments or blank lines alone
 #                                     selects nothing more
+# The whole suite (all.sh) runs for exactly these cases: code outside any
+# function in a shared test support file or the gh fake; a path no row names; a
+# module with no section file of its own; no base, or no merge-base with it.
 # The core set is the sections of the harness and loader section files and
 # every suite but orch_test.sh. It is selected, together with the rest of the
 # diff's selection, by orch.sh, orch/common.sh (plus its own section file),
@@ -291,55 +294,79 @@ SUPPORT_AWK='
 
 GH_FAKE=scripts/test/gh_adapter_fake.sh
 
+# suites_load: reads all.sh's suite list into suites, once, and with it what
+# support_select needs: the support files present, and the files that call
+# their functions (every suite but orch_test.sh, every section file but
+# setup.sh).
+suites=()
+SUPPORT_PRESENT=()
+SUPPORT_CALLERS=()
+suites_loaded=0
+suites_load() {
+  local w sf
+  [ "$suites_loaded" -eq 1 ] && return 0
+  suites_read "$dir/all.sh" "$dir" || {
+    echo "affected.sh: $SUITES_ERR" >&2
+    exit 1
+  }
+  suites=("${SUITES[@]}")
+  suites_loaded=1
+  for sf in "${SUPPORT_FILES[@]}"; do [ -f "$sf" ] && SUPPORT_PRESENT+=("$sf"); done
+  for w in "${suites[@]}"; do [ "$w" = orch_test.sh ] || SUPPORT_CALLERS+=("$dir/$w"); done
+  for sf in scripts/test/orch/*.sh; do
+    [ "$sf" = scripts/test/orch/setup.sh ] || SUPPORT_CALLERS+=("$sf")
+  done
+}
+
+# files_calling <alternation> <file>...: the files holding a non-comment line
+# that calls one of the names in the alternation (a|b), each printed once.
+files_calling() {
+  local re="(^|[^A-Za-z0-9_])($1)([^A-Za-z0-9_]|\$)"
+  shift
+  awk -v re="$re" 'FNR == 1 { done = 0 } !done && $0 !~ /^[ \t]*#/ && $0 ~ re { print FILENAME; done = 1 }' "$@"
+}
+
 # support_select <file> <present|deleted>: one of SUPPORT_FILES, or the gh fake,
-# changed. Each
-# function whose code differs between the base (merge_base) and the tree selects
-# the sections of the section files and the suites that call it, or the core
-# set when only orch_test.sh or nothing does; code outside any function runs
-# the whole suite.
+# changed. Each function whose code differs between the base (merge_base)
+# selects the sections of the section files and the suites that call it, and the
+# core set when orch_test.sh calls it or nothing does; code outside any function
+# runs the whole suite.
 support_select() {
-  local f="$1" state="$2" diffed name reached alt re hits sf sn w ops op_re mods
-  local -a sf_all=() support_present=() callers=()
+  local f="$1" state="$2" diffed name reached alt hits sf sn ops n
+  local -a support_present
+  suites_load
+  support_present=("${SUPPORT_PRESENT[@]}")
   diffed="$(awk -v mode=diff "$SUPPORT_AWK" <(
     echo @@FILE; git show "$merge_base:$f" 2>/dev/null || true
     echo @@FILE; if [ "$state" = present ]; then cat "$f"; fi))"
   [ -n "$diffed" ] || return 0
   case $'\n'"$diffed"$'\n' in *$'\n@top\n'*) full_suite ;; esac
-  for sf in "${SUPPORT_FILES[@]}"; do [ -f "$sf" ] && support_present+=("$sf"); done
   # The gh fake's functions also reach through the fake's own.
   if [ "$f" = "$GH_FAKE" ] && [ -f "$GH_FAKE" ]; then support_present+=("$GH_FAKE"); fi
-  for sf in scripts/test/orch/*.sh; do
-    [ "$sf" = scripts/test/orch/setup.sh ] || sf_all+=("$sf")
-  done
-  suites_read "$dir/all.sh" "$dir" || {
-    echo "affected.sh: $SUITES_ERR" >&2
-    exit 1
-  }
-  for w in "${SUITES[@]}"; do [ "$w" = orch_test.sh ] || callers+=("$dir/$w"); done
-  callers+=("${sf_all[@]}")
   while IFS= read -r name; do
     reached="$(awk -v mode=closure -v seeds="$name" "$SUPPORT_AWK" \
       <(for sf in "${support_present[@]}"; do echo @@FILE; cat "$sf"; done))"
-    alt="$(printf '%s\n' "$reached" | paste -sd'|' -)"
-    re="(^|[^A-Za-z0-9_])($alt)([^A-Za-z0-9_]|\$)"
-    if awk -v re="$re" '$0 !~ /^[ \t]*#/ && $0 ~ re { found = 1; exit } END { exit !found }' "$dir/orch_test.sh"; then
+    alt="${reached//$'\n'/|}"
+    if [ -n "$(files_calling "$alt" "$dir/orch_test.sh")" ]; then
       core=1
     fi
     ops=""
     if [ "$f" = "$GH_FAKE" ]; then
       # An adapter operation reached: the gh section file, and the section file
       # of every module whose code calls it.
-      ops="$(printf '%s\n' "$reached" | grep '^adapter_' | paste -sd'|' - || true)"
+      while IFS= read -r n; do
+        case "$n" in adapter_*) ops="${ops:+$ops|}$n" ;; esac
+      done <<<"$reached"
       if [ -n "$ops" ]; then
         sections_of gh
-        op_re="(^|[^A-Za-z0-9_])($ops)([^A-Za-z0-9_]|\$)"
-        mods="$(awk -v re="$op_re" 'FNR == 1 { done = 0 } !done && $0 !~ /^[ \t]*#/ && $0 ~ re { print FILENAME; done = 1 }' scripts/orch/*.sh)"
         while IFS= read -r sf; do
-          [ -n "$sf" ] && sections_of "$(basename "$sf" .sh)"
-        done <<<"$mods"
+          [ -n "$sf" ] || continue
+          sn="${sf##*/}"
+          sections_of "${sn%.sh}"
+        done < <(files_calling "$ops" scripts/orch/*.sh)
       fi
     fi
-    hits="$(awk -v re="$re" 'FNR == 1 { done = 0 } !done && $0 !~ /^[ \t]*#/ && $0 ~ re { print FILENAME; done = 1 }' "${callers[@]}")"
+    hits="$(files_calling "$alt" "${SUPPORT_CALLERS[@]}")"
     if [ -z "$hits" ]; then [ -n "$ops" ] || core=1; continue; fi
     while IFS= read -r sf; do
       case "$sf" in
@@ -438,9 +465,6 @@ while IFS= read -r f; do
   [ -n "$f" ] && classify "$f" deleted
 done <<<"$deleted"
 
-# shellcheck source=test_tree.sh
-source "$dir/test_tree.sh"
-
 if [ "$core" -eq 1 ]; then
   sections_of harness loader
 fi
@@ -480,13 +504,7 @@ if [ "${#sec_files[@]}" -gt 0 ]; then
   done < <(printf '%s\n' "${sec_files[@]}" | LC_ALL=C sort -u)
 fi
 
-# The all.sh suite list.
-suites_read "$dir/all.sh" "$dir" || {
-  echo "affected.sh: $SUITES_ERR" >&2
-  exit 1
-}
-suites=("${SUITES[@]}")
-
+suites_load
 # The suites to run, in all.sh's order: orch_test.sh and docs_lint.sh always.
 selected=()
 for suite in "${suites[@]}"; do
