@@ -301,7 +301,7 @@
 6	7	spec-review begin (#224)	94bb432792131696ac40f28aa83506faaca0b2a7
 5	7	spec-review begin --carry (#1141, #1185)	3c4ecf7256076ba81a70a615f6bd2f3d72443614
 0	1	quick implementation runs an unattended spec review (#237)	6b4e233546f10516272fc682b9f7b6edd022a545
-350	377	spec-review apply (#1117)	45610b03df281ca2e2b1a2f164dcb0ff1bccc233
+453	340	spec-review apply (#1117)	6d17588dd9453eb3c926029220f64b04879fac51
 62	69	spec-review check (#1137)	f1f762bffccdd6172b075a3b7ffa216acb03bd91
 1	2	spec-review check literal item numbers (#1339)	f6bfd387c1a4973b7ac5420ac8ec62f9e4184fd7
 16	19	spec-review check --tickets (#1226)	d8614203d8b91ab4a785e6dde9a6778876bf5110

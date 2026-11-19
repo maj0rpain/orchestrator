@@ -617,6 +617,33 @@ assert_eq "settled.md written" "$(sra_cmp "$d/settled.md" "$d/changelog.md")" sa
 assert_eq "round-complete written" "$(on_disk "$d/round-complete")" present
 assert_eq "apply-answer removed" "$(on_disk "$d/apply-answer")" absent
 
+# Unreadable files in apply: each dies with its own message and no cat: line.
+if [ "$(id -u)" -ne 0 ]; then
+  d="$(sra_dir)"
+  printf 'host\n' >"$d/hosts"
+  chmod 000 "$d/hosts"
+  sra_refused "an unreadable --host-fallbacks file" "$d" "orch: --host-fallbacks file is unreadable: $d/hosts" recommended --host-fallbacks "$d/hosts"
+  assert_eq "an unreadable --host-fallbacks file: exactly the one line" "$out" "orch: --host-fallbacks file is unreadable: $d/hosts"
+  chmod 600 "$d/hosts"
+
+  d="$(sra_dir)"
+  mkdir "$d/settled.md"
+  sra "$d" recommended
+  rmdir "$d/settled.md"
+  chmod 000 "$d/changelog.md"
+  snap="$(fake_snapshot)"
+  srr_resume "$d"
+  chmod 600 "$d/changelog.md"
+  assert_status "a resumed apply with an unreadable changelog.md dies" "$st" 1
+  sra_landed="$(sed -e :a -e '$!N;s/\n/; /;ta' "$d/applied.log")"
+  assert_eq "it names the file and the writes that landed, with no cat: line" "$out" \
+    "orch: could not read $d/changelog.md - every GitHub write landed: $sra_landed"
+  assert_eq "settled.md is not appended" "$(on_disk "$d/settled.md")" absent
+  assert_eq "round-complete is absent" "$(on_disk "$d/round-complete")" absent
+  assert_eq "apply-answer is kept" "$(on_disk "$d/apply-answer")" present
+  assert_eq "no GitHub write" "$(fake_snapshot)" "$snap"
+fi
+
 # Apply all: the recommend-decline item too.
 d="$(sra_dir)"
 sra "$d" all

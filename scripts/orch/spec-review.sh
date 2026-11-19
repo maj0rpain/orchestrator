@@ -1968,7 +1968,10 @@ spec_review_apply() {
   fi
   if [ -n "$hosts_file" ]; then
     [ -f "$hosts_file" ] || die "--host-fallbacks file not found: $hosts_file"
-    hosts="$(spec_review_one_line "$(cat "$hosts_file")")"
+    local hosts_text
+    file_read hosts_text "$hosts_file" 2>/dev/null || die "--host-fallbacks file is unreadable: $hosts_file"
+    newlines_strip hosts_text
+    hosts="$(spec_review_one_line "$hosts_text")"
     [ -n "$hosts" ] || die "--host-fallbacks file is empty: $hosts_file"
   fi
   # Flow mode: the issue is state's, and the spec command's guards hold. The
@@ -1987,7 +1990,9 @@ spec_review_apply() {
   if [ -n "$resume" ] && grep -Fxq -- "$(spec_review_label_changelog "$issue")" "$dir/applied.log" 2>/dev/null; then
     [ -f "$dir/changelog.md" ] || die "changelog.md not found in $dir"
     local landed_log
-    landed_log="$(cat "$dir/changelog.md")"
+    file_read landed_log "$dir/changelog.md" 2>/dev/null \
+      || die "could not read $dir/changelog.md - every GitHub write landed: $(spec_review_landed "$dir")"
+    newlines_strip landed_log
     spec_round_complete "$dir" "$landed_log" "$(spec_review_landed "$dir")"
     return 0
   fi
