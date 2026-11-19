@@ -79,6 +79,6 @@ assert_status "wait_limit_fits with no wait open fits" "$st" 0
 sourced_orch_script 'WAIT_FILE=$1; ORCH_WAIT_BLOCK=570; wait_limit_fits 1' "$wt_wf" >/dev/null 2>&1; st=$?
 assert_status "a block that can hold the wait fits" "$st" 0
 assert_status "and leaves no mark" "$([ -e "$wt_wf.limited" ]; echo $?)" 1
-sourced_orch_script 'WAIT_FILE=$1; WAIT_START=1; ORCH_WAIT_BLOCK=0.2; wait_limit_fits 60 && exit 9; wait_limited_check 0' "$wt_wf" >/dev/null 2>&1; st=$?
+sourced_orch_script 'WAIT_FILE=$1; WAIT_START=1; ORCH_WAIT_BLOCK=0; wait_limit_fits 60 && exit 9; wait_limited_check 0' "$wt_wf" >/dev/null 2>&1; st=$?
 assert_status "a block that cannot hold it does not fit, and wait_limited_check ends the call as still running" "$st" 75
 rm -f "$wt_wf" "$wt_wf.limited"
