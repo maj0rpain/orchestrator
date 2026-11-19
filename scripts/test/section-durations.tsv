@@ -264,6 +264,7 @@
 14	15	review ready	3de42f3d7ace4ec6ce6ffa7c0883b3806733eed4
 132	76	review ci	67768cd834eb07a3dda28b9d8b7520371b15af5e
 13	12	the grace counts from the push (issue #475)	eb2a643a788b9b82800270785192827a831aab40
+22	21	review ci --no-wait	5e199ebf7aa5cfb865ba540a77b6f4720525205a
 51	42	the grace is skipped on no evidence of CI (issue #476)	47adf5995cd35a720b31a17a50f1a4366fc237c7
 9	10	review rerun	39699a125cfcb488efe0e549d5a7f71549d25bc2
 5	6	review ci-log	062fdd89e41ebd54b3a937f0bb83e5fb59f09c4a

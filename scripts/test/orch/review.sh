@@ -925,6 +925,83 @@ out="$(ORCH_CI_GRACE=600 timeout 30 "$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "a push younger than the grace still waits it before widening" "$out" "green"
 review_ci_restore
 
+# --- review ci --no-wait ----------------------------------------------------
+# One pass of the probe the waiting form loops on: it prints `pending` where the
+# waiting form would sleep, reads no stored total, and writes nothing.
+echo
+echo "review ci --no-wait"
+review_ci_flow reviewcinowait
+# nw_snap: every file under the state directory, with its checksum - the flow
+# state file and the wait store as they stand.
+nw_snap() { find "$ORCH_DIR_NAME" -type f -exec cksum {} + 2>/dev/null | sort; }
+nw() { ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=100 timeout 10 "$ORCH" review ci --no-wait 2>&1; }
+before="$(nw_snap)"
+fake_checks 7 all green
+out="$(nw)"; st=$?
+assert_status "green exits 0" "$st" 0
+assert_first_line "and prints green" "$out" "green"
+fake_checks 7 all failing
+out="$(nw)"; st=$?
+assert_status "failing exits 1" "$st" 1
+assert_contains "with the failing check named" "$out" "build"
+fake_checks 7 all none
+out="$(nw)"; st=$?
+assert_status "none past the grace exits 0" "$st" 0
+assert_first_line "and prints none" "$out" "none"
+fake_checks 7 all pending
+out="$(nw)"; st=$?
+assert_status "checks still running exit 0" "$st" 0
+assert_eq "and print pending alone" "$out" "pending"
+fake_checks 7 required none green
+fake_checks 7 all failing
+out="$(ORCH_CI_GRACE=600 timeout 10 "$ORCH" review ci --no-wait 2>&1)"; st=$?
+assert_status "nothing required yet reported inside the grace exits 0" "$st" 0
+assert_eq "and prints pending without waiting the grace" "$out" "pending"
+assert_eq "no call left the flow state or the wait store changed" "$(nw_snap)" "$before"
+
+# A waiting call after a --no-wait one still waits its whole total.
+fake_checks 7 all pending
+fake_pr_head 7 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+nw >/dev/null
+fake_checks_clear; fake_checks 7 all pending
+out="$(ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=0.4 ORCH_CI_INTERVAL=0.05 timeout 10 "$ORCH" review ci 2>&1)"; st=$?
+assert_status "a waiting call after --no-wait still times out on its own total" "$st" 1
+assert_contains "naming the timeout" "$out" "still pending after 0.4s"
+
+# A total a waiting call spent is not read: pending, and the total is kept.
+fake_pr_head 7 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+fake_checks_clear; fake_checks 7 all pending
+ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=100 ORCH_WAIT_BLOCK=0.3 "$ORCH" review ci >/dev/null 2>&1
+fake_checks_clear; fake_checks 7 all pending
+before="$(nw_snap)"
+out="$(ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=0.1 timeout 10 "$ORCH" review ci --no-wait 2>&1)"; st=$?
+assert_status "where an earlier waiting call's total is spent, pending exits 0" "$st" 0
+assert_eq "and prints pending" "$out" "pending"
+assert_eq "leaving the wait store as it was" "$(nw_snap)" "$before"
+rm -rf "${ORCH_DIR_NAME:?}/wait"
+
+# A rate limit: unreachable at once, no sleep, nothing written.
+fake_checks_clear; fake_checks 7 all pending
+before="$(nw_snap)"
+printf 'You have exceeded a secondary rate limit.\n' >"$ORCH_GH_FAKE_STORE/ratelimit"
+out="$(ORCH_GH_LIMIT_WAIT=30 timeout 10 "$ORCH" review ci --no-wait 2>&1)"; st=$?
+assert_status "a rate limit makes it exit as unreachable, within the timeout" "$st" 1
+assert_first_line "printing unreachable" "$out" "unreachable"
+assert_contains "with a detail line naming the limit" "$out" "rate limit"
+assert_eq "writing no state, wait file or guard" "$(nw_snap)" "$before"
+top="$(git rev-parse --show-toplevel)"
+assert_eq "and recording no pause outside autopilot" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" absent
+out="$(ORCH_AUTOPILOT=1 ORCH_GH_LIMIT_WAIT=30 timeout 10 "$ORCH" review ci --no-wait 2>&1)"; st=$?
+assert_first_line "the same call in an autopilot process prints unreachable" "$out" "unreachable"
+assert_eq "and records the GitHub limit pause" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" present
+rm -rf "$top/.orchestrator/autopilot/github-limit"
+mkdir -p "$top/.orchestrator/autopilot/github-limit"
+out="$(ORCH_AUTOPILOT=1 ORCH_GH_LIMIT_WAIT=30 timeout 10 "$ORCH" review ci --no-wait 2>&1)"; st=$?
+assert_first_line "a pause that cannot be written still prints unreachable" "$out" "unreachable"
+assert_status "with its exit status" "$st" 1
+rm -rf "$top/.orchestrator/autopilot/github-limit" "$ORCH_GH_FAKE_STORE/ratelimit"
+review_ci_restore
+
 # --- the grace is skipped on no evidence of CI (issue #476) ---
 # Zero checks straight after a push is ambiguous only where the repo might have
 # CI. With no workflow in the head, nothing required on the base, and no check
