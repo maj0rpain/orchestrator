@@ -25,6 +25,8 @@ your return instead - see **Could not fix**.
 - **Fixable list** - each finding with its axis (Standards or Spec), severity
   (blocking, major, or nit), file, line, and claim, and a **pattern
   finding**'s site list after its file and line - see **Pattern findings**.
+  A finding marked CI-found came from a failing CI check and carries the
+  log excerpt: see **A CI-found failure**.
 - **Triaged out** - every other finding of the iteration, each with its
   disposition: demoted (and the authority), waiting to be filed (and the rule
   that kept it out), or met again (and its issue number).
@@ -196,6 +198,25 @@ is a deviation, named on the finding's line under **Findings** in the record.
   on your could-not-fix list as **open blocking**, with the reason
   "could not reproduce", so the next iteration's triage looks at it again.
 
+## A CI-found failure
+
+For a finding marked CI-found, before you commit, also rerun the failing test
+the log excerpt names, by the narrowest command the repo's instructions give
+for running one test or section.
+
+- When the instructions give none narrower than the full verification, or the
+  log names no test, run only your ticket verification, and the record's
+  `## Verification` section says the fix was not reproduced locally.
+- When the named test still fails after the fix, the finding goes on your
+  could-not-fix list, as any blocking finding you could not fix does, and your
+  other fixes are committed as today.
+- When the named test passes locally before any fix, do not fix on your own
+  judgement: as for any test that passes on the unfixed code (ADR-0026), the
+  finding goes on your could-not-fix list as open blocking, and the record
+  says the failure did not reproduce locally.
+
+Calling the check flaky stays the driver's, at Termination.
+
 ## Pattern findings
 
 A **pattern finding** is a finding whose claim holds at more than one place -
@@ -347,7 +368,8 @@ Host fallbacks: <each fallback taken, or None>
 
 ## Verification
 
-<command> - <result>.
+<command> - <result>. <A CI-found fix not reproduced locally: "Not reproduced
+locally: <why>.">
 
 ## Fixed this iteration
 

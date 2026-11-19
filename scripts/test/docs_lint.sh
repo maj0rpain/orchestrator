@@ -2572,7 +2572,8 @@ skills/orch-review-pass/SKILL.md
 docs/driver-loop.md
 skills/orch-review/SKILL.md
 skills/orch-audit-tests/SKILL.md
-skills/orch-spec-review/SKILL.md'
+skills/orch-spec-review/SKILL.md
+skills/orch-quick-implement/SKILL.md'
 check "each long-command site names Run a long command" \
   "$(scan_names_phrase "$PLUGIN_ROOT" "$long_sites" 'Run a long command')"
 long_row='| Run a long command |'
@@ -2582,8 +2583,7 @@ check "the Run a long command row marks Junie Unverified" \
   "$(scan_row_unverified "$PLUGIN_ROOT" 'Run a long command')"
 # Each site that runs a re-callable command names the term (ADR-0065), by
 # structure only: the Run a long command sites minus the audit's timing run,
-# which is not re-callable, plus the quick implementation's line, which is not
-# one of the Run a long command sites.
+# which is not re-callable, plus the quick implementation's line.
 recall_sites='agents/orch-implementer.md
 agents/orch-fixer.md
 agents/orch-resolver.md
@@ -2594,6 +2594,12 @@ skills/orch-review/SKILL.md
 skills/orch-spec-review/SKILL.md'
 check "each site that runs a re-callable command names the term" \
   "$(scan_names_phrase "$PLUGIN_ROOT" "$recall_sites" 're-callable')"
+# CI looked at without waiting (#3179): the triage step names the look, and the
+# quick implementation's Open the PR step runs review ci.
+check "the review loop's triage step names the --no-wait look" \
+  "$(scan_names_phrase "$PLUGIN_ROOT" 'skills/orch-review/SKILL.md|## The iteration' 'review ci --no-wait')"
+check "the quick implementation's Open the PR step names review ci" \
+  "$(scan_names_phrase "$PLUGIN_ROOT" 'skills/orch-quick-implement/SKILL.md|## 7. Open the PR' 'review ci')"
 
 # --- autopilot docs (#1497) ---------------------------------------------------
 echo

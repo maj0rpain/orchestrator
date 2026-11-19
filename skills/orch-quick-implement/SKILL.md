@@ -339,6 +339,13 @@ ruling, not on a loop: the human resumes with a standalone review pass
 ready once every one is ruled. See
 `docs/adr/0043-a-spec-question-met-in-a-review-pass-reaches-a-human-before-the-pr-is-ready.md`.
 
+After the PR opens, run `bash "$ORCH" review ci <pr>` for it, in the
+foreground, as a re-callable command: wait for it (host capability *Run a long
+command*) and run the same command again each time it exits 75, or when the
+host stops it. Never background it and sleep, poll or kill it. Your final reply
+carries the word it printed and its detail lines. It fixes nothing, spends no
+flake rerun and changes no PR state on any word.
+
 ## Starting in a side checkout
 
 Reached from step 1 (`--side`, the human asking, or `branch busy` exiting 3
