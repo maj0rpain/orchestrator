@@ -130,6 +130,7 @@ lf_case mb_deleted "$mb_head_sha" src/mb.sh 10 10
 # PR heads that never merged: the cases decide by the filed lines, never by the
 # file. One file per case (a reversed-range case reuses its twin's), each a
 # 20-line file the PR edits and main then edits elsewhere or alike.
+
 # lf_unm <n> <file> <sed script>: the never-merged PR head unm<n> off
 # $unm_base, editing src/<file>; prints its SHA.
 lf_unm() { lf_branch_head "unm$1" "$unm_base" "$2" "$3"; }
@@ -228,9 +229,9 @@ lf_assert() {
   row="$(awk -F'\t' -v n="$2" '$1 == n' "$1")"
   row="${row//$'\t'/|}" # a tab would fold empty fields away
   IFS='|' read -r name fate detail rc quiet sub_fate sub_detail sub_rc <<<"$row"
-  assert_eq "$name: its fate and commit" "$fate	$detail" "$(printf '%s\t%s' "$3" "${4:-}")"
-  assert_eq "$name: the same from a subdirectory" "$sub_fate	$sub_detail" "$fate	$detail"
-  assert_eq "$name: returns 0 from both places and prints nothing" "$rc	$quiet	$sub_rc" "$(printf '0\tyes\t0')"
+  assert_eq "$2: its fate and commit" "$fate	$detail" "$(printf '%s\t%s' "$3" "${4:-}")"
+  assert_eq "$2: the same from a subdirectory" "$sub_fate	$sub_detail" "$fate	$detail"
+  assert_eq "$2: returns 0 from both places and prints nothing" "$rc	$quiet	$sub_rc" "$(printf '0\tyes\t0')"
 }
 
 rows="$(mktemp)"
