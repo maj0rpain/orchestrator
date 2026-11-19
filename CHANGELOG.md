@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.7
+
+Doctor's sub-issues warning now names the sub-issue listing read as the step breakdown publish fails at. Each verification label's command line comes last in that label's report, the verification labels and the command choice are spelled out once inside doctor, and the remedy rule and the repo-setup doc describe what doctor prints.
+
 ## 6.8.6
 
 The autopilot test section and four other test section files lose repeated shapes: one shared assertion checks every no-Repo refusal, three claims-read cases fold into ticks the suite already runs, and stale comments, labels, dead assignments and duplicate assertions go, with no change to orch.sh behaviour.
