@@ -95,3 +95,47 @@ wt_run; st=$?
 assert_status "a second call on the same key exits 75 again" "$st" 75
 assert_eq "and stores more seconds slept than the first" \
   "$(awk -v a="$wt_first" -v b="$(sed -n 2p "$wt_file")" 'BEGIN { print (b > a) }')" "1"
+
+# --- wait: block naps start no awk far from the block's end ----------------
+# A waiting call, and a grace wait inside it, start no awk on a turn while the
+# block is far from spent (wait_block_nap's fast path); a sub-second block still
+# ends in exit 75 on time (the section above).
+echo
+echo "wait: block naps start no awk far from the block's end"
+new_repo >/dev/null
+bn_awk="$(counting_bin awk)"
+PATH="$bn_awk:$PATH" ORCH_WAIT_BLOCK=60 "$ORCH" verification run 'true' >/dev/null 2>&1
+bn_quick="$(counting_starts "$bn_awk" awk)"
+: >"$bn_awk/awk.log"
+PATH="$bn_awk:$PATH" ORCH_WAIT_BLOCK=60 "$ORCH" verification run 'sleep 1' >/dev/null 2>&1; st=$?
+assert_status "a long-block call polling a run of about a second delivers it" "$st" 0
+assert_eq "and starts no more awk than a call whose run ends at once" \
+  "$(( $(counting_starts "$bn_awk" awk) <= bn_quick ))" "1"
+
+# verification_stop's grace wait, kill faked as a group that goes after a second
+# (or is gone already).
+bn_stop() {
+  : >"$bn_awk/awk.log"
+  bn_d="$(mktemp -d)"
+  PATH="$bn_awk:$PATH" ORCH_WAIT_BLOCK=60 ORCH_VERIFICATION_GRACE=5 sourced_orch_script \
+    "orch_load verification; end=\$(( SECONDS + $1 )); kill() { [ \"\$1\" != -0 ] || [ \"\$SECONDS\" -lt \"\$end\" ]; }; verification_stop 4242 '$bn_d'" >/dev/null 2>&1
+  assert_status "a stop whose group goes after $1 s returns 0" "$?" 0
+  counting_starts "$bn_awk" awk
+}
+bn_gone="$(bn_stop 0)"
+bn_slow="$(bn_stop 2)"
+assert_eq "a grace wait over a group that lasts a second starts no more awk than one over a gone group" \
+  "$(( bn_slow <= bn_gone ))" "1"
+
+# verification_wait_state: a record with no state past its grace is given up on
+# at once, never exit 75 under a long block; with its state it is waited for no more.
+bn_rec="$(mktemp -d)"
+printf '%s\n' "$(( $(printf '%(%s)T' -1) - 10 ))" >"$bn_rec/waiting"
+ORCH_WAIT_BLOCK=60 ORCH_VERIFICATION_GRACE=1 sourced_orch_script \
+  "orch_load verification; verification_wait_state '$bn_rec'" >/dev/null 2>&1; st=$?
+assert_status "a record with no state and a 10 s old mark is given up on at once" "$st" 1
+: >"$bn_rec/state"
+ORCH_WAIT_BLOCK=60 ORCH_VERIFICATION_GRACE=1 sourced_orch_script \
+  "orch_load verification; verification_wait_state '$bn_rec'" >/dev/null 2>&1; st=$?
+assert_status "a record with its state returns 0" "$st" 0
+rm -rf "$bn_rec"
