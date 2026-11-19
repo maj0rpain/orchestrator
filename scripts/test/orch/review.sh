@@ -889,6 +889,13 @@ out="$(ORCH_CI_GRACE=5 "$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "an old push with nothing reported is none without waiting the grace" "$out" "none"
 assert_status "and none still lets the loop finish" "$st" 0
 
+# Under --no-wait the push age counts from the call's own start (no total is
+# open), so the hour-old push is just as old: none at once, not pending.
+fake_checks 7 required none
+fake_checks 7 all none
+out="$(ORCH_CI_GRACE=5 "$ORCH" review ci --no-wait 2>&1)"; st=$?
+assert_first_line "with --no-wait, an old push with nothing reported is none, not pending" "$out" "none"
+
 # The grace is measured from that one push alone: an entry for another SHA
 # says nothing about when this head arrived, so the grace counts from the call.
 fake_checks 7 required none green
