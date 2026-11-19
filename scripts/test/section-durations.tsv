@@ -246,7 +246,7 @@
 0	1	pr: PR-line pick and newest merge (#3074)	02e330a912ab011036444fafc3326dad36a97082
 78	81	redo review	b62654b38632ca3b2c5f4b61a4abeb2acb82faff
 8	9	redo review refuses a taken handoff destination	3fa122ad40f6cf338d95a10c114170d1f36c2318
-45	39	redo review rerun after review retire (#2569)	cd4da3ad670722945bb9f2dd3e2c8ec23e9b4fab
+47	42	redo review rerun after review retire (#2569)	b5593054975ed818b0908e32955f815907b498d6
 14	16	redo review reopens tickets	a825a765be427f3eea40918180e75388603b2448
 25	26	redo spec	c3c99366aaf392c1a0aceae9df6059c962657a8f
 62	67	redo spec retires the ticket breakdown (#334)	62dad2db481aef5b093ba16bc2cf38d7a6563320

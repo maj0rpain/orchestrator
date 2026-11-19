@@ -384,7 +384,8 @@ out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "redo review refuses" "$st" 1
 assert_contains "naming the retired record" "$out" ".orchestrator/review/pre-redo-1/iteration-01.md"
 rd_load="$(mktemp)"
-out="$(ORCH_LOAD_TRACE="$rd_load" "$ORCH" doctor --flow 2>&1)" || true
+out="$(ORCH_LOAD_TRACE="$rd_load" "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "doctor --flow with a malformed retired record fails" "$st" 1
 assert_contains "doctor's remedy names the retired record" "$out" ".orchestrator/review/pre-redo-1/iteration-01.md"
 assert_contains "doctor fails the malformed terminal state" "$out" "has a malformed terminal state"
 assert_trace_loads_once "doctor --flow with the flat record gone mid-redo" "$rd_load"

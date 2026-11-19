@@ -26,10 +26,8 @@ counting_starts() { wc -l <"$1/$2.log" | tr -d ' '; }
 # when its arguments, joined by spaces, equal <args>. Prints the dir.
 counting_argv_bin() {
   local dir
-  dir="$(mktemp -d)"
+  dir="$(counting_bin "$1")"
   printf '#!/bin/sh\n[ "$*" = "%s" ] && echo x >>"%s/%s.log"\nexec "%s" "$@"\n' "$2" "$dir" "$1" "$(command -v "$1")" >"$dir/$1"
-  chmod +x "$dir/$1"
-  : >"$dir/$1.log"
   printf '%s\n' "$dir"
 }
 
