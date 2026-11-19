@@ -1650,30 +1650,19 @@ for nr_args in "fetch $nr_file" "update $nr_body"; do
 done
 assert_eq "pr fetch left its file untouched" "$(cat "$nr_file")" "seeded"
 # refusals win over the missing repo
-out="$(orch_no_repo pr comment 2>&1)"; st=$?
-assert_status "pr comment usage error" "$st" 2
-assert_contains "names its usage" "$out" "usage: orch.sh pr comment <file>"
-out="$(orch_no_repo pr comments 2>&1)"; st=$?
-assert_status "pr comments usage error" "$st" 2
-assert_contains "pr comments usage error names its usage" "$out" "usage: orch.sh pr comments <file>"
-out="$(orch_no_repo pr comment /nonexistent/body 2>&1)"; st=$?
-assert_status "pr comment with a missing body file" "$st" 2
-assert_contains "names the file" "$out" "body file not found"
+assert_no_repo_refused "pr comment usage error" "usage: orch.sh pr comment <file>" pr comment
+assert_no_repo_refused "pr comments usage error" "usage: orch.sh pr comments <file>" pr comments
+assert_no_repo_refused "pr comment with a missing body file" "body file not found" pr comment /nonexistent/body
 git checkout -q --detach
 for nr_args in "comment $nr_body" "comments $nr_file" draft ready; do
   # shellcheck disable=SC2086
-  out="$(orch_no_repo pr $nr_args 2>&1)"; st=$?
-  assert_status "pr ${nr_args%% *} on a detached HEAD exits 2" "$st" 2
-  assert_contains "pr ${nr_args%% *} on a detached HEAD names it" "$out" "not on a branch (detached HEAD)"
-  assert_not_contains "pr ${nr_args%% *} on a detached HEAD is not the remedy" "$out" "$repo_missing"
+  assert_no_repo_refused "pr ${nr_args%% *} on a detached HEAD" "not on a branch (detached HEAD)" pr $nr_args
 done
 git checkout -q quick/12-foo
 mkdir -p .orchestrator
 printf '{"slug":"x","phase":"review","issue":30,"branch":"quick/12-foo"}\n' >.orchestrator/state.json
 for nr_args in draft ready; do
-  out="$(orch_no_repo pr $nr_args 2>&1)"; st=$?
-  assert_status "pr $nr_args on a flow-held branch exits 2" "$st" 2
-  assert_contains "pr $nr_args names the flow" "$out" "the active flow holds quick/12-foo at phase review"
+  assert_no_repo_refused "pr $nr_args on a flow-held branch" "the active flow holds quick/12-foo at phase review" pr $nr_args
 done
 rm -f .orchestrator/state.json
 rm -f "$nr_err" "$nr_body"

@@ -460,9 +460,7 @@ echo
 echo "breakdown state: no repo"
 breakdown_fixture
 assert_no_repo_exit2 "breakdown state with no draft" breakdown state 50
-out="$(orch_no_repo breakdown state 2>&1)"; st=$?
-assert_status "a usage error is refused first" "$st" 2
-assert_contains "with its usage line" "$out" "usage: orch.sh breakdown state <parent>"
+assert_no_repo_refused "breakdown state usage error" "usage: orch.sh breakdown state <parent>" breakdown state
 mkdir -p .orchestrator/breakdown/50 && cp "$draft" .orchestrator/breakdown/50/draft.md
 out="$(orch_no_repo breakdown state 50 2>&1)"; st=$?
 assert_status "a saved draft answers with no repo" "$st" 0
