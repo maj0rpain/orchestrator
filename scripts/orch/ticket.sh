@@ -16,16 +16,16 @@
 # read can be retried rather than died on. Both failures die with status 1, or
 # 2 under --exit 2, in the gh failure contract's own grammar (#1106): a parent
 # that is no plain number, refused before asking GitHub, and a GitHub that
-# cannot list them. --exit is passed on to gh_or_die as given, which checks it.
+# cannot list them. The parent check always dies through die, status 1: --exit
+# is passed on to gh_or_die as given, which checks it, and sets only its status.
 ticket_sub_issues() {
-  local exit_opt=() fail=die
+  local exit_opt=()
   if [ "${1-}" = --exit ]; then
     exit_opt=("$1" "${2-}")
-    [ "${2-}" != 2 ] || fail=die2
     shift 2 || shift
   fi
   local parent="${1-}" subs
-  case "$parent" in ''|*[!0-9]*) "$fail" "parent must be a plain issue number, got: $parent" ;; esac
+  case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
   gh_or_die ${exit_opt[@]+"${exit_opt[@]}"} --out subs "list sub-issues of #$parent" \
     adapter_sub_issues "$parent"
   if [ -n "$subs" ]; then printf '%s\n' "$subs"; fi
@@ -129,19 +129,19 @@ ticket_create() {
 }
 
 # ticket_link <parent> <n> <want>: puts ticket <n> in place under <parent> with
-# the blockers <want> names (newline-separated numbers, possibly empty),
-# whatever already landed. The parent's sub-issue listing is read and the
+# the blockers <want> names (newline-separated numbers, possibly empty; the
+# caller passes the set normalized, sorted and de-duplicated), whatever
+# already landed. The parent's sub-issue listing is read and the
 # ticket linked only when it is not listed; its blockers are read once, and
 # only when <want> is non-empty, and only the edges it lacks are added, so a
 # resume never writes a link already present. Then every link is read back
 # through verify_twice: one retry, either status gets it, and the second
 # attempt decides the death - a failed read dies with gh's reason, a mismatch
 # as unverified (ADR-0011). Once the links verify, the ticket's `## Blocked by`
-# section is rewritten from <want> - sorted ascending here - as `ticket block`
-# writes it, through rewrite_blocked_by_section and issue_body_rewrite.
+# section is rewritten from <want> as `ticket block`
+# writes it, through ticket_blocked_by_rewrite.
 ticket_link() {
   local parent="$1" n="$2" want="$3" subs b have
-  want="$(printf '%s\n' "$want" | sed '/^$/d' | sort -un)"
   subs="$(ticket_sub_issues "$parent")" || exit 1
   ticket_listing_has "$subs" "$n" || gh_or_die "link ticket #$n as a sub-issue of #$parent" \
     adapter_sub_issue_link "$parent" "$n"
@@ -159,9 +159,15 @@ ticket_link() {
     "ticket #$n's sub-issue/blocked-by links did not verify - checked twice, both failed" \
     ticket_links_verified "$parent" "$n" "$want"
 
-  issue_body_rewrite "$n" "read ticket #$n's body" \
-    "rewrite ticket #$n's ## Blocked by section" \
-    rewrite_blocked_by_section "$want"
+  ticket_blocked_by_rewrite "$n" "$want"
+}
+
+# ticket_blocked_by_rewrite <n> <want>: rewrites ticket <n>'s `## Blocked by`
+# section from <want> (newline-separated numbers), through issue_body_rewrite.
+ticket_blocked_by_rewrite() {
+  issue_body_rewrite "$1" "read ticket #$1's body" \
+    "rewrite ticket #$1's ## Blocked by section" \
+    rewrite_blocked_by_section "$2"
 }
 
 # Publishes a child issue - ticket_create then ticket_link: a native
@@ -485,7 +491,7 @@ ticket_edge_preconditions() {
 ticket_blockers() {
   local have
   gh_or_die --out have "read ticket #$1's blockers" adapter_blockers "$1"
-  if [ -n "$have" ]; then printf '%s\n' "$have" | sort -un; fi
+  blockers_set "$have"
 }
 
 # ticket_edges_verified <err_var> <n> <want>: the 0/1/2 verifier verify_twice
@@ -502,8 +508,7 @@ ticket_edges_verified() {
     printf -v "$1" '%s' "$__tev_err"
     return 2
   fi
-  if [ -n "$__tev_have" ]; then __tev_have="$(printf '%s\n' "$__tev_have" | sort -un)"; fi
-  [ "$__tev_have" = "$(printf '%s\n' "$3" | sed '/^$/d' | sort -un)" ]
+  [ "$(blockers_set "$__tev_have")" = "$(blockers_set "$3")" ]
 }
 
 # The heading of a ticket body's section listing its blockers - kept in line
@@ -554,10 +559,17 @@ blocked_by_section_numbers() {
   '
 }
 
+# blockers_set <list>: the numbers of <list> (newline-separated), blank lines
+# dropped, sorted numerically and de-duplicated, one per line; nothing for an
+# empty list.
+blockers_set() {
+  printf '%s\n' "$1" | sed '/^$/d' | sort -un
+}
+
 # blockers_union <before> <by>: the blocker set after `ticket block` - every
 # number in either list, one per line, sorted and de-duplicated.
 blockers_union() {
-  printf '%s\n%s\n' "$1" "$2" | sed '/^$/d' | sort -un
+  blockers_set "$(printf '%s\n%s' "$1" "$2")"
 }
 
 # blockers_difference <before> <by>: the blocker set after `ticket unblock` -
@@ -619,9 +631,7 @@ ticket_edges_change() {
   verify_twice "read ticket #$n's blockers" \
     "ticket #$n's blocking edges did not verify - checked twice, both failed" \
     ticket_edges_verified "$n" "$want"
-  issue_body_rewrite "$n" "read ticket #$n's body" \
-    "rewrite ticket #$n's ## Blocked by section" \
-    rewrite_blocked_by_section "$want"
+  ticket_blocked_by_rewrite "$n" "$want"
 }
 
 # Adds a native blocking edge on <n> for every --by issue it lacks.

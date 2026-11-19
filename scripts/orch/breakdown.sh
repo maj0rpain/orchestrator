@@ -115,7 +115,7 @@ breakdown_record() {
 # breakdown_publish_in <parent> <draft> <tmp>: breakdown publish's work, run in
 # a subshell so the caller can remove <tmp> however it ends.
 breakdown_publish_in() {
-  local parent="$1" draft="$2" tmp="$3" dir saved numbers k n status b bn want list title order
+  local parent="$1" draft="$2" tmp="$3" dir saved numbers k n status b blocker_n want list title order
   dir="$(breakdown_dir "$parent")"
   saved="$dir/draft.md"
   # A saved draft always wins over the one given.
@@ -140,8 +140,8 @@ breakdown_publish_in() {
     file_read_text list "$tmp/$k.blocked"
     if [ -n "$list" ]; then
       while IFS= read -r b; do
-        breakdown_number "$numbers" "$b" bn status  # status is spent past the linked check
-        want="${want:+$want$'\n'}$bn"
+        breakdown_number "$numbers" "$b" blocker_n status  # status is spent past the linked check
+        want="${want:+$want$'\n'}$blocker_n"
       done <<<"$list"
     fi
     if [ -z "$n" ]; then
@@ -154,7 +154,7 @@ breakdown_publish_in() {
     fi
     # Fresh or resumed alike: link only what is not yet linked, add only the
     # blocking edges the ticket lacks, read it all back.
-    (ticket_link "$parent" "$n" "$want") \
+    (ticket_link "$parent" "$n" "$(blockers_set "$want")") \
       || die "ticket $k of the draft (#$n): the link failed"
     breakdown_record "$numbers" "$k" "$n" linked
   done <<<"$order"
