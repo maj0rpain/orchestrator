@@ -14,8 +14,9 @@ ALL_RUNNER_FILES=(all.sh test_jobs.sh report.sh test_tree.sh)
 # scripts/test/, that source cleanly and that `helpers.sh --tests` lists, in its
 # header order. setup.sh is kept out: sourcing it runs the suite's setup, which
 # is why the helper index check pairs setup.sh with the column-0 grep instead
-# of `declare -F`. The planted minimal tree, the quiet-mode cut-down copy and
-# the helper index check all read it. git_env.sh, the runners' isolation
+# of `declare -F`. The planted minimal tree, the quiet-mode cut-down copy, the
+# helper index check, helper_copies and the helper body copies section's
+# copies_tree fixture all read it. git_env.sh, the runners' isolation
 # preamble, is not a helper and stays out.
 
 # The throwaway repo the affected.sh support sections plan in: tr_init <dir>
@@ -26,7 +27,7 @@ ALL_RUNNER_FILES=(all.sh test_jobs.sh report.sh test_tree.sh)
 # prints affected.sh's --plan against origin/main on one line, and tr_reset
 # drops the tree's changes. TR_GATE and TR_CORE are the plan's always-run items
 # and the core set.
-TR_GATE="orch_test.sh,test-helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853),comment reader placement (#3085)"
+TR_GATE="orch_test.sh,test-helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853),comment reader placement (#3085),helper body copies (#3170)"
 TR_CORE="isolation,loader one,hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh"
 tr_git() { local dir="$1"; shift; git -C "$dir" -c user.name=t -c user.email=t@example.com "$@"; }
 tr_put() {
@@ -49,7 +50,8 @@ tr_init() {
   done
   tr_put "$dir" scripts/test/orch/harness.sh '# --- isolation ---' \
     '# --- test-helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
-    '# --- marked comment prelude placement (#1853) ---' '# --- comment reader placement (#3085) ---'
+    '# --- marked comment prelude placement (#1853) ---' '# --- comment reader placement (#3085) ---' \ \
+    '# --- helper body copies (#3170) ---'
   tr_put "$dir" scripts/test/orch/loader.sh '# --- loader one ---'
 }
 tr_commit() {
@@ -273,6 +275,122 @@ helper_placement() {
       }
     }
   ' setup=setup.sh "$1"/*.sh)" || return 2
+  [ -z "$out" ] && return 0
+  printf '%s\n' "$out" | LC_ALL=C sort
+  return 1
+}
+
+# helper_copies <dir>: checks that no test file of <dir> (scripts/test/orch/)
+# writes out the whole body of a helper it could call, and prints one line per
+# copy, sorted, naming the copy's file and line, the helper and the file it is
+# defined in, and the `# copy-of` marker that exempts a deliberate repeat;
+# returns 1 when it printed any, and 2 when a sourceable test helper is missing
+# beside <dir> or the scan fails. The helpers are those defined at the top level
+# of setup.sh (the whole of it), of each SOURCEABLE_TEST_HELPERS file (read from
+# <dir>/.., named `../<name>`) and of each section file's preamble. A copy of a
+# setup or sourceable helper counts in any section file and in setup.sh, a
+# preamble helper's only in its own file, and one inside a sourceable file only
+# when it copies that file's own helper. Every line is trimmed to
+# SHELL_CODE_AWK's code view, with blank and comment-only lines dropped, and a
+# heredoc's body is data, never code. A body is its normalized lines between the
+# definition line and the closing brace, or the text inside the braces of a
+# one-line definition,
+# without its trailing `;`; it is checked when it has at least 2 lines or one of
+# 40 or more characters. A copy is a run of normalized lines equal to the body,
+# outside the helper's own definition; a one-line body also matches inside a
+# longer line. A `# copy-of <helper>: <reason>` comment on the line just before
+# the run's first line exempts it.
+helper_copies() {
+  local dir="$1" f out
+  for f in "${SOURCEABLE_TEST_HELPERS[@]}"; do
+    [ -f "$dir/../$f" ] || return 2
+  done
+  out="$(awk "$SHELL_CODE_AWK$FN_TRACK_AWK"'
+    function in_scope(f, h) {
+      if (kind[f] == "src") return dfile[h] == f
+      return kind[dfile[h]] != "sec" || dfile[h] == f
+    }
+    function in_own_def(f, k, h) {
+      return f == dfile[h] && nline[f, k] >= dstart[h] && nline[f, k] <= dend[h]
+    }
+    function finish(key, h,   n, b, first, last, i, one) {
+      one = FNR == dstart[h]
+      dend[h] = FNR
+      if (one) {
+        b = sc_code; gsub(/^[ \t]+|[ \t]+$/, "", b)
+        if (b !~ /\}$/) return
+        sub(/^[^{]*\{[ \t]*/, "", b); sub(/[ \t]*\}$/, "", b); sub(/[ \t]*;?[ \t]*$/, "", b)
+        if (length(b) >= 40) single[h] = b
+        return
+      }
+      first = bstart[h]; last = nn[key] - 1; n = last - first + 1
+      if (n >= 2) {
+        blen[h] = n
+        for (i = 0; i < n; i++) bline[h, i] = ntext[key, first + i]
+        fl = bline[h, 0]; firsts[fl] = firsts[fl] " " h
+      } else if (n == 1 && length(ntext[key, first]) >= 40) single[h] = ntext[key, first]
+    }
+    function exempt(f, ln, h,   r, t, nm, why) {
+      r = rawl[f, ln - 1]
+      if (r !~ /^[ \t]*# copy-of /) return 0
+      t = r; sub(/^[ \t]*# copy-of /, "", t)
+      if (index(t, ":") == 0) return 0
+      nm = t; sub(/:.*/, "", nm); why = t; sub(/^[^:]*:/, "", why)
+      return nm == dname[h] && why ~ /[^ \t]/
+    }
+    function report(f, ln, h) {
+      if (exempt(f, ln, h)) return
+      printf "%s:%d writes out %s'"'"'s body (defined in %s); call %s instead, or mark a deliberate repeat with \"# copy-of %s: <reason>\".\n", f, ln, dname[h], dfile[h], dname[h], dname[h]
+    }
+    FNR == 1 {
+      key = FILENAME
+      if (key ~ /\/\.\.\/[^\/]+$/) { sub(/.*\//, "", key); key = "../" key; kind[key] = "src" }
+      else { sub(/.*\//, "", key); kind[key] = key == setup ? "set" : "sec" }
+      files[++nf] = key; insec = 0; nn[key] = 0; cur = 0
+    }
+    {
+      inhd = FNR > 1 ? sc_hcur : 0
+      shell_code_line($0); s = sc_words
+      rawl[key, FNR] = $0
+      if (inhd) { nn[key]++; ntext[key, nn[key]] = "\001" key ":" FNR; nline[key, nn[key]] = FNR; next }
+      t = sc_code; gsub(/^[ \t]+|[ \t]+$/, "", t)
+      if (sc_top && kind[key] == "sec" && $0 ~ /^# --- /) insec = 1
+      track(s)
+      if (t != "") { nn[key]++; ntext[key, nn[key]] = t; nline[key, nn[key]] = FNR }
+      if (fn_new && (kind[key] != "sec" || !insec)) {
+        cur = ++nd; dname[cur] = fn; dfile[cur] = key; dstart[cur] = FNR; bstart[cur] = nn[key] + 1
+      } else if (fn_new) cur = 0
+      after_track(s)
+      if (cur && fn == "") { finish(key, cur); cur = 0 }
+    }
+    END {
+      for (a = 1; a <= nf; a++) {
+        f = files[a]
+        for (k = 1; k <= nn[f]; k++) {
+          x = ntext[f, k]
+          if (!(x in firsts)) continue
+          m = split(firsts[x], hs, " ")
+          for (j = 1; j <= m; j++) {
+            h = hs[j]
+            if (!in_scope(f, h) || k + blen[h] - 1 > nn[f]) continue
+            if (in_own_def(f, k, h)) continue
+            for (i = 1; i < blen[h] && ntext[f, k + i] == bline[h, i]; i++) ;
+            if (i == blen[h]) report(f, nline[f, k], h)
+          }
+        }
+      }
+      for (h in single) {
+        for (a = 1; a <= nf; a++) {
+          f = files[a]
+          if (!in_scope(f, h)) continue
+          for (k = 1; k <= nn[f]; k++) {
+            if (in_own_def(f, k, h)) continue
+            if (index(ntext[f, k], single[h])) report(f, nline[f, k], h)
+          }
+        }
+      }
+    }
+  ' setup=setup.sh "$dir"/*.sh "${SOURCEABLE_TEST_HELPERS[@]/#/$dir/../}")" || return 2
   [ -z "$out" ] && return 0
   printf '%s\n' "$out" | LC_ALL=C sort
   return 1
@@ -3379,6 +3497,282 @@ assert_eq "a quoted heredoc body, a continuation and a heredoc name() are no cal
 planted_here is defined in setup.sh and called by zz-h.sh. $HELPER_PLACEMENT_RULE
 planted_quoted is defined in setup.sh and called by no file. $HELPER_PLACEMENT_RULE"
 rm -rf "${placement_dir%/orch}"
+
+# --- helper body copies (#3170) -----------------------------------------------
+# helper_copies over the real scripts/test/orch/, then over minimal copies of
+# it (setup.sh alone, with the sourceable helpers beside it), each with planted
+# helpers and copies of their bodies.
+echo
+echo "helper body copies (#3170)"
+
+# copies_tree: prints a copy of the real scripts/test/orch/ cut down to
+# setup.sh, with the sourceable test helpers copied beside it, where
+# helper_copies reads them.
+copies_tree() {
+  local d
+  d="$(tree_copy scripts/test/orch)" || return 1
+  find "$d" -name '*.sh' ! -name setup.sh -delete
+  (cd "$PLUGIN_ROOT/scripts/test" && cp "${SOURCEABLE_TEST_HELPERS[@]}" "${d%/orch}/") || return 1
+  printf '%s\n' "$d"
+}
+# copies_reset: puts setup.sh and the sourceable helpers back as copies_tree
+# made them and removes the planted zz-*.sh, so each case starts from the same
+# tree without copying scripts/test/orch/ again.
+copies_reset() {
+  cp "$copies_pristine/setup.sh" "$copies_dir/setup.sh"
+  cp "$copies_pristine"/helpers/*.sh "${copies_dir%/orch}/"
+  rm -f "$copies_dir"/zz-*.sh
+  rm -f "${copies_dir%/orch}"/zz-*.sh
+}
+# copy_msg <copy file> <line> <helper> <defined in>: helper_copies' line for a
+# copy.
+copy_msg() {
+  printf '%s:%s writes out %s'"'"'s body (defined in %s); call %s instead, or mark a deliberate repeat with "# copy-of %s: <reason>".\n' \
+    "$1" "$2" "$3" "$4" "$3" "$3"
+}
+# plant_append <dir> <file>: appends the lines read from stdin, two leading
+# spaces stripped.
+plant_append() { sed 's/^  //' >>"$1/$2"; }
+
+copies_dir="$(copies_tree)"
+copies_pristine="$(mktemp -d)"
+mkdir "$copies_pristine/helpers"
+cp "$copies_dir/setup.sh" "$copies_pristine/"
+cp "${copies_dir%/orch}"/*.sh "$copies_pristine/helpers/"
+out="$(helper_copies "$PLUGIN_ROOT/scripts/test/orch")"; st=$?
+assert_status "the real tree has no helper body copy" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+
+copies_reset
+plant_append "$copies_dir" setup.sh <<'PLANTED'
+  planted_two() {
+    local a="$1"
+    printf '%s\n' "$a"
+  }
+PLANTED
+out="$(helper_copies "$copies_dir")"; st=$?
+assert_status "a helper's own definition is no copy of it" "$st" 0
+plant_file "$copies_dir" zz-a.sh <<'PLANTED'
+  # --- planted a
+  x=1
+  local a="$1"
+  printf '%s\n' "$a"
+PLANTED
+out="$(helper_copies "$copies_dir")"; st=$?
+assert_status "a setup helper's body written out in a section fails" "$st" 1
+assert_eq "naming the helper, its file, the copy's file and line, and the exemption" "$out" \
+  "zz-a.sh:3 writes out planted_two's body (defined in setup.sh); call planted_two instead, or mark a deliberate repeat with \"# copy-of planted_two: <reason>\"."
+plant_file "$copies_dir" zz-b.sh <<'PLANTED'
+  # --- planted b
+  local a="$1"
+  printf '%s\n' "$a"
+PLANTED
+out="$(helper_copies "$copies_dir")"; st=$?
+assert_eq "two copies in two files print two lines, sorted" "$out" \
+  "$(copy_msg zz-a.sh 3 planted_two setup.sh)
+$(copy_msg zz-b.sh 2 planted_two setup.sh)"
+
+copies_reset
+plant_file "$copies_dir" zz-p.sh <<'PLANTED'
+  planted_pre() {
+    echo one
+    echo two
+  }
+  # --- planted p
+  planted_pre
+  echo one
+  echo two
+PLANTED
+out="$(helper_copies "$copies_dir")"; st=$?
+assert_status "a preamble helper's body written out in its own file fails" "$st" 1
+assert_eq "naming the file and line" "$out" "$(copy_msg zz-p.sh 7 planted_pre zz-p.sh)"
+plant_file "$copies_dir" zz-q.sh <<'PLANTED'
+  # --- planted q
+  echo one
+  echo two
+PLANTED
+out="$(helper_copies "$copies_dir")"; st=$?
+assert_eq "and the same body in another section file is left alone" "$out" "$(copy_msg zz-p.sh 7 planted_pre zz-p.sh)"
+
+copies_reset
+plant_file "${copies_dir%/orch}" tally.sh <<'PLANTED'
+  planted_tally() {
+    echo t1
+    echo t2
+  }
+PLANTED
+plant_file "$copies_dir" zz-s.sh <<'PLANTED'
+  # --- planted s
+  echo t1
+  echo t2
+PLANTED
+out="$(helper_copies "$copies_dir")"; st=$?
+assert_status "a sourceable helper's body written out in a section fails" "$st" 1
+assert_eq "naming the helper's file as ../name" "$out" "$(copy_msg zz-s.sh 2 planted_tally ../tally.sh)"
+n="$(wc -l <"$copies_dir/setup.sh")"
+plant_append "$copies_dir" setup.sh <<'PLANTED'
+  echo t1
+  echo t2
+PLANTED
+out="$(helper_copies "$copies_dir")"
+assert_eq "a copy in setup.sh is reported as setup.sh:<line>" "$(printf '%s\n' "$out" | grep -c '^setup.sh:')" "1"
+assert_contains "at its line" "$out" "$(copy_msg setup.sh "$((n + 1))" planted_tally ../tally.sh)"
+
+copies_reset
+plant_append "$copies_dir" setup.sh <<'PLANTED'
+  planted_two() {
+    local a="$1"
+    printf '%s\n' "$a"
+  }
+PLANTED
+plant_file "${copies_dir%/orch}" fifo.sh <<'PLANTED'
+  planted_fifo() {
+    echo f1
+    echo f2
+  }
+  echo f1
+  echo f2
+  local a="$1"
+  printf '%s\n' "$a"
+PLANTED
+out="$(helper_copies "$copies_dir")"; st=$?
+assert_status "inside a sourceable helper, a copy of that file's own helper fails" "$st" 1
+assert_eq "and a copy of a setup helper there is left alone" "$out" "$(copy_msg ../fifo.sh 5 planted_fifo ../fifo.sh)"
+
+copies_reset
+plant_file "${copies_dir%/orch}" tally.sh <<'PLANTED'
+  planted_ta() {
+    echo x1
+    echo x2
+  }
+PLANTED
+plant_file "${copies_dir%/orch}" fifo.sh <<'PLANTED'
+  planted_fi() {
+    echo x1
+    echo x2
+  }
+PLANTED
+plant_file "$copies_dir" zz-m.sh <<'PLANTED'
+  # --- planted m
+  echo x1
+  echo x2
+PLANTED
+out="$(helper_copies "$copies_dir")"; st=$?
+assert_eq "a run equal to the bodies of two helpers prints a line for each" "$out" \
+  "$(copy_msg zz-m.sh 2 planted_fi ../fifo.sh)
+$(copy_msg zz-m.sh 2 planted_ta ../tally.sh)"
+
+copies_reset
+plant_append "$copies_dir" setup.sh <<'PLANTED'
+  planted_l39() { echo abcdefghijklmnopqrstuvwxyzabcdefgh; }
+  planted_l40() { echo 01234567890123456789012345678901234; }
+  planted_three() {
+    echo r1
+    echo r2
+    echo r3
+  }
+  planted_two() {
+    local a="$1"
+    printf '%s\n' "$a"
+  }
+PLANTED
+plant_file "$copies_dir" zz-l.sh <<'PLANTED'
+  # --- planted l
+  echo abcdefghijklmnopqrstuvwxyzabcdefgh
+  out="$(echo 01234567890123456789012345678901234)"
+PLANTED
+out="$(helper_copies "$copies_dir")"; st=$?
+assert_eq "a one-line body of 40 characters fails inside a command substitution, one of 39 passes" "$out" \
+  "$(copy_msg zz-l.sh 3 planted_l40 setup.sh)"
+plant_file "$copies_dir" zz-l.sh <<'PLANTED'
+  # --- planted l
+  local a="$2"
+  printf '%s\n' "$a"
+  echo r1
+  echo r2
+PLANTED
+out="$(helper_copies "$copies_dir")"; st=$?
+assert_status "a near-copy and a partial copy of a longer body pass" "$st" 0
+plant_file "$copies_dir" zz-l.sh <<'PLANTED'
+  # --- planted l
+  local a="$1"
+
+  # between the lines
+  printf '%s\n' "$a"
+PLANTED
+plant_file "$copies_dir" zz-m.sh <<'PLANTED'
+  # --- planted m
+  local a="$1"  # a trailing comment
+  printf '%s\n' "$a"
+PLANTED
+out="$(helper_copies "$copies_dir")"
+assert_eq "comment and blank lines inside a copy, and a trailing comment on one, do not stop the match" "$out" \
+  "$(copy_msg zz-l.sh 2 planted_two setup.sh)
+$(copy_msg zz-m.sh 2 planted_two setup.sh)"
+rm -f "$copies_dir/zz-m.sh"
+rm -f "$copies_dir/zz-l.sh"
+plant_append "$copies_dir" setup.sh <<'PLANTED'
+  planted_cmt() {
+    echo c1  # a trailing comment
+    echo c2
+  }
+PLANTED
+plant_file "$copies_dir" zz-m.sh <<'PLANTED'
+  # --- planted m
+  echo c1
+  echo c2
+PLANTED
+out="$(helper_copies "$copies_dir")"
+assert_eq "a copy that drops a helper line's trailing comment still fails" "$out" "$(copy_msg zz-m.sh 2 planted_cmt setup.sh)"
+rm -f "$copies_dir/zz-m.sh"
+plant_file "$copies_dir" zz-l.sh <<'PLANTED'
+  cat <<'EOF'
+  planted_fake() {
+    echo z1
+    echo z2
+  }
+  EOF
+  # --- planted l
+  cat <<'EOF'
+  local a="$1"
+  printf '%s\n' "$a"
+  EOF
+  cat <<EOF
+  local a="$1"
+  printf '%s\n' "$a"
+  EOF
+  echo z1
+  echo z2
+PLANTED
+out="$(helper_copies "$copies_dir")"; st=$?
+assert_status "a body inside a quoted or an unquoted heredoc is no copy, and a function defined there no helper" "$st" 0
+plant_file "$copies_dir" zz-l.sh <<'PLANTED'
+  # --- planted l
+  # copy-of planted_two: deliberate
+  local a="$1"
+  printf '%s\n' "$a"
+  # copy-of planted_other: wrong helper
+  local a="$1"
+  printf '%s\n' "$a"
+  # copy-of planted_two:
+  local a="$1"
+  printf '%s\n' "$a"
+  # copy-of planted_two: a blank line between
+
+  local a="$1"
+  printf '%s\n' "$a"
+PLANTED
+out="$(helper_copies "$copies_dir")"; st=$?
+assert_eq "only a marker naming the helper, with a reason, on the line just before the run exempts it" "$out" \
+  "$(copy_msg zz-l.sh 13 planted_two setup.sh)
+$(copy_msg zz-l.sh 6 planted_two setup.sh)
+$(copy_msg zz-l.sh 9 planted_two setup.sh)"
+
+copies_reset
+rm -f "${copies_dir%/orch}/counting.sh"
+out="$(helper_copies "$copies_dir")"; st=$?
+assert_status "a sourceable helper missing beside the tree is a scan failure" "$st" 2
+rm -rf "${copies_dir%/orch}" "$copies_pristine"
 
 # --- gh op placement (#1037) --------------------------------------------------
 # gh_op_placement over the real scripts/, then over copies of it, each with a

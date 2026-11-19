@@ -802,6 +802,18 @@ assert_no_repo_exit2() {
   rm -f "$err"
 }
 
+# assert_no_repo_refused <label> <message> <args>...: a refusal wins over the
+# missing Repo (#3139): orch_no_repo <args>, stdout and stderr together, exits 2
+# with <message> in its output and without the repo remedy.
+assert_no_repo_refused() {
+  local label="$1" msg="$2" out st
+  shift 2
+  out="$(orch_no_repo "$@" 2>&1)"; st=$?
+  assert_status "$label with no repo exits 2" "$st" 2
+  assert_contains "$label names its refusal" "$out" "$msg"
+  assert_not_contains "$label is not the remedy" "$out" "$repo_missing"
+}
+
 # fake_issue_body <n> <text>: seeds issue #n's body, byte for byte.
 fake_issue_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/body"; }
 

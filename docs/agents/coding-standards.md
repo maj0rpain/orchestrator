@@ -18,6 +18,10 @@ A change that introduces a helper moves onto it every existing site in the repo
 that shares both the helper's shape and the reaction to its result. That move
 is part of the change, not scope beyond it.
 
+A test's verbatim copy of a shared or preamble test helper's whole body is now
+enforced by the harness's helper body copies check; the rest of this rule stays
+a judgement call.
+
 ## 2. Route every `orch: ` message through `die`, `die2` or `warn`
 
 Never write a hand-rolled `printf 'orch: ...' >&2`. `die` and `die2` print the

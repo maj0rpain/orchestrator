@@ -1,5 +1,53 @@
 # Changelog
 
+## 6.8.15
+
+The CHANGELOG's 5.2.72, 5.3.3 and 6.0.1 entries now name the caller-visible changes they hid: the option after a lone `-` script (`python3 - --help`) the Bash hook newly denies, the two new failures of `issue fetch --json`, and `ticket-worktree remove <n>` dying where git's record of the checkouts cannot be read. No behaviour changes.
+
+## 6.8.14
+
+The glossary's Driver loop and Driver entries now say a stop report is not saved and its ticket neither merged nor closed, and a new Stop report entry defines the term.
+
+## 6.8.13
+
+Internal refactor: the base module's out-variable note helper is replaced by a no-argument printer, `base_note`, so `base show` and `base clear` no longer declare a variable they drop. What `orch.sh base` prints is unchanged.
+
+## 6.8.12
+
+Correct stale doc comments about the gh capture pair, the gh guard's memo and `gh_lines_read`'s prior art, and the matching CONTRIBUTING.md sentence. No behaviour changes.
+
+## 6.8.11
+
+Reword the Layout map, the Testing section and three script headers that had drifted from the code they describe: the Lines fate entry, the job helpers and test-tree reader rows and headers, and the job pool sentence. Docs and comments only.
+
+## 6.8.10
+
+The autopilot module drops a wrapper that only printed a constant and a verdict argument that repeated the argument count, and renames two locals to say what they hold.
+
+## 6.8.9
+
+The audit tests drop duplicated report-reference cases and share one save-and-restore of a run's files.
+
+## 6.8.8
+
+Write the issue-row readers' shared record, label-block walk and pair assignment once, and correct two comments and some names. No behaviour changes.
+
+## 6.8.7
+
+Doctor's sub-issues warning now names the sub-issue listing read as the step breakdown publish fails at. Each verification label's command line comes last in that label's report, the verification labels and the command choice are spelled out once inside doctor, and the remedy rule and the repo-setup doc describe what doctor prints.
+
+## 6.8.6
+
+The autopilot test section and four other test section files lose repeated shapes: one shared assertion checks every no-Repo refusal, three claims-read cases fold into ticks the suite already runs, and stale comments, labels, dead assignments and duplicate assertions go, with no change to orch.sh behaviour.
+
+## 6.8.5
+
+The audit module is cleaned up without changing what it prints: a resolved finding's record is split by one helper, the steering fields, the refusal remedy and the page markup are each held once, the open-issue listing and the needs-triage label step use shared helpers (the latter now in the Filed finding module, also called by `review file`), the drift line calls the Filed finding module's location check, and the module's variables are named for what they hold. The `audit file --run` help now says an already-open issue with an existing Related paragraph still gets one, its numbers kept.
+
+## 6.8.4
+
+Add a harness check that fails when an orch test file writes out a shared, sourceable or preamble test helper's whole body instead of calling it, naming the helper to call; a deliberate repeat is exempted by a `# copy-of <helper>: <reason>` comment. The implementer's and fixer's briefs now tell the agent to run the repo's helper-index command before writing the first test and to call a listed helper rather than copying its body.
+
 ## 6.8.3
 
 The trust module test section reads issue 8 once for its lower-case and empty association check, one orch.sh run fewer per suite run.
@@ -66,7 +114,7 @@ A new doc, `docs/repo-setup.md`, lists everything orch.sh reads from a repo: the
 
 ## 6.0.1
 
-The ticket commands now read one ticket's facts once through `ticket_facts <n> <prefix>`, which sets the ticket worktree's path and state, its checked-out branch, the checkout's branch, and the ticket's own branch and whether it exists in variables the caller names, and writes no other variable; the refusals live in require helpers that read those facts. The teardown takes the facts its caller read and reports which removal step failed, so `ticket reclaim` words its per-ticket lines without probing again. `ticket close <n>` (without `--unmerged`) and `ticket-worktree add <n>` now die before acting where git's record of the checkouts cannot be read, and `ticket merge <n>`, which already died there, now dies earlier, before its forked-from and dirty-tree refusals; nothing else a user of `orch.sh` can observe changes.
+The ticket commands now read one ticket's facts once through `ticket_facts <n> <prefix>`, which sets the ticket worktree's path and state, its checked-out branch, the checkout's branch, and the ticket's own branch and whether it exists in variables the caller names, and writes no other variable; the refusals live in require helpers that read those facts. The teardown takes the facts its caller read and reports which removal step failed, so `ticket reclaim` words its per-ticket lines without probing again. `ticket close <n>` (without `--unmerged`) and `ticket-worktree add <n>` now die before acting where git's record of the checkouts cannot be read, and `ticket merge <n>`, which already died there, now dies earlier, before its forked-from and dirty-tree refusals, and `ticket-worktree remove <n>` with a ticket worktree at its path, which before went ahead without reading that record, now dies there too; nothing else a user of `orch.sh` can observe changes.
 
 ## 6.0.0
 
@@ -74,7 +122,7 @@ Breaking: the plugin no longer measures suite cost (#3381, ADR-0063). The `orch.
 
 ## 5.3.3
 
-Every read of an issue's or a PR's comments now goes through one reader of trusted comments, which drops untrusted comments in one place and returns rather than dies on a failed or unparseable read. A structural test fails when orch.sh's own scripts read comments any other way. Nothing orch.sh prints or does changes.
+Every read of an issue's or a PR's comments now goes through one reader of trusted comments, which drops untrusted comments in one place and returns rather than dies on a failed or unparseable read. A structural test fails when orch.sh's own scripts read comments any other way. The exceptions are two failures of `issue fetch --json`: it reads its comments in a second gh call, which can fail on its own (`orch: gh could not read the comments of issue #<n>: <reason>`), and an issue answer that is not an issue object now dies as `orch: could not read issue #<n>: it did not parse` instead of `its comments did not parse`. Nothing else orch.sh prints or does changes.
 
 ## 5.3.2
 
@@ -207,7 +255,7 @@ The autopilot container now holds `orchestrator.autopilot.auto-sync` and `.githu
 
 ## 5.2.72
 
-The Bash hook no longer denies `node --test`, `python3 -c1`, `python3 -mpytest` and other interpreter commands whose options give the program its code, module or mode, or make it print and exit, as stdin reads; a real stdin read, including an option after a lone `-` script, is still denied.
+The Bash hook no longer denies `node --test`, `python3 -c1`, `python3 -mpytest` and other interpreter commands whose options give the program its code, module or mode, or make it print and exit, as stdin reads; a real stdin read is still denied, and an option after a lone `-` script (`python3 - --help`), which passed before, is now denied as one.
 
 ## 5.2.71
 

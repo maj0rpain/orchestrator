@@ -1915,10 +1915,6 @@ echo
 echo "ticket exists: no repo"
 ticket_fixture
 assert_no_repo_exit2 "ticket exists" ticket exists 50
-out="$(orch_no_repo ticket exists 2>&1)"; st=$?
-assert_status "a usage error is refused first" "$st" 2
-assert_contains "with its usage line" "$out" "usage: orch.sh ticket exists"
-out="$(orch_no_repo ticket exists abc 2>&1)"; st=$?
-assert_status "a parent that is no number is refused first" "$st" 2
-assert_contains "with its message" "$out" "parent must be a plain issue number, got: abc"
+assert_no_repo_refused "ticket exists usage error" "usage: orch.sh ticket exists" ticket exists
+assert_no_repo_refused "ticket exists with a parent that is no number" "parent must be a plain issue number, got: abc" ticket exists abc
 restore_suite_env
