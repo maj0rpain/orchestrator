@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.13
+
+Internal refactor: the base module's out-variable note helper is replaced by a no-argument printer, `base_note`, so `base show` and `base clear` no longer declare a variable they drop. What `orch.sh base` prints is unchanged.
+
 ## 6.8.12
 
 Correct stale doc comments about the gh capture pair, the gh guard's memo and `gh_lines_read`'s prior art, and the matching CONTRIBUTING.md sentence. No behaviour changes.
