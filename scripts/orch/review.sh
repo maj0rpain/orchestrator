@@ -257,11 +257,10 @@ review_terminal_state() {
 }
 
 # One turn of the poll loop: wait (wait_tick), then advance `elapsed`. It
-# assigns to the caller's `slept`, `blocked` and `elapsed`, which bash scopes
-# dynamically.
+# assigns to the caller's `elapsed`, which bash scopes dynamically.
 ci_tick() {
   wait_tick "$ORCH_CI_INTERVAL"
-  elapsed="$(wait_elapsed "$started" "$slept")"
+  elapsed="$(wait_taken)"
 }
 
 # When the PR's head was pushed, in epoch seconds: the newest reflog entry of
@@ -917,10 +916,9 @@ cmd_review() {
       if [ "$pr_given" = 1 ]; then
         case "$pr_arg" in ''|*[!0-9]*) die "not a PR number: $pr_arg" ;; esac
       fi
-      # blocked and slept are read by wait_tick through bash's dynamic scope;
       # refs_err is pr_refs_read's error output, which ci_refs_unread reports.
       # shellcheck disable=SC2034
-      local pr started slept=0 blocked=0 elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
+      local pr elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
       local no_ci=0 ci_status refs_rc=0
       if [ -n "$pr_arg" ]; then pr="$pr_arg"; else require_state_read pr=pr; fi
       orch_load wait
@@ -947,7 +945,7 @@ cmd_review() {
       # ends the call as still running with no total yet.
       if [ "$nowait" = 1 ]; then
         export GH_LIMIT_NO_SLEEP=1
-        printf -v started "%(%s)T" -1
+        WAIT_START="$WAIT_CALL_START"
       else
         wait_provisional_open "$pr"
       fi
@@ -956,14 +954,14 @@ cmd_review() {
       ci_refs_unread "$refs_rc" "$pr_arg" "$pr" "${refs_err-}" && return 1
       [ "$refs_rc" -eq 0 ] || head_oid=""
       if [ "$nowait" != 1 ]; then
-        wait_open "review ci $pr $head_oid" started slept
-        elapsed="$(wait_elapsed "$started" "$slept")"
+        wait_open "review ci $pr $head_oid"
+        elapsed="$(wait_taken)"
       fi
       if [ -n "$head_oid" ]; then
         pushed="$(ci_push_time "$head_oid" "$head_ref")"
         case "$pushed" in
           ''|*[!0-9]*) ;;
-          *) [ "$pushed" -ge "$started" ] || push_age=$(( started - pushed )) ;;
+          *) [ "$pushed" -ge "$WAIT_START" ] || push_age=$(( WAIT_START - pushed )) ;;
         esac
         # With no evidence of CI anywhere, there is nothing for the grace to
         # wait on. It replaces only the wait: the unfiltered probe still runs,
@@ -971,7 +969,7 @@ cmd_review() {
         if no_ci_evidence "$head_oid" "$base_ref" "$pr"; then
           no_ci=1
         fi
-        [ "$nowait" = 1 ] || wait_limited_check "$slept"
+        [ "$nowait" = 1 ] || wait_limited_check
       fi
       while :; do
         # Branch protection's required checks decide it wherever it names any.
@@ -987,14 +985,14 @@ cmd_review() {
         # ci_counted, which widens to every check.
         if [ "$no_ci" = 0 ] && float_lt "$(float_add "$push_age" "$elapsed")" "$ORCH_CI_GRACE"; then
           res="$(ci_probe "$pr" required)"
-          [ "$nowait" = 1 ] || wait_limited_check "$slept"
+          [ "$nowait" = 1 ] || wait_limited_check
           if [ "${res%%$'\n'*}" = none ]; then
             if [ "$nowait" = 1 ]; then note pending; ci_status=0; break; fi
             ci_tick; continue
           fi
         else
           res="$(ci_counted_probe "$pr")"
-          [ "$nowait" = 1 ] || wait_limited_check "$slept"
+          [ "$nowait" = 1 ] || wait_limited_check
         fi
         verdict="${res%%$'\n'*}"
         case "$verdict" in
