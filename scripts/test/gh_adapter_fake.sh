@@ -678,9 +678,9 @@ fake_labelled_field() {
 
 # fake_labelled_rows <op> <all|any> <state|state-title> <label>...: the issues
 # fake_labelled_numbers lists, each as the count-marked record the gh adapter
-# prints: number, the stored state or title, label count, labels. Lagging
-# (fake_lag) for <op>, it answers the stale answer fake_lag was given, or
-# nothing - a listing served late.
+# prints: number, the stored state, or the state and stored title tab-joined,
+# label count, labels. Lagging (fake_lag) for <op>, it answers the stale
+# answer fake_lag was given, or nothing - a listing served late.
 fake_labelled_rows() {
   local op="$1" mode="$2" field="$3" n nums
   shift 3

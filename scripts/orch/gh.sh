@@ -762,7 +762,7 @@ issues_label_block_read() {
 assoc_pairs_assign() {
   assoc_array_require assoc_pairs_assign "$1" __apa_
   local __apa_r __apa_idx
-  eval "__apa_idx=(\${!$2[@]})"
+  eval "__apa_idx=(\${$2[@]+\"\${!$2[@]}\"})"
   for __apa_r in ${__apa_idx[@]+"${__apa_idx[@]}"}; do
     eval "$1"'[${'"$2"'[__apa_r]}]=${'"$3"'[__apa_r]}'
   done
