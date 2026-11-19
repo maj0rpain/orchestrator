@@ -73,7 +73,7 @@ gh_capture_err() {
 # is retried once, a limit given up on (status 1) fails the call with the
 # handler's message in place of the command's stderr - or with nothing on
 # stderr, for the silent give-up of a re-callable wait (the mark
-# gh_limit_handle leaves) - and any other failure
+# the Wait module's wait_limit_fits leaves) - and any other failure
 # keeps its stderr as it is. The command's status passes through, and so does
 # the stdout of the deciding attempt alone - the one whose outcome the call
 # returns - byte for byte from its file, never through a shell variable; an
@@ -165,7 +165,7 @@ gh_limit_reset() {
 # (autopilot_github_limit_record), and a failed write is part of that same one
 # line, after " - " with its clauses joined by "; ", so gh_reason keeps it.
 gh_limit_handle() {
-  local kind reset nap clauses msg
+  local kind reset nap clauses="" clause msg
   kind="$(gh_limit_kind "$1")"
   [ -n "$kind" ] || return 0
   if [ "$kind" = secondary ] && [ "$2" = 0 ] && [ -z "${GH_LIMIT_NO_SLEEP:-}" ]; then
@@ -176,7 +176,9 @@ gh_limit_handle() {
   fi
   reset="$(gh_limit_reset)"
   msg="GitHub API rate limit reached - it resets at $(autopilot_epoch_iso "$reset"). An autopilot session ends its turn now and does not retry; the watcher picks the work up after the reset."
-  clauses="$(autopilot_github_limit_record "$reset" | paste -sd';' - | sed 's/;/; /g')"
+  while IFS= read -r clause; do
+    [ -z "$clause" ] || clauses="${clauses:+$clauses; }$clause"
+  done < <(autopilot_github_limit_record "$reset")
   [ -z "$clauses" ] || msg="$msg - $clauses"
   warn "$msg"
   return 1

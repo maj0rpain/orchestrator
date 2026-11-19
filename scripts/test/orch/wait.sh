@@ -59,7 +59,7 @@ assert_status "spec-review wait with an interval past the block exits 75" "$st" 
 assert_eq "and ends within the block, not a whole interval after it" \
   "$([ "$wt_took" -le 3 ] && echo yes || echo "no (${wt_took}s)")" "yes"
 
-# A rate limit the block could not hold (gh_limit_handle's mark) ends the poll
+# A rate limit the block could not hold (wait_limit_fits's mark) ends the poll
 # loop's call as still running, total kept; with no mark, the loop goes on.
 wt_wf="$(mktemp)"
 printf '1\n0\n' >"$wt_wf"
