@@ -919,8 +919,7 @@ spec_review_wait() {
     spec_review_lens_known "$lens" || die "unknown lens '$lens' (want one of: $SPEC_REVIEW_LENSES)"
   done
   require_poll_knobs ORCH_SPEC_REVIEW_WAIT_TIMEOUT ORCH_SPEC_REVIEW_WAIT_INTERVAL
-  orch_load wait
-  require_poll_knobs ORCH_WAIT_BLOCK
+  wait_block_check
   # The total is stored from the first call and belongs to this directory and
   # these lenses (wait.sh); it is forgotten once a call delivers an outcome.
   key="spec-review wait $(cd "$dir" && pwd -P) $*"

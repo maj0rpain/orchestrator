@@ -15,7 +15,11 @@
 # scripts/test/orch/gh.sh.
 # The module also owns the limit decision - whether a GitHub rate-limit wait
 # fits in what is left of the block (wait_limit_fits) - and the ".limited" mark
-# beside the wait's file that carries a give-up out of a subshell.
+# beside the wait's file that carries a give-up out of a subshell. WAIT_MARK
+# holds the open wait's mark path (wait_guard sets the provisional one,
+# wait_open the stored total's); WAIT_FILE is the stored total alone, set only
+# by wait_open. wait_guard and wait_block_check are `review ci`'s guard and the
+# ORCH_WAIT_BLOCK knob check.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 ORCH_WAIT_BLOCK="${ORCH_WAIT_BLOCK:-570}"
@@ -37,13 +41,14 @@ wait_elapsed() {
 # wait_open <key-text> <start-var> <slept-var>: finds or creates the stored
 # total for the wait <key-text> names, and sets the two variables to the
 # epoch second of its first call and the seconds slept so far (0 when new).
-# It sets WAIT_FILE and WAIT_START, the file wait_forget and wait_still_running
-# use and the epoch second of the wait's first call.
+# It sets WAIT_FILE (the stored total, set nowhere else), WAIT_MARK (its limit
+# mark) and WAIT_START, the epoch second of the wait's first call.
 wait_open() {
   local key epoch start="" slept=""
   key="$(printf '%s' "$1" | git hash-object --stdin)" || die "could not key the wait"
   mkdir -p "$ORCH/wait" || die "could not create $ORCH/wait"
   WAIT_FILE="$ORCH/wait/$key"
+  WAIT_MARK="$WAIT_FILE.limited"
   if [ -f "$WAIT_FILE" ]; then
     { IFS= read -r start; IFS= read -r slept; } <"$WAIT_FILE" || true
   fi
@@ -60,10 +65,10 @@ wait_open() {
   printf -v "$3" '%s' "$slept"
 }
 
-# wait_forget: forgets the stored total and its ".limited" mark (the Wait
+# wait_forget: forgets the stored total and its mark (the Wait
 # module's, see wait_limit_fits), once a call delivers an outcome.
 wait_forget() {
-  rm -f "$WAIT_FILE" "$WAIT_FILE.limited"
+  rm -f "${WAIT_FILE:-}" "${WAIT_MARK:-}"
 }
 
 # wait_limited_check <slept>: ends the call as still running (stores <slept>,
@@ -71,40 +76,47 @@ wait_forget() {
 # wait_limit_fits left, which a subshell's exit could not. Call it after each
 # probe of a poll loop.
 wait_limited_check() {
-  [ -e "$WAIT_FILE.limited" ] || return 0
-  rm -f "$WAIT_FILE.limited"
+  [ -e "${WAIT_MARK:-}" ] || return 0
+  rm -f "$WAIT_MARK"
   wait_still_running "$1"
 }
 
 # wait_limit_fits <seconds>: whether a limit wait of <seconds> fits. Returns 0
-# when no re-callable wait is open (no WAIT_FILE) or what is left of
+# when no re-callable wait is open (no WAIT_MARK) or what is left of
 # ORCH_WAIT_BLOCK can hold it. Otherwise sleeps the rest of the block, leaves
-# the ".limited" mark (not checked: an unwritable mark still returns 1) and
+# the mark at WAIT_MARK (not checked: an unwritable mark still returns 1) and
 # returns 1.
 wait_limit_fits() {
   local left
-  [ -n "${WAIT_FILE:-}" ] || return 0
+  [ -n "${WAIT_MARK:-}" ] || return 0
   left="$(wait_nap "$1" "$(wait_block_spent 0)")"
   float_lt "$left" "$1" || return 0
   if float_lt 0 "$left"; then sleep "$left"; fi
-  : >"$WAIT_FILE.limited" || :
+  : >"$WAIT_MARK" || :
   return 1
 }
 
-# wait_provisional_open <name>: opens the provisional wait file "pending-<name>"
-# for a read that runs before the wait's key is known, clearing its mark.
-wait_provisional_open() {
+# wait_guard <name>: opens the provisional guard "pending-<name>" for a read
+# that runs before the wait's key is known: points WAIT_MARK at its mark (not
+# WAIT_FILE) and clears any old mark.
+wait_guard() {
   mkdir -p "$ORCH/wait" || die "could not create $ORCH/wait"
-  WAIT_FILE="$ORCH/wait/pending-$1"
-  rm -f "$WAIT_FILE.limited"
+  WAIT_MARK="$ORCH/wait/pending-$1.limited"
+  rm -f "$WAIT_MARK"
 }
 
-# wait_provisional_check: ends the call as still running (exit 75, no total to
-# keep) when the provisional wait's mark was left.
-wait_provisional_check() {
-  [ -e "$WAIT_FILE.limited" ] || return 0
-  rm -f "$WAIT_FILE.limited"
+# wait_guard_check: ends the call as still running (exit 75, no total stored)
+# when the guard's mark was left, consuming it; otherwise returns.
+wait_guard_check() {
+  [ -e "${WAIT_MARK:-}" ] || return 0
+  rm -f "$WAIT_MARK"
   wait_exit_running
+}
+
+# wait_block_check [die|die2]: the poll-knob check on ORCH_WAIT_BLOCK, beside
+# its default, dying through the dier given.
+wait_block_check() {
+  require_poll_knobs "${1:-die}" ORCH_WAIT_BLOCK
 }
 
 # wait_exit_running: says on stderr that the call's wait is not over and exits

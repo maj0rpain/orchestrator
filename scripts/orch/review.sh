@@ -904,7 +904,7 @@ cmd_review() {
       # `--no-wait` is one pass of the probe the loop below repeats: it reads no
       # stored total, never sleeps and writes nothing (no state key, wait file,
       # provisional guard); where the loop would sleep it prints `pending`. A
-      # rate limit is given up on at once (GH_LIMIT_NO_SLEEP).
+      # rate limit is given up on at once (NO_WAIT_CALL).
       local nowait=0 pr_arg="" pr_given=0
       while [ $# -gt 0 ]; do
         case "$1" in
@@ -923,12 +923,11 @@ cmd_review() {
       local pr started slept=0 blocked=0 elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
       local no_ci=0 ci_status refs_rc=0
       if [ -n "$pr_arg" ]; then pr="$pr_arg"; else require_state_read pr=pr; fi
-      orch_load wait
       if [ "$nowait" = 1 ]; then
         is_number "$ORCH_CI_GRACE" || die "ORCH_CI_GRACE is not a number: $ORCH_CI_GRACE"
       else
         require_poll_knobs ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
-        require_poll_knobs ORCH_WAIT_BLOCK
+        wait_block_check
       fi
       require_value pr "$pr"
       # Two clocks: the timeout counts from the wait's first call (the stored
@@ -943,16 +942,16 @@ cmd_review() {
       # forgotten once a call delivers an outcome (wait.sh).
       # The refs read runs before the wait's key is known, so a provisional
       # guard stands in for it: a limit the block cannot hold is slept short
-      # and marked there (wait_provisional_open, wait_provisional_check), and
+      # and marked there (wait_guard, wait_guard_check), and
       # ends the call as still running with no total yet.
       if [ "$nowait" = 1 ]; then
-        export GH_LIMIT_NO_SLEEP=1
+        export NO_WAIT_CALL=1
         printf -v started "%(%s)T" -1
       else
-        wait_provisional_open "$pr"
+        wait_guard "$pr"
       fi
       pr_refs_read "$pr" head_oid head_ref base_ref refs_err || refs_rc=$?
-      [ "$nowait" = 1 ] || wait_provisional_check
+      [ "$nowait" = 1 ] || wait_guard_check
       ci_refs_unread "$refs_rc" "$pr_arg" "$pr" "${refs_err-}" && return 1
       [ "$refs_rc" -eq 0 ] || head_oid=""
       if [ "$nowait" != 1 ]; then

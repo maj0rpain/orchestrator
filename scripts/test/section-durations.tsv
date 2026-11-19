@@ -173,7 +173,7 @@
 115	123	gh adapter contract (#280)	48e991187b762b12a4f0e536c19ac683adfe246f
 22	22	claim adapter operations (#1454)	434415cd39a7bb63f7146512c1dbdde13077c353
 2	3	label casing (#1943)	967a4a39f788b73ef75f50851a8a5e6a3aa92edb
-44	29	gh rate limits (#2577)	5fc1f17b6d8d1b663b064feacca2ff01ae03bc9f
+57	27	gh rate limits (#2577)	9219cc4b0792501f26ebae802267aa0a7cfad2aa
 9	7	gh rate limits: the GitHub pause and the hit file (#2577)	473c1e0574389227587fd9bd066c9ca6a5cc0a5a
 0	1	slug	aa1e8e6f64e5dd11e111097dfde9deca1248c258
 9	10	archive	0124b5e1112a0eae813a1e43c01b2f94b426ce16
@@ -363,7 +363,7 @@
 48	7	verification run	60a21967681dc4d52f5e7454aaa13fb421327ec2
 216	20	verification run: the run key, stale runs, the ceiling	471d2e2e39b7b63f2840777531b346f7eab120a1
 0	1	verification run in help and the CLI conventions	bcef7e4ad67e97b98e872bc1de7a617d10a78253
-94	6	wait: a call's block is wall time	6dbb619df22a36bc4f87bf86e902101d1b3baba7
+86	12	wait: a call's block is wall time	2fc6ab4532bd7ad10497ec2f63dffa991530b248
 686	811	hooks_test.sh	058e31b62b5c66adb779670b21daecb8f80a55e8
 196	171	docs_lint.sh	34005b94b528c3cac0c004e8e1d78930a4878f6a
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
