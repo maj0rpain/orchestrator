@@ -60,8 +60,9 @@ it has none.
   line, `ok` reading "no 'Branch verification:' line - the combined-branch
   check runs the full verification"; `warn` for two different commands;
   `FAIL` for the label with no command. Its command's first word is checked
-  as installed, as for the other two. The docs lint checks, by structure only,
-  that the line, when present, is well formed and sits in the Testing section.
+  as installed, as for the other two. This plugin's own docs lint checks,
+  by structure only, that its own `CLAUDE.md` line is well formed and sits in
+  the Testing section; no such placement is required of your repo.
 
 ## Glossary
 

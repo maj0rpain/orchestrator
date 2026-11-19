@@ -23,8 +23,9 @@ when no planning close agreed the test seams.
   canonical triage label names (`needs-triage`, `needs-info`,
   `ready-for-agent`, `ready-for-human`, `wontfix`), or the names a
   `docs/agents/triage-labels.md` table maps them to, must exist on the repo.
-  A `Standards:` declaration, `Ticket verification:` and `Full verification:`
-  lines, a `GLOSSARY.md` and a `docs/adr` directory are read when present.
+  A `Standards:` declaration, `Ticket verification:`, `Branch verification:`
+  and `Full verification:` lines, a `GLOSSARY.md` and a `docs/adr` directory
+  are read when present.
   [docs/repo-setup.md](docs/repo-setup.md) lists each with its format and what
   happens when it is missing or unreadable. `/orchestrator:health` reports all
   of this at any time, including whether the verification commands are
