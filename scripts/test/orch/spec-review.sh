@@ -37,7 +37,7 @@ sra_refused() {
 # flags) is refused with exactly the one line <stderr>, and writes nothing.
 apply_prints_one() {
   sra_refused "$1" "$2" "$3" recommended "${@:4}"
-  assert_eq "$1: apply prints the single line" "$out" "$3"
+  assert_eq "$1: apply prints exactly the message it names, \"$3\"" "$out" "$3"
 }
 # check_refused <runner> <label> <dir> <stderr>: <runner> <dir> - a check
 # run that sets out, err and st - exits 1 with exactly <stderr>, nothing on
