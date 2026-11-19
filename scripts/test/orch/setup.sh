@@ -323,6 +323,7 @@ SSH
 # <i>".
 seq_lines() { local i; for ((i = 1; i <= $2; i++)); do echo "$1 line $i"; done; }
 # fails_bin lives in the failing-command fixture, scripts/test/fails.sh.
+
 # git_fails_bin <pattern>: a fails_bin for git.
 git_fails_bin() { fails_bin git "$1"; }
 # state_write_fails_bin: a fails_bin for mktemp that fails a state.json.*
