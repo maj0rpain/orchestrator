@@ -119,16 +119,15 @@ measure() {
 }
 
 # suite_run <name>: the start step and both waits of a suite under a slot the
-# caller took. The suite starts, then its pid and the slot's holder (`$!` after
-# the start step; with the slot taken it is the holder, as the take step always
-# precedes this call) are waited on, so the holder's CPU is charged to this
-# suite's line, not the next one's. The status is the suite's.
+# caller took. The suite starts, then its pid and the slot's holder
+# (TEST_JOBS_HOLDER_PID, waited on only when set) are waited on, so the
+# holder's CPU is charged to this suite's line, not the next one's. The status
+# is the suite's.
 suite_run() {
-  local holder st
-  TMPDIR="$tmp" test_jobs_suite_start - bash "$dir/$1"
-  holder=$!
+  local st
+  TMPDIR="$tmp" test_jobs_suite_start bash "$dir/$1"
   wait "$TEST_JOBS_SUITE_PID"; st=$?
-  wait "$holder" 2>/dev/null
+  [ -z "$TEST_JOBS_HOLDER_PID" ] || wait "$TEST_JOBS_HOLDER_PID"
   TEST_JOBS_SUITE_PID=""
   return "$st"
 }

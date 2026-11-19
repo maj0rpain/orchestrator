@@ -86,12 +86,14 @@
 # keeps the lock until <pid> has exited, then closes the run's own copy of the
 # fd. The job alone keeps the slot: a runner starts the job through
 # test_jobs_job, so no process the job leaves running holds the lock after the
-# job is gone, and the kernel still frees it should the holder die.
+# job is gone, and the kernel still frees it should the holder die. Records the
+# holder's pid in TEST_JOBS_HOLDER_PID, which is empty when no slot was held.
 #
 # test_jobs_job <cmd>...: closes the slot fd and execs <cmd> in place of the
 # calling subshell, so the job's exit status is <cmd>'s. A runner starts every
-# job through it, in the background, after test_jobs_slot_wait or
-# test_jobs_slot_take, also inside a subshell that changes directory first. It
+# job through it, in the background, normally after test_jobs_slot_wait or
+# test_jobs_slot_take, and also inside a subshell that changes directory first;
+# a job may also start with no slot, as the suite start's orch_test.sh does. It
 # never returns, so call it only in such a subshell, never in a runner's
 # foreground. The fd number lives in one constant, TEST_JOBS_FD, read through
 # eval, so the redirection is built from the constant in one place; no runner
@@ -102,22 +104,27 @@
 # so no runner starts a whole suite its own way. A suite is one
 # script of a runner's suites list; each one other than orch_test.sh, whose
 # coordinator mostly sleeps while its section children hold their own slots,
-# holds a slot while it runs. It has two steps a caller can run apart:
+# holds a slot while it runs. Its take step is test_jobs_slot_wait, above.
 #
-# test_jobs_slot_wait: the take step: waits for a slot (with the waiting notice)
-# and keeps it on the runner's fd.
+# test_jobs_start_order <suite>...: sets the array TEST_JOBS_START_ORDER to the
+# indices of the suites named, in list order, with orch_test.sh's index last
+# when it is present. all.sh and affected.sh loop over it. It starts no
+# external command.
 #
-# test_jobs_suite_start <outfile> <cmd>...: the start step. Starts <cmd> (an
-# external command; assignments before the call pass through) in the background
-# with its stdout on <outfile> (`-` keeps the caller's stdout), through
-# test_jobs_job, its children marked
-# ORCH_TEST_POOL_HELD with the pool directory when a slot was taken (an
-# inherited marker passes on when the run is unpooled), and hands the slot to a
+# test_jobs_held_marker: sets TEST_JOBS_HELD to the pool directory
+# (TEST_JOBS_POOL) when a slot is held (TEST_JOBS_SLOT_FD non-empty), else to
+# the inherited ORCH_TEST_POOL_HELD (empty when unset): the value a runner
+# gives ORCH_TEST_POOL_HELD on the children that run under its slot. Call it
+# before the slot is released. It starts no subshell.
+#
+# test_jobs_suite_start <cmd>...: the start step. Starts <cmd> (an external
+# command; assignments before the call pass through, and a redirect on the call
+# reaches the suite) in the background through test_jobs_job, its children
+# marked ORCH_TEST_POOL_HELD from test_jobs_held_marker, and hands the slot to a
 # holder that keeps it until the suite exits. Records the suite's pid in
-# TEST_JOBS_SUITE_PID, which the caller reads, never `$!`: after this step with
-# a slot taken `$!` names the slot's holder; with no slot (an unpooled run, or
-# a start with no take step first) there is no holder, `$!` is the suite's own
-# pid, and the suite starts with no slot.
+# TEST_JOBS_SUITE_PID and the holder's in TEST_JOBS_HOLDER_PID (empty when no
+# slot was held, as in an unpooled run or a start with no take step first),
+# which the caller reads, never `$!`.
 #
 # test_jobs_stop_children <pid>...: a runner's INT/TERM handler. Sends TERM to
 # every pid given, waits for each one, and exits 130, so the runner's EXIT trap
@@ -322,6 +329,9 @@ TEST_JOBS_NOTED=0
 TEST_JOBS_RUNNER=""
 TEST_JOBS_CHILD=""
 TEST_JOBS_SUITE_PID=""
+TEST_JOBS_HOLDER_PID=""
+TEST_JOBS_HELD=""
+TEST_JOBS_START_ORDER=()
 
 test_jobs_pool_init() {
   local dir slots
@@ -379,10 +389,12 @@ test_jobs_slot_wait() {
 }
 
 test_jobs_slot_release() {
+  TEST_JOBS_HOLDER_PID=""
   [ -z "$TEST_JOBS_SLOT_FD" ] && return 0
   (
     while kill -0 "$1" 2>/dev/null; do eval "sleep 0.1 $TEST_JOBS_FD>&-"; done
   ) </dev/null >/dev/null 2>&1 &
+  TEST_JOBS_HOLDER_PID=$!
   eval "exec $TEST_JOBS_FD>&-"
   TEST_JOBS_SLOT_FD=""
 }
@@ -393,15 +405,25 @@ test_jobs_job() {
 }
 
 # shellcheck disable=SC2034 # read by the sourcing runners
+test_jobs_start_order() {
+  local n last=""
+  TEST_JOBS_START_ORDER=()
+  for ((n = 1; n <= $#; n++)); do
+    if [ "${!n}" = orch_test.sh ]; then last="$((n - 1))"; else TEST_JOBS_START_ORDER+=("$((n - 1))"); fi
+  done
+  [ -z "$last" ] || TEST_JOBS_START_ORDER+=("$last")
+}
+
+# shellcheck disable=SC2034 # read by the sourcing runners
+test_jobs_held_marker() {
+  TEST_JOBS_HELD="${ORCH_TEST_POOL_HELD:-}"
+  [ -z "$TEST_JOBS_SLOT_FD" ] || TEST_JOBS_HELD="$TEST_JOBS_POOL"
+}
+
+# shellcheck disable=SC2034 # read by the sourcing runners
 test_jobs_suite_start() {
-  local out="$1" held="${ORCH_TEST_POOL_HELD:-}"
-  shift
-  [ -z "$TEST_JOBS_SLOT_FD" ] || held="$TEST_JOBS_POOL"
-  if [ "$out" = - ]; then
-    ORCH_TEST_POOL_HELD="$held" test_jobs_job "$@" &
-  else
-    ORCH_TEST_POOL_HELD="$held" test_jobs_job "$@" >"$out" &
-  fi
+  test_jobs_held_marker
+  ORCH_TEST_POOL_HELD="$TEST_JOBS_HELD" test_jobs_job "$@" &
   TEST_JOBS_SUITE_PID=$!
   test_jobs_slot_release "$TEST_JOBS_SUITE_PID"
 }
