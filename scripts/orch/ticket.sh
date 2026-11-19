@@ -650,10 +650,11 @@ cmd_ticket() {
   esac
 }
 
-# Lands ticket <n>'s branch on the branch it was forked from: rebases it onto
-# that branch's tip inside the ticket worktree, then fast-forwards that branch
-# in whichever checkout has it - so history stays linear. Every refusal (exit
-# 1) runs before anything moves. Exit 3 means a rebase conflict only: it is
+# Lands the branch checked out in ticket <n>'s worktree on the branch it was
+# forked from: rebases it onto that branch's tip inside the ticket worktree,
+# then fast-forwards that branch in whichever checkout has it - so history
+# stays linear. Every refusal (exit 1) runs before anything moves. Exit 3
+# means a rebase conflict only: it is
 # aborted, leaving both branches at their prior tips. A rebase that fails any
 # other way is aborted too and exits 1, naming git's first line; so does an
 # abort that fails, which leaves the ticket worktree mid-rebase.

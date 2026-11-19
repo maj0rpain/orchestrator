@@ -1867,7 +1867,7 @@ for rc_branch_state in branch nobranch; do
   fi
   assert_eq "leaving no record ($rc_case)" "$("$ORCH" ticket-worktree list)" ""
   assert_eq "and no ticket branch ($rc_case)" "$(rc_has_branch 7)" "no"
-  if [ "$rc_case" = merged-branch ]; then
+  if [ "$rc_report_state" = merged ] && [ "$rc_branch_state" = branch ]; then
     assert_eq "another stale record is still listed by git ($rc_case)" \
       "$(git worktree list --porcelain | grep -c "worktree $stale_wt\$")" "1"
     git worktree prune

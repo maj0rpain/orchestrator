@@ -259,7 +259,7 @@ assert_contains "naming the ticket" "$out" "no ticket worktree or branch for tic
 
 # Strict arguments.
 out="$(sourced_orch ticket_worktree_teardown 2>&1)"; st=$?
-assert_status "teardown without a prefix dies" "$st" 1
+assert_status "teardown without an array dies" "$st" 1
 assert_contains "with its usage" "$out" "usage: ticket_worktree_teardown <array> [--unmerged] [--discard]"
 out="$(sourced_orch ticket_worktree_teardown f --bogus 2>&1)"; st=$?
 assert_status "teardown dies on an unknown flag" "$st" 1
@@ -538,16 +538,14 @@ ticket_facts 7 f
 printf "%s %s %s %s %s %s" "$branch" "$path" "$n" "$parent" "$wt_branch" "$own_branch"' 2>&1)"
 assert_eq "a caller's branch, path, n, parent, wt_branch and own_branch survive the read" "$out" "b p n pa wb ob"
 
-out="$(sourced_orch_script 'ticket_facts 7 nosuch' 2>&1)"; st=$?
-assert_status "ticket_facts dies for a name that is not declared" "$st" 1
-assert_contains "naming the array" "$out" "orch: ticket_facts: nosuch is not a declared associative array"
-out="$(sourced_orch_script 'declare -a f; ticket_facts 7 f' 2>&1)"; st=$?
-assert_status "ticket_facts dies for an indexed array" "$st" 1
-assert_contains "saying so" "$out" "orch: ticket_facts: f is not a declared associative array"
-for bad in paths branches _tf_n; do
-  out="$(sourced_orch_script "declare -A $bad; ticket_facts 7 $bad" 2>&1)"; st=$?
-  assert_status "ticket_facts dies for a caller array named $bad" "$st" 1
-  assert_contains "with the guard's message for $bad" "$out" "orch: ticket_facts: $bad is not a declared associative array"
+out="$(sourced_orch_script 'declare -a idx; declare -A paths branches _tf_n
+for name in nosuch idx paths branches _tf_n; do
+  echo "case=$name"; (ticket_facts 7 "$name") 2>&1 && echo "st=0" || echo "st=$?"
+done' 2>&1)"
+for bad in nosuch idx paths branches _tf_n; do
+  case_out="$(printf '%s\n' "$out" | sed -n "/^case=$bad\$/,/^st=/p")"
+  assert_contains "ticket_facts dies for $bad, which is not a usable array" "$case_out" "st=1"
+  assert_contains "with the guard's message for $bad" "$case_out" "orch: ticket_facts: $bad is not a declared associative array"
 done
 
 git checkout -q --detach

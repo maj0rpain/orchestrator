@@ -337,7 +337,7 @@
 7	8	state set with a failed write (#1931)	277ecff0e3af2ccabe12e9fd2aebcc95a83b9bc3
 17	19	the entry read and the required-field helpers	421a88c5d4ef5960e3bcb0921ecf3a81e02d5083
 5	6	review_terminal_record fallback reads once	7f3fae7b01b9f68087b38c343c292315a4f86624
-61	48	ticket-worktree (#619)	dd8e26b79be84f0e3e7b77163fef1883321254aa
+59	46	ticket-worktree (#619)	d35f4f0fcf69783140f3c48af8483f19d296aa5e
 1	1	a ticket branch has no upstream (#1152)	bbc5298d4013eb4f017ecb7f6c59509725053f88
 2	3	the merged check beside a same-named tag (#2337)	b3482156347488560231482575e046eb972a8f39
 15	12	ticket publish	883f4068977864cb18ed1078bf88cf9a7e04714c
@@ -357,7 +357,7 @@
 0	1	ticket: unknown op	5f4ba4d168af2ac965ec141604fb776a9a0175e1
 17	12	ticket merge (#621)	3489a9afc6a27dcdedf624b3566888b18bbbac3d
 4	4	ticket merge beside a same-named tag (#2337)	8c68070ffd52a8830d9b1fd50431fd4db0b2f68a
-176	158	ticket reclaim (ADR-0054)	0c306569a791b86f3b6580373dcdb03d087367b7
+177	156	ticket reclaim (ADR-0054)	337f47e242db0b7a051702f11dbbdff63657ef9c
 1	1	ticket exists: no repo (#3050)	18f290c8db8140166817738f948443cd1b9a10dd
 22	20	trust module	cce71cee320a9a9df12b5d2fe25e74e2f6089609
 61	7	verification run	b92eb55e7297141889bf3ce64de443e5c897a452
