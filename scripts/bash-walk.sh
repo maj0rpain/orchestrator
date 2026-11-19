@@ -54,11 +54,11 @@ _hook_bash_heredoc_word() {
 }
 
 # Handles the finished word $w of _hook_bash_compound_scan (dynamic scope: w,
-# cmdpos, fn_keyword, compounds). fn_keyword tracks a `function` keyword: 0, no
-# `function` keyword pending; 1, `function` seen, its name next; 2, its name
-# A reserved word counts only in command position
-# seen, so a `{` next opens the function body as a compound. A reserved word counts only in command position
-# (cmdpos 1), and the `{` after `function name` counts too; it opens or closes
+# cmdpos, fn_keyword, compounds). fn_keyword tracks a `function` keyword: 0,
+# no `function` keyword pending; 1, `function` seen, its name next; 2, its
+# name seen, so a `{` next opens the function body as a compound. A reserved
+# word counts only in command position (cmdpos 1), and the `{` after
+# `function name` counts too; it opens or closes
 # a compound on `compounds`, one letter per open compound: `{`, `(`, `i` (if),
 # `l` (loop), `c` (case).
 _hook_bash_compound_word() {
