@@ -4040,9 +4040,10 @@ assert_eq "with none held it is the inherited marker" "$ss_out" "[/other]"
 ss_out="$(source "$ss_helpers"; unset ORCH_TEST_POOL_HELD; test_jobs_held_marker; echo "[$TEST_JOBS_HELD]")"
 assert_eq "and empty when that is unset too" "$ss_out" "[]"
 ss_file="$(mktemp)"
-ss_out="$(source "$ss_helpers"; test_jobs_suite_start echo hi >"$ss_file"; wait "$TEST_JOBS_SUITE_PID"; echo "holder=[$TEST_JOBS_HOLDER_PID] suite=[${TEST_JOBS_SUITE_PID:+set}]"; cat "$ss_file")"
+ss_out="$(source "$ss_helpers"; test_jobs_suite_start bash -c 'echo "$$"; echo hi' >"$ss_file"; wait "$TEST_JOBS_SUITE_PID"; ss_wait=$?
+  echo "holder=[$TEST_JOBS_HOLDER_PID] wait=$ss_wait same=$([ "$(head -n1 "$ss_file")" = "$TEST_JOBS_SUITE_PID" ] && echo yes || echo no)"; tail -n +2 "$ss_file")"
 assert_eq "an unpooled suite start leaves the holder pid empty and records the suite's, writing to the redirect on the call" \
-  "$ss_out" "$(printf 'holder=[] suite=[set]\nhi')"
+  "$ss_out" "$(printf 'holder=[] wait=0 same=yes\nhi')"
 if command -v flock >/dev/null 2>&1; then
   mkdir "$ss_file.pool"
   ss_out="$(source "$ss_helpers"; TEST_JOBS_POOL="$ss_file.pool"
