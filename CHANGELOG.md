@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.11
+
+Reword the Layout map, the Testing section and three script headers that had drifted from the code they describe: the Lines fate entry, the job helpers and test-tree reader rows and headers, and the job pool sentence. Docs and comments only.
+
 ## 6.8.10
 
 The autopilot module drops a wrapper that only printed a constant and a verdict argument that repeated the argument count, and renames two locals to say what they hold.
