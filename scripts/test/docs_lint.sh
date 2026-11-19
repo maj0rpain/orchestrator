@@ -5431,6 +5431,25 @@ flags "a Branch verification line outside Testing is flagged" \
 check "CLAUDE.md's Branch verification line, if any, is well formed in Testing" \
   "$(scan_branch_verification "$PLUGIN_ROOT")"
 
+# The sites that state the step f rule name the branch verification (#3545).
+branch_sites='docs/driver-loop.md
+skills/orch-handoff/SKILL.md
+agents/orch-fixer.md
+skills/orch-review/SKILL.md
+skills/orch-quick-implement/SKILL.md'
+fixture="$(new_fixture)"
+mkdir -p "$fixture/docs" "$fixture/skills/orch-handoff" "$fixture/agents" \
+  "$fixture/skills/orch-review" "$fixture/skills/orch-quick-implement"
+for f in $branch_sites; do printf '# S\n\nRuns the branch\nverification.\n' >"$fixture/$f"; done
+printf '# F\n\nRuns the full verification.\n' >"$fixture/agents/orch-fixer.md"
+out="$(scan_names_phrase "$fixture" "$branch_sites" 'branch verification')"
+flags "a site that never names the branch verification is flagged" \
+  "$out" "agents/orch-fixer.md: does not name branch verification"
+spares "sites that name it, wrapped across lines or not, are not flagged" \
+  "$out" "driver-loop|orch-handoff|orch-review|quick-implement"
+check "each step f site names the branch verification" \
+  "$(scan_names_phrase "$PLUGIN_ROOT" "$branch_sites" 'branch verification')"
+
 
 # >>> summary
 tally_summary

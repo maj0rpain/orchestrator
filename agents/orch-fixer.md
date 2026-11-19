@@ -32,7 +32,8 @@ your return instead - see **Could not fix**.
   one header line the driver chose; copy it into the record. Absent otherwise.
 - **Fix SHAs** - the fix commits of this loop's earlier iterations.
 - **Iteration** and **budget**.
-- **Verification command**.
+- **Verification command** - the branch verification in a repo that names one.
+  Step 2 says which command you run.
 - **Host fallbacks** the driver took this iteration, or none. The record
   lists these.
 - **Missing looks** - each axis whose reviewer failed twice, or none.
@@ -64,9 +65,12 @@ Never run a command that reads stdin without supplying it: give it a heredoc,
 2. **Verify.** Run the **ticket verification**. Find
    it in the repo's instructions (`CLAUDE.md`, `AGENTS.md`,
    `CONTRIBUTING.md`) yourself: a line
-   reading `Ticket verification: <command>`. The prompt hands you only the full
-   verification command; when the instructions name no ticket verification,
-   run that one.
+   reading `Ticket verification: <command>`. The prompt hands you the
+   verification command the review loop runs, which is the **branch
+   verification** in a repo that names one; never run that handed command in
+   place of the ticket verification. When the instructions name no ticket
+   verification, run the command on their `Full verification:` line; when they
+   name neither, run the handed command.
    Run it in the foreground and wait for it (host capability *Run a long
    command*), through `verification run`, a **re-callable command**:
    `bash "<orch.sh>" verification run '<command>'` at the longest timeout, and

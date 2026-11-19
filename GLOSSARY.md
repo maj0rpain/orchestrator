@@ -998,17 +998,26 @@ the logic, every call site, every input it mishandles - rather than only the
 reported instance. Its opposite, a **symptom fix**, makes the reported case pass
 while the cause stays live elsewhere. _Avoid_: foundational fix, proper fix
 
+**Branch verification**:
+The verification command a repo's instructions name as its branch
+verification: the combined-branch check, driver loop step f, runs it in place
+of the full verification, and the implement handoff records it. A repo names
+one when CI is its full gate; a repo that names none runs its full
+verification at the combined-branch check.
+
 **Ticket verification**:
 The verification command a ticket subagent, fixer, resolver or review pass
 session runs: the one a repo's instructions name as its ticket verification,
 or the repo's full verification when they name none. It checks the code a
-change can reach; the full verification runs once per branch, at the
-combined-branch check, and in CI.
+change can reach; the combined-branch check runs the branch verification where
+a repo names one and the full verification otherwise, and CI runs the full
+verification.
 
 **Full verification**:
 The verification command a repo's instructions name as its full verification:
-the whole suite, run once per branch at the combined-branch check, and in CI.
-A repo that names no ticket verification runs it for every ticket too.
+the whole suite. It runs in CI, and once per branch at the combined-branch
+check unless the repo names a branch verification. A repo that names no ticket
+verification runs it for every ticket too.
 
 **Re-callable command**:
 An `orch.sh` command whose work can outlive one call. A call waits a bounded

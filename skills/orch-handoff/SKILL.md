@@ -182,8 +182,10 @@ it, and nothing else. The review loop runs this line every iteration and
 treats a failure as blocking. Then, on its own line, the result: `pass` or
 `fail`, naming no ticket - it is the combined verification, run once over the
 whole branch after the frontier was exhausted, and belongs to no ticket. The
-command is loop step f's full command, never a ticket verification, so the
-review loop's verification command stays the full one. You
+command is the one loop step f ran: the repo's branch verification when its
+instructions name one, else its full verification, never a ticket
+verification, so the review loop's verification command, and the fixer's
+`Verification command:` line, are the branch verification in such a repo. You
 have the tests fresh; review would be guessing.>
 
 ## Unmet criteria

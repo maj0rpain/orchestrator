@@ -122,7 +122,9 @@ plan or from what the previous loop left instead of asking.
 2. Take three facts from those sections, and take them from nowhere else:
    the **PR**, the **spec issue**, and the **verification command** - the
    **Verification** section's first line, alone; any line after it records a
-   result, not part of the command. State holds the PR as well, and holds the
+   result, not part of the command. In a repo that names a branch
+   verification that line is the branch verification, as the handoff records
+   it. State holds the PR as well, and holds the
    same value; one authority is what keeps every loop of a flow reviewing
    the same change. The **base SHA** is the exception: every iteration's base
    sync moves it, so each iteration reads it from state after its sync (step
@@ -478,7 +480,7 @@ Fixable list: <each finding: axis, severity, file:line, sites, claim>
 Triaged out: <each other finding: axis, severity, file:line, sites, claim, disposition>
 Fix SHAs: <this loop's earlier fix commits, or none>
 Iteration: <NN> of budget <budget>
-Verification command: <command>
+Verification command: <command - the branch verification in a repo that names one>
 Host fallbacks: <this iteration's, or none>
 Missing looks: <each axis whose reviewer failed twice, or none>
 Record path: <bash "$ORCH" review path>

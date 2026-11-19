@@ -116,10 +116,12 @@ caller's numbered steps.
   wrote it. When the branch already holds a release record for the spec
   issue, leave it as it is and add none. A failed commit goes in **the
   record** and **the judge** carries it, as a failed verification is. Then
-  run, on **the branch**, the repo's full verification once: the command on
-  the `Full verification: <command>` line of the repo's instructions
-  (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`). When they carry no such
-  line, run the commands the reports' `Verification` lines name, as before -
+  run, on **the branch**, one verification once, in this order of preference:
+  the **branch verification**, the command on the `Branch verification:
+  <command>` line of the repo's instructions (`CLAUDE.md`, `AGENTS.md`,
+  `CONTRIBUTING.md`); else the full verification, the command on their
+  `Full verification: <command>` line. When they carry neither line, run the
+  commands the reports' `Verification` lines name, as before -
   joined with ` && ` into one line when they name different commands. Its
   command and `pass` or `fail` go in **the record**, and in the PR body's
   Evidence.

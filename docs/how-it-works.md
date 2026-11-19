@@ -111,9 +111,10 @@ resolved, not rebuilt:
 the driver resumes the ticket's own implementer to rebase and resolve it in
 its worktree (or starts a fresh `orch-resolver` there), and only if that
 resolution fails is the ticket redone alone once nothing else is in flight.
-When none remain, it runs the full verification once on the combined branch,
-runs a base sync to bring the flow's branch up to date with its base, and
-opens the one draft PR for the whole flow.
+When none remain, it runs the branch verification once on the combined branch
+(the full verification where the repo names none), runs a base sync to bring
+the flow's branch up to date with its base, and opens the one draft PR for the
+whole flow.
 
 A collapsed breakdown, a cap of 1, or a host that cannot start a background
 subagent builds one ticket at a time, each in its own ticket worktree

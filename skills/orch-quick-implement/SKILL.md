@@ -205,7 +205,8 @@ Build the linked issue's ticket frontier with the driver loop in
 
 The split is the flow's: each ticket subagent runs the repo's ticket
 verification (`Ticket verification:` in its instructions), and loop step f
-runs the full verification once (`Full verification:`), each through
+runs the branch verification once (`Branch verification:`), else the full
+verification (`Full verification:`), each through
 `verification run`, a **re-callable command**.
 
 As each implementer's report is recorded, its `Deviation` line goes under
