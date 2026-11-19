@@ -181,7 +181,7 @@ spec_round_answer_save() {
 # into the array <array-var>; dies when the file is unreadable.
 spec_round_answer_load() {
   local text
-  text="$(cat "$1/$SPEC_ROUND_APPLY_ANSWER" 2>/dev/null)" \
+  file_read text "$1/$SPEC_ROUND_APPLY_ANSWER" 2>/dev/null \
     || die "$1/$SPEC_ROUND_APPLY_ANSWER is unreadable - rerun the round"
   eval "$2=($text)" 2>/dev/null \
     || die "$1/$SPEC_ROUND_APPLY_ANSWER is unreadable - rerun the round"
@@ -195,13 +195,12 @@ spec_round_answer_clear() {
     || die "could not remove $1/$SPEC_ROUND_APPLY_ANSWER - every GitHub write landed: $2"
 }
 
-# spec_round_hold <dir>: the end of an autopilot round's first run - the
-# held-back fundamental items' blocks, read on stdin, written to
+# spec_round_hold <dir> <blocks>: the end of an autopilot round's first run -
+# the held-back fundamental items' <blocks> written, byte for byte, to
 # <dir>/fundamental.md: the round's save point, which spec round reports as
-# waiting. Feed it by a redirect, never a pipeline, so a failed write dies in
-# the caller's shell.
+# waiting.
 spec_round_hold() {
-  { cat >"$1/$SPEC_ROUND_FUNDAMENTAL"; } 2>/dev/null \
+  { printf '%s' "$2" >"$1/$SPEC_ROUND_FUNDAMENTAL"; } 2>/dev/null \
     || die "could not write $1/$SPEC_ROUND_FUNDAMENTAL - nothing written to GitHub"
 }
 
