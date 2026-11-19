@@ -1714,11 +1714,20 @@ out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a ready record is healthy" "$st" 0
 assert_contains "names it a terminal state" "$out" "review loop at a terminal state: ready"
 
+# Each module loads once: at the review phase the checks read the loop's
+# record and the PR in subshells.
+state_fixture pr 40
+fake_pr 40 open orch/doctorterm main
+fake_pr_draft 40
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
-out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+rv_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rv_load" "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a stop record is healthy too" "$st" 0
 assert_contains "names the terminal state and its reason" \
   "$out" "review loop at a terminal state: stop (CI failed twice.)"
+assert_trace_loads_once "doctor --flow at review with a PR and a stopped loop" "$rv_load"
+assert_trace_names_no "doctor --flow with its flat review record present" "$rv_load" redo
+rm -f "$rv_load"
 
 writeln '## Terminal state' '**stop**' 'CI failed twice.' >.orchestrator/review/iteration-05.md
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
@@ -1751,40 +1760,6 @@ assert_trace_loads_once "doctor --flow with report files and the flat review rec
 rm -f "$rv_load"
 mv .orchestrator/review/stop.saved .orchestrator/review/iteration-05.md
 rm .orchestrator/review/iteration-05-standards.md .orchestrator/review/iteration-05-spec.md
-restore_suite_env
-
-# Each module loads once: at the review phase the checks read the loop's
-# record, the PR and the redo command in subshells.
-review_flow doctorloadonce
-doctor_github
-state_fixture pr 40
-fake_pr 40 open orch/doctorloadonce main
-fake_pr_draft 40
-state_fixture iteration 5
-"$ORCH" state set budget 5
-mkdir -p .orchestrator/review
-writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
-rv_load="$(mktemp)"
-out="$(ORCH_LOAD_TRACE="$rv_load" "$ORCH" doctor --flow 2>&1)"; st=$?
-assert_status "doctor --flow with a PR recorded and a stopped loop is healthy" "$st" 0
-assert_contains "and reports the stop" "$out" "review loop at a terminal state: stop (CI failed twice.)"
-assert_trace_loads_once "doctor --flow at review with a PR and a stopped loop" "$rv_load"
-assert_trace_names_no "doctor --flow with its flat review record present" "$rv_load" redo
-rm -f "$rv_load"
-rm .orchestrator/review/iteration-05.md
-# Midway through a redo, the retired record is read in its place; a malformed
-# one has redo read for the terminal state and again for the remedy's path.
-state_fixture issue 9
-state_fixture redo_count 1
-state_fixture branch "$(sourced_orch branch_name_redo 9 "$("$ORCH" state get slug)" 1)"
-mkdir -p .orchestrator/review/pre-redo-1
-writeln '## Terminal state' '**stop**' 'CI failed twice.' >.orchestrator/review/pre-redo-1/iteration-05.md
-rv_load="$(mktemp)"
-out="$(ORCH_LOAD_TRACE="$rv_load" "$ORCH" doctor --flow 2>&1)"; st=$?
-assert_status "doctor --flow with a malformed retired record fails" "$st" 1
-assert_contains "naming the retired record in the rewrite remedy" "$out" "rewrite the first line of $(pwd -P)/.orchestrator/review/pre-redo-1/iteration-05.md"
-assert_trace_loads_once "doctor --flow with the flat record gone mid-redo" "$rv_load"
-rm -f "$rv_load"
 restore_suite_env
 
 # --- doctor: review budget check -----------------------------------------

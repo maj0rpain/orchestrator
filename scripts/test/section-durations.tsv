@@ -130,7 +130,7 @@
 41	45	doctor --env: finished side checkouts (#727)	409b7fb136865798294e217b184517a077d5b12c
 12	14	doctor at the review phase	f758faa73c220475b21e8e6f7ce147e4217392d6
 8	9	doctor: upstream beside an ambiguous origin/<branch> (#1331)	330a42c2865d5a02fae709612f503ac7b23ea5da
-50	54	doctor: review terminal check	fe15babda333a45d244595149f5898cce614a73f
+50	43	doctor: review terminal check	88212d953c41af51b6bd5eeac27da3ee9a58006d
 13	14	doctor: review budget check	64764c88f8752a78a540c2aa14005f71384279ca
 23	26	doctor: review ci check	268086301745d5a78bc58b7ae955764aaec271d9
 25	28	doctor: review draft check	8110e2a93d9df6cabfb904bc4eabd18576c756f1
@@ -246,7 +246,7 @@
 0	1	pr: PR-line pick and newest merge (#3074)	02e330a912ab011036444fafc3326dad36a97082
 78	81	redo review	b62654b38632ca3b2c5f4b61a4abeb2acb82faff
 8	9	redo review refuses a taken handoff destination	3fa122ad40f6cf338d95a10c114170d1f36c2318
-32	33	redo review rerun after review retire (#2569)	ab3b8c31c9f492947fdb4d50ea2fc5d2b62e9028
+45	39	redo review rerun after review retire (#2569)	cd4da3ad670722945bb9f2dd3e2c8ec23e9b4fab
 14	16	redo review reopens tickets	a825a765be427f3eea40918180e75388603b2448
 25	26	redo spec	c3c99366aaf392c1a0aceae9df6059c962657a8f
 62	67	redo spec retires the ticket breakdown (#334)	62dad2db481aef5b093ba16bc2cf38d7a6563320
