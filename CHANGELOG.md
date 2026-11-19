@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.10
+
+The autopilot module drops a wrapper that only printed a constant and a verdict argument that repeated the argument count, and renames two locals to say what they hold.
+
 ## 6.8.9
 
 The audit tests drop duplicated report-reference cases and share one save-and-restore of a run's files.
