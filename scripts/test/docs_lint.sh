@@ -4941,7 +4941,8 @@ assert_eq "a failure to fingerprint is one line naming the durations file" \
 fixture="$(ledger_fixture)"
 printf '%s\n' 'suites=()' >"$fixture/scripts/test/all.sh"
 out="$(scan_ledger_fresh "$fixture")"
-flags "an empty suites list is reported as an all.sh line" "$out" "holds an empty suites list"
+flags "an empty suites list is reported as an all.sh line" "$out" \
+  "scripts/test/all.sh: $fixture/scripts/test/all.sh holds an empty suites list"
 spares "an empty suites list is not a fingerprinting failure" "$out" 'fingerprint'
 # A ledger of many sections costs no more processes than one of three: the
 # counted commands are the ones the scan runs, at the docs lint seam.

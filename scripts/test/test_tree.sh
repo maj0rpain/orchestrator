@@ -134,7 +134,7 @@ ledger_fingerprints() {
     printf '%s\n' "$f" >>"$tmp/titles"
   done
   git hash-object --stdin-paths <"$tmp/paths" >"$tmp/hashes" || { rm -rf "$tmp"; return 1; }
-  awk 'NR == FNR { t[NR] = $0; next } { print t[FNR] "\t" $0 }' "$tmp/titles" "$tmp/hashes"
+  awk 'NR == FNR { t[NR] = $0; next } { print t[FNR] "\t" $0 }' "$tmp/titles" "$tmp/hashes" || { rm -rf "$tmp"; return 1; }
   rm -rf "$tmp"
 }
 
