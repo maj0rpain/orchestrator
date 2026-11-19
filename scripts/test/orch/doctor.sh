@@ -853,7 +853,7 @@ assert_contains "reports sub-issues as supported" "$out" "ok    sub-issues suppo
 
 # The endpoint 404ing (or otherwise refusing) reads as "not supported" -
 # advisory, so a warn, never a FAIL: the real gate is breakdown publish's own
-# link read-back (ticket_link), not this probe.
+# sub-issue listing read (ticket_link), not this probe.
 fake_no_sub_issues
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "unsupported sub-issues does not block the flow" "$st" 0
@@ -861,6 +861,8 @@ assert_contains "warns rather than fails when sub-issues are unsupported" \
   "$out" "warn  sub-issues do not appear to be supported"
 assert_contains "explains the consequence rather than leaving it silent" \
   "$out" "breakdown publish will fail"
+assert_contains "names the sub-issue listing read as the step that fails" \
+  "$out" "breakdown publish will fail at its sub-issue listing read (ticket_link) at spec time."
 
 # A repo with no issues at all has nothing to probe against - still a warn,
 # not a FAIL, and a distinct message from the unsupported case above.
@@ -2911,6 +2913,20 @@ printf 'Ticket verification: vctool test\nFull verification: vctool all\n' >CLAU
 out="$(vc_doctor)"
 assert_contains "a found ticket command prints its ok line" "$out" "ok    Ticket verification command: vctool"
 assert_contains "a found full command prints its ok line" "$out" "ok    Full verification command: vctool"
+
+printf 'Ticket verification: vctool test\n' >CLAUDE.md
+out="$(vc_doctor)"
+assert_contains "a label's command line directly follows its report line" \
+  "$(printf '%s\n' "$out" | grep -A1 -F 'ok    Ticket verification: vctool test (CLAUDE.md)')" \
+  "ok    Ticket verification: vctool test (CLAUDE.md)
+ok    Ticket verification command: vctool"
+
+printf 'Ticket verification: vctool a\nTicket verification: vctool b\n' >CLAUDE.md
+out="$(vc_doctor)"
+assert_contains "a two-commands label's command line directly follows the warn's remedy" \
+  "$(printf '%s\n' "$out" | grep -A1 -F "remove the line 'Ticket verification: vctool b'")" \
+  "/docs/repo-setup.md
+ok    Ticket verification command: vctool"
 
 printf 'Ticket verification: FOO=1 BAR=2 vctool test\n' >CLAUDE.md
 out="$(vc_doctor)"

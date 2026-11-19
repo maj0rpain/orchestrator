@@ -49,8 +49,12 @@ d_ok()   { note "ok    $1"; D_OK=$((D_OK + 1)); }
 d_warn() { note "warn  $1"; D_WARN=$((D_WARN + 1)); }
 d_fail() { note "FAIL  $1"; D_FAIL=$((D_FAIL + 1)); }
 
-# Remedies are commands, verbatim, never prose: a fix you have to translate out
-# of a sentence before you can run it is a fix you postpone.
+# A remedy is a runnable command, verbatim, wherever one command fixes the
+# problem. Where none does (an edit to the repo's own content, such as glossary
+# entries, a Standards paragraph or a verification line, or relabelling an
+# issue) it is a short plain instruction saying what to do: the file and the
+# edit when the fix is to the repo's own content, otherwise the action or the
+# condition (such as what the watcher will run). Running one is the user's call.
 d_remedy() { local l; for l in "$@"; do note "      $l"; done; }
 
 h_tools()  { d_head "tools"; }
@@ -523,9 +527,9 @@ check_labels_exist() {
 # GA part of Issues on github.com - so the only reliable way to know whether
 # this GitHub instance supports them is to ask the endpoint against an issue
 # that exists and read whether it answers or 404s. warn, never FAIL: the
-# real gate is breakdown publish's link read-back (ticket_link), not this
-# advisory probe - a repo that fails it should be told at setup, not discover
-# it mid-flow.
+# real gate is breakdown publish's sub-issue listing read
+# (ticket_link's ticket_sub_issues), not this advisory probe - a repo that
+# fails it should be told at setup, not discover it mid-flow.
 # A probe that fails outright (a 5xx, a 403, no connection) is neither answer,
 # and says so in gh's own first line (#554).
 check_sub_issues() {
@@ -543,8 +547,11 @@ check_sub_issues() {
     d_ok "sub-issues supported"
     return 0
   fi
-  d_warn "sub-issues do not appear to be supported on this GitHub instance - breakdown publish will fail its own link read-back check at spec time."
+  d_warn "sub-issues do not appear to be supported on this GitHub instance - breakdown publish will fail at its sub-issue listing read (ticket_link) at spec time."
 }
+
+# The verification labels, in the order doctor reports them.
+readonly VERIFICATION_LABELS=("Ticket verification" "Full verification" "Branch verification")
 
 # The verification lines the agents read from the repo's instructions: a line
 # outside a fenced code block starting with `Ticket verification:`, `Full
@@ -554,16 +561,15 @@ check_sub_issues() {
 # line, files in the order the agents read them, a label with no command
 # printing an empty command.
 verification_lines() {
-  local f line cmd label
+  local f line cmd label l
   for f in CLAUDE.md AGENTS.md CONTRIBUTING.md; do
     [ -f "$ROOT/$f" ] || continue
     while IFS= read -r line; do
-      case "$line" in
-        'Ticket verification:'*) label="Ticket verification"; cmd="${line#Ticket verification:}" ;;
-        'Full verification:'*)   label="Full verification";   cmd="${line#Full verification:}" ;;
-        'Branch verification:'*) label="Branch verification"; cmd="${line#Branch verification:}" ;;
-        *) continue ;;
-      esac
+      label=""
+      for l in "${VERIFICATION_LABELS[@]}"; do
+        case "$line" in "$l:"*) label="$l"; cmd="${line#"$l:"}"; break ;; esac
+      done
+      [ -n "$label" ] || continue
       trim_split "$cmd" cmd
       printf '%s\t%s\t%s\n' "$label" "$f" "$cmd"
     done < <(awk "$FENCE_AWK"'fenced($0) == 0' "$ROOT/$f")
@@ -595,27 +601,33 @@ verification_report() {
   if [ -n "$other_f" ]; then
     d_warn "$label is named twice with different commands: '$first_c' in $first_f and '$other_c' in $other_f - the first, '$first_c', is the one used."
     d_remedy "remove the line '$label: $other_c' from $other_f, or make it match - see $setup"
+    verification_command_line "$label" "$first_f" "$first_c"
     return 0
   fi
-  if [ "$have" -eq 1 ]; then d_ok "$label: $first_c ($first_f)"; return 0; fi
-  if [ "$label" = "Full verification" ]; then
-    d_warn "no 'Full verification:' line in CLAUDE.md, AGENTS.md or CONTRIBUTING.md - the agents' fallback is not defined by the code."
-    d_remedy "add the line 'Full verification: <command>' to CLAUDE.md - see $setup"
-    return 0
-  fi
-  if [ "$label" = "Branch verification" ]; then
-    d_ok "no 'Branch verification:' line - the combined-branch check runs the full verification"
-    return 0
-  fi
-  d_ok "no 'Ticket verification:' line - tickets run the full verification (ADR-0058)"
+  if [ "$have" -eq 0 ]; then verification_missing "$label"; return 0; fi
+  d_ok "$label: $first_c ($first_f)"
+  verification_command_line "$label" "$first_f" "$first_c"
+}
+
+# The report of a label no file names: Full warns with its remedy, Ticket and
+# Branch are ok, naming what runs instead. One arm per label.
+verification_missing() {
+  local setup="$ORCH_PLUGIN/docs/repo-setup.md"
+  case "$1" in
+    "Full verification")
+      d_warn "no 'Full verification:' line in CLAUDE.md, AGENTS.md or CONTRIBUTING.md - the agents' fallback is not defined by the code."
+      d_remedy "add the line 'Full verification: <command>' to CLAUDE.md - see $setup" ;;
+    "Branch verification")
+      d_ok "no 'Branch verification:' line - the combined-branch check runs the full verification" ;;
+    *)
+      d_ok "no 'Ticket verification:' line - tickets run the full verification (ADR-0058)" ;;
+  esac
 }
 
 check_verification_lines() {
-  local lines
+  local lines label
   lines="$(verification_lines)" || lines=""
-  verification_report "Ticket verification" "$lines"
-  verification_report "Full verification" "$lines"
-  verification_report "Branch verification" "$lines"
+  for label in "${VERIFICATION_LABELS[@]}"; do verification_report "$label" "$lines"; done
 }
 
 check_git_exclude() {
@@ -671,16 +683,16 @@ check_base_branch() {
 # The first command word of a verification line's text: the backticks around
 # it and any leading VAR=value words are dropped.
 d_verification_word() {
-  local rest w n
+  local rest word name
   trim_split "$1" rest
   rest="${rest#\`}"
   rest="${rest%\`}"
-  while IFS= read -r w; do
-    n="${w%%=*}"
-    if [ "$n" != "$w" ]; then
-      case "$n" in ''|[0-9]*|*[!A-Za-z0-9_]*) ;; *) continue ;; esac
+  while IFS= read -r word; do
+    name="${word%%=*}"
+    if [ "$name" != "$word" ]; then
+      case "$name" in ''|[0-9]*|*[!A-Za-z0-9_]*) ;; *) continue ;; esac
     fi
-    printf '%s' "$w"
+    printf '%s' "$word"
     return 0
   done <<<"$(d_entries "$rest")"
 }
@@ -700,33 +712,21 @@ d_verification_found() {
   esac
 }
 
-# The repo's verification commands: for each label, the first word of the
-# command on the first line outside a fenced code block, across the instruction
-# files in order, that opens with it; a label with a line of no command is
-# verification_report's FAIL and says nothing here. Found is ok; not found is a
-# warn with no remedy, since no one command installs an arbitrary tool. A label
-# nobody names, or whose line leaves no command word, says nothing. A function
-# orch.sh defines never counts as found: only a builtin, a keyword or a file
-# does. No namerefs (bash 4.2).
-check_verification_commands() {
-  local label word from_file bare lines l f cmd
-  lines="$(verification_lines)" || lines=""
-  for label in "Ticket verification" "Full verification" "Branch verification"; do
-    from_file="" word="" bare=""
-    while IFS=$'\t' read -r l f cmd; do
-      [ "$l" = "$label" ] || continue
-      if [ -z "$cmd" ]; then bare=1; continue; fi
-      [ -n "$from_file" ] && continue
-      from_file="$f"; word="$(d_verification_word "$cmd")"
-    done <<<"$lines"
-    [ -z "$bare" ] && [ -n "$from_file" ] && [ -n "$word" ] || continue
-    if d_verification_found "$word"; then
-      d_ok "$label command: $word"
-    else
-      d_warn "$label command $word (from $from_file) is not installed."
-    fi
-  done
-  return 0
+# The installed check of a label's chosen command, the last line of the label's
+# report: the first word of the command, from the file that gave it. Found is
+# ok; not found is a warn with no remedy, since no one command installs an
+# arbitrary tool. A command that leaves no word says nothing. A function orch.sh
+# defines never counts as found: only a builtin, a keyword or a file does.
+# $1 is the label, $2 the file, $3 the command.
+verification_command_line() {
+  local word
+  word="$(d_verification_word "$3")"
+  [ -n "$word" ] || return 0
+  if d_verification_found "$word"; then
+    d_ok "$1 command: $word"
+  else
+    d_warn "$1 command $word (from $2) is not installed."
+  fi
 }
 
 # A finished side checkout left standing is a leftover the sweep has not run
@@ -871,7 +871,7 @@ ENV_CHECKS="
 h_tools  check_git check_gh check_jq check_bash
 h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
 h_plugin check_host check_plugin_root check_orch_sh
-h_repo   check_labels_doc check_labels_exist check_standards_declaration check_glossary check_adr_dir check_sub_issues check_git_exclude check_base_branch check_verification_lines check_verification_commands check_agent_settings check_side_checkouts_finished check_autopilot_claims check_autopilot_side_flows
+h_repo   check_labels_doc check_labels_exist check_standards_declaration check_glossary check_adr_dir check_sub_issues check_git_exclude check_base_branch check_verification_lines check_agent_settings check_side_checkouts_finished check_autopilot_claims check_autopilot_side_flows
 "
 # flow state -----------------------------------------------------------------
 

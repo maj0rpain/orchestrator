@@ -793,7 +793,7 @@ review_standards() {
 check_standards_declaration() {
   local resolved err list first entry=""
   if ! capture resolved err review_standards_resolve_source; then
-    d_fail "${err#orch: }"
+    d_fail "$(err_line "$err")"
     # The died resolution left its stdout: the declaring file, then the entries
     # up to the rejected one (none when the paragraph had no entries).
     lines_split "$resolved" first list

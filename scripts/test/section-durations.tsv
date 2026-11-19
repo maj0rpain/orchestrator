@@ -124,7 +124,7 @@
 0	1	die_hinted and die_opt_check	a31d5ea9ef99f315cf022f51ad5894482feffb9e
 0	1	host detection (host.sh, #281)	9d7272356d7fbf0f5fdca9c46ffa86f8c5c036cd
 5	6	doctor.sh is a one-way dependency (#281)	b86ca6ac46faa586b4d718a1aa26e9018e2539ea
-160	176	doctor	11cdf2b207e70dd6b7154187e93967b8d9703549
+228	182	doctor	4e7be995252027e6d3e003e27f9472a3c5e1fc93
 36	40	doctor: host (#128)	0ff10dbdae9d20ee078396950c793cb2ec3a2d69
 97	105	doctor --flow	ec6c0771cdbf7af4d034b080907fded56e7409f3
 41	45	doctor --env: finished side checkouts (#727)	409b7fb136865798294e217b184517a077d5b12c
@@ -153,7 +153,7 @@
 8	9	doctor --env: glossary check (#3358)	1da032d3f5869f75b6dd3d5b7bb81c6163d44549
 7	9	doctor --env: ADR directory check (#3358)	bfb05745053379020206a54151bb3e09663f0ebf
 37	41	doctor --env: verification lines	c5de88b42e78f420dd14c559eb5b74d4c020d161
-42	45	doctor --env: verification commands (#3346)	42671345c4d2bce4f45ffc6226048963ef3d83e0
+64	48	doctor --env: verification commands (#3346)	ccc1963adf1bf686f1c96c6631a2879f39ac8c12
 0	1	is_filed_severity	41fb54217cc90b7a75a37b3ee336945167710410
 1	2	severity table	cbcec87893fb4d691f66b67cb960e1bc2f27d3d3
 2	3	category table	936a5e8b2f00a434df3adb306e2542dd71c175f9

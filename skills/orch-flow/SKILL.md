@@ -483,8 +483,14 @@ both outputs. Read-only: do not start, advance, or repair a flow from here. If
 
 Reached by `/orchestrator:health`, or when the user asks to diagnose the
 machine, the repo, or the flow. Run `bash "$ORCH" doctor` and report its output.
-Read-only: `doctor` prints the command that fixes each problem, and running
-those is the user's call. A `FAIL` exits non-zero and would block the flow; a
+Read-only: `doctor` prints a remedy for each problem, and running one is the
+user's call. A remedy is a runnable command, verbatim, wherever one command
+fixes the problem; where none does (for example an edit to the repo's own
+content, such as glossary entries, a Standards paragraph or a verification line,
+or relabelling an issue) it is a short plain instruction saying what to do: the
+file and the edit when the fix is to the repo's own content, otherwise the
+action or the condition (such as what the watcher will run). A `FAIL` exits
+non-zero and would block the flow; a
 `warn` is an observation and does not.
 
 ## Redo
