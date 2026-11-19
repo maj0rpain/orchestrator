@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.33
+
+The ticket-linking code normalizes a blocker set in one helper, `blockers_set`, and rewrites a ticket's `## Blocked by` section through one helper, `ticket_blocked_by_rewrite`. `ticket_sub_issues` no longer carries a die2 branch nothing reaches, `ticket_link` no longer sorts a list its caller already sorted, and the orch-to-tickets skill now says what a failed publish names and what a rerun rewrites. The breakdown publish and ticket publish tests fold their resume and refusal cases into existing fixtures and drop the cases another section already covers. Nothing `ticket publish`, `breakdown publish`, `ticket block`/`unblock` or `ticket exists` prints, writes or exits with changes.
+
 ## 6.8.32
 
 Tidy the docs linter's audit scans: the subagent-pool scan gets its own section, each step section is read once per skill, and the "stands alone" and removed-flags pins are dropped.
