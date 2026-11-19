@@ -233,8 +233,8 @@
 0	1	phase advance help names handoffs by role (#1066)	fb4e9c6b059ec9f7d1aed9b47f5b974a48096e04
 31	35	phase advance in an autopilot flow (#1457)	3f11f48e53c11f24a0c5683139056f0b493b1fe0
 7	8	phase advance with a failed phase write (#1931)	c82e166171de5000ca89ef4f8614cc5c24820382
-8	9	phase advance and boundary read the flow's state once (#3063)	0d138a2b1374e352088aabaffc5eb527472c8124
-62	66	pr open	45e24aff64f261ece05d29d31f6c610ecd34728f
+11	10	phase advance and boundary read the flow's state once (#3063)	77bfab77e7199983dcb02b7ba2f7e0f59aa1636e
+80	68	pr open	203de9c907ffc7c85b0ba4eb67ad41679f856439
 21	23	pr publish	c508b1fdef92df99d5eeed225de23d06da837bf5
 9	10	pr draft (#967)	7440fbafe20019c43b9e3db6b19f28f7914d2146
 18	20	pr ready (#967)	c639dc2cfcf29db3ff6c344f7347d02c7e5b3e3f
@@ -282,7 +282,8 @@
 15	15	review known-items in an autopilot flow (#1457)	1863aaadacbd252693177211ee326374b4967cd3
 17	16	review standards (#1532)	1815ab348b75d5b5acc0ed9523215d753520ea43
 12	10	review ready with a failed phase write (#1931)	ed1ef3a1e5d648b72a5b543383eec3fe6f47142d
-13	12	review reads its Flow state once	c7fc8289608d227fd729a49beb321266082d92c8
+13	11	review reads its Flow state once	611d87b106d7671b77c264aac6efe4914431ca16
+6	6	review_terminal_record fallback reads once	87d1a71c7589a8e2c101267be42920f11638f88a
 13	6	review ci <pr>	839ad07c48adf7f820c0db0cebb5d3959fcbefd3
 2	3	route show	0e4fc7b4e544565f4d6f0cc3b311a522ccf801b0
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
@@ -336,8 +337,7 @@
 4	4	commands on a truncated state.json (#1929)	13c01774543bda78ec2ac6965ee2467a5c58787b
 7	7	the shared and own-checkout readers on a truncated state.json	84f251301621e7e0eb35e16ed869c67daa50b697
 7	8	state set with a failed write (#1931)	277ecff0e3af2ccabe12e9fd2aebcc95a83b9bc3
-22	19	the entry read and the required-field helpers	df336df1c6caa27f9d0cf1b601d1334814845215
-5	6	review_terminal_record fallback reads once	7f3fae7b01b9f68087b38c343c292315a4f86624
+23	20	the entry read and the required-field helpers	617a92bb42e9eee51c7e765e29e9ab2fe02c7ed9
 44	47	ticket-worktree (#619)	fbb26a8bf6a99557b7ad9346478c9677ccb74b25
 1	1	a ticket branch has no upstream (#1152)	bbc5298d4013eb4f017ecb7f6c59509725053f88
 2	3	the merged check beside a same-named tag (#2337)	b3482156347488560231482575e046eb972a8f39

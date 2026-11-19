@@ -322,13 +322,13 @@ state_fixture branch orch/7-phasereads
 state_fixture base_sha abc1234
 state_fixture pr null
 complete_handoff "$("$ORCH" handoff path review)"
-pr_jq="$(counting_bin jq)"
-out="$(PATH="$pr_jq:$PATH" "$ORCH" phase advance 2>&1)"; st=$?
+pa_jq="$(counting_bin jq)"
+out="$(PATH="$pa_jq:$PATH" "$ORCH" phase advance 2>&1)"; st=$?
 assert_status "advance out of implement with no PR refuses" "$st" 1
-assert_eq "advance out of implement starts jq twice in all" "$(counting_starts "$pr_jq" jq)" "2"
-: >"$pr_jq/jq.log"
-PATH="$pr_jq:$PATH" "$ORCH" phase boundary >/dev/null 2>&1
-assert_eq "boundary starts jq once" "$(counting_starts "$pr_jq" jq)" "1"
+assert_eq "advance out of implement starts jq twice in all" "$(counting_starts "$pa_jq" jq)" "2"
+: >"$pa_jq/jq.log"
+PATH="$pa_jq:$PATH" "$ORCH" phase boundary >/dev/null 2>&1
+assert_eq "boundary starts jq once" "$(counting_starts "$pa_jq" jq)" "1"
 state_truncate
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_state_unreadable "phase advance" 1 "$out" "$st"

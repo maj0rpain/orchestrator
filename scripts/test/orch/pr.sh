@@ -386,10 +386,9 @@ assert_contains "help documents --label" "$("$ORCH" help)" \
   "pr open <title> <body-file> [--label <name>]..."
 unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
-# The branch message require_value gives is the other half of
-# require_field's coverage (#79) alongside "refuses when state has no
-# issue" above - a fresh flow with an issue recorded but no branch yet is
-# exactly the gap between init and branch create.
+# The branch message require_value gives on pr open's entry read is the other
+# half of the missing-issue case above - a fresh flow with an issue recorded but
+# no branch yet is exactly the gap between init and branch create.
 echo
 echo "pr open (missing branch)"
 new_repo >/dev/null
