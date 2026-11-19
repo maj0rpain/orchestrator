@@ -33,10 +33,10 @@ sra_refused() {
     "$(cat "$d/spec.md"; echo; cat "$d/changelog.md" "$d/settled.md" 2>/dev/null)" "$before"
   assert_eq "$label: no GitHub write" "$(fake_snapshot)" "$snap"
 }
-# apply_prints_one <label> <dir> <stderr>: plain apply on <dir> is refused with
-# exactly the one line <stderr>, and writes nothing.
+# apply_prints_one <label> <dir> <stderr> [flags...]: apply on <dir> (with the
+# flags) is refused with exactly the one line <stderr>, and writes nothing.
 apply_prints_one() {
-  sra_refused "$1" "$2" "$3" recommended
+  sra_refused "$1" "$2" "$3" recommended "${@:4}"
   assert_eq "$1: apply prints the single line" "$out" "$3"
 }
 # check_refused <runner> <label> <dir> <stderr>: <runner> <dir> - a check
@@ -606,6 +606,20 @@ sra "$d" recommended
 rmdir "$d/settled.md"
 assert_eq "a settled.md that cannot be appended keeps apply-answer" "$(on_disk "$d/apply-answer")" present
 snap="$(fake_snapshot)"
+# An unreadable changelog.md: the resume dies with its own message, no cat:.
+if [ "$(id -u)" -ne 0 ]; then
+  chmod 000 "$d/changelog.md"
+  srr_resume "$d"
+  chmod 600 "$d/changelog.md"
+  assert_status "a resumed apply with an unreadable changelog.md dies" "$st" 1
+  sra_landed="$(sed -e :a -e '$!N;s/\n/; /;ta' "$d/applied.log")"
+  assert_eq "it names the file and the writes that landed, with no cat: line" "$out" \
+    "orch: could not read $d/changelog.md - every GitHub write landed: $sra_landed"
+  assert_eq "settled.md is not appended" "$(on_disk "$d/settled.md")" absent
+  assert_eq "round-complete is absent" "$(on_disk "$d/round-complete")" absent
+  assert_eq "apply-answer is kept" "$(on_disk "$d/apply-answer")" present
+  assert_eq "no GitHub write" "$(fake_snapshot)" "$snap"
+fi
 srr_resume "$d"
 assert_status "the tail-only resume succeeds" "$st" 0
 assert_eq "no GitHub write" "$(fake_snapshot)" "$snap"
@@ -618,26 +632,8 @@ if [ "$(id -u)" -ne 0 ]; then
   d="$(sra_dir)"
   printf 'host\n' >"$d/hosts"
   chmod 000 "$d/hosts"
-  sra_refused "an unreadable --host-fallbacks file" "$d" "orch: --host-fallbacks file is unreadable: $d/hosts" recommended --host-fallbacks "$d/hosts"
-  assert_eq "an unreadable --host-fallbacks file: exactly the one line" "$out" "orch: --host-fallbacks file is unreadable: $d/hosts"
+  apply_prints_one "an unreadable --host-fallbacks file" "$d" "orch: --host-fallbacks file is unreadable: $d/hosts" --host-fallbacks "$d/hosts"
   chmod 600 "$d/hosts"
-
-  d="$(sra_dir)"
-  mkdir "$d/settled.md"
-  sra "$d" recommended
-  rmdir "$d/settled.md"
-  chmod 000 "$d/changelog.md"
-  snap="$(fake_snapshot)"
-  srr_resume "$d"
-  chmod 600 "$d/changelog.md"
-  assert_status "a resumed apply with an unreadable changelog.md dies" "$st" 1
-  sra_landed="$(sed -e :a -e '$!N;s/\n/; /;ta' "$d/applied.log")"
-  assert_eq "it names the file and the writes that landed, with no cat: line" "$out" \
-    "orch: could not read $d/changelog.md - every GitHub write landed: $sra_landed"
-  assert_eq "settled.md is not appended" "$(on_disk "$d/settled.md")" absent
-  assert_eq "round-complete is absent" "$(on_disk "$d/round-complete")" absent
-  assert_eq "apply-answer is kept" "$(on_disk "$d/apply-answer")" present
-  assert_eq "no GitHub write" "$(fake_snapshot)" "$snap"
 fi
 
 # Apply all: the recommend-decline item too.
@@ -1042,6 +1038,15 @@ srf_dir() {
   sed -i 's/^@@ item 3 consistency decision A material$/@@ item 3 consistency decision A fundamental/' "$d/batch.md"
   printf '%s\n' "$d"
 }
+# srh_dir: sra_dir's fixture with item 4 marked fundamental and a why-held-back
+# line after finding 2, so a held item is followed by another item.
+srh_dir() {
+  local d
+  d="$(sra_dir)"
+  sed -i 's/^@@ item 4 testability apply minor$/@@ item 4 testability apply fundamental/' "$d/batch.md"
+  sed -i 's/^@@ finding testability 2$/&\n@@ why held back/' "$d/batch.md"
+  printf '%s\n' "$d"
+}
 d="$(srf_dir)"
 out="$(env -u ORCH_AUTOPILOT "$ORCH" spec-review check "$d" 2>&1)"; st=$?
 assert_status "check refuses the fundamental mark without ORCH_AUTOPILOT" "$st" 1
@@ -1071,9 +1076,7 @@ assert_eq "no round-complete" "$(on_disk "$d/round-complete")" absent
 assert_eq "no settled.md" "$(on_disk "$d/settled.md")" absent
 
 # A held item followed by another item keeps its trailing blank line.
-hd="$(sra_dir)"
-sed -i 's/^@@ finding testability 2$/&\n@@ why held back/' "$hd/batch.md"
-sed -i 's/^@@ item 4 testability apply minor$/@@ item 4 testability apply fundamental/' "$hd/batch.md"
+hd="$(srh_dir)"
 ORCH_AUTOPILOT=1 sra "$hd" recommended
 assert_status "a hold of an item followed by another item" "$st" 0
 assert_eq "fundamental.md ends with the held item's blank line" "$(tail -n 1 "$hd/fundamental.md" | wc -c | tr -d ' ')" 1
@@ -1081,9 +1084,7 @@ assert_eq "fundamental.md ends with the held item's blank line" "$(tail -n 1 "$h
 # The hold run reads batch.md with every failure checked (#3757).
 for hf in "awk|*\"-v\"*|1" "grep|*\"@@ lens\"*|2"; do
   IFS="|" read -r hcmd hpat hst <<<"$hf"
-  hd="$(sra_dir)"
-  sed -i 's/^@@ item 4 testability apply minor$/@@ item 4 testability apply fundamental/' "$hd/batch.md"
-  sed -i 's/^@@ finding testability 2$/&\n@@ why held back/' "$hd/batch.md"
+  hd="$(srh_dir)"
   snap="$(fake_snapshot)"
   PATH="$(fails_bin "$hcmd" "$hpat" "$hst"):$PATH" ORCH_AUTOPILOT=1 sra "$hd" recommended
   assert_status "a hold run whose $hcmd fails dies" "$st" 1
@@ -1091,11 +1092,12 @@ for hf in "awk|*\"-v\"*|1" "grep|*\"@@ lens\"*|2"; do
   assert_eq "$hcmd failure: no fundamental.md" "$(on_disk "$hd/fundamental.md")" absent
   assert_eq "$hcmd failure: no write" "$(fake_snapshot)" "$snap"
 done
-hd="$(sra_dir)"
-sed -i 's/^@@ item 4 testability apply minor$/@@ item 4 testability apply fundamental/' "$hd/batch.md"
-sed -i 's/^@@ finding testability 2$/&\n@@ why held back/' "$hd/batch.md"
+hd="$(srh_dir)"
+snap="$(fake_snapshot)"
 PATH="$(fails_bin grep '*"@@ lens"*' 1):$PATH" ORCH_AUTOPILOT=1 sra "$hd" recommended
 assert_status "a hold run whose lens grep matches nothing holds" "$st" 0
+assert_contains "and fundamental.md holds the held item's block" "$(cat "$hd/fundamental.md")" "@@ item 4 testability apply fundamental"
+assert_eq "and the hold makes no GitHub write" "$(fake_snapshot)" "$snap"
 
 ORCH_AUTOPILOT=1 sra "$d" 1C
 assert_status "the resumed apply refuses an option the item lacks" "$st" 1

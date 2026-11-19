@@ -298,20 +298,20 @@
 12	13	side checkout marker issue: reading without re-classifying (#3073)	38fb5dbe3d46481d12994865f0baff152661f1c4
 5	6	archive reads the flow's slug once	d1e47a75531129e6123579f59802dd69c84d1d76
 5	7	side-checkout: the default branch is asked for only when needed	03ca2477dac861e7e263fc55a80eb119924bf047
-6	6	spec-review begin (#224)	7f9933eba425f01f8cd943403882ec99276a1803
-6	6	spec-review begin --carry (#1141, #1185)	8b3ce2bf5fc4498a8ad89a9443196db03f4f0d5e
-0	1	quick implementation runs an unattended spec review (#237)	82624db7edbc47f84be147bbfbdcce48e4fbad66
-444	374	spec-review apply (#1117)	cc357124b9676895607c6357633b5edade610be6
-80	60	spec-review check (#1137)	5d67aea243399379115693a1197387b14de8314f
-1	1	spec-review check literal item numbers (#1339)	fdff1c6c9804e46b64a0000b430207e643690fb7
-20	16	spec-review check --tickets (#1226)	9e5af7e46fc04d36d26f9143059f57e01eb5e6a7
-100	18	spec-review wait (#1183)	fcf24b84f2dba36c5053f05abbaec9ea9c1a5621
-5	5	spec-review prompt (#1521)	9d75bec755bd5aa2e60139951b25522853ee3b41
-0	1	spec_review_lens_known matches one whole lens (#1546)	10152362bf4fb5a68de0b03dfeb9c0bef58f27f0
-1	1	spec-review check requires every finding cited (#1914)	55e0814457400c9859a6933ce84978ad49078ff7
-3	3	spec-review check on a CRLF body (#1916)	4bcba806befe9454b9b90056a08a551ed1062305
-4	4	spec-review begin on a truncated state.json (#1929)	1c5600769d8ac041048de6d846ba3e88017f2109
-5	5	spec-review apply in a flow reads the state once (#3063)	619df4e93e3012c18d4d13be00b40c0d4c1d456b
+6	6	spec-review begin (#224)	3caac9ae69cf57a52178f99d71040ce17af5d993
+6	6	spec-review begin --carry (#1141, #1185)	ff99d261bf28d31b8e3b62462fdb13d978daf0d2
+0	1	quick implementation runs an unattended spec review (#237)	c7df753c75c1550b06b8101ff83a3a6515c9b8c5
+444	369	spec-review apply (#1117)	5fdd40c331edeb726d41adc6b5ced348d3869978
+81	60	spec-review check (#1137)	b2363604ce91a98cdd4f004b6679b0aa4ec126c0
+1	1	spec-review check literal item numbers (#1339)	2db90b6788dfb48061ce862eb25c8c7ad3ce859a
+20	18	spec-review check --tickets (#1226)	c2c4d9cfe786973626a384d1b1d5f5f8b40cabd7
+97	18	spec-review wait (#1183)	97ee222e22c2d77e92188a0ded193c00b7002107
+5	5	spec-review prompt (#1521)	be97bb4e0fa376a49e4b35b9503b0b95cf871328
+0	1	spec_review_lens_known matches one whole lens (#1546)	5fc72711da7b0f4363369f5d1532404e4336627b
+1	1	spec-review check requires every finding cited (#1914)	cb20d10e59206ba21f7d4a5354f1b55493c8a58f
+3	3	spec-review check on a CRLF body (#1916)	ff3216186d100c1d8de113b895cb71223d42c65d
+4	4	spec-review begin on a truncated state.json (#1929)	005341d7c640dd2b879bcbea68b4ecbbe1786779
+5	5	spec-review apply in a flow reads the state once (#3063)	81642c0c85f6fd5cf0055b0dedae2a57dd86dbd0
 26	30	spec	a66453ea4b1d08fd96f23b38d6d509eaabeae8fd
 10	11	spec pause	1d162ea996a9c817686e6922bbd3c075fe2e33b7
 15	16	spec round-dir	37ce1d585142e7aff29c2cfc8a4a2fe864c50bc5
