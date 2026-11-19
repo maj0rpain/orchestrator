@@ -43,9 +43,9 @@ SHELL_CODE_AWK="$(<"$ROOT/scripts/test/shell_code.awk")" || SHELL_CODE_AWK=""
 [ -n "$SHELL_CODE_AWK" ] || {
   echo "helpers.sh: scripts/test/shell_code.awk is missing or empty" >&2; exit 1; }
 
-# index <headers> <path>...: the listing of every <path>, in one awk. <headers>
-# is the files' `# <path>` header texts, tab-joined and ended by a tab, in the
-# same order. A line opens a definition
+# index <prefix> <path>...: the listing of every <path>, in one awk. A file's
+# `# <path>` header is its path with a leading <prefix> removed. A line opens a
+# definition
 # only at column 0 of a line that starts at top level, and a comment line
 # counts toward a description block only when it starts at top level too:
 # shell_code_line, from SHELL_CODE_AWK, says whether a line starts outside any
@@ -53,16 +53,18 @@ SHELL_CODE_AWK="$(<"$ROOT/scripts/test/shell_code.awk")" || SHELL_CODE_AWK=""
 # of its own. The comment-block state resets at each file's first line, and a
 # file with no line, of which awk reads no record, is still headed.
 index() {
-  local headers="$1"
+  local prefix="$1"
   shift
-  awk -v headers="$headers" "$SHELL_CODE_AWK"'
-    BEGIN { split(headers, hdr, "\t"); nextf = 1 }
+  awk -v prefix="$prefix" "$SHELL_CODE_AWK"'
+    BEGIN { nextf = 1 }
     # head_upto(last): print the header of each file not yet headed, up to
     # file number <last>, a blank line before each but the first.
     function head_upto(last) {
       while (nextf <= last) {
         if (nextf > 1) print ""
-        print "# " hdr[nextf]
+        hdr = ARGV[nextf]
+        if (prefix != "" && index(hdr, prefix) == 1) hdr = substr(hdr, length(prefix) + 1)
+        print "# " hdr
         nextf++
       }
     }
@@ -108,21 +110,13 @@ index() {
 }
 
 if [ -n "$file" ]; then
-  index "$file"$'\t' "$file"
+  index "" "$file"
   exit 0
 fi
 
 if [ "$tests" -eq 1 ]; then
-  files=(scripts/test/orch/setup.sh scripts/test/gh_adapter_fake.sh scripts/test/tally.sh scripts/test/fifo.sh scripts/test/counting.sh scripts/test/fails.sh)
+  files=("$ROOT"/scripts/test/orch/setup.sh "$ROOT"/scripts/test/gh_adapter_fake.sh "$ROOT"/scripts/test/tally.sh "$ROOT"/scripts/test/fifo.sh "$ROOT"/scripts/test/counting.sh "$ROOT"/scripts/test/fails.sh)
 else
-  files=()
-  for f in "$ROOT"/scripts/orch/*.sh; do files+=("scripts/orch/${f##*/}"); done
+  files=("$ROOT"/scripts/orch/*.sh)
 fi
-
-headers=""
-paths=()
-for rel in "${files[@]}"; do
-  headers+="$rel"$'\t'
-  paths+=("$ROOT/$rel")
-done
-index "$headers" "${paths[@]}"
+index "$ROOT/" "${files[@]}"

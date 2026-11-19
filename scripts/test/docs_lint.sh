@@ -4164,17 +4164,20 @@ noun_verbs() {
 # Exceptions.
 scan_cli_nouns() {
   local r="$1" orch="scripts/orch.sh" doc="docs/agents/cli-conventions.md" table exceptions noun
-  local bare row row_verbs module verbs verb nouns=() all_verbs
+  local bare row row_verbs module verbs verb nouns=() all_verbs n v
+  local -A verbs_of=()
   table="$(md_section "$r/$doc" "## Current nouns" | grep -E '^[[:space:]]*\|')"
   exceptions="$(md_section "$r/$doc" "## Exceptions")"
   # The "Bare global commands" bullet, up to the next bullet.
   bare="$(awk '/^- \*\*Bare global commands\*\*/ { inb = 1; print; next } inb && /^- / { exit } inb' <<<"$exceptions")"
   while IFS= read -r noun; do [ -n "$noun" ] && nouns+=("$noun"); done < <(routed_nouns "$r/$orch")
   all_verbs="$(noun_verbs "$r" "${nouns[@]}")"
-  while IFS= read -r noun; do
-    [ -n "$noun" ] || continue
+  while IFS=$'\t' read -r n v; do
+    [ -n "$n" ] && verbs_of[$n]+="$v"$'\n'
+  done <<<"$all_verbs"
+  for noun in "${nouns[@]}"; do
     module="scripts/orch/$noun.sh"
-    verbs="$(grep -- "^$noun"$'\t' <<<"$all_verbs" | cut -f2)"
+    verbs="${verbs_of[$noun]:-}"
     row="$(grep -E -- "^[[:space:]]*\|[[:space:]]*\`$noun\`" <<<"$table" | awk -v n=1 'NR<=n')"
     if [ -z "$row" ]; then
       if ! grep -qE -- "\`${noun}[\` ]" <<<"$exceptions"; then
@@ -4197,7 +4200,7 @@ scan_cli_nouns() {
       grep -qxF -- "$verb" <<<"$verbs" && continue
       echo "$doc: $noun verb $verb is in its Current nouns row but $module no longer dispatches it"
     done <<<"$row_verbs"
-  done <<<"$(printf '%s\n' "${nouns[@]}")"
+  done
   return 0
 }
 fixture="$(new_fixture)"
@@ -5373,10 +5376,11 @@ assert_empty "an interview skill that names issue labels is not flagged" \
 check "orch-interview names issue labels" \
   "$(scan_names_phrase "$PLUGIN_ROOT" 'skills/orch-interview/SKILL.md' 'issue labels')"
 
-# This repo's CLAUDE.md Testing section names its two verification commands
-# (ADR-0058), so the ticket/full split cannot rot.
+# This repo's CLAUDE.md Testing section names its three verification commands
+# (ADR-0058), so the ticket/branch/full split cannot rot.
 # scan_repo_verification <plugin root>: one line per verification line the
-# Testing section of CLAUDE.md lacks. Structure only, never wording (ADR-0027).
+# Testing section of CLAUDE.md lacks, per bare `Branch verification:` line, and
+# per one outside the Testing section. Structure only, never wording (ADR-0027).
 scan_repo_verification() {
   local r="$1" body label all
   body="$(md_section "$r/CLAUDE.md" "## Testing" 2>/dev/null)" || {
