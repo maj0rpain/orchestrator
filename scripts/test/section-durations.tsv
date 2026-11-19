@@ -95,7 +95,7 @@
 14	8	plugin-made branches have no upstream (#1152)	9fbf22e7b63732cecc65df507a97e629e4b2723b
 8	9	branch retire	cd615db2d50e5f2a3f6ef67d3f6bbafcc944c83d
 0	1	branch_records_base (#1713)	fe191a582c471d94004435e349209d91a1c7d92f
-38	40	branch sync (#792)	79b308cfbb3e0b2aaddebacc56f5d966a28c9eb0
+48	36	branch sync (#792)	7aec0323684ca8ee37a88fba3410753194587e3e
 19	17	branch busy (#1201)	fafe7dc7d03fc92c6da1c58d3677d1034ffbde83
 22	12	branch off and branch create refuse a busy checkout (#1202)	46ffbc22a4df2bac376f28a930600b3e76e72850
 28	26	branch create on a restart (ADR-0054)	f0088790924b14428d0cdd4a98c9e4e7f5c2d85e
