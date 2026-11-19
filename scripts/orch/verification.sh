@@ -169,14 +169,12 @@ verification_mark() {
   file_write_atomic "$1" "$(printf '%(%s)T' -1)"$'\n' 2>/dev/null || true
 }
 
-# verification_wait_gone <pid> [<epoch>]: waits for the process group <pid> to
-# be gone, for ORCH_VERIFICATION_GRACE seconds since <epoch> (default now) -
-# wall clock, so a grace spent across several calls counts as one - or until
-# ORCH_WAIT_BLOCK ends the call. Returns 1 when it is still there.
+# verification_wait_gone <pid> <epoch>: waits for the process group <pid> to
+# be gone, for ORCH_VERIFICATION_GRACE seconds since <epoch> - wall clock, so a
+# grace spent across several calls counts as one - or until ORCH_WAIT_BLOCK
+# ends the call. Returns 1 when it is still there.
 verification_wait_gone() {
-  local since="${2:-}"
-  [ -n "$since" ] || printf -v since '%(%s)T' -1
-  verification_grace_wait "$since" verification_group_there "$1"
+  verification_grace_wait "$2" verification_group_there "$1"
 }
 
 # verification_stop <pid> <dir>: stops the run's process group: TERM, then KILL
