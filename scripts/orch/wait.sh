@@ -11,7 +11,8 @@
 # test override still advances). A stored total belongs to one wait, named by
 # the key the caller builds, and is forgotten as soon as a call delivers an
 # outcome. Its tests: scripts/test/orch/wait.sh, and the `review ci` and
-# `spec-review wait` sections.
+# `spec-review wait` sections, and the `gh rate limits (#2577)` section of
+# scripts/test/orch/gh.sh.
 # The module also owns the limit decision - whether a GitHub rate-limit wait
 # fits in what is left of the block (wait_limit_fits) - and the ".limited" mark
 # beside the wait's file that carries a give-up out of a subshell.

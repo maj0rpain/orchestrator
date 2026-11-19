@@ -2224,14 +2224,18 @@ ORCH_AUTOPILOT_RUN=1 sourced_orch adapter_issue_body 5 >/dev/null 2>&1
 assert_eq "a later reset extends it" "$(cat "$pause_file")" "2036-07-18T13:20:00Z"
 fake_quota core 0 5000 2000000000
 rm -f "$pause_file"; mkdir -p "$hit_file"
-out="$(ORCH_AUTOPILOT=1 ORCH_AUTOPILOT_HIT_FILE="$hit_file" sourced_orch adapter_issue_body 5 2>&1)"; st=$?
+out="$(ORCH_AUTOPILOT=1 ORCH_AUTOPILOT_HIT_FILE="$hit_file" sourced_orch adapter_issue_body 5 2>"$ORCH_GH_FAKE_STORE/hit.err")"; st=$?
 assert_status "a failed hit file write still fails the call" "$st" 1
+assert_not_contains "a failed hit file write leaves no clause on stdout" "$out" "could not write"
+out="$(cat "$ORCH_GH_FAKE_STORE/hit.err")"
 assert_contains "with the distinct message" "$out" "orch: GitHub API rate limit reached"
 assert_contains "the first line holds the write too" "${out%%$'\n'*}" " - could not write the GitHub limit hit file $hit_file"
 rmdir "$hit_file"
 rm -f "$pause_file"; mkdir "$pause_file"
-out="$(ORCH_AUTOPILOT=1 sourced_orch adapter_issue_body 5 2>&1)"; st=$?
+out="$(ORCH_AUTOPILOT=1 sourced_orch adapter_issue_body 5 2>"$ORCH_GH_FAKE_STORE/pause.err")"; st=$?
 assert_status "a failed pause write still fails the call" "$st" 1
+assert_not_contains "a failed pause write leaves no clause on stdout" "$out" "could not write"
+out="$(cat "$ORCH_GH_FAKE_STORE/pause.err")"
 assert_contains "with the distinct message" "$out" "orch: GitHub API rate limit reached"
 assert_contains "the first line holds the write too" "${out%%$'\n'*}" " - could not write the GitHub limit pause"
 rmdir "$pause_file"
