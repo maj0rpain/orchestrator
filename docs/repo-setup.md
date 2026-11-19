@@ -46,12 +46,18 @@ it has none.
 - **Unreadable**: a label with no command after it leaves the agents no command
   to run. Two lines naming different commands for one label leave agents to
   pick; the first one found is the one doctor reports.
-- **Doctor line**: one line per label. `ok` reads `Full verification: <command>
-  (<file>)` or `Ticket verification: <command> (<file>)`; with no ticket
-  verification it is also `ok`, reading "no 'Ticket verification:' line -
-  tickets run the full verification (ADR-0058)". `warn` for no full
-  verification or for two commands for one label; `FAIL` for a label with no
-  command. Doctor never runs the command.
+- **Doctor line**: each label gets its report line, then that line's remedy
+  when the report is a `warn` or `FAIL` that has one. `ok` reads `Full
+  verification: <command> (<file>)` or `Ticket verification: <command>
+  (<file>)`; with no ticket verification it is also `ok`, reading "no 'Ticket
+  verification:' line - tickets run the full verification (ADR-0058)". `warn`
+  for no full verification or for two commands for one label; `FAIL` for a
+  label with no command. After those, a label whose command leaves a first
+  word (backticks and any leading `VAR=value` words dropped), and that has no
+  bare line elsewhere, gets one more line checking that the word is installed:
+  `ok    <label> command: <word>`, or
+  `warn  <label> command <word> (from <file>) is not installed.`, which has no
+  remedy. Doctor never runs the command.
 - **Branch verification**: an optional `Branch verification: <command>` line,
   read from the same files in the same order, outside a fenced code block. It
   is the command the combined-branch check runs; with no such line that check
