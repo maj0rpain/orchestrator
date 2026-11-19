@@ -4043,21 +4043,25 @@ ss_file="$(mktemp)"
 ss_out="$(source "$ss_helpers"; test_jobs_suite_start echo hi >"$ss_file"; wait "$TEST_JOBS_SUITE_PID"; echo "holder=[$TEST_JOBS_HOLDER_PID] suite=[${TEST_JOBS_SUITE_PID:+set}]"; cat "$ss_file")"
 assert_eq "an unpooled suite start leaves the holder pid empty and records the suite's, writing to the redirect on the call" \
   "$ss_out" "$(printf 'holder=[] suite=[set]\nhi')"
-ss_out="$(source "$ss_helpers"; TEST_JOBS_POOL="$ss_file.pool"; mkdir -p "$TEST_JOBS_POOL"
-  export TEST_JOBS_SLOTS=1; test_jobs_slot_take
-  test_jobs_suite_start sleep 0.3
-  if [ -n "$TEST_JOBS_HOLDER_PID" ] && [ "$TEST_JOBS_HOLDER_PID" != "$TEST_JOBS_SUITE_PID" ]; then echo pooled-ok; fi
-  wait "$TEST_JOBS_SUITE_PID"; wait "$TEST_JOBS_HOLDER_PID" 2>/dev/null
-  test_jobs_suite_start true; wait "$TEST_JOBS_SUITE_PID"
-  echo "after=[$TEST_JOBS_HOLDER_PID]")"
-rm -rf "$ss_file.pool"
-assert_eq "a pooled start sets a holder pid other than the suite's, and an unpooled start after it empties it" \
-  "$ss_out" "$(printf 'pooled-ok\nafter=[]')"
-ss_out="$(source "$ss_helpers"; TEST_JOBS_POOL="$ss_file.pool"; mkdir -p "$TEST_JOBS_POOL"
-  export TEST_JOBS_SLOTS=1; test_jobs_slot_take
-  ORCH_TEST_POOL_HELD=/other test_jobs_suite_start bash -c 'echo "$ORCH_TEST_POOL_HELD"' >"$ss_file"; wait "$TEST_JOBS_SUITE_PID"; cat "$ss_file")"
-rm -rf "$ss_file.pool"
-assert_eq "a suite started with a slot held sees the pool directory as its marker" "$ss_out" "$ss_file.pool"
+if command -v flock >/dev/null 2>&1; then
+  mkdir "$ss_file.pool"
+  ss_out="$(source "$ss_helpers"; TEST_JOBS_POOL="$ss_file.pool"
+    export TEST_JOBS_SLOTS=1; test_jobs_slot_take
+    test_jobs_suite_start true
+    if [ -n "$TEST_JOBS_HOLDER_PID" ] && [ "$TEST_JOBS_HOLDER_PID" != "$TEST_JOBS_SUITE_PID" ]; then echo pooled-ok; fi
+    wait "$TEST_JOBS_SUITE_PID"; wait "$TEST_JOBS_HOLDER_PID" 2>/dev/null
+    test_jobs_suite_start true; wait "$TEST_JOBS_SUITE_PID"
+    echo "after=[$TEST_JOBS_HOLDER_PID]")"
+  assert_eq "a pooled start sets a holder pid other than the suite's, and an unpooled start after it empties it" \
+    "$ss_out" "$(printf 'pooled-ok\nafter=[]')"
+  ss_out="$(source "$ss_helpers"; TEST_JOBS_POOL="$ss_file.pool"
+    export TEST_JOBS_SLOTS=1; test_jobs_slot_take
+    ORCH_TEST_POOL_HELD=/other test_jobs_suite_start bash -c 'echo "$ORCH_TEST_POOL_HELD"' >"$ss_file"; wait "$TEST_JOBS_SUITE_PID"; cat "$ss_file")"
+  assert_eq "a suite started with a slot held sees the pool directory as its marker" "$ss_out" "$ss_file.pool"
+  rm -rf "$ss_file.pool"
+else
+  skip "the suite start's pooled cases" "flock is not installed"
+fi
 ss_out="$(source "$ss_helpers"; export ORCH_TEST_POOL_HELD=/other
   test_jobs_slot_take; test_jobs_suite_start bash -c 'echo "$ORCH_TEST_POOL_HELD"' >"$ss_file"; wait "$TEST_JOBS_SUITE_PID"; cat "$ss_file")"
 assert_eq "and with none held, the inherited marker" "$ss_out" "/other"

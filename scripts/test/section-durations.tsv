@@ -30,7 +30,7 @@
 0	1	git env clear (#1905)	6f872bd7ca236a4dd3a32b63b36aa68e59074256
 2	3	runner git isolation (#1905)	893c92f930403219776e8e81c210fa88b82a78dc
 0	1	the background child start (#3025)	afcd21067c7aecaf71c2ec5e94c089ef132e4b31
-6	1	the suite start (#3582)	c0a09e1fc79c4eaf80629a467ed52cb3b40d0ffe
+3	1	the suite start (#3582)	95c17beb5e2ccd1535cef44946ac69a4de1a8248
 2	3	the counting fixture's stdin counter (#3434)	aafb6dd76954786ebd8a66bcb6c3100fa0ca5fe4
 49	46	affected.sh, the ticket verification (#2023)	caa6ac1aa7e4746c8d94baca433f40af48bc5b32
 3	4	the row rule (#3549)	18a8bf984386a20eba53c0d904b82f8cd71dc228

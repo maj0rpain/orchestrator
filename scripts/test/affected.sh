@@ -556,8 +556,8 @@ trap 'test_jobs_stop_children "${pids[@]}"' INT TERM
 trap 'rm -rf "$tmp"' EXIT
 
 # The suites other than orch_test.sh start first, in selection order, each under
-# its slot, then orch_test.sh with none; pids and the report stay in selection
-# order (test_jobs_start_order's).
+# its slot, then orch_test.sh with none (the order is test_jobs_start_order's);
+# pids and the report stay in selection order.
 test_jobs_start_order "${selected[@]}"
 for suite_n in "${TEST_JOBS_START_ORDER[@]}"; do
   suite="${selected[$suite_n]}"
