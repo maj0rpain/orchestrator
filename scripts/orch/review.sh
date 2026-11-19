@@ -370,7 +370,6 @@ review_ci_once() {
   local pr="$1" pr_arg="$2" started elapsed=0 res verdict refs_err head_oid head_ref base_ref push_age=0
   local no_ci=0 ci_status refs_rc=0 grace_none
   is_number "$ORCH_CI_GRACE" || die2 "ORCH_CI_GRACE is not a number: $ORCH_CI_GRACE"
-  require_value pr "$pr" die2
   export NO_WAIT_CALL=1
   printf -v started "%(%s)T" -1
   ci_refs : || return 1
@@ -405,7 +404,6 @@ review_ci_wait() {
   local no_ci=0 ci_status refs_rc=0 grace_none
   require_poll_knobs die2 ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
   wait_block_check die2
-  require_value pr "$pr" die2
   wait_guard "$pr"
   ci_refs wait_guard_check || return 1
   wait_open "review ci $pr $head_oid" started slept
@@ -1081,7 +1079,12 @@ cmd_review() {
       if [ "$pr_given" = 1 ]; then
         case "$pr_arg" in ''|*[!0-9]*) die2 "not a PR number: $pr_arg" ;; esac
       fi
-      if [ -n "$pr_arg" ]; then pr="$pr_arg"; else require_state_read die2 pr=pr; fi
+      if [ -n "$pr_arg" ]; then
+        pr="$pr_arg"
+      else
+        require_state_read die2 pr=pr
+        require_value pr "$pr" die2
+      fi
       repo_pin || die2 "$REPO_REMEDY"
       if [ "$nowait" = 1 ]; then
         review_ci_once "$pr" "$pr_arg"

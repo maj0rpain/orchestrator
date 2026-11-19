@@ -15,11 +15,12 @@
 # scripts/test/orch/gh.sh.
 # The module also owns the limit decision - whether a GitHub rate-limit wait
 # fits in what is left of the block (wait_limit_fits) - and the ".limited" mark
-# beside the wait's file that carries a give-up out of a subshell. WAIT_MARK
-# holds the open wait's mark path (wait_guard sets the provisional one,
-# wait_open the stored total's); WAIT_FILE is the stored total alone, set only
-# by wait_open. wait_guard and wait_block_check are `review ci`'s guard and the
-# ORCH_WAIT_BLOCK knob check.
+# that carries a give-up out of a subshell. The mark sits at WAIT_MARK, the open
+# wait's mark path: beside the stored total (wait_open), or at the guard's
+# provisional name (wait_guard) before the key is known; WAIT_FILE is the stored
+# total alone, set only by wait_open. wait_guard is `review ci`'s guard;
+# wait_block_check is the ORCH_WAIT_BLOCK knob check of all three re-callable
+# commands (`review ci`, `spec-review wait`, `verification run`).
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 ORCH_WAIT_BLOCK="${ORCH_WAIT_BLOCK:-570}"
