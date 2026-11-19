@@ -3345,23 +3345,14 @@ echo "autopilot answer: no repo"
 fake_flow autopilot-answer-norepo
 state_fixture phase spec
 gh_fixture
-out="$(orch_no_repo autopilot answer spec "$(mktemp)" 2>&1)"; st=$?
-assert_status "no recorded issue is refused first" "$st" 2
-assert_contains "naming the missing issue" "$out" "no issue recorded in state"
-assert_not_contains "without the remedy (no issue)" "$out" "$repo_missing"
+assert_no_repo_refused "autopilot answer with no recorded issue" "no issue recorded in state" autopilot answer spec "$(mktemp)"
 "$ORCH" state set issue 7 >/dev/null
 nr_ans="$(mktemp)"; printf 'old answer\n' >"$nr_ans"
 assert_no_repo_exit2 "autopilot answer" autopilot answer spec "$nr_ans"
 assert_eq "the file is untouched" "$(cat "$nr_ans")" "old answer"
-out="$(orch_no_repo autopilot answer bogus "$nr_ans" 2>&1)"; st=$?
-assert_status "a bad phase is refused first" "$st" 2
-assert_contains "naming the bad phase" "$out" "not a flow phase: bogus"
-assert_not_contains "without the remedy" "$out" "$repo_missing"
+assert_no_repo_refused "autopilot answer with a bad phase" "not a flow phase: bogus" autopilot answer bogus "$nr_ans"
 rm -f .orchestrator/state.json
-out="$(orch_no_repo autopilot answer spec "$nr_ans" 2>&1)"; st=$?
-assert_status "no flow state is refused first" "$st" 2
-assert_contains "naming the missing state" "$out" "no active flow (.orchestrator/state.json not found)"
-assert_not_contains "without the remedy (no state)" "$out" "$repo_missing"
+assert_no_repo_refused "autopilot answer with no flow state" "no active flow (.orchestrator/state.json not found)" autopilot answer spec "$nr_ans"
 rm -f "$nr_ans"
 restore_suite_env
 

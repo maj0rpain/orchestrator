@@ -81,7 +81,7 @@
 31	34	autopilot tick: the early GitHub pause (#2577)	dbe5f3006be3555ef39ed0883ecdd66df21c29f3
 17	19	autopilot run: the session log's GitHub usage line (#2577)	6bda132d04146540ce70f9650992e428ac2afb59
 19	22	autopilot candidates	00377fd660d3dc947942a9c725916ffec05759e7
-5	6	autopilot answer: no repo (#3050)	626d7c91532dc7e79081abf8e19a76e95c66cb69
+7	7	autopilot answer: no repo (#3050)	43b2e7d2c6f7ae2f2e566aafa0fd64850f14e34a
 4	5	autopilot session ops read the issue in one jq	c951be202d457a4ea4c00d130cfba0b2f8ae5aeb
 11	12	base	57ecdb1a5a0345f71d06015c379e962ff1d3fc4f
 37	38	a flow's base branch	45475caadc481a9fbcda51773787f44333982e42
@@ -105,7 +105,7 @@
 41	46	breakdown publish	b1c287a3d8454c23e2182f13cc2422c31de5c901
 21	24	breakdown publish rewrites ## Blocked by	208d1493e0f08750366be029724fef34279d6561
 2	3	breakdown state	3e39b6801eb24af84b286c35b744133ff1735fa8
-1	2	breakdown state: no repo (#3050)	0d598144b6a2f50f8e0129f4d5f6ddc3e6ef0d0b
+1	1	breakdown state: no repo (#3050)	2f1b42960d147fd5c2e2fb6b77cbd1bbe709b6fd
 12	13	checkout (#1078)	85b65822bd5ebac5cdac093e84c0a28d92c25cc0
 3	4	checkout current branch (#1079)	8ed29994be0d37ea761c6fba66a7f1594d5332d1
 19	14	checkout busy, redo-retired branch (#1981)	d6d2a1101edb4c54066c3be0085daad6d002bc7b
@@ -216,7 +216,7 @@
 6	7	issue fetch trust warning	3bfa7f95a6e73bcaa9c194dc1197ddbe0030538b
 4	5	issue fetch writes LF lines (#1916)	33c6a8168242000311c27c47957c82c5cb0a1df5
 16	18	issue fetch drift line (#3458)	ed2b3c91f9fe31b2d39ee7dbff2c91f10cbde9be
-1	1	issue ready: no repo (#3050)	3f95bd4e8885c84b685c31aee7e81d0018a438ca
+1	1	issue ready: no repo (#3050)	e01486b40160e00af62e89a2858de8cf2edc7580
 10	12	issue next	5197d781f049be338dec1b6be44187961f50c651
 3	4	known-items module	822bb4b7d6bc24d8ddf679e4aa02e11d5f0562a4
 28	31	lines_fate	3f28c1b61ac2edc2cbd2ae3ea48725ec6ce87220
@@ -242,7 +242,7 @@
 13	16	pr comments (#418)	130d286d938d5f987781da350e3f51a24f117d7c
 18	20	pr read (#1573)	9100926cc919805c7f97c6a3032cee3e454e627e
 16	18	pr: fork PRs (#1977)	6ecf0fdd1d64f368b3a610fb07097b3e6847156b
-5	6	pr: no repo (#3050)	425821e277b4e4de559e22967b83083de51a1a7e
+7	6	pr: no repo (#3050)	47ee3b0d56c044e7a6a39678351738911909e2fd
 0	1	pr: PR-line pick and newest merge (#3074)	02e330a912ab011036444fafc3326dad36a97082
 78	81	redo review	b62654b38632ca3b2c5f4b61a4abeb2acb82faff
 8	9	redo review refuses a taken handoff destination	3fa122ad40f6cf338d95a10c114170d1f36c2318
@@ -356,7 +356,7 @@
 13	15	ticket merge (#621)	1877a621354fa32140e18177bd6f054b484e7c26
 2	3	ticket merge beside a same-named tag (#2337)	64b469daf950986e38a72590124c5bd03441d1b3
 141	147	ticket reclaim (ADR-0054)	17ed22348527c35ead699f866b4bb1141afeec43
-1	2	ticket exists: no repo (#3050)	291d750cc4efbe9e118a0494a09f83666294d0d8
+1	1	ticket exists: no repo (#3050)	96e11c5be009acd6e59205e5f4fc683400dd9660
 22	20	trust module	cce71cee320a9a9df12b5d2fe25e74e2f6089609
 48	7	verification run	60a21967681dc4d52f5e7454aaa13fb421327ec2
 216	20	verification run: the run key, stale runs, the ceiling	471d2e2e39b7b63f2840777531b346f7eab120a1
