@@ -1648,7 +1648,8 @@ for pg_fn in pg_decide sg_decide; do
 done
 # The scan reads the apply constant and searches for both constants as JSON
 # writes them. pg_scan_with <needle> <apply> <transcript>: the view.md the scan
-# finds, with the constants set.
+# finds, with the constants set. A non-empty PG_COMPAT runs the scan under that
+# BASH_COMPAT.
 pg_scan_with() {
   local out
   # shellcheck disable=SC2034 # read by the sourced scan
