@@ -265,24 +265,24 @@
 17	16	review begin	47b15508e0f1bfc550a9ad4cca44a417cec37b28
 5	5	review path	76adf5b9111a439fb3b18dbdd899d0ce5e86a569
 6	6	the multi-loop machinery is gone	59f99e3c36807eb6099334e10a56b2ff2cc1a41e
-56	47	review file	5d76ae7eb1f643ef5fa0ae6387d82a09cf87e13c
+57	47	review file	5d76ae7eb1f643ef5fa0ae6387d82a09cf87e13c
 18	16	review ready	aba02c1f44f96eb5a4b0ce0167cbc3e1c8be3073
-172	67	review ci	b3a78328bf10c8835e6dda04d31881cbf056f0dd
+181	71	review ci	b3a78328bf10c8835e6dda04d31881cbf056f0dd
 17	12	the grace counts from the push (issue #475)	fa04bc9842a510401183fb57e243c0c591d98f6a
-35	20	review ci --no-wait	2fa22db94fbfa559dbc89edee3c79cf8e7625b76
-70	42	the grace is skipped on no evidence of CI (issue #476)	7549c3ad66a17a751325cf24b214e6e7fc7292d7
+24	17	review ci --no-wait	821bdd4c243ad96f69547132415c084ebbb6aa84
+68	42	the grace is skipped on no evidence of CI (issue #476)	601daef9db53be0caf269d6e3016cc746e7e344a
 11	10	review rerun	7d1779bfc93d812c8314fe5887835a8a5d448601
-6	6	review ci-log	c8bd459d9851185f0c333ff1c7f022db069f0f94
-30	26	review terminal	fd31523ab0eeaed67264808c9e962f07eec62e2d
-42	37	review resume	c55ba42e1bed27d7fb2d2859c6c311055b5f5c0c
+6	5	review ci-log	c8bd459d9851185f0c333ff1c7f022db069f0f94
+30	27	review terminal	fd31523ab0eeaed67264808c9e962f07eec62e2d
+41	36	review resume	c55ba42e1bed27d7fb2d2859c6c311055b5f5c0c
 6	6	review retire	0e01272795478e1913adf85975e55c8e9d8be011
 14	13	review known-items	c397e0cf62a61e679c28e97760417610fff0ddd0
 13	12	review ready in an autopilot flow (#1457)	c1321f1745707092af86620d28b3cbb4469bf2d1
 14	14	review known-items in an autopilot flow (#1457)	a462e16e9e06c42c52c8749f3c7d24aa2f0a8166
 16	14	review standards (#1532)	761a7bb47ffe6b16023f6112f96de894730d33d9
-11	10	review ready with a failed phase write (#1931)	e2ac5da0fdb7642349e578abb857a1923c6f15cb
-13	12	review reads its Flow state once	e0536b57e631c6df296ee0dc6dcc13a3a8889c90
-42	17	review ci <pr>	6bae0818980be767d1c274190eb1bf0a86c00ae0
+12	11	review ready with a failed phase write (#1931)	e2ac5da0fdb7642349e578abb857a1923c6f15cb
+12	12	review reads its Flow state once	e0536b57e631c6df296ee0dc6dcc13a3a8889c90
+12	6	review ci <pr>	68611beb809c934d5ab8e46f0b6d3922e58a64f4
 2	3	route show	0e4fc7b4e544565f4d6f0cc3b311a522ccf801b0
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
 40	42	side-checkout (#722)	af2be5feb612499e9c65d765d4e385133c64fdd4
@@ -305,7 +305,7 @@
 62	69	spec-review check (#1137)	f1f762bffccdd6172b075a3b7ffa216acb03bd91
 1	2	spec-review check literal item numbers (#1339)	f6bfd387c1a4973b7ac5420ac8ec62f9e4184fd7
 16	19	spec-review check --tickets (#1226)	d8614203d8b91ab4a785e6dde9a6778876bf5110
-72	21	spec-review wait (#1183)	e8a2ff8f1872dc8be81922979410be14e5531d54
+103	19	spec-review wait (#1183)	cd39ce96692c190ea9286bc9c3a2a49b9a8ee432
 4	5	spec-review prompt (#1521)	3c8a54e487f3050ae74e54efcd6dff6eaf9cd6a5
 0	1	spec_review_lens_known matches one whole lens (#1546)	ac06eecad2f306d0ff2e53fd6720ba837a5cbdaa
 1	2	spec-review check requires every finding cited (#1914)	6ec68a18cc75972b5e64a50ea94ae6514dee3f6e
@@ -360,7 +360,7 @@
 141	147	ticket reclaim (ADR-0054)	17ed22348527c35ead699f866b4bb1141afeec43
 1	1	ticket exists: no repo (#3050)	96e11c5be009acd6e59205e5f4fc683400dd9660
 22	20	trust module	cce71cee320a9a9df12b5d2fe25e74e2f6089609
-48	7	verification run	60a21967681dc4d52f5e7454aaa13fb421327ec2
+61	6	verification run	1dd42b596bc25070ec06b02925f7cb097936d741
 216	20	verification run: the run key, stale runs, the ceiling	471d2e2e39b7b63f2840777531b346f7eab120a1
 0	1	verification run in help and the CLI conventions	bcef7e4ad67e97b98e872bc1de7a617d10a78253
 85	11	wait: a call's block is wall time	6ceeba4749cef1e8b01dc85739116d2605837a88

@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.21
+
+The `review ci` tests are cheaper and clearer: the ORCH_WAIT_BLOCK refusal tests check one bad value, the `--no-wait` and `review ci <pr>` sections make fewer waiting calls, and a comment and two helper names say what they mean.
+
 ## 6.8.20
 
 The doctor test section drops runs and fixtures that re-proved what other tests already cover, so the suite costs less with the same coverage. A new counting-fixture helper, `counting_argv_bin`, replaces two hand-written git wrappers that counted origin reads. Two traced `doctor --env` runs now assert their exit status, and a stale comment on the review-phase trace is corrected.
