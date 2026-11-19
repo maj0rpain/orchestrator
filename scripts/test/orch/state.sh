@@ -271,7 +271,8 @@ status 0"
 printf '{"slug":"s"}' >"$fs_dir/object.json"
 printf 'not json' >"$fs_dir/invalid.json"
 printf '[1]' >"$fs_dir/array.json"
-for pair in object:0 absent:1 invalid:1 array:1; do
+printf '{"a":1}{"b":2}' >"$fs_dir/twoobjects.json"
+for pair in object:0 absent:1 invalid:1 array:1 twoobjects:1; do
   assert_eq "flow_state_readable answers ${pair#*:} for a ${pair%%:*} file, printing nothing" \
     "$(fs_run "flow_state_readable ${pair%%:*}.json")" "status ${pair#*:}"
 done

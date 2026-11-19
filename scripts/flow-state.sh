@@ -21,9 +21,9 @@
 #   through unchanged.
 # - flow_state_get_many: 1 for a key outside the table and 2 for a malformed
 #   <var>=<key>, both before any jq, assigning and printing nothing; every
-#   failed read returns 1: an absent, unparseable or non-object file inside its
-#   one jq, or a short read. On any failure nothing is
-#   assigned.
+#   failed read returns 1: anything but exactly one JSON object inside its one
+#   jq, or a missing or wrong sentinel, a short read or a record after it. On
+#   any failure nothing is assigned.
 # - flow_state_resolve_many_arg: 1 for a key outside the table and 2 for a
 #   malformed <var>=<key>, which is caller input, not a programming error.
 # - flow_state_pairs_json: 2 for a dangling --string or a key with no value,
@@ -146,10 +146,11 @@ EOT
 # /.orchestrator/state.json.
 flow_state_file() { printf '%s/%s/state.json\n' "${1%/}" "$ORCH_DIR_NAME"; }
 
-# flow_state_readable <file>: true when <file> parses as a JSON object.
+# flow_state_readable <file>: true when <file> holds exactly one JSON object,
+# the rule flow_state_get_many's read applies too.
 flow_state_readable() {
   # jq -e also exits 2 or 5 (usage, parse error); a predicate answers 0 or 1.
-  jq -e 'type == "object"' "$1" >/dev/null 2>&1 || return 1
+  jq -se 'length == 1 and (.[0] | type) == "object"' "$1" >/dev/null 2>&1 || return 1
 }
 
 # flow_state_get <file> <key>: prints <key>'s value in <file>, or the table's
