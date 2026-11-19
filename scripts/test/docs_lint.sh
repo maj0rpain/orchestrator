@@ -5383,14 +5383,15 @@ check "orch-interview names issue labels" \
 # per one outside the Testing section. Structure only, never wording (ADR-0027).
 scan_repo_verification() {
   local r="$1" body label all
-  body="$(md_section "$r/CLAUDE.md" "## Testing" 2>/dev/null)" || {
+  if body="$(md_section "$r/CLAUDE.md" "## Testing" 2>/dev/null)"; then
+    for label in "Ticket verification" "Branch verification" "Full verification"; do
+      grep -qE "^$label: [^[:space:]]" <<<"$body" ||
+        echo "CLAUDE.md: the ## Testing section has no '$label: <command>' line"
+    done
+  else
+    body=""
     echo "CLAUDE.md: has no ## Testing section"
-    return 0
-  }
-  for label in "Ticket verification" "Branch verification" "Full verification"; do
-    grep -qE "^$label: [^[:space:]]" <<<"$body" ||
-      echo "CLAUDE.md: the ## Testing section has no '$label: <command>' line"
-  done
+  fi
   all="$(grep -E '^Branch verification:' "$r/CLAUDE.md" || true)"
   [ -n "$all" ] || return 0
   [ -z "$(grep -vE '^Branch verification:[[:space:]]*[^[:space:]]' <<<"$all" || true)" ] ||
@@ -5420,6 +5421,12 @@ flags "verification lines outside the Testing section are flagged" \
   "$(scan_repo_verification "$fixture")" "no 'Ticket verification: <command>' line"
 check "CLAUDE.md's Testing section names a Ticket, a Branch and a Full verification" \
   "$(scan_repo_verification "$PLUGIN_ROOT")"
+printf '# C\n\nBranch verification:\nBranch verification: c.sh\n' >"$fixture/CLAUDE.md"
+out="$(scan_repo_verification "$fixture")"
+flags "a CLAUDE.md with no Testing section still flags a bare Branch verification line" \
+  "$out" "a 'Branch verification:' line has no command"
+flags "a CLAUDE.md with no Testing section still flags a Branch verification line outside it" \
+  "$out" "a 'Branch verification:' line is outside the ## Testing section"
 
 printf '# C\n\n## Testing\n\nTicket verification: a.sh\nBranch verification: a.sh\nBranch verification:\nFull verification: b.sh\n' \
   >"$fixture/CLAUDE.md"
