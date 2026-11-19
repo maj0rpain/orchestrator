@@ -186,9 +186,9 @@
 #   scan_interview_closing  orch-interview's SKILL.md's Closing section has
 #     four numbered route options
 #   scan_repo_verification  this repo's CLAUDE.md Testing section names a
-#     Ticket verification:, Branch verification: and Full verification: command
-#   scan_branch_verification  CLAUDE.md's Branch verification: line, if any,
-#     has a command and sits in the Testing section
+#     Ticket verification:, Branch verification: and Full verification: command,
+#     and no other Branch verification: line is bare or outside the Testing
+#     section
 # <<< rules
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -5346,7 +5346,7 @@ check "orch-interview names issue labels" \
 # scan_repo_verification <plugin root>: one line per verification line the
 # Testing section of CLAUDE.md lacks. Structure only, never wording (ADR-0027).
 scan_repo_verification() {
-  local r="$1" body label
+  local r="$1" body label all
   body="$(md_section "$r/CLAUDE.md" "## Testing" 2>/dev/null)" || {
     echo "CLAUDE.md: has no ## Testing section"
     return 0
@@ -5355,6 +5355,12 @@ scan_repo_verification() {
     grep -qE "^$label: [^[:space:]]" <<<"$body" ||
       echo "CLAUDE.md: the ## Testing section has no '$label: <command>' line"
   done
+  all="$(grep -E '^Branch verification:' "$r/CLAUDE.md" || true)"
+  [ -n "$all" ] || return 0
+  [ -z "$(grep -vE '^Branch verification:[[:space:]]*[^[:space:]]' <<<"$all" || true)" ] ||
+    echo "CLAUDE.md: a 'Branch verification:' line has no command"
+  [ "$(grep -cE '^Branch verification:' <<<"$body" || true)" = "$(wc -l <<<"$all")" ] ||
+    echo "CLAUDE.md: a 'Branch verification:' line is outside the ## Testing section"
   return 0
 }
 fixture="$(new_fixture)"
@@ -5379,36 +5385,16 @@ flags "verification lines outside the Testing section are flagged" \
 check "CLAUDE.md's Testing section names a Ticket, a Branch and a Full verification" \
   "$(scan_repo_verification "$PLUGIN_ROOT")"
 
-# A `Branch verification:` line, when CLAUDE.md has one, is well formed (a
-# command after the label) and sits in the Testing section (#3544).
-# scan_branch_verification <plugin root>: one line per fault. Structure only,
-# never wording (ADR-0027). No line at all is not a fault.
-scan_branch_verification() {
-  local r="$1" all body bad_lines
-  all="$(grep -E '^Branch verification:' "$r/CLAUDE.md" 2>/dev/null || true)"
-  [ -n "$all" ] || return 0
-  bad_lines="$(grep -vE '^Branch verification:[[:space:]]*[^[:space:]]' <<<"$all" || true)"
-  [ -z "$bad_lines" ] || echo "CLAUDE.md: a 'Branch verification:' line has no command"
-  body="$(md_section "$r/CLAUDE.md" "## Testing" 2>/dev/null || true)"
-  [ "$(grep -cE '^Branch verification:' <<<"$body" || true)" = "$(wc -l <<<"$all")" ] ||
-    echo "CLAUDE.md: a 'Branch verification:' line is outside the ## Testing section"
-  return 0
-}
-fixture="$(new_fixture)"
-printf '# C\n\n## Testing\n\nFull verification: b.sh\n' >"$fixture/CLAUDE.md"
-assert_empty "no Branch verification line is not flagged" \
-  "$(scan_branch_verification "$fixture")"
-printf '# C\n\n## Testing\n\nBranch verification: c.sh\n\n## Next\n' >"$fixture/CLAUDE.md"
-assert_empty "a well-formed Branch verification line in Testing is not flagged" \
-  "$(scan_branch_verification "$fixture")"
-printf '# C\n\n## Testing\n\nBranch verification:\n' >"$fixture/CLAUDE.md"
-flags "a Branch verification line with no command is flagged" \
-  "$(scan_branch_verification "$fixture")" "has no command"
-printf '# C\n\n## Testing\n\n## Next\n\nBranch verification: c.sh\n' >"$fixture/CLAUDE.md"
-flags "a Branch verification line outside Testing is flagged" \
-  "$(scan_branch_verification "$fixture")" "outside the ## Testing section"
-check "CLAUDE.md's Branch verification line, if any, is well formed in Testing" \
-  "$(scan_branch_verification "$PLUGIN_ROOT")"
+printf '# C\n\n## Testing\n\nTicket verification: a.sh\nBranch verification: a.sh\nBranch verification:\nFull verification: b.sh\n' \
+  >"$fixture/CLAUDE.md"
+flags "an extra bare Branch verification line beside a good one is flagged" \
+  "$(scan_repo_verification "$fixture")" "a 'Branch verification:' line has no command"
+printf '# C\n\n## Testing\n\nTicket verification: a.sh\nBranch verification: a.sh\nBranch verification:\nFull verification: b.sh\n\n## Next\n\nBranch verification: c.sh\nBranch verification:\n' \
+  >"$fixture/CLAUDE.md"
+assert_eq "extra Branch lines yield each fault line once" \
+  "$(scan_repo_verification "$fixture")" \
+  "CLAUDE.md: a 'Branch verification:' line has no command
+CLAUDE.md: a 'Branch verification:' line is outside the ## Testing section"
 
 # The sites that state the step f rule name the branch verification (#3545).
 branch_sites='docs/driver-loop.md
@@ -5416,16 +5402,6 @@ skills/orch-handoff/SKILL.md
 agents/orch-fixer.md
 skills/orch-review/SKILL.md
 skills/orch-quick-implement/SKILL.md'
-fixture="$(new_fixture)"
-mkdir -p "$fixture/docs" "$fixture/skills/orch-handoff" "$fixture/agents" \
-  "$fixture/skills/orch-review" "$fixture/skills/orch-quick-implement"
-for f in $branch_sites; do printf '# S\n\nRuns the branch\nverification.\n' >"$fixture/$f"; done
-printf '# F\n\nRuns the full verification.\n' >"$fixture/agents/orch-fixer.md"
-out="$(scan_names_phrase "$fixture" "$branch_sites" 'branch verification')"
-flags "a site that never names the branch verification is flagged" \
-  "$out" "agents/orch-fixer.md: does not name branch verification"
-spares "sites that name it, wrapped across lines or not, are not flagged" \
-  "$out" "driver-loop|orch-handoff|orch-review|quick-implement"
 check "each step f site names the branch verification" \
   "$(scan_names_phrase "$PLUGIN_ROOT" "$branch_sites" 'branch verification')"
 
