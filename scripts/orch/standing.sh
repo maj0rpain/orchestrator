@@ -250,7 +250,8 @@ standing_resume() {
 
 STANDING_LANDED=""
 # The temp body file of a comment in flight, so a death removes it too; cleared
-# once the post's step returns and by standing_chain_start.
+# once standing_chain_comment removes the file after the post's step returns,
+# and by standing_chain_start.
 STANDING_BODY_FILE=""
 
 # standing_landed_die <what failed>: removes the comment body file in flight, if
@@ -286,9 +287,10 @@ standing_timeline_read_or_die() {
 # wrapper's backstop line. A chain transition starts from the writes that landed
 # (STANDING_DONE) and skips them; with no state file nothing is recorded.
 # standing_chain_step is the one place an adapter write is run, skipped and
-# noted, apart from a comment standing_chain_comment's look finds already
-# landed (and finish's own phase record, which is no adapter write), and
-# standing_chain_comment the one place a try is recorded.
+# noted, apart from standing_chain_comment, which skips a comment already landed
+# and notes one its look finds (and finish's own phase record, which is no
+# adapter write); standing_chain_comment is also the one place a try is
+# recorded.
 STANDING_STATE_FILE=""
 STANDING_DONE=()
 
@@ -354,7 +356,7 @@ standing_stop_note() {
 
 # standing_chain_step <landed-name> <failure-what> <issue> <adapter command...>:
 # the one holder of the chain-write rule for adapter writes (a comment
-# standing_chain_comment's look finds landed is skipped and noted there). A
+# standing_chain_comment skips or notes is handled there). A
 # write already landed is skipped and its command not run; otherwise the
 # complete command runs, its stderr captured, and a failure dies as a chain
 # does ("could not <failure-what> on issue #<issue>: <reason> - writes that
@@ -388,25 +390,15 @@ standing_chain_relabel() {
   standing_chain_step "$landed" "$what" "$issue" adapter_issue_relabel "$issue" "${args[@]}"
 }
 
-# standing_comment_call <issue> <body-file>: posts the comment in <body-file>,
-# then removes the file, whatever the post returned. The step runs it, and dies
-# inside itself on a failed post, so the removal is done here and not after the
-# step call. It runs in a subshell, so standing_chain_comment, not this, clears
-# STANDING_BODY_FILE.
-standing_comment_call() {
-  local rc=0
-  adapter_issue_comment "$1" "$2" || rc=$?
-  rm -f "$2"
-  return "$rc"
-}
-
 # standing_chain_comment <landed-name> <failure-what> <issue> <text>: posts
 # <text> as a comment of a chain, once only. A comment already landed is
 # skipped. When the state file records that an earlier attempt tried it, the
 # issue's comments are read first: a trusted comment whose body is <text>,
 # trailing whitespace aside, counts as landed with no post, and a failed read
-# dies with no post. Otherwise the try is recorded, then the post goes through
-# standing_chain_step. The temp body file is removed on every path. This is the
+# dies with no post. Otherwise the temp body file is made and written (a failure
+# of either dies), the try is recorded, then the post goes through
+# standing_chain_step, then the temp body file is removed and STANDING_BODY_FILE
+# cleared; a death removes it through standing_landed_die. This is the
 # one place a try is recorded. See the resumable chain comment.
 standing_chain_comment() {
   local landed="$1" what="$2" issue="$3" body
@@ -420,11 +412,12 @@ standing_chain_comment() {
       return 0
     fi
   fi
-  temp_file_make body || die "could not create a temp file to $what"
+  temp_file_make body || standing_landed_die "could not create a temp file to $what"
   STANDING_BODY_FILE="$body"
-  printf '%s' "$4" >"$body"
+  printf '%s' "$4" >"$body" || standing_landed_die "could not write the temp file to $what"
   standing_state_put tried "$landed"
-  standing_chain_step "$landed" "$what" "$issue" standing_comment_call "$issue" "$body"
+  standing_chain_step "$landed" "$what" "$issue" adapter_issue_comment "$issue" "$body"
+  rm -f "$body"
   STANDING_BODY_FILE=""
 }
 
@@ -571,7 +564,7 @@ standing_ask() {
 # timeline that cannot be read dies with the claim held and no write, for the
 # session wrapper to sort.
 standing_reenter() {
-  local issue="$1" phase="$2" text="$3" count body
+  local issue="$1" phase="$2" text="$3" count marker body
   standing_chain_start
   standing_timeline_read_or_die "$issue" "count the automatic re-entries in a row"
   count="$(timeline_reentry_count "$phase")"
@@ -579,8 +572,8 @@ standing_reenter() {
     standing_ask "$phase" "$text"$'\n\nThis follows two automatic re-entries of the '"$phase"$' loop, so it asks instead of starting another.\n'
     return 0
   fi
-  printf -v body '%s\n\nThe watcher starts another %s loop.\n' "$text" "$phase"
-  body="$(marked_comment_write reentry "$phase")"$'\n'"$body"
+  marker="$(marked_comment_write reentry "$phase")" || exit 1
+  printf -v body '%s\n%s\n\nThe watcher starts another %s loop.\n' "$marker" "$text" "$phase"
   standing_chain_comment "posted the $phase re-entry comment" "post the re-entry comment" "$issue" "$body"
   standing_release "$issue"
 }

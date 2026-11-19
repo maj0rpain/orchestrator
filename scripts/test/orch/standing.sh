@@ -38,11 +38,16 @@ fake_issue 7 open Orch:Spec Needs-Human Orch:Running orch:Limited
 out="$(sourced_rc 'standing_read 7 && echo "$STANDING_PHASE|$STANDING_RUNNING|$STANDING_HUMAN|$STANDING_LIMITED"')"
 assert_eq "standing_read finds the phase and the three flags under any label casing" "$out" "spec|1|1|1
 rc=0"
-dump='echo "$STANDING_STATE|$STANDING_LABELS|$STANDING_PHASE|$STANDING_PHASE_LABELS|$STANDING_RUNNING|$STANDING_HUMAN|$STANDING_LIMITED|$STANDING_SYNC"'
+dump='echo "$STANDING_STATE|${STANDING_LABELS//$'"'"'\n'"'"'/,}|$STANDING_PHASE|$STANDING_PHASE_LABELS|$STANDING_RUNNING|$STANDING_HUMAN|$STANDING_LIMITED|$STANDING_SYNC"'
+pair_cmd=""
 for n in 5 6 7; do
-  read_out="$(sourced_rc "standing_read $n && $dump")"
-  set_out="$(sourced_rc "standing_set \"\$(cat '$ORCH_GH_FAKE_STORE/issues/$n/state')\" \"\$(cat '$ORCH_GH_FAKE_STORE/issues/$n/labels')\" && $dump")"
-  assert_eq "standing_set from issue $n's state and labels equals standing_read of it" "$set_out" "$read_out"
+  pair_cmd+="echo \"read $n: \$(standing_read $n && $dump)\"; echo \"set $n: \$(standing_set \"\$(cat '$ORCH_GH_FAKE_STORE/issues/$n/state')\" \"\$(cat '$ORCH_GH_FAKE_STORE/issues/$n/labels')\" && $dump)\"; "
+done
+pair_out="$(sourced_rc "$pair_cmd")"
+for n in 5 6 7; do
+  read_line="$(grep "^read $n: " <<<"$pair_out")"
+  set_line="$(grep "^set $n: " <<<"$pair_out")"
+  assert_eq "standing_set from issue $n's state and labels equals standing_read of it, every field" "${set_line#set $n: }" "${read_line#read $n: }"
 done
 fake_fail adapter_issue_state_labels "HTTP 502"
 out="$(sourced_rc 'standing_read 5; echo "reason=$STANDING_REASON"')"
@@ -429,7 +434,7 @@ fake_unfail
 # ask: a temp file that cannot be made, and a failed question comment post
 ask_seed 66 orch:spec orch:running
 out="$(sourced_rc 'temp_file_name() { printf -v "$1" "%s/orch.x" /nonexistent; }; standing_ask spec Q')"
-assert_contains "ask dies when the temp body file cannot be created" "$out" "could not create a temp file to post the spec question comment"
+assert_contains "ask dies when the temp body file cannot be created" "$out" "could not create a temp file to post the spec question comment - writes that landed: none; the claim stays held"
 assert_eq "and leaves the claim held, no comment and no label added" "$(fake_claim_held 66)|$(fake_comments_of 66)|$(fake_labels_of 66)" "held||orch:running orch:spec "
 ask_seed 67 orch:spec orch:running
 TD="$(mktemp -d)"
@@ -441,12 +446,31 @@ assert_eq "and leaves the claim held with no label added" "$(fake_claim_held 67)
 assert_eq "and no temp body file behind" "$(ls -A "$TD")" ""
 rmdir "$TD"
 
-# a posted comment leaves no body path held, so a later death removes nothing
+# a successful ask leaves no temp file behind
 ask_seed 70 orch:spec orch:running
-out="$(sourced_rc 'standing_chain_start; standing_chain_comment "posted c" "post c" 70 body; echo "held=[$STANDING_BODY_FILE]"')"
-assert_contains "a posted chain comment clears the body path in the caller's shell" "$out" "held=[]"
-out="$(sourced_rc 'STANDING_BODY_FILE=/stale; standing_chain_start; echo "held=[$STANDING_BODY_FILE]"')"
-assert_contains "a chain start clears an earlier chain's body path" "$out" "held=[]"
+TD="$(mktemp -d)"
+out="$(sourced_rc "TMPDIR='$TD' standing_ask spec Q")"
+assert_contains "a successful ask succeeds" "$out" "rc=0"
+assert_eq "and leaves its temp directory empty" "$(ls -A "$TD")" ""
+rmdir "$TD"
+
+# stop: a body temp file that cannot be made dies as a chain, the label landed
+tr_seed 71 orch:spec orch:running
+out="$(sourced_rc 'eval "orig_$(declare -f temp_file_make)"
+temp_file_make() { [ "$1" != body ] || return 1; orig_temp_file_make "$@"; }
+standing_stop 71 failure spec boom')"
+assert_contains "a stop whose body temp file cannot be made dies naming the landed writes" "$out" "orch: could not create a temp file to post the failure comment - writes that landed: added needs-human, removed orch:limited; the claim stays held"
+assert_eq "and the claim stays held" "$(fake_claim_held 71)" held
+
+# stop: a body that cannot be written dies as a chain, posts no comment
+tr_seed 72 orch:spec orch:running
+TD="$(mktemp -d)"
+out="$(sourced_rc 'eval "orig_$(declare -f temp_file_make)"
+temp_file_make() { [ "$1" != body ] || { printf -v "$1" "%s" "'"$TD"'/missing/body"; return 0; }; orig_temp_file_make "$@"; }
+standing_stop 72 failure spec boom')"
+assert_contains "a stop whose body cannot be written dies naming the landed writes" "$out" "orch: could not write the temp file to post the failure comment - writes that landed: added needs-human, removed orch:limited; the claim stays held"
+assert_eq "and the claim stays held, no comment posted, no body file left" "$(fake_claim_held 72)|$(fake_comments_of 72)|$(ls -A "$TD")" "held||"
+rmdir "$TD"
 
 # ask: a stderr temp file that fails after the body was made leaves no body
 ask_seed 69 orch:spec orch:running
@@ -467,6 +491,13 @@ ask_seed 68 orch:spec orch:running
 out="$(sourced_rc 'standing_ask " " Q')"
 assert_contains "ask with a blank phase dies" "$out" "rc=1"
 assert_eq "and writes nothing: claim held, no comment, no label added" "$(fake_claim_held 68)|$(fake_comments_of 68)|$(fake_labels_of 68)" "held||orch:running orch:spec "
+
+# reenter: a refused marker ends it before any write, in an || context
+tr_seed 72 orch:spec orch:running
+out="$(sourced_rc 'standing_reenter 72 " " Q')"
+assert_eq "reenter with a blank phase dies with the marker writer's refusal" "$out" "orch: marked comment: reentry needs an argument without whitespace
+rc=1"
+assert_eq "and writes nothing: claim held, no comment, no label change" "$(fake_claim_held 72)|$(fake_comments_of 72)|$(fake_labels_of 72)" "held||orch:running orch:spec "
 
 # the step's contract, called directly with a state file set
 out="$(sourced_rc 'STANDING_STATE_FILE="$(mktemp)"; printf "landed\tearlier\n" >"$STANDING_STATE_FILE"
