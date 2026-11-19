@@ -364,7 +364,7 @@
 271	19	verification run: the run key, stale runs, the ceiling	daf1ce1066d653f8357d01f788a280d1458d96df
 0	1	verification run in help and the CLI conventions	a99e8bc67b95c57562d13f68245e5c6c30dfdb5c
 92	6	wait: a call's block is wall time	23d522ed4025533ab29a25a4694ea1dc29febe9f
-37	5	wait: block naps start no awk far from the block's end	a10aa399c1a0185981a5fe8aa702b02ce42ebf11
+38	5	wait: block naps start no awk far from the block's end	23c7f1f1c23bb3c8f772547a3266c299525fba86
 686	811	hooks_test.sh	058e31b62b5c66adb779670b21daecb8f80a55e8
 196	171	docs_lint.sh	34005b94b528c3cac0c004e8e1d78930a4878f6a
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65

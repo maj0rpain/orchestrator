@@ -128,7 +128,8 @@ assert_eq "a grace wait over a group that lasts a second starts no more awk than
   "$(( bn_slow <= bn_gone ))" "1"
 
 # verification_wait_state: a record with no state past its grace is given up on
-# at once, never exit 75 under a long block; with its state it is waited for no more.
+# at once, never exit 75 under a long block; with its state it is waited for
+# no more.
 bn_rec="$(mktemp -d)"
 printf '%s\n' "$(( $(printf '%(%s)T' -1) - 10 ))" >"$bn_rec/waiting"
 ORCH_WAIT_BLOCK=60 ORCH_VERIFICATION_GRACE=1 sourced_orch_script \

@@ -144,8 +144,8 @@ wait_nap() {
 # <interval>, or what is left of the block when that is less. The fast path -
 # the whole seconds since WAIT_CALL_START, plus one, plus <interval> rounded up,
 # at most the block's whole-second part - just sleeps: no awk, and nothing added
-# to the caller's `blocked`; the wall clock alone bounds the block there. It sets
-# `block_fast` in the caller's scope. The slow path keeps wait_block_spent's
+# to the caller's `blocked`; the wall clock alone bounds the block there. It
+# sets `block_fast` in the caller's scope. The slow path keeps wait_block_spent's
 # test, counting the wall clock plus one second once `block_fast` is set (the
 # whole-second clock reads up to a second short, and the fast naps are not in
 # `blocked`), and adds its nap to the caller's `blocked`, read as ${blocked:-0}.

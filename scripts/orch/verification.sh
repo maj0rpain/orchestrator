@@ -117,9 +117,9 @@ verification_clear_orphans() {
   done
 }
 
-# verification_grace_tenths: sets VERIFICATION_GRACE_TENTHS, ORCH_VERIFICATION_GRACE
-# in whole tenths of a second (rounded to the nearest), the first time a call
-# needs it; returns at once when it is already set.
+# verification_grace_tenths: sets VERIFICATION_GRACE_TENTHS to
+# ORCH_VERIFICATION_GRACE in whole tenths of a second (rounded to the nearest)
+# the first time a call needs it; returns at once when it is already set.
 verification_grace_tenths() {
   [ -z "${VERIFICATION_GRACE_TENTHS:-}" ] || return 0
   VERIFICATION_GRACE_TENTHS="$(awk -v g="$ORCH_VERIFICATION_GRACE" 'BEGIN { printf "%d", g * 10 + 0.5 }')"
@@ -169,8 +169,8 @@ verification_mark() {
 }
 
 # verification_wait_gone <pid> [<epoch>]: waits for the process group <pid> to
-# be gone, for ORCH_VERIFICATION_GRACE seconds since <epoch> (default now) - wall
-# clock, so a grace spent across several calls counts as one - or until
+# be gone, for ORCH_VERIFICATION_GRACE seconds since <epoch> (default now) -
+# wall clock, so a grace spent across several calls counts as one - or until
 # ORCH_WAIT_BLOCK ends the call. Returns 1 when it is still there.
 verification_wait_gone() {
   local since="${2:-}"
@@ -315,6 +315,7 @@ verification_run() {
   orch_load wait
   require_poll_knobs ORCH_WAIT_BLOCK
   require_poll_knobs ORCH_VERIFICATION_GRACE ORCH_VERIFICATION_INTERVAL
+  # shellcheck disable=SC2034 # wait_block_nap reads and sets them
   local command="$1" state store d blocked=0 block_fast="" attached="" ceiling id main_root rec stop
   ceiling="$(verification_timeout)" || exit $?
   id="$(verification_identity)" || die "could not record this checkout's identity in $ORCH"
