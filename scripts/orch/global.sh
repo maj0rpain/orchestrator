@@ -723,7 +723,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               paragraph is written into each issue whose
                               finding overlaps another picked one (an
                               already-open issue only while its body is still
-                              the rendering, else a warning). Prints one line
+                              the rendering, with or without a Related
+                              paragraph, whose numbers are kept, else a
+                              warning). Prints one line
                               per finding: number, issue, filed|open,
                               tab-separated; a rerun finishes a failed batch
   audit file <title> --category <c> --finding-file <f> --location <<file>:<line>>...

@@ -2281,4 +2281,4 @@ assert_first_line "a waiting call that meets a primary limit prints unreachable"
 assert_not_contains "and not the pause warning line" "$out" "could not write the GitHub limit pause"
 rm -rf "$top/.orchestrator/autopilot/github-limit" "$ORCH_GH_FAKE_STORE/ratelimit"
 assert_contains "help names the PR argument" "$("$ORCH" help)" "review ci [--no-wait] [<pr>]"
-restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
+review_ci_restore
