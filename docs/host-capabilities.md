@@ -283,12 +283,15 @@ browser can open it by hand.
 ### Run a long command
 
 A host with no foreground run that long runs the command in the foreground
-with the longest timeout it allows, and waits for it to exit. A run the host
-kills at its timeout is a failed run, handled as the site that ran it handles
-a failure; never run the command in the background and sleep, poll or kill it.
-A host whose foreground limit is shorter than 570 s sets `ORCH_WAIT_BLOCK`
-below that limit, so a re-callable command's call returns, exit 75 while its
-work goes on, before the host stops it.
+with the longest timeout it allows, and waits for it to exit. For a command
+that is not re-callable, a run the host kills at its timeout is a failed run,
+handled as the site that ran it handles a failure. For a re-callable command
+(`verification run`), a call the host stops is run again, as one that exited
+75 is: the detached run is not stopped with the call, and running the line
+again attaches to it. Never run the command in the background and sleep, poll
+or kill it. A host whose foreground limit is shorter than 570 s sets
+`ORCH_WAIT_BLOCK` below that limit, so a re-callable command's call returns,
+exit 75 while its work goes on, before the host stops it.
 
 ## Finding orch.sh
 
