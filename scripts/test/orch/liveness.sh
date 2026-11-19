@@ -32,6 +32,13 @@ assert_status "the same record once the process has exited is gone" "$st" 1
 assert_eq "still printing its pid" "$out" "$LIVE_PID"
 assert_eq "and no longer listed" "$(sourced_orch liveness_live_issues)" ""
 
+# reading a record starts no cat, for a run record and for a tick record alone
+lc_cat="$(counting_bin cat)"
+printf '%s 1\n' "$$" >"$rundir/7.tick"
+sourced_orch_script 'PATH="$1:$PATH"; liveness_issue_alive 5; liveness_issue_alive 7' "$lc_cat" >/dev/null
+assert_eq "the per-issue check starts no cat for a run record or a tick record" "$(counting_starts "$lc_cat" cat)" "0"
+rm -f "$rundir/7.tick"
+
 # a bare pid, a malformed record and another start time are gone
 running_pid=$$
 printf '%s\n' "$running_pid" >"$rundir/6.pid"
