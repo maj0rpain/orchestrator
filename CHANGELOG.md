@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.4
+
+Add a harness check that fails when an orch test file writes out a shared, sourceable or preamble test helper's whole body instead of calling it, naming the helper to call; a deliberate repeat is exempted by a `# copy-of <helper>: <reason>` comment. The implementer's and fixer's briefs now tell the agent to run the repo's helper-index command before writing the first test and to call a listed helper rather than copying its body.
+
 ## 6.8.3
 
 The trust module test section reads issue 8 once for its lower-case and empty association check, one orch.sh run fewer per suite run.
