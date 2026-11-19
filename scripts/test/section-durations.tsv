@@ -364,7 +364,7 @@
 216	20	verification run: the run key, stale runs, the ceiling	471d2e2e39b7b63f2840777531b346f7eab120a1
 0	1	verification run in help and the CLI conventions	bcef7e4ad67e97b98e872bc1de7a617d10a78253
 112	12	wait: a call's block is wall time	db923f27504e50d0a04527b359feb487abb3665d
-849	911	hooks_test.sh	cc2486dab424005e9930b189e71bd0466304a592
+869	952	hooks_test.sh	45132ea833ac150ec3ee9a3230a138c2bf743618
 196	171	docs_lint.sh	34005b94b528c3cac0c004e8e1d78930a4878f6a
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf

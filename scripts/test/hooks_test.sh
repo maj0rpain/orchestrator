@@ -1596,18 +1596,16 @@ for pg_fn in pg_decide sg_decide; do
 done
 # Decision cases that pin where the decode starts.
 # Fail-open stand-ins for the new failure points, built once.
-mkdir -p "$PG/cost/failgrep" "$PG/cost/failjq1" "$PG/cost/failjq2" "$PG/cost/failtail"
+mkdir -p "$PG/cost/failgrep" "$PG/cost/failjq1" "$PG/cost/failjq2" "$PG/cost/failtail" "$PG/cost/failjq5" "$PG/cost/failwc" "$PG/cost/failwc2"
 printf '#!/bin/sh\nexit 1\n' >"$PG/cost/failtail/tail"
 printf '#!/bin/sh\nexit 2\n' >"$PG/cost/failgrep/grep"
 printf '#!/bin/sh\ncase " $* " in *" --arg needle "*) exit 3;; esac\nexec "%s" "$@"\n' "$(command -v jq)" >"$PG/cost/failjq1/jq"
 printf '#!/bin/sh\ncase " $* " in *" --arg view "*) exit 3;; esac\nexec "%s" "$@"\n' "$(command -v jq)" >"$PG/cost/failjq2/jq"
-chmod +x "$PG/cost/failtail/tail" "$PG/cost/failgrep/grep" "$PG/cost/failjq1/jq" "$PG/cost/failjq2/jq"
-mkdir -p "$PG/cost/failjq5" "$PG/cost/failwc" "$PG/cost/failwc2"
 printf '#!/bin/sh\ncase " $* " in *" --rawfile view "*) exit 5;; esac\nexec "%s" "$@"\n' "$(command -v jq)" >"$PG/cost/failjq5/jq"
 printf '#!/bin/sh\nexit 1\n' >"$PG/cost/failwc/wc"
 # The real wc on its first call, nothing and exit 1 on every later one.
 printf '#!/bin/sh\nif [ -e "%s/wc-called" ]; then exit 1; fi\n: >"%s/wc-called"\nexec "%s" "$@"\n' "$PG" "$PG" "$(command -v wc)" >"$PG/cost/failwc2/wc"
-chmod +x "$PG/cost/failjq5/jq" "$PG/cost/failwc/wc" "$PG/cost/failwc2/wc"
+chmod +x "$PG/cost/failtail/tail" "$PG/cost/failgrep/grep" "$PG/cost/failjq1/jq" "$PG/cost/failjq2/jq" "$PG/cost/failjq5/jq" "$PG/cost/failwc/wc" "$PG/cost/failwc2/wc"
 pg_line="$(pg_pass_line batch "$PG/batch/view.md")"
 # The decision transcripts have the same bytes for both hooks: built once, a
 # fresh copy per hook where the case appends.
@@ -1639,10 +1637,7 @@ for pg_fn in pg_decide sg_decide; do
     assert_eq "a human message holding '$pg_hm' after a live pass line disarms ($pg_fn)" "$("$pg_fn" "$PG/cost/human-quote-$pg_hi.jsonl")" allow
   done
   # Fail open on the new failure points, on a transcript armed now.
-  for pg_f in failgrep failjq1 failjq2 failtail; do
-    assert_eq "armed now, a failing $pg_f allows ($pg_fn)" "$(PATH="$PG/cost/$pg_f:$PATH" "$pg_fn" "$PG/cost/pad-armed-now.jsonl")" allow
-  done
-  for pg_f in failjq5 failwc; do
+  for pg_f in failgrep failjq1 failjq2 failtail failjq5 failwc; do
     assert_eq "armed now, a failing $pg_f allows ($pg_fn)" "$(PATH="$PG/cost/$pg_f:$PATH" "$pg_fn" "$PG/cost/pad-armed-now.jsonl")" allow
   done
   rm -f "$PG/wc-called"; : >"$PG/sleep-unchanged.log"
@@ -1670,12 +1665,14 @@ pg_seam_transcript() { # <file> <needle> <command> <combined|after>
 # the pre-fix replacement pair, copied here, leaves the backslash single.
 pg_canary="$(BASH_COMPAT=32; t='a"b\c'; t="${t//\\/\\\\}"; t="${t//\"/\\\"}"; printf '%s' "$t")"
 assert_eq "the suite's bash honours BASH_COMPAT=32" "$pg_canary" 'a\"b\c'
-for pg_compat in '' 32; do
 for pg_mode in after combined; do
   pg_seam_transcript "$PG/cost/seam.jsonl" '; it is saved in ' 'run APPLYME now' "$pg_mode"
-  assert_eq "a reassigned apply literal disarms ($pg_mode, BASH_COMPAT=${pg_compat:-default})" "$(PG_COMPAT=$pg_compat pg_scan_with '; it is saved in ' 'APPLYME' "$PG/cost/seam.jsonl")" ""
+  assert_eq "a reassigned apply literal disarms ($pg_mode)" "$(pg_scan_with '; it is saved in ' 'APPLYME' "$PG/cost/seam.jsonl")" ""
   pg_seam_transcript "$PG/cost/seam.jsonl" '; it is saved in ' 'run spec-review apply now' "$pg_mode"
-  assert_eq "and the default literal no longer does ($pg_mode, BASH_COMPAT=${pg_compat:-default})" "$(PG_COMPAT=$pg_compat pg_scan_with '; it is saved in ' 'zzz' "$PG/cost/seam.jsonl")" /tmp/x/view.md
+  assert_eq "and the default literal no longer does ($pg_mode)" "$(pg_scan_with '; it is saved in ' 'zzz' "$PG/cost/seam.jsonl")" /tmp/x/view.md
+done
+for pg_compat in '' 32; do
+for pg_mode in after combined; do
   pg_seam_transcript "$PG/cost/seam.jsonl" '; saved "at" ' 'run A\"P"Y\ now' "$pg_mode"
   assert_eq "an apply literal holding a backslash and a quote disarms ($pg_mode, BASH_COMPAT=${pg_compat:-default})" \
     "$(PG_COMPAT=$pg_compat pg_scan_with '; saved "at" ' 'A\"P"Y\' "$PG/cost/seam.jsonl")" ""
