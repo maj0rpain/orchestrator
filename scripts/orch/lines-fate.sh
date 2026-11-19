@@ -1,11 +1,12 @@
 # shellcheck shell=bash
 # lines-fate.sh - the Lines fate module: a concept module with no orch.sh noun
 # of its own, holding what became of a range of a file's lines at a ref since a
-# commit filed them - the existence check, the line mapping, the deleted
-# ranges, the deleting-commit lookup and its squash walk, and the rule for
-# lines that never reached the ref. Only finding triage's scan reads it, through
-# lines_fate. It calls git and the primitives no concept owns: no gh adapter and
-# nothing of a noun module.
+# commit filed them - the existence check, the test that the file differs at
+# all, the line mapping, the deleted ranges, the deleting-commit lookup and its
+# squash walk, the range expander (range_segments), the one hunk-header parse
+# (hunk_rows) and the rule for lines that never reached the ref. Only finding
+# triage's scan reads it, through lines_fate. It calls git and the primitives
+# no concept owns: no gh adapter and nothing of a noun module.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 # hunk_rows: reads a zero-context diff on stdin and prints one row per hunk
