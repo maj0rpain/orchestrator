@@ -842,6 +842,8 @@ for bad_block in soon 0 0.0; do
 done
 assert_contains "naming the variable" "$out" "ORCH_WAIT_BLOCK"
 assert_contains "help names ORCH_WAIT_BLOCK and exit 75 for review ci" "$("$ORCH" help)" "75 - run it again; the 900 s total"
+assert_contains "help says the --no-wait look writes no state, wait file or guard" "$("$ORCH" help)" "reads no total and writes no state, wait file"
+assert_contains "help says a refusal exits 2" "$("$ORCH" help)" "state) exits 2"
 rm -f "$rc_err"
 fake_pr 7 open topic main
 fake_checks_clear

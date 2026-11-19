@@ -5,7 +5,7 @@
 # its stored total is the same wait store either way.
 # `review ci --no-wait` is one pass of review ci's probe: where the waiting
 # form would sleep and look again it prints `pending`; it reads no stored
-# total, never sleeps and writes nothing (no state key, wait file or guard).
+# total, never sleeps and writes no state, wait file or guard.
 # Its tests: scripts/test/orch/review.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 

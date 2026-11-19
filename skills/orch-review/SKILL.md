@@ -299,8 +299,9 @@ plan or from what the previous loop left instead of asking.
    list with that excerpt.
    Every iteration's triage also looks at CI once, without waiting: run
    `bash "$ORCH" review ci --no-wait` (one pass of the probe, never a wait,
-   writing nothing). Only `failing` matters: read `bash "$ORCH" review ci-log
-   <pr>` and judge the failure by the rule **Termination** applies in an
+   writing no state, wait file or guard). Only `failing` matters: read
+   `bash "$ORCH" review ci-log <pr>` and judge the failure by the rule
+   **Termination** applies in an
    autopilot flow (**CI**), here in every flow. A failure the change can fix is
    a blocking finding of this iteration, marked CI-found in the fixable list
    with the log excerpt. A failure that looks flaky rather than caused by the
@@ -612,7 +613,8 @@ nobody merging can see is indistinguishable from a defect.
 Waited on **once per loop**, at **Termination**, and never inside an
 iteration: that would block a single session for most of an hour, and the fix
 commits are pushed as they land anyway. Each iteration's triage only looks at
-it, once, with `review ci --no-wait`, which never waits and writes nothing, so
+it, once, with `review ci --no-wait`, which never waits and writes no state,
+wait file or guard, so
 the flake rerun and the stored wait total are as they were (see **The
 iteration**, step 4).
 
