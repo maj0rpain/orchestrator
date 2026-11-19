@@ -28,7 +28,7 @@ declined for the home the helper would need, not because the shape differs.
 
 ```sh
 # the two sites in autopilot_watch today
-"$(autopilot_self)" autopilot tick >/dev/null &
+"$AUTOPILOT_SELF" autopilot tick >/dev/null &
 AUTOPILOT_WATCH_CHILD=$!
 wait "$AUTOPILOT_WATCH_CHILD" || rc=$?
 AUTOPILOT_WATCH_CHILD=""
