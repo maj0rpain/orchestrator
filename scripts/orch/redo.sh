@@ -102,7 +102,7 @@ redo_load_shared() {
 # resets it when the next loop starts.
 cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
-  local phase i b budget_raw word detail slug issue branch pr redo_count new_n resumed
+  local phase i budget budget_raw word detail slug issue branch pr redo_count new_n resumed
   require_state_read phase=phase i=iteration budget_raw=budget slug=slug issue=issue \
     branch=branch pr=pr redo_count=redo_count
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
@@ -117,14 +117,14 @@ cmd_redo_review() {
   if review_flat_record_gone "$i" && [ "$redo_count" -gt 0 ]; then
     orch_load branch
   fi
-  b="$(review_budget_fallback "$budget_raw")"
-  local terminal; terminal="$(review_terminal_state "$i" "$b")" || true
+  budget="$(review_budget_fallback "$budget_raw")"
+  local terminal; terminal="$(review_terminal_state "$i" "$budget")" || true
   lines_split "$terminal" word detail
   case "$word" in
     none)
       die "no review loop has run yet - nothing to redo back from; run $(flow_cmd next) to start one." ;;
     pending)
-      die "the review loop hasn't reached its budget yet (iteration $i of budget $b) - that's what $(flow_cmd next) is for; redo is for after a loop ends." ;;
+      die "the review loop hasn't reached its budget yet (iteration $i of budget $budget) - that's what $(flow_cmd next) is for; redo is for after a loop ends." ;;
     interrupted)
       die "the review loop's last iteration ($i) has no recorded terminal state - the session looks interrupted, not stopped. Resume it with $(flow_cmd next); redo only runs once a loop actually ends." ;;
     malformed)
