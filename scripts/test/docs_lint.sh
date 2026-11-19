@@ -255,6 +255,14 @@ md_section_first_block() {
     | awk '/^[[:space:]]*```/ { if (inb) exit; inb = 1; next } inb' | sed 's/^[[:space:]]*//'
 }
 
+# compose_block <key> [<file>]: the lines indented under every `<key>:` line of
+# a compose file, read from <file> or, with none, stdin. The one reader both
+# docker scanners use.
+compose_block() {
+  K="$1" awk '$0 ~ "^ *" ENVIRON["K"] ":" { match($0, /^ */); n = RLENGTH; inb = 1; next }
+    inb { match($0, /^ */); if (RLENGTH <= n) inb = 0; else print }' ${2:+"$2"}
+}
+
 # check <rule> <findings>: ok when the scan found nothing, else one FAIL line
 # per finding, each naming the file and the problem.
 check() {
@@ -2590,16 +2598,9 @@ check "host-capabilities has the Run a long command row" \
 check "the Run a long command row marks Junie Unverified" \
   "$(scan_row_unverified "$PLUGIN_ROOT" 'Run a long command')"
 # Each site that runs a re-callable command names the term (ADR-0065), by
-# structure only: the Run a long command sites minus the audit's timing run,
-# which is not re-callable.
-recall_sites='agents/orch-implementer.md
-agents/orch-fixer.md
-agents/orch-resolver.md
-skills/orch-review-pass/SKILL.md
-skills/orch-quick-implement/SKILL.md
-docs/driver-loop.md
-skills/orch-review/SKILL.md
-skills/orch-spec-review/SKILL.md'
+# structure only: derived from long_sites by dropping the test audit's site,
+# whose timing run is not re-callable.
+recall_sites="$(grep -vxF 'skills/orch-audit-tests/SKILL.md' <<<"$long_sites")"
 check "each site that runs a re-callable command names the term" \
   "$(scan_names_phrase "$PLUGIN_ROOT" "$recall_sites" 're-callable')"
 # CI looked at without waiting (#3179): the triage step names the look, and the
@@ -2685,9 +2686,7 @@ scan_build_args() {
     [ -f "$r/$f" ] || { echo "$f: missing"; missing=1; }
   done
   [ -z "$missing" ] || return 0
-  awk '/^ *args:/ { match($0, /^ */); n = RLENGTH; inargs = 1; next }
-    inargs { match($0, /^ */); if (RLENGTH <= n) inargs = 0; else print }' \
-    "$r/docker/compose.yaml" |
+  compose_block args "$r/docker/compose.yaml" |
     grep -o '\${[A-Za-z_][A-Za-z0-9_]*' | tr -d '${' | sort -u |
     while IFS= read -r v; do
       grep -q "^#* *$v=" "$r/docker/.env.example" ||
@@ -2789,9 +2788,7 @@ scan_clone_dir() {
   local r="$1" pin mount def img svc
   svc="$(awk '/^  autopilot:/ { ins = 1; next } ins && /^(  )?[^ ]/ { ins = 0 } ins' \
     "$r/docker/compose.yaml")"
-  pin="$(awk '/^ *environment:/ { match($0, /^ */); n = RLENGTH; inenv = 1; next }
-    inenv { match($0, /^ */); if (RLENGTH <= n) inenv = 0; else print }' \
-    <<<"$svc" | sed -n '/^ *ORCH_CLONE_DIR: */{s///p;q}')"
+  pin="$(compose_block environment <<<"$svc" | sed -n '/^ *ORCH_CLONE_DIR: */{s///p;q}')"
   mount="$(sed -n '/^ *- *repo:/{s/^[^:]*:\([^: ]*\).*$/\1/p;q}' <<<"$svc")"
   def="$(sed -n '/ORCH_CLONE_DIR:-/{s/.*ORCH_CLONE_DIR:-\([^}]*\)}.*/\1/p;q}' "$r/scripts/autopilot-container.sh")"
   img="$(sed -n '/mkdir -p \/home/{s/.*mkdir -p \([^ ]*\).*/\1/p;q}' "$r/docker/Dockerfile")"
@@ -5269,19 +5266,21 @@ assert_empty "width.sh given an uncovered file prints nothing" \
 # One awk per root scan, whatever the file count and what each file leaves open.
 src_awk="$(TMPDIR="$FIXTURES" counting_bin awk)"
 fixture="$(new_fixture)"
-mkdir -p "$fixture/docs" "$fixture/scripts"
+mkdir -p "$fixture/docs" "$fixture/scripts" "$fixture/skills"
 { echo '```'; echo 'code never closed'; } >"$fixture/docs/a-fence.md"
 wide_line 'Some prose ' 81 >"$fixture/docs/b-after-fence.md"
 { echo '---'; echo 'title: never closed'; } >"$fixture/docs/c-frontmatter.md"
 { echo '---'; echo 'title: x'; echo '---'; wide_line 'Some prose ' 81; } \
   >"$fixture/docs/d-after-frontmatter.md"
-{ echo 'cat <<EOF'; echo 'body'; } >"$fixture/scripts/a-heredoc.sh"
+{ wide_line '# whole-line comment ' 90; wide_line 'echo code ' 90; echo 'cat <<EOF'; echo 'body'; } \
+  >"$fixture/scripts/a-heredoc.sh"
 wide_line '# after a heredoc file ' 90 >"$fixture/scripts/b-after-heredoc.sh"
 { echo 'echo "never closed'; } >"$fixture/scripts/c-quote.sh"
 wide_line '# after a quote file ' 90 >"$fixture/scripts/d-after-quote.sh"
 : >"$fixture/scripts/e-empty.sh"
 { wide_line '# whole-line comment ' 90; wide_line 'echo code ' 90; } \
-  >"$fixture/scripts/f-after-markdown.sh"
+  >"$fixture/scripts/f-after-empty.sh"
+wide_line 'Some prose ' 81 >"$fixture/skills/z.md"
 : >"$src_awk/awk.log"
 out="$(PATH="$src_awk:$PATH" scan_line_width "$fixture")"
 assert_eq "a root scan over several covered files starts exactly one awk" \
@@ -5289,18 +5288,10 @@ assert_eq "a root scan over several covered files starts exactly one awk" \
 assert_eq "a root scan's unsorted output is the expected lines in scan order" \
   "$out" "docs/b-after-fence.md:1: 81 columns, past 80
 docs/d-after-frontmatter.md:4: 81 columns, past 80
+scripts/a-heredoc.sh:1: 90 columns, past 80
 scripts/b-after-heredoc.sh:1: 90 columns, past 80
 scripts/d-after-quote.sh:1: 90 columns, past 80
-scripts/f-after-markdown.sh:1: 90 columns, past 80"
-fixture="$(new_fixture)"
-mkdir -p "$fixture/docs" "$fixture/scripts" "$fixture/skills"
-{ echo '# T'; wide_line '# a comment ' 90; wide_line 'echo code ' 90; } >"$fixture/scripts/a.sh"
-wide_line 'Some prose ' 81 >"$fixture/skills/z.md"
-wide_line 'Some prose ' 81 >"$fixture/docs/y.md"
-out="$(PATH="$src_awk:$PATH" scan_line_width "$fixture")"
-assert_eq "each file is judged by its own kind, Markdown after shell and the reverse" \
-  "$out" "docs/y.md:1: 81 columns, past 80
-scripts/a.sh:2: 90 columns, past 80
+scripts/f-after-empty.sh:1: 90 columns, past 80
 skills/z.md:1: 81 columns, past 80"
 fixture="$(new_fixture)"
 : >"$src_awk/awk.log"
