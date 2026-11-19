@@ -183,7 +183,7 @@ paste_guard_pasted() {
 # refuse - otherwise, with `paste_guard_view` set in the caller's shell to the
 # armed view.md (pass it to paste_guard_instruction).
 paste_guard_check() {
-  local wait_s tries scan blocks size last_size pasted
+  local wait_s tries scan blocks size last_size paste_st
   wait_s="$PASTE_GUARD_WAIT"
   case "${ORCH_PASTE_GUARD_WAIT:-}" in
     ''|*[!0-9]*) ;;
@@ -201,8 +201,8 @@ paste_guard_check() {
       paste_guard_view="${scan%%$'\n'*}"
       [ -n "$paste_guard_view" ] && [ -s "$paste_guard_view" ] && [ -r "$paste_guard_view" ] || return 0
       blocks="${scan#*$'\n'}"
-      paste_guard_pasted "$blocks" "$paste_guard_view"; pasted=$?
-      [ "$pasted" -eq 1 ] || return 0
+      paste_guard_pasted "$blocks" "$paste_guard_view"; paste_st=$?
+      [ "$paste_st" -eq 1 ] || return 0
     fi
     [ "$tries" -gt 0 ] || return 1
     tries=$((tries - 1))
