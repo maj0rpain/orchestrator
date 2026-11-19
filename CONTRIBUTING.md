@@ -402,7 +402,9 @@ calls) and the bounded FIFO wait (`scripts/test/fifo.sh`: `fifo_bounded`,
 (`scripts/test/counting.sh`: `counting_bin`, `counting_starts`,
 `counting_argv_bin`, which logs only the starts whose arguments match,
 `counting_stdin_bin`, which records the bytes offered on stdin, and
-`counting_bytes`, their sum)
+`counting_bytes`, their sum) and the failing-command fixture
+(`scripts/test/fails.sh`: `fails_bin`, a stub that fails the calls whose
+arguments match a glob, with any status, and runs the real command otherwise)
 instead - their fixtures, fakes and assertions. A
 `<file>` argument lists that one bash file alone, e.g.
 `scripts/dev/helpers.sh scripts/orch/base.sh`. harness.sh's helper index
@@ -575,6 +577,8 @@ scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per l
 scripts/test/                 shell tests: the suites in all.sh's `suites` list (orch_test.sh is the orch.sh suite's runner), all.sh, and affected.sh, the ticket and branch verification, which runs what a change selects and falls back to all.sh only in the cases its header lists
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
 scripts/test/tally.sh         the assertion tally every suite sources: ok, bad and skip append to a per-run file, so an assertion inside a subshell counts; tally_summary is the ending each standalone suite calls
+scripts/test/counting.sh      the counting fixture the orch.sh suite's runner, hooks_test.sh and docs_lint.sh source: counting_bin makes a directory holding a stub, which its caller puts first on PATH, that logs one line per start and runs the real command, counting_starts reads the count, counting_argv_bin makes the stub log only the starts whose joined arguments equal a given string, counting_stdin_bin makes counting_bin's stub also record the bytes offered on its stdin, counting_bytes sums them
+scripts/test/fails.sh         the failing-command fixture the orch.sh suite's runner and hooks_test.sh source: fails_bin makes a directory holding a stub, which its caller puts first on PATH, that exits with a given status (0 allowed), after an optional stderr line, when its space-padded arguments match a glob, and runs the real command for every other call
 scripts/test/counting.sh      the counting fixture the orch.sh suite's runner, hooks_test.sh and docs_lint.sh source: counting_bin makes a directory holding a stub, which its caller puts first on PATH, that logs one line per start and runs the real command, counting_starts reads the count, counting_argv_bin makes the stub log only the starts whose joined arguments equal a given string, counting_stdin_bin makes counting_bin's stub also record the bytes offered on its stdin, counting_bytes sums them
 scripts/test/test_jobs.sh     the job-count, job pool and priority helpers orch_test.sh, all.sh, affected.sh and section-durations.sh all source: the default ORCH_TEST_JOBS (ORCH_TEST_POOL_PERCENT) and the renice to 10, and the signal-reachable child start (test_jobs_run_child, with its INT/TERM stop) that section-durations.sh and lens-bench.sh use, and the suite start (test_jobs_suite_start, with its start order test_jobs_start_order and children marker test_jobs_held_marker) all.sh and affected.sh start each suite through, and section-durations.sh each suite but orch_test.sh
 scripts/test/report.sh       the report helpers all.sh, affected.sh and section-durations.sh source: a suite's FAIL block and summary line, the shellcheck summary, the temp-files failure record, and the run's verdict line, whose PASS or FAIL comes from the failed parts recorded

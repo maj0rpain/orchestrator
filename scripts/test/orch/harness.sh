@@ -59,7 +59,7 @@ tr_commit() {
   tr_git "$1" commit -qm init
   tr_git "$1" update-ref refs/remotes/origin/main HEAD
 }
-SOURCEABLE_TEST_HELPERS=(gh_adapter_fake.sh tally.sh fifo.sh counting.sh)
+SOURCEABLE_TEST_HELPERS=(gh_adapter_fake.sh tally.sh fifo.sh counting.sh fails.sh)
 
 # count_lines [<grep flag>...] <pattern> <text>: prints how many lines of
 # <text> match <pattern>. Every argument before the last two goes to grep
@@ -5117,27 +5117,32 @@ tr_init "$sf"
 sf_put() { tr_put "$sf" "$@"; }
 sf_plan() { tr_plan "$sf"; }
 sf_reset() { tr_reset "$sf"; }
-sf_put scripts/test/hooks_test.sh 'fifo_probe'
+sf_put scripts/test/hooks_test.sh 'fifo_probe' 'fails_bin'
 sf_put scripts/test/orch/setup.sh '# helper_a is called by branch.sh.' \
   'helper_a() { echo a; }' \
   'helper_b() {' '  # calls helper_a' '  helper_a' '}' \
-  'helper_lonely() { echo l; }'
+  'helper_lonely() { echo l; }' \
+  'helper_wrap() { fails_bin git x; }'
 sf_put scripts/test/tally.sh 'tally_init() {' '  :' '}'
 sf_put scripts/test/fifo.sh 'fifo_probe() { :; }'
 sf_put scripts/test/counting.sh 'counting_probe() { :; }'
+sf_put scripts/test/fails.sh 'fails_bin() { :; }'
 sf_put scripts/test/orch/branch.sh '# --- branch one ---' 'helper_a'
 sf_put scripts/test/orch/state.sh '# --- state one ---' 'helper_b'
+sf_put scripts/test/orch/wrap.sh '# --- wrap one ---' 'helper_wrap'
 tr_commit "$sf"
 sf_setup=scripts/test/orch/setup.sh
 
 sf_put "$sf_setup" '# helper_a is called by branch.sh.' \
   'helper_a() { echo A; }' \
   'helper_b() {' '  # calls helper_a' '  helper_a' '}' \
-  'helper_lonely() { echo l; }'
+  'helper_lonely() { echo l; }' \
+  'helper_wrap() { fails_bin git x; }'
 assert_eq "a changed helper selects the section files that call it, directly and through another helper" \
   "$(sf_plan)" "$TR_GATE,branch one,state one,docs_lint.sh,$sf_setup"
 sf_reset
-sf_put "$sf_setup" 'helper_b() {' '  helper_a' '}' 'helper_lonely() { echo l; }'
+sf_put "$sf_setup" 'helper_b() {' '  helper_a' '}' 'helper_lonely() { echo l; }' \
+  'helper_wrap() { fails_bin git x; }'
 assert_eq "a removed helper selects the files that still call it" \
   "$(sf_plan)" "$TR_GATE,branch one,state one,docs_lint.sh,$sf_setup"
 sf_reset
@@ -5145,10 +5150,15 @@ sf_put scripts/test/fifo.sh 'fifo_probe() { :; :; }'
 assert_eq "a changed helper selects the suites that call it" \
   "$(sf_plan)" "$TR_GATE,hooks_test.sh,docs_lint.sh,scripts/test/fifo.sh"
 sf_reset
+sf_put scripts/test/fails.sh 'fails_bin() { :; :; }'
+assert_eq "a changed fails_bin selects a section reaching it through a setup wrapper and the suite calling it directly" \
+  "$(sf_plan)" "$TR_GATE,wrap one,hooks_test.sh,docs_lint.sh,scripts/test/fails.sh"
+sf_reset
 sf_put "$sf_setup" '# helper_a is called by branch.sh.' \
   'helper_a() { echo a; }' \
   'helper_b() {' '  # calls helper_a' '  helper_a' '}' \
-  'helper_lonely() { echo L; }'
+  'helper_lonely() { echo L; }' \
+  'helper_wrap() { fails_bin git x; }'
 assert_eq "a helper nothing reaches selects the core set" \
   "$(sf_plan)" "$TR_GATE,$TR_CORE,$sf_setup"
 sf_reset
@@ -5159,7 +5169,8 @@ sf_reset
 sf_put "$sf_setup" '# a new comment' '# helper_a is called by branch.sh.' \
   'helper_a() { echo a; }' \
   'helper_b() {' '  # calls helper_a, a changed comment' '' '  helper_a' '}' \
-  '' 'helper_lonely() { echo l; }'
+  '' 'helper_lonely() { echo l; }' \
+  'helper_wrap() { fails_bin git x; }'
 assert_eq "a comment-only and a blank-line-only change select nothing more" \
   "$(sf_plan)" "$TR_GATE,docs_lint.sh,$sf_setup"
 sf_reset

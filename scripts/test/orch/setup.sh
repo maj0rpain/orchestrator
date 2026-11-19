@@ -319,27 +319,10 @@ exit $2
 SSH
   chmod +x "$ssh_stub_dir/ssh"
 }
-# fails_bin <command> <pattern> [<status> [<stderr line>]]:
-# a new directory, <status> and <stderr line> optional, holding a <command>
-# that fails, with exit status <status> (default 1) after
-# printing <stderr line> verbatim to stderr when one is given, when its
-# arguments, space-joined and padded with a space either side, match the glob
-# <pattern>, and passes every other call through to the real one; first on
-# PATH, it fails those calls and nothing else.
-fails_bin() {
-  local dir fail="exit ${3:-1}" escaped_line escaped_quote="'\\''"
-  if [ "$#" -ge 4 ]; then
-    escaped_line="${4//\'/$escaped_quote}"
-    fail="printf '%s\\n' '$escaped_line' >&2; $fail"
-  fi
-  dir="$(mktemp -d)"
-  writeln '#!/bin/sh' 'case " $* " in '"$2"') '"$fail"' ;; esac' "exec $(command -v "$1") \"\$@\"" >"$dir/$1"
-  chmod +x "$dir/$1"
-  printf '%s\n' "$dir"
-}
 # seq_lines <prefix> <count>: prints <count> numbered lines, "<prefix> line
 # <i>".
 seq_lines() { local i; for ((i = 1; i <= $2; i++)); do echo "$1 line $i"; done; }
+# fails_bin lives in the failing-command fixture, scripts/test/fails.sh.
 # git_fails_bin <pattern>: a fails_bin for git.
 git_fails_bin() { fails_bin git "$1"; }
 # state_write_fails_bin: a fails_bin for mktemp that fails a state.json.*

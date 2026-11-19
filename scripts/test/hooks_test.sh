@@ -18,6 +18,8 @@ test_git_env_clear || exit 1
 source "$DIR/test/tally.sh"
 # shellcheck source=counting.sh
 source "$DIR/test/counting.sh"
+# shellcheck source=fails.sh
+source "$DIR/test/fails.sh"
 # shellcheck source=test_jobs.sh
 source "$DIR/test/test_jobs.sh"
 GRILL="$DIR/hook-grilling.sh"
@@ -1596,12 +1598,10 @@ for pg_fn in pg_decide sg_decide; do
 done
 # Decision cases that pin where the decode starts.
 # Fail-open stand-ins for the new failure points, built once.
-mkdir -p "$PG/cost/failgrep" "$PG/cost/failjq1" "$PG/cost/failjq2" "$PG/cost/failtail"
-printf '#!/bin/sh\nexit 1\n' >"$PG/cost/failtail/tail"
-printf '#!/bin/sh\nexit 2\n' >"$PG/cost/failgrep/grep"
-printf '#!/bin/sh\ncase " $* " in *" --arg needle "*) exit 3;; esac\nexec "%s" "$@"\n' "$(command -v jq)" >"$PG/cost/failjq1/jq"
-printf '#!/bin/sh\ncase " $* " in *" --arg view "*) exit 3;; esac\nexec "%s" "$@"\n' "$(command -v jq)" >"$PG/cost/failjq2/jq"
-chmod +x "$PG/cost/failtail/tail" "$PG/cost/failgrep/grep" "$PG/cost/failjq1/jq" "$PG/cost/failjq2/jq"
+pg_fb_jq1="$(fails_bin jq '*" --arg needle "*' 3)"
+pg_fb_jq2="$(fails_bin jq '*" --arg view "*' 3)"
+pg_fb_tail="$(fails_bin tail '*' 1)"
+pg_fb_grep="$(fails_bin grep '*' 2)"
 pg_line="$(pg_pass_line batch "$PG/batch/view.md")"
 # The decision transcripts have the same bytes for both hooks: built once, a
 # fresh copy per hook where the case appends.
@@ -1633,8 +1633,8 @@ for pg_fn in pg_decide sg_decide; do
     assert_eq "a human message holding '$pg_hm' after a live pass line disarms ($pg_fn)" "$("$pg_fn" "$PG/cost/human-quote-$pg_hi.jsonl")" allow
   done
   # Fail open on the new failure points, on a transcript armed now.
-  for pg_f in failgrep failjq1 failjq2 failtail; do
-    assert_eq "armed now, a failing $pg_f allows ($pg_fn)" "$(PATH="$PG/cost/$pg_f:$PATH" "$pg_fn" "$PG/cost/pad-armed-now.jsonl")" allow
+  for pg_f in grep:$pg_fb_grep jq1:$pg_fb_jq1 jq2:$pg_fb_jq2 tail:$pg_fb_tail; do
+    assert_eq "armed now, a failing fail${pg_f%%:*} allows ($pg_fn)" "$(PATH="${pg_f#*:}:$PATH" "$pg_fn" "$PG/cost/pad-armed-now.jsonl")" allow
   done
 done
 # The scan reads the apply constant and searches for both constants as JSON
@@ -1696,7 +1696,7 @@ assert_eq "the Stop paste guard allows a payload with no transcript_path" "$(sg_
 # Fail open.
 assert_eq "a transcript with no arming pass line allows" "$(sg_decide "$T11")" allow
 unset ORCH_PASTE_GUARD_WAIT
-rm -rf "$PG"
+rm -rf "$PG" "$pg_fb_jq1" "$pg_fb_jq2" "$pg_fb_tail" "$pg_fb_grep"
 
 assert_eq "hooks.json registers hook-paste-stop-guard.sh under Stop" \
   "$(jq -r '[.hooks.Stop[]? | .hooks[]?.command | select(test("hook-paste-stop-guard\\.sh"))] | length' "$DIR/../hooks/hooks.json")" 1
