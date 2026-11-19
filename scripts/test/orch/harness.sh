@@ -4597,11 +4597,7 @@ tr_git "$af" add -A
 assert_eq "a staged change counts" "$(tr_plan "$af" origin/rel)" \
   "$TR_GATE,state,state two,docs_lint.sh,scripts/test/orch/state.sh"
 af_reset
-tr_put "$af" scripts/test/orch/harness.sh '# --- isolation ---' \
-  '# --- test-helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
-  '# --- marked comment prelude placement (#1853) ---' '# --- comment reader placement (#3085) ---' \
-  '# --- helper body copies (#3170) ---' '# --- the parallel runner (#780) ---' \
-  '# --- more ---'
+printf '%s\n' '# --- more ---' >>"$af/scripts/test/orch/harness.sh"
 assert_eq "harness.sh selects all of its sections, the placement ones once" \
   "$(tr_plan "$af" origin/rel)" \
   "$TR_GATE,isolation,the parallel runner (#780),more,docs_lint.sh,scripts/test/orch/harness.sh"
@@ -4817,9 +4813,9 @@ af_reset
 # End to end, with stub suites for the real ones.
 suites_read "$af_tests/all.sh" "$af_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
 for af_s in "${SUITES[@]}"; do
-  printf '%s\n' '#!/usr/bin/env bash' \
+  tr_put "$af" "scripts/test/$af_s" \
     "echo \"$af_s only=\${ORCH_TEST_ONLY-unset}\" >>\"$af.log\"" \
-    'echo; echo "7 passed, 0 failed"' >"$af/scripts/test/$af_s"
+    'echo; echo "7 passed, 0 failed"'
 done
 tr_git "$af" add -A
 tr_git "$af" commit -qm stubs
@@ -4938,8 +4934,8 @@ if command -v flock >/dev/null 2>&1; then
 else
   skip "a shellcheck run with the pool's slot held waits and says so" "flock is not installed"
 fi
-printf '%s\n' '#!/usr/bin/env bash' 'printf "  FAIL a thing\n     its detail\n"' \
-  'echo; echo "1 passed, 1 failed"; exit 1' >"$af/scripts/test/hooks_test.sh"
+tr_put "$af" scripts/test/hooks_test.sh 'printf "  FAIL a thing\n     its detail\n"' \
+  'echo; echo "1 passed, 1 failed"; exit 1'
 tr_put "$af" scripts/hook-guard.sh 'for f in $(ls); do echo "$f"; done'
 af_out="$(cd "$af" && env -u ORCH_TEST_JOBS PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
 assert_status "a failing part makes the run exit 1" "$st" 1
@@ -4952,7 +4948,7 @@ assert_eq "ending on a FAIL verdict naming the failing parts" "$(printf '%s\n' "
   "affected.sh: FAIL (hooks_test.sh, shellcheck)"
 
 # A suite that exits 0 on a header, with no summary line, died before it.
-printf '%s\n' '#!/usr/bin/env bash' 'echo "a section header"' >"$af/scripts/test/hooks_test.sh"
+tr_put "$af" scripts/test/hooks_test.sh 'echo "a section header"'
 tr_put "$af" scripts/hook-guard.sh 'echo ok'
 af_out="$(cd "$af" && env -u ORCH_TEST_JOBS PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
 assert_status "a suite that exited 0 without its summary makes the run exit 1" "$st" 1
@@ -4981,7 +4977,7 @@ af_verdict_run() {
   st=$?
 }
 # A passing selection: the passing stub back, shellcheck skipped.
-printf '%s\n' '#!/usr/bin/env bash' 'echo; echo "7 passed, 0 failed"' >"$af/scripts/test/hooks_test.sh"
+tr_put "$af" scripts/test/hooks_test.sh 'echo; echo "7 passed, 0 failed"'
 af_verdict_run -- HEAD
 assert_status "a passing selection exits 0 without shellcheck outside CI" "$st" 0
 assert_contains "a missing shellcheck outside CI prints its skipped line" "$af_out" \
@@ -5010,7 +5006,7 @@ af_verdict_run -- --bogus
 assert_status "a usage error exits 2" "$st" 2
 assert_eq "a usage error prints no verdict on stdout" "$af_out" ""
 # A TERM stop prints no verdict.
-printf '%s\n' '#!/usr/bin/env bash' "echo \$\$ >'$af.pid'" 'sleep 30' >"$af/scripts/test/hooks_test.sh"
+tr_put "$af" scripts/test/hooks_test.sh "echo \$\$ >'$af.pid'" 'sleep 30'
 tr_put "$af" scripts/hook-guard.sh 'echo ok'
 term_run "$af.stdout" /dev/null "$af.pid" -- \
   bash -c 'cd "$1" && shift && exec "$@"' _ "$af" \
@@ -5020,9 +5016,9 @@ assert_status "TERM to affected.sh exits 130" "$term_st" 130
 assert_eq "TERM to affected.sh prints no verdict" "$(grep -c ': \(PASS\|FAIL\) (' "$af.stdout")" "0"
 # A set ORCH_TEST_SHARD never narrows a ticket verification: the suites see it
 # unset on the mapped path and on the full-suite fallback.
-printf '%s\n' '#!/usr/bin/env bash' 'echo; echo "7 passed, 0 failed"' >"$af/scripts/test/hooks_test.sh"
-printf '%s\n' '#!/usr/bin/env bash' "echo \"shard=\${ORCH_TEST_SHARD:-unset}\" >>'$af.log'" \
-  'echo; echo "7 passed, 0 failed"' >"$af/scripts/test/orch_test.sh"
+tr_put "$af" scripts/test/hooks_test.sh 'echo; echo "7 passed, 0 failed"'
+tr_put "$af" scripts/test/orch_test.sh "echo \"shard=\${ORCH_TEST_SHARD:-unset}\" >>'$af.log'" \
+  'echo; echo "7 passed, 0 failed"'
 : >"$af.log"
 af_verdict_run ORCH_TEST_SHARD=2/4 -- HEAD
 assert_eq "affected.sh's mapped path runs orch_test.sh with the shard setting unset" \
