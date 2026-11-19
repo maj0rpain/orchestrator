@@ -12,7 +12,9 @@
 # the key the caller builds, and is forgotten as soon as a call delivers an
 # outcome. Its tests: scripts/test/orch/wait.sh, and the `review ci` and
 # `spec-review wait` sections, and the `gh rate limits (#2577)` section of
-# scripts/test/orch/gh.sh.
+# scripts/test/orch/gh.sh; wait_block_nap's: the `verification run: block
+# naps start no awk far from the block's end` section of
+# scripts/test/orch/verification.sh.
 # wait_block_nap is the block turn of a caller that keeps no stored total
 # (`verification run`), with a fast path that starts no awk.
 # The module also owns the limit decision - whether a GitHub rate-limit wait

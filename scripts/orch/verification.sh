@@ -356,6 +356,9 @@ verification_run() {
     printf '%s\n' "$ROOT" >"$d/root"
     printf '%s\n' "$id" >"$d/id"
     verification_start "$d" "$command" "$ceiling"
+    # file_write_atomic makes its parent: a record another call removed must not
+    # come back holding only a state.
+    [ -d "$d" ] || die "could not write the state of the run in $d - its record is gone"
     file_write_atomic "$d/state" "$state"$'\n' || die "could not write the state of the run in $d"
   fi
   while [ ! -f "$d/status" ]; do
