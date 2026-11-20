@@ -19,8 +19,8 @@ encodes a different fact:
   for `review` (which leaves through `review ready`) and for `done`.
 
 Deriving all of this from `PHASES` would need a table with a column for
-each fact plus exceptions for the refusals. In bash 3.2 (no associative
-arrays) that table would be harder to read than the four small switches.
+each fact plus exceptions for the refusals, and that table would be harder to
+read than the four small switches.
 `orch.sh` is a switch-based transaction-script file
 (`.out-of-scope/command-function-decomposition.md`), and phases stay plain
 strings (`.out-of-scope/typed-phase-representation.md`).
