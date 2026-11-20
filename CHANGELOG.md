@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.10.0
+
+The autopilot watcher cleans up after itself: at most once an hour a tick runs a housekeeping step that deletes session logs last modified more than 14 days ago and runs the same finished sweep `/orchestrator:finish` runs, removing finished side checkouts. A failure in either half warns and never stops the tick, and a GitHub rate limit the sweep hits ends the tick before pickup.
+
 ## 6.9.20
 
 Corrected a comment in `lines_fate` so it names the reversed range the guard normalises, not every range.
