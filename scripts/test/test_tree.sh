@@ -190,14 +190,15 @@ suite_budget_read() {
 # before `time`. orch_test.sh's timed child and section-durations.sh use it.
 #
 # DURATIONS_AWK: awk text for a program run with -F'\t', defining the function
-# durations_read(), which reads the current record of section-durations.tsv
-# into the arrays wall and cpu, in tenths of a second, keyed by name. A line
+# durations_read(), which reads the current record of its input into the arrays
+# wall and cpu, in tenths of a second, keyed by name. The shard dealing and the
+# start order feed it the effective record (ledger_effective), which carries
+# one line per title, so the first line per name winning is that line. A line
 # is "<wall>", "<cpu>" and a non-empty name, tab-separated, the two numbers
 # digits, with an optional fourth column after the name, the ledger's
 # fingerprint, which it does not read: a three- and a four-column line read
-# alike. Any other line is ignored, and the first line per name wins. The
-# shard dealing and the start order both start with it, so they read the file
-# one way. It also defines durations_line(), true when the current record is
+# alike. Any other line is ignored. Both read the record one way. It also
+# defines durations_line(), true when the current record is
 # such a line, for a program that reads every line itself.
 #
 # SHELLCHECK_CMD: the array holding the one shellcheck invocation, run from the

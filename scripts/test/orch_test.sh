@@ -548,14 +548,15 @@ orch_total=${#orch_sections[@]}
 # The start order: sections the effective record does not list first, in walk
 # order, then the rest by wall seconds, longest first, ties in walk order. A
 # line that does not parse and a name matching no section are ignored; a
-# missing file gives walk order, and so does a failed effective record.
+# missing file gives walk order, and so does a failed effective record. A
+# sharded run reuses the record its deal already wrote.
 mapfile -t orch_title_at <<<"$orch_titles"
 orch_titles_kept=""
 for ((orch_i = 0; orch_i < orch_total; orch_i++)); do
   orch_titles_kept+="${orch_title_at[orch_sections[orch_i] - 1]}"$'\n'
 done
 orch_order=()
-if orch_effective_read 2>/dev/null; then
+if [ -f "$orch_root/effective" ] || orch_effective_read 2>/dev/null; then
   mapfile -t orch_order < <(
     { orch_durations_feed; printf '%s' "$orch_titles_kept"; } |
       awk -F'\t' "$DURATIONS_AWK"'

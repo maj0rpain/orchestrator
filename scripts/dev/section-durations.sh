@@ -103,15 +103,29 @@ source "$dir/test_tree.sh"
 # shellcheck source=../test/report.sh
 source "$dir/report.sh"
 
+# replace_whole <src> <dest>: replaces <dest> with a copy of <src>, whole (a
+# copy beside it, renamed over it), with INT and TERM held from here on, so an
+# interrupt leaves <dest> whole, old or new.
+replace_whole() {
+  trap '' INT TERM
+  cp "$1" "$2.$$" && mv "$2.$$" "$2"
+}
+
+# delete_fragments: deletes every durations fragment, never `.gitkeep`.
+delete_fragments() {
+  local f
+  while IFS= read -r f; do rm -f "$f"; done < <(ledger_fragments "$dir")
+}
+
 # fold_run: the --fold mode (see the header); returns the script's status. It
 # measures nothing, so it needs no job pool. Everything is computed in a
 # temporary directory first; then the file is replaced whole (a copy beside it,
 # renamed over it) and the fragments are deleted, with INT and TERM held, so an
 # interrupt before that leaves the file and every fragment as they were.
 fold_run() {
-  local ftmp faults frags=() f
+  local ftmp faults frags=()
   ftmp="$(mktemp -d)" || return 1
-  trap 'rm -rf "$ftmp" "$target.fold.$$"' EXIT
+  trap 'rm -rf "$ftmp" "$target.$$"' EXIT
   trap 'exit 130' INT TERM
   faults="$(ledger_fragment_faults "$dir")" || return 1
   if [ -n "$faults" ]; then
@@ -128,9 +142,8 @@ fold_run() {
     echo "section-durations.sh: nothing to fold, durations file unchanged"
     return 0
   fi
-  trap '' INT TERM
-  cp "$ftmp/effective" "$target.fold.$$" && mv "$target.fold.$$" "$target" || return 1
-  for f in ${frags[@]+"${frags[@]}"}; do rm -f "$f"; done
+  replace_whole "$ftmp/effective" "$target" || return 1
+  delete_fragments
   echo "section-durations.sh: folded ${#frags[@]} fragments into the durations file"
 }
 
@@ -192,7 +205,7 @@ suite_run() {
   return "$st"
 }
 
-# stale_report: prints the durations file's new total and the budget on one
+# stale_report: prints the new effective total and the budget on one
 # line; the budget is named as missing when suite-budget is missing or is not
 # one positive whole number.
 stale_report() {
@@ -238,16 +251,15 @@ frag_build() {
 
 # frag_write: replaces the branch's fragment with $tmp/frag whole (a copy
 # beside it, renamed over it), creating durations.d when it is missing; an
-# empty result removes the fragment. INT and TERM are held meanwhile, so an
-# interrupt leaves the fragment whole, old or new.
+# empty result removes the fragment. INT and TERM are held meanwhile (see
+# replace_whole), so an interrupt leaves the fragment whole, old or new.
 frag_write() {
   trap '' INT TERM
   if [ ! -s "$tmp/frag" ]; then
     rm -f "$frag"
     return 0
   fi
-  mkdir -p "$(dirname "$frag")" &&
-    cp "$tmp/frag" "$frag.$$" && mv "$frag.$$" "$frag"
+  mkdir -p "$(dirname "$frag")" && replace_whole "$tmp/frag" "$frag"
 }
 
 # stale_run: the --stale mode (see the header); returns the script's status.
@@ -271,19 +283,29 @@ stale_run() {
   # what to measure (todo: index, title, kind, fingerprint) and the fresh
   # sections but isolation (fresh).
   ledger_states "$tmp/walk" "$tmp/eff" >"$tmp/states" || return 1
+  # A title on two lines of the branch's own fragment is measured afresh, as a
+  # duplicate in the durations file is; the effective record holds only its
+  # last line, so it is found in the fragment itself.
+  if [ -f "$frag" ]; then
+    awk -F'\t' "$DURATIONS_AWK"'durations_line() && $3 != "shellcheck" { c[$3]++ }
+      END { for (t in c) if (c[t] > 1) print t }' "$frag" >"$tmp/dups" || return 1
+  else
+    : >"$tmp/dups"
+  fi
   awk -F'\t' -v todo="$tmp/todo" -v fresh="$tmp/fresh" "$DURATIONS_AWK"'
     FILENAME == ARGV[1] { if (!($1 in fp)) { fp[$1] = $2; kind[$1] = $3; ttl[$4] = $1; top = $4 + 0 } next }
     FILENAME == ARGV[2] { state[$1] = $2; next }
+    FILENAME == ARGV[3] { dup[$1] = 1; next }
     durations_line() && state[$3] == "fresh" { fcpu[$3] = $2 + 0 }
     END {
       printf "" > todo; printf "" > fresh
       for (k = 1; k <= top; k++) {
         name = ttl[k]
         if (name == "") continue
-        if (state[name] != "fresh") printf "%d\t%s\t%s\t%s\n", k, name, kind[name], fp[name] > todo
+        if (state[name] != "fresh" || name in dup) printf "%d\t%s\t%s\t%s\n", k, name, kind[name], fp[name] > todo
         else if (kind[name] == "section" && k != 1) printf "%d\t%d\t%s\n", k, fcpu[name], name > fresh
       }
-    }' "$tmp/walk" "$tmp/states" "$tmp/eff" || return 1
+    }' "$tmp/walk" "$tmp/states" "$tmp/dups" "$tmp/eff" || return 1
   if [ ! -s "$tmp/todo" ]; then
     # Nothing to measure: only its own fragment's surplus is mended.
     if [ -f "$frag" ]; then
@@ -391,6 +413,5 @@ cat "$tmp/sections" "$tmp/rest" |
   awk -F'\t' '!seen[$3]++' >"$tmp/new" || exit 1
 # Whole or not at all: INT and TERM are held while the file is replaced and the
 # fragments deleted.
-trap '' INT TERM
-cp "$tmp/new" "$target" || exit 1
-while IFS= read -r frag_file; do rm -f "$frag_file"; done < <(ledger_fragments "$dir")
+replace_whole "$tmp/new" "$target" || exit 1
+delete_fragments

@@ -143,7 +143,8 @@ fragments and measures nothing; with nothing to fold it changes nothing and
 exits 0, and a malformed fragment line or a failing walk leaves everything
 unchanged and exits 1.
 
-Both modes time every other suite with `DOCS_LINT_RECORDING=1`, which only
+The full refresh and `--stale` time every other suite with
+`DOCS_LINT_RECORDING=1`, which only
 `section-durations.sh` sets (`all.sh` and `affected.sh` unset it, CI never sets
 it, and `docs_lint.sh --base-rules` ignores it). With it set, the full run
 of `docs_lint.sh` skips the ledger freshness rule and the suite budget total

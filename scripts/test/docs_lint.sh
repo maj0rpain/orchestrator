@@ -31,8 +31,9 @@
 #     fragments in durations.d) has one fresh line per section, per other suite
 #     and for shellcheck; a line of nothing that exists is ignored; a title on
 #     two lines of one file, or a malformed fragment line, is reported naming
-#     that file; the message names section-durations.sh --stale, or the full
-#     refresh for shellcheck
+#     that file; a missing, stale or unrecorded line's message names
+#     section-durations.sh --stale, or the full refresh for shellcheck, and the
+#     other two say what to fix by hand
 #   scan_suite_budget  the suite-budget file is one positive whole number, and
 #     with a base known the effective record's total is not over it and above
 #     the base's total, read from the merge-base tree's effective record
@@ -471,9 +472,12 @@ BUDGET_FILE=scripts/test/suite-budget
 # matches the text; a fresh fragment line makes its section fresh), per title
 # on two lines of one file (the durations file or one fragment, naming it), per
 # malformed fragment line, and one for a missing shellcheck line. Orphaned
-# lines are ignored. Each of these names the
-# command that fixes it: scripts/dev/section-durations.sh --stale, or the full
-# refresh for the missing line of shellcheck, which only a full refresh writes.
+# lines are ignored. A missing or stale line names the command that fixes it:
+# scripts/dev/section-durations.sh --stale, or the full refresh for the missing
+# line of shellcheck, which only a full refresh writes. A duplicated title
+# says to delete all but the last of its lines by hand, and a malformed
+# fragment line says what a durations line is. A fragment's shellcheck lines
+# are ignored, as the effective record ignores them.
 # A failed all.sh suite list or a failed fingerprinting prints one line saying
 # so, and no line is judged. The
 # fingerprints come from test_tree.sh's ledger_fingerprints, a fixed number of
@@ -514,8 +518,10 @@ scan_ledger_fresh() {
   # A title on two lines of one file is duplicated; orphaned lines are ignored.
   for f in "$r/$LEDGER_FILE" $(ledger_fragments "$td"); do
     ledger_states "$fps" "$f" | while IFS=$'\t' read -r t state n; do
-      [ "$state" = duplicated ] &&
-        echo "${f#"$r/"}: title \"$t\" is on $n lines; delete all but the last of them by hand"
+      [ "$state" = duplicated ] || continue
+      # A fragment's shellcheck lines are ignored, not malformed.
+      [ "$t" = shellcheck ] && [ "$f" != "$r/$LEDGER_FILE" ] && continue
+      echo "${f#"$r/"}: title \"$t\" is on $n lines; delete all but the last of them by hand"
     done
   done
   ledger_fragment_faults "$td" | while IFS= read -r line; do
@@ -568,9 +574,9 @@ scan_suite_budget() {
 # changes alone. With a <base>, when the working tree's budget file differs
 # from the merge-base's, it reports every other file changed since the
 # merge-base, committed or not, untracked files included, the durations file
-# excepted. A budget file the merge-base lacks is exempt: that change
-# introduces it. A <base> with no merge-base is reported. Without a <base> it
-# prints nothing.
+# and the fragments excepted. A budget file the merge-base lacks is exempt:
+# that change introduces it. A <base> with no merge-base is reported. Without
+# a <base> it prints nothing.
 scan_suite_budget_alone() {
   local r="$1" base="${2:-}" mb changed path
   [ -n "$base" ] || return 0
@@ -617,7 +623,7 @@ check_real_ledger_fresh() {
   if [ -n "${DOCS_LINT_RECORDING:-}" ]; then
     ok "the durations file's freshness is not judged while it is being recorded"
   else
-    check "the durations file has one fresh line for every section, other suite and shellcheck" \
+    check "the effective durations record has one fresh line per title" \
       "$(scan_ledger_fresh "$PLUGIN_ROOT")"
   fi
 }
@@ -4995,11 +5001,25 @@ spares "a section with a line is not flagged as missing" "$out" '"a one"'
 fixture="$(ledger_fixture)"
 printf '10\t20\tgone\tabc\n' >>"$fixture/scripts/test/section-durations.tsv"
 assert_empty "an orphaned file line is not flagged" "$(scan_ledger_fresh "$fixture")"
+# ledger_fragment <root> <name> <line>...: writes the fragment <name>.tsv of the
+# root's durations.d with the given lines.
+ledger_fragment() {
+  local d="$1/scripts/test/durations.d" name="$2"
+  shift 2
+  mkdir -p "$d" && printf '%s\n' "$@" >"$d/$name.tsv"
+}
+# ledger_fp <root> <title>: the fingerprint the root's durations file holds for
+# the title.
+ledger_fp() { awk -F'\t' -v t="$2" '$3 == t { print $4 }' "$1/scripts/test/section-durations.tsv"; }
 fixture="$(ledger_fixture)"
 fixture_sed "$fixture/scripts/test/orch/harness.sh" 's/^echo 1$/echo changed/'
 out="$(scan_ledger_fresh "$fixture")"
 flags "a stale line is flagged, naming --stale" "$out" "the line of \"h one\" is stale; $ledger_fix"
 spares "a fresh line beside a stale one is not flagged" "$out" '"h two"|"a one"'
+fp_h="$(ledger_fingerprints "$fixture/scripts/test" | awk -F'\t' '$1 == "h one" { print $2 }')"
+ledger_fragment "$fixture" b "5	5	h one	$fp_h"
+assert_empty "a fresh fragment line makes a section fresh beside a stale file line" \
+  "$(scan_ledger_fresh "$fixture")"
 fixture="$(ledger_fixture)"
 fixture_sed "$fixture/scripts/test/orch/harness.sh" 's/^# harness preamble$/# harness preamble, edited/'
 out="$(scan_ledger_fresh "$fixture")"
@@ -5019,30 +5039,14 @@ dup_line="$(grep -F "a one" "$fixture/scripts/test/section-durations.tsv")"
 printf "%s\n" "$dup_line" >>"$fixture/scripts/test/section-durations.tsv"
 flags "a title on two lines of the durations file is flagged, naming the file and the hand deletion" \
   "$(scan_ledger_fresh "$fixture")" "$LEDGER_FILE: title \"a one\" is on 2 lines; delete all but the last of them by hand"
-# ledger_fragment <root> <name> <line>...: writes the fragment <name>.tsv of the
-# root's durations.d with the given lines.
-ledger_fragment() {
-  local d="$1/scripts/test/durations.d" name="$2"
-  shift 2
-  mkdir -p "$d" && printf '%s\n' "$@" >"$d/$name.tsv"
-}
-# ledger_fp <root> <title>: the fingerprint the root's durations file holds for
-# the title.
-ledger_fp() { awk -F'\t' -v t="$2" '$3 == t { print $4 }' "$1/scripts/test/section-durations.tsv"; }
-fixture="$(ledger_fixture)"
-fixture_sed "$fixture/scripts/test/orch/harness.sh" 's/^echo 1$/echo changed/'
-flags "precondition: the stale file line of \"h one\" is flagged without a fragment" \
-  "$(scan_ledger_fresh "$fixture")" "the line of \"h one\" is stale"
-fp_h="$(ledger_fingerprints "$fixture/scripts/test" | awk -F'\t' '$1 == "h one" { print $2 }')"
-ledger_fragment "$fixture" b "5	5	h one	$fp_h"
-assert_empty "a fresh fragment line makes a section fresh beside a stale file line" \
-  "$(scan_ledger_fresh "$fixture")"
 fixture="$(ledger_fixture)"
 ledger_fragment "$fixture" b "5	5	gone	abc"
 assert_empty "an orphaned fragment line is not flagged" "$(scan_ledger_fresh "$fixture")"
 fixture="$(ledger_fixture)"
 ledger_fragment "$fixture" b "5	5	shellcheck" "5	5	a one	$(ledger_fp "$fixture" 'a one')"
 assert_empty "a fragment's shellcheck line is not malformed" "$(scan_ledger_fresh "$fixture")"
+ledger_fragment "$fixture" b "5	5	shellcheck" "6	6	shellcheck"
+assert_empty "two shellcheck lines of a fragment are not a duplicated title" "$(scan_ledger_fresh "$fixture")"
 ledger_fragment "$fixture" b "not a line" "5	5	a one	$(ledger_fp "$fixture" 'a one')"
 out="$(scan_ledger_fresh "$fixture")"
 flags "a malformed fragment line is reported, naming the fragment and the line" \
@@ -5255,7 +5259,7 @@ assert_contains "a stale ledger's freshness is not judged while the ledger is re
 out="$(ORCH_TEST_QUIET='' tally_file=/dev/null PLUGIN_ROOT="$fixture" \
   DOCS_LINT_RECORDING='' check_real_ledger_fresh)"
 assert_contains "and is judged when the ledger is not being recorded" \
-  "$out" "FAIL the durations file has one fresh line"
+  "$out" "FAIL the effective durations record has one fresh line"
 assert_eq "the full run calls check_real_ledger_fresh" \
   "$(grep -c '^check_real_ledger_fresh$' "$PLUGIN_ROOT/scripts/test/docs_lint.sh")" 1
 check_real_ledger_fresh
