@@ -692,6 +692,15 @@ fake_pr_head() {
 # iso_of <epoch>: epoch seconds as a UTC timestamp, GNU or BSD date.
 iso_of() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; }
 
+# pause_near <file> <seconds>: "near" when <file> holds now + <seconds>, +-10s;
+# "unreadable" when it holds no timestamp, else "far: <got> vs <want>".
+pause_near() {
+  local want got iso
+  want="$(( $(date +%s) + $2 ))"; iso="$(cat "$1" 2>/dev/null)"
+  got="$(date -u -d "$iso" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$iso" +%s 2>/dev/null)" || { echo unreadable; return; }
+  if [ "$(( got - want ))" -ge -10 ] && [ "$(( got - want ))" -le 10 ]; then echo near; else echo "far: $got vs $want"; fi
+}
+
 # iso_ago <age-seconds>: the UTC timestamp <age-seconds> before the current
 # time.
 iso_ago() { iso_of "$(( $(date -u +%s) - $1 ))"; }
