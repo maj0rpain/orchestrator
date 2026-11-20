@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.9.15
+
+autopilot-up.sh removes the image a project's successful rebuild replaced, never forced, warning when Docker refuses. It never prunes the shared build cache; the container docs name `docker builder prune` and `docker image prune` as the manual reclaims.
+
 ## 6.9.14
 
 Test-only: the gh fake reads its optional store files without starting a command, `log_count` is the one line counter, and `fake_snapshot` leaves out every read-side file.
