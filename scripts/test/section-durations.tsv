@@ -33,7 +33,7 @@
 0	0	the background child start (#3025)	f220e015537065a2c163be79d07de2b762404f7e
 2	1	the suite start (#3582)	2bbcc72545bb8c86426bb97cbb0200ce5cada1da
 2	2	the counting fixture's stdin counter (#3434)	3f9d3e5f4752d616b853d586ec384640401213ef
-92	99	affected.sh, the ticket verification (#2023)	e922fb8b3739c9daeb048808fa02e08c8f9528b7
+84	96	affected.sh, the ticket verification (#2023)	0c4c9d41fdc6e8fe7b33f0f1b90f8c51505cc9ce
 1	1	the row rule (#3549)	d5025ef93fc07a442c5bbb184cebe1cf567c2cfc
 4	4	the shared test support, function by function (#3550)	a8668a1f16717d12d05ad6ab2787f81d50be6898
 2	2	the gh fake, operation by operation (#3551)	1ce7bff3167463ac98f8d773be5eadb253da52f3
@@ -362,8 +362,8 @@
 22	20	trust module	cce71cee320a9a9df12b5d2fe25e74e2f6089609
 19	12	verification run	05e611f23e4d30bd2a77cb623293302bfbfb3f7a
 117	29	verification run: the run key, stale runs, the ceiling	f4dbfa1467100e29dcf78ec4291673e4502189fb
-1	9	verification stop	5e63df1eafef6b64a121bf7df5ffe6403fd6ba64
-1	7	verification run orphans: a live run is stopped	ad19d65733350bd74b1ed72e8d9000834c4d3e91
+19	10	verification stop	bd547f62c0bba70374f34924be0ef862dba84f9c
+11	8	verification run orphans: a live run is stopped	7023edfdbfa15158807abe68146074d593d3cbd9
 19	6	verification run: block naps start no awk far from the end	06e4afaaaafe936e2802c8e42ea51ff059d6b706
 1	2	verification run in help and the CLI conventions	8afadaac8afea4eb7f4acd4424d3d5eccc14380b
 99	11	wait: a call's block is wall time	db923f27504e50d0a04527b359feb487abb3665d

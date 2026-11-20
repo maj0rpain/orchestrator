@@ -373,7 +373,7 @@ assert_eq "and survives the stop" "$(vs_kept "$vs_side")" "kept"
 # a group that survives KILL cannot be made for real, so the survival paths run
 # with a kill that signals nothing and finds every group there
 vrun_start "$vs_main" 'sleep 303'
-out="$(cd "$vs_main" && ORCH_WAIT_BLOCK=5 ORCH_VERIFICATION_GRACE=0.3 sourced_orch_script "kill() { return 0; }; verification_stop_checkout \"\$1\"" "$vs_main" 2>&1)"; st=$?
+out="$(cd "$vs_main" && ORCH_WAIT_BLOCK=5 ORCH_VERIFICATION_GRACE=0 sourced_orch_script "kill() { return 0; }; verification_stop_checkout \"\$1\"" "$vs_main" 2>&1)"; st=$?
 assert_status "a group surviving the KILL makes the stop exit 1" "$st" 1
 assert_contains "naming the process group" "$out" "process group"
 assert_eq "and its record is kept" "$(vs_kept "$vs_main")" "kept"
@@ -399,7 +399,7 @@ git worktree add -q "$vs_wt2" -b vs-orph2
 vrun_start "$vs_wt2" 'sleep 306'
 vs_pid2="$(cut -d' ' -f1 "$(vs_rec "$vs_wt2")/pid")"
 git worktree remove --force "$vs_wt2"
-out="$(ORCH_WAIT_BLOCK=5 ORCH_VERIFICATION_GRACE=0.3 sourced_orch_script "kill() { return 0; }; verification_clear_orphans \"\$1\"" "$vs_store" 2>&1)"; st=$?
+out="$(ORCH_WAIT_BLOCK=5 ORCH_VERIFICATION_GRACE=0 sourced_orch_script "kill() { return 0; }; verification_clear_orphans \"\$1\"" "$vs_store" 2>&1)"; st=$?
 assert_status "a surviving group does not stop the clearing" "$st" 0
 assert_contains "it warns naming the process group" "$out" "orch: the run in $vs_wt2 (process group $vs_pid2)"
 assert_eq "and the record is dropped anyway" "$(vs_kept "$vs_wt2")" "none"

@@ -129,8 +129,9 @@ checked out in the driver's checkout.
    that **Resumed to resolve a conflict** in `agents/orch-implementer.md`,
    beside this file, gives, its `<parent branch>` filled in.
 
-   It starts the rebase in its ticket worktree itself, resolves, verifies
-   and commits, and returns the four lines of **Report** below.
+   It starts the rebase in its ticket worktree itself, resolves, finishes
+   the rebase, verifies the finished tree, commits any fix on top, and
+   returns the four lines of **Report** below.
 2. **Or start a fresh resolver.** Where the implementer cannot be resumed -
    the host cannot resume a finished subagent, its context is gone, or the
    resume fails - start a fresh `orch-resolver` per **Starting this agent**

@@ -135,8 +135,8 @@ verification_clear_orphans() {
 
 # verification_group_of <dir>: prints the process group the record <dir> names.
 verification_group_of() {
-  local rec
-  rec="$(<"$1/pid")"
+  local rec=""
+  [ ! -f "$1/pid" ] || rec="$(<"$1/pid")"
   printf '%s\n' "${rec%% *}"
 }
 
@@ -166,12 +166,13 @@ verification_store_begin() {
 # and the step goes on to the other runs and returns 1.
 verification_stop_checkout() {
   verification_store_begin
+  orch_load checkout
   local co="${1%/}" store="$VERIFICATION_STORE" r root rc=0
   for r in "$store"/*/; do
     r="${r%/}"
     [ -f "$r/root" ] || continue
     root="$(<"$r/root")"
-    case "$root" in "$co" | "$co/$ORCH_DIR_NAME/worktrees/"*) ;; *) continue ;; esac
+    [ "$root" = "$co" ] || checkout_ticket_path "$root" "$co" || continue
     [ ! -f "$r/status" ] || continue
     if verification_stop_record "$r"; then
       rm -rf "$r"
@@ -328,16 +329,14 @@ verification_start() {
 # saying so (naming the process group when it is still there) - then forgets
 # the run, only once everything was printed.
 verification_deliver() {
-  local d="$1" st ceiling rec group gone=1
+  local d="$1" st ceiling group gone=1
   st="$(<"$d/status")"
   if [ -f "$d/overrun" ]; then
     ceiling="$(<"$d/overrun")"
     # The runner's KILL ends the group an instant after it wrote the status.
     # Waited for before anything is printed: a call whose block is spent exits
     # 75 here, and the next one delivers.
-    rec=""
-    [ ! -f "$d/pid" ] || rec="$(<"$d/pid")"
-    group="${rec%% *}"
+    group="$(verification_group_of "$d")"
     if [ -n "$group" ]; then
       # The grace counts from the runner's KILL (its mark), across calls.
       verification_mark "$d/killed"

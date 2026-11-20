@@ -4939,6 +4939,9 @@ af_reset
 af_git checkout -q -b behind "$af_c0"
 af_put docs/a.md changed
 af_git commit -qam doc
+# The control: with no merge in progress, the selection is today's.
+assert_eq "with no merge in progress a branch behind its base selects its own change" \
+  "$(af_plan origin/rel)" "$af_gate,docs_lint.sh"
 af_git merge -q --no-commit --no-ff origin/rel >/dev/null 2>&1
 af_put scripts/orch/state.sh 'resolved=1'
 af_resolved="$af_gate,state,docs_lint.sh,scripts/orch/state.sh"
@@ -4948,15 +4951,7 @@ af_git merge --abort
 af_git reset -q --hard
 af_git checkout -q -f feat
 af_git branch -q -D behind
-# The control: with no merge in progress, the selection is today's.
-af_git checkout -q -b behind "$af_c0"
-af_put docs/a.md changed
-af_git commit -qam doc
-assert_eq "with no merge in progress a branch behind its base selects its own change" \
-  "$(af_plan origin/rel)" "$af_gate,docs_lint.sh"
 # The ticket branch's second merge-base lookup: the merge brings in its parent.
-af_git checkout -q -f feat
-af_git branch -q -D behind
 af_git branch -q par "$(af_git rev-parse origin/rel)"
 af_git checkout -q -b feat--t1 "$af_c0"
 af_put docs/a.md changed
