@@ -368,7 +368,7 @@
 0	1	verification run in help	28e484325ea5c39e7d957ba95f689dcdbb9ecc1a
 99	11	wait: a call's block is wall time	db923f27504e50d0a04527b359feb487abb3665d
 882	983	hooks_test.sh	8dec8318df78d1487d2d11c16c6ac962831bc14c
-127	151	docs_lint.sh	4c7fa56a0b551dfd7c783ebf6f47a4f838c70a37
+131	157	docs_lint.sh	bccf1920d97388af8097aed6c7bd1cbec97e4af1
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 8	8	autopilot_up_test.sh	25eb01b693309e8b681fe96ca4c386c741b9ecd8
