@@ -1272,21 +1272,21 @@ sh_case "ties go to the earlier section and the lowest group" "isolation,s1,s3,s
   "1	20	shard s1" "1	20	shard s2" "1	10	shard s3" "1	10	shard s4" "1	0	shard s5"
 # The unlisted weight is the median CPU of the listed sections: the middle value
 # on an odd count, the lower middle on an even one. Each case is group 1 of 2
-# over a file with no suite or shellcheck line, so both groups start at 0.
+# over a file whose suite and shellcheck lines, if any, weigh 0, so both groups
+# start at 0.
 # s1 60, s2 20 and s3 10 are listed, s4 and s5 weigh the median 20: s1 to group
 # 1, s2, s4 and s5 to group 2, s3 to group 1 on the 60-60 tie. Weighing them as
 # the heaviest (60) gives group 1 s1 and s5.
 sh_case "an odd count of listed sections: each of two unlisted weighs the middle one" "isolation,s1,s3," \
   "1	60	shard s1" "1	20	shard s2" "1	10	shard s3"
-# s1 40, s2 30 and s3 20 listed (median 30): s1 and s5 in group 1. A line that
-# counted toward the median as a 0 would make it the lower middle of 0, 20, 30
-# and 40, 20, which gives group 1 s1 and s4.
-sh_case "a line for a section that no longer exists is not counted in the median" "isolation,s1,s5," \
-  "1	40	shard s1" "1	30	shard s2" "1	20	shard s3" "1	0	a section that no longer exists"
-sh_case "a line for another suite is not counted in the median" "isolation,s1,s5," \
-  "1	40	shard s1" "1	30	shard s2" "1	20	shard s3" "1	0	hooks_test.sh"
-sh_case "a shellcheck line is not counted in the median" "isolation,s1,s5," \
-  "1	40	shard s1" "1	30	shard s2" "1	20	shard s3" "1	0	shellcheck"
+# s1 40, s2 30 and s3 20 listed, with a 0-CPU line for another suite and one
+# for shellcheck: neither is a section, so the median is 30 and group 1 gets s1
+# and s5. Counting either 0 line, or both, makes the median 20 (both give the
+# middle of 0, 0, 20, 30, 40) and gives group 1 s1 and s4. A line for a section
+# that no longer exists is covered by the default planted file, whose 99-CPU
+# line would make the median 40 if counted.
+sh_case "a line for another suite or for shellcheck is not counted in the median" "isolation,s1,s5," \
+  "1	40	shard s1" "1	30	shard s2" "1	20	shard s3" "1	0	hooks_test.sh" "1	0	shellcheck"
 # s5 is listed at 0 (median 30 of 50, 40, 30, 20, 0): it weighs 0, so it comes
 # last and lands in group 1 on the 70-70 tie, with s1 and s4. Weighed as the
 # unlisted 30 it would give group 1 s1 and s5.
@@ -1298,13 +1298,14 @@ sh_case "a section listed at 0 weighs 0, not the unlisted weight" "isolation,s1,
 sh_case "a section listed at 0 counts as 0 toward the median" "isolation,s1,s5," \
   "1	40	shard s1" "1	30	shard s2" "1	10	shard s3" "1	0	shard s4"
 declare -A sh_saved_printed sh_saved_st sh_saved_seen
-# Why 4 groups: the weights are s1 50, s2 40, s3 30, s5 (unlisted, so the
+# Why 3 groups: the weights are s1 50, s2 40, s3 30, s5 (unlisted, so the
 # median listed) 30 and s4 20 CPU tenths, dealt in that order; group 1 starts
-# at 80, the rest at 0. With 4 groups s1, s2 and s3 fill groups 2-4, s5 goes to
-# group 4 (30, the lowest total) and s4 to group 3 (40, the lowest), leaving
-# 1/4 with isolation alone.
+# at 80, the rest at 0. With 3 groups s1 goes to group 2 (50), s2 to group 3
+# (40), s3 to group 3 (70), s5 to group 2 (80) and s4 to group 3 (90), leaving
+# 1/3 with isolation alone. 2 groups give group 1 s3 and s4 (asserted above),
+# so 3 is the smallest count that leaves group 1 with isolation alone.
 # The 2-group pass runs with no durations file; the others with it.
-for sh_n in 2 1 4; do
+for sh_n in 2 1 3; do
   sh_label="$sh_n groups run every planted section exactly once"
   if [ "$sh_n" -eq 2 ]; then
     rm -f "$sh_t/section-durations.tsv"
@@ -1327,8 +1328,8 @@ for sh_n in 2 1 4; do
 done
 sh_run 2/2
 assert_eq "a second call groups the same" "$sh_printed" "$sh_first_22"
-assert_eq "a group left with isolation alone runs it alone" "${sh_saved_printed[1/4]}" "isolation,"
-assert_eq "and passes" "${sh_saved_st[1/4]}" 0
+assert_eq "a group left with isolation alone runs it alone" "${sh_saved_printed[1/3]}" "isolation,"
+assert_eq "and passes" "${sh_saved_st[1/3]}" 0
 assert_eq "1/1 runs every section" "${sh_saved_printed[1/1]}" "isolation,s1,s2,s3,s4,s5,"
 assert_eq "and a section's nested runner sees no ORCH_TEST_SHARD" "${sh_saved_seen[1/1]}" "unset,"
 sh_run ""

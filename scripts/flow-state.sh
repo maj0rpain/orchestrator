@@ -21,9 +21,9 @@
 #   through unchanged.
 # - flow_state_get_many: 1 for a key outside the table and 2 for a malformed
 #   <var>=<key>, both before any jq, assigning and printing nothing; every
-#   failed read returns 1: an absent, unparseable or non-object file inside its
-#   one jq, a failed temp file, or a short read. On any failure nothing is
-#   assigned.
+#   failed read returns 1: anything but exactly one JSON object inside its one
+#   jq, or a missing or wrong sentinel, a short read or a record after it. On
+#   any failure nothing is assigned.
 # - flow_state_resolve_many_arg: 1 for a key outside the table and 2 for a
 #   malformed <var>=<key>, which is caller input, not a programming error.
 # - flow_state_pairs_json: 2 for a dangling --string or a key with no value,
@@ -146,10 +146,11 @@ EOT
 # /.orchestrator/state.json.
 flow_state_file() { printf '%s/%s/state.json\n' "${1%/}" "$ORCH_DIR_NAME"; }
 
-# flow_state_readable <file>: true when <file> parses as a JSON object.
+# flow_state_readable <file>: true when <file> holds exactly one JSON object,
+# the rule flow_state_get_many's read applies too.
 flow_state_readable() {
   # jq -e also exits 2 or 5 (usage, parse error); a predicate answers 0 or 1.
-  jq -e 'type == "object"' "$1" >/dev/null 2>&1 || return 1
+  jq -se 'length == 1 and (.[0] | type) == "object"' "$1" >/dev/null 2>&1 || return 1
 }
 
 # flow_state_get <file> <key>: prints <key>'s value in <file>, or the table's
@@ -194,18 +195,23 @@ flow_state_resolve_many_arg() {
 # travel NUL-separated and are read back with read -r -d '', byte for byte; a
 # NUL inside a value is dropped by the jq. A key outside the table returns 1
 # and a malformed <var>=<key> (no =, or an empty <var>) returns 2, both before
-# any jq, by flow_state_resolve_many_arg; a failed read - an absent,
-# unparseable or non-object file (null included), a failed temp file, or a
-# short read - returns 1. On any failure nothing is assigned.
+# any jq, by flow_state_resolve_many_arg; a failed read - an absent file, one
+# flow_state_readable refuses (not exactly one JSON object: null, trailing text
+# or a second value included), a missing sentinel, or a short read - returns 1.
+# On any failure nothing is assigned.
 #
-# jq's output goes through a temp file on purpose; do not read it directly.
-# This module is sourced by the hooks and stays bash 3.2-compatible. On bash
-# 3.2 a process substitution's exit status cannot be read (wait on one needs
-# bash 4.4) and a $(...) capture cannot hold the NUL separators, so a direct
-# read could not tell a failed jq from a successful one.
+# The one jq slurps the file and refuses anything but exactly one JSON object
+# (trailing text, null, an empty or truncated file all fail), and writes a
+# closing sentinel record after every value, only on success. The values are
+# read straight from a process substitution, whose exit status bash 3.2 cannot
+# read (wait on one needs bash 4.4), so the sentinel is the only proof the jq
+# finished: a missing or wrong sentinel, a short read or any record after it
+# is a failed read. The loop reads to EOF and never leaves early. This module
+# is sourced by the hooks and stays bash 3.2-compatible: no nameref, mapfile
+# or declare -A.
 flow_state_get_many() {
   local __fsgm_file="$1" __fsgm_arg __fsgm_kd="" __fsgm_a_var __fsgm_a_key __fsgm_a_def \
-    __fsgm_tmp __fsgm_i __fsgm_n=0 __fsgm_rows
+    __fsgm_i __fsgm_n=0 __fsgm_rows __fsgm_rec __fsgm_seen=0 __fsgm_end=""
   local __fsgm_vars=() __fsgm_vals=()
   shift
   __fsgm_rows="$(state_rows)" || return
@@ -216,17 +222,22 @@ flow_state_get_many() {
     __fsgm_n=$((__fsgm_n + 1))
   done
   [ "$__fsgm_n" -gt 0 ] || return 0
-  __fsgm_tmp="$(mktemp)" || return 1
-  jq -j --arg kd "$__fsgm_kd" '. as $o
-    | if ($o | type) != "object" then error("not an object") else
-      ($kd | split("\n")[] | split("|") as $p
+  while IFS= read -r -d '' __fsgm_rec || [ -n "$__fsgm_rec" ]; do
+    if [ "$__fsgm_seen" -lt "$__fsgm_n" ]; then
+      __fsgm_vals[__fsgm_seen]="$__fsgm_rec"
+    elif [ "$__fsgm_seen" -eq "$__fsgm_n" ]; then
+      __fsgm_end="$__fsgm_rec"
+    fi
+    __fsgm_seen=$((__fsgm_seen + 1))
+  done < <(jq -sj --arg kd "$__fsgm_kd" \
+    'if length != 1 or (.[0] | type) != "object" then error("not one object") else
+      .[0] as $o
+      | ($kd | split("\n")[] | split("|") as $p
         | ($o[$p[0]] | if . == null then $p[1] else . end | tostring
-          | split("\u0000") | join("")), "\u0000") end' \
-    "$__fsgm_file" >"$__fsgm_tmp" || { rm -f "$__fsgm_tmp"; return 1; }
-  for ((__fsgm_i = 0; __fsgm_i < __fsgm_n; __fsgm_i++)); do
-    IFS= read -r -d '' "__fsgm_vals[$__fsgm_i]" || { rm -f "$__fsgm_tmp"; return 1; }
-  done <"$__fsgm_tmp"
-  rm -f "$__fsgm_tmp"
+          | split("\u0000") | join("")), "\u0000"),
+        "flow-state-end\u0000" end' \
+    "$__fsgm_file")
+  [ "$__fsgm_seen" -eq $((__fsgm_n + 1)) ] && [ "$__fsgm_end" = flow-state-end ] || return 1
   for ((__fsgm_i = 0; __fsgm_i < __fsgm_n; __fsgm_i++)); do
     printf -v "${__fsgm_vars[$__fsgm_i]}" '%s' "${__fsgm_vals[$__fsgm_i]}"
   done

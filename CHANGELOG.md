@@ -1,5 +1,13 @@
 # Changelog
 
+## 6.9.13
+
+The shard-setting harness section proves the same deal with three fewer runner starts: its partition loop runs 3 groups instead of 4, and its stale-line median case is dropped, being covered by the default planted file, and its hooks_test.sh and shellcheck median cases fold into one.
+
+## 6.9.12
+
+The Flow state module's many-key reader starts only jq: it reads jq's output straight from a process substitution and checks a closing sentinel instead of routing it through a temp file, so per-item reads no longer start `mktemp` and `rm`. `orch.sh status` reads the Flow state once and refuses an unreadable state file with the same message as every other command. The callerless `require_pr`, `require_branch` and `flow_active` helpers and `require_state`'s unused parameter are gone, and stale comments, test variable names and a misplaced test section are corrected.
+
 ## 6.9.11
 
 Test-only: the harness suite builds its three affected.sh --plan fixtures with one shared throwaway-repo helper set.

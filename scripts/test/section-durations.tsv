@@ -1,26 +1,26 @@
-1	2	isolation	5800389f2df28a61e36ffb3310d499ee3bab93d9
-28	20	isolation under a git hook (#1905)	8c51391c31805ffb97e6f6b156845f8e98ab6d00
+1	1	isolation	5800389f2df28a61e36ffb3310d499ee3bab93d9
+25	20	isolation under a git hook (#1905)	8c51391c31805ffb97e6f6b156845f8e98ab6d00
 16	10	the section filter (ORCH_TEST_ONLY, #612)	1483ee8816c7de9f21cc120b6b144dec74745996
 7	6	quiet mode (ORCH_TEST_QUIET, #614)	02ec3c2bcda4c0ca33fbe600523bcd3a25df30d9
-221	39	the parallel runner (ORCH_TEST_JOBS, #780)	197b457bb6791181b7682caa11eb5c99b03442b6
+224	39	the parallel runner (ORCH_TEST_JOBS, #780)	197b457bb6791181b7682caa11eb5c99b03442b6
 14	12	the parallel runner's start order (#2857)	097cec5c5c734769ff53356d4ed842d14709c2c6
-104	50	the shard setting (#2859)	1c99ecfede0f271e24546afe25cf81407594b682
+98	47	the shard setting (#2859)	1f39229e82d713e74acd957291cd89514278a0a9
 9	9	the seeded start (stub cache)	ddd486b42c7cb5c401f6eb8009ffae2013377967
-280	147	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	c1e9c45c3a54cbb91b854dcde553d9c7532bc9d0
+275	142	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	c1e9c45c3a54cbb91b854dcde553d9c7532bc9d0
 3	2	assertions in a subshell (#1904)	92c333c3178aa43510b6c32172ec4032d4d0fce0
 0	1	the standalone suites' tally (#1904)	584252a550370de31b111d3e974f3f34bd6bdab6
 11	9	the section files (#932)	bb763901619c0f08503ac264a7239909e08a3766
-346	23	the suite's temp root (#807)	66478c595008cff505d1d0b983e532e09a2dfba8
+345	24	the suite's temp root (#807)	66478c595008cff505d1d0b983e532e09a2dfba8
 0	1	the real-gh guard (#779)	d13d7c91d954770a0e31bba97b1ae606bf5723da
 34	18	all.sh, the single entry point (#615)	38fcb2a43f8ae70131783ab98fe9a3b231ef0e2c
 0	1	all.sh's suite list holds every runner (#1941)	fb0e3a9bfce4e83ffdc0f77ad707ed9bf13a0b64
-485	64	the job pool (#2022)	391481aab8d6a79baedab6fa322bf6c35b7fb948
+482	65	the job pool (#2022)	391481aab8d6a79baedab6fa322bf6c35b7fb948
 0	1	the slot fd contract (#2300)	84b6a81051d8f93442fb7a00313b1d5a171fc9e3
 56	13	the test runners' CPU load (#1586)	b7e78d6efd54981c0bda67ebe89302fdbdddab30
 0	1	shell code (#1411)	70063321a2bbee5234405aa9a96efb83a10396b2
-59	59	test-helper placement (#1006)	77493a15f97138c00463b096623999bdf2bc2bcf
-32	33	helper body copies (#3170)	c096f94b39e65cce459dc555ff865cec78a6f6cc
-33	34	gh op placement (#1037)	dc5b9624a8f03ae77a83d088deeec432e04415e1
+58	59	test-helper placement (#1006)	77493a15f97138c00463b096623999bdf2bc2bcf
+34	35	helper body copies (#3170)	c096f94b39e65cce459dc555ff865cec78a6f6cc
+31	32	gh op placement (#1037)	dc5b9624a8f03ae77a83d088deeec432e04415e1
 5	5	marked comment prelude placement (#1853)	8caac95084af07f3655983ef528c45d14740dc66
 14	15	comment reader placement (#3085)	3433bd3b6e718602387165751e6fef834e4d5695
 13	14	orch_load before cross-module reads (#2868)	0ce2c85c1a0e1544dac8e8ff83b0d0d878ee711d
@@ -32,9 +32,9 @@
 2	3	runner git isolation (#1905)	8ac400c6ee2be04199909f5474c5ee93d2e9d7da
 0	1	the background child start (#3025)	5c62b66f6ee5689e015b57ffe5e9cffd84b52b5a
 2	1	the suite start (#3582)	b719afdceeb4a008597a66f50ddbf3d8e9d06bf3
-2	3	the counting fixture's stdin counter (#3434)	dd610f9cfaf4afa92040052b2e9c078fd512749a
-52	45	affected.sh, the ticket verification (#2023)	36ced0a74fd65a36918bbbfcf49dd69a3bfcf926
-1	2	the row rule (#3549)	17039bd8a9f183d0850ea8d357412134faef31b3
+2	3	the counting fixture's stdin counter (#3434)	1e2666207b4b796653708ae88a2950a6f5af03cf
+53	46	affected.sh, the ticket verification (#2023)	99e5ce120867114e706b7fccbb0376b888e2d3d6
+2	3	the row rule (#3549)	17039bd8a9f183d0850ea8d357412134faef31b3
 3	4	the shared test support, function by function (#3550)	9ed5acacf23eda69ae791ba3d1584632c54d35b7
 2	3	the gh fake, operation by operation (#3551)	58a3f2e5b596acb089d1271fcf728da36a5ecf62
 64	70	agent	0d79b59e4f3295e93a9ede1bda22fbbc139f7e19
@@ -128,8 +128,8 @@
 5	6	doctor.sh is a one-way dependency (#281)	b86ca6ac46faa586b4d718a1aa26e9018e2539ea
 151	166	doctor	85d21e76a7b11fcc51673870bbc6d61b0ed25449
 36	40	doctor: host (#128)	0ff10dbdae9d20ee078396950c793cb2ec3a2d69
-97	105	doctor --flow	ec6c0771cdbf7af4d034b080907fded56e7409f3
-41	44	doctor --env: finished side checkouts (#727)	8d56eb5df3a1cea24b7c1e0173d431eb1a742f7b
+94	102	doctor --flow	8d28021dd7fd5c64f62d12573dc1792e590cfa6d
+40	44	doctor --env: finished side checkouts (#727)	8d56eb5df3a1cea24b7c1e0173d431eb1a742f7b
 12	14	doctor at the review phase	f758faa73c220475b21e8e6f7ce147e4217392d6
 8	9	doctor: upstream beside an ambiguous origin/<branch> (#1331)	330a42c2865d5a02fae709612f503ac7b23ea5da
 50	43	doctor: review terminal check	88212d953c41af51b6bd5eeac27da3ee9a58006d
@@ -177,6 +177,7 @@
 8	9	gh rate limits: the GitHub pause and the hit file (#2577)	fcb666e7303479e77d20fa86573702cc89fbdd1c
 0	1	slug	0e5d14cb85802ac178af168a4ee7e009fa0b927b
 9	11	archive	ab01c77d6d8c6c3784c7e3244adedb382528bdd9
+3	4	status	4dcdfbf9c3c90c6f28b94996bc2aeb4bef091a16
 0	1	mp-skill	42a828d6f818ccb7afe36031ee93138e2a7dfc35
 1	2	bash version guard	86cdad11a00c6e0ab6653370de5bfe34334218ba
 0	1	glossary terms	791773bc1306a4b30242cbf20709956dbdcb5101
@@ -232,9 +233,9 @@
 0	1	phase advance help names handoffs by role (#1066)	fb4e9c6b059ec9f7d1aed9b47f5b974a48096e04
 31	35	phase advance in an autopilot flow (#1457)	3f11f48e53c11f24a0c5683139056f0b493b1fe0
 7	8	phase advance with a failed phase write (#1931)	c82e166171de5000ca89ef4f8614cc5c24820382
-8	9	phase advance and boundary read the flow's state once (#3063)	0d138a2b1374e352088aabaffc5eb527472c8124
-61	64	pr open	f8e7d85f3b7aac428feb90a6b465eb53b8d509d2
-21	23	pr publish	902d8d87fdb4ea7e9ea7e6451bc95df1467b527a
+8	9	phase advance and boundary read the flow's state once (#3063)	77bfab77e7199983dcb02b7ba2f7e0f59aa1636e
+60	63	pr open	3d61a1ed5ffcfbf019c9e155be8f6555a491cf74
+20	23	pr publish	902d8d87fdb4ea7e9ea7e6451bc95df1467b527a
 9	10	pr draft (#967)	2fcf41b7bf15a3cb9053a6513a3f264017c4cd09
 17	19	pr ready (#967)	c09179592ea47f3380ff5e59efd231c6abcdb0d8
 0	1	pr: unknown op	23a8d9f3afcf9188f83053f77307c3bb57660727
@@ -260,29 +261,30 @@
 9	10	repo show	03b579d082d6e4e5353a860b91cb90f1006013d0
 7	8	default-branch	0177d6e5817d4d0befacac87fc2b2a0f621ad11b
 9	10	review-pass begin (#342)	c9a9274e4ded397a8c551e3b82717cd167110d2b
-51	63	review-pass known-items	1fef82c7211e3ec0461af015f37fbe44425ea8b8
-15	16	review ready's pointer to /orchestrator:finish (#727)	67b87c1a3e5d6a1be771ad269ac5911449b717af
-13	14	review begin	47fcbc727fc01c1d430ee0277d2ff47fa0e78bbb
-4	5	review path	b592ca2006a75b140123da9e0f8ddb30729a8a0a
-5	6	the multi-loop machinery is gone	6e8329be15e5f8d38ea6e8f08e4474cef89b06d8
-45	49	review file	7b1d4ce05800b8733c8c9e1ac7f5e5e08e1f8203
-14	15	review ready	72485745ada64338e42a649ec5e7c7166a63bfbb
-143	81	review ci	e0eabf65a00a7c84d616625f329887b7c1c150a2
-14	13	the grace counts from the push (issue #475)	eed4ba4e16610b43781cdbd91b6acbb614cf36b7
-15	16	review ci --no-wait	0bc15a61db0215884737caff9f6c6d30fce5b06a
-53	46	the grace is skipped on no evidence of CI (issue #476)	29dfbba237b9733786033a072f8ad7898a77481c
-9	10	review rerun	9b49427fc69cbaed3110c1d17f70a17c8eb1996e
-5	6	review ci-log	1a084582882afcd2fa9b50ceb555009a027aed78
-23	25	review terminal	fe93b1fe6ad70a880cc2c076ff418e2c5640e553
-31	33	review resume	f8ace5091e41995ff91d55dbf66935d984cb3354
-5	6	review retire	26b64e236dcc7d43f25a71127add340bd99df4b7
-11	12	review known-items	d91a134cfdf0aedec86c357449640db764801ab7
-10	11	review ready in an autopilot flow (#1457)	0daca9a84f2e287952a590d542b4bfbcec453098
-11	12	review known-items in an autopilot flow (#1457)	bce3da223e398f11580dda310f270c3275a1daca
-12	15	review standards (#1532)	bf761e5fbbec85dff1751ef9676923badfe24d90
-9	10	review ready with a failed phase write (#1931)	1fd5359c063a3ebff8961a61aa54cf13c17e846a
-10	10	review reads its Flow state once	22a2df5a39c6ed552d4d85ad20497064b00f0597
-10	7	review ci <pr>	93c09969f98de8377631b62c8e1cec9ca3d81350
+52	64	review-pass known-items	1fef82c7211e3ec0461af015f37fbe44425ea8b8
+20	17	review ready's pointer to /orchestrator:finish (#727)	e8d2ed095a35df98ab05ed3f22261da9f491025c
+17	15	review begin	c4a68a37d613f9f5992ecf1b159a2ce1f9ba6bca
+4	5	review path	c78a5b250d2bed63c97a669e2cbac1fe74e42940
+6	5	the multi-loop machinery is gone	56222b7e078261fd8d6c1ca2c7e63d3117ecc435
+59	48	review file	1709efef973387fdb6f67c7ed37d9262de56c3e5
+18	16	review ready	7f56a2d5a8fa9d475c2f6a7cdaa4cd8b0cf7a7d9
+168	69	review ci	c5b16e5abda05f2554ab2e1bf0261e29ba453297
+19	14	the grace counts from the push (issue #475)	83357513a7a03b0a0d3fda1e7854f5673a097608
+23	17	review ci --no-wait	e235335de49ce1f76db6573c702c3277c14cf817
+65	43	the grace is skipped on no evidence of CI (issue #476)	13cb1ba5f6dfcd8ac4ba5933a14b020bb5a61031
+12	9	review rerun	125c5474891fa92f544fa60f5cb34af9c2975eb0
+6	5	review ci-log	37606d939180e23d494938b9fae5102bac479d37
+32	26	review terminal	d94be37e86c973cc2de12eef65acf7e71440d853
+44	37	review resume	75d11794dcb0d28edb3db1c3cf140f8efbd99625
+5	5	review retire	990ced2eda246eff493769e5debf8f5279a1e8a9
+15	14	review known-items	bdb25be812bff7d8bae1260508495ad5ba8d5ef1
+14	12	review ready in an autopilot flow (#1457)	cc1e7b3dac576a83544970705048308fa5b533c3
+15	15	review known-items in an autopilot flow (#1457)	1863aaadacbd252693177211ee326374b4967cd3
+17	16	review standards (#1532)	1815ab348b75d5b5acc0ed9523215d753520ea43
+12	10	review ready with a failed phase write (#1931)	ed1ef3a1e5d648b72a5b543383eec3fe6f47142d
+13	11	review reads its Flow state once	611d87b106d7671b77c264aac6efe4914431ca16
+5	6	review_terminal_record fallback reads once	87d1a71c7589a8e2c101267be42920f11638f88a
+13	6	review ci <pr>	839ad07c48adf7f820c0db0cebb5d3959fcbefd3
 2	3	route show	e41cb9679b1f09b9a73382b655216a8aff604ccd
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
 38	40	side-checkout (#722)	753522fea8c0be1dec4dc2f8633b7a5d78439049
@@ -331,12 +333,11 @@
 16	17	the state writer accepts exactly the table's phases	8483d2441e21e1e5f965968522b0c3e00737359d
 7	8	state.json schema	425162b3d7cb59537674814f30ff0da8c11d57c4
 4	5	state set on a corrupt state.json	0813b93dd6fb8875d3936903ca0134a8792b0b9e
-27	29	the Flow state module, sourced alone	d5092a6f188e3ca5aef3a75f6ab6e4e6a960bc01
-3	4	commands on a truncated state.json (#1929)	5e88163687d9726fba605c88b9bc3e30e8f05b8d
-6	7	the shared and own-checkout readers on a truncated state.json	30feb996d686165c99297576f3823d8fc5286cb6
+36	33	the Flow state module, sourced alone	957f5f219317044f8b46f53fbbb6f91e674e48be
+4	4	commands on a truncated state.json (#1929)	13c01774543bda78ec2ac6965ee2467a5c58787b
+7	7	the shared and own-checkout readers on a truncated state.json	84f251301621e7e0eb35e16ed869c67daa50b697
 7	8	state set with a failed write (#1931)	277ecff0e3af2ccabe12e9fd2aebcc95a83b9bc3
-17	19	the entry read and the required-field helpers	421a88c5d4ef5960e3bcb0921ecf3a81e02d5083
-5	6	review_terminal_record fallback reads once	7f3fae7b01b9f68087b38c343c292315a4f86624
+19	21	the entry read and the required-field helpers	c5ef422d99a8f23876bf06ac8983f5bca2b684c6
 46	49	ticket-worktree (#619)	c52aa57c33965d3db61a8322267ddf19f3b096a0
 1	1	a ticket branch has no upstream (#1152)	bbc5298d4013eb4f017ecb7f6c59509725053f88
 2	3	the merged check beside a same-named tag (#2337)	b3482156347488560231482575e046eb972a8f39

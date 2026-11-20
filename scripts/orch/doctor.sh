@@ -88,7 +88,7 @@ D_FLOW_PR_STATE=""      # the flow PR's state, empty when that one read failed
 D_FLOW_PR_DRAFT=""      # the flow PR's draft flag, as that one read left it
 D_FLOW_PR_ERR=""        # gh's error text when that read failed
 D_JQ=""            # "ok", or empty when jq is missing
-D_STATE=""         # "ok" when state.json is a JSON object, or empty
+D_STATE=""         # "ok" when state.json is exactly one JSON object, or empty
 D_FLOW_PHASE=""    # the flow's phase, as d_probe's one state read left it
 D_FLOW_ISSUE=""    # the flow's issue, likewise
 D_FLOW_BRANCH=""   # the flow's branch, likewise
@@ -184,13 +184,13 @@ d_probe_gh() {
 d_probe() {
   local scope="$1" view err budget_raw
   if command -v jq >/dev/null 2>&1; then D_JQ=ok; fi
-  # A state file that is not a JSON object - unparseable, or valid JSON of
-  # another type - invalidates every flow check at once. Judged by the Flow
+  # A state file holding anything but exactly one JSON object invalidates
+  # every flow check at once. Judged by the Flow
   # state module's own predicate, so doctor and the hooks agree on it.
   # Settled here so that d_run_flow can report it once, ahead of the list, and
   # the checks that would each have run jq at the same broken file never run.
   # The same one read takes the values the flow checks use, so the file is
-  # parsed once and a non-object earns no D_STATE.
+  # parsed once and a file that is not exactly one JSON object earns no D_STATE.
   if [ "$scope" != env ] && [ "$D_JQ" = ok ] && flow_state_get_many "$STATE" \
     D_FLOW_PHASE=phase D_FLOW_ISSUE=issue D_FLOW_BRANCH=branch D_FLOW_PR=pr \
     D_FLOW_ITERATION=iteration budget_raw=budget 2>/dev/null; then
@@ -1275,7 +1275,7 @@ d_run_flow() {
   fi
   # One problem earns one FAIL. Every check reads this file, so there is nothing
   # left to say about it and nothing that could be said honestly.
-  d_fail "$ORCH_DIR_NAME/state.json is not a JSON object."
+  d_fail "$ORCH_DIR_NAME/state.json is not exactly one JSON object."
   d_remedy "$(flow_cmd abort)"
 }
 
