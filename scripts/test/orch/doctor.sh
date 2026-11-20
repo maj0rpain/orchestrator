@@ -1207,7 +1207,7 @@ printf '%s' '{not json' >.orchestrator/state.json
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when state.json does not parse" "$st" 1
 assert_contains "names the file that will not parse" "$out" \
-  "FAIL  .orchestrator/state.json is not a JSON object."
+  "FAIL  .orchestrator/state.json is not exactly one JSON object."
 assert_contains "with the abort remedy under it" \
   "$(printf '%s\n' "$out" | grep -A1 '^FAIL  .orchestrator/state.json' | tail -n 1)" "abort"
 assert_eq "reports it once rather than once per check" \
@@ -1235,7 +1235,7 @@ out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when state.json is valid JSON but not an object" "$st" 1
 assert_eq "with the one FAIL and its abort remedy, and nothing else from the flow checks" \
   "$(printf '%s\n' "$out" | sed -n '/^flow state/,$p' | grep -v -e '^$' -e ' warn, ' | sed 's/^      .*abort.*/REMEDY/')" \
-  "$(printf '%s\n' 'flow state' 'FAIL  .orchestrator/state.json is not a JSON object.' REMEDY)"
+  "$(printf '%s\n' 'flow state' 'FAIL  .orchestrator/state.json is not exactly one JSON object.' REMEDY)"
 cp "$statebak" .orchestrator/state.json
 
 state_fixture phase nonsense

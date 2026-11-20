@@ -611,8 +611,9 @@ out="$(sourced_orch state_get_in "$rs_gi_dir/bytes.json" slug | od -An -c | tr -
 assert_eq "state_get_in reads tab, newline and backslash byte for byte" "$out" " a \\t b \\n c \\ d \\n"
 printf 'null' >"$rs_gi_dir/null.json"
 printf '{"slug":"s"} trailing' >"$rs_gi_dir/trailing.json"
+printf '{"a":1}{"b":2}' >"$rs_gi_dir/two.json"
 : >"$rs_gi_dir/empty.json"
-for f in null trailing empty; do
+for f in null trailing empty two; do
   out="$(sourced_orch state_get_in "$rs_gi_dir/$f.json" slug 2>&1)"; st=$?
   assert_status "state_get_in on a $f file returns 2" "$st" 2
   assert_eq "state_get_in on a $f file prints nothing" "$out" ""

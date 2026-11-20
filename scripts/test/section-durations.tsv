@@ -128,7 +128,7 @@
 5	6	doctor.sh is a one-way dependency (#281)	b86ca6ac46faa586b4d718a1aa26e9018e2539ea
 147	162	doctor	85d21e76a7b11fcc51673870bbc6d61b0ed25449
 36	40	doctor: host (#128)	0ff10dbdae9d20ee078396950c793cb2ec3a2d69
-97	105	doctor --flow	ec6c0771cdbf7af4d034b080907fded56e7409f3
+94	102	doctor --flow	8d28021dd7fd5c64f62d12573dc1792e590cfa6d
 40	44	doctor --env: finished side checkouts (#727)	8d56eb5df3a1cea24b7c1e0173d431eb1a742f7b
 12	14	doctor at the review phase	f758faa73c220475b21e8e6f7ce147e4217392d6
 8	9	doctor: upstream beside an ambiguous origin/<branch> (#1331)	330a42c2865d5a02fae709612f503ac7b23ea5da
@@ -337,7 +337,7 @@
 4	4	commands on a truncated state.json (#1929)	13c01774543bda78ec2ac6965ee2467a5c58787b
 7	7	the shared and own-checkout readers on a truncated state.json	84f251301621e7e0eb35e16ed869c67daa50b697
 7	8	state set with a failed write (#1931)	277ecff0e3af2ccabe12e9fd2aebcc95a83b9bc3
-18	19	the entry read and the required-field helpers	6fc1e14a67efbd798111c4a633e0243a1ea23d2c
+19	21	the entry read and the required-field helpers	c5ef422d99a8f23876bf06ac8983f5bca2b684c6
 46	49	ticket-worktree (#619)	c52aa57c33965d3db61a8322267ddf19f3b096a0
 1	1	a ticket branch has no upstream (#1152)	bbc5298d4013eb4f017ecb7f6c59509725053f88
 2	3	the merged check beside a same-named tag (#2337)	b3482156347488560231482575e046eb972a8f39

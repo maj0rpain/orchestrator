@@ -195,8 +195,9 @@ flow_state_resolve_many_arg() {
 # travel NUL-separated and are read back with read -r -d '', byte for byte; a
 # NUL inside a value is dropped by the jq. A key outside the table returns 1
 # and a malformed <var>=<key> (no =, or an empty <var>) returns 2, both before
-# any jq, by flow_state_resolve_many_arg; a failed read - an absent,
-# unparseable or non-object file (null included), or a short read - returns 1.
+# any jq, by flow_state_resolve_many_arg; a failed read - an absent file, one
+# flow_state_readable refuses (not exactly one JSON object: null, trailing text
+# or a second value included), a missing sentinel, or a short read - returns 1.
 # On any failure nothing is assigned.
 #
 # The one jq slurps the file and refuses anything but exactly one JSON object

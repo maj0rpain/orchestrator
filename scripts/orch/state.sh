@@ -175,7 +175,7 @@ require_state_exists() {
 }
 
 # require_state_readable [die2]: dies, through the dier given, when the state
-# file exists but does not parse as a JSON object. A missing file passes: the
+# file exists but is not exactly one JSON object. A missing file passes: the
 # caller settles whether a flow must exist.
 # shellcheck disable=SC2120 # no caller passes a dier any more; die2 stays for one that needs it
 require_state_readable() {
@@ -184,9 +184,9 @@ require_state_readable() {
 
 # require_state_read [die|die2] <var>=<key>...: a command's entry read. Dies
 # "no active flow" on a missing state file and with STATE_UNREADABLE_MSG on one
-# that is not a JSON object, through the dier given (die, or die2 for a command
-# that reserves exit 1 for a meaningful "no"); then assigns each <key>'s value,
-# with its table default, to the caller's <var>, all in one jq
+# that is not exactly one JSON object, through the dier given (die, or die2
+# for a command that reserves exit 1 for a meaningful "no"); then assigns each
+# <key>'s value, with its table default, to the caller's <var>, all in one jq
 # (flow_state_get_many). Call it as a bare statement: it declares no unprefixed
 # local, so a caller may name an out-variable anything but a __rsr_ or
 # __fsgm_ name. A key outside the table dies "unknown state key", and a
