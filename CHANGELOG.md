@@ -1,5 +1,13 @@
 # Changelog
 
+## 6.9.17
+
+The Liveness start-time reader no longer starts `ps` for a gone pid on a /proc host, and no longer starts `sed` to tidy the `ps` result.
+
+Move the `orch.sh status` default-budget test from the state section to the global section file's `status` section, so no status case stays in the state section. Test placement only; no behaviour change.
+
+The glossary's Stop report, Driver loop and Driver entries and orch-flow's implement phase now agree with the driver loop doc: a stop report is not saved and its ticket is neither merged nor closed, the loop stops refilling, processes the tickets still in flight, then stops, naming every missing command.
+
 ## 6.9.16
 
 Test-only: the affected-plan tests write the harness file's non-gate sections once, in `TR_HARNESS`.
