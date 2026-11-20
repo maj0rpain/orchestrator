@@ -342,8 +342,7 @@ fake_online
 # warning and its base-branch line fall back locally (origin/HEAD, else main)
 # without a second ask. The adapter's read is counted at its stand-in.
 doc_reads="$(mktemp)"
-doc_counted_defs="$(counting_defs adapter_repo_default_branch branch)"
-doc_counted() { counted_adapter_run "$doc_reads" "$doc_counted_defs" "$ORCH" doctor --env 2>&1; }
+doc_counted() { default_reads_run "$doc_reads" "$ORCH" doctor --env 2>&1; }
 doc_read_count() { log_count "$doc_reads"; }
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/develop
 fake_offline
@@ -1558,12 +1557,11 @@ assert_loads_once "doctor --flow with side checkouts" bash -c 'cd "$1" && "$2" d
 # The finished test reads the default branch per side checkout, yet doctor asks
 # GitHub for it only in its probe - whether that read answered or failed.
 sc_reads="$(mktemp)"
-sc_counted_defs="$(counting_defs adapter_repo_default_branch branch)"
-out="$(counted_adapter_run "$sc_reads" "$sc_counted_defs" "$ORCH" doctor --env 2>&1)"
+out="$(default_reads_run "$sc_reads" "$ORCH" doctor --env 2>&1)"
 assert_eq "with side checkouts, doctor's only default-branch read is its probe's" "$(log_count "$sc_reads")" "1"
 assert_contains "and the walk still warns on the finished one" "$out" "warn  side checkout dfin is finished"
 fake_fail adapter_repo_default_branch 'HTTP 502: Bad Gateway'
-out="$(counted_adapter_run "$sc_reads" "$sc_counted_defs" "$ORCH" doctor --env 2>&1)"
+out="$(default_reads_run "$sc_reads" "$ORCH" doctor --env 2>&1)"
 assert_eq "with the probe's read failed, the walk asks nothing more" "$(log_count "$sc_reads")" "1"
 fake_unfail
 out="$(PATH="$(worktree_list_fails_bin):$PATH" "$ORCH" doctor --env 2>&1)"; st=$?

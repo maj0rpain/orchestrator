@@ -262,21 +262,26 @@ out="$("$ORCH" review-pass known-items 21 "$kp/fresh.md" --deviations "$kp/missi
 assert_eq "and writing no file" "$(on_disk "$kp/fresh.md")" "absent"
 
 fake_pr 57 open quick/21-foo main
-for op in adapter_prs_open adapter_pr_body adapter_pr_comments adapter_issue_comments; do
-  if [ "$op" = adapter_issue_comments ]; then fake_fail "$op" "$GH_502"; else fake_fail "$op"; fi
+for op in adapter_prs_open adapter_pr_body adapter_pr_comments; do
+  fake_fail "$op"
   out="$("$ORCH" review-pass known-items 21 "$kp/known.md" 2>&1)"; st=$?
   assert_status "refuses when $op cannot be read" "$st" 1
-  if [ "$op" = adapter_issue_comments ]; then
-    assert_eq "naming the issue's comments and gh's reason for $op" "$out" \
-      "orch: gh could not read the comments of issue #21: HTTP 502: Bad Gateway"
-  else
-    assert_contains "with an orch: message for $op" "$out" "orch: gh could not"
-  fi
+  assert_contains "with an orch: message for $op" "$out" "orch: gh could not"
   assert_eq "leaving the existing file untouched for $op" "$(cat "$kp/known.md")" "kept"
   out="$("$ORCH" review-pass known-items 21 "$kp/fresh.md" 2>&1)"
   assert_eq "and writing no file for $op" "$(on_disk "$kp/fresh.md")" "absent"
   fake_unfail
 done
+
+fake_fail adapter_issue_comments "$GH_502"
+out="$("$ORCH" review-pass known-items 21 "$kp/known.md" 2>&1)"; st=$?
+assert_status "refuses when adapter_issue_comments cannot be read" "$st" 1
+assert_eq "naming the issue's comments and gh's reason" "$out" \
+  "orch: gh could not read the comments of issue #21: HTTP 502: Bad Gateway"
+assert_eq "leaving the existing file untouched for the issue comments" "$(cat "$kp/known.md")" "kept"
+out="$("$ORCH" review-pass known-items 21 "$kp/fresh.md" 2>&1)"
+assert_eq "and writing no file for the issue comments" "$(on_disk "$kp/fresh.md")" "absent"
+fake_unfail
 
 out="$(adapter_stood_in 'adapter_issue_comments() { printf "not json\n"; }' "$ORCH" review-pass known-items 21 "$kp/known.md" 2>&1)"; st=$?
 assert_status "an issue-comments answer that is not a comment list exits 1" "$st" 1
