@@ -85,14 +85,12 @@ fi
 rm -f "$rundir/9.pid"
 
 # on a /proc host the stat entry alone decides: no ps starts for a gone pid
-fp="$(mktemp -d)"; pslog="$(mktemp)"
-ORCH_PROC_DIR="$fp" PSLOG="$pslog" sourced_orch_script 'mkdir -p "$ORCH_PROC_DIR/$$"; ps() { echo x >>"$PSLOG"; return 1; }; export -f ps; liveness_record_alive "99999999 x"' >/dev/null; st=$?
-assert_status "with a /proc, a record naming a gone pid is gone" "$st" 1
-assert_eq "and ps starts 0 times" "$(wc -l <"$pslog" | tr -d ' ')" "0"
-ORCH_PROC_DIR="$fp" PSLOG="$pslog" sourced_orch_script 'mkdir -p "$ORCH_PROC_DIR/$$" "$ORCH_PROC_DIR/99999999"; echo "99999999 (c) S 0 0" >"$ORCH_PROC_DIR/99999999/stat"; ps() { echo x >>"$PSLOG"; echo Mon; }; export -f ps; liveness_record_alive "99999999 Mon"' >/dev/null; st=$?
-assert_status "with a /proc, a stat too short for field 22 is gone" "$st" 1
-assert_eq "and ps starts 0 times for it" "$(wc -l <"$pslog" | tr -d ' ')" "0"
-rm -rf "$fp" "$pslog"
+fp="$(mktemp -d)"; psdir="$(mktemp -d)"
+out="$(ORCH_PROC_DIR="$fp" PSDIR="$psdir" sourced_orch_script 'mkdir -p "$ORCH_PROC_DIR/$$"; ps() { echo x >>"$PSDIR/ps.log"; echo Mon; }; export -f ps; : >"$PSDIR/ps.log"; liveness_record_alive "99999999 x" && s=0 || s=$?; echo "gone $s"; mkdir -p "$ORCH_PROC_DIR/99999999"; echo "99999999 (c) S 0 0" >"$ORCH_PROC_DIR/99999999/stat"; liveness_record_alive "99999999 Mon" && s=0 || s=$?; echo "short $s"')"
+assert_eq "with a /proc, a record naming a gone pid is gone" "$(grep '^gone' <<<"$out")" "gone 1"
+assert_eq "with a /proc, a stat too short for field 22 is gone" "$(grep '^short' <<<"$out")" "short 1"
+assert_eq "and ps starts 0 times for either" "$(counting_starts "$psdir" ps)" "0"
+rm -rf "$fp" "$psdir"
 
 # with no /proc the ps start time is one token, made without sed
 fp="$(mktemp -d)"; lc_sed="$(counting_bin sed)"

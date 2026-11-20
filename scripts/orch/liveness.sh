@@ -17,7 +17,7 @@
 # liveness_proc_start <pid>: the process's start time as one whitespace-free
 # token. Fails when unreadable.
 liveness_proc_start() {
-  local pid="$1" root="${ORCH_PROC_DIR:-/proc}" stat rest t
+  local pid="$1" root="${ORCH_PROC_DIR:-/proc}" stat rest t IFS
   local -a words
   [[ "$pid" =~ ^[0-9]+$ ]] || return 1
   # a /proc host has the reading shell's own entry; there the stat entry
@@ -35,7 +35,8 @@ liveness_proc_start() {
   fi
   t="$(ps -o lstart= -p "$pid" 2>/dev/null)" || return 1
   read -ra words <<<"${t//[[:space:]]/ }"
-  t="$(IFS=_; printf '%s' "${words[*]}")"
+  IFS=_
+  t="${words[*]}"
   [ -n "$t" ] || return 1
   printf '%s\n' "$t"
 }
