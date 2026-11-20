@@ -3014,7 +3014,7 @@ for fd_file in all.sh affected.sh orch_test.sh ../dev/section-durations.sh; do
   # shared shellcheck_start.
   case "$fd_file" in all.sh | ../dev/section-durations.sh) fd_start=test_tree.sh ;; esac
   assert_eq "$fd_file starts its jobs through test_jobs_job" \
-    "$(grep -c 'test_jobs_job ' "$fd_tests/$fd_start" | awk '{print ($1 > 0)}')" "1"
+    "$(grep -cE 'test_jobs_(job|suite_start) ' "$fd_tests/$fd_start" | awk '{print ($1 > 0)}')" "1"
   assert_eq "$fd_file never writes REPORT_FAILED" \
     "$(grep -c 'REPORT_FAILED' "$fd_tests/$fd_file")" "0"
 done
@@ -4469,13 +4469,13 @@ if command -v flock >/dev/null 2>&1; then
     export TEST_JOBS_SLOTS=1; test_jobs_slot_take
     test_jobs_suite_start true
     if [ -n "$TEST_JOBS_HOLDER_PID" ] && [ "$TEST_JOBS_HOLDER_PID" != "$TEST_JOBS_SUITE_PID" ]; then echo pooled-ok; fi
-    wait "$TEST_JOBS_SUITE_PID"; wait "$TEST_JOBS_HOLDER_PID" 2>/dev/null
+    wait "$TEST_JOBS_SUITE_PID"
     test_jobs_suite_start true; wait "$TEST_JOBS_SUITE_PID"
     echo "after=[$TEST_JOBS_HOLDER_PID]")"
   assert_eq "a pooled start sets a holder pid other than the suite's, and an unpooled start after it empties it" \
     "$ss_out" "$(printf 'pooled-ok\nafter=[]')"
   ss_out="$(source "$ss_helpers"; TEST_JOBS_POOL="$ss_file.pool"
-    export TEST_JOBS_SLOTS=1; test_jobs_slot_take
+    export TEST_JOBS_SLOTS=2; test_jobs_slot_take
     ORCH_TEST_POOL_HELD=/other test_jobs_suite_start bash -c 'echo "$ORCH_TEST_POOL_HELD"' >"$ss_file"; wait "$TEST_JOBS_SUITE_PID"; cat "$ss_file")"
   assert_eq "a suite started with a slot held sees the pool directory as its marker" "$ss_out" "$ss_file.pool"
   rm -rf "$ss_file.pool"

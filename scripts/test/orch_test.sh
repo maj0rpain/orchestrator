@@ -572,15 +572,12 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     test_jobs_slot_take || { test_jobs_slot_note; break; }
     orch_k=$((orch_order[orch_started] - 1))
     orch_pos="${orch_sections[$orch_k]}"
-    # A child of a slot marks its pool; an unpooled run passes its marker on.
-    test_jobs_held_marker
     ORCH_TEST_CHILD_SEED="$orch_seed_dir" ORCH_TEST_CHILD_SECTION="$orch_pos" ORCH_TEST_CHILD_COUNTS="$orch_buf/$orch_pos.counts" \
-      ORCH_TEST_CHILD_TIMES="${orch_durations_out:+$orch_buf/$orch_pos.times}" ORCH_TEST_JOBS=1 ORCH_TEST_POOL_HELD="$TEST_JOBS_HELD" \
-      test_jobs_job bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" 2>"$orch_buf/$orch_pos.err" &
-    orch_pids[orch_k]=$!
+      ORCH_TEST_CHILD_TIMES="${orch_durations_out:+$orch_buf/$orch_pos.times}" ORCH_TEST_JOBS=1 \
+      test_jobs_suite_start bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" 2>"$orch_buf/$orch_pos.err"
+    orch_pids[orch_k]="$TEST_JOBS_SUITE_PID"
     orch_starts[orch_k]=$SECONDS
     orch_began[orch_k]=1
-    test_jobs_slot_release "${orch_pids[orch_k]}"
     orch_started=$((orch_started + 1))
     orch_running=$((orch_running + 1))
   done
