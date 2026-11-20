@@ -1,9 +1,13 @@
 name: test
 
 # A PR runs the whole suite once, in the autopilot container, as 4 jobs of
-# ORCH_TEST_SHARD groups plus one gate job; a push to main runs it unsplit on
-# the runner. The changelog fragment rule lives in fragment.yml. The grouping
-# and the suite list live in the scripts: this file is wiring only.
+# ORCH_TEST_SHARD groups, the pytest suite once more on Python 3.9, the
+# minimum version, and one gate job over both; a push to main runs the suite
+# unsplit on the runner, on Python 3.9. The changelog fragment rule lives in
+# fragment.yml. The grouping and the suite list live in the scripts: this file
+# is wiring only. Every job that runs the pytest suite installs the one pinned
+# file, scripts/orch_py/requirements-dev.txt (the image installs it into its
+# /opt/orch-dev venv).
 #
 # Both jobs that run the suite run it with SIGPIPE ignored (`trap '' PIPE`).
 # The ignored disposition is the one that catches write-error bugs, and the PR
@@ -55,6 +59,13 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - &setup-python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.9"
+      - &pytest-install
+        name: Install the Python dev requirements
+        run: python3 -m pip install -r scripts/orch_py/requirements-dev.txt
       - name: Verify
         run: |
           trap '' PIPE
@@ -93,8 +104,23 @@ jobs:
           --cache-to type=gha,scope=autopilot,ignore-error=true
           -t orchestrator-autopilot .
 
+  # A PR: the pytest suite alone, on Python 3.9, the minimum version; the
+  # container groups run it on the image's python3. The suite gate needs it.
+  pytest:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - *setup-python
+      - *pytest-install
+      - name: Run the pytest suite
+        run: scripts/test/orch_py_test.sh
+
   # A PR: the whole suite on the autopilot image's own tools (jq 1.6,
-  # bookworm's mawk, git 2.39, its shellcheck), so tool-version drift and
+  # bookworm's mawk, git 2.39, its shellcheck, python3 3.11 and the
+  # /opt/orch-dev venv), so tool-version drift and
   # environment leaks are caught on the PR rather than in an autopilot run, as
   # 4 jobs, each one ORCH_TEST_SHARD group. It runs the runner's checkout, not
   # the image's baked-in copy, which has no .git. The suite starts with SIGPIPE
@@ -182,14 +208,16 @@ jobs:
             -e ORCH_TEST_SHARD \
             orchestrator-autopilot -c "trap '' PIPE; exec scripts/test/all.sh"
 
-  # The one result for a PR's suite: passes only when all four groups did, and
-  # runs whether or not they passed, but not when the run was cancelled.
+  # The one result for a PR's suite: passes only when all four groups and the
+  # pytest job did, and runs whether or not they passed, but not when the run
+  # was cancelled.
   suite:
     if: ${{ !cancelled() && github.event_name == 'pull_request' }}
-    needs: container
+    needs: [container, pytest]
     runs-on: ubuntu-latest
     steps:
-      - name: Every group passed
+      - name: Every group and the pytest job passed
         env:
           RESULT: ${{ needs.container.result }}
-        run: test "$RESULT" = success
+          PYTEST: ${{ needs.pytest.result }}
+        run: test "$RESULT" = success && test "$PYTEST" = success
