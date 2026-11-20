@@ -3502,6 +3502,7 @@ for hs_slug in hs-done hs-open; do
   git -C "$top/.orchestrator/checkouts/$hs_slug" checkout -q -b "quick/9-$hs_slug"
   git -C "$top/.orchestrator/checkouts/$hs_slug" commit -q --allow-empty -m "work on $hs_slug"
 done
+(cd "$hs_done" && orch_gh_failing init hs-done-flow >/dev/null && state_fixture phase "done" && state_fixture branch quick/9-hs-done && state_fixture pr 61)
 fake_pr 61 merged quick/9-hs-done main
 fake_pr_head 61 "$(git rev-parse quick/9-hs-done)"
 fake_online
@@ -3550,4 +3551,5 @@ assert_status "a tick with nothing to pick up succeeds" "$st" 0
 assert_contains "a failing log prune warns" "$out" "orch: could not delete the old session log"
 assert_eq "the finished side checkout is removed" "$(on_disk "$hs_done")" absent
 assert_eq "with its branch" "$(branch_presence refs/heads/quick/9-hs-done)" gone
+assert_eq "its flow is archived into the main checkout" "$(find "$top/.orchestrator/archive" -maxdepth 1 -name "*-hs-done-flow" | wc -l | tr -d " ")" 1
 assert_eq "the unfinished one is kept" "$(on_disk "$hs_open")" present
