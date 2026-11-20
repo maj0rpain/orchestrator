@@ -13,19 +13,19 @@
 # ticket_sub_issues [--exit 2] <parent>: the parent's sub-issues as
 # adapter_sub_issues prints them - the listing the ticket commands read (#394),
 # save ticket_links_verified, which calls adapter_sub_issues itself so a failed
-# read can be retried rather than died on. Both failures die with status 1, or
-# 2 under --exit 2, in the gh failure contract's own grammar (#1106): a parent
-# that is no plain number, refused before asking GitHub, and a GitHub that
-# cannot list them. --exit is passed on to gh_or_die as given, which checks it.
+# read can be retried rather than died on. A parent that is no plain number is
+# refused before asking GitHub, always through die, status 1. A GitHub that
+# cannot list them dies in the gh failure contract's own grammar (#1106): status
+# 1, or 2 under --exit 2, which is passed on to gh_or_die as given, which checks
+# it, and sets only that status.
 ticket_sub_issues() {
-  local exit_opt=() fail=die
+  local exit_opt=()
   if [ "${1-}" = --exit ]; then
     exit_opt=("$1" "${2-}")
-    [ "${2-}" != 2 ] || fail=die2
     shift 2 || shift
   fi
   local parent="${1-}" subs
-  case "$parent" in ''|*[!0-9]*) "$fail" "parent must be a plain issue number, got: $parent" ;; esac
+  case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
   gh_or_die ${exit_opt[@]+"${exit_opt[@]}"} --out subs "list sub-issues of #$parent" \
     adapter_sub_issues "$parent"
   if [ -n "$subs" ]; then printf '%s\n' "$subs"; fi
@@ -129,19 +129,19 @@ ticket_create() {
 }
 
 # ticket_link <parent> <n> <want>: puts ticket <n> in place under <parent> with
-# the blockers <want> names (newline-separated numbers, possibly empty),
-# whatever already landed. The parent's sub-issue listing is read and the
+# the blockers <want> names (newline-separated numbers, possibly empty; the
+# caller passes the set normalized, sorted and de-duplicated), whatever
+# already landed. The parent's sub-issue listing is read and the
 # ticket linked only when it is not listed; its blockers are read once, and
 # only when <want> is non-empty, and only the edges it lacks are added, so a
 # resume never writes a link already present. Then every link is read back
 # through verify_twice: one retry, either status gets it, and the second
 # attempt decides the death - a failed read dies with gh's reason, a mismatch
 # as unverified (ADR-0011). Once the links verify, the ticket's `## Blocked by`
-# section is rewritten from <want> - sorted ascending here - as `ticket block`
-# writes it, through rewrite_blocked_by_section and issue_body_rewrite.
+# section is rewritten from <want> as `ticket block`
+# writes it, through ticket_blocked_by_rewrite.
 ticket_link() {
   local parent="$1" n="$2" want="$3" subs b have
-  want="$(printf '%s\n' "$want" | sed '/^$/d' | sort -un)"
   subs="$(ticket_sub_issues "$parent")" || exit 1
   ticket_listing_has "$subs" "$n" || gh_or_die "link ticket #$n as a sub-issue of #$parent" \
     adapter_sub_issue_link "$parent" "$n"
@@ -159,9 +159,15 @@ ticket_link() {
     "ticket #$n's sub-issue/blocked-by links did not verify - checked twice, both failed" \
     ticket_links_verified "$parent" "$n" "$want"
 
-  issue_body_rewrite "$n" "read ticket #$n's body" \
-    "rewrite ticket #$n's ## Blocked by section" \
-    rewrite_blocked_by_section "$want"
+  ticket_blocked_by_rewrite "$n" "$want"
+}
+
+# ticket_blocked_by_rewrite <n> <want>: rewrites ticket <n>'s `## Blocked by`
+# section from <want> (newline-separated numbers), through issue_body_rewrite.
+ticket_blocked_by_rewrite() {
+  issue_body_rewrite "$1" "read ticket #$1's body" \
+    "rewrite ticket #$1's ## Blocked by section" \
+    rewrite_blocked_by_section "$2"
 }
 
 # Publishes a child issue - ticket_create then ticket_link: a native
@@ -235,8 +241,7 @@ cmd_ticket_list() {
 # runs. Every refusal comes before any gh call, leaving the issue open.
 cmd_ticket_close() {
   local n="" unmerged=0 usage="usage: orch.sh ticket close <n> [--unmerged]"
-  # shellcheck disable=SC2034 # ticket_facts fills them; only some are read
-  local cf_n cf_path cf_worktree cf_wt_branch cf_parent cf_own_branch cf_own_exists
+  local -A cf
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=1 ;;
@@ -249,9 +254,9 @@ cmd_ticket_close() {
   case "$n" in *[!0-9]*) die "not a plain issue number: $n" ;; esac
   if [ "$unmerged" = 0 ]; then
     ticket_facts "$n" cf
-    if [ "$cf_worktree" = worktree ]; then
+    if [ "${cf[worktree]}" = worktree ]; then
       ticket_facts_require_wt_branch cf
-      ticket_branch_merged_or_die "$cf_wt_branch" "close it anyway"
+      ticket_branch_merged_or_die "${cf[wt_branch]}" "close it anyway"
     fi
   fi
   gh_or_die "close ticket #$n" adapter_issue_close "$n"
@@ -485,7 +490,7 @@ ticket_edge_preconditions() {
 ticket_blockers() {
   local have
   gh_or_die --out have "read ticket #$1's blockers" adapter_blockers "$1"
-  if [ -n "$have" ]; then printf '%s\n' "$have" | sort -un; fi
+  blockers_set "$have"
 }
 
 # ticket_edges_verified <err_var> <n> <want>: the 0/1/2 verifier verify_twice
@@ -502,8 +507,7 @@ ticket_edges_verified() {
     printf -v "$1" '%s' "$__tev_err"
     return 2
   fi
-  if [ -n "$__tev_have" ]; then __tev_have="$(printf '%s\n' "$__tev_have" | sort -un)"; fi
-  [ "$__tev_have" = "$(printf '%s\n' "$3" | sed '/^$/d' | sort -un)" ]
+  [ "$(blockers_set "$__tev_have")" = "$(blockers_set "$3")" ]
 }
 
 # The heading of a ticket body's section listing its blockers - kept in line
@@ -554,10 +558,18 @@ blocked_by_section_numbers() {
   '
 }
 
+# blockers_set <list>: the numbers of <list> (newline-separated), blank lines
+# dropped, sorted numerically and de-duplicated, one per line; nothing for an
+# empty list.
+blockers_set() {
+  [ -n "$1" ] || return 0
+  printf '%s\n' "$1" | sed '/^$/d' | sort -un
+}
+
 # blockers_union <before> <by>: the blocker set after `ticket block` - every
 # number in either list, one per line, sorted and de-duplicated.
 blockers_union() {
-  printf '%s\n%s\n' "$1" "$2" | sed '/^$/d' | sort -un
+  blockers_set "$(printf '%s\n%s' "$1" "$2")"
 }
 
 # blockers_difference <before> <by>: the blocker set after `ticket unblock` -
@@ -619,9 +631,7 @@ ticket_edges_change() {
   verify_twice "read ticket #$n's blockers" \
     "ticket #$n's blocking edges did not verify - checked twice, both failed" \
     ticket_edges_verified "$n" "$want"
-  issue_body_rewrite "$n" "read ticket #$n's body" \
-    "rewrite ticket #$n's ## Blocked by section" \
-    rewrite_blocked_by_section "$want"
+  ticket_blocked_by_rewrite "$n" "$want"
 }
 
 # Adds a native blocking edge on <n> for every --by issue it lacks.
@@ -651,18 +661,18 @@ cmd_ticket() {
   esac
 }
 
-# Lands ticket <n>'s branch on the branch it was forked from: rebases it onto
-# that branch's tip inside the ticket worktree, then fast-forwards that branch
-# in whichever checkout has it - so history stays linear. Every refusal (exit
-# 1) runs before anything moves. Exit 3 means a rebase conflict only: it is
+# Lands the branch checked out in ticket <n>'s worktree on the branch it was
+# forked from: rebases it onto that branch's tip inside the ticket worktree,
+# then fast-forwards that branch in whichever checkout has it - so history
+# stays linear. Every refusal (exit 1) runs before anything moves. Exit 3
+# means a rebase conflict only: it is
 # aborted, leaving both branches at their prior tips. A rebase that fails any
 # other way is aborted too and exits 1, naming git's first line; so does an
 # abort that fails, which leaves the ticket worktree mid-rebase.
 cmd_ticket_merge() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket merge <n>"
-  local n path branch parent parent_checkout rebase_err unmerged said
-  # shellcheck disable=SC2034 # ticket_facts fills them; only some are read
-  local mf_n mf_path mf_worktree mf_wt_branch mf_parent mf_own_branch mf_own_exists
+  local n path wt_branch parent parent_checkout rebase_err unmerged said
+  local -A mf
   # rebase_out is set by capture and only git's stderr is read.
   # shellcheck disable=SC2034
   local rebase_out
@@ -671,15 +681,15 @@ cmd_ticket_merge() {
   ticket_facts "$n" mf
   ticket_facts_require_worktree mf worktree
   ticket_facts_require_wt_branch mf
-  path="$mf_path"
-  branch="$mf_wt_branch"
-  parent="$(forked_from_branch "$branch")" \
-    || die "branch $branch records no forked-from branch"
+  path="${mf[path]}"
+  wt_branch="${mf[wt_branch]}"
+  parent="$(forked_from_branch "$wt_branch")" \
+    || die "branch $wt_branch records no forked-from branch"
   require_clean_tree "$path" \
     "ticket worktree $path is dirty - commit or discard its changes first"
   parent_checkout="$(branch_checkout "$parent")" || exit $?
   [ -n "$parent_checkout" ] \
-    || die "$parent, the branch $branch was forked from, is checked out nowhere - check it out first"
+    || die "$parent, the branch $wt_branch was forked from, is checked out nowhere - check it out first"
   require_clean_tree "$parent_checkout" \
     "$parent_checkout, the checkout of $parent, is dirty - commit or discard its changes first"
   if ! capture rebase_out rebase_err git -C "$path" rebase -q "refs/heads/$parent"; then
@@ -691,14 +701,14 @@ cmd_ticket_merge() {
         || die "could not abort the rebase in ticket worktree $path - it is left mid-rebase"
     fi
     if [ -n "$unmerged" ]; then
-      warn "rebasing $branch onto $parent hit a conflict - aborted; both branches are as they were"
+      warn "rebasing $wt_branch onto $parent hit a conflict - aborted; both branches are as they were"
       exit 3
     fi
     said="${rebase_err%%$'\n'*}"
-    die "rebasing $branch onto $parent failed: ${said:-git gave no reason}"
+    die "rebasing $wt_branch onto $parent failed: ${said:-git gave no reason}"
   fi
-  git -C "$parent_checkout" merge -q --ff-only "refs/heads/$branch" \
-    || die "could not fast-forward $parent to $branch in $parent_checkout"
+  git -C "$parent_checkout" merge -q --ff-only "refs/heads/$wt_branch" \
+    || die "could not fast-forward $parent to $wt_branch in $parent_checkout"
 }
 
 # ticket_reclaim_close <n> <parent>: closes ticket <n> if it is still open and
@@ -712,17 +722,18 @@ ticket_reclaim_close() {
   note "closed ticket #$n"
 }
 
-# ticket_reclaim_remove <prefix>: tears down the ticket worktree and branch in
-# <prefix>'s facts, discarding the work in the worktree first, when either
+# ticket_reclaim_remove <array>: tears down the ticket worktree and branch in
+# <array>'s facts, discarding the work in the worktree first, when either
 # exists. The facts are the caller's one read, so its notes follow from them and
 # nothing is probed afterwards. The teardown runs in a subshell, so a die in it
 # cannot end this command before the line below is printed; its status says
 # which step failed. A failure dies naming the ticket and the step.
 ticket_reclaim_remove() {
-  local n_var="$1_n" path_var="$1_path" wt_var="$1_worktree" own_var="$1_own_branch" exists_var="$1_own_exists"
-  local n="${!n_var}" path="${!path_var}" had_wt=0 had_branch=0 st=0
-  [ "${!wt_var}" = none ] || had_wt=1
-  [ "${!exists_var}" != yes ] || had_branch=1
+  local n_ref="${1}[n]" path_ref="${1}[path]" wt_ref="${1}[worktree]" own_ref="${1}[own_branch]" exists_ref="${1}[own_exists]"
+  local n="${!n_ref}" path="${!path_ref}" worktree="${!wt_ref}" own_branch="${!own_ref}" own_exists="${!exists_ref}"
+  local had_wt=0 had_branch=0 st=0
+  [ "$worktree" = none ] || had_wt=1
+  [ "$own_exists" != yes ] || had_branch=1
   [ "$had_wt$had_branch" != 00 ] || return 0
   orch_load ticket-worktree
   (ticket_worktree_teardown "$1" --unmerged --discard) || st=$?
@@ -732,7 +743,7 @@ ticket_reclaim_remove() {
     die "ticket #$n: could not remove its worktree $path"
   fi
   [ "$had_wt" = 0 ] || note "removed the worktree of ticket #$n"
-  [ "$st" = 0 ] || die "ticket #$n: could not delete branch ${!own_var}"
+  [ "$st" = 0 ] || die "ticket #$n: could not delete branch $own_branch"
   [ "$had_branch" = 0 ] || note "deleted the branch of ticket #$n"
 }
 
@@ -769,8 +780,7 @@ ticket_reclaim_guard() {
 cmd_ticket_reclaim() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket reclaim <parent>"
   local parent="$1" flow recorded="" fissue="" phase="" active="" subs line worktrees n state path st reported merged nums=""
-  # shellcheck disable=SC2034 # ticket_facts fills them; only some are read
-  local rf_n rf_path rf_worktree rf_wt_branch rf_parent rf_own_branch rf_own_exists
+  local -A rf
   case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
   flow="$(checkout_branch "$ROOT")" || die "the current checkout is on no branch - nothing to reclaim onto"
   if [ -f "$STATE" ]; then
@@ -797,12 +807,12 @@ cmd_ticket_reclaim() {
   while read -r n; do
     [ -n "$n" ] || continue
     ticket_facts "$n" rf
-    path="$rf_path"
+    path="${rf[path]}"
     reported=""
     [ ! -f "$(ticket_reports_dir)/$n.md" ] || reported=1
     merged=""
-    if [ "$rf_own_exists" = yes ]; then
-      ! ticket_branch_merged "$rf_own_branch" || merged=1
+    if [ "${rf[own_exists]}" = yes ]; then
+      ! ticket_branch_merged "${rf[own_branch]}" || merged=1
     elif [ -n "$reported" ]; then
       merged=1
     fi
@@ -810,7 +820,7 @@ cmd_ticket_reclaim() {
       [ "$n" != "$parent" ] || note "ticket #$n already landed"
       ticket_reclaim_close "$n" "$parent"
       ticket_reclaim_remove rf
-    elif [ -n "$reported" ] && [ "$rf_worktree" = worktree ]; then
+    elif [ -n "$reported" ] && [ "${rf[worktree]}" = worktree ]; then
       discard_work_in "$path" "ticket #$n"
       st=0
       (cmd_ticket_merge "$n") || st=$?

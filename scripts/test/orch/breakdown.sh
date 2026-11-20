@@ -67,6 +67,16 @@ assert_not_contains "never the old message" "$out" "the publish failed"
 assert_eq "no marker" "$(on_disk .orchestrator/breakdown/50/published)" "absent"
 assert_eq "the recorded numbers are kept" "$(paste -sd ';' .orchestrator/breakdown/50/numbers)" "1 100 created;1 100 linked;2 101 created"
 assert_eq "state is partial" "$("$ORCH" breakdown state 50)" "partial"
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a failed link of a resumed ticket dies" "$st" 1
+assert_not_contains "never the old message for a resumed link" "$out" "the publish failed"
+assert_contains "naming the resumed ticket and the link step" "$out" "ticket 2 of the draft (#101): the link failed"
+fake_unfail
+fake_fail_after adapter_sub_issues 1
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a failed read-back of a resumed ticket dies" "$st" 1
+assert_not_contains "never the old message for a resumed read-back" "$out" "the publish failed"
+assert_contains "naming the resumed ticket after its read-back" "$out" "ticket 2 of the draft (#101): the link failed"
 fake_unfail
 other="$(mktemp)"
 printf '@@ ticket 1 Other\nx\n@@ end\n' >"$other"
@@ -92,19 +102,7 @@ assert_not_contains "without the create message" "$out" "the create failed"
 assert_eq "the ticket is created but never linked" "$(fake_sub_issues_of 50)" ""
 restore_suite_env
 
-# A failed link of a resumed ticket (recorded created) names it too.
-breakdown_fixture
-printf '@@ ticket 1 Only\nx\n@@ end\n' >"$draft"
-fake_fail adapter_sub_issue_link
-"$ORCH" breakdown publish 50 "$draft" >/dev/null 2>&1
-out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
-assert_status "a failed link of a resumed ticket dies" "$st" 1
-assert_not_contains "never the old message" "$out" "the publish failed"
-assert_contains "naming the ticket and the link step" "$out" "ticket 1 of the draft (#100): the link failed"
-fake_unfail
-restore_suite_env
-
-# A failed link read-back or listing read names the ticket, fresh or resumed.
+# A failed link read-back or listing read names the ticket.
 breakdown_fixture
 printf '@@ ticket 1 Only\nx\n@@ end\n' >"$draft"
 fake_fail_after adapter_sub_issues 1
@@ -114,19 +112,6 @@ assert_contains "naming the ticket and the link step" "$out" "ticket 1 of the dr
 assert_not_contains "never the old message" "$out" "the publish failed"
 fake_unfail
 restore_suite_env
-breakdown_fixture
-printf '@@ ticket 1 Only\nx\n@@ end\n' >"$draft"
-fake_fail adapter_sub_issue_link
-"$ORCH" breakdown publish 50 "$draft" >/dev/null 2>&1
-fake_unfail
-fake_fail_after adapter_sub_issues 1
-out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
-assert_status "a failed read-back of a resumed ticket dies" "$st" 1
-assert_not_contains "never the old message" "$out" "the publish failed"
-assert_contains "naming the ticket and the link step" "$out" "ticket 1 of the draft (#100): the link failed"
-fake_unfail
-restore_suite_env
-
 breakdown_fixture
 printf '@@ ticket 1 Only\nx\n@@ end\n' >"$draft"
 fake_fail adapter_sub_issues
@@ -164,25 +149,18 @@ assert_contains "naming the draft position" "$out" "ticket 3 of the draft"
 assert_contains "naming the ticket and the link step" "$out" "ticket 3 of the draft (#102): the link failed"
 assert_eq "ticket 3 is recorded created" "$(tail -n1 .orchestrator/breakdown/50/numbers)" "3 102 created"
 fake_unfail
+fake_fail adapter_blocker_add
+out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
+assert_status "a failed edge add of a resumed ticket dies" "$st" 1
+assert_not_contains "never the old message for a resumed edge add" "$out" "the publish failed"
+assert_contains "naming the resumed ticket on an edge add" "$out" "ticket 3 of the draft (#102): the link failed"
+fake_unfail
 fake_fail_after adapter_blocker_add 1
 out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
 assert_status "a resume with part of the edges present adds only the missing one" "$st" 0
 fake_unfail
 assert_eq "ticket 3 ends with its full blocker set" "$(fake_blockers_of 102)" "100 101"
 assert_eq "marker written" "$(on_disk .orchestrator/breakdown/50/published)" "present"
-restore_suite_env
-
-# A failed edge add of a resumed ticket (recorded created) names it too.
-breakdown_fixture
-fake_fail_after adapter_blocker_add 2
-"$ORCH" breakdown publish 50 "$draft" >/dev/null 2>&1
-fake_unfail
-fake_fail adapter_blocker_add
-out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
-assert_status "a failed edge add of a resumed ticket dies" "$st" 1
-assert_not_contains "never the old message" "$out" "the publish failed"
-assert_contains "naming the ticket and the link step" "$out" "ticket 3 of the draft (#102): the link failed"
-fake_unfail
 restore_suite_env
 
 # A ticket whose link and every edge landed but whose linked record did not:
@@ -354,20 +332,6 @@ assert_eq "ticket 1's section is rewritten" "$(fake_body_of 100)" "$(printf 'Bod
 assert_eq "no edge added twice" "$(fake_blockers_of 102)" "100 101"
 restore_suite_env
 
-# A body write that dies on the third ticket, after its edges were written, then
-# a rerun: the resumed ticket gets no edge twice.
-breakdown_fixture
-fake_fail_after adapter_issue_body_edit 2
-out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
-assert_status "a body write failing on ticket 3 dies" "$st" 1
-assert_eq "ticket 3 already holds its edges" "$(fake_blockers_of 102)" "100 101"
-fake_unfail
-fake_fail adapter_blocker_add
-out="$("$ORCH" breakdown publish 50 "$draft" 2>&1)"; st=$?
-fake_unfail
-assert_status "the rerun after the edges were written finishes without adding an edge" "$st" 0
-assert_eq "no edge added twice on the resumed ticket" "$(fake_blockers_of 102)" "100 101"
-restore_suite_env
 
 # A failed body read on the resume path, then a rerun.
 breakdown_fixture

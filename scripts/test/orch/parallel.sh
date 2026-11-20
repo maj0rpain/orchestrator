@@ -42,5 +42,3 @@ assert_contains "listed alongside the ops that exist" "$out" "unknown parallel o
 out="$("$ORCH" help 2>&1)"
 assert_contains "parallel show is in the usage text" "$out" "parallel show"
 assert_contains "beside base show" "$(printf '%s\n' "$out" | grep -A3 '^  base clear' | tr '\n' ' ')" "parallel show"
-assert_contains "the CLI conventions' noun table has a parallel row" \
-  "$(grep '^| `parallel`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`show`'

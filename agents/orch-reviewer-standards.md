@@ -259,11 +259,11 @@ wrong in one or two sentences and, where the remedy is not obvious, what the
 fix would be. The source is the documented rule it breaches, quoted briefly,
 the baseline smell it resembles, or the root-cause check's, the test-cost
 check's, the doc-agreement check's or the glossary parse check's own source - a
-documented-standard breach and a glossary parse check finding can be hard;
-a smell, a test-cost smell, a possible symptom fix or a possible stale doc is
-always a judgement call. A
-re-raised known item ends with its marker (see **Known items**). `Known items
-held back` counts the findings held back, `0` when none were.
+documented-standard breach can be hard, and a glossary parse check finding is
+always hard; a smell, a test-cost smell, a possible symptom fix or a
+possible stale doc is always a judgement call. A re-raised known
+item ends with its marker (see **Known items**). `Known items held back`
+counts the findings held back, `0` when none were.
 
 List findings in file order, unranked: severity is the driver's triage, and
 it reads every finding the same way whatever order you give. A change with

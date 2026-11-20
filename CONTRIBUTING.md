@@ -124,7 +124,7 @@ file unchanged and exits 1; it refuses `ORCH_TEST_JOBS=1`.
 
 Both modes time every other suite with `DOCS_LINT_RECORDING=1`, which only
 `section-durations.sh` sets (`all.sh` and `affected.sh` unset it, CI never sets
-it, and `docs_lint.sh --fragment-only` ignores it). With it set, the full run
+it, and `docs_lint.sh --base-rules` ignores it). With it set, the full run
 of `docs_lint.sh` skips the ledger freshness rule and the suite budget total
 rule (rule 2) and says so, so the suite it is measuring does not fail on the
 very lines being replaced; the budget-alone rule (rule 3) still runs. With it
@@ -373,7 +373,7 @@ it.
 CI enforces the rule through its own workflow, `.github/workflows/fragment.yml`,
 which runs the fragment rule and the suite budget's two rules with a base (the
 total within the budget, the budget file changing alone) through
-`docs_lint.sh --fragment-only`, and reruns on a PR's body and label edits; the
+`docs_lint.sh --base-rules`, and reruns on a PR's body and label edits; the
 ledger's freshness rule runs in the suite's whole lint, on a push to `main`
 too, where the budget comparison is skipped: a PR
 to `main` adds exactly one
@@ -581,7 +581,7 @@ scripts/test/counting.sh      the counting fixture the orch.sh suite's runner, h
 scripts/test/fails.sh         the failing-command fixture the orch.sh suite's runner and hooks_test.sh source: fails_bin makes a directory holding a stub, which its caller puts first on PATH, that exits with a given status (0 allowed), after an optional stderr line, when its space-padded arguments match a glob, and runs the real command for every other call
 scripts/test/test_jobs.sh     the job-count, job pool and priority helpers orch_test.sh, all.sh, affected.sh and section-durations.sh all source: the default ORCH_TEST_JOBS (ORCH_TEST_POOL_PERCENT) and the renice to 10, and the signal-reachable child start (test_jobs_run_child, with its INT/TERM stop) that section-durations.sh and lens-bench.sh use, and the suite start (test_jobs_suite_start, with its start order test_jobs_start_order and children marker test_jobs_held_marker) all.sh and affected.sh start each suite through, and section-durations.sh each suite but orch_test.sh
 scripts/test/report.sh       the report helpers all.sh, affected.sh and section-durations.sh source: a suite's FAIL block and summary line, the shellcheck summary, the temp-files failure record, and the run's verdict line, whose PASS or FAIL comes from the failed parts recorded
-scripts/test/test_tree.sh    how the runners read the test tree, which orch_test.sh, all.sh, affected.sh, docs_lint.sh and section-durations.sh source (harness.sh reaches it through orch_test.sh): SECTION_TITLE_AWK, the section-title rule, suites_read, the reader of all.sh's suite list, suites_unlisted, the runners all.sh's list leaves out, section_files, the noun files of the walk, ledger_fingerprints and ledger_fingerprints_all, the ledger's fingerprints, ledger_states, the ledger's freshness rule, titles_regex, the anchored ORCH_TEST_ONLY pattern for a list of titles, suite_budget_read, the reader of the suite budget, durations_total, tenths_text, the shared tenths formatter, shellcheck_files, SHELLCHECK_CMD, shellcheck_start and shellcheck_join (the pooled shellcheck step), TENTHS_AWK and DURATIONS_AWK
+scripts/test/test_tree.sh    how the runners read the test tree, which orch_test.sh, all.sh, affected.sh, docs_lint.sh and section-durations.sh source (harness.sh reaches it through orch_test.sh): SECTION_TITLE_AWK, the section-title rule, suites_read, the reader of all.sh's suite list, suites_unlisted, the runners all.sh's list leaves out, listed, the runners' one membership test of a word in a list, section_files, the noun files of the walk, ledger_fingerprints and ledger_fingerprints_all, the ledger's fingerprints, ledger_states, the ledger's freshness rule, titles_regex, the anchored ORCH_TEST_ONLY pattern for a list of titles, suite_budget_read, the reader of the suite budget, durations_total, tenths_text, the shared tenths formatter, shellcheck_files, SHELLCHECK_CMD, shellcheck_start and shellcheck_join (the pooled shellcheck step), TENTHS_AWK and DURATIONS_AWK
 scripts/test/git_env.sh      `test_git_env_clear`, which every suite runner sources and calls first: it unsets git's repo-local variables and the commit-identity variables, so a suite run from a git hook never writes to the caller's repository
 scripts/test/shell_code.awk    the SHELL_CODE_AWK library, the one rule of what counts as code in a shell file: setup.sh, docs_lint.sh, width.sh and the helper index each load it whole
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary

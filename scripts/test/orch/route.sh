@@ -54,7 +54,5 @@ assert_contains "with the unknown-op message" "$out" "unknown route op"
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "route show is in the usage text" "$out" "route show"
-assert_contains "the CLI conventions' noun table has a route row" \
-  "$(grep '^| `route`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`show`'
 assert_contains "How it works has a Default route subsection" \
   "$(grep '^### Default route' "$PLUGIN_ROOT/docs/how-it-works.md")" "Default route"

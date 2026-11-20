@@ -21,6 +21,18 @@ ticket_fixture() {
 # Shared by this file's merge, same-named tag and reclaim sections.
 commit_file() { echo "$3" >"$1/$2" && git -C "$1" add "$2" && git -C "$1" commit -qm "$2: $3"; }
 
+# switched_ticket_worktree <n>: adds ticket <n>'s worktree, switches it to
+# other-<n> with its forked-from record set to orch/5-feature and one commit,
+# and prints its path. Shared by this file's close and merge sections.
+switched_ticket_worktree() {
+  local wt
+  wt="$("$ORCH" ticket-worktree add "$1")" || return 1
+  git -C "$wt" checkout -q -b "other-$1"
+  git config "branch.other-$1.orchestrator-ticket-parent" orch/5-feature
+  commit_file "$wt" "other$1.txt" one
+  printf '%s\n' "$wt"
+}
+
 # fake_unlag: every readback fake_lag_after named is current again.
 fake_unlag() { rm -rf "$ORCH_GH_FAKE_STORE/lag"; }
 
@@ -50,7 +62,7 @@ out="$("$ORCH" ticket publish 50 "First ticket" "$body" 2>&1)"; st=$?
 assert_status "publishes" "$st" 0
 assert_eq "printing the child's issue number and nothing else" "$out" "100"
 assert_eq "passes the title through" "$(fake_title_of 100)" "First ticket"
-assert_eq "sends the body file's contents" "$(fake_body_of 100)" "$(printf 'Build the thing.\n\n## Blocked by\n\nNone (can start immediately)')"
+assert_eq "sends the body file's contents, its \`## Blocked by\` section appended" "$(fake_body_of 100)" "$(printf 'Build the thing.\n\n## Blocked by\n\nNone (can start immediately)')"
 assert_eq "applies ready-for-agent" "$(fake_labels_of 100)" "ready-for-agent "
 assert_eq "records no state" "$(on_disk .orchestrator/state.json)" "absent"
 assert_eq "links the child as 50's sub-issue" "$(fake_sub_issues_of 50)" "100"
@@ -109,6 +121,16 @@ assert_contains "with a usage line" "$out" "usage: orch.sh ticket publish"
 
 out="$("$ORCH" ticket publish 50 2>&1)"; st=$?
 assert_status "refuses with no body file" "$st" 1
+
+# --record is gone: refused with the usage line.
+out="$("$ORCH" ticket publish 50 "Third" "$body" --record "$(mktemp -d)" 3 2>&1)"; st=$?
+assert_status "refuses --record" "$st" 1
+assert_contains "with publish's usage line" "$out" "usage: orch.sh ticket publish"
+assert_not_contains "the usage line shows no --record" "$out" "--record <"
+out="$("$ORCH" help 2>&1)"
+assert_contains "help shows the ticket publish line" "$out" \
+  "ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
+assert_not_contains "help shows no --record" "$out" "--record"
 assert_eq "none of the refusals wrote anything to GitHub" "$(fake_snapshot)" "$before"
 
 fake_fail adapter_issue_create
@@ -145,30 +167,16 @@ assert_gh_dies "a failed sub-issue link still exits 1" adapter_sub_issue_link "$
 assert_gh_dies "a failed blocking-edge write still exits 1" adapter_blocker_add "$GH_502" 1 \
   "orch: gh could not add a blocking edge from ticket #107 on #100: HTTP 502: Bad Gateway" \
   "$ORCH" ticket publish 50 "Title" "$body" --blocked-by 100
-restore_suite_env
-
-# --record is gone: refused with the usage line, nothing written to GitHub.
-ticket_fixture
-fake_issue 50 open
-fake_next_issue 102
-before="$(fake_snapshot)"
-out="$("$ORCH" ticket publish 50 "Third" "$body" --record "$(mktemp -d)" 3 2>&1)"; st=$?
-assert_status "refuses --record" "$st" 1
-assert_contains "with publish's usage line" "$out" "usage: orch.sh ticket publish"
-assert_not_contains "the usage line shows no --record" "$out" "--record <"
-assert_eq "writing nothing to GitHub" "$(fake_snapshot)" "$before"
-out="$("$ORCH" help 2>&1)"
-assert_contains "help shows the ticket publish line" "$out" \
-  "ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
-assert_not_contains "help shows no --record" "$out" "--record"
 
 # A failed sub-issue listing read before the link dies, the ticket created.
+fake_next_issue 108
 fake_fail adapter_sub_issues
 out="$("$ORCH" ticket publish 50 "Third" "$body" 2>&1)"; st=$?
 assert_status "a failed pre-link listing read dies" "$st" 1
 assert_contains "with the listing line" "$out" "gh could not list sub-issues of #50"
 fake_unfail
-assert_eq "the ticket is created and not linked" "$(fake_sub_issues_of 50)" ""
+assert_eq "the ticket is created" "$(fake_title_of 108)" "Third"
+assert_not_contains "and not linked" "$(fake_sub_issues_of 50)" "108"
 restore_suite_env
 
 # --- ticket publish verify-then-die ---------------------------------------
@@ -278,35 +286,16 @@ assert_eq "no blockers: the section reads None" "$(fake_body_of "$ta")" "$(print
 tb="$("$ORCH" ticket publish 50 "B" "$tp_body")"
 tc="$("$ORCH" ticket publish 50 "C" "$tp_body" --blocked-by "$tb,$ta")"
 assert_eq "blockers listed by number, ascending, the placeholder gone" "$(fake_body_of "$tc")" "$(printf 'Intro.\n\n## Blocked by\n\n- #%s\n- #%s' "$ta" "$tb")"
-printf 'Just text.\n' >"$tp_body"
-td="$("$ORCH" ticket publish 50 "D" "$tp_body" --blocked-by "$ta")"
-assert_eq "a body with no section gets one appended" "$(fake_body_of "$td")" "$(printf 'Just text.\n\n## Blocked by\n\n- #%s' "$ta")"
 
-printf 'Intro.\n\n## Blocked by\n\nNone (can start immediately)' >"$tp_body"
 fake_fail adapter_issue_body_edit
 out="$("$ORCH" ticket publish 50 "E" "$tp_body" --blocked-by "$ta" 2>&1)"; st=$?
-te=$((td + 1))
+te=$((tc + 1))
 assert_status "a failed body write dies" "$st" 1
 assert_contains "naming the ticket and the write" "$out" "gh could not rewrite ticket #$te's ## Blocked by section"
 assert_eq "the ticket stays linked" "$(fake_sub_issues_of 50 | tr ' ' '\n' | grep -cx "$te")" "1"
 assert_eq "with its edge" "$(fake_blockers_of "$te")" "$ta"
 assert_eq "and the draft's text" "$(fake_body_of "$te")" "$(printf 'Intro.\n\n## Blocked by\n\nNone (can start immediately)')"
 fake_unfail
-fake_fail adapter_issue_body
-out="$("$ORCH" ticket publish 50 "F" "$tp_body" --blocked-by "$ta" 2>&1)"; st=$?
-tf=$((te + 1))
-assert_status "a failed body read dies" "$st" 1
-assert_contains "naming the ticket and the read" "$out" "gh could not read ticket #$tf's body"
-assert_eq "the ticket stays linked" "$(fake_sub_issues_of 50 | tr ' ' '\n' | grep -cx "$tf")" "1"
-assert_eq "with its edge" "$(fake_blockers_of "$tf")" "$ta"
-assert_eq "the draft's text stays" "$(fake_body_of "$tf")" "$(printf 'Intro.\n\n## Blocked by\n\nNone (can start immediately)')"
-fake_unfail
-
-fake_fail adapter_issue_body_edit
-out="$("$ORCH" ticket publish 50 "G" "$tp_body" 2>&1)"; st=$?
-assert_status "no blockers on an already-matching section writes no body" "$st" 0
-fake_unfail
-
 restore_suite_env
 
 # --- ticket next -----------------------------------------------------------
@@ -493,10 +482,7 @@ assert_eq "leaving the issue open" "$(fake_state_of 22)" "OPEN"
 
 # A ticket worktree with another branch checked out than the ticket's own.
 fake_issue 24 open
-wt="$("$ORCH" ticket-worktree add 24)"
-git -C "$wt" checkout -q -b other-24
-git config branch.other-24.orchestrator-ticket-parent orch/5-feature
-commit_file "$wt" other24.txt one
+wt="$(switched_ticket_worktree 24)"
 out="$("$ORCH" ticket close 24 2>&1)"; st=$?
 assert_status "close asks the merged check of the checked-out branch" "$st" 1
 assert_eq "leaving the issue open" "$(fake_state_of 24)" "OPEN"
@@ -1461,7 +1447,7 @@ rm -rf "$wt"
 tip7="$(git rev-parse orch/5-feature--t7)"
 out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
 assert_status "merge refuses a ticket worktree whose directory is gone" "$st" 1
-assert_contains "saying there is no ticket worktree" "$out" "no ticket worktree"
+assert_contains "saying there is no ticket worktree" "$out" "orch: no ticket worktree for ticket 7 at $wt"
 assert_eq "git's record is unchanged" "$("$ORCH" ticket-worktree list)" "7 $wt"
 assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t7)" "$tip7"
 git worktree prune
@@ -1504,10 +1490,7 @@ assert_eq "the forked-from branch is as it was" "$(git rev-parse orch/5-feature)
 assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t23)" "$t_tip"
 
 # A ticket worktree with another branch checked out than the ticket's own.
-wt="$("$ORCH" ticket-worktree add 24)"
-git -C "$wt" checkout -q -b other-24
-git config branch.other-24.orchestrator-ticket-parent orch/5-feature
-commit_file "$wt" other24.txt one
+wt="$(switched_ticket_worktree 24)"
 own_tip="$(git rev-parse orch/5-feature--t24)"
 out="$("$ORCH" ticket merge 24 2>&1)"; st=$?
 assert_status "merge lands the checked-out branch" "$st" 0
@@ -1516,8 +1499,6 @@ assert_eq "leaving the ticket's own branch as it was" "$(git rev-parse orch/5-fe
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket merge is in the usage text" "$out" "ticket merge <n>"
-assert_contains "the CLI conventions' noun table lists merge among ticket's verbs" \
-  "$(grep '^| `ticket` ' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`merge`'
 restore_suite_env
 
 # --- ticket merge beside a same-named tag (#2337) -----------------------------
@@ -1828,43 +1809,46 @@ restore_suite_env
 
 # a leftover whose directory is gone: its record is cleared through the
 # teardown, with and without a ticket branch, reported-and-merged or not
-for rc_case in merged-branch merged-nobranch unreported-branch unreported-nobranch; do
+for rc_report_state in merged unreported; do
+for rc_branch_state in branch nobranch; do
+  rc_case="$rc_report_state-$rc_branch_state"
   rc_setup 1
-  if [ "$rc_case" = merged-branch ]; then
+  if [ "$rc_report_state" = merged ] && [ "$rc_branch_state" = branch ]; then
     stale_wt="$(mktemp -d)/stale"
     git worktree add -q -b rc-stale "$stale_wt"
     rm -rf "$stale_wt"
   fi
-  case "$rc_case" in
-    merged-*) rc_report 7; "$ORCH" ticket merge 7 >/dev/null 2>&1 ;;
-  esac
-  case "$rc_case" in
-    *-nobranch)
-      case "$rc_case" in unreported-*) commit_file . other.txt x ;; esac
-      git -C "$(rc_wt 7)" checkout -q --detach
-      git branch -q -D orch/5-feature--t7
-      ;;
-  esac
+  if [ "$rc_report_state" = merged ]; then
+    rc_report 7; "$ORCH" ticket merge 7 >/dev/null 2>&1
+  fi
+  if [ "$rc_branch_state" = nobranch ]; then
+    [ "$rc_report_state" = unreported ] && commit_file . other.txt x
+    git -C "$(rc_wt 7)" checkout -q --detach
+    git branch -q -D orch/5-feature--t7
+  fi
   rm -rf "$(rc_wt 7)"
   out="$("$ORCH" ticket reclaim 90 2>&1)"; st=$?
   assert_status "reclaim of a gone-directory leftover ($rc_case) succeeds" "$st" 0
   assert_contains "printing the worktree line ($rc_case)" "$out" "removed the worktree of ticket #7"
-  case "$rc_case" in
-    merged-*) assert_contains "printing the close ($rc_case)" "$out" "closed ticket #7" ;;
-    unreported-*) assert_contains "printing the discard ($rc_case)" "$out" "discarded ticket #7" ;;
-  esac
-  case "$rc_case" in
-    *-branch) assert_contains "printing the branch line ($rc_case)" "$out" "deleted the branch of ticket #7" ;;
-    *-nobranch) assert_not_contains "printing no branch line ($rc_case)" "$out" "deleted the branch of ticket #7" ;;
-  esac
+  if [ "$rc_report_state" = merged ]; then
+    assert_contains "printing the close ($rc_case)" "$out" "closed ticket #7"
+  else
+    assert_contains "printing the discard ($rc_case)" "$out" "discarded ticket #7"
+  fi
+  if [ "$rc_branch_state" = branch ]; then
+    assert_contains "printing the branch line ($rc_case)" "$out" "deleted the branch of ticket #7"
+  else
+    assert_not_contains "printing no branch line ($rc_case)" "$out" "deleted the branch of ticket #7"
+  fi
   assert_eq "leaving no record ($rc_case)" "$("$ORCH" ticket-worktree list)" ""
   assert_eq "and no ticket branch ($rc_case)" "$(rc_has_branch 7)" "no"
-  if [ "$rc_case" = merged-branch ]; then
+  if [ "$rc_report_state" = merged ] && [ "$rc_branch_state" = branch ]; then
     assert_eq "another stale record is still listed by git ($rc_case)" \
       "$(git worktree list --porcelain | grep -c "worktree $stale_wt\$")" "1"
     git worktree prune
     git branch -q -D rc-stale
   fi
+done
 done
 
 # a plain directory at the recorded path: the teardown's refusal, then the

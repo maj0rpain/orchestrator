@@ -42,5 +42,8 @@ the full verification bare: step f runs it through `verification run` as well.
   running", never pass or fail.
 - A run can outlive its session. It is bounded by the ceiling, and a restarted
   phase with an unchanged tree collects its result.
+- An autopilot session's live runs are stopped at its end, so a restarted phase
+  never reattaches to one but still collects a finished run's result; a human's
+  session's runs still outlive it.
 - The 600 s figure is the host's. One setting, `ORCH_WAIT_BLOCK`, holds the
   block length kept under it, for all three commands.

@@ -65,6 +65,18 @@ assert_status "add refuses a ticket number that is not a positive integer" "$st"
 out="$("$ORCH" ticket-worktree add 2>&1)"; st=$?
 assert_status "add refuses a missing ticket number" "$st" 1
 
+out="$(sourced_orch_script 'declare -A facts own_branch _twt_x _tfrp_x
+for name in nosuch facts own_branch _twt_x; do echo "case=$name"; (ticket_worktree_teardown "$name") 2>&1 && echo "st=0" || echo "st=$?"; done
+for name in nosuch _tfrp_x; do echo "case=r$name"; (ticket_facts_require_parent "$name") 2>&1 && echo "st=0" || echo "st=$?"; done' 2>&1)"
+for bad in nosuch facts own_branch _twt_x; do
+  case_out="$(printf '%s\n' "$out" | sed -n "/^case=$bad\$/,/^st=/p")"
+  assert_contains "the teardown dies for $bad" "$case_out" "orch: ticket_worktree_teardown: $bad is not a declared associative array"
+done
+for bad in nosuch _tfrp_x; do
+  case_out="$(printf '%s\n' "$out" | sed -n "/^case=r$bad\$/,/^st=/p")"
+  assert_contains "require_parent dies for $bad" "$case_out" "orch: ticket_facts_require_parent: $bad is not a declared associative array"
+done
+
 git checkout -q --detach
 out="$("$ORCH" ticket-worktree add 9 2>&1)"; st=$?
 assert_status "add refuses a detached HEAD" "$st" 1
@@ -161,7 +173,7 @@ assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
 
 # teardown_of <n> [flag...]: reads ticket <n>'s facts, then calls
 # ticket_worktree_teardown on them, in one sourced shell.
-teardown_of() { sourced_orch_script 'ticket_facts "$1" f; shift; ticket_worktree_teardown f "$@"' "$@"; }
+teardown_of() { sourced_orch_script 'declare -A f; ticket_facts "$1" f; shift; ticket_worktree_teardown f "$@"' "$@"; }
 # ticket_worktree_teardown, the one site that tears a worktree down. Called
 # through teardown_of (the facts read, then the teardown); checked through
 # what git shows.
@@ -259,8 +271,8 @@ assert_contains "naming the ticket" "$out" "no ticket worktree or branch for tic
 
 # Strict arguments.
 out="$(sourced_orch ticket_worktree_teardown 2>&1)"; st=$?
-assert_status "teardown without a prefix dies" "$st" 1
-assert_contains "with its usage" "$out" "usage: ticket_worktree_teardown <prefix> [--unmerged] [--discard]"
+assert_status "teardown without an array dies" "$st" 1
+assert_contains "with its usage" "$out" "usage: ticket_worktree_teardown <array> [--unmerged] [--discard]"
 out="$(sourced_orch ticket_worktree_teardown f --bogus 2>&1)"; st=$?
 assert_status "teardown dies on an unknown flag" "$st" 1
 assert_contains "naming it" "$out" "--bogus"
@@ -452,9 +464,10 @@ assert_eq "leaving no record" "$("$ORCH" ticket-worktree list)" ""
 tw_repo
 top="$(git rev-parse --show-toplevel)"
 facts_of() {
-  sourced_orch_script 'ticket_facts "$1" f 2>&1 || exit $?
+  sourced_orch_script 'declare -A f
+ticket_facts "$1" f 2>&1 || exit $?
 for k in n path worktree wt_branch parent own_branch own_exists; do
-  v="f_$k"; printf "%s=%s\n" "$k" "${!v}"
+  printf "%s=%s\n" "$k" "${f[$k]}"
 done' "$1"
 }
 fact() {
@@ -531,10 +544,21 @@ out="$(PATH="$(worktree_list_fails_bin):$PATH" facts_of 7)"; st=$?
 assert_status "the read dies on an unreadable record, nothing at the path" "$st" 1
 assert_not_contains "never reporting none" "$out" "worktree=none"
 
-out="$(sourced_orch_script 'branch=b path=p n=n parent=pa tbranch=tb
+out="$(sourced_orch_script 'declare -A f
+branch=b path=p n=n parent=pa wt_branch=wb own_branch=ob
 ticket_facts 7 f
-printf "%s %s %s %s %s" "$branch" "$path" "$n" "$parent" "$tbranch"' 2>&1)"
-assert_eq "a caller's branch, path, n, parent and tbranch survive the read" "$out" "b p n pa tb"
+printf "%s %s %s %s %s %s" "$branch" "$path" "$n" "$parent" "$wt_branch" "$own_branch"' 2>&1)"
+assert_eq "a caller's branch, path, n, parent, wt_branch and own_branch survive the read" "$out" "b p n pa wb ob"
+
+out="$(sourced_orch_script 'declare -a idx; declare -A paths branches _tf_n
+for name in nosuch idx paths branches _tf_n; do
+  echo "case=$name"; (ticket_facts 7 "$name") 2>&1 && echo "st=0" || echo "st=$?"
+done' 2>&1)"
+for bad in nosuch idx paths branches _tf_n; do
+  case_out="$(printf '%s\n' "$out" | sed -n "/^case=$bad\$/,/^st=/p")"
+  assert_contains "ticket_facts dies for $bad, which is not a usable array" "$case_out" "st=1"
+  assert_contains "with the guard's message for $bad" "$case_out" "orch: ticket_facts: $bad is not a declared associative array"
+done
 
 git checkout -q --detach
 out="$(facts_of 7)"; st=$?
@@ -552,9 +576,6 @@ out="$("$ORCH" help 2>&1)"
 assert_contains "ticket-worktree add is in the usage text" "$out" "ticket-worktree add <n>"
 assert_contains "ticket-worktree list is in the usage text" "$out" "ticket-worktree list"
 assert_contains "ticket-worktree remove is in the usage text" "$out" "ticket-worktree remove <n> [--unmerged]"
-assert_contains "the CLI conventions' noun table has a ticket-worktree row" \
-  "$(grep '^| `ticket-worktree`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" \
-  '`add`, `list`, `remove`'
 restore_suite_env
 
 # --- a ticket branch has no upstream (#1152) ----------------------------------

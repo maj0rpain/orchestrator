@@ -43,13 +43,6 @@ PR_BODY_PIECES="$(printf '%s\t%s\n' \
   '**Door:** two-way' 'no **Door:** line under ## Merge Danger' \
   '**Blast Radius:** the widget module' 'no **Blast Radius:** line under ## Merge Danger')"
 
-# default_reads_run <log> <cmd>...: runs <cmd> with the adapter's
-# default-branch read answering main and appending a line to <log> per call,
-# so log_count <log> is how many times <cmd> asked GitHub for it.
-default_reads_run() {
-  fake_default_branch main
-  counted_adapter_run "$1" "$(counting_defs adapter_repo_default_branch branch)" "${@:2}"
-}
 
 # PR_BODY_REFUSED: the opening of every PR-body refusal, before its file.
 PR_BODY_REFUSED="orch: the PR body does not meet the PR-writing standard - no PR was opened:"
@@ -114,6 +107,7 @@ assert_eq "and records no PR in state" \
 # default-branch check share one ask of GitHub.
 state_fixture_drop base
 reads="$(mktemp)"
+fake_default_branch main
 out="$(default_reads_run "$reads" "$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "opens the PR" "$st" 0
 assert_eq "asking GitHub for the default branch once, with no base recorded" "$(log_count "$reads")" "1"
@@ -434,6 +428,7 @@ fake_next_pr 23
 # No base recorded for the branch and none set: its base read and the issue
 # line's default-branch check share one ask of GitHub.
 reads="$(mktemp)"
+fake_default_branch main
 out="$(default_reads_run "$reads" "$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
 assert_status "opens the PR" "$st" 0
 assert_eq "asking GitHub for the default branch once, with no base set" "$(log_count "$reads")" "1"
@@ -925,6 +920,7 @@ fake_issue 8 closed
 fake_pull 62
 
 reads="$(mktemp)"
+fake_default_branch main
 out="$(default_reads_run "$reads" release "Release" "$body" 2>&1)"; st=$?
 assert_status "refuses when the base branch is the default branch" "$st" 1
 assert_eq "asking GitHub for the default branch once, with no base set" "$(log_count "$reads")" "1"
