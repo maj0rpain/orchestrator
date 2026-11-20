@@ -1135,6 +1135,10 @@ PLANTED
 ord_suite="$ord_dir/scripts/test/orch_test.sh"
 ord_file="$ord_dir/scripts/test/section-durations.tsv"
 ord_log="$ord_dir/start.log"
+suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
+for ord_s in "${SUITES[@]}"; do
+  [ -e "$ord_dir/scripts/test/$ord_s" ] || echo 'echo; echo "1 passed, 0 failed"' >"$ord_dir/scripts/test/$ord_s"
+done
 # ord_run <jobs> <filter>: run the planted sections; the start order, then the
 # header order of the output, one comma-separated line each.
 ord_run() {
@@ -1174,6 +1178,21 @@ ord_run 2 '^ord '
 assert_status "a run with no durations file passes" "$ord_st" 0
 assert_eq "starts in walk order without the file" "$ord_started" "ord a,ord b,ord c,ord d,ord unlisted,"
 assert_eq "and prints in walk order" "$ord_printed" "ord a,ord b,ord c,ord d,ord unlisted,"
+# A fragment's line sets a section's place; an orphaned fragment line sets none.
+mkdir -p "$ord_dir/scripts/test/durations.d"
+printf '%s\n' "10	11	ord a" "30	31	ord b" >"$ord_dir/scripts/test/section-durations.tsv"
+printf '%s\n' "50	51	ord a" "90	90	a section that no longer exists" >"$ord_dir/scripts/test/durations.d/f.tsv"
+ord_run 2 '^ord (a|b)$'
+assert_eq "a fragment's line sets a section's place in the start order" "$ord_started" "ord a,ord b,"
+printf '%s\n' "99	99	a section that no longer exists" >"$ord_dir/scripts/test/durations.d/f.tsv"
+ord_run 2 '^ord (a|b)$'
+assert_eq "an orphaned fragment line sets no place" "$ord_started" "ord b,ord a,"
+# A suite list naming a missing suite gives walk order.
+rm -f "$ord_dir/scripts/test/durations.d/f.tsv"
+sed -i 's/^\(suites=(\)/\1no-such-suite.sh /' "$ord_dir/scripts/test/all.sh"
+ord_run 2 '^ord (a|b)$'
+assert_status "a missing suite gives a passing run" "$ord_st" 0
+assert_eq "and walk order" "$ord_started" "ord a,ord b,"
 rm -rf "$ord_dir"
 
 # --- the shard setting (#2859) ------------------------------------------------
@@ -1336,6 +1355,19 @@ sh_run ""
 assert_eq "an empty value runs as unset" "$sh_printed" "isolation,s1,s2,s3,s4,s5,"
 sh_run 1/2 1
 assert_eq "ORCH_TEST_JOBS=1 runs a group in walk order" "$sh_printed" "isolation,s3,s4,"
+# A fragment's line sets a weight; an orphaned one sets none.
+cp "$sh_dir/durations.keep" "$sh_t/section-durations.tsv"
+mkdir -p "$sh_t/durations.d"
+printf '%s\n' "1	99	shard s1" "1	99	a section that no longer exists" >"$sh_t/durations.d/f.tsv"
+sh_run 1/2
+assert_eq "a fragment's line sets a section's weight in the dealing" "$sh_printed" "isolation,s2,s5,"
+printf '%s\n' "1	99	a section that no longer exists" >"$sh_t/durations.d/f.tsv"
+sh_run 1/2
+assert_eq "an orphaned fragment line sets no weight" "$sh_printed" "isolation,s3,s4,"
+# A failing helper (a suite list naming a missing suite) exits 1.
+sed -i 's/^\(suites=(\)/\1no-such-suite.sh /' "$sh_t/all.sh"
+sh_run 1/2
+assert_status "a failing effective record makes the shard dealing exit 1" "$sh_st" 1
 # test_jobs_shard parses the value; one runner-level case shows the refusal
 # comes before any section starts.
 for sh_bad in x 0/2 3/2 1/ /2 1/2/3 a/b -1/2 " 1/2"; do
@@ -4680,6 +4712,9 @@ assert_eq "a change to a doc selects only the always-run checks" \
 tr_put "$af" scripts/test/section-durations.tsv 'x	1.0	1.0	t	f'
 tr_put "$af" scripts/test/suite-budget 100
 assert_eq "a changed durations file and a changed budget file select only the always-run checks" \
+  "$(tr_plan "$af" origin/rel)" "$TR_GATE,docs_lint.sh"
+tr_put "$af" scripts/test/durations.d/feat.tsv 'x	1	1	f'
+assert_eq "a changed durations fragment selects only the always-run checks" \
   "$(tr_plan "$af" origin/rel)" "$TR_GATE,docs_lint.sh"
 af_reset
 assert_eq "a module selects its section file's sections, and shellchecks itself" \

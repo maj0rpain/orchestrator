@@ -129,7 +129,11 @@ trap test_jobs_stop_descendants INT TERM
 # for them to exit.
 #
 # The parallel run starts its kept sections longest-first, read from the
-# committed tab-separated file section-durations.tsv beside this runner: one
+# effective record (test_tree.sh's ledger_effective): the committed
+# tab-separated file section-durations.tsv beside this runner overlaid by every
+# durations fragment in durations.d beside it, so a section a change just
+# recorded in its fragment starts in its right place, and a fragment line of a
+# section that no longer exists sets nothing. The file's format: one
 # line per section, "<wall tenths>", "<cpu tenths>" and the section's title,
 # tab-separated, and a fourth column, the fingerprint of the text the line was
 # measured from, on every line but shellcheck's; this runner reads three- and
@@ -138,7 +142,9 @@ trap test_jobs_stop_descendants INT TERM
 # the rest follow by wall seconds, longest first, ties in walk order. Output
 # stays in walk order. A line that does not parse and a name matching no
 # section are ignored, and a missing file gives walk order, so the file costs
-# speed only. A filtered run orders the sections it kept the same way;
+# speed only; when the effective record cannot be read (a suite list naming a
+# suite that is not there) the start order is walk order. A filtered run
+# orders the sections it kept the same way;
 # ORCH_TEST_JOBS=1 stays in walk order.
 #
 # The shard setting. ORCH_TEST_SHARD=<i>/<n> (positive integers, i at most n)
@@ -149,7 +155,8 @@ trap test_jobs_stop_descendants INT TERM
 # value together with a non-empty ORCH_TEST_ONLY (1/1 included) does the same
 # with "orch_test.sh: ORCH_TEST_SHARD and ORCH_TEST_ONLY cannot both be set".
 # The grouping is a pure function of the section titles in walk order,
-# section-durations.tsv, all.sh's suite list (read with suites_read) and n:
+# the effective record, all.sh's suite list (read with suites_read) and n (a
+# record that cannot be read exits 1, as a failed suite list does):
 # a section weighs its CPU seconds, one the file does not list the median CPU
 # of the listed sections the deal deals, all but the isolation section (the
 # lower middle on an even count, 1 second when none is listed), group 1
@@ -395,11 +402,16 @@ refuse_selection() {
   exit 1
 }
 
-orch_durations_file="$TEST_DIR/section-durations.tsv"
-# orch_durations_feed: the first stage of an awk input - the durations file when
-# readable (awk 1 supplies a missing final newline), then the \001 separator.
+# orch_effective_read: writes the effective record of the durations file and the
+# fragments beside it (test_tree.sh's ledger_effective) to a file in the temp
+# root. It fails, LEDGER_ERR holding the fault, when the helper does.
+orch_effective_read() {
+  ledger_effective "$TEST_DIR" >"$orch_root/effective"
+}
+# orch_durations_feed: the first stage of an awk input - the record
+# orch_effective_read wrote, then the \001 separator.
 orch_durations_feed() {
-  if [ -r "$orch_durations_file" ]; then awk 1 "$orch_durations_file"; fi
+  cat "$orch_root/effective"
   printf '\001\n'
 }
 if [ -n "${ORCH_TEST_ONLY:-}" ]; then
@@ -424,6 +436,8 @@ else
     # Deal the sections but isolation by CPU-second weight; keep group i's.
     suites_read "$TEST_DIR/all.sh" "$TEST_DIR" || {
       echo "orch_test.sh: $SUITES_ERR" >&2; exit 1; }
+    orch_effective_read || {
+      echo "orch_test.sh: $LEDGER_ERR" >&2; exit 1; }
     orch_others=""
     for orch_suite in "${SUITES[@]}" shellcheck; do
       [ "$orch_suite" = orch_test.sh ] || orch_others+="$orch_suite"$'\n'
@@ -531,25 +545,27 @@ orch_sections=()
 trap 'test_jobs_stop_children "${orch_pids[@]}"' INT TERM
 IFS=, read -r -a orch_sections <<<"${orch_kept#,}"
 orch_total=${#orch_sections[@]}
-# The start order: sections the durations file does not list first, in walk
+# The start order: sections the effective record does not list first, in walk
 # order, then the rest by wall seconds, longest first, ties in walk order. A
 # line that does not parse and a name matching no section are ignored; a
-# missing or unreadable file gives walk order.
+# missing file gives walk order, and so does a failed effective record.
 mapfile -t orch_title_at <<<"$orch_titles"
 orch_titles_kept=""
 for ((orch_i = 0; orch_i < orch_total; orch_i++)); do
   orch_titles_kept+="${orch_title_at[orch_sections[orch_i] - 1]}"$'\n'
 done
 orch_order=()
-mapfile -t orch_order < <(
-  { orch_durations_feed; printf '%s' "$orch_titles_kept"; } |
-    awk -F'\t' "$DURATIONS_AWK"'
-      !seen && $0 == "\001" { seen = 1; next }
-      !seen { durations_read(); next }
-      { idx++
-        if ($0 in wall) printf "1\t%d\t%d\n", -wall[$0], idx; else printf "0\t0\t%d\n", idx }
-    ' | LC_ALL=C sort -n -k1,1 -k2,2 -k3,3 | cut -f3
-)
+if orch_effective_read 2>/dev/null; then
+  mapfile -t orch_order < <(
+    { orch_durations_feed; printf '%s' "$orch_titles_kept"; } |
+      awk -F'\t' "$DURATIONS_AWK"'
+        !seen && $0 == "\001" { seen = 1; next }
+        !seen { durations_read(); next }
+        { idx++
+          if ($0 in wall) printf "1\t%d\t%d\n", -wall[$0], idx; else printf "0\t0\t%d\n", idx }
+      ' | LC_ALL=C sort -n -k1,1 -k2,2 -k3,3 | cut -f3
+  )
+fi
 if [ "${#orch_order[@]}" -ne "$orch_total" ]; then
   orch_order=()
   for ((orch_i = 1; orch_i <= orch_total; orch_i++)); do orch_order+=("$orch_i"); done

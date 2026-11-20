@@ -57,7 +57,8 @@
 #   .shellcheckrc                     shellcheck over every scripts/**/*.sh,
 #                                     plus the harness sections
 #   skills, agents, docs, markdown, changelog fragments, the durations file
-#   (section-durations.tsv) and the budget file (suite-budget, beside it), the
+#   (section-durations.tsv), a durations fragment (durations.d/) and the
+#   budget file (suite-budget, beside it), the
 #   workflow files, .gitignore, .gitattributes, .ignore, LICENSE and
 #   .claude/settings.json
 #                                     nothing beyond the always-run checks
@@ -457,7 +458,8 @@ classify() {
       .shellcheckrc) sc_all=1; sections_of harness ;;
       .github/workflows/* | .gitignore | .gitattributes | .ignore | LICENSE | .claude/settings.json) return 0 ;;
       scripts/test/docs_lint.sh) ;;
-      scripts/test/section-durations.tsv | scripts/test/suite-budget) return 0 ;;
+      scripts/test/section-durations.tsv | scripts/test/suite-budget | \
+        scripts/test/durations.d/*) return 0 ;;
       skills/* | agents/* | docs/* | changelog.d/* | *.md) return 0 ;;
       *) unnamed ;;
     esac
