@@ -198,7 +198,8 @@ plan or from what the previous loop left instead of asking.
      8, plus Other for any integer ≥ 1; there is no upper cap. Suggest one
      from the size of the change, by your own judgement, as the planning
      interview's closing route question recommends a route from the scope
-     of the work (`scripts/hook-grilling.sh`). Weigh lines and files changed
+     of the work when no default route is set (`orch-interview`'s Closing).
+     Weigh lines and files changed
      (`git diff --stat` from the base SHA), the ticket count (`bash "$ORCH"
      ticket list <spec issue>`, one line per sub-issue; no lines means a
      collapsed breakdown, which counts as 1 ticket), and how many modules or
