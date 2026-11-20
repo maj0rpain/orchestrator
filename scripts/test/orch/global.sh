@@ -5,6 +5,8 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+guard_line_for() { echo "orch: bash $1 is too old - orch.sh needs bash 4.2 or newer: brew install bash"; }
+
 # --- slug -------------------------------------------------------------------
 # The same normalisation init applies to its own slug argument, exposed as a
 # primitive so the quick-implement skill can call it instead of restating the
@@ -103,7 +105,6 @@ echo "bash version guard"
 guard_repo="$(new_repo)"
 guard_plain="$(mktemp -d)"
 guard_unfaked="$(cd "$guard_repo" && "$ORCH" help 2>&1)"
-guard_line_for() { echo "orch: bash $1 is too old - orch.sh needs bash 4.2 or newer: brew install bash"; }
 for guard_ver in 3.2 4.1; do
   guard_line="$(guard_line_for "$guard_ver")"
   for guard_cmd in doctor help; do
