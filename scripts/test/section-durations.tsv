@@ -85,7 +85,7 @@
 29	31	autopilot candidates	8592ae15d07de5fdedc7f071630838ec706c1f4d
 4	5	autopilot answer: no repo (#3050)	43b2e7d2c6f7ae2f2e566aafa0fd64850f14e34a
 4	5	autopilot session ops read the issue in one jq	c951be202d457a4ea4c00d130cfba0b2f8ae5aeb
-15	13	base	1d30c92ace82dbeb31bd2bb0af57badfdbedaf1c
+11	12	base	4ca1f19cac3ef83ca996b678fba01404782aa24d
 37	38	a flow's base branch	45475caadc481a9fbcda51773787f44333982e42
 3	4	base set on a truncated state.json (#1929)	de4767097a86d163c76e27f57e97f2f368040804
 25	18	branch create	1dc2ff2bbd612ebe62e588cd8398e113e0eaa996
@@ -126,10 +126,10 @@
 0	1	die_hinted and die_opt_check	a31d5ea9ef99f315cf022f51ad5894482feffb9e
 0	1	host detection (host.sh, #281)	9d7272356d7fbf0f5fdca9c46ffa86f8c5c036cd
 5	6	doctor.sh is a one-way dependency (#281)	b86ca6ac46faa586b4d718a1aa26e9018e2539ea
-191	161	doctor	64528465cd563834f7d7cb1059759adceb8e4e7d
+147	162	doctor	85d21e76a7b11fcc51673870bbc6d61b0ed25449
 36	40	doctor: host (#128)	0ff10dbdae9d20ee078396950c793cb2ec3a2d69
 97	105	doctor --flow	ec6c0771cdbf7af4d034b080907fded56e7409f3
-41	45	doctor --env: finished side checkouts (#727)	409b7fb136865798294e217b184517a077d5b12c
+40	44	doctor --env: finished side checkouts (#727)	8d56eb5df3a1cea24b7c1e0173d431eb1a742f7b
 12	14	doctor at the review phase	f758faa73c220475b21e8e6f7ce147e4217392d6
 8	9	doctor: upstream beside an ambiguous origin/<branch> (#1331)	330a42c2865d5a02fae709612f503ac7b23ea5da
 50	43	doctor: review terminal check	88212d953c41af51b6bd5eeac27da3ee9a58006d
@@ -233,19 +233,19 @@
 31	35	phase advance in an autopilot flow (#1457)	3f11f48e53c11f24a0c5683139056f0b493b1fe0
 7	8	phase advance with a failed phase write (#1931)	c82e166171de5000ca89ef4f8614cc5c24820382
 8	9	phase advance and boundary read the flow's state once (#3063)	0d138a2b1374e352088aabaffc5eb527472c8124
-62	66	pr open	45e24aff64f261ece05d29d31f6c610ecd34728f
-21	23	pr publish	c508b1fdef92df99d5eeed225de23d06da837bf5
-9	10	pr draft (#967)	7440fbafe20019c43b9e3db6b19f28f7914d2146
-18	20	pr ready (#967)	c639dc2cfcf29db3ff6c344f7347d02c7e5b3e3f
-0	1	pr: unknown op	5a640be315379f1c037648e726c43c589b47e1de
-17	20	pr release	5d64e8da38904f343c2784a8d8e29ee96ad4ad7f
-6	7	pr comment (#343)	b48f7b02f325d3bb20df13523a862b9dabc3987b
-13	14	pr fetch / pr update (#444)	f6fb9af3388a6f835490a95136c4a916735ead68
-13	16	pr comments (#418)	130d286d938d5f987781da350e3f51a24f117d7c
-18	20	pr read (#1573)	9100926cc919805c7f97c6a3032cee3e454e627e
-16	18	pr: fork PRs (#1977)	6ecf0fdd1d64f368b3a610fb07097b3e6847156b
-7	6	pr: no repo (#3050)	47ee3b0d56c044e7a6a39678351738911909e2fd
-0	1	pr: PR-line pick and newest merge (#3074)	02e330a912ab011036444fafc3326dad36a97082
+60	64	pr open	f8e7d85f3b7aac428feb90a6b465eb53b8d509d2
+20	23	pr publish	902d8d87fdb4ea7e9ea7e6451bc95df1467b527a
+9	10	pr draft (#967)	2fcf41b7bf15a3cb9053a6513a3f264017c4cd09
+18	19	pr ready (#967)	c09179592ea47f3380ff5e59efd231c6abcdb0d8
+0	1	pr: unknown op	23a8d9f3afcf9188f83053f77307c3bb57660727
+17	19	pr release	a2a3fb885605dfa4b828b95ec1e2a21b00b020a9
+6	7	pr comment (#343)	d23b28b8ee74493e1aba607a529c1b5a0b947b7c
+13	15	pr fetch / pr update (#444)	dbe87bc76e7031ba3de6691684c366745f3ab0e2
+13	16	pr comments (#418)	99115a5ae7f9ed8a92206166a683f1a8cb8e4d1e
+18	20	pr read (#1573)	9cf4f283c66797b956629e21c992ab96cd0a9442
+16	18	pr: fork PRs (#1977)	b1369b7108b029e0296053c992eb0b53cbbff1e3
+5	6	pr: no repo (#3050)	8b3b809ad4bd20c29b28db9f93669024b929cd12
+0	1	pr: PR-line pick and newest merge (#3074)	f4c619df6cb7bde1cd52f0d8181a321aa7b5511e
 78	81	redo review	b62654b38632ca3b2c5f4b61a4abeb2acb82faff
 8	9	redo review refuses a taken handoff destination	3fa122ad40f6cf338d95a10c114170d1f36c2318
 46	40	redo review rerun after review retire (#2569)	cd4da3ad670722945bb9f2dd3e2c8ec23e9b4fab
@@ -289,15 +289,15 @@
 20	21	status lists every checkout (#725)	0e2829f44c533a36ede63218f75dc3b6b9f517bf
 62	66	side-checkout archive and remove (#724)	1fb2f3f39b0980a84392830dc2587afb5d19aa14
 61	64	side-checkout prune (#726)	2bda70fa48dd4b380007de96e4897b5b0aea9095
-66	70	side-checkout prune: edge cases (#726)	66423bb902f47121ad084803adf568ee18c0271f
+69	72	side-checkout prune: edge cases (#726)	be2f05022f06b567f8644f200d31cb3fcfb831ee
 18	19	archive keeps flow-less directories (#1247)	1cf41fafd151a6478b41bf1fd7aff5efd9847669
 21	23	side-checkout prune: a covered branch tip (#1906)	b13be4c577395b49197e461cad6954d626b4081f
 5	7	side-checkout prune: fork PRs are not proof (#1979)	004dd30e3e0deb54b95c8c79110e26cd2ffc4014
 49	52	side-checkout prune: the merged-PR close backstop (#2477)	69f285288eabcace9d74fa67194548b6bf7ab512
 2	3	side_checkout_marker reads the worktree's git pointer	7605e77ff7fdca5853e0a9cc368065fe764cb65e
-12	13	side checkout marker issue: reading without re-classifying (#3073)	38fb5dbe3d46481d12994865f0baff152661f1c4
+11	12	side checkout marker issue: reading without re-classifying (#3073)	4d201251bfb73c22114fdcdc86ae808fb3930ed5
 5	6	archive reads the flow's slug once	d1e47a75531129e6123579f59802dd69c84d1d76
-5	7	side-checkout: the default branch is asked for only when needed	03ca2477dac861e7e263fc55a80eb119924bf047
+5	7	side-checkout: the default branch is asked for only when needed	5f8f132611fabd4e0dede5d1e6b3db76ceff3111
 6	6	spec-review begin (#224)	fe74fe8dd28fdc37ed2e86fe535752768ee13f03
 6	6	spec-review begin --carry (#1141, #1185)	2c305a83077a50dfcb50dc0bac0388c4ce86ff59
 0	1	quick implementation runs an unattended spec review (#237)	91dd9515c5afc42fce26ef3734a5366a26a9dacf
