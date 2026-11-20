@@ -368,8 +368,11 @@ origin is not `REPO` is refused, not repaired: remove the repo volume
 (`docker compose down -v`) or run a separate compose project (`-p <name>`) for
 the new repo. Session logs stay
 where the watcher writes them, under `.orchestrator/autopilot/logs/` in that
-volume; the watcher's stderr is the container's output, shown by `docker
-compose logs`.
+volume, and the watcher deletes those last modified more than 14 days ago. At
+most once an hour it also sweeps finished side checkouts, as
+`/orchestrator:finish` does: each has its flow archived, its worktree removed
+and its local branch deleted. The watcher's stderr is the container's output,
+shown by `docker compose logs`.
 
 For a repo whose tests need a toolchain, set `EXTRA_APT_PACKAGES` in the
 repo's env file (`docker/.env`, or `docker/.env.<name>`) to a space-separated

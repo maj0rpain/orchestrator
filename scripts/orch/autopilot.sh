@@ -1217,7 +1217,7 @@ autopilot_rank() {
 # gates it: a missing stamp, one that does not parse as an epoch, one dated in
 # the future and one more than an hour old each run it. The stamp is written
 # first; when it cannot be, the step warns and is skipped. A failed log prune
-# warns, and never fails the step.
+# warns, and never fails the step; then the finished sweep runs the same way.
 autopilot_housekeeping() {
   local stamp text="" now
   stamp="$(autopilot_dir "$1")/housekeeping"
@@ -1232,6 +1232,11 @@ autopilot_housekeeping() {
     return 0
   }
   liveness_logs_prune || :
+  # The finished sweep /orchestrator:finish runs, its report on stderr as in
+  # side-checkout add; a failed sweep warns and never fails the step.
+  orch_load side-checkout
+  ( cmd_side_checkout_prune ) >&2 \
+    || warn "the finished sweep failed - carrying on"
   return 0
 }
 
@@ -1287,6 +1292,7 @@ autopilot_tick() {
     if autopilot_pause_until "$main_root" graphql; then return 0; fi
   fi
   autopilot_housekeeping "$main_root"
+  if autopilot_pause_until "$main_root" github; then return 0; fi
   if [ "$auto_sync" = true ]; then autopilot_sync_detect "$done_table"; fi
   slots=$((cap / 2))
   autopilot_flow_ranked ranked

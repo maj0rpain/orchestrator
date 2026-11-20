@@ -3472,3 +3472,65 @@ printf '%s\n' "$(iso_of "$(( $(date +%s) + 1800 ))")" >"$hk_dir/github-limit"
 assert_eq "a GitHub pause skips housekeeping" "$(hk_kept)" "5-spec-20240101-000000.log 6-spec-20240101-000000.log notes.txt "
 assert_eq "and writes no stamp either" "$(on_disk "$hk_stamp")" absent
 rm -f "$hk_dir/github-limit"
+
+# --- autopilot tick: housekeeping sweeps finished side checkouts --------------
+# The finished sweep /orchestrator:finish runs, on a tick with no issue to pick
+# up, so add's own sweep cannot be what removes a checkout.
+echo
+echo "autopilot tick housekeeping sweep"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+hs_dir="$top/.orchestrator/autopilot"
+hs_stamp="$hs_dir/housekeeping"
+hs_done="$top/.orchestrator/checkouts/hs-done"
+hs_open="$top/.orchestrator/checkouts/hs-open"
+fake_offline
+for hs_slug in hs-done hs-open; do
+  orch_gh_failing side-checkout add "$hs_slug" >/dev/null 2>&1
+  git -C "$top/.orchestrator/checkouts/$hs_slug" checkout -q -b "quick/9-$hs_slug"
+  git -C "$top/.orchestrator/checkouts/$hs_slug" commit -q --allow-empty -m "work on $hs_slug"
+done
+fake_pr 61 merged quick/9-hs-done main
+fake_pr_head 61 "$(git rev-parse quick/9-hs-done)"
+fake_online
+hs_branch() { git rev-parse --verify --quiet "refs/heads/$1" >/dev/null && echo kept || echo gone; }
+# GitHub unreadable: nothing is removed, the tick warns and still picks up
+fake_fail adapter_prs_merged "$GH_502"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Sweep 7"
+printf '7\n' >"$launcher_dir/release"
+rm -f "$hs_stamp"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick whose sweep cannot read GitHub succeeds" "$st" 0
+assert_contains "it warns" "$out" "could not read GitHub"
+assert_eq "the finished side checkout stays" "$(on_disk "$hs_done")" present
+assert_eq "and the tick still picks up" "$(tick_calls)" "1"
+fake_unfail
+# a failing sweep warns, the stamp is written, the tick still picks up
+fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Sweep 8"
+printf '8\n' >"$launcher_dir/release"
+rm -f "$hs_stamp"
+hs_git="$(fails_bin git '*" worktree remove "*')"
+out="$(PATH="$hs_git:$PATH" "$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a failing sweep leaves the exit status" "$st" 0
+assert_contains "it warns" "$out" "orch: could not remove side checkout"
+assert_eq "the stamp is written" "$(on_disk "$hs_stamp")" present
+assert_eq "and pickup happens" "$(tick_calls)" "2"
+rm -rf "$hs_git"
+# a GitHub rate limit hit by the sweep writes the pause and ends the tick
+fake_issue 9 open ready-for-agent orch:spec; fake_issue_title 9 "Sweep 9"
+printf '9\n' >"$launcher_dir/release"
+rm -f "$hs_stamp" "$hs_dir/github-limit"
+fake_fail_times adapter_prs_merged 1 "API rate limit exceeded for user ID 1."
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "the GitHub pause is written" "$(on_disk "$hs_dir/github-limit")" present
+assert_eq "the tick ends before pickup" "$(tick_calls)" "2"
+fake_unfail
+rm -f "$hs_dir/github-limit"
+# a finished side checkout is removed and an unfinished one kept
+rm -f "$hs_stamp" "$launcher_dir/release"
+for hs_n in 7 8 9; do fake_issue "$hs_n" closed; done
+"$ORCH" autopilot tick >/dev/null 2>&1; st=$?
+assert_status "a tick with nothing to pick up succeeds" "$st" 0
+assert_eq "the finished side checkout is removed" "$(on_disk "$hs_done")" absent
+assert_eq "with its branch" "$(hs_branch quick/9-hs-done)" gone
+assert_eq "the unfinished one is kept" "$(on_disk "$hs_open")" present
