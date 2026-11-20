@@ -78,6 +78,16 @@ out="$("$ORCH" status 2>&1)"; st=$?
 assert_state_unreadable "status on a truncated state.json" 1 "$out" "$st"
 restore_suite_env
 
+echo
+echo "status on a flow started before the budget shipped"
+fresh_flow legacystatus
+state_fixture_drop budget loop flake_rerun_used
+assert_eq "the drop leaves state.json with no budget key" \
+  "$("$ORCH" state get | jq 'has("budget")')" "false"
+assert_contains "status reads the missing budget as the default" \
+  "$("$ORCH" status)" "iteration 0 of 5"
+restore_suite_env
+
 # --- mp-skill ---------------------------------------------------------------
 # The plugin reads no upstream skill any more (ADR-0028), so the resolver is
 # gone.

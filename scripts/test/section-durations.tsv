@@ -177,7 +177,7 @@
 8	9	gh rate limits: the GitHub pause and the hit file (#2577)	fcb666e7303479e77d20fa86573702cc89fbdd1c
 0	1	slug	0e5d14cb85802ac178af168a4ee7e009fa0b927b
 9	11	archive	ab01c77d6d8c6c3784c7e3244adedb382528bdd9
-3	4	status	4dcdfbf9c3c90c6f28b94996bc2aeb4bef091a16
+6	7	status	5d72b4243f86d69884e2350f8a6bb4269b4ac54d
 0	1	mp-skill	42a828d6f818ccb7afe36031ee93138e2a7dfc35
 1	2	bash version guard	86cdad11a00c6e0ab6653370de5bfe34334218ba
 0	1	glossary terms	791773bc1306a4b30242cbf20709956dbdcb5101
@@ -328,7 +328,7 @@
 124	117	Standing transitions	545e34fbb2e91632de6484af07eb526577b4f311
 2	3	standing_ask reads the issue in one jq	323242a91458cfdc0852ce80bf275f3a21daf5f0
 19	21	state	8f8a6d0c9ed66193eb8616169bbf206ccea0a741
-21	20	a flow from before the budget shipped	b21908c018f434ba989362b0c10b86ed3addcc32
+21	20	a flow from before the budget shipped	74a733a87311a08cfe7a1e7bd6abe7956bdb2975
 9	10	state get reads every key with its default	9b5f35731357e21c5e7825d8e14c347e0e4bedbd
 16	17	the state writer accepts exactly the table's phases	8483d2441e21e1e5f965968522b0c3e00737359d
 7	8	state.json schema	425162b3d7cb59537674814f30ff0da8c11d57c4
