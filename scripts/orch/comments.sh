@@ -66,7 +66,9 @@ comments_render() {
 # failure); a comment object that does not parse dies as "could not <what>: its
 # comments did not parse", both with status 1, or status 2 under --exit 2 (a
 # caller that reserves exit 1, like pr comments). The options are
-# die_opt_check's and may come in either order.
+# die_opt_check's and may come in either order. A kind other than issue or pr is
+# a misuse: it dies as "comments_trusted: unknown kind: <kind> (want issue|pr)"
+# with status 1, even under --exit 2, before any gh call.
 comments_trusted() {
   local __ct_opts=() __ct_exit=() __ct_err __ct_out
   while [ "${1-}" = --hint ] || [ "${1-}" = --exit ]; do
@@ -74,6 +76,7 @@ comments_trusted() {
     [ "$1" != --exit ] || __ct_exit=(--exit 2)
     __ct_opts+=("$1" "$2"); shift 2
   done
+  case "$1" in issue | pr) ;; *) die "comments_trusted: unknown kind: $1 (want issue|pr)" ;; esac
   comments_trusted_read "$1" "$3" __ct_out __ct_err || {
     [ -z "$__ct_err" ] || gh_die ${__ct_opts[@]+"${__ct_opts[@]}"} "$2" "$__ct_err"
     die_hinted ${__ct_exit[@]+"${__ct_exit[@]}"} "could not $2: its comments did not parse"
@@ -83,8 +86,8 @@ comments_trusted() {
 
 # comments_rendered [--exit 2] [--hint <h>] <issue|pr> <what> <n> <var>:
 # comments_trusted's comments rendered by comments_render, assigned to <var>;
-# no placeholder for a dropped comment. Its failures, --exit and --hint are
-# comments_trusted's.
+# no placeholder for a dropped comment. Its failures (a kind misuse included),
+# --exit and --hint are comments_trusted's.
 comments_rendered() {
   local __cd_opts=() __cd_exit=() __cd_kept __cd_out
   while [ "${1-}" = --hint ] || [ "${1-}" = --exit ]; do

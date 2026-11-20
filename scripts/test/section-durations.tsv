@@ -111,7 +111,7 @@
 12	13	checkout (#1078)	85b65822bd5ebac5cdac093e84c0a28d92c25cc0
 3	4	checkout current branch (#1079)	8ed29994be0d37ea761c6fba66a7f1594d5332d1
 19	14	checkout busy, redo-retired branch (#1981)	d6d2a1101edb4c54066c3be0085daad6d002bc7b
-21	25	comments module	60c75de06b49ff19fe1f45024b92278062be3ab1
+18	21	comments module	739322b3d4c13677d2d97a98fa6d910f36f20073
 8	10	common.sh is the bottom layer	04f7eed4e1b745bc381196f09f7ddd3c7337cc02
 0	1	orch_dirs_unexcluded	12a7c2c452ab0556c398c46950d20b677e85748f
 2	2	exclude_line	91fd2dfe3a47af5e150b38ca04a8fa5232fb2954
@@ -260,7 +260,7 @@
 9	10	repo show	03b579d082d6e4e5353a860b91cb90f1006013d0
 7	8	default-branch	0177d6e5817d4d0befacac87fc2b2a0f621ad11b
 9	10	review-pass begin (#342)	c9a9274e4ded397a8c551e3b82717cd167110d2b
-52	65	review-pass known-items	c01aa6033c8a94081955880d1ea8ecdcc49dbb05
+52	64	review-pass known-items	1fef82c7211e3ec0461af015f37fbe44425ea8b8
 20	17	review ready's pointer to /orchestrator:finish (#727)	e8d2ed095a35df98ab05ed3f22261da9f491025c
 17	15	review begin	c4a68a37d613f9f5992ecf1b159a2ce1f9ba6bca
 4	5	review path	c78a5b250d2bed63c97a669e2cbac1fe74e42940
