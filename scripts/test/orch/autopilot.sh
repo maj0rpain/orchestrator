@@ -141,10 +141,6 @@ out="$("$ORCH" help 2>&1)"
 assert_contains "autopilot show is in the usage text" "$out" "autopilot show"
 assert_contains "autopilot active is in the usage text" "$out" "autopilot active"
 assert_contains "autopilot settings is in the usage text" "$out" "autopilot settings"
-assert_contains "the CLI conventions' autopilot row lists settings" \
-  "$(grep '^| `autopilot`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`settings`'
-assert_contains "the CLI conventions' noun table has an autopilot row" \
-  "$(grep '^| `autopilot`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`active`'
 hc_row="$(grep '^| Start a headless session' "$PLUGIN_ROOT/docs/host-capabilities.md")"
 assert_contains "host-capabilities has the headless-session row" "$hc_row" '`claude -p`'
 assert_contains "the headless-session row carries --append-system-prompt" "$hc_row" '`--append-system-prompt`'

@@ -188,9 +188,9 @@
 #   scan_interview_closing  orch-interview's SKILL.md's Closing section has
 #     four numbered route options
 #   scan_repo_verification  this repo's CLAUDE.md Testing section names a
-#     Ticket verification:, Branch verification: and Full verification: command
-#   scan_branch_verification  CLAUDE.md's Branch verification: line, if any,
-#     has a command and sits in the Testing section
+#     Ticket verification:, Branch verification: and Full verification: command,
+#     and no other Branch verification: line is bare or outside the Testing
+#     section
 # <<< rules
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -257,6 +257,14 @@ md_section() {
 md_section_first_block() {
   md_section "$1" "$2" \
     | awk '/^[[:space:]]*```/ { if (inb) exit; inb = 1; next } inb' | sed 's/^[[:space:]]*//'
+}
+
+# compose_block <key> [<file>]: the lines indented under every `<key>:` line of
+# a compose file, read from <file> or, with none, stdin. The one reader both
+# docker scanners use.
+compose_block() {
+  K="$1" awk '$0 ~ "^ *" ENVIRON["K"] ":" { match($0, /^ */); n = RLENGTH; inb = 1; next }
+    inb { match($0, /^ */); if (RLENGTH <= n) inb = 0; else print }' ${2:+"$2"}
 }
 
 # check <rule> <findings>: ok when the scan found nothing, else one FAIL line
@@ -1092,10 +1100,10 @@ flags "the scan flags orch.sh resolved without the Junie step" \
 documented_orch_form() {
   local -a steps=("$orch_junie (the Junie CLI install)." "$orch_junie_one" "$orch_junie_many"
     "$orch_fallback two directories above this skill's own directory.")
-  local step omit
+  local step
   printf '%s\n' '```' "$orch_line" '```'
   for step in "${steps[@]}"; do
-    for omit in "$@"; do [ "$step" = "$omit" ] && continue 2; done
+    listed "$step" "$@" && continue
     printf '%s\n' "$step"
   done
 }
@@ -2315,9 +2323,13 @@ echo "no pipe into a quiet grep or head (#987, #1019)"
 # a scanned script that pipes into a quiet grep or into head, <text> the raw
 # line with leading whitespace trimmed.
 scan_early_exit_pipe() {
-  local f
-  while IFS= read -r f; do
-    F="$f" awk "$SHELL_CODE_AWK"'
+  local f files=()
+  while IFS= read -r f; do files+=("$f"); done < <(cd "$1" && find scripts -name '*.sh' 2>/dev/null | sort)
+  [ "${#files[@]}" -gt 0 ] || return 0
+  # One awk over every file: the pipe-continued state resets at each file's
+  # first line, as SHELL_CODE_AWK's own does.
+  (cd "$1" && awk "$SHELL_CODE_AWK"'
+      FNR == 1 { open = 0 }
       {
         t = $0; sub(/^[[:space:]]+/, "", t)
         shell_code_line($0)
@@ -2334,17 +2346,16 @@ scan_early_exit_pipe() {
           if ((k = index(g, SUBSEP)) && k < cut) cut = k
           m = split(substr(g, 1, cut - 1), w, /[[:space:]]+/)
           j = 1; while (j <= m && w[j] == "") j++
-          if (j <= m && w[j] ~ /^head([);&|]|$)/) { print ENVIRON["F"] ":" FNR ": " t; next }
+          if (j <= m && w[j] ~ /^head([);&|]|$)/) { print FILENAME ":" FNR ": " t; next }
           if (j > m || w[j] != "grep") continue
           for (j++; j <= m; j++) {
             o = w[j]; sub(/^["\047]+/, "", o)
             if (o ~ /^-[A-Za-z0-9]*[qm]/ || o ~ /^--(quiet|silent)$/ || o ~ /^--max-count(=|$)/) {
-              print ENVIRON["F"] ":" FNR ": " t; next
+              print FILENAME ":" FNR ": " t; next
             }
           }
         }
-      }' "$1/$f"
-  done < <(cd "$1" && find scripts -name '*.sh' 2>/dev/null | sort)
+      }' "${files[@]}")
   return 0
 }
 fixture="$(new_fixture)"
@@ -2378,7 +2389,14 @@ printf '%s\n' 'grep -q y <<<"$x"' >"$fixture/scripts/orch/herestring.sh"
 printf '%s\n' 'false || grep -q y f' >"$fixture/scripts/orch/oror.sh"
 printf '%s\n' '  # never write printf "%s" "$x" | grep -q y' >"$fixture/scripts/orch/comment.sh"
 printf '%s\n' 'echo "$x" | grep -q y' 'echo "$x" | head -n 1' >"$fixture/scripts/test/runner.sh"
-out="$(scan_early_exit_pipe "$fixture")"
+# An open pipe at one script's end is not carried into the next script.
+printf '%s\n' 'echo "$x" |' >"$fixture/scripts/orch/y-open-pipe.sh"
+printf '%s\n' 'grep -q y f' >"$fixture/scripts/orch/z-starts-grep.sh"
+pipe_awk="$(TMPDIR="$FIXTURES" counting_bin awk)"
+out="$(PATH="$pipe_awk:$PATH" scan_early_exit_pipe "$fixture")"
+assert_eq "the early-exit-pipe scan starts exactly one awk" "$(counting_starts "$pipe_awk" awk)" "1"
+spares "a trailing | at a script's end is not carried into the next script" \
+  "$out" '^scripts/orch/z-starts-grep\.sh:'
 flags "a pipe into grep -q is flagged" "$out" 'scripts/orch/flagged.sh:2: printf "%s\n" "$x" | grep -q y'
 flags "a pipe into grep -qxF is flagged, its leading whitespace trimmed" \
   "$out" 'scripts/orch/flagged.sh:3: printf "%s\n" "$x" | grep -qxF y'
@@ -2601,16 +2619,9 @@ check "host-capabilities has the Run a long command row" \
 check "the Run a long command row marks Junie Unverified" \
   "$(scan_row_unverified "$PLUGIN_ROOT" 'Run a long command')"
 # Each site that runs a re-callable command names the term (ADR-0065), by
-# structure only: the Run a long command sites minus the audit's timing run,
-# which is not re-callable.
-recall_sites='agents/orch-implementer.md
-agents/orch-fixer.md
-agents/orch-resolver.md
-skills/orch-review-pass/SKILL.md
-skills/orch-quick-implement/SKILL.md
-docs/driver-loop.md
-skills/orch-review/SKILL.md
-skills/orch-spec-review/SKILL.md'
+# structure only: derived from long_sites by dropping the test audit's site,
+# whose timing run is not re-callable.
+recall_sites="$(grep -vxF 'skills/orch-audit-tests/SKILL.md' <<<"$long_sites")"
 check "each site that runs a re-callable command names the term" \
   "$(scan_names_phrase "$PLUGIN_ROOT" "$recall_sites" 're-callable')"
 # CI looked at without waiting (#3179): the triage step names the look, and the
@@ -2696,9 +2707,7 @@ scan_build_args() {
     [ -f "$r/$f" ] || { echo "$f: missing"; missing=1; }
   done
   [ -z "$missing" ] || return 0
-  awk '/^ *args:/ { match($0, /^ */); n = RLENGTH; inargs = 1; next }
-    inargs { match($0, /^ */); if (RLENGTH <= n) inargs = 0; else print }' \
-    "$r/docker/compose.yaml" |
+  compose_block args "$r/docker/compose.yaml" |
     grep -o '\${[A-Za-z_][A-Za-z0-9_]*' | tr -d '${' | sort -u |
     while IFS= read -r v; do
       grep -q "^#* *$v=" "$r/docker/.env.example" ||
@@ -2825,9 +2834,7 @@ scan_clone_dir() {
   local r="$1" pin mount def img svc
   svc="$(awk '/^  autopilot:/ { ins = 1; next } ins && /^(  )?[^ ]/ { ins = 0 } ins' \
     "$r/docker/compose.yaml")"
-  pin="$(awk '/^ *environment:/ { match($0, /^ */); n = RLENGTH; inenv = 1; next }
-    inenv { match($0, /^ */); if (RLENGTH <= n) inenv = 0; else print }' \
-    <<<"$svc" | sed -n '/^ *ORCH_CLONE_DIR: */{s///p;q}')"
+  pin="$(compose_block environment <<<"$svc" | sed -n '/^ *ORCH_CLONE_DIR: */{s///p;q}')"
   mount="$(sed -n '/^ *- *repo:/{s/^[^:]*:\([^: ]*\).*$/\1/p;q}' <<<"$svc")"
   def="$(sed -n '/ORCH_CLONE_DIR:-/{s/.*ORCH_CLONE_DIR:-\([^}]*\)}.*/\1/p;q}' "$r/scripts/autopilot-container.sh")"
   img="$(sed -n '/mkdir -p \/home/{s/.*mkdir -p \([^ ]*\).*/\1/p;q}' "$r/docker/Dockerfile")"
@@ -4152,44 +4159,61 @@ routed_nouns() {
       for (i = 1; i <= n; i++) if (names[i] !~ /^-/) print names[i]
     }' "$1"
 }
-# noun_verbs <module> <noun>: one line per verb the noun dispatches - each name
-# on a top-level arm of the first case in the module's cmd_<noun> (- mapped to
-# _), its option spellings, the catch-all and nested cases' arms left out.
+# noun_verbs <root> <noun>...: one "<noun><TAB><verb>" line per verb each named
+# noun dispatches - each name on a top-level arm of the first case in cmd_<noun>
+# (- mapped to _) of its module, scripts/orch/<noun>.sh under the root, its
+# option spellings, the catch-all and nested cases' arms left out. A noun with
+# no module yields none; when no named noun has one, no awk starts.
 noun_verbs() {
-  [ -f "$1" ] || return 0
-  F="cmd_${2//-/_}" awk "$SHELL_CODE_AWK"'
-    BEGIN { fn = ENVIRON["F"] }
+  local r="$1" noun files=()
+  shift
+  for noun in "$@"; do
+    [ -f "$r/scripts/orch/$noun.sh" ] && files+=("scripts/orch/$noun.sh")
+  done
+  [ "${#files[@]}" -gt 0 ] || return 0
+  (cd "$r" && awk "$SHELL_CODE_AWK"'
+    FNR == 1 {
+      noun = FILENAME; sub(/^.*\//, "", noun); sub(/\.sh$/, "", noun)
+      fn = "cmd_" noun; gsub(/-/, "_", fn)
+      inf = 0; fin = 0; depth = 0; started = 0
+    }
     { shell_code_line($0) }
+    fin { next }
     sc_top && index(sc_code, fn "()") == 1 { inf = 1; next }
     !inf { next }
-    sc_top && sc_code ~ /^\}/ { exit }
+    sc_top && sc_code ~ /^\}/ { fin = 1; next }
     {
       if (depth == 1 && sc_top && match(sc_code, /^[[:space:]]+[a-z-][a-z|-]*\)/)) {
         arm = substr(sc_code, RSTART, RLENGTH - 1); gsub(/[[:space:]]/, "", arm)
         n = split(arm, names, "|")
-        for (i = 1; i <= n; i++) if (names[i] !~ /^-/) print names[i]
+        for (i = 1; i <= n; i++) if (names[i] !~ /^-/) print noun "\t" names[i]
       }
       t = sc_words; opens = gsub(/(^|[;[:space:]])case[[:space:]]/, "", t)
       t = sc_words; closes = gsub(/(^|[;[:space:]])esac([;[:space:])]|$)/, "", t)
       if (opens) started = 1
       depth += opens - closes
-      if (started && depth <= 0) exit
-    }' "$1"
+      if (started && depth <= 0) fin = 1
+    }' "${files[@]}")
 }
 # scan_cli_nouns <plugin root>: each routed noun in neither the table nor the
 # Exceptions section, and each verb out of step with its noun's row or
 # Exceptions.
 scan_cli_nouns() {
   local r="$1" orch="scripts/orch.sh" doc="docs/agents/cli-conventions.md" table exceptions noun
-  local bare row row_verbs module verbs verb
+  local bare row row_verbs module verbs verb nouns=() all_verbs n v
+  local -A verbs_of=()
   table="$(md_section "$r/$doc" "## Current nouns" | grep -E '^[[:space:]]*\|')"
   exceptions="$(md_section "$r/$doc" "## Exceptions")"
   # The "Bare global commands" bullet, up to the next bullet.
   bare="$(awk '/^- \*\*Bare global commands\*\*/ { inb = 1; print; next } inb && /^- / { exit } inb' <<<"$exceptions")"
-  while IFS= read -r noun; do
-    [ -n "$noun" ] || continue
+  while IFS= read -r noun; do [ -n "$noun" ] && nouns+=("$noun"); done < <(routed_nouns "$r/$orch")
+  all_verbs="$(noun_verbs "$r" "${nouns[@]}")"
+  while IFS=$'\t' read -r n v; do
+    [ -n "$n" ] && verbs_of[$n]+="$v"$'\n'
+  done <<<"$all_verbs"
+  for noun in "${nouns[@]}"; do
     module="scripts/orch/$noun.sh"
-    verbs="$(noun_verbs "$r/$module" "$noun")"
+    verbs="${verbs_of[$noun]:-}"
     row="$(grep -E -- "^[[:space:]]*\|[[:space:]]*\`$noun\`" <<<"$table" | awk -v n=1 'NR<=n')"
     if [ -z "$row" ]; then
       if ! grep -qE -- "\`${noun}[\` ]" <<<"$exceptions"; then
@@ -4212,7 +4236,7 @@ scan_cli_nouns() {
       grep -qxF -- "$verb" <<<"$verbs" && continue
       echo "$doc: $noun verb $verb is in its Current nouns row but $module no longer dispatches it"
     done <<<"$row_verbs"
-  done < <(routed_nouns "$r/$orch")
+  done
   return 0
 }
 fixture="$(new_fixture)"
@@ -4261,6 +4285,14 @@ spares "nested-case arms, option spellings, the catch-all and a later case are n
 spares "a row verb, a redo <verb> in Exceptions, and a hyphenated noun's verbs are spared" \
   "$out" '(base verb (set|show) |redo verb (review|spec) |widget-thing verb )'
 spares "a bare global command in Exceptions has no verbs to check" "$out" '(doctor|routed noun) '
+# noun_verbs over the verbs fixture: one awk for every named noun, each
+# module's verbs from its own cmd_<noun>, a noun with no module none.
+verbs_awk="$(TMPDIR="$FIXTURES" counting_bin awk)"
+assert_eq "noun_verbs prints one line per verb of each module, none for a noun with no module" \
+  "$(PATH="$verbs_awk:$PATH" noun_verbs "$fixture" base redo doctor widget-thing ghost)" \
+  "$(printf '%s\t%s\n' base set base show base extra redo review redo spec redo zap \
+    doctor check widget-thing go widget-thing stop)"
+assert_eq "noun_verbs started exactly one awk" "$(counting_starts "$verbs_awk" awk)" "1"
 # Planted fixtures for the shared code rule: a case/esac in a trailing comment
 # or a quoted string, and a quoted arm pattern, inside cmd_<noun>, and an
 # arm-shaped line in a heredoc or a multi-line string in main(), change
@@ -5319,19 +5351,21 @@ assert_empty "width.sh given an uncovered file prints nothing" \
 # One awk per root scan, whatever the file count and what each file leaves open.
 src_awk="$(TMPDIR="$FIXTURES" counting_bin awk)"
 fixture="$(new_fixture)"
-mkdir -p "$fixture/docs" "$fixture/scripts"
+mkdir -p "$fixture/docs" "$fixture/scripts" "$fixture/skills"
 { echo '```'; echo 'code never closed'; } >"$fixture/docs/a-fence.md"
 wide_line 'Some prose ' 81 >"$fixture/docs/b-after-fence.md"
 { echo '---'; echo 'title: never closed'; } >"$fixture/docs/c-frontmatter.md"
 { echo '---'; echo 'title: x'; echo '---'; wide_line 'Some prose ' 81; } \
   >"$fixture/docs/d-after-frontmatter.md"
-{ echo 'cat <<EOF'; echo 'body'; } >"$fixture/scripts/a-heredoc.sh"
+{ wide_line '# whole-line comment ' 90; wide_line 'echo code ' 90; echo 'cat <<EOF'; echo 'body'; } \
+  >"$fixture/scripts/a-heredoc.sh"
 wide_line '# after a heredoc file ' 90 >"$fixture/scripts/b-after-heredoc.sh"
 { echo 'echo "never closed'; } >"$fixture/scripts/c-quote.sh"
 wide_line '# after a quote file ' 90 >"$fixture/scripts/d-after-quote.sh"
 : >"$fixture/scripts/e-empty.sh"
 { wide_line '# whole-line comment ' 90; wide_line 'echo code ' 90; } \
-  >"$fixture/scripts/f-after-markdown.sh"
+  >"$fixture/scripts/f-after-empty.sh"
+wide_line 'Some prose ' 81 >"$fixture/skills/z.md"
 : >"$src_awk/awk.log"
 out="$(PATH="$src_awk:$PATH" scan_line_width "$fixture")"
 assert_eq "a root scan over several covered files starts exactly one awk" \
@@ -5339,18 +5373,10 @@ assert_eq "a root scan over several covered files starts exactly one awk" \
 assert_eq "a root scan's unsorted output is the expected lines in scan order" \
   "$out" "docs/b-after-fence.md:1: 81 columns, past 80
 docs/d-after-frontmatter.md:4: 81 columns, past 80
+scripts/a-heredoc.sh:1: 90 columns, past 80
 scripts/b-after-heredoc.sh:1: 90 columns, past 80
 scripts/d-after-quote.sh:1: 90 columns, past 80
-scripts/f-after-markdown.sh:1: 90 columns, past 80"
-fixture="$(new_fixture)"
-mkdir -p "$fixture/docs" "$fixture/scripts" "$fixture/skills"
-{ echo '# T'; wide_line '# a comment ' 90; wide_line 'echo code ' 90; } >"$fixture/scripts/a.sh"
-wide_line 'Some prose ' 81 >"$fixture/skills/z.md"
-wide_line 'Some prose ' 81 >"$fixture/docs/y.md"
-out="$(PATH="$src_awk:$PATH" scan_line_width "$fixture")"
-assert_eq "each file is judged by its own kind, Markdown after shell and the reverse" \
-  "$out" "docs/y.md:1: 81 columns, past 80
-scripts/a.sh:2: 90 columns, past 80
+scripts/f-after-empty.sh:1: 90 columns, past 80
 skills/z.md:1: 81 columns, past 80"
 fixture="$(new_fixture)"
 : >"$src_awk/awk.log"
@@ -5400,20 +5426,28 @@ assert_empty "an interview skill that names issue labels is not flagged" \
 check "orch-interview names issue labels" \
   "$(scan_names_phrase "$PLUGIN_ROOT" 'skills/orch-interview/SKILL.md' 'issue labels')"
 
-# This repo's CLAUDE.md Testing section names its two verification commands
-# (ADR-0058), so the ticket/full split cannot rot.
+# This repo's CLAUDE.md Testing section names its three verification commands
+# (ADR-0058), so the ticket/branch/full split cannot rot.
 # scan_repo_verification <plugin root>: one line per verification line the
-# Testing section of CLAUDE.md lacks. Structure only, never wording (ADR-0027).
+# Testing section of CLAUDE.md lacks, per bare `Branch verification:` line, and
+# per one outside the Testing section. Structure only, never wording (ADR-0027).
 scan_repo_verification() {
-  local r="$1" body label
-  body="$(md_section "$r/CLAUDE.md" "## Testing" 2>/dev/null)" || {
+  local r="$1" body label all
+  if body="$(md_section "$r/CLAUDE.md" "## Testing" 2>/dev/null)"; then
+    for label in "Ticket verification" "Branch verification" "Full verification"; do
+      grep -qE "^$label: [^[:space:]]" <<<"$body" ||
+        echo "CLAUDE.md: the ## Testing section has no '$label: <command>' line"
+    done
+  else
+    body=""
     echo "CLAUDE.md: has no ## Testing section"
-    return 0
-  }
-  for label in "Ticket verification" "Branch verification" "Full verification"; do
-    grep -qE "^$label: [^[:space:]]" <<<"$body" ||
-      echo "CLAUDE.md: the ## Testing section has no '$label: <command>' line"
-  done
+  fi
+  all="$(grep -E '^Branch verification:' "$r/CLAUDE.md" 2>/dev/null || true)"
+  [ -n "$all" ] || return 0
+  [ -z "$(grep -vE '^Branch verification:[[:space:]]*[^[:space:]]' <<<"$all" || true)" ] ||
+    echo "CLAUDE.md: a 'Branch verification:' line has no command"
+  [ "$(grep -cE '^Branch verification:' <<<"$body" || true)" = "$(wc -l <<<"$all")" ] ||
+    echo "CLAUDE.md: a 'Branch verification:' line is outside the ## Testing section"
   return 0
 }
 fixture="$(new_fixture)"
@@ -5437,37 +5471,23 @@ flags "verification lines outside the Testing section are flagged" \
   "$(scan_repo_verification "$fixture")" "no 'Ticket verification: <command>' line"
 check "CLAUDE.md's Testing section names a Ticket, a Branch and a Full verification" \
   "$(scan_repo_verification "$PLUGIN_ROOT")"
+printf '# C\n\nBranch verification:\nBranch verification: c.sh\n' >"$fixture/CLAUDE.md"
+out="$(scan_repo_verification "$fixture")"
+flags "a CLAUDE.md with no Testing section still flags a bare Branch verification line" \
+  "$out" "a 'Branch verification:' line has no command"
+flags "a CLAUDE.md with no Testing section still flags a Branch verification line outside it" \
+  "$out" "a 'Branch verification:' line is outside the ## Testing section"
 
-# A `Branch verification:` line, when CLAUDE.md has one, is well formed (a
-# command after the label) and sits in the Testing section (#3544).
-# scan_branch_verification <plugin root>: one line per fault. Structure only,
-# never wording (ADR-0027). No line at all is not a fault.
-scan_branch_verification() {
-  local r="$1" all body bad_lines
-  all="$(grep -E '^Branch verification:' "$r/CLAUDE.md" 2>/dev/null || true)"
-  [ -n "$all" ] || return 0
-  bad_lines="$(grep -vE '^Branch verification:[[:space:]]*[^[:space:]]' <<<"$all" || true)"
-  [ -z "$bad_lines" ] || echo "CLAUDE.md: a 'Branch verification:' line has no command"
-  body="$(md_section "$r/CLAUDE.md" "## Testing" 2>/dev/null || true)"
-  [ "$(grep -cE '^Branch verification:' <<<"$body" || true)" = "$(wc -l <<<"$all")" ] ||
-    echo "CLAUDE.md: a 'Branch verification:' line is outside the ## Testing section"
-  return 0
-}
-fixture="$(new_fixture)"
-printf '# C\n\n## Testing\n\nFull verification: b.sh\n' >"$fixture/CLAUDE.md"
-assert_empty "no Branch verification line is not flagged" \
-  "$(scan_branch_verification "$fixture")"
-printf '# C\n\n## Testing\n\nBranch verification: c.sh\n\n## Next\n' >"$fixture/CLAUDE.md"
-assert_empty "a well-formed Branch verification line in Testing is not flagged" \
-  "$(scan_branch_verification "$fixture")"
-printf '# C\n\n## Testing\n\nBranch verification:\n' >"$fixture/CLAUDE.md"
-flags "a Branch verification line with no command is flagged" \
-  "$(scan_branch_verification "$fixture")" "has no command"
-printf '# C\n\n## Testing\n\n## Next\n\nBranch verification: c.sh\n' >"$fixture/CLAUDE.md"
-flags "a Branch verification line outside Testing is flagged" \
-  "$(scan_branch_verification "$fixture")" "outside the ## Testing section"
-check "CLAUDE.md's Branch verification line, if any, is well formed in Testing" \
-  "$(scan_branch_verification "$PLUGIN_ROOT")"
+printf '# C\n\n## Testing\n\nTicket verification: a.sh\nBranch verification: a.sh\nBranch verification:\nFull verification: b.sh\n' \
+  >"$fixture/CLAUDE.md"
+flags "an extra bare Branch verification line beside a good one is flagged" \
+  "$(scan_repo_verification "$fixture")" "a 'Branch verification:' line has no command"
+printf '# C\n\n## Testing\n\nTicket verification: a.sh\nBranch verification: a.sh\nBranch verification:\nFull verification: b.sh\n\n## Next\n\nBranch verification: c.sh\nBranch verification:\n' \
+  >"$fixture/CLAUDE.md"
+assert_eq "extra Branch lines yield each fault line once" \
+  "$(scan_repo_verification "$fixture")" \
+  "CLAUDE.md: a 'Branch verification:' line has no command
+CLAUDE.md: a 'Branch verification:' line is outside the ## Testing section"
 
 # The sites that state the step f rule name the branch verification (#3545).
 branch_sites='docs/driver-loop.md
@@ -5475,16 +5495,6 @@ skills/orch-handoff/SKILL.md
 agents/orch-fixer.md
 skills/orch-review/SKILL.md
 skills/orch-quick-implement/SKILL.md'
-fixture="$(new_fixture)"
-mkdir -p "$fixture/docs" "$fixture/skills/orch-handoff" "$fixture/agents" \
-  "$fixture/skills/orch-review" "$fixture/skills/orch-quick-implement"
-for f in $branch_sites; do printf '# S\n\nRuns the branch\nverification.\n' >"$fixture/$f"; done
-printf '# F\n\nRuns the full verification.\n' >"$fixture/agents/orch-fixer.md"
-out="$(scan_names_phrase "$fixture" "$branch_sites" 'branch verification')"
-flags "a site that never names the branch verification is flagged" \
-  "$out" "agents/orch-fixer.md: does not name branch verification"
-spares "sites that name it, wrapped across lines or not, are not flagged" \
-  "$out" "driver-loop|orch-handoff|orch-review|quick-implement"
 check "each step f site names the branch verification" \
   "$(scan_names_phrase "$PLUGIN_ROOT" "$branch_sites" 'branch verification')"
 

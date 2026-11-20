@@ -1,5 +1,33 @@
 # Changelog
 
+## 6.9.7
+
+The side-checkout tests build every test side checkout through one builder and run the list cost check in the for-issue check's repo, the default-branch ask counter is one shared test helper, and archive_flow's entry-name local is called entry_name rather than base.
+
+## 6.9.6
+
+The docs lint and the helper index lose duplicated scan code and extra fixture runs. `scan_build_args` and `scan_clone_dir` share one `compose_block` reader. The early-exit-pipe scan, `noun_verbs` (now `noun_verbs <root> <noun>...`, called once by `scan_cli_nouns`) and the helper index each start one awk over all their files or nouns instead of one per item, resetting their state at each file's first line. `recall_sites` is derived from `long_sites`. `scan_branch_verification` is folded into `scan_repo_verification`, which now also flags a bare `Branch verification:` line, or one outside `## Testing`. The width scan's file-kind boundaries move into its first fixture root, which drops a second scan, `f-after-markdown.sh` is renamed `f-after-empty.sh`, and the duplicated branch_sites fixtures are gone.
+
+## 6.9.5
+
+Clean up the ticket verification script: one name per loop variable, each file list written once, `suites_load` split from a new `support_load`, and an unreachable row guard removed. What it selects is unchanged.
+
+## 6.9.4
+
+Simplify the agent copy marker check and its tests: `agent_copy_marked` has one failure branch, and the Junie session report test uses the shared counting fixture.
+
+## 6.9.3
+
+Tidy the branch module and its tests: drop the branch_name_flow middle man and duplicated branch retire test setup and coverage.
+
+## 6.9.2
+
+Reword six skill, agent brief and help passages that had drifted from the rules or code beside them: the review-pass smell-baseline list, the Standards reviewer report format, the to-spec no-label reason, the review-iterations route analogy, the spec-review wait paragraph and its help entry.
+
+## 6.9.1
+
+Test-only refactor of the gh test file and the shared fixture gh: one logging prologue, one secondary-limit wording, and clearer names.
+
 ## 6.9.0
 
 A resolver now finishes the merge or rebase it was given - commits the merge, or continues the rebase until none is in progress - before it runs the repo's ticket verification, and commits any fix on top as its own commit; its four-line report and its never-abort rule are unchanged, and `orch.sh branch sync --finish` accepts such fix commits above the base merge. The affected-tests runner, with a merge in progress, counts the commits the merge brings in as part of its base, so a run mid-merge selects only the branch's own change and the resolution. When an autopilot session ends, whatever its outcome, the autopilot wrapper stops every verification run still live for its side checkout through the new `orch.sh verification stop <checkout>`, and orphan clearing stops a live run whose checkout or ticket worktree is gone before dropping its record; a human's session's runs still outlive it. The autopilot container takes an optional memory limit, `ORCH_MEMORY`, that also turns swap off for the container, documented with a sizing rule in the env example and guarded by the docs lint; unset means no limit, as before.
