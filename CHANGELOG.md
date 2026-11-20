@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.9.2
+
+Reword six skill, agent brief and help passages that had drifted from the rules or code beside them: the review-pass smell-baseline list, the Standards reviewer report format, the to-spec no-label reason, the review-iterations route analogy, the spec-review wait paragraph and its help entry.
+
 ## 6.9.1
 
 Test-only refactor of the gh test file and the shared fixture gh: one logging prologue, one secondary-limit wording, and clearer names.
