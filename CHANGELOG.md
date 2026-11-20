@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.9.19
+
+Tidy a comment in the Bash walker: the compound-word handler no longer states the function-body `{` rule twice.
+
 ## 6.9.18
 
 Rename the gh adapter module's shared state-record pair to `ISSUE_STATE_ROWS_JSON`/`ISSUE_STATE_ROWS_JQ` and reword its comment to name the adapters that share it. No behaviour change.
