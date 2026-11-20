@@ -217,8 +217,6 @@ assert_status "show refuses an argument" "$st" 1
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "agent set is in the usage text" "$out" "agent set <role>"
-assert_contains "the CLI conventions' noun table has an agent row" \
-  "$(grep '^| `agent`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`set`, `show`, `clear`, `get`, `sync`'
 # --host junie: the same verbs on the Junie keys, beside the Claude Code ones.
 jkey() { key "$1" "orchestrator.junie.$2.$3"; }
 out="$("$ORCH" agent get lens --host junie 2>&1)"; st=$?

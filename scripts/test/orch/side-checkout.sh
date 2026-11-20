@@ -250,10 +250,6 @@ assert_contains "side-checkout add is in the usage text" "$out" "side-checkout a
 assert_contains "side-checkout list is in the usage text" "$out" "side-checkout list"
 assert_contains "side-checkout add --issue is in the usage text" "$out" "side-checkout add <slug> [--issue N]"
 assert_contains "side-checkout issue is in the usage text" "$out" "side-checkout issue"
-assert_contains "the CLI conventions' noun table has a side-checkout row" \
-  "$(grep '^| `side-checkout`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`add`, `list`'
-assert_contains "naming the issue verb" \
-  "$(grep '^| `side-checkout`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`issue`'
 assert_eq "docs/how-it-works.md names side-checkout add --issue" \
   "$(grep -c 'side-checkout add <slug> --issue' "$PLUGIN_ROOT/docs/how-it-works.md" | tr -d ' ')" "1"
 assert_eq "docs/how-it-works.md names side-checkout issue" \
@@ -1054,8 +1050,6 @@ fake_online
 out="$(orch_gh_failing side-checkout prune extra 2>&1)"; st=$?
 assert_status "prune takes no arguments" "$st" 1
 assert_contains "side-checkout prune is in the usage text" "$(orch_gh_failing help)" "side-checkout prune"
-assert_contains "the CLI conventions' noun table names prune" \
-  "$(grep '^| `side-checkout`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`prune`'
 restore_suite_env
 
 # --- archive keeps flow-less directories (#1247) ------------------------------

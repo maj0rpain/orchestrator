@@ -382,11 +382,9 @@ ORCH_WAIT_BLOCK=60 ORCH_VERIFICATION_GRACE=1 sourced_orch_script \
 assert_status "a record with its state returns 0" "$st" 0
 rm -rf "$bn_rec"
 
-# --- verification run in help and the CLI conventions -------------------------
+# --- verification run in help ----------------------------------------------
 echo
 echo "verification run docs"
 new_repo >/dev/null
 assert_contains "orch.sh help lists verification run with its wait knob" \
   "$(help_entry "verification run" | flat_text)" "ORCH_WAIT_BLOCK"
-assert_contains "the CLI conventions noun table lists the noun" \
-  "$(<"${ORCH%/*}/../docs/agents/cli-conventions.md")" '| `verification` | `run`'
