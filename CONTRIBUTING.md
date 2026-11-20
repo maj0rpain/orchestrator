@@ -284,7 +284,7 @@ never-reached rule, behind `lines_fate`),
 `liveness.sh` (the Liveness module: whether the process behind a record
 (a claim, a watch) is still running - the run records,
 the start-time reader, the record-alive rule, the watch pidfile and the
-session log naming),
+session log naming and its 14-day retention),
 `marked-comment.sh` (the Marked comment module: writing and reading
 the issue comments whose first line names their kind), `session-log.sh` (the
 Session log module: what a phase session's log says about usage limits, read
@@ -569,7 +569,7 @@ scripts/orch/filed-finding.sh the Filed finding module, a concept module with no
 scripts/orch/issue-timeline.sh the Issue timeline module, a concept module with no noun: an issue's comment history, read once and asked for its newest question, latest stop, limit stops, re-entry comments and live handoffs
 scripts/orch/known-items.sh   the Known items module, a concept module with no noun: a known-items file's entries, tagged bullets and writing
 scripts/orch/lines-fate.sh    the Lines fate module, a concept module with no noun: what became of a range of a file's lines at a ref since a commit filed them - the existence check, the test that the file differs at all, the line mapping, deleted ranges, deleting-commit lookup and its squash walk, the range expander (`range_segments`) and the never-reached rule, behind `lines_fate`
-scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a record (a claim, a watch) is alive - the run records, the start-time reader, the record-alive rule, the watch pidfile, the session log names
+scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a record (a claim, a watch) is alive - the run records, the start-time reader, the record-alive rule, the watch pidfile, the session log names, deleted after 14 days
 scripts/orch/marked-comment.sh the Marked comment module, a concept module with no noun: the kinds of marked issue comment, writing their first line and reading them
 scripts/orch/session-log.sh   the Session log module, a concept module with no noun: what a phase session's log says about usage limits - one pass over the log, its limit stop, reset, early pause and final reply
 scripts/orch/standing.sh      the Standing module, a concept module with no noun: where an autopilot flow's issue stands - the label set, the host id, the read and the claims

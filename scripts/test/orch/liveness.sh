@@ -84,6 +84,21 @@ else
 fi
 rm -f "$rundir/9.pid"
 
+# on a /proc host the stat entry alone decides: no ps starts for a gone pid
+fp="$(mktemp -d)"; psdir="$(mktemp -d)"
+out="$(ORCH_PROC_DIR="$fp" PSDIR="$psdir" sourced_orch_script 'mkdir -p "$ORCH_PROC_DIR/$$"; ps() { echo x >>"$PSDIR/ps.log"; echo Mon; }; export -f ps; : >"$PSDIR/ps.log"; liveness_record_alive "99999999 x" && s=0 || s=$?; echo "gone $s"; mkdir -p "$ORCH_PROC_DIR/99999999"; echo "99999999 (c) S 0 0" >"$ORCH_PROC_DIR/99999999/stat"; liveness_record_alive "99999999 Mon" && s=0 || s=$?; echo "short $s"')"
+assert_eq "with a /proc, a record naming a gone pid is gone" "$(grep '^gone' <<<"$out")" "gone 1"
+assert_eq "with a /proc, a stat too short for field 22 is gone" "$(grep '^short' <<<"$out")" "short 1"
+assert_eq "and ps starts 0 times for either" "$(counting_starts "$psdir" ps)" "0"
+rm -rf "$fp" "$psdir"
+
+# with no /proc the ps start time is one token, made without sed
+fp="$(mktemp -d)"; lc_sed="$(counting_bin sed)"
+out="$(ORCH_PROC_DIR="$fp" sourced_orch_script 'PATH="$1:$PATH"; ps() { printf "  Mon \t Jan   1\r \v 10:00:00  2026 \r\n"; }; export -f ps; liveness_proc_start 1' "$lc_sed")"
+assert_eq "with no /proc the ps start time is its words joined by _" "$out" "Mon_Jan_1_10:00:00_2026"
+assert_eq "and sed starts 0 times" "$(counting_starts "$lc_sed" sed)" "0"
+rm -rf "$fp"
+
 # hit_take: the hit file's text, and the file removed
 printf '2030-01-01T00:00:00Z\n' >"$rundir/30.hit"
 assert_eq "hit_take prints the hit file's text" "$(sourced_orch liveness_hit_take 30)" "2030-01-01T00:00:00Z"
@@ -171,6 +186,10 @@ assert_eq "log_path is logs/<issue>-<phase>-<stamp>.log" "$([[ "$path" =~ ^$logd
 assert_eq "and creates the logs directory" "$(on_disk "$logdir")" present
 : >"$path"
 assert_eq "latest_log agrees on the name" "$(sourced_orch liveness_latest_log 30 spec)" "$path"
+touch -t "$(date -d '15 days ago' +%Y%m%d%H%M 2>/dev/null || date -v-15d +%Y%m%d%H%M)" "$path"
+sourced_orch liveness_logs_prune
+assert_eq "the prune matches the name log_path writes" "$(on_disk "$path")" absent
+: >"$path"
 : >"$logdir/30-spec-20990101-000000.log"
 : >"$logdir/30-implement-20990202-000000.log"
 : >"$logdir/300-spec-20991212-000000.log"

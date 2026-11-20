@@ -1,5 +1,41 @@
 # Changelog
 
+## 6.10.1
+
+The helper body copies test section now resets its copied tree straight from the real tree with no snapshot, asserts exit status 1 on every failure case, and checks the setup.sh case's whole output.
+
+## 6.10.0
+
+The autopilot watcher cleans up after itself: at most once an hour a tick runs a housekeeping step that deletes session logs last modified more than 14 days ago and runs the same finished sweep `/orchestrator:finish` runs, removing finished side checkouts. A failure in either half warns and never stops the tick, and a GitHub rate limit the sweep hits ends the tick before pickup.
+
+## 6.9.20
+
+Corrected a comment in `lines_fate` so it names the reversed range the guard normalises, not every range.
+
+## 6.9.19
+
+Tidy a comment in the Bash walker: the compound-word handler no longer states the function-body `{` rule twice.
+
+## 6.9.18
+
+Rename the gh adapter module's shared state-record pair to `ISSUE_STATE_ROWS_JSON`/`ISSUE_STATE_ROWS_JQ` and reword its comment to name the adapters that share it. No behaviour change.
+
+## 6.9.17
+
+The Liveness start-time reader no longer starts `ps` for a gone pid on a /proc host, and no longer starts `sed` to tidy the `ps` result.
+
+Move the `orch.sh status` default-budget test from the state section to the global section file's `status` section, so no status case stays in the state section. Test placement only; no behaviour change.
+
+The glossary's Stop report, Driver loop and Driver entries and orch-flow's implement phase now agree with the driver loop doc: a stop report is not saved and its ticket is neither merged nor closed, the loop stops refilling, processes the tickets still in flight, then stops, naming every missing command.
+
+## 6.9.16
+
+Test-only: the affected-plan tests write the harness file's non-gate sections once, in `TR_HARNESS`.
+
+## 6.9.15
+
+autopilot-up.sh removes the image a project's successful rebuild replaced, never forced, warning when Docker refuses. It never prunes the shared build cache; the container docs name `docker builder prune` and `docker image prune` as the manual reclaims.
+
 ## 6.9.14
 
 Test-only: the gh fake reads its optional store files without starting a command, `log_count` is the one line counter, and `fake_snapshot` leaves out every read-side file.

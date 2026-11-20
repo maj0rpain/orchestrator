@@ -178,7 +178,7 @@ review_terminal_record() {
 # only that look reaches test it here, rather than re-deriving the condition.
 review_flat_record_gone() {
   local flat
-  [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -gt 0 ] || return 1
+  is_positive_int "$1" || return 1
   flat="$(review_record_path "$1" 2>/dev/null)" && [ ! -e "$flat" ]
 }
 
