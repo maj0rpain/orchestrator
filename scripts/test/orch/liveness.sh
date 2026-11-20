@@ -84,6 +84,23 @@ else
 fi
 rm -f "$rundir/9.pid"
 
+# on a /proc host the stat entry alone decides: no ps starts for a gone pid
+fp="$(mktemp -d)"; pslog="$(mktemp)"
+ORCH_PROC_DIR="$fp" PSLOG="$pslog" sourced_orch_script 'mkdir -p "$ORCH_PROC_DIR/$$"; ps() { echo x >>"$PSLOG"; return 1; }; export -f ps; liveness_record_alive "99999999 x"' >/dev/null; st=$?
+assert_status "with a /proc, a record naming a gone pid is gone" "$st" 1
+assert_eq "and ps starts 0 times" "$(wc -l <"$pslog" | tr -d ' ')" "0"
+ORCH_PROC_DIR="$fp" PSLOG="$pslog" sourced_orch_script 'mkdir -p "$ORCH_PROC_DIR/$$" "$ORCH_PROC_DIR/99999999"; echo "99999999 (c) S 0 0" >"$ORCH_PROC_DIR/99999999/stat"; ps() { echo x >>"$PSLOG"; echo Mon; }; export -f ps; liveness_record_alive "99999999 Mon"' >/dev/null; st=$?
+assert_status "with a /proc, a stat too short for field 22 is gone" "$st" 1
+assert_eq "and ps starts 0 times for it" "$(wc -l <"$pslog" | tr -d ' ')" "0"
+rm -rf "$fp" "$pslog"
+
+# with no /proc the ps start time is one token, made without sed
+fp="$(mktemp -d)"; lc_sed="$(counting_bin sed)"
+out="$(ORCH_PROC_DIR="$fp" sourced_orch_script 'PATH="$1:$PATH"; ps() { printf "  Mon \t Jan   1\r \v 10:00:00  2026 \r\n"; }; export -f ps; liveness_proc_start 1' "$lc_sed")"
+assert_eq "with no /proc the ps start time is its words joined by _" "$out" "Mon_Jan_1_10:00:00_2026"
+assert_eq "and sed starts 0 times" "$(counting_starts "$lc_sed" sed)" "0"
+rm -rf "$fp"
+
 # hit_take: the hit file's text, and the file removed
 printf '2030-01-01T00:00:00Z\n' >"$rundir/30.hit"
 assert_eq "hit_take prints the hit file's text" "$(sourced_orch liveness_hit_take 30)" "2030-01-01T00:00:00Z"
