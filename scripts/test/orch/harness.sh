@@ -4584,6 +4584,22 @@ af_reset() {
   af_git config --unset orchestrator.base 2>/dev/null
   af_git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
 }
+# af_mid_merge <branch> <ref>: <branch> at the initial commit changes a doc,
+# then merges <ref> with --no-commit and writes a resolution of state.sh.
+af_mid_merge() {
+  af_git checkout -q -b "$1" "$af_c0"
+  af_put docs/a.md changed
+  af_git commit -qam doc
+  af_git merge -q --no-commit --no-ff "$2" >/dev/null 2>&1
+  af_put scripts/orch/state.sh 'resolved=1'
+}
+# af_mid_merge_end <branch>: abort the merge and delete <branch>.
+af_mid_merge_end() {
+  af_git merge --abort
+  af_git reset -q --hard
+  af_git checkout -q -f feat
+  af_git branch -q -D "$1"
+}
 # af_plan [<arg>...]: affected.sh --plan <arg>... in the fixture, one line per
 # item joined with commas.
 af_plan() {
@@ -4941,29 +4957,21 @@ af_git commit -qam doc
 # The control: with no merge in progress, the selection is today's.
 assert_eq "with no merge in progress a branch behind its base selects its own change" \
   "$(af_plan origin/rel)" "$af_gate,docs_lint.sh"
-af_git merge -q --no-commit --no-ff origin/rel >/dev/null 2>&1
-af_put scripts/orch/state.sh 'resolved=1'
+af_git checkout -q -f feat
+af_git branch -q -D behind
+af_mid_merge behind origin/rel
 af_resolved="$af_gate,state,docs_lint.sh,scripts/orch/state.sh"
 assert_eq "a merge of the base in progress selects the branch's change and the resolution, not the base's incoming files" \
   "$(af_plan origin/rel)" "$af_resolved"
-af_git merge --abort
-af_git reset -q --hard
-af_git checkout -q -f feat
-af_git branch -q -D behind
+af_mid_merge_end behind
 # The ticket branch's second merge-base lookup: the merge brings in its parent.
 af_git branch -q par "$(af_git rev-parse origin/rel)"
-af_git checkout -q -b feat--t1 "$af_c0"
-af_put docs/a.md changed
-af_git commit -qam doc
+af_mid_merge feat--t1 par
 af_git config branch.feat--t1.orchestrator-ticket-parent par
-af_git merge -q --no-commit --no-ff par >/dev/null 2>&1
-af_put scripts/orch/state.sh 'resolved=1'
 assert_eq "a ticket branch merging its parent selects the ticket's change and the resolution" \
   "$(af_plan)" "$af_resolved"
-af_git merge --abort
-af_git reset -q --hard
-af_git checkout -q -f feat
-af_git branch -q -D feat--t1 par
+af_mid_merge_end feat--t1
+af_git branch -q -D par
 af_reset
 
 # An invalid ORCH_TEST_POOL_PERCENT is refused before anything runs.
