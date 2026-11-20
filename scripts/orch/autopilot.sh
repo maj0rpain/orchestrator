@@ -544,10 +544,12 @@ autopilot_pickup_settle() {
 # inside it fails only the step and a cd never reaches the tick's shell. A
 # failure sets PICKUP_REASON (see autopilot_pickup_reason) and returns 1; a
 # success passes every stderr line on. When the stderr's temp file cannot be
-# made, the command is not run and the reason says so.
+# made, the command is not run and the reason says so. Every step it contains
+# can reach GitHub, so it captures through gh_capture_err, as the gh pair's
+# rule requires of any command that reaches GitHub.
 autopilot_pickup_contained() {
   local err st=0
-  capture_err err "$@" || st=$?
+  gh_capture_err err "$@" || st=$?
   autopilot_pickup_settle "$st" "$err"
 }
 
@@ -594,7 +596,7 @@ autopilot_pickup_side_add() {
       slug="$stem-$n"
     done
   fi
-  capture side err cmd_side_checkout_add "$slug" --issue "$issue" || st=$?
+  gh_capture side err cmd_side_checkout_add "$slug" --issue "$issue" || st=$?
   autopilot_pickup_settle "$st" "$err"
 }
 
