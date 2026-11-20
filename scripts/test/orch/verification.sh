@@ -41,23 +41,12 @@ vr_finished() {
   : >"$1/ended"
 }
 
-# vs_rec <root>: prints the record directory of the run kept for <root>.
-vs_rec() {
-  local r
-  for r in "$vs_store"/*/; do
-    [ "$(cat "$r/root" 2>/dev/null)" = "$1" ] && { printf '%s\n' "${r%/}"; return 0; }
-  done
-  return 1
-}
-# vs_live <root>: whether the process group of the run kept for <root> exists.
-vs_live() {
-  local r pid
-  r="$(vs_rec "$1")" || return 1
-  pid="$(cut -d' ' -f1 "$r/pid")"
-  kill -0 -- "-$pid" 2>/dev/null
-}
-# vs_start <dir> <command>: starts a run of the command in <dir>, left going.
-vs_start() { (cd "$1" && ORCH_WAIT_BLOCK=0.2 "$ORCH" verification run "$2" >/dev/null 2>&1); }
+# vs_rec <root>: the record directory of the run kept for <root>.
+vs_rec() { vrun_rec "$vs_store" "$1"; }
+# vs_live <root>: whether the process group of that run exists.
+vs_live() { vrun_live "$vs_store" "$1"; }
+# vs_kept <root>: prints "kept" when a record is kept for <root>, else "none".
+vs_kept() { vs_rec "$1" >/dev/null && echo kept || echo none; }
 
 # --- verification run ---------------------------------------------------------
 # A command line run detached and waited for in bounded calls: delivered whole
@@ -363,31 +352,31 @@ git worktree add -q "$vs_side" -b vs-side
 vs_tw="$vs_side/.orchestrator/worktrees/t5"
 git worktree add -q "$vs_tw" -b vs-t5
 vs_dir="$(mktemp -d)"
-vs_start "$vs_side" 'sleep 300'
-vs_start "$vs_tw" 'sleep 301'
-vs_start "$vs_main" 'sleep 302'
+vrun_start "$vs_side" 'sleep 300'
+vrun_start "$vs_tw" 'sleep 301'
+vrun_start "$vs_main" 'sleep 302'
 assert_eq "the three runs are live" "$(for p in "$vs_side" "$vs_tw" "$vs_main"; do vs_live "$p" && echo y; done | tr -d '\n')" "yyy"
 vs_other_rec="$(vs_rec "$vs_main")"
 ORCH_VERIFICATION_GRACE=0.3 "$ORCH" verification stop "$vs_side" >/dev/null 2>&1; st=$?
 assert_status "stopping a checkout exits 0" "$st" 0
-assert_eq "its own live run is gone with its record" "$(vs_rec "$vs_side" >/dev/null && echo kept || echo none)" "none"
-assert_eq "so is the one in its ticket worktree" "$(vs_rec "$vs_tw" >/dev/null && echo kept || echo none)" "none"
+assert_eq "its own live run is gone with its record" "$(vs_kept "$vs_side")" "none"
+assert_eq "so is the one in its ticket worktree" "$(vs_kept "$vs_tw")" "none"
 assert_eq "a run of another checkout keeps running with its record" "$(vs_live "$vs_main" && [ -d "$vs_other_rec" ] && echo live)" "live"
 ORCH_VERIFICATION_GRACE=0.3 "$ORCH" verification stop "$vs_side" >/dev/null 2>&1; st=$?
 assert_status "a checkout with no live run is a no-op" "$st" 0
 ORCH_VERIFICATION_GRACE=0.3 "$ORCH" verification stop "$vs_main" >/dev/null 2>&1
 (cd "$vs_side" && vr_count="$(counting_bin date)" && vr_finished "$vs_dir")
-assert_eq "a finished run's record exists before the stop" "$(vs_rec "$vs_side" >/dev/null && echo kept || echo none)" "kept"
+assert_eq "a finished run's record exists before the stop" "$(vs_kept "$vs_side")" "kept"
 ORCH_VERIFICATION_GRACE=0.3 "$ORCH" verification stop "$vs_side" >/dev/null 2>&1
-assert_eq "and survives the stop" "$(vs_rec "$vs_side" >/dev/null && echo kept || echo none)" "kept"
+assert_eq "and survives the stop" "$(vs_kept "$vs_side")" "kept"
 
 # a group that survives KILL cannot be made for real, so the survival paths run
 # with a kill that signals nothing and finds every group there
-vs_start "$vs_main" 'sleep 303'
+vrun_start "$vs_main" 'sleep 303'
 out="$(cd "$vs_main" && ORCH_WAIT_BLOCK=5 ORCH_VERIFICATION_GRACE=0.3 sourced_orch_script "kill() { return 0; }; verification_stop_checkout \"\$1\"" "$vs_main" 2>&1)"; st=$?
 assert_status "a group surviving the KILL makes the stop exit 1" "$st" 1
 assert_contains "naming the process group" "$out" "process group"
-assert_eq "and its record is kept" "$(vs_rec "$vs_main" >/dev/null && echo kept || echo none)" "kept"
+assert_eq "and its record is kept" "$(vs_kept "$vs_main")" "kept"
 ORCH_VERIFICATION_GRACE=0.3 "$ORCH" verification stop "$vs_main" >/dev/null 2>&1
 
 # --- verification run orphans: a live run is stopped --------------------------
@@ -398,22 +387,22 @@ vs_main="$(pwd -P)"
 vs_store="$vs_main/.orchestrator/verification"
 vs_wt="$(mktemp -d)/wt"
 git worktree add -q "$vs_wt" -b vs-orph
-vs_start "$vs_wt" 'sleep 304'
+vrun_start "$vs_wt" 'sleep 304'
 vs_orph_pid="$(cut -d' ' -f1 "$(vs_rec "$vs_wt")/pid")"
 git worktree remove --force "$vs_wt"
 ORCH_WAIT_BLOCK=5 ORCH_VERIFICATION_GRACE=0.3 "$ORCH" verification run 'true' >/dev/null 2>&1
 assert_eq "a live run whose worktree is removed is stopped by the next call" "$(kill -0 -- "-$vs_orph_pid" 2>/dev/null && echo live || echo stopped)" "stopped"
-assert_eq "and its record dropped" "$(vs_rec "$vs_wt" >/dev/null && echo kept || echo none)" "none"
-vs_start "$vs_main" 'sleep 305'
+assert_eq "and its record dropped" "$(vs_kept "$vs_wt")" "none"
+vrun_start "$vs_main" 'sleep 305'
 vs_wt2="$(mktemp -d)/wt"
 git worktree add -q "$vs_wt2" -b vs-orph2
-vs_start "$vs_wt2" 'sleep 306'
+vrun_start "$vs_wt2" 'sleep 306'
 vs_pid2="$(cut -d' ' -f1 "$(vs_rec "$vs_wt2")/pid")"
 git worktree remove --force "$vs_wt2"
 out="$(ORCH_WAIT_BLOCK=5 ORCH_VERIFICATION_GRACE=0.3 sourced_orch_script "kill() { return 0; }; verification_clear_orphans \"\$1\"" "$vs_store" 2>&1)"; st=$?
 assert_status "a surviving group does not stop the clearing" "$st" 0
 assert_contains "it warns naming the process group" "$out" "orch: the run in $vs_wt2 (process group $vs_pid2)"
-assert_eq "and the record is dropped anyway" "$(vs_rec "$vs_wt2" >/dev/null && echo kept || echo none)" "none"
+assert_eq "and the record is dropped anyway" "$(vs_kept "$vs_wt2")" "none"
 kill -KILL -- "-$vs_pid2" 2>/dev/null
 ORCH_VERIFICATION_GRACE=0.3 "$ORCH" verification stop "$vs_main" >/dev/null 2>&1
 

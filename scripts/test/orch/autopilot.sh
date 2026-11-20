@@ -11,20 +11,6 @@ tick_calls() { local n; n="$(grep -c '^argv:' "$launcher_dir/calls" 2>/dev/null)
 # basename and a space each.
 picked() { grep '^dir:' "$launcher_dir/calls" | sed 's#.*/##' | tr '\n' ' '; }
 
-# ap_start <dir> <tag>: starts a run of a long sleep in <dir>, left going.
-ap_start() { (cd "$1" && ORCH_WAIT_BLOCK=0.2 "$ORCH" verification run "sleep 300 # $2" >/dev/null 2>&1); }
-# ap_group <dir>: prints "live" when the run kept for checkout <dir> has its
-# process group, else "gone".
-ap_group() {
-  local r pid
-  for r in "$top/.orchestrator/verification"/*/; do
-    [ "$(cat "$r/root" 2>/dev/null)" = "$1" ] || continue
-    pid="$(cut -d' ' -f1 "$r/pid")"
-    kill -0 -- "-$pid" 2>/dev/null && { echo live; return 0; }
-  done
-  echo gone
-}
-
 # local_fields <iso>: the limit file's UTC timestamp as "<epoch> <%H> <%a>" in
 # local time.
 local_fields() {
@@ -585,12 +571,12 @@ for ap_rc in 0 3; do
   printf '%s\n' "$ap_rc" >"$launcher_dir/exit"; rm -f "$launcher_dir/release"
   fake_issue 7 open ready-for-agent orch:spec orch:running
   fake_claim_seed 7 "$(hostname)" "$$"
-  ap_start "$side7" "side$ap_rc"
-  ap_start "$top" "other$ap_rc"
-  assert_eq "a run of the side checkout is going before the session ends (exit $ap_rc)" "$(ap_group "$side7")" live
+  vrun_start "$side7" "sleep 300 # side$ap_rc"
+  vrun_start "$top" "sleep 300 # other$ap_rc"
+  assert_eq "a run of the side checkout is going before the session ends (exit $ap_rc)" "$(vrun_live "$top/.orchestrator/verification" "$side7" && echo live || echo gone)" live
   "$ORCH" autopilot run 7 >/dev/null 2>&1
-  assert_eq "a session exiting $ap_rc leaves no live run of its side checkout" "$(ap_group "$side7")" gone
-  assert_eq "and a run of another checkout survives (exit $ap_rc)" "$(ap_group "$top")" live
+  assert_eq "a session exiting $ap_rc leaves no live run of its side checkout" "$(vrun_live "$top/.orchestrator/verification" "$side7" && echo live || echo gone)" gone
+  assert_eq "and a run of another checkout survives (exit $ap_rc)" "$(vrun_live "$top/.orchestrator/verification" "$top" && echo live || echo gone)" live
   "$ORCH" verification stop "$top" >/dev/null 2>&1
 done
 assert_eq "the stop changes neither outcome nor claim handling" "$(fake_labels_of 7)" "needs-human orch:spec ready-for-agent "

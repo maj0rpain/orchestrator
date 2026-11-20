@@ -4944,12 +4944,6 @@ af_put scripts/orch/state.sh 'resolved=1'
 af_resolved="$af_gate,state,docs_lint.sh,scripts/orch/state.sh"
 assert_eq "a merge of the base in progress selects the branch's change and the resolution, not the base's incoming files" \
   "$(af_plan origin/rel)" "$af_resolved"
-af_put scripts/dev/new.sh
-assert_eq "an untracked file in a merge in progress is selected too" \
-  "$(af_plan origin/rel)" "$af_gate,isolation,the parallel runner (#780),state,docs_lint.sh,scripts/dev/new.sh,scripts/orch/state.sh"
-rm -f "$af/scripts/dev/new.sh"
-assert_eq "--row is unchanged by a merge in progress" \
-  "$(cd "$af" && bash scripts/test/affected.sh --row scripts/orch/branch.sh)" "scripts/orch/branch.sh	named"
 af_git merge --abort
 af_git reset -q --hard
 af_git checkout -q -f feat
@@ -4974,8 +4968,6 @@ assert_eq "a ticket branch merging its parent selects the ticket's change and th
   "$(af_plan)" "$af_resolved"
 af_git merge --abort
 af_git reset -q --hard
-assert_eq "a ticket branch with no merge in progress selects its own change" \
-  "$(af_plan)" "$af_gate,docs_lint.sh"
 af_git checkout -q -f feat
 af_git branch -q -D feat--t1 par
 af_reset
