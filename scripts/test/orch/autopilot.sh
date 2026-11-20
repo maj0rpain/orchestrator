@@ -3556,6 +3556,11 @@ fake_issue 40 closed
 rm -f "$hs_dir/github-limit"
 # a finished side checkout is removed and an unfinished one kept, even when the
 # log prune before the sweep fails
+# the failing sweep above already archived the flow before its worktree remove
+# failed: give the checkout a fresh finished flow (init archives the remnant)
+# and clear the archive, so only this tick's sweep can archive it
+(cd "$hs_done" && orch_gh_failing init hs-done-flow >/dev/null && state_fixture phase "done" && state_fixture branch quick/9-hs-done && state_fixture pr 61)
+rm -rf "$top"/.orchestrator/archive/*-hs-done-flow
 rm -f "$hs_stamp" "$launcher_dir/release"
 mkdir -p "$hs_dir/logs"; : >"$hs_dir/logs/5-spec-20240101-000000.log"
 touch -t "$(date -d '15 days ago' +%Y%m%d%H%M 2>/dev/null || date -v-15d +%Y%m%d%H%M)" "$hs_dir/logs/5-spec-20240101-000000.log"
