@@ -490,9 +490,10 @@ its ticket's intent.
 **Stop report**:
 The report a ticket subagent returns, having built nothing,
 when its ticket verification cannot start - a missing tool, or a command
-not found or not executable. The driver loop lands no ticket on one: it
-saves no report, merges and closes nothing, and stops, naming the missing
-command.
+not found or not executable. The driver loop does not land its ticket: it
+neither saves the report nor merges or closes that ticket, and stops
+refilling; the tickets still in flight are processed as normal, then the
+loop stops, naming every missing command.
 
 **Ticket branch**:
 The branch one ticket subagent builds a single ticket on, forked from its
@@ -513,11 +514,12 @@ next` prints. Several can be built at once, up to the clone's parallel cap.
 **Driver loop**:
 The procedure that builds a ticket breakdown, one frontier
 after another: one ticket subagent per ticket, in parallel up to the clone's
-parallel cap or one at a time, each ticket's report but a stop report saved
-as it returns, then the ticket merged and closed - a collapsed breakdown's
-merged, never closed - then one verification of the combined branch. A stop
-report is not saved and its ticket neither merged nor closed; the loop stops
-instead. The implement phase and a quick implementation both run it.
+parallel cap or one at a time, each ticket's report saved as it returns,
+then the ticket merged and closed - a collapsed breakdown's merged, never
+closed - then one verification of the combined branch. A stop report is not
+saved and its ticket neither merged nor closed; the loop stops refilling,
+processes the tickets still in flight, then stops, naming every missing
+command. The implement phase and a quick implementation both run it.
 
 ### Spec review
 
@@ -727,11 +729,12 @@ is a host with no fresh subagent: there the review loop's driver takes the
 host-capabilities **Start a fresh subagent** fallback, does the fixer's
 and the closer's work in its own session, and records that as a host
 fallback. A driver loop's driver starts one ticket subagent per ticket
-and saves each ticket's report but a stop report as it returns, then merges
-and closes the ticket - a collapsed breakdown's merged, never closed; on a
-breakdown that did not collapse, it then writes the release record, before
-the combined branch's verification. On a stop report it saves, merges and
-closes nothing, and stops.
+and saves each ticket's report as it returns, then merges and closes the
+ticket - a collapsed breakdown's merged, never closed; on a breakdown that
+did not collapse, it then writes the release record, before the combined
+branch's verification. On a stop report it saves, merges and closes nothing
+of that ticket, stops refilling, and stops once the tickets in flight are
+processed, naming every missing command.
 
 **Reviewer**:
 A fresh agent a review loop's driver starts for one axis - Standards or Spec -

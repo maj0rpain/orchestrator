@@ -367,9 +367,9 @@ says.
    - **the stop**: the phase stops, naming every failure;
    - **after loop step f**: this phase's step 4.
 
-   The driver saves every returned report (loop step d). Steps 5 and 6 read
-   them back with `bash "$ORCH" ticket report show <n>`, for every saved
-   ticket report, none held only in this session.
+   The driver saves every returned report but a stop report (loop step d).
+   Steps 5 and 6 read them back with `bash "$ORCH" ticket report show <n>`,
+   for every saved ticket report, none held only in this session.
 
    Whether the breakdown is collapsed comes from structure, not from the
    handoff: run `bash "$ORCH" ticket exists <spec issue>`.
