@@ -4935,7 +4935,6 @@ af_reset
 # base (#3796): only the branch's own change and the uncommitted resolution
 # select. The branch is behind origin/rel (the initial commit plus the branch
 # module change), changes a doc, and merges rel with --no-commit.
-af_reset
 af_git checkout -q -b behind "$af_c0"
 af_put docs/a.md changed
 af_git commit -qam doc
