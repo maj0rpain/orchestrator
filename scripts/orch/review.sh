@@ -28,9 +28,11 @@ readonly DEFAULT_BUDGET=5
 # review_budget_fallback <raw>: prints the budget read from state, or
 # DEFAULT_BUDGET where <raw> is empty or not a number.
 review_budget_fallback() {
-  local b="$1"
-  case "$b" in ''|*[!0-9]*) b="$DEFAULT_BUDGET" ;; esac
-  printf '%s\n' "$b"
+  local budget_raw="$1"
+  case "$budget_raw" in
+    ""|*[!0-9]*) printf '%s\n' "$DEFAULT_BUDGET" ;;
+    *) printf '%s\n' "$budget_raw" ;;
+  esac
 }
 
 # One look at the PR's checks, classified. Prints the classification on the
@@ -209,7 +211,7 @@ review_flat_record_gone() {
 # stays readable until the redo's closing write.
 review_terminal_state() {
   local i="$1" budget="$2" path err sec="" line started="" body=""
-  local first_raw first rest after s sep
+  local first_raw first rest after reason s sep
   if [ "$i" -eq 0 ]; then note none; return 1; fi
   # The detail is review_record_path's own last orch: line.
   capture path err review_terminal_record "$i" \
@@ -243,9 +245,9 @@ review_terminal_state() {
       # Bare `stop`, or `stop` and a separator: anything else after the word
       # (`stopped`, `stop CI failed`) falls through to malformed.
       if [ -z "$after" ] || [ -n "$sep" ]; then
-        after="$(trim "${after#"$sep"}")"
+        reason="$(trim "${after#"$sep"}")"
         note stop
-        [ -z "$after" ] || printf '%s\n' "$after"
+        [ -z "$reason" ] || printf '%s\n' "$reason"
         [ -z "$rest" ] || printf '%s\n' "$rest"
         return 0
       fi ;;
@@ -981,11 +983,11 @@ check_standards_declaration() {
 # `budget` are never written. A failed clear dies (exit 1) naming the report.
 review_resume() {
   [ $# -eq 0 ] || die "usage: orch.sh review resume"
-  local state i path report b budget_raw budget recorded phase active=""
+  local terminal state i path report b budget_raw budget recorded phase active=""
   require_state_read i=iteration budget_raw=budget recorded=branch phase=phase
   budget="$(review_budget_fallback "$budget_raw")"
-  state="$(review_terminal_state "$i" "$budget")" || true
-  state="${state%%$'\n'*}"
+  terminal="$(review_terminal_state "$i" "$budget")" || true
+  state="${terminal%%$'\n'*}"
   case "$state" in
     pending|interrupted) ;;
     *) die "nothing to resume: review terminal says ${state:-nothing}" ;;
