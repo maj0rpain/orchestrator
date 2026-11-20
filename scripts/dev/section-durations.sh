@@ -25,7 +25,8 @@
 # (test_jobs.sh's suite start): the wait for the slot is not timed, and the
 # timed region ends once the suite and the slot's holder have both exited.
 #
-# Both modes time each other suite with DOCS_LINT_RECORDING=1, which only this
+# The full refresh and --stale time each other suite with
+# DOCS_LINT_RECORDING=1, which only this
 # script sets (all.sh and affected.sh unset it, CI never sets it, and
 # docs_lint.sh --base-rules ignores it). docs_lint.sh's full run, with it
 # set, skips the ledger freshness rule and the budget total rule (rules 1 and

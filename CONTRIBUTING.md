@@ -59,51 +59,52 @@ noun gets a new file, which the runner picks up with no edit. A noun file holds
 only `# ---` sections, optionally preceded by a preamble: the text before its
 first `# ---` line, run before that file's sections whenever one of them runs.
 
-A parallel `orch_test.sh` run starts its kept sections longest-first, read from
-`scripts/test/section-durations.tsv`, the durations file: one line per section,
-other suite and the shellcheck run, tab-separated, of wall seconds, CPU seconds
-(both in tenths of a second), the title and, on every line but shellcheck's, the
-fingerprint of the test text the line was measured from: a section's own lines
-and its file's preamble, or an other suite's whole file. A line whose
-fingerprint no longer matches, or that has none, is stale. The file is a ledger:
-`docs_lint.sh` fails (but not while `section-durations.sh` records, below) on a
-section or suite with no fresh line, a stale line, a title on two lines of one
-file and a missing shellcheck line; a line with no section or suite is
-ignored, and the fold drops it. A branch records in its own **durations
-fragment** instead of the file: `scripts/test/durations.d/<branch>.tsv`, with
-each `/` of the branch name as `-`, in the same line grammar and never with a
-`shellcheck` line, kept by a tracked `.gitkeep` and ignored by it. Every reader
-reads the **effective record**, `test_tree.sh`'s `ledger_effective`: per title
-the line whose fingerprint matches the test text, from the file and every
-fragment (of several, the last fragment in name order, then the file); failing
-that the last fragment's line, then the file's; the `shellcheck` line from the
-file alone. On every push to main the version-bump Action runs
-`section-durations.sh --fold`, which writes the effective record into the file
-in walk order, drops orphaned lines, deletes the fragments and measures
-nothing (ADR-0067). The
-runners read a three-column line and a four-column one alike.
-Sections the file does not list start first, in walk order; the rest follow by
-wall seconds, longest first, ties in walk order, so a run ends when its work
-does. Output stays in walk order, and a filtered run orders the sections it kept
-the same way; `ORCH_TEST_JOBS=1` runs in walk order in one shell. A line that
-does not parse and a title that matches no section are ignored, and a missing
-file gives walk order: for the runners the file costs speed only. The shared
-test setup, the fakes and the code under test are in no fingerprint, so a change
-there that makes every section dearer is seen only by a full refresh.
+A parallel `orch_test.sh` run starts its kept sections longest-first, read
+from the effective record (below) of `scripts/test/section-durations.tsv`,
+the durations file: one line per section, other suite and the shellcheck run,
+tab-separated, of wall seconds, CPU seconds (both in tenths of a second), the
+title and, on every line but shellcheck's, the fingerprint of the test text
+the line was measured from: a section's own lines and its file's preamble,
+or an other suite's whole file. A line whose fingerprint no longer matches,
+or that has none, is stale. The file is a ledger: `docs_lint.sh` fails
+(but not while `section-durations.sh` records, below) on a section or
+suite with no fresh line, a stale line, a title on two lines of one file
+and a missing shellcheck line; a line with no section or suite is ignored,
+and the fold drops it. A branch records in its own **durations fragment**
+instead of the file: `scripts/test/durations.d/<branch>.tsv`, with each
+`/` of the branch name as `-`, in the same line grammar and never with a
+`shellcheck` line, kept by a tracked `.gitkeep` and ignored by it. Every
+reader reads the **effective record**, `test_tree.sh`'s `ledger_effective`:
+per title the line whose fingerprint matches the test text, from the file and
+every fragment (of several, the last fragment in name order, then the file);
+failing that the last fragment's line, then the file's; the `shellcheck`
+line from the file alone. On every push to main the version-bump Action runs
+`section-durations.sh --fold`, which writes the effective record into the
+file in walk order, drops orphaned lines, deletes the fragments and measures
+nothing (ADR-0067). The runners read a three-column line and a four-column
+one alike. Sections the effective record does not list start first, in
+walk order; the rest follow by wall seconds, longest first, ties in walk
+order, so a run ends when its work does. Output stays in walk order, and a
+filtered run orders the sections it kept the same way; `ORCH_TEST_JOBS=1`
+runs in walk order in one shell. A line that does not parse and a title
+that matches no section are ignored, and a missing file gives walk order,
+as does an effective record that cannot be read (a suite list naming a suite
+that is not there): for the runners the record costs speed only. The shared
+test setup, the fakes and the code under test are in no fingerprint, so a
+change there that makes every section dearer is seen only by a full refresh.
 
-`ORCH_TEST_SHARD=<i>/<n>` makes `orch_test.sh` and `all.sh` run group `i` of `n`
-balanced groups of the sections, so CI can run a full verification as several
-jobs. The grouping depends only on the section titles, the effective record,
-`all.sh`'s suite list and `n`: sections are dealt heaviest first, by CPU
-seconds, to the group with the lowest total, group 1 starting with the CPU
-seconds of the other suites and shellcheck, and a section the file does not
-list weighs the median CPU of the listed sections the deal deals, all but the
-isolation section (the lower middle on an even count; 1 second when none is
-listed). The isolation section runs in
-every group. `all.sh` runs the other suites and shellcheck in group 1 only. A
-malformed value, or any value with `ORCH_TEST_ONLY`, is refused; an empty value
-counts as unset; `affected.sh` unsets it, and no runner a section starts
-inherits it.
+`ORCH_TEST_SHARD=<i>/<n>` makes `orch_test.sh` and `all.sh` run group `i`
+of `n` balanced groups of the sections, so CI can run a full verification as
+several jobs. The grouping depends only on the section titles, the effective
+record, `all.sh`'s suite list and `n`: sections are dealt heaviest first, by
+CPU seconds, to the group with the lowest total, group 1 starting with the CPU
+seconds of the other suites and shellcheck, and a section the effective record
+does not list weighs the median CPU of the listed sections the deal deals,
+all but the isolation section (the lower middle on an even count; 1 second
+when none is listed). The isolation section runs in every group. `all.sh`
+runs the other suites and shellcheck in group 1 only. A malformed value, or
+any value with `ORCH_TEST_ONLY`, is refused; an empty value counts as unset;
+`affected.sh` unsets it, and no runner a section starts inherits it.
 
 `scripts/dev/section-durations.sh` with no argument makes a full refresh of the
 durations file: it runs `orch_test.sh`

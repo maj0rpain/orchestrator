@@ -1687,8 +1687,8 @@ dur_stale() {
 # dur_eff: the effective record (the file overlaid by the fragments) after the
 # last dur_stale; dur_frag: this branch's fragment.
 dur_eff="$dur_dir/eff.tsv"
-dur_frag="$dur_test/durations.d/feat-x.tsv"
-git -C "$dur_dir" init -q -b feat/x
+dur_frag="$dur_test/durations.d/feat-x-y.tsv"
+git -C "$dur_dir" init -q -b feat/x/y
 # stale_last <output>: the output's last line. stale_cpu <title>: that line's
 # CPU tenths. stale_set <cpu> <title>...: plants that CPU on each title's line.
 stale_last() { printf '%s\n' "$1" | tail -n 1; }
@@ -1834,7 +1834,7 @@ echo '# edited' >>"$dur_orch/zz-planted.sh"
 dur_plant_other
 out="$(dur_stale)"; st=$?
 assert_status "--stale beside another fragment exits 0" "$st" 0
-assert_eq "it writes the line of the edited section in feat-x.tsv, and only that" "$(cut -f3 "$dur_frag")" "dur b"
+assert_eq "it writes the line of the edited section in feat-x-y.tsv, and only that" "$(cut -f3 "$dur_frag")" "dur b"
 assert_eq "the durations file is byte for byte as it was" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
 assert_eq "and the other fragment too" "$(<"$dur_test/durations.d/zzz-other.tsv")" "$(<"$dur_dir/other.keep")"
 cp "$dur_frag" "$dur_dir/frag1.tsv"
@@ -1912,11 +1912,7 @@ out="$(dur_stale)"; st=$?
 assert_status "--stale on a detached HEAD exits 1" "$st" 1
 assert_contains "naming the reason" "$out" "detached HEAD"
 assert_eq "and writing nothing" "$(dur_frag_count)" "0"
-git -C "$dur_dir" checkout -q feat/x
-git -C "$dur_dir" checkout -q -b a/b/c
-out="$(dur_stale)"
-assert_eq "a branch name holding / is a fragment name with each / as -" "$(cd "$dur_test/durations.d" && echo *.tsv)" "a-b-c.tsv"
-git -C "$dur_dir" checkout -q feat/x
+git -C "$dur_dir" checkout -q feat/x/y
 stale_reset
 # The effective record unreadable: named, exit 1, every file unchanged.
 dur_plant_other
@@ -2089,11 +2085,11 @@ cp "$dur_dir/base.tsv" "$dur_file"
 # sent here: a plain background start inherits SIGINT ignored, and the `set -m`
 # launch the isolation-root section uses is not repeated for it.
 
-# dur_term <pid file> [<env assignment>...]: starts the script as in dur_script,
-# through term_run, which TERMs it once the pid file has content, and
 # dur_term_args: arguments for the script; none runs the full refresh.
 dur_term_args=()
-# sets term_st and term_secs (the seconds the script took to return).
+# dur_term <pid file> [<env assignment>...]: starts the script as in dur_script,
+# passing dur_term_args, through term_run, which TERMs it once the pid file has
+# content, and sets term_st and term_secs (seconds taken to return).
 dur_term() {
   local pid_file="$1"
   shift

@@ -138,7 +138,7 @@ trap test_jobs_stop_descendants INT TERM
 # tab-separated, and a fourth column, the fingerprint of the text the line was
 # measured from, on every line but shellcheck's; this runner reads three- and
 # four-column lines alike and ignores the fingerprint (test_tree.sh's reader).
-# Sections the file does not list start first, in walk order;
+# Sections the effective record does not list start first, in walk order;
 # the rest follow by wall seconds, longest first, ties in walk order. Output
 # stays in walk order. A line that does not parse and a name matching no
 # section are ignored, and a missing file gives walk order, so the file costs
@@ -157,10 +157,10 @@ trap test_jobs_stop_descendants INT TERM
 # The grouping is a pure function of the section titles in walk order,
 # the effective record, all.sh's suite list (read with suites_read) and n (a
 # record that cannot be read exits 1, as a failed suite list does):
-# a section weighs its CPU seconds, one the file does not list the median CPU
+# a section weighs its CPU seconds, one the record does not list the median CPU
 # of the listed sections the deal deals, all but the isolation section (the
 # lower middle on an even count, 1 second when none is listed), group 1
-# starts with the summed CPU seconds of the file's other suites and of
+# starts with the summed CPU seconds of the record's other suites and of
 # the shellcheck run, the others at 0, and sections are dealt heaviest first,
 # ties in walk order, each to the group with the lowest total, the
 # lowest-numbered on a tie. The isolation section runs in every group and
