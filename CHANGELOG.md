@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.9.4
+
+Simplify the agent copy marker check and its tests: `agent_copy_marked` has one failure branch, and the Junie session report test uses the shared counting fixture.
+
 ## 6.9.3
 
 Tidy the branch module and its tests: drop the branch_name_flow middle man and duplicated branch retire test setup and coverage.
