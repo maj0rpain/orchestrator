@@ -110,6 +110,8 @@
 #     every build arg the former interpolates is named in the latter
 #   scan_cpu_limit  the autopilot service limits CPU from ORCH_CPUS and
 #     docker/.env.example mentions it
+#   scan_memory_limit  the autopilot service sets mem_limit and memswap_limit
+#     from ORCH_MEMORY and docker/.env.example mentions it
 #   scan_autopilot_env  docker/.env.example names the ORCH_<NAME> variable of
 #     every setting in the autopilot module's AUTOPILOT_SETTING_NAMES
 #   scan_clone_dir  the autopilot service pins ORCH_CLONE_DIR to the repo
@@ -2744,6 +2746,36 @@ flags "an .env.example without ORCH_CPUS is flagged" \
   "$(scan_cpu_limit "$fixture")" "does not mention ORCH_CPUS"
 check "docker/compose.yaml limits CPU from ORCH_CPUS and .env.example documents it" \
   "$(scan_cpu_limit "$PLUGIN_ROOT")"
+
+# The autopilot service's memory limit reads ORCH_MEMORY (0 = no limit when
+# unset) through both mem_limit and memswap_limit (equal, so swap is off), and
+# .env.example documents it.
+# scan_memory_limit <plugin root>: one line per break of that rule.
+scan_memory_limit() {
+  local r="$1" key
+  for key in mem_limit memswap_limit; do
+    grep -qE "^ +$key: \\$\\{ORCH_MEMORY:-0\\}\$" "$r/docker/compose.yaml" ||
+      echo "docker/compose.yaml: autopilot has no $key: \${ORCH_MEMORY:-0} line"
+  done
+  grep -q 'ORCH_MEMORY' "$r/docker/.env.example" ||
+    echo "docker/.env.example: does not mention ORCH_MEMORY"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/docker"
+printf 'services:\n  a:\n    restart: no\n' >"$fixture/docker/compose.yaml"
+printf '# FOO=\n' >"$fixture/docker/.env.example"
+flags "a compose file without either memory key is flagged for mem_limit" \
+  "$(scan_memory_limit "$fixture")" "no mem_limit"
+flags "a compose file without either memory key is flagged for memswap_limit" \
+  "$(scan_memory_limit "$fixture")" "no memswap_limit"
+printf 'services:\n  a:\n    mem_limit: ${ORCH_MEMORY:-0}\n' >"$fixture/docker/compose.yaml"
+flags "a compose file with mem_limit but no memswap_limit is flagged" \
+  "$(scan_memory_limit "$fixture")" "no memswap_limit"
+flags "an .env.example without ORCH_MEMORY is flagged" \
+  "$(scan_memory_limit "$fixture")" "does not mention ORCH_MEMORY"
+check "docker/compose.yaml limits memory from ORCH_MEMORY and .env.example documents it" \
+  "$(scan_memory_limit "$PLUGIN_ROOT")"
 
 # .env.example names the variable of every autopilot setting (#3103). The names
 # come from the autopilot module's one list, sourced from the real plugin root
