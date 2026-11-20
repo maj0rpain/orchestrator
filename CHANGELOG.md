@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.9.8
+
+A recorded GitHub rate-limit reset is never held more than an hour ahead: every GitHub pause writer caps its reset at one hour from now, and a pause file already on disk that is further out is cut to an hour (with a warning) when a tick reads it. The usage limit pause is not capped.
+
 ## 6.9.7
 
 The side-checkout tests build every test side checkout through one builder and run the list cost check in the for-issue check's repo, the default-branch ask counter is one shared test helper, and archive_flow's entry-name local is called entry_name rather than base.
