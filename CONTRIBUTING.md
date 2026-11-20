@@ -185,8 +185,9 @@ the change that introduces the budget file excepted. What a session does:
 - **A conflict in a durations fragment** is rare: two branch names that map to
   one fragment name (`a/b` and `a-b`) share a fragment. Keep both sides' lines,
   then run `section-durations.sh --stale`. A conflict in the durations file
-  itself means a change edited it by hand or made a full refresh: take main's
-  file and run `--stale`.
+  itself means a change edited it by hand or made a full refresh: for a hand
+  edit, take main's file and run `--stale`; for a full refresh, take main's
+  file and fragments, then run the full refresh again on the merged tree.
 - **A full refresh** is the human's call. A session whose `--stale` refuses for
   want of a fresh section stops for the human, as when still over.
 

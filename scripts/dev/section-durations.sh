@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# section-durations.sh: rewrites scripts/test/section-durations.tsv, the file
-# orch_test.sh reads to start its sections longest-first. It has three modes.
+# section-durations.sh: records scripts/test/section-durations.tsv, the file
+# orch_test.sh reads to start its sections longest-first (the full refresh and
+# --fold rewrite the file; --stale writes the branch's own fragment beside it).
+# It has three modes.
 # With no argument it is the full refresh, which resets the scale of every
 # line: the human's call, made when the suite's shape changes (sections added,
 # removed or made much slower or faster), on a tree whose suite passes. With
@@ -60,13 +62,13 @@
 # each new line's wall and CPU are what was measured times the ratio, rounded
 # to tenths, and the line carries its fingerprint. The fragment is created, with
 # durations.d, when missing; run again over its own fragment, it replaces the
-# line of a re-recorded title, adds new lines, keeps walk order, leaves a title
-# on two of its lines on one (the last), and drops its lines of no section or
-# suite. It never writes a `shellcheck` line: only a full refresh does. It ends
-# by printing the new effective total and the budget (the one number in
-# suite-budget beside the durations file) on one line, naming the budget as
-# missing when that file is missing or malformed; that does not stop the
-# recording. Nothing out of date measures nothing, says so and creates no
+# line of a re-recorded title, adds new lines, keeps walk order, measures afresh
+# a title on two of its lines and leaves it on one, and drops its lines of no
+# section or suite. It never writes a `shellcheck` line: only a full refresh
+# does. It ends by printing the new effective total and the budget (the one
+# number in suite-budget beside the durations file) on one line, naming the
+# budget as missing when that file is missing or malformed; that does not stop
+# the recording. Nothing out of date measures nothing, says so and creates no
 # fragment (a fragment holding only surplus lines is mended without
 # measuring). Something to measure with no fresh section is refused, naming the
 # full refresh, and exits 1. When the effective record cannot be read it names
@@ -111,6 +113,10 @@ replace_whole() {
   cp "$1" "$2.$$" && mv "$2.$$" "$2"
 }
 
+# ftmp: fold_run's temporary directory. It is script-level so the EXIT
+# trap, which fires after fold_run has returned, can still remove it.
+ftmp=
+
 # delete_fragments: deletes every durations fragment, never `.gitkeep`.
 delete_fragments() {
   local f
@@ -123,7 +129,7 @@ delete_fragments() {
 # renamed over it) and the fragments are deleted, with INT and TERM held, so an
 # interrupt before that leaves the file and every fragment as they were.
 fold_run() {
-  local ftmp faults frags=()
+  local faults frags=()
   ftmp="$(mktemp -d)" || return 1
   trap 'rm -rf "$ftmp" "$target.$$"' EXIT
   trap 'exit 130' INT TERM

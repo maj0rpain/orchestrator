@@ -1,5 +1,5 @@
 22	17	the parallel runner's start order (#2857)	7e043830f5d6b996d256dac1226c22a68b20a9a0
 111	59	the shard setting (#2859)	39dc71622619ca6bf4658f914574000804c7d365
-373	196	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	278bc19a93d2d3f76f431eba55f7cc83fb48f6c1
+336	187	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	8078de31bd5025eb559726fbcafc4a29bd837995
 54	47	affected.sh, the ticket verification (#2023)	9d9f0e810b82103af140719f3bdbb1fe42bc62f2
-139	166	docs_lint.sh	19556bc5c2bf9b4f91888f664a18bf4a5be39f42
+138	162	docs_lint.sh	bce44d49ec61c794f817437e860375eb76b3533b

@@ -1586,6 +1586,22 @@ dur_dev_script="$dur_dir/scripts/dev/section-durations.sh"
 dur_script() {
   "${dur_cmd[@]}" "$@" bash "$dur_dev_script" 2>&1
 }
+# dur_frag_count: how many fragments (*.tsv) durations.d of the planted tree
+# holds.
+dur_frag_count() {
+  local f c=0
+  for f in "$dur_test"/durations.d/*.tsv; do
+    [ -f "$f" ] && c=$((c + 1))
+  done
+  echo "$c"
+}
+# dur_plant_frags: fragments f1.tsv and f2.tsv and a .gitkeep in durations.d.
+dur_plant_frags() {
+  mkdir -p "$dur_test/durations.d"
+  : >"$dur_test/durations.d/.gitkeep"
+  printf '1\t1\tdur a\tstale\n' >"$dur_test/durations.d/f1.tsv"
+  printf '2\t2\tdur b\tstale\n' >"$dur_test/durations.d/f2.tsv"
+}
 printf 'old\n' >"$dur_file"
 out="$(dur_script ORCH_TEST_ONLY='^dur a$' ORCH_TEST_SHARD=2/2)"; st=$?
 assert_status "the script passes on a passing tree, ORCH_TEST_ONLY and ORCH_TEST_SHARD set" "$st" 0
@@ -1626,12 +1642,15 @@ assert_status "a failing section fails the script" "$st" 1
 assert_contains "naming what failed" "$out" "orch_test.sh"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
 rm -f "$dur_orch/zzz-failing.sh"
+dur_plant_frags
 printf '#!/usr/bin/env bash\necho "stderr-marker" >&2\necho; echo "  FAIL x"; echo "0 passed, 1 failed"; exit 1\n' >"$dur_test/stub_b.sh"
 out="$(dur_script)"; st=$?
 assert_status "a failing other suite fails the script" "$st" 1
 assert_contains "naming it" "$out" "stub_b.sh"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/good.tsv")"
 assert_contains "a failing suite's stderr is in the failure dump" "$out" "stderr-marker"
+assert_eq "and leaves both fragments in place, .gitkeep too" \
+  "$(dur_frag_count)|$([ -e "$dur_test/durations.d/.gitkeep" ] && echo yes)" "2|yes"
 dur_stub_passing stub_b.sh
 printf '#!/usr/bin/env bash\necho "a.sh:1:1: warning: planted"; exit 1\n' >"$dur_tool/shellcheck"
 out="$(dur_script)"; st=$?
@@ -1682,18 +1701,10 @@ stale_set() {
     'BEGIN { n = split(ts, a, "\n"); for (i = 1; i <= n; i++) want[a[i]] = 1 } $3 in want { $2 = c } 1' \
     "$dur_file" >"$dur_dir/stale.tmp" && cp "$dur_dir/stale.tmp" "$dur_file"
 }
-# stale_except <title> [<file>]: <file> or the durations file, less the title.
+# stale_except <title> [<file>]: <file>, by default the effective record after
+# the last dur_stale, less the title.
 stale_except() {
   awk -F'\t' -v t="$1" '$3 != t' "${2:-$dur_eff}"
-}
-# dur_frag_count [<dir>]: how many fragments (*.tsv) the directory holds,
-# durations.d of the planted tree by default.
-dur_frag_count() {
-  local f c=0
-  for f in "${1:-$dur_test/durations.d}"/*.tsv; do
-    [ -f "$f" ] && c=$((c + 1))
-  done
-  echo "$c"
 }
 # dur_plant_other: a fragment of another branch, zzz-other.tsv, and a copy of it
 # in other.keep to compare against.
@@ -1713,8 +1724,11 @@ printf '%s\n' '  # --- dur cal' \
 cp "$dur_orch/zz-planted.sh" "$dur_dir/planted.keep"
 cp "$dur_test/stub_a.sh" "$dur_dir/stub_a.keep"
 cp "$dur_test/stub_b.sh" "$dur_dir/stub_b.keep"
+dur_plant_frags
 out="$(dur_script)"; st=$?
 assert_status "a full refresh on the tree for the --stale cases passes" "$st" 0
+assert_eq "it deletes every fragment and keeps .gitkeep" \
+  "$(dur_frag_count)|$([ -e "$dur_test/durations.d/.gitkeep" ] && echo yes)" "0|yes"
 cp "$dur_file" "$dur_dir/base.tsv"
 assert_eq "every line but shellcheck's has four columns" \
   "$(awk -F'\t' '$3 != "shellcheck" && NF != 4 { n++ } END { print n + 0 }' "$dur_file")" "0"
@@ -1817,9 +1831,7 @@ stale_reset
 # The fragment (#3877): --stale writes this branch's own fragment, named for the
 # branch with each `/` as `-`, and nothing else.
 echo '# edited' >>"$dur_orch/zz-planted.sh"
-mkdir -p "$dur_test/durations.d"
-printf '3\t3\tdur cal\tother\n' >"$dur_test/durations.d/zzz-other.tsv"
-cp "$dur_test/durations.d/zzz-other.tsv" "$dur_dir/other.keep"
+dur_plant_other
 out="$(dur_stale)"; st=$?
 assert_status "--stale beside another fragment exits 0" "$st" 0
 assert_eq "it writes the line of the edited section in feat-x.tsv, and only that" "$(cut -f3 "$dur_frag")" "dur b"
@@ -2004,24 +2016,6 @@ assert_status "--stale with two fresh sections passes" "$st" 0
 assert_eq "its new lines are far above their own measurement too" "$([ "$(stale_cpu 'cal m1')" -ge 500 ] && echo yes)" "yes"
 stale_reset
 cp "$dur_dir/base.tsv" "$dur_dir/good.tsv"
-# The full refresh deletes every fragment, keeping .gitkeep (#3877).
-mkdir -p "$dur_test/durations.d"
-: >"$dur_test/durations.d/.gitkeep"
-printf '1\t1\tdur a\tstale\n' >"$dur_test/durations.d/f1.tsv"
-printf '2\t2\tdur b\tstale\n' >"$dur_test/durations.d/f2.tsv"
-dur_stub_passing stub_b.sh
-printf '#!/usr/bin/env bash\necho; echo "  FAIL x"; echo "0 passed, 1 failed"; exit 1\n' >"$dur_test/stub_b.sh"
-cp "$dur_file" "$dur_dir/pre-full.tsv"
-out="$(dur_script)"; st=$?
-assert_status "a full refresh with a failing suite exits 1" "$st" 1
-assert_eq "it leaves the file and both fragments in place" \
-  "$(<"$dur_file")|$(dur_frag_count)" "$(<"$dur_dir/pre-full.tsv")|2"
-cp "$dur_dir/stub_b.keep" "$dur_test/stub_b.sh"
-out="$(dur_script)"; st=$?
-assert_status "a full refresh over fragments exits 0" "$st" 0
-assert_eq "it deletes every fragment" "$(dur_frag_count)" "0"
-assert_eq "keeps .gitkeep" "$([ -e "$dur_test/durations.d/.gitkeep" ] && echo yes)" "yes"
-assert_eq "and writes no title twice" "$(cut -f3 "$dur_file" | sort | uniq -d | wc -l | tr -d ' ')" "0"
 stale_reset
 # The --fold mode (#3874): fragments in durations.d folded into the file.
 # dur_fold: the dev script with --fold, stdout and stderr together.
@@ -2036,6 +2030,11 @@ out="$(dur_fold)"; st=$?
 assert_status "--fold with no fragment and the file as is exits 0" "$st" 0
 assert_contains "saying it changed nothing" "$out" "nothing to fold"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
+# --fold removes its temporary directory, with no complaint from its EXIT trap.
+mkdir -p "$dur_dir/foldtmp"
+out="$(TMPDIR="$dur_dir/foldtmp" dur_fold)"
+assert_eq "--fold prints no unbound variable and leaves no temporary directory" \
+  "$(grep -c "unbound variable" <<<"$out")|$(ls -A "$dur_dir/foldtmp")" "0|"
 { printf '9\t9\tdur a\tstale\n'; cat "$dur_dir/base.tsv"; } >"$dur_file"
 out="$(dur_fold)"; st=$?
 assert_status "--fold with no fragment and a duplicated line exits 0" "$st" 0

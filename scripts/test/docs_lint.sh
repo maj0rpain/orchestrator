@@ -461,8 +461,10 @@ check_real_changelog_fragments() {
 }
 
 # The three suite budget rules (#3180) and the helpers they reach. They read
-# the durations file, scripts/test/section-durations.tsv, and the budget file
-# beside it, scripts/test/suite-budget, under a plugin root.
+# the effective durations record (the durations file,
+# scripts/test/section-durations.tsv, overlaid by the fragments of
+# scripts/test/durations.d) and the budget file beside it,
+# scripts/test/suite-budget, under a plugin root.
 LEDGER_FILE=scripts/test/section-durations.tsv
 LEDGER_FRAGMENTS=scripts/test/durations.d
 BUDGET_FILE=scripts/test/suite-budget
@@ -604,7 +606,7 @@ check_real_suite_budget() {
   # budget file may be missing or malformed and the recording still goes on, so
   # rule 2 is not judged in the full run; the budget-alone rule still is.
   if [ "$BASE_RULES" = 0 ] && [ -n "${DOCS_LINT_RECORDING:-}" ]; then
-    ok "the recorded total is not judged against the suite budget while the durations file is being recorded"
+    ok "the recorded total is not judged against the suite budget while the effective durations record is being recorded"
   else
     check "the recorded total is within the suite budget" "$(scan_suite_budget "$PLUGIN_ROOT" "$base")"
   fi
@@ -621,7 +623,7 @@ check_real_suite_budget() {
 # being replaced. Only the full run calls it, never --base-rules.
 check_real_ledger_fresh() {
   if [ -n "${DOCS_LINT_RECORDING:-}" ]; then
-    ok "the durations file's freshness is not judged while it is being recorded"
+    ok "the effective durations record's freshness is not judged while it is being recorded"
   else
     check "the effective durations record has one fresh line per title" \
       "$(scan_ledger_fresh "$PLUGIN_ROOT")"
@@ -5135,7 +5137,7 @@ ledger_extra() {
 }
 fixture="$(budget_fixture 14)"
 ledger_extra "$fixture" 40
-flags "the working tree, not HEAD, is judged: an uncommitted durations file over the budget is flagged" \
+flags "the working tree, not HEAD, is judged: an uncommitted durations fragment over the budget is flagged" \
   "$(scan_suite_budget "$fixture" main)" "the total is 17.0 CPU seconds"
 assert_empty "with no base, the comparison is skipped and an over-budget total is not flagged" \
   "$(scan_suite_budget "$fixture")"
@@ -5210,6 +5212,11 @@ fixture="$(budget_fixture 14)"
 echo 30 >"$fixture/scripts/test/suite-budget"
 assert_empty "a budget file changed alone is not flagged" "$(scan_suite_budget_alone "$fixture" main)"
 ledger_extra "$fixture" 40
+assert_empty "a budget file changed beside only a durations fragment is not flagged" \
+  "$(scan_suite_budget_alone "$fixture" main)"
+fixture="$(budget_fixture 14)"
+echo 30 >"$fixture/scripts/test/suite-budget"
+printf "1\t1\ta one\tabc\n" >>"$fixture/scripts/test/section-durations.tsv"
 assert_empty "a budget file changed beside only the durations file is not flagged" \
   "$(scan_suite_budget_alone "$fixture" main)"
 fixture="$(budget_fixture 14)"
@@ -5255,7 +5262,7 @@ printf '%s\n' '# --- a two ---' 'echo 4' >>"$fixture/scripts/test/orch/a.sh"
 out="$(ORCH_TEST_QUIET='' tally_file=/dev/null PLUGIN_ROOT="$fixture" \
   DOCS_LINT_RECORDING=1 check_real_ledger_fresh)"
 assert_contains "a stale ledger's freshness is not judged while the ledger is recorded, and says so" \
-  "$out" "ok   the durations file's freshness is not judged while it is being recorded"
+  "$out" "ok   the effective durations record's freshness is not judged while it is being recorded"
 out="$(ORCH_TEST_QUIET='' tally_file=/dev/null PLUGIN_ROOT="$fixture" \
   DOCS_LINT_RECORDING='' check_real_ledger_fresh)"
 assert_contains "and is judged when the ledger is not being recorded" \
