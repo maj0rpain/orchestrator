@@ -1233,6 +1233,10 @@ autopilot_housekeeping() {
   liveness_logs_prune || :
   # The finished sweep /orchestrator:finish runs, its report on stderr as in
   # side-checkout add; a failed sweep warns and never fails the step.
+  orch_load branch
+  orch_load trust
+  orch_load ticket-worktree
+  orch_load state
   orch_load side-checkout
   ( cmd_side_checkout_prune ) >&2 \
     || warn "the finished sweep failed - carrying on"
@@ -1247,7 +1251,7 @@ autopilot_housekeeping() {
 # it released; the claim count is the read's claims less that number, taken
 # straight after), one read of the done issues (autopilot_done_read), the
 # merged-PR close (which needs no session, so the usage-limit and early pauses
-# never hold it), the three limit-pause checks (usage, core, graphql), sync
+# never hold it), the three limit-pause checks (usage, core, graphql),
 # housekeeping (at most hourly; it runs whatever auto-sync is), sync detection
 # (when auto-sync is true), then pickup (see the spec's One tick),
 # the tick ending after any pickup, after stale cleanup, and after
@@ -1268,6 +1272,8 @@ autopilot_tick() {
   orch_load standing
   orch_load gh
   orch_load handoff
+  orch_load checkout
+  orch_load liveness
   local main_root cap count released issue gh_err phase rc limited_arg auto_sync
   local ranked="" slots limit done_table reserve
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"

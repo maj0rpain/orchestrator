@@ -170,7 +170,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               ensures the eight labels, cleans up this host's
                               stale claims and closes the issues of merged
                               PRs. Then, unless a usage limit pause or an
-                              early GitHub pause holds the tick, it detects
+                              early GitHub pause holds the tick, it runs the
+                              hourly housekeeping (deletes session logs older
+                              than 14 days, then the finished sweep removes
+                              side checkouts and their branches; a GitHub rate
+                              limit hit there ends the tick before pickup),
+                              detects
                               done issues whose PR needs a sync (when
                               auto-sync is on) and labels them orch:sync, then
                               claims each open

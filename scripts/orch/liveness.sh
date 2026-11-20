@@ -200,17 +200,21 @@ LIVENESS_LOG_RETENTION_MINUTES=$((14 * 24 * 60))
 # (logs/<issue>-<phase>-<stamp>.log)
 # last modified more than 14 days ago, and nothing else in the logs directory.
 # A missing logs directory is no failure; one that is not a directory, or a
-# file that cannot be deleted, fails with an orch: line.
+# file that cannot be deleted, or a directory that cannot be listed, fails with
+# an orch: line.
 liveness_logs_prune() {
-  local dir f base failed=0
+  local dir f base listing failed=0
   dir="$(liveness_subdir logs)" || return $?
   [ -e "$dir" ] || return 0
   [ -d "$dir" ] || { warn "could not prune the session logs: $dir is not a directory"; return 1; }
-  while IFS= read -r -d '' f; do
+  listing="$(find "$dir" -maxdepth 1 -type f -mmin "+$LIVENESS_LOG_RETENTION_MINUTES" -print 2>/dev/null)" ||
+    { warn "could not prune the session logs: $dir could not be listed"; return 1; }
+  while IFS= read -r f; do
+    [[ "$f" == "$dir"/* ]] || continue
     base="${f##*/}"
     [[ "$base" =~ ^[0-9]+-[^-]+-.+\.log$ ]] || continue
     rm -f -- "$f" 2>/dev/null || { warn "could not delete the old session log $f"; failed=1; }
-  done < <(find "$dir" -maxdepth 1 -type f -mmin "+$LIVENESS_LOG_RETENTION_MINUTES" -print0 2>/dev/null)
+  done <<<"$listing"
   return "$failed"
 }
 

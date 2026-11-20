@@ -3460,6 +3460,18 @@ assert_contains "it warns" "$out" "orch: could not delete the old session log"
 assert_eq "the stamp is still written" "$(on_disk "$hk_stamp")" present
 assert_eq "and pickup still happens" "$(tick_calls)" "2"
 rm -rf "$hk_rm_bin"
+# an unlistable logs directory warns, the stamp is written, pickup happens
+hk_seed; rm -f "$hk_stamp"; chmod 000 "$hk_logs"
+fake_issue 9 open ready-for-agent orch:spec; fake_issue_title 9 "Housekeeping 9"
+printf '9\n' >"$launcher_dir/release"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+chmod 755 "$hk_logs"
+assert_status "an unlistable logs directory leaves the exit status" "$st" 0
+assert_contains "it warns" "$out" "orch: could not prune the session logs"
+assert_eq "the stamp is still written (unlistable logs)" "$(on_disk "$hk_stamp")" present
+# a tick whose stamp is missing loads each module once
+rm -f "$hk_stamp"
+assert_loads_once "autopilot tick with no housekeeping stamp" "$ORCH" autopilot tick
 # a holding usage limit pause and a holding early GitHub pause each skip it
 hk_seed; rm -f "$hk_stamp"
 printf '%s\n' "$(iso_of "$(( $(date +%s) + 7200 ))")" >"$hk_dir/limit"
