@@ -112,11 +112,11 @@ forked_from_set() { git config "$(forked_from_key "$1")" "$2"; }
 # Name builders. A flow's branch from its issue and slug, its redo form from
 # that and a redo count, a ticket branch from its forked-from branch and
 # ticket number, and a quick implementation's branch from issue and slug.
+
 # branch_name_flow_into <var> <issue> <slug>: the flow's branch name, set into
 # the caller-named <var> with no subshell. The one place the format lives.
 branch_name_flow_into() { printf -v "$1" 'orch/%s-%s' "$2" "$3"; }
-branch_name_flow() { local _bnf; branch_name_flow_into _bnf "$1" "$2"; printf '%s\n' "$_bnf"; }
-branch_name_redo() { printf '%s-redo-%s\n' "$(branch_name_flow "$1" "$2")" "$3"; }
+branch_name_redo() { local _bnr; branch_name_flow_into _bnr "$1" "$2"; printf '%s-redo-%s\n' "$_bnr" "$3"; }
 branch_name_ticket() { printf '%s--t%s\n' "$1" "$2"; }
 branch_name_quick() { printf 'quick/%s-%s\n' "$1" "$2"; }
 
@@ -327,10 +327,12 @@ on_origin_base() {
 # pending base merge a failed sync left: exit 3, nothing fetched or moved, so a
 # resolver resumes it; any other merge in progress is refused with exit 1.
 # --finish, never a plain rerun, finishes a resolved conflict without
-# fetching: HEAD must be a merge commit whose second parent is on the local
-# origin/<base> and no merge may be in progress, else exit 1 with nothing
-# moved. It records that second parent as the base SHA and pushes, leaving a
-# newer base tip for the next sync.
+# fetching: the newest merge commit on HEAD's first-parent chain, with every
+# commit above it single-parent (a resolver's fix commits), must have its
+# second parent on the local origin/<base> and no merge may be in progress,
+# else exit 1 with nothing moved - a chain with no merge dies. --finish accepts
+# fix commits above the merge. It records that second parent as the base SHA
+# and pushes, leaving a newer base tip for the next sync.
 cmd_branch_sync() {
   local finish=""
   case "$*" in
@@ -358,10 +360,13 @@ cmd_branch_sync() {
     if merge_in_progress "$ROOT"; then
       die "a merge is in progress on $branch - commit it (or git merge --abort), then rerun orch.sh branch sync --finish; nothing was synced"
     fi
-    tip="$(git rev-parse --verify --quiet "HEAD^2^{commit}")" \
-      || die "HEAD of $branch is not a merge commit - nothing to finish; nothing was synced"
+    local merge_commit
+    merge_commit="$(git rev-list --first-parent --min-parents=2 -1 HEAD 2>/dev/null)"
+    [ -n "$merge_commit" ] \
+      || die "no merge commit on the first-parent chain of $branch - nothing to finish; nothing was synced"
+    tip="$(git rev-parse --verify --quiet "$merge_commit^2^{commit}")"
     on_origin_base "$tip" "$base" \
-      || die "the second parent of HEAD is not on origin/$base - nothing to finish; nothing was synced"
+      || die "the second parent of the newest merge on $branch is not on origin/$base - nothing to finish; nothing was synced"
   else
     if merge_in_progress "$ROOT"; then
       mh="$(git rev-parse --verify --quiet MERGE_HEAD)"

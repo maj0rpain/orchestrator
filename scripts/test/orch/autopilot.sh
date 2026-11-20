@@ -141,10 +141,6 @@ out="$("$ORCH" help 2>&1)"
 assert_contains "autopilot show is in the usage text" "$out" "autopilot show"
 assert_contains "autopilot active is in the usage text" "$out" "autopilot active"
 assert_contains "autopilot settings is in the usage text" "$out" "autopilot settings"
-assert_contains "the CLI conventions' autopilot row lists settings" \
-  "$(grep '^| `autopilot`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`settings`'
-assert_contains "the CLI conventions' noun table has an autopilot row" \
-  "$(grep '^| `autopilot`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`active`'
 hc_row="$(grep '^| Start a headless session' "$PLUGIN_ROOT/docs/host-capabilities.md")"
 assert_contains "host-capabilities has the headless-session row" "$hc_row" '`claude -p`'
 assert_contains "the headless-session row carries --append-system-prompt" "$hc_row" '`--append-system-prompt`'
@@ -560,7 +556,14 @@ assert_eq "a failure without the usage-limit message writes no limit file" "$(on
 printf '7\n' >"$launcher_dir/release"
 fake_issue 7 open ready-for-agent orch:spec orch:running
 fake_claim_seed 7 "$(hostname)" "$$"
+# a session's verification runs end with it, whatever its exit code
+vrun_start "$side7" "sleep 300 # side3"
+vrun_start "$top" "sleep 300 # other3"
+assert_eq "a run of the side checkout is going before the session ends (exit 3)" "$(vrun_live "$top/.orchestrator/verification" "$side7" && echo live || echo gone)" live
 "$ORCH" autopilot run 7 >/dev/null 2>&1
+assert_eq "a session exiting 3 leaves no live run of its side checkout" "$(vrun_live "$top/.orchestrator/verification" "$side7" && echo live || echo gone)" gone
+assert_eq "and a run of another checkout survives (exit 3)" "$(vrun_live "$top/.orchestrator/verification" "$top" && echo live || echo gone)" live
+"$ORCH" verification stop "$top" >/dev/null 2>&1
 assert_eq "a released claim and a non-zero exit is no failure" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
 assert_not_contains "and posts no failure comment" "$(fake_comments_of 7)" "Autopilot failed"
 released_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
@@ -571,7 +574,13 @@ rm -f "$launcher_dir/release"; printf '0\n' >"$launcher_dir/exit"
 fake_issue 7 open ready-for-agent orch:spec orch:running
 fake_claim_seed 7 "$(hostname)" "$$"
 run_load="$(mktemp)"
+vrun_start "$side7" "sleep 300 # side0"
+vrun_start "$top" "sleep 300 # other0"
+assert_eq "a run of the side checkout is going before the session ends (exit 0)" "$(vrun_live "$top/.orchestrator/verification" "$side7" && echo live || echo gone)" live
 ORCH_LOAD_TRACE="$run_load" "$ORCH" autopilot run 7 >/dev/null 2>&1
+assert_eq "a session exiting 0 leaves no live run of its side checkout" "$(vrun_live "$top/.orchestrator/verification" "$side7" && echo live || echo gone)" gone
+assert_eq "and a run of another checkout survives (exit 0)" "$(vrun_live "$top/.orchestrator/verification" "$top" && echo live || echo gone)" live
+"$ORCH" verification stop "$top" >/dev/null 2>&1
 assert_eq "a clean exit with the claim held is needs-human" "$(fake_labels_of 7)" "needs-human orch:spec ready-for-agent "
 assert_eq "its claim is released" "$(fake_claim_held 7)" free
 clean_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"

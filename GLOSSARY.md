@@ -339,8 +339,8 @@ _Avoid_: rebase, update branch.
 **Resolver**:
 The fresh agent that finishes one in-progress merge or rebase. It reads why
 each side changed before resolving a hunk, keeps both intents where it can,
-names any intent it drops, runs the repo's checks, and commits. It never
-aborts.
+names any intent it drops, commits, then runs the repo's checks on the
+finished merge or rebase and commits any fix on top. It never aborts.
 
 **Release record**:
 The per-PR versioning change a repo's own instructions require - a changelog

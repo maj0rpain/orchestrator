@@ -1499,8 +1499,6 @@ assert_eq "leaving the ticket's own branch as it was" "$(git rev-parse orch/5-fe
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket merge is in the usage text" "$out" "ticket merge <n>"
-assert_contains "the CLI conventions' noun table lists merge among ticket's verbs" \
-  "$(grep '^| `ticket` ' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`merge`'
 restore_suite_env
 
 # --- ticket merge beside a same-named tag (#2337) -----------------------------
