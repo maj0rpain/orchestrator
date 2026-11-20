@@ -3518,7 +3518,7 @@ copies_tree() {
 }
 # copies_reset <tree dir>: puts setup.sh and the sourceable helpers in the
 # tree from the real tree and removes the planted zz-*.sh, so each case starts
-# from the same tree without copying scripts/test/orch/ again.
+# from setup.sh and the helpers alone.
 copies_reset() {
   cp "$PLUGIN_ROOT/scripts/test/orch/setup.sh" "$1/setup.sh" || return 1
   (cd "$PLUGIN_ROOT/scripts/test" && cp "${SOURCEABLE_TEST_HELPERS[@]}" "${1%/orch}/") || return 1
@@ -3565,7 +3565,7 @@ plant_file "$copies_dir" zz-b.sh <<'PLANTED'
   printf '%s\n' "$a"
 PLANTED
 out="$(helper_copies "$copies_dir")"; st=$?
-assert_status "the scan exits 1 when: two copies in two files print two lines, sorted" "$st" 1
+assert_status "two copies of a setup helper in two files fail" "$st" 1
 assert_eq "two copies in two files print two lines, sorted" "$out" \
   "$(copy_msg zz-a.sh 3 planted_two setup.sh)
 $(copy_msg zz-b.sh 2 planted_two setup.sh)"
@@ -3614,7 +3614,7 @@ plant_append "$copies_dir" setup.sh <<'PLANTED'
   echo t2
 PLANTED
 out="$(helper_copies "$copies_dir")"; st=$?
-assert_status "a copy in setup.sh as well fails" "$st" 1
+assert_status "with a copy in setup.sh too, the scan still fails" "$st" 1
 assert_eq "a copy in setup.sh is reported as setup.sh:<line>, before the section file's" "$out" \
   "$(copy_msg setup.sh "$((n + 1))" planted_tally ../tally.sh)
 $(copy_msg zz-s.sh 2 planted_tally ../tally.sh)"
@@ -3659,7 +3659,7 @@ plant_file "$copies_dir" zz-m.sh <<'PLANTED'
   echo x2
 PLANTED
 out="$(helper_copies "$copies_dir")"; st=$?
-assert_status "the scan exits 1 when: a run equal to the bodies of two helpers prints a line for each" "$st" 1
+assert_status "a run equal to the bodies of two helpers fails" "$st" 1
 assert_eq "a run equal to the bodies of two helpers prints a line for each" "$out" \
   "$(copy_msg zz-m.sh 2 planted_fi ../fifo.sh)
 $(copy_msg zz-m.sh 2 planted_ta ../tally.sh)"
@@ -3684,7 +3684,7 @@ plant_file "$copies_dir" zz-l.sh <<'PLANTED'
   out="$(echo 01234567890123456789012345678901234)"
 PLANTED
 out="$(helper_copies "$copies_dir")"; st=$?
-assert_status "the scan exits 1 when: a one-line body of 40 characters fails inside a command substitution, one of 39 passes" "$st" 1
+assert_status "a 40-character one-line body in a command substitution fails" "$st" 1
 assert_eq "a one-line body of 40 characters fails inside a command substitution, one of 39 passes" "$out" \
   "$(copy_msg zz-l.sh 3 planted_l40 setup.sh)"
 plant_file "$copies_dir" zz-l.sh <<'PLANTED'
@@ -3709,7 +3709,7 @@ plant_file "$copies_dir" zz-m.sh <<'PLANTED'
   printf '%s\n' "$a"
 PLANTED
 out="$(helper_copies "$copies_dir")"; st=$?
-assert_status "the scan exits 1 when: comment and blank lines inside a copy, and a trailing comment on one, do not stop the match" "$st" 1
+assert_status "a copy with comment and blank lines and a trailing comment fails" "$st" 1
 assert_eq "comment and blank lines inside a copy, and a trailing comment on one, do not stop the match" "$out" \
   "$(copy_msg zz-l.sh 2 planted_two setup.sh)
 $(copy_msg zz-m.sh 2 planted_two setup.sh)"
@@ -3727,7 +3727,7 @@ plant_file "$copies_dir" zz-m.sh <<'PLANTED'
   echo c2
 PLANTED
 out="$(helper_copies "$copies_dir")"; st=$?
-assert_status "the scan exits 1 when: a copy that drops a helper line's trailing comment still fails" "$st" 1
+assert_status "a copy without the helper line's trailing comment fails" "$st" 1
 assert_eq "a copy that drops a helper line's trailing comment still fails" "$out" "$(copy_msg zz-m.sh 2 planted_cmt setup.sh)"
 rm -f "$copies_dir/zz-m.sh"
 plant_file "$copies_dir" zz-l.sh <<'PLANTED'
@@ -3768,7 +3768,7 @@ plant_file "$copies_dir" zz-l.sh <<'PLANTED'
   printf '%s\n' "$a"
 PLANTED
 out="$(helper_copies "$copies_dir")"; st=$?
-assert_status "the scan exits 1 when: only a marker naming the helper, with a reason, on the line just before the run exempts it" "$st" 1
+assert_status "runs with a wrong, reasonless or detached marker fail" "$st" 1
 assert_eq "only a marker naming the helper, with a reason, on the line just before the run exempts it" "$out" \
   "$(copy_msg zz-l.sh 13 planted_two setup.sh)
 $(copy_msg zz-l.sh 6 planted_two setup.sh)
