@@ -33,7 +33,7 @@
 0	0	the background child start (#3025)	f220e015537065a2c163be79d07de2b762404f7e
 2	1	the suite start (#3582)	2bbcc72545bb8c86426bb97cbb0200ce5cada1da
 2	2	the counting fixture's stdin counter (#3434)	3f9d3e5f4752d616b853d586ec384640401213ef
-83	98	affected.sh, the ticket verification (#2023)	c56fc9772f9e502fff30cd47afed8b18c4342c5b
+84	98	affected.sh, the ticket verification (#2023)	dc63c1086ee673266069c6c08055cd0f1396bea7
 1	1	the row rule (#3549)	d5025ef93fc07a442c5bbb184cebe1cf567c2cfc
 4	4	the shared test support, function by function (#3550)	a8668a1f16717d12d05ad6ab2787f81d50be6898
 2	2	the gh fake, operation by operation (#3551)	1ce7bff3167463ac98f8d773be5eadb253da52f3
@@ -51,7 +51,7 @@
 17	18	autopilot rounds, budget and start	41829146970a3ee47b79d27ccf9e27f2ba60d4f1
 23	24	autopilot ask and answer	646445929ad04febc7c3cdb6d5d7cdfc421084b0
 21	23	autopilot reenter	9f551d768335d7d0af0835fa7b4f8705fab0e6d1
-72	69	autopilot tick and run	c067855e4a07eaf151a1c28ba2cb409f11e8f5e9
+62	63	autopilot tick and run	0f0958ef6beb91f659ddae98f3e535d6ad67c07d
 10	12	autopilot tick: started by a relative path (#3055)	d9dd0213e6dd303dc497f3a29838e810cd898ed6
 2	32	autopilot tick: the flow-issue read at the issue-list limit	8f47b14f4bdd9b5b0b0b2839a3173964f3b90228
 35	37	autopilot tick: the direct read before each claim	a20ed11001100a2786efc83540270687ac0a161b

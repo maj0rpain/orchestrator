@@ -4584,14 +4584,22 @@ af_reset() {
   af_git config --unset orchestrator.base 2>/dev/null
   af_git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
 }
-# af_mid_merge <branch> <ref>: <branch> at the initial commit changes a doc,
-# then merges <ref> with --no-commit and writes a resolution of state.sh.
-af_mid_merge() {
+# af_behind <branch>: <branch> at the initial commit changes a doc; checked out.
+af_behind() {
   af_git checkout -q -b "$1" "$af_c0"
   af_put docs/a.md changed
   af_git commit -qam doc
-  af_git merge -q --no-commit --no-ff "$2" >/dev/null 2>&1
+}
+# af_merge_resolve <ref>: merge <ref> with --no-commit into the checked-out
+# branch and write a resolution of state.sh.
+af_merge_resolve() {
+  af_git merge -q --no-commit --no-ff "$1" >/dev/null 2>&1
   af_put scripts/orch/state.sh 'resolved=1'
+}
+# af_mid_merge <branch> <ref>: af_behind <branch>, then af_merge_resolve <ref>.
+af_mid_merge() {
+  af_behind "$1"
+  af_merge_resolve "$2"
 }
 # af_mid_merge_end <branch>: abort the merge and delete <branch>.
 af_mid_merge_end() {
@@ -4951,15 +4959,11 @@ af_reset
 # base (#3796): only the branch's own change and the uncommitted resolution
 # select. The branch is behind origin/rel (the initial commit plus the branch
 # module change), changes a doc, and merges rel with --no-commit.
-af_git checkout -q -b behind "$af_c0"
-af_put docs/a.md changed
-af_git commit -qam doc
+af_behind behind
 # The control: with no merge in progress, the selection is today's.
 assert_eq "with no merge in progress a branch behind its base selects its own change" \
   "$(af_plan origin/rel)" "$af_gate,docs_lint.sh"
-af_git checkout -q -f feat
-af_git branch -q -D behind
-af_mid_merge behind origin/rel
+af_merge_resolve origin/rel
 af_resolved="$af_gate,state,docs_lint.sh,scripts/orch/state.sh"
 assert_eq "a merge of the base in progress selects the branch's change and the resolution, not the base's incoming files" \
   "$(af_plan origin/rel)" "$af_resolved"
