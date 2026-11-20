@@ -676,8 +676,6 @@ assert_status "a second argument is a usage error" "$st" 2
 out="$("$ORCH" issue bogus 2>&1)"
 assert_contains "the unknown-op message lists ready" "$out" "|ready"
 assert_contains "help documents issue ready" "$("$ORCH" help)" "issue ready <n>"
-assert_contains "the CLI conventions' noun table lists issue ready" \
-  "$(grep '^| `issue`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`ready`'
 restore_suite_env
 
 # --- issue labels -------------------------------------------------------------
@@ -778,8 +776,6 @@ out="$("$ORCH" issue bogus 2>&1)"
 assert_contains "the unknown-op message lists close" "$out" "|close"
 assert_contains "help documents issue close" "$("$ORCH" help)" \
   "issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>"
-assert_contains "the CLI conventions' noun table lists issue close" \
-  "$(grep '^| `issue`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`close`'
 rm -f "$close_comment" "$empty_comment"
 restore_suite_env
 

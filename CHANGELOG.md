@@ -1,5 +1,29 @@
 # Changelog
 
+## 6.9.5
+
+Clean up the ticket verification script: one name per loop variable, each file list written once, `suites_load` split from a new `support_load`, and an unreachable row guard removed. What it selects is unchanged.
+
+## 6.9.4
+
+Simplify the agent copy marker check and its tests: `agent_copy_marked` has one failure branch, and the Junie session report test uses the shared counting fixture.
+
+## 6.9.3
+
+Tidy the branch module and its tests: drop the branch_name_flow middle man and duplicated branch retire test setup and coverage.
+
+## 6.9.2
+
+Reword six skill, agent brief and help passages that had drifted from the rules or code beside them: the review-pass smell-baseline list, the Standards reviewer report format, the to-spec no-label reason, the review-iterations route analogy, the spec-review wait paragraph and its help entry.
+
+## 6.9.1
+
+Test-only refactor of the gh test file and the shared fixture gh: one logging prologue, one secondary-limit wording, and clearer names.
+
+## 6.9.0
+
+A resolver now finishes the merge or rebase it was given - commits the merge, or continues the rebase until none is in progress - before it runs the repo's ticket verification, and commits any fix on top as its own commit; its four-line report and its never-abort rule are unchanged, and `orch.sh branch sync --finish` accepts such fix commits above the base merge. The affected-tests runner, with a merge in progress, counts the commits the merge brings in as part of its base, so a run mid-merge selects only the branch's own change and the resolution. When an autopilot session ends, whatever its outcome, the autopilot wrapper stops every verification run still live for its side checkout through the new `orch.sh verification stop <checkout>`, and orphan clearing stops a live run whose checkout or ticket worktree is gone before dropping its record; a human's session's runs still outlive it. The autopilot container takes an optional memory limit, `ORCH_MEMORY`, that also turns swap off for the container, documented with a sizing rule in the env example and guarded by the docs lint; unset means no limit, as before.
+
 ## 6.8.35
 
 The docs lint's ledger freshness rule now reports a failure to fingerprint the test text as its own, one line naming the durations file, and judges no ledger line against partial fingerprints; `ledger_fingerprints_all` returns 2 for that failure and keeps 1 for a failed `all.sh` suite list, which is still reported with its message. `docs_lint.sh`'s narrowed mode is renamed from `--fragment-only` to `--base-rules`, since it runs suite budget rules 2 and 3 as well as the changelog fragment rule, and the fragment workflow's step is renamed `Check the changelog fragment and the suite budget`. The comments and CONTRIBUTING's suite budget paragraphs now say what the code does, including that `DOCS_LINT_RECORDING` is the one variable that narrows the full run. The section durations tests run fewer `--stale` runs, spin CPU only in the cases that read it, and, with the docs lint's recording cases, assert through `assert_ne` and `assert_contains` so a failure shows its values.

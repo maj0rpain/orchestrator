@@ -347,15 +347,11 @@ agent_role_of() {
 agent_copy_marked() {
   local l1="" l2="" opened=0
   # read keeps an unterminated last line in its variable. Only an unreadable
-  # file starts a command: the one sed whose diagnostic stands for it. A
-  # directory opens but cannot be read, so it takes that path up front, as
-  # file_read's pre-check does.
-  if [[ ! -r $1 || -d $1 ]]; then
-    sed -n 1p "$1" >/dev/null || :
-    return 1
-  fi
-  { opened=1; IFS= read -r l1 || :; IFS= read -r l2 || :; } 2>/dev/null <"$1" || :
-  if [ "$opened" -eq 0 ]; then
+  # file starts a command: the one sed whose diagnostic stands for it, whether
+  # the pre-check or the open finds it. A directory opens but cannot be read,
+  # so it takes that path up front, as file_read's pre-check does.
+  if [[ ! -r $1 || -d $1 ]] ||
+    ! { { opened=1; IFS= read -r l1 || :; IFS= read -r l2 || :; } 2>/dev/null <"$1" || :; [ "$opened" -eq 1 ]; }; then
     sed -n 1p "$1" >/dev/null || :
     return 1
   fi

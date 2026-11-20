@@ -15,7 +15,8 @@
 # working-tree state: tracked changes, staged or not, and unignored untracked
 # files, by content), pid (a liveness record), out, err, status
 # (written once the run ends), overrun (a run stopped at the ceiling), termed
-# (when TERM was sent to a stale run's group), killed (when KILL was sent, by
+# (when TERM was sent to a stopped run's group: a stale run, one
+# `verification stop` found, or an orphan's), killed (when KILL was sent, by
 # the stop, the delivery or the runner) and waiting (when a record with no state
 # was first seen); the last three hold an epoch, so the grace counts across
 # calls. A
@@ -28,9 +29,18 @@
 # and delivered as failed by the next one, its orch: message naming the process
 # group when that could not be stopped. A record with no state is waited on for
 # ORCH_VERIFICATION_GRACE (counted across calls), then cleared as stale.
-# Records of checkouts that no longer exist are cleared by the next call. A
+# Records of checkouts that no longer exist are cleared by the next call, a live
+# run there stopped first through verification_stop (a group surviving the KILL
+# is warned about by process group and its record dropped anyway). A
 # finished result is forgotten only once a call has printed it whole. Nothing
 # about a delivered run is measured or kept (ADR-0063).
+# `verification stop <checkout>` (verification_stop_checkout) stops every live
+# run whose checkout root is <checkout> or one of its ticket worktrees, through
+# verification_stop, and removes its record; a finished run's record and a run
+# of another checkout are left, and a group surviving the KILL keeps its record
+# and makes the step exit 1 after the other runs. Its one caller is the
+# autopilot session wrapper (autopilot_run), which runs it in a child process at
+# the end of every session, so a run does not outlive the session it served.
 # Its waits (the poll turn and both grace waits, verification_grace_wait) nap
 # through wait_block_nap, so a turn far from the block's end starts no awk.
 # Its tests: scripts/test/orch/verification.sh.
@@ -48,7 +58,10 @@ cmd_verification() {
     run)
       [ $# -eq 1 ] && [ -n "$1" ] || die "usage: orch.sh verification run <command>"
       verification_run "$1" ;;
-    *) die "usage: orch.sh verification run <command>" ;;
+    stop)
+      [ $# -eq 1 ] && [ -n "$1" ] || die "usage: orch.sh verification stop <checkout>"
+      verification_stop_checkout "$1" ;;
+    *) die "usage: orch.sh verification run <command> | stop <checkout>" ;;
   esac
 }
 
@@ -96,8 +109,9 @@ verification_timeout() {
 
 # verification_clear_orphans <store>: removes the records of checkouts that no
 # longer exist, or were made again at their path, and those a call stopped
-# before it wrote their root and id left behind. A live run there runs to its
-# end, undelivered.
+# before it wrote their root and id left behind. A live run there is stopped
+# first, through verification_stop; when its group survives the KILL the record
+# is dropped anyway and one orch: warning names the process group.
 verification_clear_orphans() {
   local r root id current idf
   for r in "$1"/*/; do
@@ -113,8 +127,61 @@ verification_clear_orphans() {
     current=""
     idf="$root/$ORCH_DIR_NAME/verification/id"
     [ ! -f "$idf" ] || current="$(<"$idf")"
-    [ "$current" = "$id" ] || rm -rf "$r"
+    [ "$current" = "$id" ] && continue
+    verification_stop_record "$r" || warn "the run in $root (process group $(verification_group_of "$r")) could not be stopped - its record is dropped, stop it by hand"
+    rm -rf "$r"
   done
+}
+
+# verification_group_of <dir>: prints the process group the record <dir> names.
+verification_group_of() {
+  local rec=""
+  [ ! -f "$1/pid" ] || rec="$(<"$1/pid")"
+  printf '%s\n' "${rec%% *}"
+}
+
+# verification_stop_record <dir>: stops the run in <dir> when it is live
+# (verification_stoppable) and returns 1 when its group survives the KILL; a
+# record with nothing to stop returns 0.
+verification_stop_record() {
+  verification_stoppable "$1" || return 0
+  verification_stop "$(verification_group_of "$1")" "$1"
+}
+
+# verification_store_begin: the setup a verb that stops runs starts with: loads
+# the wait module, checks the block and the poll knobs, and sets
+# VERIFICATION_STORE to the main checkout's verification store.
+verification_store_begin() {
+  local main_root
+  orch_load wait
+  wait_block_check
+  require_poll_knobs ORCH_VERIFICATION_GRACE ORCH_VERIFICATION_INTERVAL
+  main_root="$(main_checkout_or_die)" || exit $?
+  VERIFICATION_STORE="$main_root/$ORCH_DIR_NAME/verification"
+}
+
+# verification_stop_checkout <checkout>: stops every live run whose checkout
+# root is <checkout> or a ticket worktree under it and removes its record. A
+# finished run's record stays; a group that survives the KILL keeps its record,
+# and the step goes on to the other runs and returns 1.
+verification_stop_checkout() {
+  verification_store_begin
+  orch_load checkout
+  local co="${1%/}" store="$VERIFICATION_STORE" r root rc=0
+  for r in "$store"/*/; do
+    r="${r%/}"
+    [ -f "$r/root" ] || continue
+    root="$(<"$r/root")"
+    [ "$root" = "$co" ] || checkout_ticket_path "$root" "$co" || continue
+    [ ! -f "$r/status" ] || continue
+    if verification_stop_record "$r"; then
+      rm -rf "$r"
+    else
+      warn "the run in $root (process group $(verification_group_of "$r")) could not be stopped - stop it by hand"
+      rc=1
+    fi
+  done
+  return "$rc"
 }
 
 # verification_grace_tenths: sets VERIFICATION_GRACE_TENTHS to
@@ -262,16 +329,14 @@ verification_start() {
 # saying so (naming the process group when it is still there) - then forgets
 # the run, only once everything was printed.
 verification_deliver() {
-  local d="$1" st ceiling rec group gone=1
+  local d="$1" st ceiling group gone=1
   st="$(<"$d/status")"
   if [ -f "$d/overrun" ]; then
     ceiling="$(<"$d/overrun")"
     # The runner's KILL ends the group an instant after it wrote the status.
     # Waited for before anything is printed: a call whose block is spent exits
     # 75 here, and the next one delivers.
-    rec=""
-    [ ! -f "$d/pid" ] || rec="$(<"$d/pid")"
-    group="${rec%% *}"
+    group="$(verification_group_of "$d")"
     if [ -n "$group" ]; then
       # The grace counts from the runner's KILL (its mark), across calls.
       verification_mark "$d/killed"
@@ -311,16 +376,13 @@ verification_stoppable() {
 
 # verification_run <command>: the verb's work.
 verification_run() {
-  orch_load wait
-  wait_block_check
-  require_poll_knobs ORCH_VERIFICATION_GRACE ORCH_VERIFICATION_INTERVAL
+  verification_store_begin
   # shellcheck disable=SC2034 # wait_block_nap reads and sets them
-  local command="$1" state store d blocked=0 block_fast="" attached="" ceiling id main_root rec stop
+  local command="$1" state store d blocked=0 block_fast="" attached="" ceiling id stop
   ceiling="$(verification_timeout)" || exit $?
   id="$(verification_identity)" || die "could not record this checkout's identity in $ORCH"
   state="$(verification_state)" || die "could not read the working tree state"
-  main_root="$(main_checkout_or_die)" || exit $?
-  store="$main_root/$ORCH_DIR_NAME/verification"
+  store="$VERIFICATION_STORE"
   mkdir -p "$store" || die "could not create $store"
   verification_clear_orphans "$store"
   d="$store/$(printf 'root %s\nid %s\ncommand %s\n' "$ROOT" "$id" "$command" | git hash-object --stdin)"
@@ -344,10 +406,7 @@ verification_run() {
     fi
     # A TERMed run whose leader died still has its group to KILL: its record
     # says termed, whatever the liveness record says.
-    if [ -n "$stop" ] && verification_stoppable "$d"; then
-      rec="$(<"$d/pid")"
-      verification_stop "${rec%% *}" "$d" || die "the stale run of this command (process group ${rec%% *}) could not be stopped - stop it by hand"
-    fi
+    [ -z "$stop" ] || verification_stop_record "$d" || die "the stale run of this command (process group $(verification_group_of "$d")) could not be stopped - stop it by hand"
     rm -rf "$d"
   done
   if [ -z "$attached" ]; then
