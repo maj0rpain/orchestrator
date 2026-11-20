@@ -63,7 +63,7 @@
 55	55	autopilot questions, reply and resume	4da805d6b6928f4d16586d347eb40405f8ad8d2c
 1	2	autopilot_phase_arg refuses two adjacent phases (#1546)	236a5f8c3c11b75b24d0d7641de95c4d25666be5
 2	3	autopilot pause store	c370995aa5dd68dfcd4a64917da5d4e7a15c5574
-95	95	autopilot session end	953c159472afe93e2900c2e9cb5521dfaf8492d2
+112	124	autopilot session end	23e0a09e4b6f5e18acd4b16d4f92fce5eb5f9690
 2	32	autopilot tick: the trust check	fee7c9d2bfcb856df5a8e7d0a6658720a248eb87
 60	59	autopilot run: the budget and the final reply (#2004)	99d8b49071f6c5c09f8b0038a99ba350d52a7d2d
 3	4	autopilot answer on a truncated state.json (#1929)	9436eb3d4e492aca58e16ccc1ee44d805fba4d22
@@ -75,12 +75,12 @@
 31	32	autopilot tick: the merged-PR close backstop (#2478)	0033359ed474b5dd950f56f500c4fc9a6cd673ca
 57	58	autopilot tick: one read of the done issues (#2559)	97a136d2c4f927f2762892c8a812756b644683eb
 10	11	autopilot sync-finish, sync-dropped and sync-fail	78c02accdbb1a0a1177162e2b7cac98d10519259
-11	12	autopilot tick: the GitHub limit pause (#2577)	88e0746af43ccddb5015e049b5371eae1d66a9c6
+14	16	autopilot tick: the GitHub limit pause (#2577)	61eedb46e72a705776806ed346ca1e29f4d12cba
 36	37	autopilot tick: a pickup that meets a GitHub limit (#2577)	b7506990f8e031e132734d5df6c4f88f4da1e243
 62	71	autopilot tick: stops that cannot land are contained (#3052)	7ec5cf27cf36197447177e1aebd51a80f7b8c9e0
 15	16	autopilot tick: one read of the claims on origin (#3062)	f500de4dd86cbabdf5452405fa18f36de6021d97
 21	22	autopilot run: a start-up read that meets a GitHub limit (#2577)	929190161e7c50cff18ab6e7bccb60001583384b
-39	40	autopilot tick: the early GitHub pause (#2577)	6e6a9b751bcc70cda56db94edf32dd17761c940e
+32	36	autopilot tick: the early GitHub pause (#2577)	9ad21a1cc16ea2b5b29ba5aa5d510eb93478aa7c
 19	20	autopilot run: the session log's GitHub usage line (#2577)	6bda132d04146540ce70f9650992e428ac2afb59
 29	31	autopilot candidates	8592ae15d07de5fdedc7f071630838ec706c1f4d
 4	5	autopilot answer: no repo (#3050)	43b2e7d2c6f7ae2f2e566aafa0fd64850f14e34a
