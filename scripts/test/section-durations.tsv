@@ -6,7 +6,7 @@
 14	11	the parallel runner's start order (#2857)	c03c3730ae530e85ca80c87c214b4f67e6523bdc
 105	49	the shard setting (#2859)	98ff48598300f99538f70e7280a73a05f2e65eff
 9	9	the seeded start (stub cache)	8c471bcc319f1db879598562e309bc4366ab3581
-298	191	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	42a8f43a3d5b648fbd89b6b57a23138dc29a1034
+268	137	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	4af02be1effe2940adff01d41689e26ff8046f82
 3	2	assertions in a subshell (#1904)	75d977df3b359ca798f785997dae2c2a3021cf81
 0	1	the standalone suites' tally (#1904)	a11ca2ab2dff1a7024e914bfaf682d5687584b4b
 11	9	the section files (#932)	f0430ff5e89bc84550932094c28c51922f9b0fcb
@@ -26,18 +26,18 @@
 12	13	orch_load before cross-module reads (#2868)	235af2d33bd71dc9ec36c371a9af33e1969fd2d1
 3	4	on-demand sourcing variable (#2820)	ed7b4ec62dd8e2ddf3abbc8ed60af851ae4013c3
 0	1	declaration substitutions (#1327)	2a981c5e1f5405017ab02ebf2c939fa6442a4a60
-10	14	the helper index (#1144)	e8404a43ee6b8dafbc8b5ffc1e3d4966e1cc3841
+9	13	the helper index (#1144)	6603c5b3f8ddb578c08c1ca5040c27feb3704588
 0	1	stand-in adapter (#2465)	0364883959b933a1ace8af70dcb4b21ffa794313
 0	1	git env clear (#1905)	d10b10cce4ab9b890de36a95b9cfef5cdddfc603
 2	3	runner git isolation (#1905)	934f4cacedc8a2ab194cc22957603fc6b2ae6391
 0	1	the background child start (#3025)	27cfc1e2dfdc9ddfed674b169741d3ae13cc611e
 2	1	the suite start (#3582)	3582943d2b9955227901d59ed9dc24171795d8a9
 2	3	the counting fixture's stdin counter (#3434)	2bc728e8d8d8d685e1a945b9b3cd92743db25725
-49	43	affected.sh, the ticket verification (#2023)	9a3147810d2e4360bea4d1c5f7d793349eb9ab12
+52	46	affected.sh, the ticket verification (#2023)	2996c08780c87a34a77b310a02f61d1f2c3a990e
 1	2	the row rule (#3549)	97cc643bea9a12fc4edb142c5624dd3b66908f71
 3	4	the shared test support, function by function (#3550)	aa1d9f801ae7af5607e3ededdf370c6acc921320
 2	3	the gh fake, operation by operation (#3551)	2cc2c25de0509332d2a8289ea66ed403ada3ae2d
-66	72	agent	cddc69e5a268c5cd6ddfed15d957b78960ef77e3
+65	71	agent	0d79b59e4f3295e93a9ede1bda22fbbc139f7e19
 20	22	agent sync	b39ad35449afd2ba48dfe47fd1a68a53a2d8c22b
 3	4	agent copy marker and Junie field: no command per call	7261e94ea71b44582780d728312d592266f2e005
 8	6	audit file	6bbf361e504ccaa9a3f0d45038632b66b03acc8a
