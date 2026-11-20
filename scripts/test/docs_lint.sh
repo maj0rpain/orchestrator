@@ -27,14 +27,18 @@
 # >>> rules
 #   scan_changelog_fragments  a PR to main adds one well-formed changelog
 #     fragment, named for no sub-issue, and bumps nothing by hand
-#   scan_ledger_fresh  the durations file has one fresh line per section, per
-#     other suite and for shellcheck, and none for anything else; the message
-#     names section-durations.sh --stale, or the full refresh for shellcheck
+#   scan_ledger_fresh  the effective record (the durations file overlaid by the
+#     fragments in durations.d) has one fresh line per section, per other suite
+#     and for shellcheck; a line of nothing that exists is ignored; a title on
+#     two lines of one file, or a malformed fragment line, is reported naming
+#     that file; the message names section-durations.sh --stale, or the full
+#     refresh for shellcheck
 #   scan_suite_budget  the suite-budget file is one positive whole number, and
-#     with a base known the durations file's total is not over it and above the
-#     base's total
+#     with a base known the effective record's total is not over it and above
+#     the base's total, read from the merge-base tree's effective record
 #   scan_suite_budget_alone  with a base known, a change to the suite-budget
-#     file touches no file but the durations file, unless the budget file is new
+#     file touches no file but the durations file and its fragments, unless the
+#     budget file is new
 #   scan_rule_index  this index lists every scan_* function, in file order
 #   scan_old_names  no old skill or command name outside history, and no old
 #     command file or skill directory
@@ -459,11 +463,15 @@ check_real_changelog_fragments() {
 # the durations file, scripts/test/section-durations.tsv, and the budget file
 # beside it, scripts/test/suite-budget, under a plugin root.
 LEDGER_FILE=scripts/test/section-durations.tsv
+LEDGER_FRAGMENTS=scripts/test/durations.d
 BUDGET_FILE=scripts/test/suite-budget
-# scan_ledger_fresh <plugin root>: rule 1, the ledger is fresh. One line per
-# section or suite with no line, per line with no section or suite, per stale
-# line (no fingerprint, or one that no longer matches the text), per title on
-# two lines, and one for a missing shellcheck line. Each of these names the
+# scan_ledger_fresh <plugin root>: rule 1, the ledger is fresh, judged on the
+# effective record (test_tree.sh's ledger_effective). One line per section or
+# suite with no line, per stale line (no fingerprint, or one that no longer
+# matches the text; a fresh fragment line makes its section fresh), per title
+# on two lines of one file (the durations file or one fragment, naming it), per
+# malformed fragment line, and one for a missing shellcheck line. Orphaned
+# lines are ignored. Each of these names the
 # command that fixes it: scripts/dev/section-durations.sh --stale, or the full
 # refresh for the missing line of shellcheck, which only a full refresh writes.
 # A failed all.sh suite list or a failed fingerprinting prints one line saying
@@ -471,7 +479,7 @@ BUDGET_FILE=scripts/test/suite-budget
 # fingerprints come from test_tree.sh's ledger_fingerprints, a fixed number of
 # processes whatever the number of sections.
 scan_ledger_fresh() {
-  local r="$1" td="$1/scripts/test" fps st=0 fix="run scripts/dev/section-durations.sh --stale"
+  local r="$1" td="$1/scripts/test" fps st=0 f line fix="run scripts/dev/section-durations.sh --stale"
   if [ ! -f "$r/$LEDGER_FILE" ]; then
     echo "$LEDGER_FILE: missing; run the full refresh (scripts/dev/section-durations.sh with no argument)"
     return 0
@@ -487,7 +495,12 @@ scan_ledger_fresh() {
     rm -f "$fps"
     return 0
   fi
-  ledger_states "$fps" "$r/$LEDGER_FILE" | while IFS=$'\t' read -r t state n; do
+  if ! ledger_effective "$td" >"$fps.eff"; then
+    echo "$LEDGER_FILE: $LEDGER_ERR, so no line is judged"
+    rm -f "$fps" "$fps.eff"
+    return 0
+  fi
+  ledger_states "$fps" "$fps.eff" | while IFS=$'\t' read -r t state n; do
     case "$state" in
       missing)
         if [ "$t" = shellcheck ]; then
@@ -495,21 +508,32 @@ scan_ledger_fresh() {
         else
           echo "$LEDGER_FILE: section or suite \"$t\" has no line; $fix"
         fi ;;
-      duplicated) echo "$LEDGER_FILE: title \"$t\" is on $n lines; $fix" ;;
       stale) echo "$LEDGER_FILE: the line of \"$t\" is stale; $fix" ;;
-      orphaned) echo "$LEDGER_FILE: the line of \"$t\" has no section or suite; $fix" ;;
     esac
   done
+  # A title on two lines of one file is duplicated; orphaned lines are ignored.
+  for f in "$r/$LEDGER_FILE" $(ledger_fragments "$td"); do
+    ledger_states "$fps" "$f" | while IFS=$'\t' read -r t state n; do
+      [ "$state" = duplicated ] &&
+        echo "${f#"$r/"}: title \"$t\" is on $n lines; delete all but the last of them by hand"
+    done
+  done
+  ledger_fragment_faults "$td" | while IFS= read -r line; do
+    echo "$LEDGER_FRAGMENTS/${line%% line *}: malformed line ${line#* line }; a durations line is <wall>, <cpu>, a title and an optional fingerprint, tab-separated"
+  done
+  rm -f "$fps.eff"
   rm -f "$fps"
 }
 # scan_suite_budget <plugin root> [<base>]: rule 2, the total is within the
 # suite budget. It reports a budget file that is missing or is not one positive
 # whole number. With a <base>, it reports a total over the budget and above the
-# base's total, the same sum over the durations file at the merge-base of <base>
-# and HEAD, and a <base> with no merge-base; the durations file is the working
-# tree's. Without one, it checks the budget file's format alone.
+# base's total, the same sum over the effective record of the merge-base's tree
+# (extracted with git archive into a temporary directory, removed afterwards),
+# and a <base> with no merge-base or a tree that cannot be extracted; the
+# effective record is the working tree's. Without one, it checks the budget
+# file's format alone.
 scan_suite_budget() {
-  local r="$1" base="${2:-}" budget total base_total mb st=0
+  local r="$1" base="${2:-}" budget total base_total mb tmp st=0
   suite_budget_read "$r/$BUDGET_FILE" || st=$?
   if [ "$st" -eq 1 ]; then
     echo "$BUDGET_FILE: missing; it holds the suite budget, one positive whole number of CPU seconds"
@@ -524,8 +548,17 @@ scan_suite_budget() {
     echo "$LEDGER_FILE: no merge-base with HEAD for '$base', so the suite budget is not compared with the base"
     return 0
   fi
-  total="$(durations_total <"$r/$LEDGER_FILE" 2>/dev/null)"
-  base_total="$(git -C "$r" show "$mb:$LEDGER_FILE" 2>/dev/null | durations_total)"
+  total="$(ledger_effective "$r/scripts/test" 2>/dev/null | durations_total)"
+  tmp="$(mktemp -d)" || return 0
+  if ! git -C "$r" archive -o "$tmp.tar" "$mb" scripts/test 2>/dev/null || ! tar -xf "$tmp.tar" -C "$tmp" 2>/dev/null; then
+    rm -f "$tmp.tar"
+    rm -rf "$tmp"
+    echo "$LEDGER_FILE: could not extract the merge-base tree of '$base', so the suite budget is not compared with the base"
+    return 0
+  fi
+  base_total="$(ledger_effective "$tmp/scripts/test" 2>/dev/null | durations_total)"
+  rm -f "$tmp.tar"
+  rm -rf "$tmp"
   if [ "$total" -gt "$((budget * 10))" ] && [ "$total" -gt "$base_total" ]; then
     echo "$LEDGER_FILE: the total is $(tenths_text "$total") CPU seconds, over the suite budget of $budget and above the base's total of $(tenths_text "$base_total"). Make cheaper the tests this change added or edited and run scripts/dev/section-durations.sh --stale again; never cut other tests and never edit $BUDGET_FILE; if still over, stop for the human"
   fi
@@ -550,8 +583,8 @@ scan_suite_budget_alone() {
     git -C "$r" ls-files --others --exclude-standard; } | LC_ALL=C sort -u)"
   grep -qxF -- "$BUDGET_FILE" <<<"$changed" || return 0
   while IFS= read -r path; do
-    [ "$path" = "$BUDGET_FILE" ] || [ "$path" = "$LEDGER_FILE" ] || [ -z "$path" ] ||
-      echo "$path: changed beside $BUDGET_FILE; the suite budget changes in a change of its own, with at most the durations file"
+    [ "$path" = "$BUDGET_FILE" ] || [ "$path" = "$LEDGER_FILE" ] || [ -z "$path" ] || [ "${path%/*}" = "$LEDGER_FRAGMENTS" ] ||
+      echo "$path: changed beside $BUDGET_FILE; the suite budget changes in a change of its own, with at most the durations file and its fragments"
   done <<<"$changed"
   return 0
 }
@@ -4961,8 +4994,7 @@ flags "a section with no line is flagged, naming --stale" \
 spares "a section with a line is not flagged as missing" "$out" '"a one"'
 fixture="$(ledger_fixture)"
 printf '10\t20\tgone\tabc\n' >>"$fixture/scripts/test/section-durations.tsv"
-flags "a line with no section or suite is flagged, naming --stale" \
-  "$(scan_ledger_fresh "$fixture")" "the line of \"gone\" has no section or suite; $ledger_fix"
+assert_empty "an orphaned file line is not flagged" "$(scan_ledger_fresh "$fixture")"
 fixture="$(ledger_fixture)"
 fixture_sed "$fixture/scripts/test/orch/harness.sh" 's/^echo 1$/echo changed/'
 out="$(scan_ledger_fresh "$fixture")"
@@ -4985,8 +5017,44 @@ flags "a three-column section line is flagged as stale" \
 fixture="$(ledger_fixture)"
 dup_line="$(grep -F "a one" "$fixture/scripts/test/section-durations.tsv")"
 printf "%s\n" "$dup_line" >>"$fixture/scripts/test/section-durations.tsv"
-flags "a title on two lines is flagged, naming --stale" \
-  "$(scan_ledger_fresh "$fixture")" "title \"a one\" is on 2 lines; $ledger_fix"
+flags "a title on two lines of the durations file is flagged, naming the file and the hand deletion" \
+  "$(scan_ledger_fresh "$fixture")" "$LEDGER_FILE: title \"a one\" is on 2 lines; delete all but the last of them by hand"
+# ledger_fragment <root> <name> <line>...: writes the fragment <name>.tsv of the
+# root's durations.d with the given lines.
+ledger_fragment() {
+  local d="$1/scripts/test/durations.d" name="$2"
+  shift 2
+  mkdir -p "$d" && printf '%s\n' "$@" >"$d/$name.tsv"
+}
+# ledger_fp <root> <title>: the fingerprint the root's durations file holds for
+# the title.
+ledger_fp() { awk -F'\t' -v t="$2" '$3 == t { print $4 }' "$1/scripts/test/section-durations.tsv"; }
+fixture="$(ledger_fixture)"
+fixture_sed "$fixture/scripts/test/orch/harness.sh" 's/^echo 1$/echo changed/'
+flags "precondition: the stale file line of \"h one\" is flagged without a fragment" \
+  "$(scan_ledger_fresh "$fixture")" "the line of \"h one\" is stale"
+fp_h="$(ledger_fingerprints "$fixture/scripts/test" | awk -F'\t' '$1 == "h one" { print $2 }')"
+ledger_fragment "$fixture" b "5	5	h one	$fp_h"
+assert_empty "a fresh fragment line makes a section fresh beside a stale file line" \
+  "$(scan_ledger_fresh "$fixture")"
+fixture="$(ledger_fixture)"
+ledger_fragment "$fixture" b "5	5	gone	abc"
+assert_empty "an orphaned fragment line is not flagged" "$(scan_ledger_fresh "$fixture")"
+fixture="$(ledger_fixture)"
+ledger_fragment "$fixture" b "5	5	shellcheck" "5	5	a one	$(ledger_fp "$fixture" 'a one')"
+assert_empty "a fragment's shellcheck line is not malformed" "$(scan_ledger_fresh "$fixture")"
+ledger_fragment "$fixture" b "not a line" "5	5	a one	$(ledger_fp "$fixture" 'a one')"
+out="$(scan_ledger_fresh "$fixture")"
+flags "a malformed fragment line is reported, naming the fragment and the line" \
+  "$out" "scripts/test/durations.d/b.tsv: malformed line 1: not a line"
+fixture="$(ledger_fixture)"
+a_fp="$(ledger_fp "$fixture" 'a one')"
+ledger_fragment "$fixture" b "5	5	a one	$a_fp" "6	6	a one	$a_fp"
+flags "a title on two lines of one fragment is reported, naming the fragment and the hand deletion" \
+  "$(scan_ledger_fresh "$fixture")" "scripts/test/durations.d/b.tsv: title \"a one\" is on 2 lines; delete all but the last of them by hand"
+ledger_fragment "$fixture" b "5	5	a one	$a_fp"
+assert_empty "a title with one line in the file and one in a fragment is not duplicated" \
+  "$(scan_ledger_fresh "$fixture")"
 fixture="$(ledger_fixture)"
 fixture_sed "$fixture/scripts/test/section-durations.tsv" '/shellcheck/d'
 out="$(scan_ledger_fresh "$fixture")"
@@ -5054,9 +5122,13 @@ budget_fixture() {
   case "$1" in 8) src="$budget_template_8" ;; none) src="$budget_template_none" ;; esac
   f="$(new_fixture)" && cp -r "$src/." "$f" && echo "$f"
 }
-# ledger_extra <root> <cpu tenths>: adds a line of that CPU to the durations
-# file.
-ledger_extra() { printf '10\t%s\textra\tabc\n' "$2" >>"$1/scripts/test/section-durations.tsv"; }
+# ledger_extra <root> <cpu tenths>: adds that much CPU to the effective record,
+# through a fragment line for "a one" carrying its fresh fingerprint (an
+# orphaned line would not count); the section's own line of 2.0 s is replaced,
+# so the total grows by <cpu tenths>.
+ledger_extra() {
+  ledger_fragment "$1" extra "10	$(($2 + 20))	a one	$(ledger_fp "$1" 'a one')"
+}
 fixture="$(budget_fixture 14)"
 ledger_extra "$fixture" 40
 flags "the working tree, not HEAD, is judged: an uncommitted durations file over the budget is flagged" \
@@ -5086,6 +5158,25 @@ fixture="$(budget_fixture 14)"
 ledger_extra "$fixture" 5
 assert_empty "a total under the budget is not flagged, whatever it adds" \
   "$(scan_suite_budget "$fixture" main)"
+fixture="$(budget_fixture 14)"
+fixture_git "$fixture" checkout -q main
+ledger_extra "$fixture" 40
+fragment_commit "$fixture"
+fixture_git "$fixture" checkout -q -b pr2
+assert_empty "a fragment on the base counts in the base's total, so an unchanged total is not above it" \
+  "$(scan_suite_budget "$fixture" main)"
+ledger_extra "$fixture" 50
+flags "a fragment on the change counts in its total, above the base's fragment-counted total" \
+  "$(scan_suite_budget "$fixture" main)" "the total is 18.0 CPU seconds, over the suite budget of 14 and above the base's total of 17.0"
+fixture="$(budget_fixture 14)"
+ledger_extra "$fixture" 40
+tmp_probe="$(mktemp -d "$FIXTURES/tmpdir.XXXXXX")"
+out="$(git() { [ "$3" = archive ] && return 1; command git "$@"; }; TMPDIR="$tmp_probe" scan_suite_budget "$fixture" main)"
+flags "a merge-base tree that cannot be extracted is reported" \
+  "$out" "could not extract the merge-base tree of 'main'"
+assert_empty "a failed extraction leaves no temporary directory" "$(ls -A "$tmp_probe")"
+out="$(TMPDIR="$tmp_probe" scan_suite_budget "$fixture" main)"
+assert_empty "a successful extraction leaves no temporary directory" "$(ls -A "$tmp_probe")"
 fixture="$fixture_over"
 for budget_text in '' 'x' '0' '-5' '12.5' '1 2'; do
   printf '%s\n' "$budget_text" >"$fixture/scripts/test/suite-budget"
@@ -5116,6 +5207,15 @@ echo 30 >"$fixture/scripts/test/suite-budget"
 assert_empty "a budget file changed alone is not flagged" "$(scan_suite_budget_alone "$fixture" main)"
 ledger_extra "$fixture" 40
 assert_empty "a budget file changed beside only the durations file is not flagged" \
+  "$(scan_suite_budget_alone "$fixture" main)"
+fixture="$(budget_fixture 14)"
+fixture_git "$fixture" checkout -q main
+ledger_extra "$fixture" 40
+fragment_commit "$fixture"
+fixture_git "$fixture" checkout -q -b pr3
+rm "$fixture/scripts/test/durations.d/extra.tsv"
+echo 30 >"$fixture/scripts/test/suite-budget"
+assert_empty "a fragment deleted beside a budget edit is not flagged" \
   "$(scan_suite_budget_alone "$fixture" main)"
 fixture="$(budget_fixture 14)"
 echo '# new' >"$fixture/scripts/new.sh"
