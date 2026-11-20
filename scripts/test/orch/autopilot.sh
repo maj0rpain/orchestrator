@@ -2481,7 +2481,7 @@ assert_not_contains "no PR-less issue is warned about" "$out" "issue #38"
 assert_eq "no session starts for a sync request without a side checkout" "$(tick_calls)" "0"
 
 # several open PRs: warned about and skipped
-fake_done_pr 40 open CONFLICTING
+fake_issue 40 open orch:done; fake_pr 140 open orch/40-widget main; fake_pr_mergeable 140 CONFLICTING
 fake_pr 140 open orch/40-a main; fake_pr_mergeable 140 CONFLICTING
 fake_pr 240 open orch/40-b main; fake_pr_mergeable 240 CONFLICTING
 out="$("$ORCH" autopilot tick 2>&1)"
@@ -3469,10 +3469,15 @@ hk_seed; rm -f "$hk_stamp"; chmod 000 "$hk_logs"
 fake_issue 9 open ready-for-agent orch:spec; fake_issue_title 9 "Housekeeping 9"
 printf '9\n' >"$launcher_dir/release"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+hk_unlistable=1; [ -r "$hk_logs" ] && hk_unlistable=0
 chmod 755 "$hk_logs"
-assert_status "an unlistable logs directory leaves the exit status" "$st" 0
-assert_contains "it warns" "$out" "orch: could not prune the session logs"
-assert_eq "the stamp is still written (unlistable logs)" "$(on_disk "$hk_stamp")" present
+if [ "$hk_unlistable" -eq 0 ]; then
+  skip "an unlistable logs directory warns" "permissions do not bite here, e.g. root"
+else
+  assert_status "an unlistable logs directory leaves the exit status" "$st" 0
+  assert_contains "it warns" "$out" "orch: could not prune the session logs"
+  assert_eq "the stamp is still written (unlistable logs)" "$(on_disk "$hk_stamp")" present
+fi
 # a holding usage limit pause and a holding early GitHub pause each skip it
 hk_seed; rm -f "$hk_stamp"
 printf '%s\n' "$(iso_of "$(( $(date +%s) + 7200 ))")" >"$hk_dir/limit"
@@ -3499,7 +3504,7 @@ hs_done="$top/.orchestrator/checkouts/hs-done"
 hs_open="$top/.orchestrator/checkouts/hs-open"
 fake_offline
 for hs_slug in hs-done hs-open; do
-  orch_gh_failing side-checkout add "$hs_slug" >/dev/null 2>&1
+  sc_add "$hs_slug" >/dev/null
   git -C "$top/.orchestrator/checkouts/$hs_slug" checkout -q -b "quick/9-$hs_slug"
   git -C "$top/.orchestrator/checkouts/$hs_slug" commit -q --allow-empty -m "work on $hs_slug"
 done
@@ -3534,12 +3539,15 @@ rm -rf "$hs_git"
 # a GitHub rate limit hit by the sweep writes the pause and ends the tick
 fake_issue 9 open ready-for-agent orch:spec; fake_issue_title 9 "Sweep 9"
 printf '9\n' >"$launcher_dir/release"
+fake_issue 40 open orch:done; fake_pr 140 open orch/40-widget main; fake_pr_mergeable 140 CONFLICTING
 rm -f "$hs_stamp" "$hs_dir/github-limit"
 fake_fail_times adapter_prs_merged 1 "API rate limit exceeded for user ID 1."
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "the GitHub pause is written" "$(on_disk "$hs_dir/github-limit")" present
 assert_eq "the tick ends before pickup" "$(tick_calls)" "2"
+assert_eq "and before sync detection" "$(fake_labels_of 40)" "orch:done "
 fake_unfail
+fake_issue 40 closed
 rm -f "$hs_dir/github-limit"
 # a finished side checkout is removed and an unfinished one kept, even when the
 # log prune before the sweep fails
