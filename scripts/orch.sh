@@ -30,7 +30,7 @@
 # shellcheck disable=SC2034
 set -euo pipefail
 
-# The bash version guard: the first statement after the options, ahead of every
+# The bash version guard: the first lines after the options, ahead of every
 # source line, because everything sourced below needs bash 4.2 and an older bash
 # would die on a raw `declare` error instead. It depends on no other file, so it
 # prints its own line - the one hand-written `orch: ` message (Coding Standards,
@@ -38,11 +38,12 @@ set -euo pipefail
 # ORCH_BASH_VERSION ("<major>.<minor>") fakes the running bash, because
 # BASH_VERSINFO is readonly; unset or empty, the real version is read. `exit`
 # stops a sourcing shell as well, as every other stop of this file does.
-if ORCH_BASH_V="${ORCH_BASH_VERSION:-${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}}"; [ "${ORCH_BASH_V%%.*}" -lt 4 ] || { [ "${ORCH_BASH_V%%.*}" -eq 4 ] && [ "${ORCH_BASH_V#*.}" -lt 2 ]; }; then
-  printf 'orch: bash %s is too old - orch.sh needs bash 4.2 or newer: brew install bash\n' "$ORCH_BASH_V" >&2
+ORCH_BASH_JUDGED="${ORCH_BASH_VERSION:-${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}}"
+if [ "${ORCH_BASH_JUDGED%%.*}" -lt 4 ] || { [ "${ORCH_BASH_JUDGED%%.*}" -eq 4 ] && [ "${ORCH_BASH_JUDGED#*.}" -lt 2 ]; }; then
+  printf 'orch: bash %s is too old - orch.sh needs bash 4.2 or newer: brew install bash\n' "$ORCH_BASH_JUDGED" >&2
   exit 1
 fi
-unset ORCH_BASH_V
+unset ORCH_BASH_JUDGED
 
 # A tool manager's shim (mise) can print a status line on stdout ahead of the
 # tool's own output, which then lands in every `$(gh ...)` capture (#465).
