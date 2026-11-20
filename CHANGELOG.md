@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.9.7
+
+The side-checkout tests build every test side checkout through one builder and run the list cost check in the for-issue check's repo, the default-branch ask counter is one shared test helper, and archive_flow's entry-name local is called entry_name rather than base.
+
 ## 6.9.6
 
 The docs lint and the helper index lose duplicated scan code and extra fixture runs. `scan_build_args` and `scan_clone_dir` share one `compose_block` reader. The early-exit-pipe scan, `noun_verbs` (now `noun_verbs <root> <noun>...`, called once by `scan_cli_nouns`) and the helper index each start one awk over all their files or nouns instead of one per item, resetting their state at each file's first line. `recall_sites` is derived from `long_sites`. `scan_branch_verification` is folded into `scan_repo_verification`, which now also flags a bare `Branch verification:` line, or one outside `## Testing`. The width scan's file-kind boundaries move into its first fixture root, which drops a second scan, `f-after-markdown.sh` is renamed `f-after-empty.sh`, and the duplicated branch_sites fixtures are gone.
