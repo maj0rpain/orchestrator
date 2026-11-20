@@ -741,14 +741,6 @@ adapter_issues_titled_rows() {
     --jq '.[] | .number, (.state + "\t" + .title), (.labels | length), (.labels[].name)'
 }
 
-# issues_titled_rows_read <nums_var> <state_titles_array> <labels_array>
-# <err_var> <label>: issues_labelled_rows_read through
-# adapter_issues_titled_rows, the second field of each record the state and the
-# title, tab-joined, the limit warning issues_labelled_limit_warn's.
-issues_titled_rows_read() {
-  issues_rows_read_via issues_titled_rows_read adapter_issues_titled_rows issues_labelled_limit_warn "$@"
-}
-
 # issues_label_block_read <lines_array> <index_var> <out_var> <count>: reads
 # <count> label lines from the indexed array <lines_array>, starting at the
 # index <index_var> holds, joins them by newlines into <out_var> and advances

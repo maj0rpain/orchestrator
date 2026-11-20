@@ -2,7 +2,8 @@
 
 Each operation is named for what its callers need, as the gh adapter's are
 (ADR-0033): the origin URL the repo pin reads, the checkout's toplevel
-the issue noun finds the triage-labels doc under, and the comparisons
+the issue noun finds the triage-labels doc under, the toplevel of another
+directory's checkout the outside-a-checkout remedy names, and the comparisons
 an audit body's drift line reads. Each later noun adds the
 operations it needs, each with a test run against a real repository and
 against FakeGit, asserting the same answers.
@@ -45,7 +46,13 @@ class Git:
     def toplevel(self) -> Optional[str]:
         """The checkout's root, as orch.sh's ROOT block reads it; None outside
         a repository."""
-        run = self._run(["rev-parse", "--show-toplevel"])
+        return self.toplevel_at(None)
+
+    def toplevel_at(self, path: Optional[str]) -> Optional[str]:
+        """The root of the checkout directory <path> is in (this adapter's
+        own directory when None), as `git -C <path> rev-parse --show-toplevel`
+        reads it; None when it is in no repository or does not exist."""
+        run = self._run((["-C", path] if path is not None else []) + ["rev-parse", "--show-toplevel"])
         if run.returncode != 0:
             return None
         return run.stdout.decode("utf-8", "surrogateescape").rstrip("\n")
@@ -79,7 +86,8 @@ class FakeGit:
     for no repository; <commits> maps each commit's SHA to its tree, a path
     to its contents; <head> is HEAD's commit, None on an unborn branch;
     <diff_fails> makes every comparison fail, as a git that cannot read its
-    objects does."""
+    objects does; <checkouts> maps each other directory in a checkout to
+    that checkout's root."""
 
     def __init__(
         self,
@@ -88,9 +96,11 @@ class FakeGit:
         commits: Optional[Dict[str, Dict[str, str]]] = None,
         head: Optional[str] = None,
         diff_fails: bool = False,
+        checkouts: Optional[Dict[str, str]] = None,
     ) -> None:
         self.remotes = dict(remotes or {})
         self.root = toplevel
+        self.checkouts = dict(checkouts or {})
         self.commits = dict(commits or {})
         self.head = head
         self.diff_fails = diff_fails
@@ -100,6 +110,9 @@ class FakeGit:
 
     def toplevel(self) -> Optional[str]:
         return self.root
+
+    def toplevel_at(self, path: Optional[str]) -> Optional[str]:
+        return self.root if path is None else self.checkouts.get(path)
 
     def changed_paths(self, base: str, paths: Sequence[str]) -> Optional[Set[str]]:
         if self.diff_fails or self.head is None or base not in self.commits:

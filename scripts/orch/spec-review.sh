@@ -1865,7 +1865,6 @@ spec_review_ticket_numbers() {
 spec_review_apply() {
   # Subshells below call into these: load each once here, not once per subshell.
   orch_load gh
-  orch_load issue
   orch_load ticket
   local usage="usage: orch.sh spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>] [--tickets <answer> [--ticket-reasons <file>]] [--issue <n>] [--unattended] [--host-fallbacks <file>] | orch.sh spec-review apply <dir> --resume --round <k>/<n>"
   local dir="" answer="" have_answer="" round="" reasons="" issue="" unattended=false hosts_file="" hosts=""

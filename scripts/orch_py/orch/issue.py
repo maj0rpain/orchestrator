@@ -34,9 +34,12 @@ from orch.gh import (
 from orch.git import Git
 from orch.host import finding_triage_cmd
 from orch.repo import REPO_REMEDY
+from orch.root import checkout_root
 from orch.triage_labels import TRIAGE_ROLES, TriageLabels
 
-# The ops the unknown-op message names, in its order.
+# The verbs, each an Issue method of its name: the dispatch table, in the
+# unknown-op message's order. docs_lint.sh reads this line as the verbs the
+# noun dispatches, so it stays one `OPS = "<verb>|..."` line.
 OPS = "fetch|update|comment|comments|publish|triage|ready|next|labels|close"
 
 
@@ -420,23 +423,13 @@ def run(
     env: Optional[Mapping[str, str]] = None,
 ) -> int:
     """`orch.sh issue <op> ...`: the real adapters and the process's
-    environment unless a test hands in fakes."""
+    environment unless a test hands in fakes. Outside a checkout it dies
+    first, as orch.sh does, whatever the op."""
     env = os.environ if env is None else env
-    noun = Issue(adapter(env) if gh is None else gh, Git() if git is None else git, env)
+    git = Git() if git is None else git
+    checkout_root(git, env)
+    noun = Issue(adapter(env) if gh is None else gh, git, env)
     op = argv[0] if argv else ""
-    verbs = {
-        "fetch": noun.fetch,
-        "comments": noun.comments,
-        "labels": noun.labels,
-        "ready": noun.ready,
-        "next": noun.next,
-        "update": noun.update,
-        "comment": noun.comment,
-        "publish": noun.publish,
-        "triage": noun.triage,
-        "close": noun.close,
-    }
-    verb = verbs.get(op)
-    if verb is None:
+    if op not in OPS.split("|"):
         die("unknown issue op: %s (want %s)" % (op or "<none>", OPS))
-    return verb(argv[1:])
+    return getattr(noun, op)(argv[1:])

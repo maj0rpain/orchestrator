@@ -67,6 +67,29 @@ def test_outside_a_repository_there_is_no_toplevel(tmp_path):
     assert FakeGit().toplevel() is None
 
 
+def test_toplevel_at_reads_another_directory_s_checkout_the_same_from_both(tmp_path):
+    root = tmp_path / "checkout"
+    git_repo(root)
+    (root / "sub").mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    sub, top = str(root / "sub"), str(root.resolve())
+    fake = FakeGit(checkouts={sub: top})
+
+    assert Git(cwd=str(elsewhere)).toplevel_at(sub) == top
+    assert fake.toplevel_at(sub) == top
+
+
+@pytest.mark.parametrize("name", ["plain", "missing"])
+def test_a_directory_in_no_repository_has_no_toplevel_at(tmp_path, name):
+    path = tmp_path / name
+    if name == "plain":
+        path.mkdir()
+
+    assert Git(cwd=str(tmp_path)).toplevel_at(str(path)) is None
+    assert FakeGit().toplevel_at(str(path)) is None
+
+
 # --- the drift line's operations ---------------------------------------------
 
 

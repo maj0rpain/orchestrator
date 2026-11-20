@@ -3,6 +3,9 @@ in-process against the gh adapter's fake on a tmp_path store, each checked by
 its stdout, its exit code, its `orch:` message and the store afterwards."""
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import pytest
 
 from orch import issue
@@ -12,6 +15,9 @@ from orch.git import FakeGit
 from orch.repo import REPO_REMEDY, RepoPin
 
 GH_502 = "HTTP 502: Bad Gateway\nsecond line"
+# The root of the checkout a test runs in when it needs no file there: no
+# triage-labels doc, so every role is its own label.
+CHECKOUT = "/nonexistent/checkout"
 
 
 @pytest.fixture
@@ -23,11 +29,11 @@ def store(tmp_path):
 
 def orch_issue(store, *argv, git=None, env=None, pin=None):
     """`orch.sh issue <argv>` on the store: its exit code. <pin> is the repo
-    pin, a resolved one when None."""
+    pin, a resolved one when None; <git> a checkout at CHECKOUT when None."""
     env = {} if env is None else env
     gh = FakeGh(store.store, env, pin=pin, sleep=lambda _: None)
     try:
-        return issue.run(list(argv), gh=gh, git=git or FakeGit(), env=env)
+        return issue.run(list(argv), gh=gh, git=git or FakeGit(toplevel=CHECKOUT), env=env)
     except SystemExit as died:
         return died.code
 
@@ -577,7 +583,8 @@ def test_an_issue_answer_that_does_not_parse_fails_fetch_json(store, capsys, tmp
 
     try:
         code = issue.run(["fetch", "27", str(out), "--json"],
-                         gh=UnparsedIssue(store.store, {}), git=FakeGit(), env={})
+                         gh=UnparsedIssue(store.store, {}), git=FakeGit(toplevel=CHECKOUT),
+                         env={})
     except SystemExit as died:
         code = died.code
 
@@ -692,7 +699,8 @@ def audited_repo(**changed):
     """A fake checkout whose HEAD differs from the audited commit SHA in the
     files named, a.md, b.md and c.md held by both."""
     base = {"a.md": "a", "b.md": "b", "c.md": "c"}
-    return FakeGit(commits={SHA: base, "head": dict(base, **changed)}, head="head")
+    return FakeGit(toplevel=CHECKOUT, commits={SHA: base, "head": dict(base, **changed)},
+                   head="head")
 
 
 def fetched_drift(store, tmp_path, body, git, *flag):
@@ -721,9 +729,10 @@ def test_an_audit_filed_body_prints_which_cited_files_changed(store, capsys, tmp
 
 
 @pytest.mark.parametrize("git, reason", [
-    (FakeGit(commits={SHA: {}}), "no commit on HEAD"),
-    (FakeGit(commits={"head": {}}, head="head"), "commit not in this clone"),
-    (FakeGit(commits={SHA: {}, "head": {}}, head="head", diff_fails=True), "git comparison failed"),
+    (FakeGit(toplevel=CHECKOUT, commits={SHA: {}}), "no commit on HEAD"),
+    (FakeGit(toplevel=CHECKOUT, commits={"head": {}}, head="head"), "commit not in this clone"),
+    (FakeGit(toplevel=CHECKOUT, commits={SHA: {}, "head": {}}, head="head", diff_fails=True),
+     "git comparison failed"),
 ], ids=["unborn", "not-in-clone", "failed"])
 def test_a_comparison_that_cannot_be_made_says_why_and_still_writes(store, capsys, tmp_path, git, reason):
     code, out = fetched_drift(store, tmp_path, audit_body(SHA, "a.md:1"), git)
@@ -766,3 +775,38 @@ def test_an_op_the_noun_lacks_dies_listing_the_ops(store, capsys, argv, op):
         "orch: unknown issue op: %s"
         " (want fetch|update|comment|comments|publish|triage|ready|next|labels|close)\n" % op
     ))
+
+
+# --- outside a checkout --------------------------------------------------------
+
+
+def outside_message(target):
+    return ("orch: not inside a git repository (%s) - cd into %s and run orch.sh there;"
+            " a mktemp path is for files, not the working directory\n" % (os.getcwd(), target))
+
+
+GENERIC = "the repo's checkout (its root or a worktree)"
+
+
+@pytest.mark.parametrize("argv", [
+    ("labels", "23"), ("ready", "23"), ("close", "23", "--completed"), ("bogus",), (),
+], ids=["labels", "ready", "close", "unknown-op", "no-op"])
+def test_outside_a_checkout_every_verb_dies_as_orch_sh_does_touching_nothing(store, capsys, argv):
+    store.issue(23, "open", "ready-for-agent")
+
+    assert orch_issue(store, *argv, git=FakeGit()) == 1
+    assert capsys.readouterr() == ("", outside_message(GENERIC))
+    assert (Path(store.store) / "issues" / "23" / "state").read_text() == "OPEN\n"
+
+
+@pytest.mark.parametrize("oldpwd, checkouts, target", [
+    ("/came/from/sub", {"/came/from/sub": "/came/from"},
+     "the checkout you came from, /came/from,"),
+    ("/no/repo", {}, GENERIC),
+    ("", {"": "/came/from"}, GENERIC),
+], ids=["in-a-checkout", "in-no-checkout", "empty"])
+def test_outside_a_checkout_the_remedy_names_the_checkout_oldpwd_is_in(store, capsys, oldpwd, checkouts, target):
+    git = FakeGit(checkouts=checkouts)
+
+    assert orch_issue(store, "labels", "23", git=git, env={"OLDPWD": oldpwd}) == 1
+    assert capsys.readouterr() == ("", outside_message(target))

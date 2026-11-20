@@ -4719,7 +4719,7 @@ tr_init "$af"
 tr_put "$af" scripts/test/orch/branch.sh 'x=1' '# --- branch create ---' '# --- branch (x.y) retire ---'
 tr_put "$af" scripts/test/orch/state.sh '# --- state ---'
 tr_put "$af" scripts/test/orch/common.sh '# --- common one ---'
-for af_f in doctor init issue side-checkout spec-review spec ticket finding-triage; do
+for af_f in doctor init side-checkout spec-review spec ticket finding-triage; do
   tr_put "$af" "scripts/test/orch/$af_f.sh" "# --- $af_f s ---"
 done
 for af_f in scripts/orch.sh scripts/orch/common.sh scripts/orch/branch.sh \
@@ -4892,8 +4892,8 @@ af_row "paste-guard.sh selects the hooks suite and the spec-review sections" scr
   "$TR_GATE,spec-review s,$af_hooks_s,scripts/paste-guard.sh"
 af_row "planning-allowlist.sh selects the hooks suite and the doctor sections" scripts/planning-allowlist.sh \
   "$TR_GATE,doctor s,$af_hooks_s,scripts/planning-allowlist.sh"
-af_row "triage-labels.sh selects the hooks suite and the doctor and issue sections" scripts/triage-labels.sh \
-  "$TR_GATE,doctor s,issue s,$af_hooks_s,scripts/triage-labels.sh"
+af_row "triage-labels.sh selects the hooks suite and the doctor sections" scripts/triage-labels.sh \
+  "$TR_GATE,doctor s,$af_hooks_s,scripts/triage-labels.sh"
 af_row "a dev script other than the lens bench selects the harness sections" scripts/dev/other.sh \
   "$TR_GATE,$TR_HARNESS,docs_lint.sh,scripts/dev/other.sh"
 af_row "the edit width hook selects the harness sections and the hooks suite" scripts/dev/hook-edit-width.sh \

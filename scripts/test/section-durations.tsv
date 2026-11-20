@@ -34,7 +34,7 @@
 2	2	the suite start (#3582)	bfaaeecc9758c77d4bc24ba781558792eeb10bec
 9	9	the pytest suite (#3912)	a51b8ff0c372862319780618afa9e2deb7053c5e
 2	3	the counting fixture's stdin counter (#3434)	a145120e7c438785387cdcf0178edcf7e2f9dcaa
-80	87	affected.sh, the ticket verification (#2023)	75028ad97384e4feabcd9fbf8156a20bddb5d459
+83	90	affected.sh, the ticket verification (#2023)	6d2f0e3497f26635e6206d83fa1cab160d418e08
 3	4	the row rule (#3549)	01fe024c61ad3fd46f0efb0820a8ee0ff79809d9
 6	8	the shared test support, function by function (#3550)	0f4c5f1f63e2388d954769b98fd20c3cec532574
 5	6	the gh fake, operation by operation (#3551)	e4020e43a1578edf25e0543fc3e0d9e57a5494a2
@@ -183,7 +183,8 @@
 9	11	archive	ab01c77d6d8c6c3784c7e3244adedb382528bdd9
 6	7	status	5d72b4243f86d69884e2350f8a6bb4269b4ac54d
 0	1	mp-skill	42a828d6f818ccb7afe36031ee93138e2a7dfc35
-1	2	bash version guard	86cdad11a00c6e0ab6653370de5bfe34334218ba
+2	4	bash version guard	e62fe631ce5eb2d4dc1040aa81ae0eb6d24dc370
+1	2	outside a checkout (#931)	f92620c1cae2f31da3cfe5d915cd1ecbddada796
 0	1	glossary terms	791773bc1306a4b30242cbf20709956dbdcb5101
 2	3	glossary show	4b96379c1390bb7c58e73c7de9c01bb4624a0e7d
 2	3	glossary match	8e337663ef5fb5db17f60cc455eba019d0fdce9d
@@ -211,27 +212,13 @@
 14	16	init seeds the review loop	4fdc693af71369d7c69cb32de471d5038986af35
 5	6	init --issue trust warning	e3f8a66b3ae93ca44a635cd3eae2decbe1c33c24
 185	223	issue-timeline module	c60c74521e712ce2d67cc0b5fceb0a3a9673363e
-2	3	issue publish	bc64f554bde384790a3439be97e4e3d874d90091
-7	9	issue publish verify-then-die	d09778aa4d05959b5ab1ce0fbcc95a9698e756d3
-24	28	issue triage	35104602a6dc67c6a5b055ec9fbef989793ffefc
-15	18	issue triage --check	564f12ed763e0da2d5050a9f33e1d37403c81e97
-3	4	issue ready	d9d5f707dc5d34ae5b010027826eefcf81c7f9a8
-2	3	issue labels	9354d102c3ac71107563416e1618ae7138cd3de6
-4	5	issue close	2aca71782fc224a28a9a3fe2ef9ac42b9a06055c
-89	102	issue fetch/update	757d89d57752cf31da76d1a7277bd0ea0a65a9c7
-0	1	outside a checkout (#931)	062b9b295a023794605c84086a2187d40ba593df
-6	7	issue fetch trust warning	3bfa7f95a6e73bcaa9c194dc1197ddbe0030538b
-4	5	issue fetch writes LF lines (#1916)	33c6a8168242000311c27c47957c82c5cb0a1df5
-16	18	issue fetch drift line (#3458)	b92eb616e695504f3224a8b053f69180086d0db5
-1	1	issue ready: no repo (#3050)	e01486b40160e00af62e89a2858de8cf2edc7580
-10	12	issue next	5197d781f049be338dec1b6be44187961f50c651
 3	4	known-items module	822bb4b7d6bc24d8ddf679e4aa02e11d5f0562a4
 37	24	lines_fate	57058870d6d783311a61b5e56f26d005da2e4f80
 8	9	Liveness module	a3eb853321244ddc291751d37b820bf4e3a80df7
 12	14	orch_load	78936724de415f7d72a2cb1732f2ec537485646c
 9	11	on-demand loading	6f5f8fdb61e60028685965dbdd5c3eb5ae8397b7
 14	15	stub table cache	4f0f12dcbedfdea3bf7690542ff5bf5d5a0e4a4e
-44	45	marked-comment module	324231b375e7bb51bdb49f85cb5fc6f8a98b64b7
+32	33	marked-comment module	fbf96690f59c83108a2387d3173115e249c6229d
 1	2	parallel show	29ed0447ad25daddc7f71a506dad5df2ad3d3cba
 55	58	phase advance / phase boundary	db56fe480597de86f8a487c134e1e6b488336fee
 0	1	phase advance help names handoffs by role (#1066)	fb4e9c6b059ec9f7d1aed9b47f5b974a48096e04
@@ -345,25 +332,25 @@
 46	49	ticket-worktree (#619)	c52aa57c33965d3db61a8322267ddf19f3b096a0
 1	1	a ticket branch has no upstream (#1152)	bbc5298d4013eb4f017ecb7f6c59509725053f88
 2	3	the merged check beside a same-named tag (#2337)	b3482156347488560231482575e046eb972a8f39
-15	12	ticket publish	5585cea50f503e622bc3274efcd40b993704e4e7
-17	12	ticket publish verify-then-die	bde39f8db8154191f2c407bc67db7879abe9340a
-6	5	ticket publish rewrites ## Blocked by	8ce4e8e3f89b2b60dfe7df7c984a40b237812b87
-7	6	ticket next	a4a7d26e1b29c7548861c339b08ddc5384f32b31
-5	5	ticket list	c87d266a90f270e0236bc3f4bff8329833c6bb52
-16	12	ticket close	ca52ca491cda30f740f719708bf4064c6584e22a
-9	7	ticket reset	96c5220e1d1bdfbfda38d8be3f23c54dee2e3a4e
-15	12	ticket report	6a3944c58873bdb0bd40444a6062185a08723ba5
-4	4	ticket parent	c2b2f87317dc0edfbc1d927eb765bb68272da97e
-16	14	ticket exists	1c21c83f7b37b6c3dfcfd779fade617fc9c591b1
-73	54	ticket block	4c5c3089758386224eae6bffe979611351849a2b
-49	37	ticket unblock	565d493dd2399a86d02fd6247635208f536f2bda
-2	2	ticket retire: breakdown save point	0772ba43e346c0377dc2c1d5ab1cf1a73d76fcce
-7	9	ticket retire: untrusted comments	63af4127d5521853eb6111e092c05b54f068d042
-0	1	ticket: unknown op	5f4ba4d168af2ac965ec141604fb776a9a0175e1
-13	14	ticket merge (#621)	8c97f51986af15a34263966fb8ff4d5a8f978a55
-4	2	ticket merge beside a same-named tag (#2337)	8c68070ffd52a8830d9b1fd50431fd4db0b2f68a
-185	147	ticket reclaim (ADR-0054)	337f47e242db0b7a051702f11dbbdff63657ef9c
-1	1	ticket exists: no repo (#3050)	18f290c8db8140166817738f948443cd1b9a10dd
+21	22	ticket publish	27124e0e40d5ee271e55e560c8f980307cdc3391
+25	27	ticket publish verify-then-die	9c76928a7c93fdb96af49324b2ba9bf2b2ebb4e6
+9	10	ticket publish rewrites ## Blocked by	e85dee99ae72c16a2151bff6d4274e7e6b785060
+11	11	ticket next	a41babd7428ba3beb6dfea6096fd3f5c56d8081a
+8	9	ticket list	56f1e152c1e0861d378966b4ac4f6564009df9e3
+21	23	ticket close	00354e4d101b8e9e8efacacce62cc9f42dd92fdd
+12	13	ticket reset	46cee5f59b559b8225486281267270a017f54110
+17	19	ticket report	0f5f998d2b6db5cc9827abedc05da85588ea6468
+6	7	ticket parent	3242d7b2b85a0d9478b67540ade8fee25ea56d7c
+21	23	ticket exists	40ba8a6dd3da79a62d64da3a4398b3e6b6f87b22
+78	87	ticket block	823005b58907b088899720a16feeeb59f39925e1
+56	61	ticket unblock	0fdd4ad1ca93a0da9dde25dfa98e63868dc892f2
+4	5	ticket retire: breakdown save point	be0834564c05cf818ca57e44842b1117aba47b60
+6	7	ticket retire: untrusted comments	6b18797154016eb5ec2d7c780462fefe98b05275
+1	2	ticket: unknown op	981b89935ad87c2281cc51c292fda63de8267f29
+21	23	ticket merge (#621)	650432da9926350e99eb0d6680885e2b5878b8c4
+5	6	ticket merge beside a same-named tag (#2337)	3858a2ca9bc1227bed78d1eca0300eba2827ff86
+104	110	ticket reclaim (ADR-0054)	7ec366d96e6a84ae723df4b5833904e10b5a6bb9
+2	3	ticket exists: no repo (#3050)	062de093bbfb2338a6a4265e1d0a90e8cf621544
 20	22	trust module	dfb000c56ba19484f278d67a5e9d3d661b2728a7
 19	12	verification run	05e611f23e4d30bd2a77cb623293302bfbfb3f7a
 117	29	verification run: the run key, stale runs, the ceiling	f4dbfa1467100e29dcf78ec4291673e4502189fb
@@ -373,7 +360,7 @@
 0	1	verification run in help	28e484325ea5c39e7d957ba95f689dcdbb9ecc1a
 99	11	wait: a call's block is wall time	db923f27504e50d0a04527b359feb487abb3665d
 882	983	hooks_test.sh	8dec8318df78d1487d2d11c16c6ac962831bc14c
-135	159	docs_lint.sh	55b335baa6c5833c9113379fb614ca39fa895b62
+171	205	docs_lint.sh	4c95f6b5f93c87939f8702378cb9a0ae72da8a95
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 17	17	autopilot_up_test.sh	e83bb3b5d6213ab54507233be7cc6e624358622c

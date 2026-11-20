@@ -45,8 +45,7 @@
 #   paste-guard.sh                    hooks_test.sh, plus the spec-review
 #                                     sections
 #   planning-allowlist.sh             hooks_test.sh, plus the doctor sections
-#   triage-labels.sh                  hooks_test.sh, plus the doctor and issue
-#                                     sections
+#   triage-labels.sh                  hooks_test.sh, plus the doctor sections
 #   scripts/dev/ other than the lens bench, hook-edit-width.sh, width.sh
 #                                     the harness section file's sections
 #   the Python package (scripts/orch_py/), its tests and dev files included
@@ -444,7 +443,7 @@ classify() {
       scripts/bash-walk.sh) want+=(hooks_test.sh) ;;
       scripts/paste-guard.sh) want+=(hooks_test.sh); sections_of spec-review ;;
       scripts/planning-allowlist.sh) want+=(hooks_test.sh); sections_of doctor ;;
-      scripts/triage-labels.sh) want+=(hooks_test.sh); sections_of doctor issue ;;
+      scripts/triage-labels.sh) want+=(hooks_test.sh); sections_of doctor ;;
       scripts/orch/*.sh)
         if [ "$state" != deleted ]; then
           [ -f "scripts/test/orch/$file_name" ] || unnamed

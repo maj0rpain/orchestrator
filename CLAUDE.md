@@ -12,8 +12,12 @@ Standards: `CONTRIBUTING.md#Develop`, `docs/agents/cli-conventions.md`,
 `scripts/orch/<noun>.sh`, each helper in the module of the concept it serves,
 and only the primitives no concept owns in `scripts/orch/common.sh`;
 `common.sh` and the module loader `loader.sh` are the two files every start
-loads. See CONTRIBUTING.md's Layout for the full map. There is no top-level
-`tests/`, and `hooks/` holds only `hooks.json`.
+loads. A noun converted to Python (ADR-0067; `issue` so far) has no bash
+module: `orch.sh`'s one case naming the converted nouns runs it as `python3 -m
+orch <noun> ...` from the standard-library package in `scripts/orch_py/orch/`,
+its pytest tests beside it in `scripts/orch_py/tests/`. See CONTRIBUTING.md's
+Layout for the full map. There is no top-level `tests/`, and `hooks/` holds
+only `hooks.json`.
 
 ## Agent skills
 
@@ -79,6 +83,14 @@ counting and failing-command fixtures), or `scripts/dev/helpers.sh <file>` (any
 one bash file, e.g. `scripts/test/docs_lint.sh`) instead of grepping, and read
 CONTRIBUTING's Test helpers subsection: the fixtures to reach for first, running
 one section under `bash -x`, and the bash-version rule.
+The Python package's tests are pytest, run from `scripts/orch_py/`: `python3 -m
+pytest` (`-k <name>` for one test, `-n auto` for xdist), with the dev
+dependencies of `scripts/orch_py/requirements-dev.txt` installed (the image's
+`/opt/orch-dev` venv has them). They use `tmp_path`, `monkeypatch` and the
+in-process fakes (`orch.gh_fake`'s `FakeGh` and `FakeStore`, on the fake store
+the bash `fake_*` helpers share; `orch.git`'s `FakeGit`), never the bash
+fixtures. `all.sh` and `affected.sh` run the whole pytest suite through
+`scripts/test/orch_py_test.sh`, outside the suite budget and the durations file.
 See CONTRIBUTING.md's Develop section.
 
 ## Versioning

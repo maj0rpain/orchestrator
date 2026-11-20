@@ -5,6 +5,7 @@ holds afterwards."""
 from __future__ import annotations
 
 import os
+import subprocess
 
 import pytest
 
@@ -802,6 +803,7 @@ def test_an_unknown_op_lists_every_op(orch):
 
 def test_the_entry_point_hands_issue_to_the_noun(store, capsys, monkeypatch, tmp_path):
     monkeypatch.setenv("ORCH_GH_FAKE_STORE", str(store))
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, stdin=subprocess.DEVNULL)
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(SystemExit) as died:

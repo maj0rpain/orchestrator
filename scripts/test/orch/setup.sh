@@ -1096,16 +1096,6 @@ fake_lag() {
   if [ $# -ge 3 ]; then printf '%s\n' "$3" >"$ORCH_GH_FAKE_STORE/lag/$1.stale"; fi
 }
 
-# fake_lag_after <operation> <k> <n> [stale]: fake_lag, but only once k calls
-# of the operation have answered current - a readback that lags after the
-# reads ahead of a write did not.
-fake_lag_after() {
-  local op="$1" k="$2"
-  shift 2
-  fake_lag "$op" "$@"
-  printf '%s\n' "$k" >"$ORCH_GH_FAKE_STORE/lag/$op.after"
-}
-
 # fake_body_read <n> <format> [arg...]: seeds issue #n's body so that a read
 # of it - the stored body, then a newline, as gh's --jq .body prints it -
 # answers exactly what printf prints, which ends in a newline.

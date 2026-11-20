@@ -18,6 +18,7 @@ claude --plugin-dir /path/to/orchestrator     # load the working tree directly
 claude plugin validate .
 scripts/test/affected.sh                      # the suites a change maps to; run before each commit
 scripts/test/all.sh                           # every suite; the command CI runs on a PR
+scripts/test/orch_py_test.sh                  # the pytest suite alone, as all.sh runs it
 ```
 
 While iterating, run only the section you are working on, in quiet mode:
@@ -36,6 +37,35 @@ It ends on one verdict line, `all.sh: PASS (<n> parts)` or `all.sh: FAIL
 (<part>, <part>, ...)`, naming each failed part by its summary line's prefix
 (leftover temp files as `temp files`); affected.sh ends the same way on
 `affected.sh: ...`, or on all.sh's verdict when it falls back to the full suite.
+
+**The Python package.** A noun converted to Python (ADR-0067) lives in the
+`orch` package, `scripts/orch_py/orch/`, and its tests are pytest, in
+`scripts/orch_py/tests/` (still no top-level `tests/`). `orch.sh` stays the one
+entry point: main's one case naming the converted nouns calls `orch_python`,
+which runs `python3 -m orch <noun> <arg>...` in place of orch.sh, the package
+directory first on `PYTHONPATH`, so stdin, stdout, stderr and the exit code are
+the noun's own. With no `python3` on `PATH` it dies before doing anything, exit
+1, naming `orch.sh doctor`; the package's entry point dies the same way below
+Python 3.9. orch.sh's ROOT block still runs first, and the package's own
+(`orch/root.py`) gives the same death outside a checkout when it is run
+directly. A converted noun keeps the bash noun's arguments, stdout, exit codes
+and `orch:` messages, and its bash module and section file are deleted with it.
+The package uses only the standard library; the dev dependencies (pytest,
+pytest-xdist, pytest-timeout) are pinned in
+`scripts/orch_py/requirements-dev.txt`, which the autopilot image installs
+into a venv at `/opt/orch-dev`. Locally: `python3 -m venv .venv &&
+.venv/bin/pip install -r scripts/orch_py/requirements-dev.txt`. From
+`scripts/orch_py/`, `python3 -m pytest` runs the whole suite, `-k <name>` the
+tests whose names match, `-n <workers>` (or `-n auto`) spreads them over xdist
+workers.
+`scripts/test/orch_py_test.sh` is the wrapper all.sh and affected.sh run, on
+every call: it reports pytest's result as a suite's FAIL lines and summary, and
+prints `not installed - skipped` without pytest, which fails only under CI. The
+pytest suite sits outside the suite budget: it is in neither all.sh's suites
+list nor the durations file, has no durations file of its own, and its growth
+is guarded by review alone. In affected.sh a change under `scripts/orch_py/`
+selects the spec, spec-review, ticket and finding-triage sections, the bash
+nouns whose sections run an `issue` verb through the dispatch.
 
 orch_test.sh is the suite's runner and holds no test. Its `# ---` sections live
 under `scripts/test/orch/`: `<noun>.sh` holds the sections for one orch.sh noun
@@ -455,6 +485,28 @@ The fixtures to reach for first:
 - `state_fixture <key> <value>`: arranges state.json directly, for the keys
   `state set` refuses (phase, branch, pr, iteration, ...).
 
+The pytest suite has fakes of its own, never the bash harness's fixtures:
+each test uses `tmp_path` and `monkeypatch`, and an in-process test hands a
+noun's `run` its fakes (`issue.run(argv, gh=..., git=..., env=...)`).
+
+- `orch.gh_fake.FakeGh`, the gh adapter's fake, and `FakeStore`, which seeds
+  and reads the shared fake store: the file store
+  `scripts/test/gh_adapter_fake.sh` documents, in the layout the bash
+  `fake_*` helpers write. `orch.gh.adapter` picks the fake whenever
+  `ORCH_GH_FAKE_STORE` is set, as `fake_github` sets it, and the fake honours
+  the store's failure files (`fail/<operation>` with `.after` and `.times`,
+  `offline`, `ratelimit`) under the bash adapter's operation names, so a
+  bash section's `fake_fail` reaches a converted noun it runs through
+  orch.sh. A bash stand-in (`adapter_stood_in`) cannot reach
+  Python: a case that needs one for a converted verb is a pytest test.
+- `orch.git.FakeGit`, the git adapter's in-memory fake. Each git operation is
+  tested against a real repository in `tmp_path` and against the fake,
+  asserting the same answers.
+- In `conftest.py`: `clean_env`, autouse, clears the variables that would
+  change what a test resolves and puts the real-gh guard first on `PATH`,
+  failing a test that reaches gh; `fixture_gh` is a fixture gh answering by
+  exact argv, for the real gh adapter's contract tests (ADR-0033).
+
 To debug, run one section under `bash -x`. The suite selects whole `# ---`
 sections, not single cases, and in parallel mode each section re-runs in a
 child bash that does not inherit `-x`, so run it sequentially:
@@ -536,8 +588,12 @@ skills/orch-questions/        gathers the pending autopilot questions, a fresh s
 skills/orch-audit-tests/     audits a repo's test suite for cost-cutting refactors read-only: scope, measure sequentially, partition into areas, hunt in read-only orch-test-auditor subagents, rank by cost saved, HTML report, hand off to orch-interview and `orch.sh audit file`
 skills/orch-audit-docs/      audits a repo's documentation against its code read-only: scope, partition into areas, hunt in read-only orch-doc-auditor subagents, rank, HTML report, hand off to orch-interview and `orch.sh audit file`
 skills/orch-audit-code/      audits a repo's source code for latent bugs, inefficiencies and architecture deepenings read-only: scope, partition into areas, hunt in read-only orch-code-auditor subagents, rank, HTML report, hand off to orch-interview and `orch.sh audit file`
-scripts/orch.sh               the entry point for every deterministic operation (mechanism): path resolution, shared constants, the module list, main
-scripts/orch/<noun>.sh        one module per orch.sh noun (branch.sh, ticket.sh, ...), sourced by orch.sh, named as its test file
+scripts/orch.sh               the entry point for every deterministic operation (mechanism): path resolution, shared constants, the module list, main, whose one case naming the converted nouns hands each to `python3 -m orch` through orch_python
+scripts/orch/<noun>.sh        one module per orch.sh noun still in bash (branch.sh, ticket.sh, ...), sourced by orch.sh, named as its test file
+scripts/orch_py/orch/         the orch Python package (ADR-0067), one module per converted noun (issue.py) beside the helpers it rebuilt: standard library only, Python 3.9+; cli.py the entry point (the version check, the noun table), gh.py and git.py the only places gh and git run, gh_fake.py the gh adapter's fake on the shared fake store, root.py the ROOT block
+scripts/orch_py/tests/        the pytest suite: in-process tests of each noun against the fakes, the gh adapter's contract tests against a fixture gh, the git adapter's tests against a real repository and its fake, and the end-to-end checks of orch.sh's dispatch (test_dispatch.py); conftest.py the clean environment and the real-gh guard
+scripts/orch_py/requirements-dev.txt the pinned dev dependencies: pytest, pytest-xdist, pytest-timeout (the package itself needs none)
+scripts/orch_py/pytest.ini    the pytest settings: the tests folder, the package on the module path, the per-test timeout, no cache directory
 scripts/orch/checkout.sh      the Checkout module, a concept module with no noun: checkouts, the one walk over every checkout
 scripts/orch/comments.sh      the Comments module, a concept module with no noun: reading an issue's or a PR's trusted comments once, the dying wrappers over that read, the rendered shape, the render step and the split into one file per comment
 scripts/orch/filed-finding.sh the Filed finding module, a concept module with no noun: a filed finding's severities and labels, rendering and parsing its issue body, the finding categories, and the input checks `review file`, `audit file` and `audit report` share
@@ -575,6 +631,7 @@ scripts/dev/width.sh          the line-width rule, whole: which files it covers 
 scripts/dev/hook-edit-width.sh the project's edit hook, registered in .claude/settings.json: width.sh and shellcheck on each edited file and each file a Bash call changed (Develop)
 scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per lens: its spec body, baseline map and snapshot commit
 scripts/test/                 shell tests: the suites in all.sh's `suites` list (orch_test.sh is the orch.sh suite's runner), all.sh, and affected.sh, the ticket and branch verification, which runs what a change selects and falls back to all.sh only in the cases its header lists
+scripts/test/orch_py_test.sh  the pytest suite's wrapper, run by all.sh and affected.sh outside the suite budget: pytest from the /opt/orch-dev venv or python3, its xdist workers drawn from the job pool, its result as a suite's FAIL lines and summary
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
 scripts/test/tally.sh         the assertion tally every suite sources: ok, bad and skip append to a per-run file, so an assertion inside a subshell counts; tally_summary is the ending each standalone suite calls
 scripts/test/counting.sh      the counting fixture the orch.sh suite's runner, hooks_test.sh and docs_lint.sh source: counting_bin makes a directory holding a stub, which its caller puts first on PATH, that logs one line per start and runs the real command, counting_starts reads the count, counting_argv_bin makes the stub log only the starts whose joined arguments equal a given string, counting_stdin_bin makes counting_bin's stub also record the bytes offered on its stdin, counting_bytes sums them
