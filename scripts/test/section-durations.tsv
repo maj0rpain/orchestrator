@@ -39,7 +39,7 @@
 2	3	the gh fake, operation by operation (#3551)	2cc2c25de0509332d2a8289ea66ed403ada3ae2d
 66	72	agent	cddc69e5a268c5cd6ddfed15d957b78960ef77e3
 20	22	agent sync	b39ad35449afd2ba48dfe47fd1a68a53a2d8c22b
-3	4	agent copy marker and Junie field: no command per call	2a90944570501eb9df9e004a9fab0ff67c9dac60
+3	4	agent copy marker and Junie field: no command per call	7261e94ea71b44582780d728312d592266f2e005
 8	6	audit file	6bbf361e504ccaa9a3f0d45038632b66b03acc8a
 3	3	audit file duplicates	e5be439ac2451322b83945ad891f56ab378d67ca
 9	9	audit file refusals	b1a0484287eb30f5231deffb1dc76702c14536e3
@@ -47,55 +47,55 @@
 9	9	audit begin	eda1af9627a75a5db715c16d299179de30b2060e
 29	23	audit report	ae10a47e1f0db257b716316a4f7800b193c68623
 38	30	audit file batch	a1786986c75fd179a95f4411e35e32ab075dc8f0
-9	10	autopilot	0de8834cdf8bd2ccc871a51e5abda748144d0337
-19	22	autopilot rounds, budget and start	41829146970a3ee47b79d27ccf9e27f2ba60d4f1
-40	46	autopilot ask and answer	646445929ad04febc7c3cdb6d5d7cdfc421084b0
-33	38	autopilot reenter	9f551d768335d7d0af0835fa7b4f8705fab0e6d1
-49	56	autopilot tick and run	4e690c21c5372a6dcc598ee93ade8e7faf21cb8f
-10	11	autopilot tick: started by a relative path (#3055)	d9dd0213e6dd303dc497f3a29838e810cd898ed6
-39	33	autopilot tick: the flow-issue read at the issue-list limit	8f47b14f4bdd9b5b0b0b2839a3173964f3b90228
-22	26	autopilot tick: the direct read before each claim	a20ed11001100a2786efc83540270687ac0a161b
-139	150	autopilot tick: the cap, lost claims and the order	67b423ea7891cc3d10ea5c8b26ec3066429c4c95
-140	121	autopilot tick: side checkouts, refusals and failed steps	1aa92e8d7d488673c7c6a9a17bc6f1e45c9fd64f
-26	7	autopilot watch	f8ebd62e40841558f499d7278d3f783f629c0bc6
-28	32	autopilot tick: the usage limit	c9216462a629b00d7c7549d3e550e46180653ac6
-82	93	autopilot tick: limited issues	0fcd2511a7f3362e1b1771a349b24c9dd2804687
-72	86	autopilot questions, reply and resume	4da805d6b6928f4d16586d347eb40405f8ad8d2c
-0	1	autopilot_phase_arg refuses two adjacent phases (#1546)	236a5f8c3c11b75b24d0d7641de95c4d25666be5
-1	2	autopilot pause store	c370995aa5dd68dfcd4a64917da5d4e7a15c5574
-110	122	autopilot session end	953c159472afe93e2900c2e9cb5521dfaf8492d2
-23	26	autopilot tick: the trust check	fee7c9d2bfcb856df5a8e7d0a6658720a248eb87
-75	82	autopilot run: the budget and the final reply (#2004)	99d8b49071f6c5c09f8b0038a99ba350d52a7d2d
-2	3	autopilot answer on a truncated state.json (#1929)	9436eb3d4e492aca58e16ccc1ee44d805fba4d22
-20	23	autopilot: labels in the repo's casing (#1943)	4fe0e50eec669f1ac8d428fcaa6deafe8c134bf1
-8	9	autopilot tick: the label check writes only drift (#2691)	34b464f4957b9f54da57eadc20d1a54bf6c0a5e8
-100	115	autopilot tick and run: sync requests	5f541b28b34516a510cddb69292ac757035ceb40
-116	128	autopilot tick: pickup rank and sync slots	330a67583d22dd486e90247cb07c64e6f9f7c521
-28	31	autopilot tick: sync request auto-detection (#2325)	8ff499aa276dd447c6ed361f0f3f232be3e16d37
-16	18	autopilot tick: the merged-PR close backstop (#2478)	0033359ed474b5dd950f56f500c4fc9a6cd673ca
-40	31	autopilot tick: one read of the done issues (#2559)	97a136d2c4f927f2762892c8a812756b644683eb
-11	12	autopilot sync-finish, sync-dropped and sync-fail	78c02accdbb1a0a1177162e2b7cac98d10519259
-15	13	autopilot tick: the GitHub limit pause (#2577)	88e0746af43ccddb5015e049b5371eae1d66a9c6
-44	36	autopilot tick: a pickup that meets a GitHub limit (#2577)	b7506990f8e031e132734d5df6c4f88f4da1e243
-102	80	autopilot tick: stops that cannot land are contained (#3052)	7ec5cf27cf36197447177e1aebd51a80f7b8c9e0
-18	15	autopilot tick: one read of the claims on origin (#3062)	f500de4dd86cbabdf5452405fa18f36de6021d97
-16	18	autopilot run: a start-up read that meets a GitHub limit (#2577)	929190161e7c50cff18ab6e7bccb60001583384b
-47	38	autopilot tick: the early GitHub pause (#2577)	6e6a9b751bcc70cda56db94edf32dd17761c940e
-17	19	autopilot run: the session log's GitHub usage line (#2577)	6bda132d04146540ce70f9650992e428ac2afb59
-28	22	autopilot candidates	8592ae15d07de5fdedc7f071630838ec706c1f4d
-7	7	autopilot answer: no repo (#3050)	43b2e7d2c6f7ae2f2e566aafa0fd64850f14e34a
+8	9	autopilot	60d914ab6aad1cf761d42e5d1385666f7090753d
+17	18	autopilot rounds, budget and start	41829146970a3ee47b79d27ccf9e27f2ba60d4f1
+23	24	autopilot ask and answer	646445929ad04febc7c3cdb6d5d7cdfc421084b0
+21	23	autopilot reenter	9f551d768335d7d0af0835fa7b4f8705fab0e6d1
+62	63	autopilot tick and run	0f0958ef6beb91f659ddae98f3e535d6ad67c07d
+10	12	autopilot tick: started by a relative path (#3055)	d9dd0213e6dd303dc497f3a29838e810cd898ed6
+2	32	autopilot tick: the flow-issue read at the issue-list limit	8f47b14f4bdd9b5b0b0b2839a3173964f3b90228
+35	37	autopilot tick: the direct read before each claim	a20ed11001100a2786efc83540270687ac0a161b
+153	155	autopilot tick: the cap, lost claims and the order	67b423ea7891cc3d10ea5c8b26ec3066429c4c95
+114	117	autopilot tick: side checkouts, refusals and failed steps	1aa92e8d7d488673c7c6a9a17bc6f1e45c9fd64f
+16	10	autopilot watch	f8ebd62e40841558f499d7278d3f783f629c0bc6
+32	34	autopilot tick: the usage limit	c9216462a629b00d7c7549d3e550e46180653ac6
+85	88	autopilot tick: limited issues	0fcd2511a7f3362e1b1771a349b24c9dd2804687
+55	55	autopilot questions, reply and resume	4da805d6b6928f4d16586d347eb40405f8ad8d2c
+1	2	autopilot_phase_arg refuses two adjacent phases (#1546)	236a5f8c3c11b75b24d0d7641de95c4d25666be5
+2	3	autopilot pause store	c370995aa5dd68dfcd4a64917da5d4e7a15c5574
+95	95	autopilot session end	953c159472afe93e2900c2e9cb5521dfaf8492d2
+2	32	autopilot tick: the trust check	fee7c9d2bfcb856df5a8e7d0a6658720a248eb87
+60	59	autopilot run: the budget and the final reply (#2004)	99d8b49071f6c5c09f8b0038a99ba350d52a7d2d
+3	4	autopilot answer on a truncated state.json (#1929)	9436eb3d4e492aca58e16ccc1ee44d805fba4d22
+21	23	autopilot: labels in the repo's casing (#1943)	4fe0e50eec669f1ac8d428fcaa6deafe8c134bf1
+1	13	autopilot tick: the label check writes only drift (#2691)	34b464f4957b9f54da57eadc20d1a54bf6c0a5e8
+103	105	autopilot tick and run: sync requests	5f541b28b34516a510cddb69292ac757035ceb40
+133	135	autopilot tick: pickup rank and sync slots	330a67583d22dd486e90247cb07c64e6f9f7c521
+54	55	autopilot tick: sync request auto-detection (#2325)	8ff499aa276dd447c6ed361f0f3f232be3e16d37
+31	32	autopilot tick: the merged-PR close backstop (#2478)	0033359ed474b5dd950f56f500c4fc9a6cd673ca
+57	58	autopilot tick: one read of the done issues (#2559)	97a136d2c4f927f2762892c8a812756b644683eb
+10	11	autopilot sync-finish, sync-dropped and sync-fail	78c02accdbb1a0a1177162e2b7cac98d10519259
+11	12	autopilot tick: the GitHub limit pause (#2577)	88e0746af43ccddb5015e049b5371eae1d66a9c6
+36	37	autopilot tick: a pickup that meets a GitHub limit (#2577)	b7506990f8e031e132734d5df6c4f88f4da1e243
+62	71	autopilot tick: stops that cannot land are contained (#3052)	7ec5cf27cf36197447177e1aebd51a80f7b8c9e0
+15	16	autopilot tick: one read of the claims on origin (#3062)	f500de4dd86cbabdf5452405fa18f36de6021d97
+21	22	autopilot run: a start-up read that meets a GitHub limit (#2577)	929190161e7c50cff18ab6e7bccb60001583384b
+39	40	autopilot tick: the early GitHub pause (#2577)	6e6a9b751bcc70cda56db94edf32dd17761c940e
+19	20	autopilot run: the session log's GitHub usage line (#2577)	6bda132d04146540ce70f9650992e428ac2afb59
+29	31	autopilot candidates	8592ae15d07de5fdedc7f071630838ec706c1f4d
+4	5	autopilot answer: no repo (#3050)	43b2e7d2c6f7ae2f2e566aafa0fd64850f14e34a
 4	5	autopilot session ops read the issue in one jq	c951be202d457a4ea4c00d130cfba0b2f8ae5aeb
-15	13	base	1d30c92ace82dbeb31bd2bb0af57badfdbedaf1c
+11	12	base	4ca1f19cac3ef83ca996b678fba01404782aa24d
 37	38	a flow's base branch	45475caadc481a9fbcda51773787f44333982e42
 3	4	base set on a truncated state.json (#1929)	de4767097a86d163c76e27f57e97f2f368040804
-23	18	branch create	5dc2fd66c97350a6d7b0913facf3518aef7ef412
+25	18	branch create	1dc2ff2bbd612ebe62e588cd8398e113e0eaa996
 21	16	branch off	a593304d47cbf00cd7703cb6cb488482578c09ae
 5	6	a quick implementation's base branch	46bcc2dc7b6d178534044f5ba9f13ebc3530850b
 3	4	a quick implementation's base SHA (#243)	35a26faa71afd7c0a5e72dedfebdc08736b4c9e3
 14	8	plugin-made branches have no upstream (#1152)	9fbf22e7b63732cecc65df507a97e629e4b2723b
-8	9	branch retire	cd615db2d50e5f2a3f6ef67d3f6bbafcc944c83d
+7	9	branch retire	3aacffdeb6d755080e2943b7462748b9dfce6681
 0	1	branch_records_base (#1713)	fe191a582c471d94004435e349209d91a1c7d92f
-38	40	branch sync (#792)	79b308cfbb3e0b2aaddebacc56f5d966a28c9eb0
+48	36	branch sync (#792)	7aec0323684ca8ee37a88fba3410753194587e3e
 19	17	branch busy (#1201)	fafe7dc7d03fc92c6da1c58d3677d1034ffbde83
 22	12	branch off and branch create refuse a busy checkout (#1202)	46ffbc22a4df2bac376f28a930600b3e76e72850
 28	26	branch create on a restart (ADR-0054)	f0088790924b14428d0cdd4a98c9e4e7f5c2d85e
@@ -103,7 +103,7 @@
 11	11	the fork start point is decided where origin is asked (#1930)	3ceaf867c78b7705e4044fdf825391698dfedcca
 0	1	branch: unknown op	09ccbeff10e543f91244486e12686159f5541c9f
 2	3	branch retire beside a same-named tag (#2337)	4b6ee64b25b98b5c750805fad89df265fe42adb9
-13	8	branch create and branch off beside a same-named tag (#2337)	c7cda0ea0bd3fe50a3589436dfaec771f958366f
+14	7	branch create and branch off beside a same-named tag (#2337)	1128e41953f74cffde4492d138e78958e82ed68c
 47	33	breakdown publish	06e062e1f136bd148b926cae1ce00aa44fc8dfa3
 23	16	breakdown publish rewrites ## Blocked by	eca2fdd84bd9ad7527f6c1b3c8159b25d4c7067d
 2	3	breakdown state	3e39b6801eb24af84b286c35b744133ff1735fa8
@@ -126,10 +126,10 @@
 0	1	die_hinted and die_opt_check	a31d5ea9ef99f315cf022f51ad5894482feffb9e
 0	1	host detection (host.sh, #281)	9d7272356d7fbf0f5fdca9c46ffa86f8c5c036cd
 5	6	doctor.sh is a one-way dependency (#281)	b86ca6ac46faa586b4d718a1aa26e9018e2539ea
-191	161	doctor	64528465cd563834f7d7cb1059759adceb8e4e7d
+147	162	doctor	85d21e76a7b11fcc51673870bbc6d61b0ed25449
 36	40	doctor: host (#128)	0ff10dbdae9d20ee078396950c793cb2ec3a2d69
 97	105	doctor --flow	ec6c0771cdbf7af4d034b080907fded56e7409f3
-41	45	doctor --env: finished side checkouts (#727)	409b7fb136865798294e217b184517a077d5b12c
+40	44	doctor --env: finished side checkouts (#727)	8d56eb5df3a1cea24b7c1e0173d431eb1a742f7b
 12	14	doctor at the review phase	f758faa73c220475b21e8e6f7ce147e4217392d6
 8	9	doctor: upstream beside an ambiguous origin/<branch> (#1331)	330a42c2865d5a02fae709612f503ac7b23ea5da
 50	43	doctor: review terminal check	88212d953c41af51b6bd5eeac27da3ee9a58006d
@@ -164,17 +164,17 @@
 58	41	finding-triage scan	342c6006bbdf721f2803384daa7755f93eb916bd
 91	105	finding-triage apply	8ef1b718be7569dccc002d3db335be58da2354c1
 114	134	finding-triage bundle	01854aee6fc7a32daed655eb528f22d32c6a6bce
-16	13	every gh call pinned to the repo (#520)	1eb11e16b7f53cdc4bbd6ec78423c2ed06b9d15e
-1	2	gh_reason and capture_err (#846)	3f9cdf25735ea6df18c44dff188643475c4bc8e3
-1	1	label_listed	56177c00bcc468d90ca6e59cbb9a5064b76a3c0b
-19	21	gh failure verb and readers (#1022)	93ed95ee34e426bcae583346b5fd33e7e92643fc
-4	4	verify_twice (#2658)	ebc9ff6baf1226bdf15c2acb47aa32db65757deb
-8	10	gh fake (#280)	fa29fafa9108b174f392c3aac2d2b9bd72f3fe89
-115	123	gh adapter contract (#280)	48e991187b762b12a4f0e536c19ac683adfe246f
-22	22	claim adapter operations (#1454)	434415cd39a7bb63f7146512c1dbdde13077c353
-2	3	label casing (#1943)	967a4a39f788b73ef75f50851a8a5e6a3aa92edb
-57	27	gh rate limits (#2577)	9219cc4b0792501f26ebae802267aa0a7cfad2aa
-9	7	gh rate limits: the GitHub pause and the hit file (#2577)	473c1e0574389227587fd9bd066c9ca6a5cc0a5a
+11	13	every gh call pinned to the repo (#520)	9050ead0ce8b006a7d6f4f8014f9cf72aea221c1
+1	2	gh_reason and capture_err (#846)	b1e6b22fd807869629678553c5c019b36b00fe4b
+1	2	label_listed	cbe133bb57a99edd13286a7b3c3bbc18b7d9f7b2
+21	23	gh failure verb and readers (#1022)	ffc1d9bcda9e186a0848b4b7f1f7f22a31a713d3
+4	5	verify_twice (#2658)	bb17bc92611d733be7609bb9fa29feb815519b8e
+8	10	gh fake (#280)	2cfce26f7d5cbdacc7499a2421bddb2ab35da8e8
+117	125	gh adapter contract (#280)	cc39c05926f818a5507f2842688f5a157ab6a73f
+19	20	claim adapter operations (#1454)	e38d5ba7a6cc558f697cc9b45c94994637c720bf
+2	3	label casing (#1943)	c0b2710909262227f7983fc382544e2c13a57e55
+45	28	gh rate limits (#2577)	41ea1a9243d7cfb38a94d8b87258f1dbe0625d74
+6	7	gh rate limits: the GitHub pause and the hit file (#2577)	79123add1578c1d705a7a3da968448b63570cf10
 0	1	slug	aa1e8e6f64e5dd11e111097dfde9deca1248c258
 9	10	archive	0124b5e1112a0eae813a1e43c01b2f94b426ce16
 0	1	mp-skill	80c8160f5b342b489904f400b93e09e618b8ee00
@@ -210,14 +210,14 @@
 7	9	issue publish verify-then-die	d09778aa4d05959b5ab1ce0fbcc95a9698e756d3
 24	28	issue triage	35104602a6dc67c6a5b055ec9fbef989793ffefc
 15	18	issue triage --check	564f12ed763e0da2d5050a9f33e1d37403c81e97
-3	4	issue ready	fb83751d2b18b2562947725eb2ec3faeb24a3a24
-2	3	issue labels	2660a93084add5e8c79be829041de52212aedfaf
-4	5	issue close	31642c9eef64b5d17aea977702d7884852078fee
+3	4	issue ready	d9d5f707dc5d34ae5b010027826eefcf81c7f9a8
+2	3	issue labels	9354d102c3ac71107563416e1618ae7138cd3de6
+4	5	issue close	2aca71782fc224a28a9a3fe2ef9ac42b9a06055c
 89	102	issue fetch/update	757d89d57752cf31da76d1a7277bd0ea0a65a9c7
 0	1	outside a checkout (#931)	062b9b295a023794605c84086a2187d40ba593df
 6	7	issue fetch trust warning	3bfa7f95a6e73bcaa9c194dc1197ddbe0030538b
 4	5	issue fetch writes LF lines (#1916)	33c6a8168242000311c27c47957c82c5cb0a1df5
-16	18	issue fetch drift line (#3458)	ed2b3c91f9fe31b2d39ee7dbff2c91f10cbde9be
+16	18	issue fetch drift line (#3458)	b92eb616e695504f3224a8b053f69180086d0db5
 1	1	issue ready: no repo (#3050)	e01486b40160e00af62e89a2858de8cf2edc7580
 10	12	issue next	5197d781f049be338dec1b6be44187961f50c651
 3	4	known-items module	822bb4b7d6bc24d8ddf679e4aa02e11d5f0562a4
@@ -227,25 +227,25 @@
 9	11	on-demand loading	6f5f8fdb61e60028685965dbdd5c3eb5ae8397b7
 10	11	stub table cache	f28bc3efe383c64ec4671e57784eb9058dec1d2e
 42	43	marked-comment module	af6dd53fa3dfe4fc5339996d6a1379bafdf42525
-1	2	parallel show	bc573286ce7805613d2a0874af5e338316da567c
+1	2	parallel show	29ed0447ad25daddc7f71a506dad5df2ad3d3cba
 55	58	phase advance / phase boundary	db56fe480597de86f8a487c134e1e6b488336fee
 0	1	phase advance help names handoffs by role (#1066)	fb4e9c6b059ec9f7d1aed9b47f5b974a48096e04
 31	35	phase advance in an autopilot flow (#1457)	3f11f48e53c11f24a0c5683139056f0b493b1fe0
 7	8	phase advance with a failed phase write (#1931)	c82e166171de5000ca89ef4f8614cc5c24820382
 8	9	phase advance and boundary read the flow's state once (#3063)	0d138a2b1374e352088aabaffc5eb527472c8124
-62	66	pr open	45e24aff64f261ece05d29d31f6c610ecd34728f
-21	23	pr publish	c508b1fdef92df99d5eeed225de23d06da837bf5
-9	10	pr draft (#967)	7440fbafe20019c43b9e3db6b19f28f7914d2146
-18	20	pr ready (#967)	c639dc2cfcf29db3ff6c344f7347d02c7e5b3e3f
-0	1	pr: unknown op	5a640be315379f1c037648e726c43c589b47e1de
-17	20	pr release	5d64e8da38904f343c2784a8d8e29ee96ad4ad7f
-6	7	pr comment (#343)	b48f7b02f325d3bb20df13523a862b9dabc3987b
-13	14	pr fetch / pr update (#444)	f6fb9af3388a6f835490a95136c4a916735ead68
-13	16	pr comments (#418)	130d286d938d5f987781da350e3f51a24f117d7c
-18	20	pr read (#1573)	9100926cc919805c7f97c6a3032cee3e454e627e
-16	18	pr: fork PRs (#1977)	6ecf0fdd1d64f368b3a610fb07097b3e6847156b
-7	6	pr: no repo (#3050)	47ee3b0d56c044e7a6a39678351738911909e2fd
-0	1	pr: PR-line pick and newest merge (#3074)	02e330a912ab011036444fafc3326dad36a97082
+60	64	pr open	f8e7d85f3b7aac428feb90a6b465eb53b8d509d2
+20	23	pr publish	902d8d87fdb4ea7e9ea7e6451bc95df1467b527a
+9	10	pr draft (#967)	2fcf41b7bf15a3cb9053a6513a3f264017c4cd09
+18	19	pr ready (#967)	c09179592ea47f3380ff5e59efd231c6abcdb0d8
+0	1	pr: unknown op	23a8d9f3afcf9188f83053f77307c3bb57660727
+17	19	pr release	a2a3fb885605dfa4b828b95ec1e2a21b00b020a9
+6	7	pr comment (#343)	d23b28b8ee74493e1aba607a529c1b5a0b947b7c
+13	15	pr fetch / pr update (#444)	dbe87bc76e7031ba3de6691684c366745f3ab0e2
+13	16	pr comments (#418)	99115a5ae7f9ed8a92206166a683f1a8cb8e4d1e
+18	20	pr read (#1573)	9cf4f283c66797b956629e21c992ab96cd0a9442
+16	18	pr: fork PRs (#1977)	b1369b7108b029e0296053c992eb0b53cbbff1e3
+5	6	pr: no repo (#3050)	8b3b809ad4bd20c29b28db9f93669024b929cd12
+0	1	pr: PR-line pick and newest merge (#3074)	f4c619df6cb7bde1cd52f0d8181a321aa7b5511e
 78	81	redo review	b62654b38632ca3b2c5f4b61a4abeb2acb82faff
 8	9	redo review refuses a taken handoff destination	3fa122ad40f6cf338d95a10c114170d1f36c2318
 46	40	redo review rerun after review retire (#2569)	cd4da3ad670722945bb9f2dd3e2c8ec23e9b4fab
@@ -283,21 +283,21 @@
 12	10	review ready with a failed phase write (#1931)	ed1ef3a1e5d648b72a5b543383eec3fe6f47142d
 13	12	review reads its Flow state once	c7fc8289608d227fd729a49beb321266082d92c8
 13	6	review ci <pr>	839ad07c48adf7f820c0db0cebb5d3959fcbefd3
-2	3	route show	0e4fc7b4e544565f4d6f0cc3b311a522ccf801b0
+2	3	route show	e41cb9679b1f09b9a73382b655216a8aff604ccd
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
-40	42	side-checkout (#722)	af2be5feb612499e9c65d765d4e385133c64fdd4
+38	40	side-checkout (#722)	753522fea8c0be1dec4dc2f8633b7a5d78439049
 20	21	status lists every checkout (#725)	0e2829f44c533a36ede63218f75dc3b6b9f517bf
 62	66	side-checkout archive and remove (#724)	1fb2f3f39b0980a84392830dc2587afb5d19aa14
 61	64	side-checkout prune (#726)	2bda70fa48dd4b380007de96e4897b5b0aea9095
-69	73	side-checkout prune: edge cases (#726)	362681b13f704c2999a7f32e8b1370b18d3d834c
+69	72	side-checkout prune: edge cases (#726)	be2f05022f06b567f8644f200d31cb3fcfb831ee
 18	19	archive keeps flow-less directories (#1247)	1cf41fafd151a6478b41bf1fd7aff5efd9847669
 21	23	side-checkout prune: a covered branch tip (#1906)	b13be4c577395b49197e461cad6954d626b4081f
 5	7	side-checkout prune: fork PRs are not proof (#1979)	004dd30e3e0deb54b95c8c79110e26cd2ffc4014
 49	52	side-checkout prune: the merged-PR close backstop (#2477)	69f285288eabcace9d74fa67194548b6bf7ab512
 2	3	side_checkout_marker reads the worktree's git pointer	7605e77ff7fdca5853e0a9cc368065fe764cb65e
-12	13	side checkout marker issue: reading without re-classifying (#3073)	38fb5dbe3d46481d12994865f0baff152661f1c4
+11	12	side checkout marker issue: reading without re-classifying (#3073)	4d201251bfb73c22114fdcdc86ae808fb3930ed5
 5	6	archive reads the flow's slug once	d1e47a75531129e6123579f59802dd69c84d1d76
-5	7	side-checkout: the default branch is asked for only when needed	03ca2477dac861e7e263fc55a80eb119924bf047
+5	7	side-checkout: the default branch is asked for only when needed	5f8f132611fabd4e0dede5d1e6b3db76ceff3111
 6	6	spec-review begin (#224)	fe74fe8dd28fdc37ed2e86fe535752768ee13f03
 6	6	spec-review begin --carry (#1141, #1185)	2c305a83077a50dfcb50dc0bac0388c4ce86ff59
 0	1	quick implementation runs an unattended spec review (#237)	91dd9515c5afc42fce26ef3734a5366a26a9dacf
@@ -337,7 +337,7 @@
 7	8	state set with a failed write (#1931)	277ecff0e3af2ccabe12e9fd2aebcc95a83b9bc3
 17	19	the entry read and the required-field helpers	421a88c5d4ef5960e3bcb0921ecf3a81e02d5083
 5	6	review_terminal_record fallback reads once	7f3fae7b01b9f68087b38c343c292315a4f86624
-62	47	ticket-worktree (#619)	38ccb610c7bc4ec08f55e4dfcf9fd369c142667e
+46	49	ticket-worktree (#619)	c52aa57c33965d3db61a8322267ddf19f3b096a0
 1	1	a ticket branch has no upstream (#1152)	bbc5298d4013eb4f017ecb7f6c59509725053f88
 2	3	the merged check beside a same-named tag (#2337)	b3482156347488560231482575e046eb972a8f39
 15	12	ticket publish	5585cea50f503e622bc3274efcd40b993704e4e7
@@ -355,18 +355,20 @@
 2	2	ticket retire: breakdown save point	0772ba43e346c0377dc2c1d5ab1cf1a73d76fcce
 7	9	ticket retire: untrusted comments	63af4127d5521853eb6111e092c05b54f068d042
 0	1	ticket: unknown op	5f4ba4d168af2ac965ec141604fb776a9a0175e1
-17	14	ticket merge (#621)	3489a9afc6a27dcdedf624b3566888b18bbbac3d
+13	14	ticket merge (#621)	8c97f51986af15a34263966fb8ff4d5a8f978a55
 4	2	ticket merge beside a same-named tag (#2337)	8c68070ffd52a8830d9b1fd50431fd4db0b2f68a
 185	147	ticket reclaim (ADR-0054)	337f47e242db0b7a051702f11dbbdff63657ef9c
 1	1	ticket exists: no repo (#3050)	18f290c8db8140166817738f948443cd1b9a10dd
 22	20	trust module	cce71cee320a9a9df12b5d2fe25e74e2f6089609
-61	7	verification run	b92eb55e7297141889bf3ce64de443e5c897a452
-271	19	verification run: the run key, stale runs, the ceiling	daf1ce1066d653f8357d01f788a280d1458d96df
-28	5	verification run: block naps start no awk far from the end	11d200cb64f705ede1c96b6cc4a25397d5b00583
-0	1	verification run in help and the CLI conventions	a99e8bc67b95c57562d13f68245e5c6c30dfdb5c
+19	12	verification run	05e611f23e4d30bd2a77cb623293302bfbfb3f7a
+117	29	verification run: the run key, stale runs, the ceiling	f4dbfa1467100e29dcf78ec4291673e4502189fb
+19	10	verification stop	bd547f62c0bba70374f34924be0ef862dba84f9c
+11	8	verification run orphans: a live run is stopped	7023edfdbfa15158807abe68146074d593d3cbd9
+19	6	verification run: block naps start no awk far from the end	06e4afaaaafe936e2802c8e42ea51ff059d6b706
+0	1	verification run in help	28e484325ea5c39e7d957ba95f689dcdbb9ecc1a
 99	11	wait: a call's block is wall time	db923f27504e50d0a04527b359feb487abb3665d
 882	983	hooks_test.sh	8dec8318df78d1487d2d11c16c6ac962831bc14c
-165	141	docs_lint.sh	92b4f1aab1a5b51d68bfbd468a78611da547a30d
+133	158	docs_lint.sh	55b335baa6c5833c9113379fb614ca39fa895b62
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 8	8	autopilot_up_test.sh	25eb01b693309e8b681fe96ca4c386c741b9ecd8

@@ -1,7 +1,7 @@
 name: fragment
 
 # The changelog fragment rule and the suite budget rules that judge a change
-# against its base (docs_lint.sh --fragment-only), on every PR event that can
+# against its base (docs_lint.sh --base-rules), on every PR event that can
 # change their answer: a push, a reopen, and an edit to the PR's body or labels.
 # The suite workflow does not rerun for those edits; it runs the whole docs lint
 # on every push, which adds the ledger's freshness rule.
@@ -55,10 +55,10 @@ jobs:
             echo "NO_VERSION_BUMP=1" >>"$GITHUB_ENV"
           fi
       # Runs the fragment rule and the suite budget rules 2 and 3
-      # (--fragment-only), never the whole docs lint, which the suite workflow
+      # (--base-rules), never the whole docs lint, which the suite workflow
       # runs. GH_TOKEN is for the fragment rule, whose gh api call reads the
       # fragment's issue to check it is no sub-issue.
-      - name: Check the changelog fragment
+      - name: Check the changelog fragment and the suite budget
         env:
           GH_TOKEN: ${{ github.token }}
-        run: scripts/test/docs_lint.sh --fragment-only
+        run: scripts/test/docs_lint.sh --base-rules

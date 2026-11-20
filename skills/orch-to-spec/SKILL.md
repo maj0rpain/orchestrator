@@ -133,7 +133,8 @@ names.
    fails, stop and say why, and run no ticket step: `orch-to-tickets` does
    not run.
 4. **Read the label:** `bash "$ORCH" issue ready <n>`. Apply no triage label:
-   the planning close already moved the label, or the human declined it.
+   in rewrite mode the label is the planning close's or the human's call, never
+   this skill's.
    - Exit 0: nothing to say.
    - Exit 1: warn that `/orchestrator:start --issue <n>` will refuse the
      issue until it carries the `ready-for-agent` label (the repo's own name
