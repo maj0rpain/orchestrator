@@ -926,16 +926,17 @@ orch.sh - deterministic operations for the orchestrator flow
                               order named, that view in view.md; never with
                               --tickets
   spec-review wait <dir> <lens>...
-                              block until <dir>/lens-<lens>.md exists for
-                              every named lens (fidelity, consistency,
-                              testability, implementability), then print
+                              wait, across calls, until <dir>/lens-<lens>.md
+                              exists for every named lens (fidelity,
+                              consistency, testability, implementability),
+                              then print
                               "lenses back: <lens> <count>, ..." in the order
                               named, <count> the file's @@ finding lines. Run
                               in the response that starts the lenses. Exit 1,
                               nothing on stdout, naming the lenses still
                               missing after ORCH_SPEC_REVIEW_WAIT_TIMEOUT
                               seconds (default 900), polling every
-                              ORCH_SPEC_REVIEW_WAIT_INTERVAL (default 5)
+                              ORCH_SPEC_REVIEW_WAIT_INTERVAL (default 5).
                               Blocks at most ORCH_WAIT_BLOCK seconds per call
                               (default 570): still waiting, nothing on stdout,
                               "orch: still running" on stderr, exit 75 - run
