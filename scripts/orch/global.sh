@@ -379,8 +379,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               that is its own base, or a branch the plugin
                               did not make, nothing moved.
                               --finish finishes a resolved conflict without
-                              fetching: HEAD must be a merge commit whose
-                              second parent is on origin's base, no merge in
+                              fetching: the newest merge on HEAD's
+                              first-parent chain, with only single-parent fix
+                              commits above it, must have its second parent on
+                              origin's base, no merge in
                               progress, else exit 1; it records that parent
                               as the base SHA and pushes. Exit
                               1 on a failed push, the merge recorded - rerun
@@ -1130,6 +1132,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               failed with an orch: line, exit 1. Records of
                               checkouts that no longer exist are cleared by the
                               next call
+  verification stop <checkout>  stop every live verification run of <checkout>
+                              or a ticket worktree under it (TERM, then KILL),
+                              removing its record; exits 1 when a group
+                              survives the KILL. The autopilot wrapper runs it
+                              when a session ends
   status                      human-readable summary of this checkout's flow,
                               then one line for every other checkout holding
                               a flow and every side checkout
