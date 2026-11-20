@@ -39,11 +39,7 @@
 2	2	the gh fake, operation by operation (#3551)	1ce7bff3167463ac98f8d773be5eadb253da52f3
 64	70	agent	0d79b59e4f3295e93a9ede1bda22fbbc139f7e19
 20	22	agent sync	b39ad35449afd2ba48dfe47fd1a68a53a2d8c22b
-<<<<<<< HEAD
-3	4	agent copy marker and Junie field: no command per call	fa814905df0f5ba9f7e42bf59d57ef12416f93e5
-=======
 3	4	agent copy marker and Junie field: no command per call	7261e94ea71b44582780d728312d592266f2e005
->>>>>>> refs/remotes/origin/main
 8	6	audit file	6bbf361e504ccaa9a3f0d45038632b66b03acc8a
 3	3	audit file duplicates	e5be439ac2451322b83945ad891f56ab378d67ca
 9	9	audit file refusals	b1a0484287eb30f5231deffb1dc76702c14536e3
@@ -168,31 +164,17 @@
 58	41	finding-triage scan	342c6006bbdf721f2803384daa7755f93eb916bd
 91	105	finding-triage apply	8ef1b718be7569dccc002d3db335be58da2354c1
 114	134	finding-triage bundle	01854aee6fc7a32daed655eb528f22d32c6a6bce
-<<<<<<< HEAD
-11	13	every gh call pinned to the repo (#520)	077b456a01616a70bb132ba4231352de5b585a00
-1	2	gh_reason and capture_err (#846)	3f9cdf25735ea6df18c44dff188643475c4bc8e3
-1	1	label_listed	56177c00bcc468d90ca6e59cbb9a5064b76a3c0b
-19	21	gh failure verb and readers (#1022)	93ed95ee34e426bcae583346b5fd33e7e92643fc
-4	4	verify_twice (#2658)	ebc9ff6baf1226bdf15c2acb47aa32db65757deb
-9	11	gh fake (#280)	9f4625dea77c95ff66bd567c750af9dddac66825
-115	123	gh adapter contract (#280)	48e991187b762b12a4f0e536c19ac683adfe246f
-22	22	claim adapter operations (#1454)	434415cd39a7bb63f7146512c1dbdde13077c353
-2	3	label casing (#1943)	967a4a39f788b73ef75f50851a8a5e6a3aa92edb
-45	28	gh rate limits (#2577)	c7f10f495cb79463df44d61f7959c576b28f6c43
-9	7	gh rate limits: the GitHub pause and the hit file (#2577)	473c1e0574389227587fd9bd066c9ca6a5cc0a5a
-=======
-11	13	every gh call pinned to the repo (#520)	9050ead0ce8b006a7d6f4f8014f9cf72aea221c1
+10	12	every gh call pinned to the repo (#520)	2366260ad14eaa7016742f5f921fbb8bfb019114
 1	2	gh_reason and capture_err (#846)	b1e6b22fd807869629678553c5c019b36b00fe4b
 1	2	label_listed	cbe133bb57a99edd13286a7b3c3bbc18b7d9f7b2
 21	23	gh failure verb and readers (#1022)	ffc1d9bcda9e186a0848b4b7f1f7f22a31a713d3
 4	5	verify_twice (#2658)	bb17bc92611d733be7609bb9fa29feb815519b8e
-8	10	gh fake (#280)	2cfce26f7d5cbdacc7499a2421bddb2ab35da8e8
+9	10	gh fake (#280)	d7a8179b130bdca81ead4c60b80249a5966232f8
 117	125	gh adapter contract (#280)	cc39c05926f818a5507f2842688f5a157ab6a73f
 19	20	claim adapter operations (#1454)	e38d5ba7a6cc558f697cc9b45c94994637c720bf
 2	3	label casing (#1943)	c0b2710909262227f7983fc382544e2c13a57e55
-45	28	gh rate limits (#2577)	41ea1a9243d7cfb38a94d8b87258f1dbe0625d74
+45	29	gh rate limits (#2577)	f47578031e2fd3c2762e6dd839cd759dfb9ab1be
 6	7	gh rate limits: the GitHub pause and the hit file (#2577)	79123add1578c1d705a7a3da968448b63570cf10
->>>>>>> refs/remotes/origin/main
 0	1	slug	aa1e8e6f64e5dd11e111097dfde9deca1248c258
 9	10	archive	0124b5e1112a0eae813a1e43c01b2f94b426ce16
 0	1	mp-skill	80c8160f5b342b489904f400b93e09e618b8ee00
@@ -279,55 +261,29 @@
 7	8	default-branch	0177d6e5817d4d0befacac87fc2b2a0f621ad11b
 9	10	review-pass begin (#342)	c9a9274e4ded397a8c551e3b82717cd167110d2b
 52	65	review-pass known-items	c01aa6033c8a94081955880d1ea8ecdcc49dbb05
-<<<<<<< HEAD
-15	17	review ready's pointer to /orchestrator:finish (#727)	67b87c1a3e5d6a1be771ad269ac5911449b717af
-14	15	review begin	47fcbc727fc01c1d430ee0277d2ff47fa0e78bbb
+15	16	review ready's pointer to /orchestrator:finish (#727)	67b87c1a3e5d6a1be771ad269ac5911449b717af
+13	14	review begin	47fcbc727fc01c1d430ee0277d2ff47fa0e78bbb
 4	5	review path	b592ca2006a75b140123da9e0f8ddb30729a8a0a
 5	6	the multi-loop machinery is gone	6e8329be15e5f8d38ea6e8f08e4474cef89b06d8
-44	49	review file	7b1d4ce05800b8733c8c9e1ac7f5e5e08e1f8203
-14	16	review ready	72485745ada64338e42a649ec5e7c7166a63bfbb
-138	77	review ci	e0eabf65a00a7c84d616625f329887b7c1c150a2
-15	14	the grace counts from the push (issue #475)	eed4ba4e16610b43781cdbd91b6acbb614cf36b7
-19	18	review ci --no-wait	0bc15a61db0215884737caff9f6c6d30fce5b06a
-54	45	the grace is skipped on no evidence of CI (issue #476)	29dfbba237b9733786033a072f8ad7898a77481c
-9	11	review rerun	9b49427fc69cbaed3110c1d17f70a17c8eb1996e
+45	49	review file	7b1d4ce05800b8733c8c9e1ac7f5e5e08e1f8203
+14	15	review ready	72485745ada64338e42a649ec5e7c7166a63bfbb
+143	81	review ci	e0eabf65a00a7c84d616625f329887b7c1c150a2
+14	13	the grace counts from the push (issue #475)	eed4ba4e16610b43781cdbd91b6acbb614cf36b7
+15	16	review ci --no-wait	0bc15a61db0215884737caff9f6c6d30fce5b06a
+53	46	the grace is skipped on no evidence of CI (issue #476)	29dfbba237b9733786033a072f8ad7898a77481c
+9	10	review rerun	9b49427fc69cbaed3110c1d17f70a17c8eb1996e
 5	6	review ci-log	1a084582882afcd2fa9b50ceb555009a027aed78
 23	25	review terminal	fe93b1fe6ad70a880cc2c076ff418e2c5640e553
-33	34	review resume	f8ace5091e41995ff91d55dbf66935d984cb3354
+31	33	review resume	f8ace5091e41995ff91d55dbf66935d984cb3354
 5	6	review retire	26b64e236dcc7d43f25a71127add340bd99df4b7
-11	13	review known-items	d91a134cfdf0aedec86c357449640db764801ab7
-11	12	review ready in an autopilot flow (#1457)	0daca9a84f2e287952a590d542b4bfbcec453098
-12	14	review known-items in an autopilot flow (#1457)	bce3da223e398f11580dda310f270c3275a1daca
-13	16	review standards (#1532)	bf761e5fbbec85dff1751ef9676923badfe24d90
+11	12	review known-items	d91a134cfdf0aedec86c357449640db764801ab7
+10	11	review ready in an autopilot flow (#1457)	0daca9a84f2e287952a590d542b4bfbcec453098
+11	12	review known-items in an autopilot flow (#1457)	bce3da223e398f11580dda310f270c3275a1daca
+12	15	review standards (#1532)	bf761e5fbbec85dff1751ef9676923badfe24d90
 9	10	review ready with a failed phase write (#1931)	1fd5359c063a3ebff8961a61aa54cf13c17e846a
-10	11	review reads its Flow state once	22a2df5a39c6ed552d4d85ad20497064b00f0597
+10	10	review reads its Flow state once	22a2df5a39c6ed552d4d85ad20497064b00f0597
 10	7	review ci <pr>	93c09969f98de8377631b62c8e1cec9ca3d81350
-2	3	route show	0e4fc7b4e544565f4d6f0cc3b311a522ccf801b0
-=======
-20	17	review ready's pointer to /orchestrator:finish (#727)	e8d2ed095a35df98ab05ed3f22261da9f491025c
-17	15	review begin	c4a68a37d613f9f5992ecf1b159a2ce1f9ba6bca
-4	5	review path	c78a5b250d2bed63c97a669e2cbac1fe74e42940
-6	5	the multi-loop machinery is gone	56222b7e078261fd8d6c1ca2c7e63d3117ecc435
-59	48	review file	1709efef973387fdb6f67c7ed37d9262de56c3e5
-18	16	review ready	7f56a2d5a8fa9d475c2f6a7cdaa4cd8b0cf7a7d9
-168	69	review ci	c5b16e5abda05f2554ab2e1bf0261e29ba453297
-19	14	the grace counts from the push (issue #475)	83357513a7a03b0a0d3fda1e7854f5673a097608
-23	17	review ci --no-wait	e235335de49ce1f76db6573c702c3277c14cf817
-65	43	the grace is skipped on no evidence of CI (issue #476)	13cb1ba5f6dfcd8ac4ba5933a14b020bb5a61031
-12	9	review rerun	125c5474891fa92f544fa60f5cb34af9c2975eb0
-6	5	review ci-log	37606d939180e23d494938b9fae5102bac479d37
-32	26	review terminal	d94be37e86c973cc2de12eef65acf7e71440d853
-44	37	review resume	75d11794dcb0d28edb3db1c3cf140f8efbd99625
-5	5	review retire	990ced2eda246eff493769e5debf8f5279a1e8a9
-15	14	review known-items	bdb25be812bff7d8bae1260508495ad5ba8d5ef1
-14	12	review ready in an autopilot flow (#1457)	cc1e7b3dac576a83544970705048308fa5b533c3
-15	15	review known-items in an autopilot flow (#1457)	1863aaadacbd252693177211ee326374b4967cd3
-17	16	review standards (#1532)	1815ab348b75d5b5acc0ed9523215d753520ea43
-12	10	review ready with a failed phase write (#1931)	ed1ef3a1e5d648b72a5b543383eec3fe6f47142d
-13	12	review reads its Flow state once	c7fc8289608d227fd729a49beb321266082d92c8
-13	6	review ci <pr>	839ad07c48adf7f820c0db0cebb5d3959fcbefd3
 2	3	route show	e41cb9679b1f09b9a73382b655216a8aff604ccd
->>>>>>> refs/remotes/origin/main
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
 38	40	side-checkout (#722)	753522fea8c0be1dec4dc2f8633b7a5d78439049
 20	21	status lists every checkout (#725)	0e2829f44c533a36ede63218f75dc3b6b9f517bf
