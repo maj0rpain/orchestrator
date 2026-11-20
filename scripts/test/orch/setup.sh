@@ -1179,6 +1179,10 @@ fake_quota() { printf '%s\t%s\t%s\t%s\n' "$@" >>"$ORCH_GH_FAKE_STORE/quota"; }
 # (<unset> for an unset one), so a test asserts which repo a call was pinned to.
 # It also appends the name of every inherited variable starting REPO_ to
 # $GH_FIXTURE/repo_vars.log: the repo memo is never exported, so it stays empty.
+# Those two log lines are written once, by $GH_FIXTURE/log.sh, which the
+# fixture gh sources; any other gh a section puts on PATH to stand in for the
+# fixture gh, logging its calls to env.log as triage_gh's does, sources it too.
+# A gh that keeps its own call log instead, such as limit_once_gh's, does not.
 # A section that calls it ends with restore_suite_env GH_FIXTURE.
 gh_fixture() {
   GH_FIXTURE="$(mktemp -d)" || return 1
@@ -1190,11 +1194,15 @@ gh_fixture() {
 # arguments, NUL-terminated, its space turned into -.
 printf '%s\0' "$@" | cksum | tr ' ' -
 KEY
+  cat >"$GH_FIXTURE/log.sh" <<LOG
+# log.sh: sourced by a gh, it logs that gh's call; \$* is the gh's own argv.
+printf 'GH_REPO=%s GH_HOST=%s %s\n' "\${GH_REPO-<unset>}" "\${GH_HOST-<unset>}" "\$*" >>"$GH_FIXTURE/env.log"
+compgen -v REPO_ >>"$GH_FIXTURE/repo_vars.log"
+LOG
   cat >"$GH_FIXTURE/bin/gh" <<'GH'
 #!/usr/bin/env bash
 d="$(cd "$(dirname "$0")/.." && pwd)"
-printf 'GH_REPO=%s GH_HOST=%s %s\n' "${GH_REPO-<unset>}" "${GH_HOST-<unset>}" "$*" >>"$d/env.log"
-compgen -v REPO_ >>"$d/repo_vars.log"
+. "$d/log.sh"
 r="$d/replies/$("$d/key" "$@")"
 if [ -f "$r/argv" ] && printf '%s\0' "$@" | cmp -s - "$r/argv"; then
   cat "$r/stdout"
@@ -1347,6 +1355,26 @@ term_run() {
   kill -TERM "$pid"
   wait "$pid"; term_st=$?
   term_secs=$((SECONDS - t0))
+}
+
+# vrun_start <dir> <command>: starts a run of the command in <dir>, left going.
+vrun_start() { (cd "$1" && ORCH_WAIT_BLOCK=0.2 "$ORCH" verification run "$2" >/dev/null 2>&1); }
+# vrun_rec <store> <root>: prints the record directory of the run kept for
+# <root> in the verification store <store>.
+vrun_rec() {
+  local r
+  for r in "$1"/*/; do
+    [ "$(cat "$r/root" 2>/dev/null)" = "$2" ] && { printf '%s\n' "${r%/}"; return 0; }
+  done
+  return 1
+}
+# vrun_live <store> <root>: whether the process group of the run kept for <root>
+# exists.
+vrun_live() {
+  local r pid
+  r="$(vrun_rec "$1" "$2")" || return 1
+  pid="$(cut -d' ' -f1 "$r/pid")"
+  kill -0 -- "-$pid" 2>/dev/null
 }
 
 # >>> summary
