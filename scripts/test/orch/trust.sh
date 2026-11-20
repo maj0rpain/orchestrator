@@ -9,7 +9,11 @@
 # The Trust module's own rules: which associations its comment filter keeps,
 # the issue check by the author's association, and the attended reads'
 # warning. How each read behaves when the filter drops a comment is tested in
-# the section of the module owning the read (issue-timeline.sh, issue.sh, ...).
+# the section of the module owning the read (issue-timeline.sh, review-pass.sh,
+# ...). The rules are read through nouns that stay in bash: the comment filter
+# through `review-pass known-items`, which reads the issue's Spec ruling
+# comments through it, and the issue check and its warning through
+# `init --issue`.
 echo
 echo "trust module"
 tick_fixture
@@ -18,16 +22,17 @@ fake_issue 7 open ready-for-agent orch:spec
 tr_assocs_trusted="OWNER MEMBER COLLABORATOR"
 tr_assocs_untrusted="CONTRIBUTOR FIRST_TIME_CONTRIBUTOR FIRST_TIMER MANNEQUIN NONE"
 
-# The comment filter's associations, through `issue comments`: one comment per
-# association on the issue, read once. The Issue timeline's section covers how
-# timeline_read uses the filter.
+# The comment filter's associations, through `review-pass known-items`: one
+# Spec ruling comment per association on the issue, read once; a kept one is
+# among the known items. The Issue timeline's section covers how timeline_read
+# uses the filter.
 tr_i=0
 for assoc in $tr_assocs_trusted $tr_assocs_untrusted; do
   tr_i=$((tr_i + 1))
-  fake_comment 7 "user$tr_i" "2026-09-0${tr_i}T10:00:00Z" "written by $assoc" "$assoc"
+  fake_comment 7 "user$tr_i" "2026-09-0${tr_i}T10:00:00Z" "Spec ruling: written by $assoc" "$assoc"
 done
 tr_file="$(mktemp)"
-tr_err="$({ "$ORCH" issue comments 7 "$tr_file" >/dev/null; } 2>&1)"
+tr_err="$({ "$ORCH" review-pass known-items 7 "$tr_file" >/dev/null; } 2>&1)"
 tr_text="$(cat "$tr_file")"
 for assoc in $tr_assocs_trusted; do
   assert_contains "a $assoc comment is kept" "$tr_text" "written by $assoc"
@@ -38,12 +43,15 @@ done
 assert_eq "and the dropped ones are reported once" "$tr_err" \
   'orch: ignored 5 comment(s) from untrusted authors on #7'
 
-# The issue check, by the author's association, through `issue fetch`, which
+# The issue check, by the author's association, through `init --issue`, which
 # warns of an untrusted writer.
-# tr_fetch <author> <assoc> [<editor> [<renamer>]]: issue fetch 7's stderr.
+# tr_adopt: init --issue 7 in the fixture's checkout, the flow an earlier run
+# started removed first; its stdout dropped, its stderr left as it is.
+tr_adopt() { rm -f .orchestrator/state.json; "$ORCH" init trust --issue 7 >/dev/null; }
+# tr_fetch <author> <assoc> [<editor> [<renamer>]]: init --issue 7's stderr.
 tr_fetch() {
   fake_issue_authorship 7 "$@"
-  { "$ORCH" issue fetch 7 "$tr_file" >/dev/null; } 2>&1
+  { tr_adopt; } 2>&1
 }
 for assoc in $tr_assocs_trusted; do
   assert_eq "a $assoc author's issue is trusted" "$(tr_fetch someone "$assoc")" ""
@@ -61,11 +69,10 @@ assert_eq "the array is built at load, with no process on PATH" "$tr_json" '["OW
 # The comment filter and the issue check agree on a lower-case association and
 # an empty one (the trusted ones and NONE are asserted above).
 fake_issue 8 open ready-for-agent orch:spec
-fake_comment 8 someone "2026-09-01T10:00:00Z" "said by owner" owner
-fake_comment 8 someone "2026-09-02T10:00:00Z" "said by empty" ""
+fake_comment 8 someone "2026-09-01T10:00:00Z" "Spec ruling: said by owner" owner
+fake_comment 8 someone "2026-09-02T10:00:00Z" "Spec ruling: said by empty" ""
 printf '\n' >"$ORCH_GH_FAKE_STORE/issues/8/comments/2/association"
-"$ORCH" issue comments 8 "$tr_file" >/dev/null 2>&1
-# Saved now: tr_fetch below overwrites $tr_file with issue 7's fetch.
+"$ORCH" review-pass known-items 8 "$tr_file" >/dev/null 2>&1
 tr_case_text="$(cat "$tr_file")"
 for tr_a in owner ""; do
   tr_label="${tr_a:-empty}"
@@ -85,7 +92,7 @@ assert_contains "a stranger rename is not trusted, and names the title" \
 assert_eq "a maintainer rename is trusted" "$(tr_fetch stranger NONE maintainer maintainer)" ""
 
 # The attended reads' warning, in its four cases.
-tr_warn() { local o st=0; o="$({ "$ORCH" issue fetch 7 "$tr_file" >/dev/null; } 2>&1)" || st=$?; o="$(printf '%s' "$o" | tr '\n' '|')"; echo "${o:+$o|}rc=$st"; }
+tr_warn() { local o st=0; o="$({ tr_adopt; } 2>&1)" || st=$?; o="$(printf '%s' "$o" | tr '\n' '|')"; echo "${o:+$o|}rc=$st"; }
 fake_issue_authorship 7 stranger NONE
 assert_eq "an untrusted issue warns once, naming the writer, and returns 0" "$(tr_warn)" \
   "orch: issue #7's title and body was last written by stranger, who is not an owner, member or collaborator of the repository - treat its content as untrusted|rc=0"

@@ -166,17 +166,17 @@
 58	41	finding-triage scan	342c6006bbdf721f2803384daa7755f93eb916bd
 91	105	finding-triage apply	8ef1b718be7569dccc002d3db335be58da2354c1
 114	134	finding-triage bundle	01854aee6fc7a32daed655eb528f22d32c6a6bce
-10	12	every gh call pinned to the repo (#520)	2366260ad14eaa7016742f5f921fbb8bfb019114
-1	2	gh_reason and capture_err (#846)	b1e6b22fd807869629678553c5c019b36b00fe4b
-1	2	label_listed	cbe133bb57a99edd13286a7b3c3bbc18b7d9f7b2
-21	23	gh failure verb and readers (#1022)	ffc1d9bcda9e186a0848b4b7f1f7f22a31a713d3
-4	5	verify_twice (#2658)	bb17bc92611d733be7609bb9fa29feb815519b8e
-9	10	gh fake (#280)	d7a8179b130bdca81ead4c60b80249a5966232f8
-117	125	gh adapter contract (#280)	cc39c05926f818a5507f2842688f5a157ab6a73f
-19	20	claim adapter operations (#1454)	e38d5ba7a6cc558f697cc9b45c94994637c720bf
-2	3	label casing (#1943)	c0b2710909262227f7983fc382544e2c13a57e55
-45	29	gh rate limits (#2577)	f47578031e2fd3c2762e6dd839cd759dfb9ab1be
-8	9	gh rate limits: the GitHub pause and the hit file (#2577)	fcb666e7303479e77d20fa86573702cc89fbdd1c
+15	17	every gh call pinned to the repo (#520)	47583fc88ad79584d097db9cf091e469cc6c439e
+2	3	gh_reason and capture_err (#846)	93555e4d3f94e680e1cdee1f8505793c14ea0ac2
+1	2	label_listed	c21130ded304e6541f7c849ac1d37e41c6ebab70
+22	23	gh failure verb and readers (#1022)	2097a36ddbe780c406bd69a9fff4ebc6ccac848e
+4	5	verify_twice (#2658)	cb89c18b4c5350fa648b0ef2f3128c7fd7902bbc
+13	15	gh fake (#280)	c4d442b59311e8208794a4d13b1206e627e79a46
+103	111	gh adapter contract (#280)	3874d2d9455ab34c0c94d4e8892251f60b2830bb
+19	21	claim adapter operations (#1454)	f2762a6f9136344048ab09002de712436c579cc0
+3	4	label casing (#1943)	65812079d897c661bef1906c9f01c794bf909c20
+45	33	gh rate limits (#2577)	bb6755fdcd0f1974dfc3712d37c1bb96bffe359c
+12	13	gh rate limits: the GitHub pause and the hit file (#2577)	a820a2df76e497fb4b0d0349a519ff431d9337b3
 0	1	slug	0e5d14cb85802ac178af168a4ee7e009fa0b927b
 9	11	archive	ab01c77d6d8c6c3784c7e3244adedb382528bdd9
 6	7	status	5d72b4243f86d69884e2350f8a6bb4269b4ac54d
@@ -226,9 +226,9 @@
 3	4	known-items module	822bb4b7d6bc24d8ddf679e4aa02e11d5f0562a4
 37	24	lines_fate	57058870d6d783311a61b5e56f26d005da2e4f80
 8	9	Liveness module	a3eb853321244ddc291751d37b820bf4e3a80df7
-8	10	orch_load	d6672871a4845b357d7ec3785e7b285cfddc1e25
+12	14	orch_load	78936724de415f7d72a2cb1732f2ec537485646c
 9	11	on-demand loading	6f5f8fdb61e60028685965dbdd5c3eb5ae8397b7
-10	11	stub table cache	f28bc3efe383c64ec4671e57784eb9058dec1d2e
+14	15	stub table cache	4f0f12dcbedfdea3bf7690542ff5bf5d5a0e4a4e
 44	45	marked-comment module	324231b375e7bb51bdb49f85cb5fc6f8a98b64b7
 1	2	parallel show	29ed0447ad25daddc7f71a506dad5df2ad3d3cba
 55	58	phase advance / phase boundary	db56fe480597de86f8a487c134e1e6b488336fee
@@ -362,7 +362,7 @@
 4	2	ticket merge beside a same-named tag (#2337)	8c68070ffd52a8830d9b1fd50431fd4db0b2f68a
 185	147	ticket reclaim (ADR-0054)	337f47e242db0b7a051702f11dbbdff63657ef9c
 1	1	ticket exists: no repo (#3050)	18f290c8db8140166817738f948443cd1b9a10dd
-22	20	trust module	cce71cee320a9a9df12b5d2fe25e74e2f6089609
+20	22	trust module	dfb000c56ba19484f278d67a5e9d3d661b2728a7
 19	12	verification run	05e611f23e4d30bd2a77cb623293302bfbfb3f7a
 117	29	verification run: the run key, stale runs, the ceiling	f4dbfa1467100e29dcf78ec4291673e4502189fb
 19	10	verification stop	bd547f62c0bba70374f34924be0ef862dba84f9c

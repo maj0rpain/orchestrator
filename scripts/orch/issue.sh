@@ -17,34 +17,6 @@ labels_verified() {
   done
 }
 
-# open_issue_read [--hint <h>] <n> <not-open message> <labels_var>
-# [<body_var>]: reads issue <n> once through the gh adapter - its body too,
-# only when <body_var> is given - and writes its labels (one per line,
-# possibly none) and its body into the caller-named variables. A failed read
-# dies through gh_die "read issue #<n>", with --hint passed on as given; an
-# issue that is not OPEN dies with <not-open message>, verbatim, since the
-# callers' messages are not one shape. It checks no label: each caller keeps
-# its own label test.
-# Out-params through `printf -v`, its locals prefixed so no caller's variable
-# name is shadowed.
-open_issue_read() {
-  local __oir_hint=() __oir_state __oir_labels __oir_body __oir_err
-  if [ "${1-}" = --hint ]; then
-    die_opt_check open_issue_read $# "$@"
-    __oir_hint=(--hint "$2"); shift 2
-  fi
-  if [ $# -ge 4 ]; then
-    issue_state_labels_body_read "$1" __oir_state __oir_labels __oir_body __oir_err \
-      || gh_die ${__oir_hint[@]+"${__oir_hint[@]}"} "read issue #$1" "$__oir_err"
-  else
-    issue_state_labels_read "$1" __oir_state __oir_labels __oir_err \
-      || gh_die ${__oir_hint[@]+"${__oir_hint[@]}"} "read issue #$1" "$__oir_err"
-  fi
-  [ "$__oir_state" = OPEN ] || die "$2"
-  printf -v "$3" '%s' "$__oir_labels"
-  [ $# -lt 4 ] || printf -v "$4" '%s' "$__oir_body"
-}
-
 # The four stateless issue ops - fetch, comments, update and comment - on an
 # issue given just its number: the same contract issue publish/pr
 # publish/ticket publish already offer, extended to a plain issue. spec.sh's

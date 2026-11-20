@@ -30,19 +30,17 @@ contract() { env -u ORCH_GH_ADAPTER bash -c 'source "$1"; shift; "$@"' _ "$ORCH"
 # default. fake_online lifts it.
 fake_ratelimit() { printf '%s\n' "${1-API rate limit exceeded for user ID 1.}" >"$ORCH_GH_FAKE_STORE/ratelimit"; }
 
-# triage_gh: a gh on PATH for issue 5, open and unlabelled until its first
-# edit, then ready-for-agent; it sources the fixture's log.sh to log its calls.
-triage_gh() {
-  triage_dir="$(mktemp -d)"
-  cat >"$triage_dir/gh" <<GH
+# exists_gh: a gh on PATH for issue 5, a collapsed breakdown - no sub-issue,
+# and a body under the ## Ticket heading - for ticket exists 5; it sources the
+# fixture's log.sh to log its calls.
+exists_gh() {
+  exists_dir="$(mktemp -d)"
+  cat >"$exists_dir/gh" <<GH
 #!/usr/bin/env bash
 . "$GH_FIXTURE/log.sh"
-case "\$2" in
-  view) echo OPEN; [ ! -f "$triage_dir/edited" ] || echo ready-for-agent ;;
-  edit) : >"$triage_dir/edited" ;;
-esac
+[ "\$1" = api ] || printf '## Ticket\\n'
 GH
-  chmod +x "$triage_dir/gh"
+  chmod +x "$exists_dir/gh"
 }
 
 # --- every gh call pinned to the repo (#520) ----------------------------------
@@ -56,14 +54,15 @@ echo "every gh call pinned to the repo"
 new_repo >/dev/null
 git remote set-url origin https://github.com/fork/widgets.git
 gh_fixture
-body="$(mktemp)"
-writeln 'Some body.' >"$body"
-fetched="$(mktemp)"
+known="$(mktemp)"
+subs_jq="$(sourced_orch_script 'printf "%s" "$SUB_ISSUES_JQ"')"
 # pinned_replies <repo>: the fixture's answers to every call below, for the
-# repo named - gh repo view alone takes it in its argv.
+# repo named - gh repo view alone takes it in its argv. Issue 5 is a collapsed
+# breakdown, so ticket exists reads its sub-issues and then its body.
 pinned_replies() {
-  gh_reply 0 $'Some body.\n' '' issue view 5 --json body --jq .body
-  gh_reply 0 '' '' issue edit 5 --body-file "$body"
+  gh_reply 0 '' '' api --paginate 'repos/{owner}/{repo}/issues/5/sub_issues' --jq "$subs_jq"
+  gh_reply 0 $'## Ticket\n' '' issue view 5 --json body --jq .body
+  gh_reply 0 '' '' issue close 50
   gh_reply 0 '' '' api 'repos/{owner}/{repo}/issues/50' --jq '.parent_issue_url // empty'
   gh_reply 0 $'main\n' '' repo view "$1" --json defaultBranchRef --jq .defaultBranchRef.name
   gh_reply 0 '[{"bucket":"fail","name":"build","link":"https://github.com/x/y/actions/runs/4242/job/1"}]' '' \
@@ -71,7 +70,7 @@ pinned_replies() {
   gh_reply 0 '' '' run rerun 4242 --failed
 }
 pinned_replies fork/widgets
-for args in "issue fetch 5 $fetched" "issue update 5 $body" "ticket parent 50" "base show" "review rerun 7"; do
+for args in "ticket exists 5" "ticket close 50" "ticket parent 50" "base show" "review rerun 7"; do
   # shellcheck disable=SC2086 # each args string is a word list on purpose
   out="$(env -u ORCH_GH_ADAPTER "$ORCH" $args 2>&1)"; st=$?
   assert_status "$args runs in the fork" "$st" 0
@@ -93,12 +92,12 @@ assert_eq "no bare capture or capture_err runs an adapter operation or gh" \
   "$(grep -hEv '^[[:space:]]*#' "$(dirname "$ORCH")"/orch/*.sh | grep -cE '(^|[^_[:alnum:]])capture(_err)? .*[[:space:]](adapter_[a-z_]+|gh)([[:space:]]|$)')" "0"
 
 # No usable repo: the first command that reaches GitHub dies naming GH_REPO,
-# in the parent shell (issue fetch) or in a command substitution (ticket
-# parent) alike - and behind capture_err's stderr capture too (ticket parent,
-# ticket close), whose own capture must not swallow the remedy (#846).
+# in the parent shell (review-pass known-items) or in a command substitution
+# (ticket parent) alike - and behind capture_err's stderr capture too (ticket
+# parent, ticket close), whose own capture must not swallow the remedy (#846).
 git remote remove origin
 : >"$GH_FIXTURE/env.log"
-for args in "issue fetch 5 $fetched" "ticket parent 50" "ticket close 50"; do
+for args in "review-pass known-items 5 $known" "ticket parent 50" "ticket close 50"; do
   # shellcheck disable=SC2086 # each args string is a word list on purpose
   out="$(env -u ORCH_GH_ADAPTER "$ORCH" $args 2>&1)"; st=$?
   assert_status "$args dies with no repo" "$st" 1
@@ -113,20 +112,20 @@ assert_status "a local-only command is unaffected" "$st" 0
 # (set or unset); a parent's pinned GH_REPO and GH_HOST pass to a child.
 git remote add origin https://github.com/fork/widgets.git
 : >"$GH_FIXTURE/env.log"
-out="$(env -u ORCH_GH_ADAPTER GH_HOST=other.example.com "$ORCH" issue fetch 5 "$fetched" 2>&1)"; st=$?
-assert_status "issue fetch runs from a github.com origin under a user GH_HOST" "$st" 0
+out="$(env -u ORCH_GH_ADAPTER GH_HOST=other.example.com "$ORCH" ticket parent 50 2>&1)"; st=$?
+assert_status "ticket parent runs from a github.com origin under a user GH_HOST" "$st" 0
 assert_eq "a github.com origin pins GH_HOST=github.com over the user's"   "$(grep -cv '^GH_REPO=fork/widgets GH_HOST=github.com ' "$GH_FIXTURE/env.log")" "0"
 : >"$GH_FIXTURE/env.log"
-out="$(env -u ORCH_GH_ADAPTER GH_REPO=fork/widgets GH_HOST=ghe.example.com "$ORCH" issue fetch 5 "$fetched" 2>&1)"; st=$?
-assert_status "issue fetch runs with a user-set GH_REPO" "$st" 0
+out="$(env -u ORCH_GH_ADAPTER GH_REPO=fork/widgets GH_HOST=ghe.example.com "$ORCH" ticket parent 50 2>&1)"; st=$?
+assert_status "ticket parent runs with a user-set GH_REPO" "$st" 0
 assert_eq "a user-set OWNER/REPO keeps the user's GH_HOST" \
   "$(grep -cv '^GH_REPO=fork/widgets GH_HOST=ghe.example.com ' "$GH_FIXTURE/env.log")" "0"
 : >"$GH_FIXTURE/env.log"
-out="$(env -u ORCH_GH_ADAPTER -u GH_HOST GH_REPO=fork/widgets "$ORCH" issue fetch 5 "$fetched" 2>&1)"; st=$?
+out="$(env -u ORCH_GH_ADAPTER -u GH_HOST GH_REPO=fork/widgets "$ORCH" ticket parent 50 2>&1)"; st=$?
 assert_eq "a user-set OWNER/REPO with GH_HOST unset leaves it unset" \
   "$(grep -cv '^GH_REPO=fork/widgets GH_HOST=<unset> ' "$GH_FIXTURE/env.log")" "0"
 : >"$GH_FIXTURE/env.log"
-out="$(env -u ORCH_GH_ADAPTER GH_REPO=fork/widgets GH_HOST=github.com "$ORCH" issue fetch 5 "$fetched" 2>&1)"; st=$?
+out="$(env -u ORCH_GH_ADAPTER GH_REPO=fork/widgets GH_HOST=github.com "$ORCH" ticket parent 50 2>&1)"; st=$?
 assert_eq "a child with GH_REPO preset keeps the parent's pinned GH_HOST=github.com" \
   "$(grep -cv '^GH_REPO=fork/widgets GH_HOST=github.com ' "$GH_FIXTURE/env.log")" "0"
 git remote remove origin
@@ -136,7 +135,7 @@ git remote remove origin
 git remote add origin git@ghe.example.com:fork/widgets.git
 : >"$GH_FIXTURE/env.log"
 pinned_replies ghe.example.com/fork/widgets
-for args in "issue fetch 5 $fetched" "ticket parent 50" "base show" "review rerun 7"; do
+for args in "ticket exists 5" "ticket parent 50" "base show" "review rerun 7"; do
   # shellcheck disable=SC2086 # each args string is a word list on purpose
   out="$(env -u ORCH_GH_ADAPTER "$ORCH" $args 2>&1)"; st=$?
   assert_status "$args runs on the repo's own host" "$st" 0
@@ -148,15 +147,15 @@ assert_eq "every gh call carried the host-qualified repo and its host" \
 
 # An SSH-alias origin: a command whose GitHub calls start from its main shell
 # resolves the Repo once, so ssh is called once, and every call still carries
-# the repo and its host (#3148). issue triage reads, relabels and reads back
-# from its main shell, so one ssh call for all of them is a memo, not luck.
+# the repo and its host (#3148). ticket exists reads a parent's sub-issues and
+# its body from its main shell, so one ssh call for both is a memo, not luck.
 write_ssh_stub 'echo hostname ghe.example.com' 0
 git remote set-url origin git@github-work:fork/widgets.git
 : >"$GH_FIXTURE/env.log"; : >"$ssh_calls"
-triage_gh
-out="$(PATH="$triage_dir:$ssh_stub_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" issue triage 5 2>&1)"; st=$?
-assert_status "issue triage on an SSH-alias origin runs" "$st" 0
-assert_eq "and ssh is called once for its read, relabel and read back" \
+exists_gh
+out="$(PATH="$exists_dir:$ssh_stub_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" ticket exists 5 2>&1)"; st=$?
+assert_status "ticket exists on an SSH-alias origin runs" "$st" 0
+assert_eq "and ssh is called once for its sub-issue and body reads" \
   "$(log_count "$ssh_calls")" "1"
 assert_eq "and every one of its gh calls carried the repo and its host" \
   "$(grep -cv '^GH_REPO=ghe.example.com/fork/widgets GH_HOST=ghe.example.com ' "$GH_FIXTURE/env.log")" "0"
@@ -176,9 +175,9 @@ assert_eq "a command that only captures a local git command runs no ssh -G" \
 # On an https origin, a git wrapper logs each read of origin's URL.
 git remote set-url origin https://github.com/fork/widgets.git
 origin_wrap="$(counting_argv_bin git "remote get-url origin")"
-: >"$origin_wrap/git.log"; rm -f "$triage_dir/edited"
-out="$(PATH="$origin_wrap:$triage_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" issue triage 5 2>&1)"; st=$?
-assert_status "issue triage on an https origin runs" "$st" 0
+: >"$origin_wrap/git.log"
+out="$(PATH="$origin_wrap:$exists_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" ticket exists 5 2>&1)"; st=$?
+assert_status "ticket exists on an https origin runs" "$st" 0
 assert_eq "and reads origin once" "$(counting_starts "$origin_wrap" git)" "1"
 # The whole section's gh calls: none inherited a memo variable.
 assert_eq "no gh call inherited a REPO_ variable: the repo memo is never exported" \

@@ -97,6 +97,15 @@ err_line() {
   local err="${1#*orch: }"
   printf '%s' "${err%%$'\n'*}"
 }
+# orch_run <noun> <verb> [<arg>...]: this orch.sh run again as a command, by
+# the running bash, in a process of its own - how a module reaches a noun whose
+# module it must not call into, one bound for Python - its stdout, stderr and
+# exit status the command's own. ORCH_PLUGIN is absolute, so a caller that
+# changed directory still finds it, and a relative <arg> is read from the
+# caller's working directory, as a direct call would read it. The child runs
+# with ORCH_LOAD_TRACE emptied: the load trace records this process's loads,
+# and a child's own would read as this one loading a module twice.
+orch_run() { ORCH_LOAD_TRACE='' "$BASH" "$ORCH_PLUGIN/scripts/orch.sh" "$@"; }
 # The one timestamp shape for .orchestrator/ directory names: compact, UTC, and
 # colon-free so the path is valid on Windows too. now(), in flow-state.sh, stays
 # ISO-8601: it is a field value, never a path segment.
