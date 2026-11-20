@@ -199,7 +199,8 @@ lines_fate() {
   local __lf_fate="" __lf_detail="" __lf_file_commit __lf_log_out __lf_deleted __lf_seg
   local __lf_new_start __lf_new_end __lf_off_ref=false __lf_detail_settled=false __lf_diff __lf_rows __lf_diff_rc=0
   local -a __lf_follow_args=()
-  # Normalised once, so every reader below sees the start line alone.
+  # A reversed range is normalised once, so every reader below sees its start
+  # line alone.
   [ "$__lf_end" -ge "$__lf_start" ] || __lf_end="$__lf_start"
   if ! git cat-file -e "$__lf_ref:$__lf_file" 2>/dev/null; then
     __lf_fate=gone
