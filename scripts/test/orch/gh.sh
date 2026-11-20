@@ -2219,12 +2219,6 @@ first="${out%%$'\n'*}"
 assert_contains "a written pause and hit file leave the rate-limit message first" "$first" "orch: GitHub API rate limit reached - it resets at"
 assert_eq "and the first line ends with the message, no write clause" "${first##*the watcher picks the work up after the reset.}" ""
 assert_contains "and carries the whole message" "$first" "the watcher picks the work up after the reset."
-# pause_near <file> <seconds>: "near" when <file> holds now + <seconds>, +-10s
-pause_near() {
-  local want got
-  want="$(( $(date +%s) + $2 ))"; got="$(date -u -d "$(cat "$1" 2>/dev/null)" +%s 2>/dev/null)" || { echo unreadable; return; }
-  if [ "$(( got - want ))" -ge -10 ] && [ "$(( got - want ))" -le 10 ]; then echo near; else echo "far: $got vs $want"; fi
-}
 assert_eq "a session writes the pause, capped at an hour" "$(pause_near "$pause_file" 3600)" near
 assert_eq "and the hit file, capped too" "$(pause_near "$hit_file" 3600)" near
 rm -f "$pause_file" "$hit_file"

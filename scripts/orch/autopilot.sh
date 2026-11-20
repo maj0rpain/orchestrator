@@ -712,7 +712,7 @@ autopilot_github_paused() {
   main_root="$(main_checkout_or_die 2>/dev/null)" || return 1
   err="$(autopilot_pause_until "$main_root" github 2>&1 >/dev/null)"; st=$?
   cut="$(grep '^orch: the GitHub pause until ' <<<"$err")" || cut=""
-  [ -z "$cut" ] || printf '%s\n' "$cut" >&2
+  [ -z "$cut" ] || warn "${cut#orch: }"
   return "$st"
 }
 
@@ -798,7 +798,9 @@ autopilot_cleanup_stale() {
 # everywhere else: the GitHub limit record's writes of the GitHub limit file and
 # the session's hit file, and the early GitHub pause's core and graphql files)
 # and read through
-# autopilot_pause_epoch or autopilot_pause_until.
+# autopilot_pause_epoch or autopilot_pause_until. A further writer is
+# autopilot_pause_until's read-side cut, which rewrites a GitHub or early-pool
+# file more than an hour ahead to the cut time.
 
 # autopilot_usage_pause_file <main>: the usage limit file under <main>.
 autopilot_usage_pause_file() { printf '%s/limit\n' "$(autopilot_dir "$1")"; }
@@ -819,13 +821,15 @@ autopilot_github_pause_file() { printf '%s/github-limit\n' "$(autopilot_dir "$1"
 # AUTOPILOT_GITHUB_PAUSE_MAX when <epoch> is further ahead. Every GitHub writer
 # caps its reset through it; the usage limit file is never capped.
 autopilot_github_reset_cap() {
-  local max=$(( $(date +%s) + AUTOPILOT_GITHUB_PAUSE_MAX ))
+  local max
+  max=$(( $(date +%s) + AUTOPILOT_GITHUB_PAUSE_MAX ))
   if [ "$1" -gt "$max" ]; then echo "$max"; else echo "$1"; fi
 }
 
 # autopilot_github_limit_record <reset>: in an autopilot process - a tick or the
 # session wrapper, each by a flag of its own, or a session (ORCH_AUTOPILOT=1) -
-# writes the GitHub pause, extended only to the later of two resets; in a
+# writes the GitHub pause, its reset capped at an hour from now, extended only
+# to the later of two resets; in a
 # session, which has the wrapper's hit file path, writes the reset there too. An
 # interactive call writes and prints nothing. Never fails and never warns: each
 # write that fails prints one clause on stdout, for gh_limit_handle to join onto
@@ -854,9 +858,9 @@ autopilot_github_early_file() { printf '%s/github-early-%s\n' "$(autopilot_dir "
 
 # autopilot_github_early <main> <reserve>: the early GitHub pause. Reads the
 # pools and, for each with less than <reserve> (the github-reserve setting)
-# percent of its limit left, records its reset in the pool's early file (kept
-# if later). A reserve of 0 reads nothing, and the tick then ignores a recorded
-# early pause; a failed read pauses nothing.
+# percent of its limit left, records its reset, capped at an hour from now, in
+# the pool's early file (kept if later). A reserve of 0 reads nothing, and
+# the tick then ignores a recorded early pause; a failed read pauses nothing.
 autopilot_github_early() {
   local quota pool remaining limit reset
   [ "$2" -gt 0 ] || return 0
@@ -896,7 +900,9 @@ autopilot_github_usage() {
 # pickup: the usage limit, with "github" the GitHub API rate limit, or with a
 # pool its early GitHub pause. While the limit
 # file's reset time is in the future it prints one line naming it and returns
-# 0; once it has passed, the file is removed and it returns 1.
+# 0; a GitHub or early-pool file more than an hour ahead is first rewritten to
+# an hour from now, with a warning of the cut; once it has passed, the file is
+# removed and it returns 1.
 autopilot_pause_until() {
   local file epoch report what
   # The GitHub pauses go to stderr (warn): the watcher discards each tick's
@@ -923,7 +929,7 @@ autopilot_pause_until() {
         # Over an hour ahead: no GitHub limit names that. Lower the file
         # directly (autopilot_pause_put keeps the later reset); a failed write
         # still holds until the cut time, and the next read cuts again.
-        autopilot_epoch_iso "$capped" >"$file" 2>/dev/null || :
+        { autopilot_epoch_iso "$capped" >"$file"; } 2>/dev/null || :
         shown="$(autopilot_epoch_iso "$capped")"
         warn "the GitHub pause until $(autopilot_epoch_iso "$epoch") is more than an hour away, which no GitHub limit names; it is cut to $shown"
       fi
@@ -1297,7 +1303,7 @@ autopilot_tick() {
 # (session_log_read says the session stopped on a usage limit), else
 # GitHub-limited (the issue's hit file names a reset), else failure. The hit
 # file is removed once read, whatever the outcome. A GitHub-limited outcome
-# extends the GitHub pause to the hit file's reset.
+# extends the GitHub pause to the hit file's reset, capped at an hour from now.
 # The limit pause is the reset the session named, or one hour on; the early
 # pause is the five-hour window's resetsAt when its utilization is 0.9 or more,
 # whatever the outcome; all are epoch seconds. The usage pause store is
