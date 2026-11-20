@@ -3419,8 +3419,12 @@ hk_seed() {
 hk_kept() { ls "$hk_logs" 2>/dev/null | tr '\n' ' '; }
 rm -f "$hk_stamp"
 hk_seed
-out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+hk_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$hk_load" "$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a tick with no stamp succeeds" "$st" 0
+# a tick whose stamp is missing loads each module once
+assert_trace_loads_once "autopilot tick with no housekeeping stamp" "$hk_load"
+rm -f "$hk_load"
 assert_eq "an old session log is deleted, a fresh one and a non-log file kept" "$(hk_kept)" "6-spec-20240101-000000.log notes.txt "
 assert_eq "the stamp is written as an epoch" "$([[ "$(cat "$hk_stamp")" =~ ^[0-9]+$ ]] && echo ok)" "ok"
 # a fresh stamp skips housekeeping
@@ -3469,9 +3473,6 @@ chmod 755 "$hk_logs"
 assert_status "an unlistable logs directory leaves the exit status" "$st" 0
 assert_contains "it warns" "$out" "orch: could not prune the session logs"
 assert_eq "the stamp is still written (unlistable logs)" "$(on_disk "$hk_stamp")" present
-# a tick whose stamp is missing loads each module once
-rm -f "$hk_stamp"
-assert_loads_once "autopilot tick with no housekeeping stamp" "$ORCH" autopilot tick
 # a holding usage limit pause and a holding early GitHub pause each skip it
 hk_seed; rm -f "$hk_stamp"
 printf '%s\n' "$(iso_of "$(( $(date +%s) + 7200 ))")" >"$hk_dir/limit"

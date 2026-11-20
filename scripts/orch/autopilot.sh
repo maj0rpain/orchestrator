@@ -1223,7 +1223,7 @@ autopilot_housekeeping() {
   stamp="$(autopilot_dir "$1")/housekeeping"
   now_epoch="$(date +%s)"
   file_read_text text "$stamp" 2>/dev/null
-  if [[ "$text" =~ ^[0-9]+$ ]] && [ "$((10#$text))" -le "$now_epoch" ] && [ $((now_epoch - 10#$text)) -le 3600 ]; then
+  if is_positive_int "$text" && [ "$((10#$text))" -le "$now_epoch" ] && [ $((now_epoch - 10#$text)) -le 3600 ]; then
     return 0
   fi
   { mkdir -p "${stamp%/*}" && printf '%s\n' "$now_epoch" >"$stamp"; } 2>/dev/null || {

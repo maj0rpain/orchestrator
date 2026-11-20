@@ -85,7 +85,7 @@
 29	31	autopilot candidates	8592ae15d07de5fdedc7f071630838ec706c1f4d
 4	5	autopilot answer: no repo (#3050)	43b2e7d2c6f7ae2f2e566aafa0fd64850f14e34a
 4	5	autopilot session ops read the issue in one jq	1d56747e92f48e5eb8550d10c931bf25384c31a3
-41	46	autopilot tick: housekeeping prunes old session logs	9beeb9e0e6067630faeb938b03af99dbcb42a820
+39	43	autopilot tick: housekeeping prunes old session logs	e4189cfc5beec818783f4dd1278b8119ad27cb55
 34	38	autopilot tick: housekeeping sweeps finished side checkouts	5ccf32ff82f326f28c526077f0551c0084271267
 10	11	base	4ca1f19cac3ef83ca996b678fba01404782aa24d
 37	38	a flow's base branch	45475caadc481a9fbcda51773787f44333982e42
