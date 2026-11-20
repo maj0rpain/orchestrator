@@ -226,7 +226,7 @@
 8	10	orch_load	d6672871a4845b357d7ec3785e7b285cfddc1e25
 9	11	on-demand loading	6f5f8fdb61e60028685965dbdd5c3eb5ae8397b7
 10	11	stub table cache	f28bc3efe383c64ec4671e57784eb9058dec1d2e
-42	43	marked-comment module	af6dd53fa3dfe4fc5339996d6a1379bafdf42525
+44	45	marked-comment module	97232e7f2f35ff657d4b312b6a5ef41d5cead7a8
 1	2	parallel show	bc573286ce7805613d2a0874af5e338316da567c
 55	58	phase advance / phase boundary	db56fe480597de86f8a487c134e1e6b488336fee
 0	1	phase advance help names handoffs by role (#1066)	fb4e9c6b059ec9f7d1aed9b47f5b974a48096e04
