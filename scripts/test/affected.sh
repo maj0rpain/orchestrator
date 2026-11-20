@@ -183,8 +183,6 @@ git_raw_paths() { git -c core.quotepath=off "$@"; }
 
 # full_suite: the fallback - the whole of all.sh, or its name on --plan.
 full_suite() {
-  # A row of its own names the path, though it runs the whole suite.
-  [ "$row" -eq 1 ] && exit 0
   if [ "$plan" -eq 1 ]; then
     echo "all.sh"
     exit 0
@@ -316,16 +314,10 @@ SUPPORT_AWK='
 
 GH_FAKE=scripts/test/gh_adapter_fake.sh
 
-# suites_load: reads all.sh's suite list into suites, once, and with it what
-# support_select needs: the support files present, and the files that call
-# their functions (every suite but orch_test.sh, every section file but
-# setup.sh).
+# suites_load: reads all.sh's suite list into suites, once.
 suites=()
-SUPPORT_PRESENT=()
-SUPPORT_CALLERS=()
 suites_loaded=0
 suites_load() {
-  local w sf
   [ "$suites_loaded" -eq 1 ] && return 0
   suites_read "$dir/all.sh" "$dir" || {
     echo "affected.sh: $SUITES_ERR" >&2
@@ -333,10 +325,23 @@ suites_load() {
   }
   suites=("${SUITES[@]}")
   suites_loaded=1
-  for sf in "${SUPPORT_FILES[@]}"; do [ -f "$sf" ] && SUPPORT_PRESENT+=("$sf"); done
-  for w in "${suites[@]}"; do [ "$w" = orch_test.sh ] || SUPPORT_CALLERS+=("$dir/$w"); done
-  for sf in scripts/test/orch/*.sh; do
-    [ "$sf" = scripts/test/orch/setup.sh ] || SUPPORT_CALLERS+=("$sf")
+}
+
+# support_load: reads what support_select needs, once: into SUPPORT_PRESENT the
+# support files present, and into SUPPORT_CALLERS the files that call their
+# functions (every suite but orch_test.sh, every section file but setup.sh).
+SUPPORT_PRESENT=()
+SUPPORT_CALLERS=()
+support_loaded=0
+support_load() {
+  local support suite section
+  [ "$support_loaded" -eq 1 ] && return 0
+  suites_load
+  support_loaded=1
+  for support in "${SUPPORT_FILES[@]}"; do [ -f "$support" ] && SUPPORT_PRESENT+=("$support"); done
+  for suite in "${suites[@]}"; do [ "$suite" = orch_test.sh ] || SUPPORT_CALLERS+=("$dir/$suite"); done
+  for section in scripts/test/orch/*.sh; do
+    [ "$section" = scripts/test/orch/setup.sh ] || SUPPORT_CALLERS+=("$section")
   done
 }
 
@@ -349,14 +354,14 @@ files_calling() {
 }
 
 # support_select <file> <present|deleted>: one of SUPPORT_FILES, or the gh fake,
-# changed. Each function whose code differs between the base (merge_base)
-# selects the sections of the section files and the suites that call it, and the
-# core set when orch_test.sh calls it or nothing does; code outside any function
-# runs the whole suite.
+# changed. Each function whose code differs between the base (merge_base) and
+# the tree selects the sections of the section files and the suites that call
+# it, and the core set when orch_test.sh calls it or nothing does; code outside
+# any function runs the whole suite.
 support_select() {
-  local f="$1" state="$2" diffed name reached alt hits sf sn ops n closure_input
+  local f="$1" state="$2" diffed name reached alt hits support module caller sn ops n closure_input
   local -a support_present
-  suites_load
+  support_load
   support_present=("${SUPPORT_PRESENT[@]}")
   diffed="$(awk -v mode=diff "$SUPPORT_AWK" <(
     echo @@FILE; git show "$merge_base:$f" 2>/dev/null || true
@@ -365,7 +370,7 @@ support_select() {
   case $'\n'"$diffed"$'\n' in *$'\n@top\n'*) full_suite ;; esac
   # The gh fake's functions also reach through the fake's own.
   if [ "$f" = "$GH_FAKE" ] && [ -f "$GH_FAKE" ]; then support_present+=("$GH_FAKE"); fi
-  closure_input="$(for sf in "${support_present[@]}"; do echo @@FILE; cat "$sf"; done)"
+  closure_input="$(for support in "${support_present[@]}"; do echo @@FILE; cat "$support"; done)"
   while IFS= read -r name; do
     reached="$(awk -v mode=closure -v seeds="$name" "$SUPPORT_AWK" <<<"$closure_input")"
     alt="${reached//$'\n'/|}"
@@ -381,23 +386,26 @@ support_select() {
       done <<<"$reached"
       if [ -n "$ops" ]; then
         sections_of gh
-        while IFS= read -r sf; do
-          [ -n "$sf" ] || continue
-          sn="${sf##*/}"
+        while IFS= read -r module; do
+          [ -n "$module" ] || continue
+          sn="${module##*/}"
           sections_of "${sn%.sh}"
         done < <(files_calling "$ops" scripts/orch/*.sh)
       fi
     fi
     hits="$(files_calling "$alt" "${SUPPORT_CALLERS[@]}")"
     if [ -z "$hits" ]; then [ -n "$ops" ] || core=1; continue; fi
-    while IFS= read -r sf; do
-      case "$sf" in
-        scripts/test/orch/*.sh) sn="${sf##*/}"; sections_of "${sn%.sh}" ;;
-        *) want+=("${sf##*/}") ;;
+    while IFS= read -r caller; do
+      case "$caller" in
+        scripts/test/orch/*.sh) sn="${caller##*/}"; sections_of "${sn%.sh}" ;;
+        *) want+=("${caller##*/}") ;;
       esac
     done <<<"$hits"
   done <<<"$diffed"
 }
+
+# The files that select the core set and have no row of their own.
+CORE_FILES=(scripts/orch.sh scripts/test/git_env.sh scripts/test/all.sh scripts/test/orch_test.sh scripts/test/affected.sh scripts/test/test_jobs.sh scripts/test/report.sh scripts/test/test_tree.sh)
 
 # classify <file> <present|deleted>: record what the file selects, or run the
 # full suite when its reach is unclear.
@@ -406,54 +414,54 @@ classify() {
   file_name="${f##*/}"
   # The core set: the harness and loader section files' sections and every
   # suite but orch_test.sh, together with whatever the rest of the diff selects.
-  case "$f" in
-    scripts/orch.sh | scripts/orch/common.sh | scripts/orch/loader.sh | scripts/test/git_env.sh | \
-      scripts/test/all.sh | scripts/test/orch_test.sh | scripts/test/affected.sh | \
-      scripts/test/test_jobs.sh | scripts/test/report.sh | scripts/test/test_tree.sh)
-      core=1 ;;
-    scripts/orch/*.sh | scripts/test/orch/*.sh)
-      [ "$state" = deleted ] && core=1 ;;
-  esac
-  case "$f" in
-    scripts/test/gh_adapter_fake.sh | scripts/test/orch/setup.sh | scripts/test/counting.sh | scripts/test/fails.sh | scripts/test/fifo.sh | scripts/test/tally.sh)
-      # The row form asks only which row takes the path, never what it selects.
-      [ "$row" -eq 1 ] || support_select "$f" "$state" ;;
-    scripts/orch.sh | scripts/test/all.sh | scripts/test/orch_test.sh | scripts/test/affected.sh | \
-      scripts/test/test_jobs.sh | scripts/test/report.sh | scripts/test/test_tree.sh | scripts/test/git_env.sh) ;;
-    scripts/flow-state.sh) core=1; sections_of state init side-checkout ;;
-    scripts/host.sh) core=1; sections_of doctor ;;
-    scripts/bash-walk.sh) want+=(hooks_test.sh) ;;
-    scripts/paste-guard.sh) want+=(hooks_test.sh); sections_of spec-review ;;
-    scripts/planning-allowlist.sh) want+=(hooks_test.sh); sections_of doctor ;;
-    scripts/triage-labels.sh) want+=(hooks_test.sh); sections_of doctor issue ;;
-    scripts/orch/*.sh)
-      if [ "$state" != deleted ]; then
-        [ -f "scripts/test/orch/$file_name" ] || unnamed
-        sec_files+=("scripts/test/orch/$file_name")
-      fi ;;
-    scripts/test/orch/*.sh)
-      [ "$state" = deleted ] || sec_files+=("$f") ;;
-    scripts/hook-*.sh | hooks/hooks.json) want+=(hooks_test.sh) ;;
-    scripts/test/hooks_test.sh) want+=(hooks_test.sh) ;;
-    scripts/version-bump.sh | scripts/test/version_bump_test.sh) want+=(version_bump_test.sh) ;;
-    scripts/autopilot-container.sh | scripts/test/autopilot_container_test.sh)
-      want+=(autopilot_container_test.sh) ;;
-    scripts/autopilot-up.sh | scripts/test/autopilot_up_test.sh) want+=(autopilot_up_test.sh) ;;
-    scripts/dev/lens-bench.sh | scripts/test/lens_bench_test.sh | \
-      scripts/dev/lens-bench/* | scripts/test/lens-bench/*)
-      want+=(lens_bench_test.sh) ;;
-    scripts/dev/hook-edit-width.sh | scripts/dev/width.sh | scripts/test/shell_code.awk)
-      want+=(hooks_test.sh); sections_of harness ;;
-    scripts/dev/*) sections_of harness ;;
-    docker/* | .dockerignore) want+=(autopilot_container_test.sh autopilot_up_test.sh) ;;
-    .claude-plugin/*) want+=(version_bump_test.sh autopilot_up_test.sh) ;;
-    .shellcheckrc) sc_all=1; sections_of harness ;;
-    .github/workflows/* | .gitignore | .gitattributes | .ignore | LICENSE | .claude/settings.json) return 0 ;;
-    scripts/test/docs_lint.sh) ;;
-    scripts/test/section-durations.tsv | scripts/test/suite-budget) return 0 ;;
-    skills/* | agents/* | docs/* | changelog.d/* | *.md) return 0 ;;
-    *) unnamed ;;
-  esac
+  if listed "$f" "${CORE_FILES[@]}" scripts/orch/common.sh scripts/orch/loader.sh; then
+    core=1
+  else
+    case "$f" in
+      scripts/orch/*.sh | scripts/test/orch/*.sh)
+        [ "$state" = deleted ] && core=1 ;;
+    esac
+  fi
+  if listed "$f" "${SUPPORT_FILES[@]}" "$GH_FAKE"; then
+    # The row form asks only which row takes the path, never what it selects.
+    [ "$row" -eq 1 ] || support_select "$f" "$state"
+  elif ! listed "$f" "${CORE_FILES[@]}"; then
+    case "$f" in
+      scripts/flow-state.sh) core=1; sections_of state init side-checkout ;;
+      scripts/host.sh) core=1; sections_of doctor ;;
+      scripts/bash-walk.sh) want+=(hooks_test.sh) ;;
+      scripts/paste-guard.sh) want+=(hooks_test.sh); sections_of spec-review ;;
+      scripts/planning-allowlist.sh) want+=(hooks_test.sh); sections_of doctor ;;
+      scripts/triage-labels.sh) want+=(hooks_test.sh); sections_of doctor issue ;;
+      scripts/orch/*.sh)
+        if [ "$state" != deleted ]; then
+          [ -f "scripts/test/orch/$file_name" ] || unnamed
+          sec_files+=("scripts/test/orch/$file_name")
+        fi ;;
+      scripts/test/orch/*.sh)
+        [ "$state" = deleted ] || sec_files+=("$f") ;;
+      scripts/hook-*.sh | hooks/hooks.json) want+=(hooks_test.sh) ;;
+      scripts/test/hooks_test.sh) want+=(hooks_test.sh) ;;
+      scripts/version-bump.sh | scripts/test/version_bump_test.sh) want+=(version_bump_test.sh) ;;
+      scripts/autopilot-container.sh | scripts/test/autopilot_container_test.sh)
+        want+=(autopilot_container_test.sh) ;;
+      scripts/autopilot-up.sh | scripts/test/autopilot_up_test.sh) want+=(autopilot_up_test.sh) ;;
+      scripts/dev/lens-bench.sh | scripts/test/lens_bench_test.sh | \
+        scripts/dev/lens-bench/* | scripts/test/lens-bench/*)
+        want+=(lens_bench_test.sh) ;;
+      scripts/dev/hook-edit-width.sh | scripts/dev/width.sh | scripts/test/shell_code.awk)
+        want+=(hooks_test.sh); sections_of harness ;;
+      scripts/dev/*) sections_of harness ;;
+      docker/* | .dockerignore) want+=(autopilot_container_test.sh autopilot_up_test.sh) ;;
+      .claude-plugin/*) want+=(version_bump_test.sh autopilot_up_test.sh) ;;
+      .shellcheckrc) sc_all=1; sections_of harness ;;
+      .github/workflows/* | .gitignore | .gitattributes | .ignore | LICENSE | .claude/settings.json) return 0 ;;
+      scripts/test/docs_lint.sh) ;;
+      scripts/test/section-durations.tsv | scripts/test/suite-budget) return 0 ;;
+      skills/* | agents/* | docs/* | changelog.d/* | *.md) return 0 ;;
+      *) unnamed ;;
+    esac
+  fi
   if [ "$state" = present ]; then
     case "$f" in scripts/*.sh) sc_files+=("$f") ;; esac
   fi
@@ -505,8 +513,7 @@ titles_of() {
 # The placement titles come first, then the selected files' sections.
 titles=()
 add_title() {
-  local t
-  for t in "${titles[@]}"; do [ "$t" = "$1" ] && return 0; done
+  listed "$1" "${titles[@]}" && return 0
   titles+=("$1")
 }
 harness="scripts/test/orch/harness.sh"
@@ -535,9 +542,7 @@ for suite in "${suites[@]}"; do
     orch_test.sh | docs_lint.sh) selected+=("$suite") ;;
     *)
       [ "$core" -eq 1 ] && { selected+=("$suite"); continue; }
-      for w in "${want[@]}"; do
-        [ "$w" = "$suite" ] && { selected+=("$suite"); break; }
-      done ;;
+      listed "$suite" "${want[@]}" && selected+=("$suite") ;;
   esac
 done
 
