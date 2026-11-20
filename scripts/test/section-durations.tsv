@@ -26,7 +26,7 @@
 16	17	orch_load before cross-module reads (#2868)	58a4c2511000c68d23276e9d0a7ba2c8ebf7dc7e
 4	2	on-demand sourcing variable (#2820)	7a1406a26fb76880357c1ca10152e3e090b5752f
 0	1	declaration substitutions (#1327)	8c4dfde380a2fcd49e43177e8ec6cff40d14a6ce
-12	12	the helper index (#1144)	a25b3dee4250461887ee7939aa3af044dd9e288e
+12	14	the helper index (#1144)	80a61de77a484d8e1c488d6cd2ef07c79810e7b1
 0	1	stand-in adapter (#2465)	258012e82752baec0caa6f22d65d58405b46c91a
 0	0	git env clear (#1905)	74c68ac02b0bfa56e40d957aff0115026224257c
 2	2	runner git isolation (#1905)	90242dda61ca0130515a6c27a08f6f72e5176283
@@ -368,7 +368,7 @@
 0	1	verification run in help	28e484325ea5c39e7d957ba95f689dcdbb9ecc1a
 99	11	wait: a call's block is wall time	db923f27504e50d0a04527b359feb487abb3665d
 882	983	hooks_test.sh	8dec8318df78d1487d2d11c16c6ac962831bc14c
-133	156	docs_lint.sh	12091e787b9a9877877fea59eab6aaa31ca14346
+133	158	docs_lint.sh	55b335baa6c5833c9113379fb614ca39fa895b62
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 8	8	autopilot_up_test.sh	25eb01b693309e8b681fe96ca4c386c741b9ecd8
