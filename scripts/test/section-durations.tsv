@@ -1,42 +1,43 @@
-1	1	isolation	0d4cd19400abe89dfaf9ec03c96188d58a6c9be8
-25	19	isolation under a git hook (#1905)	f85fd06d55c19926be4c2c5e0cfe89d686e72c67
-16	9	the section filter (ORCH_TEST_ONLY, #612)	6d26b8ec8b7ec4ec3e633de323a76c33e40c98f7
-7	6	quiet mode (ORCH_TEST_QUIET, #614)	14346262ad198508aea7df4ad311906ac862be4c
-227	37	the parallel runner (ORCH_TEST_JOBS, #780)	1f43deb6fcd5fc25312ee06202c671f6c1fc1eab
-14	11	the parallel runner's start order (#2857)	a8893a33b41d02293f4732c75bb68ad2c2ad1a46
-100	47	the shard setting (#2859)	d79e669b023e0405e262c7370bb2e51729c04999
-9	9	the seeded start (stub cache)	1ea3b6ba6d0ee0fb455adf75ff44474d8a095b96
-282	148	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	a1b3f8d248fc7f3888e39212c21acc58260ce739
-3	2	assertions in a subshell (#1904)	d4203fee6cd1a08a5fb3b4a6e49fc837e0f6c9bd
-0	1	the standalone suites' tally (#1904)	9285f72aa1caffa221de222c2d3ae17cb22b9a28
-11	9	the section files (#932)	22102b8234446db05efe30a55dd3bdba65134c58
-350	22	the suite's temp root (#807)	f71394a7c14c4cafe64e18501f23cd600708cc6a
-0	1	the real-gh guard (#779)	b6066059fe2cbc4a1913c2016fdef7584c268ec6
-35	18	all.sh, the single entry point (#615)	5be94b05365707e110ae2c01d7a66d3729faafd6
-0	1	all.sh's suite list holds every runner (#1941)	865b7b0560187914932be29ab530d88357ccede0
-491	66	the job pool (#2022)	e54902b103cc3967a87a939cb46eeef9f0bd34ce
-0	1	the slot fd contract (#2300)	7be039802070e6536a5fc4b1f7f6f9f893eb7c68
-57	13	the test runners' CPU load (#1586)	c22faf75f630996277842a97d186d4623a821bf0
-0	1	shell code (#1411)	ea284fd385c9442fd3e129e2caef3218c88e0c1b
-57	58	test-helper placement (#1006)	dddbd47340bc0b216480c39b1595022584b4ea06
-32	33	helper body copies (#3170)	233659813199da9995b0764cc2fd51903a25c6b2
-33	34	gh op placement (#1037)	5158aa96d9e63a495cb4ec3ceda7d459968eeb68
-4	5	marked comment prelude placement (#1853)	e3857d23c982ad40b7a749a1f656a675adae85e8
-14	15	comment reader placement (#3085)	a25b3e58cc6685e5bfe1566f72063507b786dcf6
-13	14	orch_load before cross-module reads (#2868)	9f34d3860198a63de0e25173ab5d6027283a3329
-3	4	on-demand sourcing variable (#2820)	2fa61cbf2a3bee5107780757e3fc9bbb2632d09f
-0	1	declaration substitutions (#1327)	eb5e1c4ad535c9ab98eff87b1df7ab71b504840b
-9	13	the helper index (#1144)	1b0ee5e3dda29ae59bb33b72183f3220221a785d
-0	1	stand-in adapter (#2465)	0e8d350239d08e80268cf4ae91704b03e3b19c9f
-0	1	git env clear (#1905)	7b6324ebfc6a98e2b6e6114ae9610e724b889aa4
-2	3	runner git isolation (#1905)	475e1037b218cafd58e7b821d75fa91ff050aa0e
-0	1	the background child start (#3025)	347ef5c40dde23f943994d429f3531314e50f438
-1	1	the suite start (#3582)	bff0619dc60012af51ba50332d71ebd1028b890f
-2	3	the counting fixture's stdin counter (#3434)	ce7663203bbc5c560276ab22f85c51cf82436c7a
-53	47	affected.sh, the ticket verification (#2023)	daa5f6c6bf6bca5e8d758f4cd1e532bd57e8b28e
-1	2	the row rule (#3549)	c7353a1dcfb34c8b87bdf1e26a50a0e4d5a5a0ea
-3	4	the shared test support, function by function (#3550)	61e8b9993795f76abf88e36b4d47471d144209a8
-2	3	the gh fake, operation by operation (#3551)	b13b3f32fa5d64af653c03c951ebc5239d02c392
+2	3	isolation	dcc098dfb82b3932dbfb65578f882c8507576326
+20	15	isolation under a git hook (#1905)	f861e1294bb97c5ffa889240cd4030342a213e6d
+18	20	the section filter (ORCH_TEST_ONLY, #612)	4c6fb445a7b822a5b50df37d5acc1394d0f9f64f
+10	12	quiet mode (ORCH_TEST_QUIET, #614)	a8d911499ff8ab4256e0564fe0e6cd3d86966fc9
+21	59	the parallel runner (ORCH_TEST_JOBS, #780)	d9556eaf93e6dc8d3d26460a7dc718f781316406
+16	27	the parallel runner's start order (#2857)	3a57d51a150ddc8c901173cf75273d001757a4c4
+119	111	the shard setting (#2859)	da627707f5498ab5b0d932f7b1c4c31d8c64c137
+13	19	the seeded start (stub cache)	29b37ccf518292e83eed0cf14563b9ca68a2f7ea
+279	197	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	36d5ea6127e4c39b6396a8a302c3533f0c57d506
+3	5	assertions in a subshell (#1904)	d75377326d28823acab6b689eea1454f5f3e15f6
+2	3	the standalone suites' tally (#1904)	021735ae41e6ac9c19772a20246c8ac89ab75a85
+14	20	the section files (#932)	a6f80baf696d85717f8d2b8aecab1220e505e801
+338	36	the suite's temp root (#807)	4682a004cfd46768e309c6b3e843471d08d4d240
+2	3	the real-gh guard (#779)	0cb306263b2070766feeadff7eb1c9c8cee0fbc2
+46	39	all.sh, the single entry point (#615)	671d50f2c5c3abe3b689524bde84fd83d1bd0116
+1	2	all.sh's suite list holds every runner (#1941)	d01106366b8454727b3949f0fe532ea1ebec8dd6
+49	129	the job pool (#2022)	da54503d48e1154dc2e95b8a388a679a2acf0bf3
+1	1	the slot fd contract (#2300)	4071ba4136f28ce338a8621cc350f191b372b765
+68	27	the test runners' CPU load (#1586)	b1d37af3b4777ae4779b00824ec60c12a33fdd09
+2	2	shell code (#1411)	96bcb32bdd7fc32c90d1fb6e303c63495fb5e23d
+129	130	test-helper placement (#1006)	a61b890c374365c866d1513f50fc7a9080070d96
+67	68	helper body copies (#3170)	ce40eb56c68f8264291506aba330c79b94129329
+10	115	gh op placement (#1037)	89118e905d1e542aed0f3351353c539e14bc7ba3
+10	11	marked comment prelude placement (#1853)	5e657fc19c9ed3c51c1cc2983fc9bf109d83a8ab
+37	38	comment reader placement (#3085)	354ee09cbe904998045076bfc897bff04271e046
+31	32	orch_load before cross-module reads (#2868)	a7aaf74e4273ff5d67797cd3651d215f9b88da9c
+5	6	on-demand sourcing variable (#2820)	1309380504a647817dcaf29e6256b8f568c17c01
+1	2	declaration substitutions (#1327)	adc0a82a872466503f08c3d5f8909361dc008e77
+1	27	the helper index (#1144)	e16d52af83bdb7cff2cf60a377e179db3702bdb5
+1	1	stand-in adapter (#2465)	7d6783cff3417fa24df5d56ae3f86d142ee2d1bb
+1	2	git env clear (#1905)	42f04661b72dcbad39c30539b3bc232102ae6be1
+4	5	runner git isolation (#1905)	8a9fdfa474a45f0cec209eae61f2a39017a72878
+1	1	the background child start (#3025)	354c49d28c4e3a750db2908e06024e2d6d5bc65f
+2	2	the suite start (#3582)	bfaaeecc9758c77d4bc24ba781558792eeb10bec
+9	9	the pytest suite (#3912)	a51b8ff0c372862319780618afa9e2deb7053c5e
+2	3	the counting fixture's stdin counter (#3434)	a145120e7c438785387cdcf0178edcf7e2f9dcaa
+80	87	affected.sh, the ticket verification (#2023)	75028ad97384e4feabcd9fbf8156a20bddb5d459
+3	4	the row rule (#3549)	01fe024c61ad3fd46f0efb0820a8ee0ff79809d9
+6	8	the shared test support, function by function (#3550)	0f4c5f1f63e2388d954769b98fd20c3cec532574
+5	6	the gh fake, operation by operation (#3551)	e4020e43a1578edf25e0543fc3e0d9e57a5494a2
 64	70	agent	0d79b59e4f3295e93a9ede1bda22fbbc139f7e19
 20	22	agent sync	b39ad35449afd2ba48dfe47fd1a68a53a2d8c22b
 3	4	agent copy marker and Junie field: no command per call	7261e94ea71b44582780d728312d592266f2e005
@@ -129,6 +130,7 @@
 0	1	host detection (host.sh, #281)	9d7272356d7fbf0f5fdca9c46ffa86f8c5c036cd
 5	6	doctor.sh is a one-way dependency (#281)	b86ca6ac46faa586b4d718a1aa26e9018e2539ea
 151	166	doctor	85d21e76a7b11fcc51673870bbc6d61b0ed25449
+12	13	doctor: python3 check (#3912)	92742cbbd3df076d44c03c8a3a08dba02273ee7c
 36	40	doctor: host (#128)	0ff10dbdae9d20ee078396950c793cb2ec3a2d69
 94	102	doctor --flow	8d28021dd7fd5c64f62d12573dc1792e590cfa6d
 40	44	doctor --env: finished side checkouts (#727)	8d56eb5df3a1cea24b7c1e0173d431eb1a742f7b

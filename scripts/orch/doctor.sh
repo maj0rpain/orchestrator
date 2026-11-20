@@ -241,6 +241,26 @@ check_jq() {
   d_remedy "brew install jq    # or your platform's package manager"
 }
 
+# python3, which runs orch.sh's converted nouns (ADR-0067): 3.9 or newer is ok;
+# a missing one, an older one or one whose version cannot be read FAILs,
+# naming the version found.
+check_python3() {
+  local version="" found=none major minor
+  if command -v python3 >/dev/null 2>&1; then
+    version="$(python3 -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])' </dev/null 2>/dev/null)"
+    found="${version:-unknown}"
+  fi
+  if [[ "$version" =~ ^([0-9]+)\.([0-9]+) ]]; then
+    major="${BASH_REMATCH[1]}" minor="${BASH_REMATCH[2]}"
+    if [ "$((10#$major))" -gt 3 ] || { [ "$((10#$major))" -eq 3 ] && [ "$((10#$minor))" -ge 9 ]; }; then
+      d_ok "python3 $version"
+      return 0
+    fi
+  fi
+  d_fail "python3 3.9 or newer not found (found $found) - orch.sh runs its converted nouns with it."
+  d_remedy "brew install python3    # or your platform's package manager"
+}
+
 # The running bash, as an ok line only: orch.sh's version guard stops every
 # command below bash 4.2 before doctor can run.
 check_bash() {
@@ -873,7 +893,7 @@ check_autopilot_claims() {
 }
 
 ENV_CHECKS="
-h_tools  check_git check_gh check_jq check_bash
+h_tools  check_git check_gh check_jq check_python3 check_bash
 h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
 h_plugin check_host check_plugin_root check_orch_sh
 h_repo   check_labels_doc check_labels_exist check_standards_declaration check_glossary check_adr_dir check_sub_issues check_git_exclude check_base_branch check_verification_lines check_agent_settings check_side_checkouts_finished check_autopilot_claims check_autopilot_side_flows
