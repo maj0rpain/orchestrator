@@ -164,17 +164,17 @@
 58	41	finding-triage scan	342c6006bbdf721f2803384daa7755f93eb916bd
 91	105	finding-triage apply	8ef1b718be7569dccc002d3db335be58da2354c1
 114	134	finding-triage bundle	01854aee6fc7a32daed655eb528f22d32c6a6bce
-16	13	every gh call pinned to the repo (#520)	1eb11e16b7f53cdc4bbd6ec78423c2ed06b9d15e
-1	2	gh_reason and capture_err (#846)	3f9cdf25735ea6df18c44dff188643475c4bc8e3
-1	1	label_listed	56177c00bcc468d90ca6e59cbb9a5064b76a3c0b
-19	21	gh failure verb and readers (#1022)	93ed95ee34e426bcae583346b5fd33e7e92643fc
-4	4	verify_twice (#2658)	ebc9ff6baf1226bdf15c2acb47aa32db65757deb
-8	10	gh fake (#280)	fa29fafa9108b174f392c3aac2d2b9bd72f3fe89
-115	123	gh adapter contract (#280)	48e991187b762b12a4f0e536c19ac683adfe246f
-22	22	claim adapter operations (#1454)	434415cd39a7bb63f7146512c1dbdde13077c353
-2	3	label casing (#1943)	967a4a39f788b73ef75f50851a8a5e6a3aa92edb
-57	27	gh rate limits (#2577)	9219cc4b0792501f26ebae802267aa0a7cfad2aa
-9	7	gh rate limits: the GitHub pause and the hit file (#2577)	473c1e0574389227587fd9bd066c9ca6a5cc0a5a
+11	13	every gh call pinned to the repo (#520)	9050ead0ce8b006a7d6f4f8014f9cf72aea221c1
+1	2	gh_reason and capture_err (#846)	b1e6b22fd807869629678553c5c019b36b00fe4b
+1	2	label_listed	cbe133bb57a99edd13286a7b3c3bbc18b7d9f7b2
+21	23	gh failure verb and readers (#1022)	ffc1d9bcda9e186a0848b4b7f1f7f22a31a713d3
+4	5	verify_twice (#2658)	bb17bc92611d733be7609bb9fa29feb815519b8e
+8	10	gh fake (#280)	2cfce26f7d5cbdacc7499a2421bddb2ab35da8e8
+117	125	gh adapter contract (#280)	cc39c05926f818a5507f2842688f5a157ab6a73f
+19	20	claim adapter operations (#1454)	e38d5ba7a6cc558f697cc9b45c94994637c720bf
+2	3	label casing (#1943)	c0b2710909262227f7983fc382544e2c13a57e55
+45	28	gh rate limits (#2577)	41ea1a9243d7cfb38a94d8b87258f1dbe0625d74
+6	7	gh rate limits: the GitHub pause and the hit file (#2577)	79123add1578c1d705a7a3da968448b63570cf10
 0	1	slug	aa1e8e6f64e5dd11e111097dfde9deca1248c258
 9	10	archive	0124b5e1112a0eae813a1e43c01b2f94b426ce16
 0	1	mp-skill	80c8160f5b342b489904f400b93e09e618b8ee00
