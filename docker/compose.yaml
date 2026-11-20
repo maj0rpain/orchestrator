@@ -18,6 +18,8 @@ services:
         EXTRA_BUILD_COMMAND: ${EXTRA_BUILD_COMMAND:-}
     restart: unless-stopped
     cpus: ${ORCH_CPUS:-0}
+    mem_limit: ${ORCH_MEMORY:-0}
+    memswap_limit: ${ORCH_MEMORY:-0}
     env_file: ${ORCH_ENV_FILE:-.env}
     # The clone always lives on the repo volume: a service's environment beats
     # its env_file, so a stale ORCH_CLONE_DIR line cannot move the clone off it.

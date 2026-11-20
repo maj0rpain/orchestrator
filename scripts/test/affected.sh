@@ -21,6 +21,12 @@
 # whole suite runs. A <ref> that does not resolve prints "affected.sh: unknown
 # ref <ref>" on stderr, runs nothing and exits 2, --plan included.
 #
+# With a merge in progress (MERGE_HEAD resolves), every way of choosing the
+# base above takes the merge-base of the base ref with HEAD or MERGE_HEAD, the
+# later of the two, so the base's incoming commits count as part of the base and
+# the range is the branch's own change; the uncommitted resolution is still in
+# the changed set. A rebase in progress is not handled, and --row is unchanged.
+#
 # The changed set is that range plus uncommitted changes, untracked files
 # included. What a changed file selects:
 #   scripts/orch/<m>.sh               the sections of scripts/test/orch/<m>.sh
@@ -185,6 +191,21 @@ full_suite() {
   exec bash "$dir/all.sh"
 }
 
+# base_merge_base <target>: prints the merge-base of HEAD with <target>. With a
+# merge in progress (MERGE_HEAD resolves) it is the latest common ancestor of
+# <target> and either HEAD or MERGE_HEAD, so what the merge brings in counts as
+# part of the base. A rebase in progress is not handled.
+base_merge_base() {
+  local bases
+  bases="$(git merge-base --all HEAD "$1" 2>/dev/null)" || return 1
+  if git rev-parse --verify -q MERGE_HEAD >/dev/null; then
+    bases="$bases"$'\n'"$(git merge-base --all MERGE_HEAD "$1" 2>/dev/null)"
+    bases="$(git merge-base --independent $bases 2>/dev/null)" || return 1
+  fi
+  [ -n "$bases" ] || return 1
+  printf '%s\n' "${bases%%$'\n'*}"
+}
+
 # resolve_base: prints the commit the changed range starts at (the merge-base),
 # or nothing when there is none. A <ref> that does not resolve exits 2.
 resolve_base() {
@@ -200,7 +221,7 @@ resolve_base() {
     if [ -n "$branch" ]; then
       parent="$(git config --get "branch.$branch.orchestrator-ticket-parent")" || parent=""
       if [ -n "$parent" ] && target="$(git rev-parse --verify -q "refs/heads/$parent^{commit}")"; then
-        own="$(git merge-base HEAD "$target" 2>/dev/null)" || own=""
+        own="$(base_merge_base "$target")" || own=""
         [ -n "$own" ] && { printf '%s\n' "$own"; return 0; }
       fi
       name="$(git config --get "branch.$branch.orchestrator-base")" || name=""
@@ -215,7 +236,7 @@ resolve_base() {
       target="$(git rev-parse --verify -q "refs/remotes/origin/HEAD^{commit}")" || return 0
     fi
   fi
-  git merge-base HEAD "$target" 2>/dev/null || true
+  base_merge_base "$target" || true
 }
 
 # shellcheck source=test_tree.sh
