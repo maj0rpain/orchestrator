@@ -2854,6 +2854,15 @@ out="$("$ORCH" autopilot tick 2>&1)"
 assert_not_contains "a usage limit file days ahead gets no cut warning" "$out" "is more than an hour away"
 assert_eq "and stays as written" "$(cat "$top/.orchestrator/autopilot/limit")" "$far_iso"
 rm -f "$top/.orchestrator/autopilot/limit"
+# the wrapper's stop-chain wait is bounded even when the cut cannot be written
+gw_dir="$top/.orchestrator/autopilot"
+printf '%s\n' "$(iso_of "$(( $(date +%s) + 172800 ))")" >"$gh_file"
+chmod a-w "$gh_file" "$gw_dir"
+out="$(cd "$top" && env -u ORCH_GH_LIMIT_WAIT bash -c 'source "$1"; sleep() { echo "slept $1"; }; autopilot_github_pause_wait 5' _ "$ORCH" 2>/dev/null)"
+chmod u+w "$gw_dir" "$gh_file"
+gw_slept="${out#slept }"
+assert_eq "an unwritable over-long GitHub pause is waited at most an hour" "$((gw_slept > 0 && gw_slept <= 3600 ? 0 : 1))" 0
+rm -f "$gh_file"
 
 # --- autopilot tick: a pickup that meets a GitHub limit (#2577) ---------------
 echo

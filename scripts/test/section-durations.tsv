@@ -75,7 +75,7 @@
 16	18	autopilot tick: the merged-PR close backstop (#2478)	0033359ed474b5dd950f56f500c4fc9a6cd673ca
 40	31	autopilot tick: one read of the done issues (#2559)	97a136d2c4f927f2762892c8a812756b644683eb
 11	12	autopilot sync-finish, sync-dropped and sync-fail	78c02accdbb1a0a1177162e2b7cac98d10519259
-13	15	autopilot tick: the GitHub limit pause (#2577)	59fd00132b7511bf46a2643d1c2aeac22d8e31fa
+14	16	autopilot tick: the GitHub limit pause (#2577)	61eedb46e72a705776806ed346ca1e29f4d12cba
 44	36	autopilot tick: a pickup that meets a GitHub limit (#2577)	b7506990f8e031e132734d5df6c4f88f4da1e243
 102	80	autopilot tick: stops that cannot land are contained (#3052)	7ec5cf27cf36197447177e1aebd51a80f7b8c9e0
 18	15	autopilot tick: one read of the claims on origin (#3062)	f500de4dd86cbabdf5452405fa18f36de6021d97

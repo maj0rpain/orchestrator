@@ -1365,7 +1365,7 @@ autopilot_github_pause_wait() {
   local wait="${1:-0}" main_root
   if autopilot_github_paused; then
     main_root="$(main_checkout_or_die)"
-    wait="$(( $(autopilot_pause_epoch "$(autopilot_github_pause_file "$main_root")") - $(date +%s) ))"
+    wait="$(( $(autopilot_github_reset_cap "$(autopilot_pause_epoch "$(autopilot_github_pause_file "$main_root")")") - $(date +%s) ))"
   fi
   sleep "${ORCH_GH_LIMIT_WAIT:-$wait}"
 }
