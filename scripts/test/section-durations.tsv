@@ -84,7 +84,8 @@
 19	20	autopilot run: the session log's GitHub usage line (#2577)	6bda132d04146540ce70f9650992e428ac2afb59
 29	31	autopilot candidates	8592ae15d07de5fdedc7f071630838ec706c1f4d
 4	5	autopilot answer: no repo (#3050)	43b2e7d2c6f7ae2f2e566aafa0fd64850f14e34a
-4	5	autopilot session ops read the issue in one jq	c951be202d457a4ea4c00d130cfba0b2f8ae5aeb
+4	5	autopilot session ops read the issue in one jq	1d56747e92f48e5eb8550d10c931bf25384c31a3
+27	31	autopilot tick: housekeeping prunes old session logs	7a7b63d1b1ae9f53d1a234ea1d12bb243542b701
 10	11	base	4ca1f19cac3ef83ca996b678fba01404782aa24d
 37	38	a flow's base branch	45475caadc481a9fbcda51773787f44333982e42
 3	4	base set on a truncated state.json (#1929)	de4767097a86d163c76e27f57e97f2f368040804
