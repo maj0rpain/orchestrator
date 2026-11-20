@@ -613,8 +613,8 @@ issues_labelled_limit_warn() {
 
 # The record the row adapters share: --json's field list and --jq's expression
 # for number, state, label count, then one label per line.
-readonly ISSUE_ROWS_JSON=number,state,labels
-readonly ISSUE_ROWS_JQ='.[] | .number, .state, (.labels | length), (.labels[].name)'
+readonly ISSUE_STATE_ROWS_JSON=number,state,labels
+readonly ISSUE_STATE_ROWS_JQ='.[] | .number, .state, (.labels | length), (.labels[].name)'
 
 # adapter_issues_labelled_rows <label>...: the open issues carrying every label
 # named, oldest first and cut at ISSUE_LIST_LIMIT (the newest dropped),
@@ -625,7 +625,7 @@ readonly ISSUE_ROWS_JQ='.[] | .number, .state, (.labels | length), (.labels[].na
 adapter_issues_labelled_rows() {
   local args=() l
   for l in "$@"; do args+=(--label "$l"); done
-  gh issue list --state open ${args[@]+"${args[@]}"} --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json "$ISSUE_ROWS_JSON" --jq "$ISSUE_ROWS_JQ"
+  gh issue list --state open ${args[@]+"${args[@]}"} --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json "$ISSUE_STATE_ROWS_JSON" --jq "$ISSUE_STATE_ROWS_JQ"
 }
 
 # adapter_issues_any_labelled_rows <label>...: the open issues carrying any of
@@ -635,7 +635,7 @@ adapter_issues_labelled_rows() {
 adapter_issues_any_labelled_rows() {
   local any="" l
   for l in "$@"; do any="${any:+$any,}\"$l\""; done
-  gh issue list --state open --search "label:$any sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json "$ISSUE_ROWS_JSON" --jq "$ISSUE_ROWS_JQ"
+  gh issue list --state open --search "label:$any sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json "$ISSUE_STATE_ROWS_JSON" --jq "$ISSUE_STATE_ROWS_JQ"
 }
 
 # issues_any_labels_phrase <var> <label>...: writes the labels named, joined by
