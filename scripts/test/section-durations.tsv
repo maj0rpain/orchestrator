@@ -289,7 +289,7 @@
 20	21	status lists every checkout (#725)	0e2829f44c533a36ede63218f75dc3b6b9f517bf
 62	66	side-checkout archive and remove (#724)	1fb2f3f39b0980a84392830dc2587afb5d19aa14
 61	64	side-checkout prune (#726)	2bda70fa48dd4b380007de96e4897b5b0aea9095
-67	71	side-checkout prune: edge cases (#726)	1661a48f3d94b715e21a5af6ae4ae3e0703723ca
+69	72	side-checkout prune: edge cases (#726)	be2f05022f06b567f8644f200d31cb3fcfb831ee
 18	19	archive keeps flow-less directories (#1247)	1cf41fafd151a6478b41bf1fd7aff5efd9847669
 21	23	side-checkout prune: a covered branch tip (#1906)	b13be4c577395b49197e461cad6954d626b4081f
 5	7	side-checkout prune: fork PRs are not proof (#1979)	004dd30e3e0deb54b95c8c79110e26cd2ffc4014
