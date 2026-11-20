@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.9.18
+
+Rename the gh adapter module's shared state-record pair to `ISSUE_STATE_ROWS_JSON`/`ISSUE_STATE_ROWS_JQ` and reword its comment to name the adapters that share it. No behaviour change.
+
 ## 6.9.17
 
 The Liveness start-time reader no longer starts `ps` for a gone pid on a /proc host, and no longer starts `sed` to tidy the `ps` result.
