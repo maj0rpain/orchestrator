@@ -3478,7 +3478,7 @@ else
   assert_contains "it warns" "$out" "orch: could not prune the session logs"
   assert_eq "the stamp is still written (unlistable logs)" "$(on_disk "$hk_stamp")" present
 fi
-# a holding usage limit pause and a holding early GitHub pause each skip it
+# a holding usage limit pause and a holding GitHub rate-limit pause each skip it
 hk_seed; rm -f "$hk_stamp"
 printf '%s\n' "$(iso_of "$(( $(date +%s) + 7200 ))")" >"$hk_dir/limit"
 "$ORCH" autopilot tick >/dev/null 2>&1
