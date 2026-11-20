@@ -6,7 +6,8 @@
 # record, run/<issue>.tick, the tick's record, and run/<issue>.hit, the hit
 # file: the reset of a GitHub API rate limit a session hit), the
 # `<pid> <start-time>` record format, the start-time reader
-# (/proc/<pid>/stat field 22 under $ORCH_PROC_DIR, else `ps -o lstart=`), the
+# (/proc/<pid>/stat field 22 under $ORCH_PROC_DIR; `ps -o lstart=` only where
+# no /proc is), the
 # record-alive rule, the watch pidfile and the session log naming
 # (logs/<issue>-<phase>-<stamp>.log). Of orch.sh's files only this one touches
 # /proc and ps and names paths under run/; a session writes the hit file only
@@ -16,9 +17,13 @@
 # liveness_proc_start <pid>: the process's start time as one whitespace-free
 # token. Fails when unreadable.
 liveness_proc_start() {
-  local pid="$1" root="${ORCH_PROC_DIR:-/proc}" stat rest t
+  local pid="$1" root="${ORCH_PROC_DIR:-/proc}" stat rest t IFS
+  local -a words
   [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-  if [ -r "$root/$pid/stat" ]; then
+  # a /proc host has the reading shell's own entry; there the stat entry
+  # alone decides, and ps could only fail where the stat read did
+  if [ -d "$root/$$" ]; then
+    [ -r "$root/$pid/stat" ] || return 1
     file_read stat "$root/$pid/stat" 2>/dev/null || stat=""
     rest="${stat##*) }"
     # shellcheck disable=SC2086
@@ -29,7 +34,9 @@ liveness_proc_start() {
     return 0
   fi
   t="$(ps -o lstart= -p "$pid" 2>/dev/null)" || return 1
-  t="$(printf '%s' "$t" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/[[:space:]][[:space:]]*/_/g')"
+  read -ra words <<<"${t//[[:space:]]/ }"
+  IFS=_
+  t="${words[*]}"
   [ -n "$t" ] || return 1
   printf '%s\n' "$t"
 }

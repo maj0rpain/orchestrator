@@ -426,11 +426,18 @@ reported as busy;
 line, then one line per project with the outcome and the plugin version and
 commit baked in, keeps going past a failed project, and exits non-zero when
 any failed. It warns, but does not refuse, when the checkout has uncommitted
-changes, since the build context is the working tree. A recreated container
-keeps its claim identity in the repo volume, so its watcher stops a killed
-phase's issue as a failure; claims left by containers recreated before #1603
-carry another identity, and `/orchestrator:health` reports them with their
-release command.
+changes, since the build context is the working tree. After a project's rebuild
+succeeds, the script removes the image the project used before (the one its tag
+named and the one its container ran), never forced: Docker's refusal, for an
+image another container still uses, is a `warning:` on stderr and changes
+neither the summary line nor the exit status. It never prunes the build cache or
+other images, which your own Docker builds share. To reclaim that space by hand,
+run `docker builder prune` (build cache) and `docker image prune` (dangling
+images, including those left by rebuilds before this change). A recreated
+container keeps its claim identity in the repo volume, so its watcher stops a
+killed phase's issue as a failure; claims left by containers recreated before
+#1603 carry another identity, and `/orchestrator:health` reports them with
+their release command.
 
 On Windows, run it from PowerShell as `bash scripts/autopilot-up.sh` (WSL's
 bash) or from Git Bash. Under WSL, turn on Docker Desktop's WSL integration for

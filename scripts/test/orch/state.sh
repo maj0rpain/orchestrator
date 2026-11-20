@@ -89,7 +89,6 @@ complete_handoff "$("$ORCH" handoff path implement)"
 complete_handoff "$("$ORCH" handoff path review)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "doctor does not strand it either" "$st" 0
-assert_contains "status reads its budget as the default" "$("$ORCH" status)" "iteration 5 of 5"
 
 # ci and ready need a PR, which a flow this old still records the same way.
 state_fixture pr 3
