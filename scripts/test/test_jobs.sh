@@ -7,9 +7,9 @@
 # their children when signalled; by scripts/dev/lens-bench.sh, for the child
 # start and its stop (a signal stops its running `claude -p`); and by the
 # suites that own a temp root (hooks_test.sh, version_bump_test.sh,
-# lens_bench_test.sh), for that stop alone. Runs nothing; the job pool below
-# keeps its
-# state in TEST_JOBS_* variables of the sourcing shell.
+# lens_bench_test.sh), for that stop alone; and by orch_py_test.sh, the pytest
+# suite, for its pool slots and its child's stop. Runs nothing; the job pool
+# below keeps its state in TEST_JOBS_* variables of the sourcing shell.
 #
 # is_positive_integer <value>: true when it is digits only and above zero, so
 # `00` is no positive integer either.
@@ -81,6 +81,15 @@
 # the first time it is called in a run.
 #
 # test_jobs_slot_wait: takes a slot, noting and polling while none is free.
+#
+# test_jobs_slots_hold <max>: the take step of a runner whose one job runs
+# across several CPUs (orch_py_test.sh, whose pytest runs one xdist worker per
+# slot): waits for one slot (test_jobs_slot_wait), then takes more without
+# waiting, while any is free, up to <max> in all. Each slot it takes moves off
+# the slot fd to an fd of its own, listed in the array TEST_JOBS_HELD_FDS; the
+# caller keeps them open until its job ends and closes them in the job's own
+# process. TEST_JOBS_HELD_FDS is empty when the run is unpooled, or unpools
+# before its first take.
 #
 # test_jobs_slot_release <pid>: hands the held slot to a holder process that
 # keeps the lock until <pid> has exited, then closes the run's own copy of the
@@ -340,6 +349,7 @@ TEST_JOBS_SUITE_PID=""
 TEST_JOBS_HOLDER_PID=""
 TEST_JOBS_HELD=""
 TEST_JOBS_START_ORDER=()
+TEST_JOBS_HELD_FDS=()
 
 test_jobs_pool_init() {
   local dir slots
@@ -393,6 +403,20 @@ test_jobs_slot_wait() {
   until test_jobs_slot_take; do
     test_jobs_slot_note
     sleep 0.1
+  done
+}
+
+test_jobs_slots_hold() {
+  local fd
+  TEST_JOBS_HELD_FDS=()
+  test_jobs_slot_wait
+  while [ -n "$TEST_JOBS_SLOT_FD" ]; do
+    exec {fd}>&"$TEST_JOBS_SLOT_FD"
+    eval "exec $TEST_JOBS_FD>&-"
+    TEST_JOBS_SLOT_FD=""
+    TEST_JOBS_HELD_FDS+=("$fd")
+    [ "${#TEST_JOBS_HELD_FDS[@]}" -lt "$1" ] || break
+    test_jobs_slot_take || break
   done
 }
 
