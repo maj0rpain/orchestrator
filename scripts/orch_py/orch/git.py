@@ -1,9 +1,10 @@
 """The git adapter: the one place the Python side runs `git`, and its fake.
 
 Each operation is named for what its callers need, as the gh adapter's are
-(ADR-0033). This slice has one, the one the repo pin reads; each later noun
-adds the operations it needs, each with a test run against a real repository
-and against FakeGit, asserting the same answers.
+(ADR-0033): the origin URL the repo pin reads, and the checkout's toplevel
+the issue noun finds the triage-labels doc under. Each later noun adds the
+operations it needs, each with a test run against a real repository and
+against FakeGit, asserting the same answers.
 """
 from __future__ import annotations
 
@@ -40,13 +41,28 @@ class Git:
             return None
         return run.stdout.decode("utf-8", "surrogateescape").rstrip("\n")
 
+    def toplevel(self) -> Optional[str]:
+        """The checkout's root, as orch.sh's ROOT block reads it; None outside
+        a repository."""
+        run = self._run(["rev-parse", "--show-toplevel"])
+        if run.returncode != 0:
+            return None
+        return run.stdout.decode("utf-8", "surrogateescape").rstrip("\n")
+
 
 class FakeGit:
     """The in-process fake: a repository held in memory. <remotes> maps each
-    remote's name to its URL."""
+    remote's name to its URL; <toplevel> is the checkout's root, None for no
+    repository."""
 
-    def __init__(self, remotes: Optional[Dict[str, str]] = None) -> None:
+    def __init__(
+        self, remotes: Optional[Dict[str, str]] = None, toplevel: Optional[str] = None
+    ) -> None:
         self.remotes = dict(remotes or {})
+        self.root = toplevel
 
     def origin_url(self) -> Optional[str]:
         return self.remotes.get("origin")
+
+    def toplevel(self) -> Optional[str]:
+        return self.root

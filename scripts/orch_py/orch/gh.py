@@ -105,6 +105,42 @@ def gh_or_die(
         gh_die(what, failed.stderr, hint, code)
 
 
+def verify_twice(what: str, unverified: str, verifier: Callable[[], bool]) -> None:
+    """The one verify-then-die runner - the one-retry policy ADR-0011
+    records for ticket publish's links. <verifier> reads fresh and answers
+    whether the read-back verified, raising GhFailed on a failed read. A
+    mismatch or a failed read gets one more attempt, and that attempt
+    decides: verified returns, a failed read dies through gh_die "<what>"
+    with gh's reason, a mismatch dies with <unverified>. Either death exits
+    1."""
+    failed: Optional[GhFailed] = None
+    for _ in range(2):
+        try:
+            if verifier():
+                return
+            failed = None
+        except GhFailed as error:
+            failed = error
+    if failed is not None:
+        gh_die(what, failed.stderr)
+    die(unverified)
+
+
+# --- labels -------------------------------------------------------------------
+
+# ASCII case folding alone, whatever the locale: a Turkish I never folds to a
+# dotless i, and a non-ASCII letter stays as it is.
+_ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+
+
+def label_listed(labels: Sequence[str], label: str) -> bool:
+    """Whether <label> is one of <labels>, matched whole, literally and
+    case-insensitively: GitHub's label names are case-insensitive, and it
+    attaches a label in the repo's existing casing."""
+    want = label.translate(_ASCII_LOWER)
+    return any(have.translate(_ASCII_LOWER) == want for have in labels)
+
+
 # --- answers, as the bash readers split them -------------------------------
 
 # GitHub's search returns at most this many rows, whatever --limit asks for.

@@ -50,3 +50,18 @@ def test_a_repo_with_other_remotes_but_no_origin_has_no_origin_url(tmp_path):
 
 def test_outside_a_repository_there_is_no_origin_url(tmp_path):
     assert Git(cwd=str(tmp_path)).origin_url() is None
+
+
+def test_toplevel_reads_the_same_from_a_real_repo_and_the_fake(tmp_path):
+    root = tmp_path / "checkout"
+    git_repo(root)
+    (root / "sub").mkdir()
+    fake = FakeGit(toplevel=str(root.resolve()))
+
+    assert Git(cwd=str(root / "sub")).toplevel() == str(root.resolve())
+    assert fake.toplevel() == str(root.resolve())
+
+
+def test_outside_a_repository_there_is_no_toplevel(tmp_path):
+    assert Git(cwd=str(tmp_path)).toplevel() is None
+    assert FakeGit().toplevel() is None

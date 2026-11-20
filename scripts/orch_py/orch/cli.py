@@ -13,9 +13,18 @@ from orch.common import die
 
 MIN_PYTHON = (3, 9)
 
+
+def _issue(argv: List[str]) -> int:
+    # Imported on call, after the interpreter check, so an older Python dies
+    # with that check's message, never a syntax error in the noun.
+    from orch.issue import run
+
+    return run(argv)
+
+
 # The converted nouns: each takes the arguments after the noun and returns its
 # exit code.
-NOUNS: Dict[str, Callable[[List[str]], int]] = {}
+NOUNS: Dict[str, Callable[[List[str]], int]] = {"issue": _issue}
 
 
 def require_python(noun: str) -> None:

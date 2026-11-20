@@ -447,6 +447,26 @@ class FakeStore:
         _write(self._path("fail", operation), stderr)
         _write(self._path("fail", operation + ".times"), "%d\n" % times)
 
+    def fail_after(self, operation: str, after: int, stderr: Optional[str] = None) -> None:
+        """fail, but only once <after> calls of the operation have answered."""
+        self.fail(operation, stderr)
+        _write(self._path("fail", operation + ".after"), "%d\n" % after)
+
+    def lag(self, operation: str, times: int, stale: Optional[str] = None) -> None:
+        """The next <times> reads of the operation answer <stale>, in the
+        shape gh prints it - nothing where none is given - then current."""
+        _write(self._path("lag", operation), "%d\n" % times)
+        if stale is not None:
+            _write(self._path("lag", operation + ".stale"), stale + "\n")
+
+    def lag_after(
+        self, operation: str, after: int, times: int, stale: Optional[str] = None
+    ) -> None:
+        """lag, but only once <after> reads of the operation have answered
+        current."""
+        self.lag(operation, times, stale)
+        _write(self._path("lag", operation + ".after"), "%d\n" % after)
+
     def unfail(self) -> None:
         shutil.rmtree(self._path("fail"), ignore_errors=True)
 
