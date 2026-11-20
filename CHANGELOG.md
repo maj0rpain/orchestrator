@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.9.20
+
+Corrected a comment in `lines_fate` so it names the reversed range the guard normalises, not every range.
+
 ## 6.9.19
 
 Tidy a comment in the Bash walker: the compound-word handler no longer states the function-body `{` rule twice.
