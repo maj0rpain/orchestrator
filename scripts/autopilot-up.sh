@@ -17,8 +17,14 @@
 # project name, outcome (created, rebuilt, skipped, failed) and the plugin
 # version and checkout commit baked in. A failed project does not stop the
 # others; the exit is non-zero when any failed. Never runs a git command that
-# changes anything; warns when the checkout has uncommitted changes. Its tests:
-# scripts/test/autopilot_up_test.sh.
+# changes anything; warns when the checkout has uncommitted changes.
+#
+# After a project's rebuild succeeds it removes the image the project used
+# before (its tag's old image and its container's old image), never forced; a
+# refusal is a warning on stderr. It never prunes the shared build cache or
+# images: `docker builder prune` and `docker image prune` are the manual
+# reclaims.
+# Its tests: scripts/test/autopilot_up_test.sh.
 
 # shellcheck source=orch/common.sh
 . "$(dirname "${BASH_SOURCE[0]}")/orch/common.sh"
@@ -113,6 +119,41 @@ compose() {
 # summary_line <outcome> <detail>: the current project's one summary line.
 summary_line() { printf '%-13s (%s)  %-8s %s\n' "$file" "$pname" "$1" "$2"; }
 
+# image_ids: the current project's image IDs, one per line, `sha256:` stripped,
+# duplicates dropped: the ID its image name (compose config --images) points to
+# and its container's image ID (compose images -q). A lookup that fails or
+# finds nothing adds none and prints nothing.
+image_ids() {
+  local img id ids=""
+  while IFS= read -r img; do
+    [ -n "$img" ] || continue
+    while IFS= read -r id; do
+      id="${id#sha256:}"
+      [ -n "${id//[[:space:]]/}" ] && ! list_has "$ids" "$id" && ids+="${ids:+$'\n'}$id"
+    done < <(docker image inspect --format '{{.Id}}' "$img" 2>/dev/null)
+  done < <(compose config --images 2>/dev/null)
+  while IFS= read -r id; do
+    id="${id#sha256:}"
+    [ -n "${id//[[:space:]]/}" ] && ! list_has "$ids" "$id" && ids+="${ids:+$'\n'}$id"
+  done < <(compose images -q 2>/dev/null)
+  [ -z "$ids" ] || printf '%s\n' "$ids"
+  return 0
+}
+
+# remove_replaced <old ids>: after a successful up, removes each old image ID
+# that is not one of the project's new IDs, never forced. Docker's output goes
+# to stderr; a refusal is a warning and changes nothing else.
+remove_replaced() {
+  local new id
+  new="$(image_ids)"
+  [ -n "$new" ] || return 0
+  for id in $1; do
+    list_has "$new" "$id" && continue
+    docker image rm "$id" >&2 || warn "warning: could not remove image $id"
+  done
+  return 0
+}
+
 failed=0
 for name in "${names[@]}"; do
   if [ "$name" = default ]; then
@@ -152,6 +193,7 @@ for name in "${names[@]}"; do
     fi
   fi
 
+  old_ids="$(image_ids)"
   if [ "$fresh" -eq 1 ] && ! compose build --pull --no-cache >&2; then
     summary_line failed "$baked"
     failed=1
@@ -162,6 +204,7 @@ for name in "${names[@]}"; do
   if compose up -d --build "${recreate[@]}" >&2; then
     if [ -n "$existing" ]; then outcome=rebuilt; else outcome=created; fi
     summary_line "$outcome" "$baked${killed:+ $killed}"
+    remove_replaced "$old_ids"
   else
     summary_line failed "$baked"
     failed=1

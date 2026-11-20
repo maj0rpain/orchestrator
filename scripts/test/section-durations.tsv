@@ -372,6 +372,6 @@
 135	159	docs_lint.sh	55b335baa6c5833c9113379fb614ca39fa895b62
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
-8	8	autopilot_up_test.sh	25eb01b693309e8b681fe96ca4c386c741b9ecd8
+17	17	autopilot_up_test.sh	e83bb3b5d6213ab54507233be7cc6e624358622c
 51	51	lens_bench_test.sh	ffb52c95b18f2076683217dffc8d27f1d03a136d
 519	1378	shellcheck
