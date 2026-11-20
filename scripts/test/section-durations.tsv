@@ -15,7 +15,7 @@
 34	18	all.sh, the single entry point (#615)	38fcb2a43f8ae70131783ab98fe9a3b231ef0e2c
 0	1	all.sh's suite list holds every runner (#1941)	fb0e3a9bfce4e83ffdc0f77ad707ed9bf13a0b64
 482	65	the job pool (#2022)	391481aab8d6a79baedab6fa322bf6c35b7fb948
-0	1	the slot fd contract (#2300)	84b6a81051d8f93442fb7a00313b1d5a171fc9e3
+0	1	the slot fd contract (#2300)	87591fdb5a459b666aa337c8271c20a44f988751
 56	13	the test runners' CPU load (#1586)	b7e78d6efd54981c0bda67ebe89302fdbdddab30
 0	1	shell code (#1411)	70063321a2bbee5234405aa9a96efb83a10396b2
 58	59	test-helper placement (#1006)	77493a15f97138c00463b096623999bdf2bc2bcf
@@ -31,7 +31,7 @@
 0	1	git env clear (#1905)	ca3c5e14a612c26c9c82be8cc3d153f788fbd035
 2	3	runner git isolation (#1905)	8ac400c6ee2be04199909f5474c5ee93d2e9d7da
 0	1	the background child start (#3025)	5c62b66f6ee5689e015b57ffe5e9cffd84b52b5a
-2	1	the suite start (#3582)	b719afdceeb4a008597a66f50ddbf3d8e9d06bf3
+1	1	the suite start (#3582)	f3ba93d7cb5f9738111d9bb19d89ee561a4973cb
 2	3	the counting fixture's stdin counter (#3434)	dd610f9cfaf4afa92040052b2e9c078fd512749a
 52	46	affected.sh, the ticket verification (#2023)	36ced0a74fd65a36918bbbfcf49dd69a3bfcf926
 2	3	the row rule (#3549)	17039bd8a9f183d0850ea8d357412134faef31b3
