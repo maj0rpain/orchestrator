@@ -995,14 +995,14 @@ check_flow_pr() {
 # won't run. Listed for review alone, like check_flow_upstream's phases:
 # outside review, there is no loop to classify and nothing to say about one.
 check_flow_review_terminal() {
-  local i b terminal word detail
+  local i budget terminal word detail
   i="$D_FLOW_ITERATION"
-  b="$D_FLOW_BUDGET"
+  budget="$D_FLOW_BUDGET"
   # redo is read only when the flat record is gone (review_terminal_record).
   if review_flat_record_gone "$i"; then
     orch_load redo
   fi
-  terminal="$(review_terminal_state "$i" "$b")" || true
+  terminal="$(review_terminal_state "$i" "$budget")" || true
   lines_split "$terminal" word detail
   case "$word" in
     none)  d_ok "review loop: not started yet" ;;
@@ -1015,9 +1015,9 @@ check_flow_review_terminal() {
     # normally, where one whose last iteration recorded nothing looks like the
     # session that was driving it simply died.
     pending)
-      d_warn "review loop hasn't reached its budget yet (iteration $i of budget $b) - $(flow_cmd next) will resume it; redo refuses until it reaches a terminal state." ;;
+      d_warn "review loop hasn't reached its budget yet (iteration $i of budget $budget) - $(flow_cmd next) will resume it; redo refuses until it reaches a terminal state." ;;
     interrupted)
-      d_warn "review loop's last iteration ($i of budget $b) has no recorded terminal state - the session looks interrupted, not stopped. $(flow_cmd next) will resume it; redo refuses until it reaches a terminal state." ;;
+      d_warn "review loop's last iteration ($i of budget $budget) has no recorded terminal state - the session looks interrupted, not stopped. $(flow_cmd next) will resume it; redo refuses until it reaches a terminal state." ;;
     # A FAIL, not a warn: the record is there but unreadable, and
     # /orchestrator:next will not rewrite it - only a human editing it will.
     malformed)
@@ -1032,15 +1032,15 @@ check_flow_review_terminal() {
 # meant to be unreachable - an iteration count past it is not a loop still
 # running, it is state.json in a shape nothing produced on a healthy run.
 check_flow_review_budget() {
-  local i b
+  local i budget
   i="$D_FLOW_ITERATION"
-  b="$D_FLOW_BUDGET"
-  if [ "$i" -gt "$b" ]; then
-    d_fail "review loop iteration ($i) is past its budget ($b) - the loop's stop enforcement did not hold."
+  budget="$D_FLOW_BUDGET"
+  if [ "$i" -gt "$budget" ]; then
+    d_fail "review loop iteration ($i) is past its budget ($budget) - the loop's stop enforcement did not hold."
     d_remedy "$(flow_cmd abort)"
     return 0
   fi
-  d_ok "review loop iteration ($i) within budget ($b)"
+  d_ok "review loop iteration ($i) within budget ($budget)"
 }
 
 # The loop requires CI green (with one flake rerun) before it marks the PR
