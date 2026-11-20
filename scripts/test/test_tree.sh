@@ -9,7 +9,9 @@
 # pooled shellcheck step (`shellcheck_start` / `shellcheck_join`), the tenths
 # conversion, the durations-file grammar, the suite budget, the ledger's
 # fingerprints (`ledger_fingerprints`), the ledger's freshness rule
-# (`ledger_states`) and the ORCH_TEST_ONLY pattern that affected.sh and
+# (`ledger_states`), the effective record of the durations file and the
+# fragments in durations.d beside it (`ledger_effective`, `ledger_fragments`,
+# `ledger_fragment_faults`) and the ORCH_TEST_ONLY pattern that affected.sh and
 # section-durations.sh share (`titles_regex`). A runner that calls the step
 # first sources test_jobs.sh and inits the job pool. Runs nothing.
 #
@@ -263,6 +265,81 @@ ledger_states() {
       if (!("shellcheck" in cnt)) print "shellcheck\tmissing\t0"
     }' "$1" "$2"
 }
+# The function ledger_fragments <test dir> prints the durations fragments of
+# <test dir>/durations.d, one path per line: every *.tsv there in LC_ALL=C name
+# order (`.gitkeep` and anything else is no fragment); nothing when there is
+# none or no such directory.
+ledger_fragments() {
+  local f
+  for f in "$1/durations.d"/*.tsv; do
+    [ -f "$f" ] && printf '%s\n' "$f"
+  done | LC_ALL=C sort
+}
+
+# The function ledger_effective <test dir> prints the effective record of the
+# durations file <test dir>/section-durations.tsv overlaid by the fragments of
+# <test dir>/durations.d (ledger_fragments), in walk order with the file's
+# `shellcheck` line last, and returns 0. Per title of the walk
+# (ledger_fingerprints_all of <test dir>) it takes the line whose fingerprint
+# matches the walk, from the file and every fragment; of several matches the
+# last fragment's in name order wins, then the file's. With no match it takes
+# the last fragment's line in name order, then the file's. Of several lines of
+# one file carrying a title the last stands for that file. Lines of a title the
+# walk lacks are left out, and a fragment's `shellcheck` line is ignored: that
+# line comes only from the file. A line that is no durations line is ignored
+# (see ledger_fragment_faults). It returns 1 when the walk fails, LEDGER_ERR
+# then holding a message with no prefix.
+ledger_effective() {
+  local test_dir="$1" tmp st=0 src
+  local sources=()
+  LEDGER_ERR=""
+  tmp="$(mktemp -d)" || { LEDGER_ERR="could not make a temporary directory"; return 1; }
+  ledger_fingerprints_all "$test_dir" >"$tmp/walk" || st=$?
+  if [ "$st" -ne 0 ]; then
+    LEDGER_ERR="${SUITES_ERR:-could not fingerprint the test text}"
+    rm -rf "$tmp"
+    return 1
+  fi
+  src="$test_dir/section-durations.tsv"
+  [ -f "$src" ] || src=/dev/null
+  mapfile -t sources < <(ledger_fragments "$test_dir")
+  awk -F'\t' "$DURATIONS_AWK"'
+    FILENAME == ARGV[1] { if (!($1 in fp)) { fp[$1] = $2; ord[++n] = $1 } next }
+    !durations_line() { next }
+    FILENAME != cur { cur = FILENAME; s++; isfile[s] = (FILENAME == ARGV[2]) }
+    { if (!isfile[s] && $3 == "shellcheck") next
+      if ($3 == "shellcheck") { sc = $0; next }
+      if ($3 in fp) { last[s, $3] = $0; tit[$3] = 1 } }
+    END {
+      for (i = 1; i <= n; i++) {
+        t = ord[i]
+        if (!(t in tit)) continue
+        pick = ""; any = ""
+        for (k = 1; k <= s; k++) {
+          if (!((k, t) in last)) continue
+          any = last[k, t]
+          if (split(any, c, "\t") == 4 && c[4] == fp[t]) pick = any
+        }
+        print (pick != "" ? pick : any)
+      }
+      if (sc != "") print sc
+    }' "$tmp/walk" "$src" ${sources[@]+"${sources[@]}"} || { LEDGER_ERR="could not read the durations record"; rm -rf "$tmp"; return 1; }
+  rm -rf "$tmp"
+}
+
+# The function ledger_fragment_faults <test dir> prints one line per fragment
+# line that is no durations line, "<fragment name> line <n>: <the line>", a
+# fragment's `shellcheck` line excepted; nothing when every line parses. It
+# returns 0.
+ledger_fragment_faults() {
+  local f
+  while IFS= read -r f; do
+    awk -F'\t' -v name="${f##*/}" "$DURATIONS_AWK"'
+      $3 == "shellcheck" { next }
+      !durations_line() { printf "%s line %d: %s\n", name, FNR, $0 }' "$f"
+  done < <(ledger_fragments "$1")
+}
+
 # shellcheck disable=SC2034 # read by the sourcing runners
 SHELLCHECK_CMD=(shellcheck -S warning -f gcc)
 

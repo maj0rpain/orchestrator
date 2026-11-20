@@ -6,7 +6,7 @@
 14	12	the parallel runner's start order (#2857)	097cec5c5c734769ff53356d4ed842d14709c2c6
 96	46	the shard setting (#2859)	4de3662058ae702ce5d5a0d7afdce67d30fd4c21
 9	9	the seeded start (stub cache)	ddd486b42c7cb5c401f6eb8009ffae2013377967
-275	142	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	c1e9c45c3a54cbb91b854dcde553d9c7532bc9d0
+282	146	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	e2153597096c43eba7337bb05ba30b3d0508dcb0
 3	2	assertions in a subshell (#1904)	92c333c3178aa43510b6c32172ec4032d4d0fce0
 0	1	the standalone suites' tally (#1904)	584252a550370de31b111d3e974f3f34bd6bdab6
 11	9	the section files (#932)	bb763901619c0f08503ac264a7239909e08a3766

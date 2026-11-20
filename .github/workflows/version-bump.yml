@@ -1,8 +1,11 @@
 name: version-bump
 
-# On every push to main, gathers the changelog fragments under changelog.d/
+# On every push to main, folds the durations fragments of scripts/test/durations.d/
+# into the durations file with scripts/dev/section-durations.sh --fold, then
+# gathers the changelog fragments under changelog.d/
 # into one version bump with scripts/version-bump.sh, which holds every
-# versioning decision, and pushes it as a "Release <version>" commit. A push
+# versioning decision. It pushes what either changed as one commit, "Release
+# <version>" with a version, "Fold section durations" without. A push
 # made with the default GITHUB_TOKEN triggers no workflow, so this never
 # loops. No git tag.
 
@@ -25,6 +28,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: main
+      # A failed fold (a malformed durations fragment line, a failing walk)
+      # fails the job before Bump with nothing committed or pushed; the
+      # fragments stay on main for the next run.
+      - name: Fold durations fragments
+        run: scripts/dev/section-durations.sh --fold
       # The script exiting 1 (a malformed fragment, version line or CHANGELOG)
       # fails the job with nothing committed or pushed; the fragments stay on
       # main for the next run, after the fault is fixed.
@@ -38,7 +46,6 @@ jobs:
       # merge queued its own run, which takes these fragments. Any other
       # failed push (main has not moved) fails the job.
       - name: Commit and push
-        if: steps.bump.outputs.version != ''
         env:
           VERSION: ${{ steps.bump.outputs.version }}
         run: |
@@ -46,7 +53,13 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -q -m "Release $VERSION"
+          if [ -z "$VERSION" ] && git diff --cached --quiet; then
+            echo "Nothing to commit."
+            exit 0
+          fi
+          message="Release $VERSION"
+          [ -n "$VERSION" ] || message="Fold section durations"
+          git commit -q -m "$message"
           if ! git push origin HEAD:main; then
             git fetch --quiet origin main
             if [ "$(git rev-parse origin/main)" = "$(git rev-parse HEAD~1)" ]; then

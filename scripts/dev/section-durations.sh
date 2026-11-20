@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # section-durations.sh: rewrites scripts/test/section-durations.tsv, the file
-# orch_test.sh reads to start its sections longest-first. It has two modes. With
-# no argument it is the full refresh, which resets the scale of every line: the
-# human's call, made when the suite's shape changes (sections added, removed or
-# made much slower or faster), on a tree whose suite passes. With --stale,
+# orch_test.sh reads to start its sections longest-first. It has three modes.
+# With no argument it is the full refresh, which resets the scale of every
+# line: the human's call, made when the suite's shape changes (sections added,
+# removed or made much slower or faster), on a tree whose suite passes. With
+# --stale,
 # below, a session that adds or edits tests records just what its change made
 # out of date.
 #
@@ -65,6 +66,20 @@
 # refresh does; so is a job count of 1, refused, and an interrupt leaves the
 # file unchanged, as above.
 #
+# With the argument --fold it folds the durations fragments (the *.tsv files of
+# durations.d beside the durations file; `.gitkeep` is no fragment) into the
+# durations file, and measures nothing. It writes test_tree.sh's effective
+# record (ledger_effective) in walk order, with the file's `shellcheck` line
+# last, so no title is written twice and the lines of a section or suite that
+# no longer exists are dropped, then deletes every fragment and keeps
+# `.gitkeep`. The version-bump Action runs it on every push to main. With no
+# fragment and the file already byte for byte that record it changes nothing,
+# says so and exits 0; with no fragment but an orphaned or duplicated line it
+# still rewrites the file. A malformed fragment line (a fragment's `shellcheck`
+# line is not one) or a failing walk is named on stderr, exits 1 and leaves the
+# file and every fragment unchanged; so does an interrupt. The file is replaced
+# only whole. It needs no job pool, so ORCH_TEST_JOBS does not matter to it.
+#
 # A repo-development tool, not an orch.sh noun: it does not ship to users.
 set -uo pipefail
 
@@ -78,12 +93,47 @@ source "$dir/test_tree.sh"
 # shellcheck source=../test/report.sh
 source "$dir/report.sh"
 
+# fold_run: the --fold mode (see the header); returns the script's status. It
+# measures nothing, so it needs no job pool. Everything is computed in a
+# temporary directory first; then the file is replaced whole (a copy beside it,
+# renamed over it) and the fragments are deleted, with INT and TERM held, so an
+# interrupt before that leaves the file and every fragment as they were.
+fold_run() {
+  local ftmp faults frags=() f
+  ftmp="$(mktemp -d)" || return 1
+  trap 'rm -rf "$ftmp" "$target.fold.$$"' EXIT
+  trap 'exit 130' INT TERM
+  faults="$(ledger_fragment_faults "$dir")" || return 1
+  if [ -n "$faults" ]; then
+    echo "section-durations.sh: malformed durations fragment line, nothing folded:" >&2
+    printf '%s\n' "$faults" >&2
+    return 1
+  fi
+  ledger_effective "$dir" >"$ftmp/effective" || {
+    echo "section-durations.sh: ${LEDGER_ERR:-could not read the durations record}, nothing folded" >&2
+    return 1
+  }
+  mapfile -t frags < <(ledger_fragments "$dir")
+  if [ "${#frags[@]}" -eq 0 ] && [ -f "$target" ] && cmp -s "$ftmp/effective" "$target"; then
+    echo "section-durations.sh: nothing to fold, durations file unchanged"
+    return 0
+  fi
+  trap '' INT TERM
+  cp "$ftmp/effective" "$target.fold.$$" && mv "$target.fold.$$" "$target" || return 1
+  for f in ${frags[@]+"${frags[@]}"}; do rm -f "$f"; done
+  echo "section-durations.sh: folded ${#frags[@]} fragments into the durations file"
+}
+
 mode=full
-if [ "$#" -gt 1 ] || { [ "$#" -eq 1 ] && [ "$1" != --stale ]; }; then
-  echo "section-durations.sh: usage: section-durations.sh [--stale]" >&2
+if [ "$#" -gt 1 ] || { [ "$#" -eq 1 ] && [ "$1" != --stale ] && [ "$1" != --fold ]; }; then
+  echo "section-durations.sh: usage: section-durations.sh [--stale|--fold]" >&2
   exit 1
 fi
 [ "${1-}" = --stale ] && mode=stale
+if [ "${1-}" = --fold ]; then
+  fold_run
+  exit
+fi
 
 unset ORCH_TEST_ONLY ORCH_TEST_SHARD
 jobs="$(test_jobs_count section-durations.sh)" || exit 1

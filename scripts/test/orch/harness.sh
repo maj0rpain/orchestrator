@@ -1668,7 +1668,7 @@ stale_reset() {
 }
 out="$(bash "$dur_dev_script" --bogus 2>&1)"; st=$?
 assert_status "the script refuses an argument it does not know" "$st" 1
-assert_contains "naming the usage" "$out" "usage: section-durations.sh [--stale]"
+assert_contains "naming the usage" "$out" "usage: section-durations.sh [--stale|--fold]"
 
 out="$(dur_stale)"; st=$?
 assert_status "--stale on a fresh ledger exits 0" "$st" 0
@@ -1828,6 +1828,68 @@ assert_status "--stale with two fresh sections passes" "$st" 0
 assert_eq "its new lines are far above their own measurement too" "$([ "$(stale_cpu 'cal m1')" -ge 500 ] && echo yes)" "yes"
 stale_reset
 cp "$dur_dir/base.tsv" "$dur_dir/good.tsv"
+# The --fold mode (#3874): fragments in durations.d folded into the file.
+# dur_fold: the dev script with --fold, stdout and stderr together. fold_line
+# <title> <output>: the title's line of the durations file.
+dur_fold() { "${dur_cmd[@]}" bash "$dur_dev_script" --fold 2>&1; }
+dur_frags="$dur_test/durations.d"
+mkdir -p "$dur_frags"
+: >"$dur_frags/.gitkeep"
+fold_fp_a="$(fp_of 'dur a' "$dur_dir/base.tsv")"
+fold_fp_cal="$(fp_of 'dur cal' "$dur_dir/base.tsv")"
+tab=$'\t'
+cp "$dur_dir/base.tsv" "$dur_file"
+out="$(dur_fold)"; st=$?
+assert_status "--fold with no fragment and the file as is exits 0" "$st" 0
+assert_contains "saying it changed nothing" "$out" "nothing to fold"
+assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
+{ printf '9\t9\tdur a\tstale\n'; cat "$dur_dir/base.tsv"; } >"$dur_file"
+out="$(dur_fold)"; st=$?
+assert_status "--fold with no fragment and a duplicated line exits 0" "$st" 0
+assert_eq "it still rewrites the file, one line per title" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
+{ cat "$dur_dir/base.tsv"; printf '5\t5\tgone\tabc\n'; } >"$dur_file"
+out="$(dur_fold)"
+assert_eq "--fold with no fragment and an orphaned line drops it" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
+# The effective record's choices. The file's dur b line is stale, so only
+# fragments can match it.
+awk -F'\t' -v OFS='\t' '$3 == "dur b" { $4 = "stale0" } 1' "$dur_dir/base.tsv" >"$dur_dir/fold-file.tsv"
+cp "$dur_dir/fold-file.tsv" "$dur_file"
+printf '11\t11\tdur a\t%s\n12\t12\tdur b\tstale1\n99\t99\tshellcheck\n5\t5\tgone\tabc\n' "$fold_fp_a" >"$dur_frags/a.tsv"
+printf '13\t13\tdur a\tstale2\n14\t14\tdur b\tstale3\n15\t15\tdur cal\t%s\n16\t16\tdur cal\tstale4\n' "$fold_fp_cal" >"$dur_frags/b.tsv"
+printf '21\t21\tdur a\t%s\n' "$fold_fp_a" >"$dur_frags/c.tsv"
+out="$(dur_fold)"; st=$?
+assert_status "--fold over three fragments exits 0" "$st" 0
+assert_eq "of two matching lines the later fragment's wins, over a later fragment's non-matching line" \
+  "$(awk -F'\t' '$3 == "dur a" { print $1 }' "$dur_file")" "21"
+assert_eq "with no match the last fragment's line in name order wins" \
+  "$(awk -F'\t' '$3 == "dur b" { print $4 }' "$dur_file")" "stale3"
+assert_eq "of two lines of one fragment the last stands, so the file's matching line wins" \
+  "$(awk -F'\t' '$3 == "dur cal" { print $1 }' "$dur_file")" "$(awk -F'\t' '$3 == "dur cal" { print $1 }' "$dur_dir/base.tsv")"
+assert_eq "the shellcheck line is the file's, last" \
+  "$(tail -n 1 "$dur_file")" "$(grep $'\tshellcheck$' "$dur_dir/base.tsv")"
+assert_eq "the titles are in walk order, each once, the orphaned one dropped" \
+  "$(cut -f3 "$dur_file" | tr '\n' ',')" "$(cut -f3 "$dur_dir/base.tsv" | tr '\n' ',')"
+assert_eq "every fragment is deleted" "$(ls "$dur_frags"/*.tsv 2>/dev/null | wc -l | tr -d ' ')" "0"
+assert_eq "and .gitkeep stays" "$([ -e "$dur_frags/.gitkeep" ] && echo yes)" "yes"
+# A malformed fragment line, and a failing walk: named, exit 1, nothing changed.
+cp "$dur_dir/fold-file.tsv" "$dur_file"
+printf '11\t11\tdur a\t%s\ngarbage\n' "$fold_fp_a" >"$dur_frags/bad.tsv"
+out="$(dur_fold)"; st=$?
+assert_status "--fold with a malformed fragment line exits 1" "$st" 1
+assert_contains "naming the fragment and the line" "$out" "bad.tsv line 2: garbage"
+assert_eq "the file is unchanged" "$(<"$dur_file")" "$(<"$dur_dir/fold-file.tsv")"
+assert_eq "and the fragment stays" "$(wc -l <"$dur_frags/bad.tsv" | tr -d ' ')" "2"
+printf '11\t11\tdur a\t%s\n' "$fold_fp_a" >"$dur_frags/bad.tsv"
+sed -i 's/^suites=(.*)$/suites=(orch_test.sh stub_a.sh stub_b.sh missing.sh)/' "$dur_test/all.sh"
+out="$(dur_fold)"; st=$?
+assert_status "--fold on a failing walk exits 1" "$st" 1
+assert_contains "naming the missing suite" "$out" "missing.sh"
+assert_eq "the file is unchanged" "$(<"$dur_file")" "$(<"$dur_dir/fold-file.tsv")"
+assert_eq "and the fragment stays" "$(ls "$dur_frags"/*.tsv | wc -l | tr -d ' ')" "1"
+sed -i 's/^suites=(.*)$/suites=(orch_test.sh stub_a.sh stub_b.sh)/' "$dur_test/all.sh"
+rm -f "$dur_frags/bad.tsv"
+cp "$dur_dir/base.tsv" "$dur_file"
+
 
 # TERM to the dev script (#2957), last in the section: a slow child records its
 # pid and sleeps 30 s. After TERM the script must return at once with 130, the
