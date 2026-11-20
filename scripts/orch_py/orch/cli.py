@@ -7,19 +7,15 @@ not in NOUNS dies as orch.sh dies on an unknown command.
 from __future__ import annotations
 
 import sys
-from typing import Callable, Dict, List, NoReturn
+from typing import Callable, Dict, List
+
+from orch.common import die
 
 MIN_PYTHON = (3, 9)
 
 # The converted nouns: each takes the arguments after the noun and returns its
 # exit code.
 NOUNS: Dict[str, Callable[[List[str]], int]] = {}
-
-
-def die(message: str, code: int = 1) -> NoReturn:
-    """Prints `orch: <message>` on stderr and exits with <code>."""
-    print("orch: " + message, file=sys.stderr)
-    sys.exit(code)
 
 
 def require_python(noun: str) -> None:
