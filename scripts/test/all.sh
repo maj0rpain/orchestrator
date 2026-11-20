@@ -6,9 +6,9 @@
 # The suites other than orch_test.sh start first, in list order, each holding a
 # slot of the job pool while it runs (waiting for one when none is free); then
 # orch_test.sh, which holds none (its sections take their own); then the pytest
-# suite, which holds none either (it takes its own, one per xdist worker); then
-# shellcheck. The pytest suite is in no `suites` list, so it stays outside the
-# suite budget and the durations file.
+# suite, which holds none either (it takes its own, one per xdist worker), and
+# last shellcheck. The pytest suite is in no `suites` list, so it stays outside
+# the suite budget and the durations file.
 # Each one's stdout is captured to a temporary directory, removed on exit, and
 # its exit status is taken from waiting on it; once every one has finished,
 # their output is printed in a fixed order, no matter which finished first. A

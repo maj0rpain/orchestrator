@@ -2202,9 +2202,9 @@ for root_suite in hooks_test.sh version_bump_test.sh lens_bench_test.sh; do
 done
 
 # all.sh checks every full run for leaks: a copy of it beside a stub for each
-# suite in its list and for the pytest suite, all passing, run with no
-# shellcheck on its PATH, once with an orch_test.sh stub that leaves a file in
-# its TMPDIR.
+# suite in its list and for the pytest suite, all passing, run on a PATH
+# with no shellcheck, once with an orch_test.sh stub that leaves a file in its
+# TMPDIR.
 root_all="$root_dir/all"
 mkdir -p "$root_all/scripts/test" "$root_all/bin" "$root_all/tmp"
 (cd "$(dirname "$SUITE_SCRIPT")" && cp "${ALL_RUNNER_FILES[@]}" "$root_all/scripts/test/")

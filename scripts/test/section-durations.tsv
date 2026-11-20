@@ -10,7 +10,7 @@
 3	5	assertions in a subshell (#1904)	d75377326d28823acab6b689eea1454f5f3e15f6
 2	3	the standalone suites' tally (#1904)	021735ae41e6ac9c19772a20246c8ac89ab75a85
 14	20	the section files (#932)	a6f80baf696d85717f8d2b8aecab1220e505e801
-338	36	the suite's temp root (#807)	4682a004cfd46768e309c6b3e843471d08d4d240
+429	39	the suite's temp root (#807)	796cc2fa2b4656c15cdd45af99213fd32ab78e13
 2	3	the real-gh guard (#779)	0cb306263b2070766feeadff7eb1c9c8cee0fbc2
 46	39	all.sh, the single entry point (#615)	671d50f2c5c3abe3b689524bde84fd83d1bd0116
 1	2	all.sh's suite list holds every runner (#1941)	d01106366b8454727b3949f0fe532ea1ebec8dd6
