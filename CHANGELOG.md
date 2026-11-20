@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.10.3
+
+Tidy doctor's verification-line report: rename its installed-check helper, correct two comments, and quote the `--flow` working-tree check's captured error through `err_line`, so an error with no `orch: ` line is now quoted instead of leaving an empty FAIL line.
+
 ## 6.10.2
 
 The test job pool's suite start is cheaper and shared: the harness no longer waits on a holder whose result nothing reads, and orch_test.sh's parallel section start calls `test_jobs_suite_start` instead of repeating its steps.
