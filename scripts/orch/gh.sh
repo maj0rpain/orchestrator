@@ -611,8 +611,10 @@ issues_labelled_limit_warn() {
   issue_list_limit_warn "$__illw_n" "$__illw_what"
 }
 
-# The record the row adapters share: --json's field list and --jq's expression
-# for number, state, label count, then one label per line.
+# The plain state record the labelled, any-labelled and open row adapters share:
+# --json's field list and --jq's expression for number, state, label count, then
+# one label per line. adapter_issues_titled_rows answers its own record, the
+# state and title on one line.
 readonly ISSUE_STATE_ROWS_JSON=number,state,labels
 readonly ISSUE_STATE_ROWS_JQ='.[] | .number, .state, (.labels | length), (.labels[].name)'
 
