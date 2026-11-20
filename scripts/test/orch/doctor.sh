@@ -2702,9 +2702,9 @@ echo "doctor --env: verification lines"
 healthy_repo
 doctor_github
 vl_setup="docs/repo-setup.md"
-vl_doctor() { out="$("$ORCH" doctor "$@" 2>&1)"; st=$?; }
+vl_doctor() { out="$("$ORCH" doctor --env 2>&1)"; st=$?; }
 
-vl_doctor --env
+vl_doctor
 assert_status "a full verification alone passes" "$st" 0
 assert_contains "no ticket verification is ok naming the fallback" "$out" \
   "ok    no 'Ticket verification:' line - tickets run the full verification (ADR-0058)"
@@ -2713,19 +2713,19 @@ assert_contains "the full verification is ok with its command and file" "$out" \
 assert_contains "a healthy repo reports no warn and no FAIL" "$(printf '%s\n' "$out" | tail -1)" "0 warn, 0 FAIL"
 
 writeln 'Ticket verification: true quick' 'Full verification: true test' >CLAUDE.md
-vl_doctor --env
+vl_doctor
 assert_contains "a ticket verification is ok with its command and file" "$out" "ok    Ticket verification: true quick (CLAUDE.md)"
 assert_contains "and the full one still is" "$out" "ok    Full verification: true test (CLAUDE.md)"
 
 writeln 'Ticket verification: true quick' >CLAUDE.md
-vl_doctor --env
+vl_doctor
 assert_status "no full verification still exits 0" "$st" 0
 assert_contains "no full verification warns" "$out" "warn  no 'Full verification:' line"
 assert_contains "its remedy writes the line" "$out" "add the line 'Full verification: <command>' to CLAUDE.md"
 assert_contains "its remedy names the setup doc" "$out" "$vl_setup"
 
 writeln 'Ticket verification:' 'Full verification: true test' >CLAUDE.md
-vl_doctor --env
+vl_doctor
 assert_status "a bare ticket verification fails" "$st" 1
 assert_contains "it names the file" "$out" "FAIL  CLAUDE.md has a 'Ticket verification:' line with no command."
 assert_contains "its remedy says what to write or remove" "$out" "write the command after 'Ticket verification:' in CLAUDE.md, or remove the line"
@@ -2734,7 +2734,7 @@ assert_not_contains "no ok line names the fallback" "$out" "tickets run the full
 
 writeln 'Full verification:' >CLAUDE.md
 writeln 'Full verification: true test' >CONTRIBUTING.md
-vl_doctor --env
+vl_doctor
 assert_contains "a bare full verification fails beside a command elsewhere" "$out" "FAIL  CLAUDE.md has a 'Full verification:' line with no command."
 assert_contains "its remedy says what to write or remove" "$out" "write the command after 'Full verification:' in CLAUDE.md, or remove the line"
 assert_contains "its remedy names the setup doc" "$out" "$vl_setup"
@@ -2743,7 +2743,7 @@ assert_not_contains "and no command line is reported for that label" "$out" "Ful
 
 writeln 'Full verification: true test' >CLAUDE.md
 writeln 'Full verification:' >CONTRIBUTING.md
-vl_doctor --env
+vl_doctor
 assert_contains "the reverse fails too, naming CONTRIBUTING.md" "$out" "FAIL  CONTRIBUTING.md has a 'Full verification:' line with no command."
 assert_contains "its remedy says what to write or remove" "$out" "write the command after 'Full verification:' in CONTRIBUTING.md, or remove the line"
 assert_contains "its remedy names the setup doc" "$out" "$vl_setup"
@@ -2752,7 +2752,7 @@ assert_not_contains "and no command line is reported for it" "$out" "Full verifi
 
 writeln 'Full verification: true test' >CLAUDE.md
 writeln 'Full verification: true other' >CONTRIBUTING.md
-vl_doctor --env
+vl_doctor
 assert_status "two commands is a warn, exit 0" "$st" 0
 assert_contains "it names both commands" "$out" "warn  Full verification is named twice with different commands: 'true test' in CLAUDE.md and 'true other' in CONTRIBUTING.md"
 assert_contains "CLAUDE.md's is the one used" "$out" "the first, 'true test', is the one used"
@@ -2765,25 +2765,25 @@ ok    Full verification command: true"
 
 writeln 'Ticket verification: a' 'Ticket verification: b' 'Full verification: true test' >CLAUDE.md
 rm -f CONTRIBUTING.md
-vl_doctor --env
+vl_doctor
 assert_contains "two commands in one file warn as well" "$out" "warn  Ticket verification is named twice with different commands: 'a' in CLAUDE.md and 'b' in CLAUDE.md"
 assert_contains "its remedy removes the second line" "$out" "remove the line 'Ticket verification: b' from CLAUDE.md"
 assert_contains "its remedy names the setup doc" "$out" "$vl_setup"
 
 writeln '```' 'Full verification: make fenced' 'Ticket verification:' '```' 'Full verification: true test' >CLAUDE.md
-vl_doctor --env
+vl_doctor
 assert_contains "a line in a fenced block is not read" "$out" "ok    Full verification: true test (CLAUDE.md)"
 assert_contains "a fenced bare label is not a FAIL" "$(printf "%s\n" "$out" | tail -1)" "0 warn, 0 FAIL"
 
 # The Branch verification: line (#3544): the combined-branch check's command.
 writeln 'Full verification: true test' >CLAUDE.md
-vl_doctor --env
+vl_doctor
 assert_contains "no branch verification is ok naming the full verification" "$out" \
   "ok    no 'Branch verification:' line - the combined-branch check runs the full verification"
 assert_not_contains "and no branch command line is reported" "$out" "Branch verification command"
 
 writeln 'Branch verification: true branch' 'Full verification: true test' >CLAUDE.md
-vl_doctor --env
+vl_doctor
 assert_contains "a branch verification is ok with its command and file" "$out" "ok    Branch verification: true branch (CLAUDE.md)"
 assert_contains "and its command is checked as installed" "$out" "ok    Branch verification command: true"
 
