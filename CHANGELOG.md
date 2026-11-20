@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.9.14
+
+Test-only: the gh fake reads its optional store files without starting a command, `log_count` is the one line counter, and `fake_snapshot` leaves out every read-side file.
+
 ## 6.9.13
 
 The shard-setting harness section proves the same deal with three fewer runner starts: its partition loop runs 3 groups instead of 4, and its stale-line median case is dropped, being covered by the default planted file, and its hooks_test.sh and shellcheck median cases fold into one.
