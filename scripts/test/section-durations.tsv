@@ -1,28 +1,28 @@
 1	1	isolation	0d4cd19400abe89dfaf9ec03c96188d58a6c9be8
-25	20	isolation under a git hook (#1905)	f85fd06d55c19926be4c2c5e0cfe89d686e72c67
-16	10	the section filter (ORCH_TEST_ONLY, #612)	6d26b8ec8b7ec4ec3e633de323a76c33e40c98f7
+25	19	isolation under a git hook (#1905)	f85fd06d55c19926be4c2c5e0cfe89d686e72c67
+16	9	the section filter (ORCH_TEST_ONLY, #612)	6d26b8ec8b7ec4ec3e633de323a76c33e40c98f7
 7	6	quiet mode (ORCH_TEST_QUIET, #614)	14346262ad198508aea7df4ad311906ac862be4c
-223	35	the parallel runner (ORCH_TEST_JOBS, #780)	1f43deb6fcd5fc25312ee06202c671f6c1fc1eab
+227	37	the parallel runner (ORCH_TEST_JOBS, #780)	1f43deb6fcd5fc25312ee06202c671f6c1fc1eab
 14	11	the parallel runner's start order (#2857)	a8893a33b41d02293f4732c75bb68ad2c2ad1a46
-99	46	the shard setting (#2859)	d79e669b023e0405e262c7370bb2e51729c04999
+100	47	the shard setting (#2859)	d79e669b023e0405e262c7370bb2e51729c04999
 9	9	the seeded start (stub cache)	1ea3b6ba6d0ee0fb455adf75ff44474d8a095b96
-285	148	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	a1b3f8d248fc7f3888e39212c21acc58260ce739
+282	148	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	a1b3f8d248fc7f3888e39212c21acc58260ce739
 3	2	assertions in a subshell (#1904)	d4203fee6cd1a08a5fb3b4a6e49fc837e0f6c9bd
 0	1	the standalone suites' tally (#1904)	9285f72aa1caffa221de222c2d3ae17cb22b9a28
 11	9	the section files (#932)	22102b8234446db05efe30a55dd3bdba65134c58
-351	22	the suite's temp root (#807)	f71394a7c14c4cafe64e18501f23cd600708cc6a
+350	22	the suite's temp root (#807)	f71394a7c14c4cafe64e18501f23cd600708cc6a
 0	1	the real-gh guard (#779)	b6066059fe2cbc4a1913c2016fdef7584c268ec6
 35	18	all.sh, the single entry point (#615)	5be94b05365707e110ae2c01d7a66d3729faafd6
 0	1	all.sh's suite list holds every runner (#1941)	865b7b0560187914932be29ab530d88357ccede0
-497	66	the job pool (#2022)	e54902b103cc3967a87a939cb46eeef9f0bd34ce
-0	1	the slot fd contract (#2300)	a735be872a3a53b33fef24da133a8f8ac038312b
+491	66	the job pool (#2022)	e54902b103cc3967a87a939cb46eeef9f0bd34ce
+0	1	the slot fd contract (#2300)	7be039802070e6536a5fc4b1f7f6f9f893eb7c68
 57	13	the test runners' CPU load (#1586)	c22faf75f630996277842a97d186d4623a821bf0
 0	1	shell code (#1411)	ea284fd385c9442fd3e129e2caef3218c88e0c1b
 57	58	test-helper placement (#1006)	dddbd47340bc0b216480c39b1595022584b4ea06
-29	30	helper body copies (#3170)	233659813199da9995b0764cc2fd51903a25c6b2
-32	33	gh op placement (#1037)	5158aa96d9e63a495cb4ec3ceda7d459968eeb68
+32	33	helper body copies (#3170)	233659813199da9995b0764cc2fd51903a25c6b2
+33	34	gh op placement (#1037)	5158aa96d9e63a495cb4ec3ceda7d459968eeb68
 4	5	marked comment prelude placement (#1853)	e3857d23c982ad40b7a749a1f656a675adae85e8
-13	14	comment reader placement (#3085)	a25b3e58cc6685e5bfe1566f72063507b786dcf6
+14	15	comment reader placement (#3085)	a25b3e58cc6685e5bfe1566f72063507b786dcf6
 13	14	orch_load before cross-module reads (#2868)	9f34d3860198a63de0e25173ab5d6027283a3329
 3	4	on-demand sourcing variable (#2820)	2fa61cbf2a3bee5107780757e3fc9bbb2632d09f
 0	1	declaration substitutions (#1327)	eb5e1c4ad535c9ab98eff87b1df7ab71b504840b
@@ -31,9 +31,9 @@
 0	1	git env clear (#1905)	7b6324ebfc6a98e2b6e6114ae9610e724b889aa4
 2	3	runner git isolation (#1905)	475e1037b218cafd58e7b821d75fa91ff050aa0e
 0	1	the background child start (#3025)	347ef5c40dde23f943994d429f3531314e50f438
-2	1	the suite start (#3582)	c370cd5f30073f199df0e0f6463a8b4f9a481775
+1	1	the suite start (#3582)	bff0619dc60012af51ba50332d71ebd1028b890f
 2	3	the counting fixture's stdin counter (#3434)	ce7663203bbc5c560276ab22f85c51cf82436c7a
-53	46	affected.sh, the ticket verification (#2023)	daa5f6c6bf6bca5e8d758f4cd1e532bd57e8b28e
+53	47	affected.sh, the ticket verification (#2023)	daa5f6c6bf6bca5e8d758f4cd1e532bd57e8b28e
 1	2	the row rule (#3549)	c7353a1dcfb34c8b87bdf1e26a50a0e4d5a5a0ea
 3	4	the shared test support, function by function (#3550)	61e8b9993795f76abf88e36b4d47471d144209a8
 2	3	the gh fake, operation by operation (#3551)	b13b3f32fa5d64af653c03c951ebc5239d02c392

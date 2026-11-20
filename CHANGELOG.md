@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.10.2
+
+The test job pool's suite start is cheaper and shared: the harness no longer waits on a holder whose result nothing reads, and orch_test.sh's parallel section start calls `test_jobs_suite_start` instead of repeating its steps.
+
 ## 6.10.1
 
 The helper body copies test section now resets its copied tree straight from the real tree with no snapshot, asserts exit status 1 on every failure case, and checks the setup.sh case's whole output.
