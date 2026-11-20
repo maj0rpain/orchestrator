@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.10.1
+
+The helper body copies test section now resets its copied tree straight from the real tree with no snapshot, asserts exit status 1 on every failure case, and checks the setup.sh case's whole output.
+
 ## 6.10.0
 
 The autopilot watcher cleans up after itself: at most once an hour a tick runs a housekeeping step that deletes session logs last modified more than 14 days ago and runs the same finished sweep `/orchestrator:finish` runs, removing finished side checkouts. A failure in either half warns and never stops the tick, and a GitHub rate limit the sweep hits ends the tick before pickup.
