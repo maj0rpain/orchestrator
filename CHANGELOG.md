@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.9.11
+
+Test-only: the harness suite builds its three affected.sh --plan fixtures with one shared throwaway-repo helper set.
+
 ## 6.9.10
 
 Move the bash version guard test helper into the global test file preamble, rename the guard's judged version to ORCH_BASH_JUDGED on its own line, and drop the stale bash 3.2 reason from the phase-order record. No behaviour changes.
