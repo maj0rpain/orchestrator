@@ -2,9 +2,14 @@
 read, and what each role's label is."""
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
+
 import pytest
 
-from orch.triage_labels import TriageLabels
+from orch.triage_labels import TRIAGE_ROLES, TriageLabels
+
+TRIAGE_LABELS_SH = Path(__file__).resolve().parents[2] / "triage-labels.sh"
 
 HEADER = (
     "| Label in mattpocock/skills | Label in our tracker | Meaning |\n"
@@ -71,3 +76,27 @@ def test_nothing_after_the_role_table_is_read(tmp_path):
 
     assert labels.label("needs-triage") == "triage me"
     assert labels.label("ready-for-agent") == "ready-for-agent"
+
+
+def test_every_role_reads_as_the_bash_parser_reads_it(tmp_path):
+    docs = [
+        HEADER + "| `ready-for-agent` | `agent go` | AFK |\n| wontfix | no\\|pe | x |\n",
+        "| Role | Label |\n| --- | --- |\n| ready-for-agent | two-col |\n",
+        "| a | b | c |\n| :-: | --: | - |\n| needs-info | ask |\r\n| needs-triage | t | x |\n\n"
+        + HEADER + "| ready-for-human | late | x |\n",
+    ]
+    roots = [tmp_path / str(i) for i in range(len(docs))]
+    for root, doc in zip(roots, docs):
+        mapping(root, doc)
+    script = (
+        'source "$1"; shift\n'
+        'for ROOT in "$@"; do for r in $TRIAGE_ROLES; do triage_label_for "$r"; done; done\n'
+    )
+    run = subprocess.run(
+        ["bash", "-c", script, "_", str(TRIAGE_LABELS_SH), *map(str, roots)],
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, timeout=30, check=True,
+    )
+
+    python = [TriageLabels(lambda root=root: str(root)).label(role)
+              for root in roots for role in TRIAGE_ROLES]
+    assert python == run.stdout.decode().split("\n")[:-1]

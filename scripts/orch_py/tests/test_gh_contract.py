@@ -282,6 +282,28 @@ def test_blockers_states_lists_each_blocker_and_its_state(fixture_gh):
     assert real_gh(fixture_gh).blockers_states(5) == [(3, "OPEN"), (4, "CLOSED")]
 
 
+AUTHORSHIP = [
+    "api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-F", "number=5",
+    "-f", "query=query($owner: String!, $name: String!, $number: Int!) { repository("
+    "owner: $owner, name: $name) { issue(number: $number) { author { login }"
+    " authorAssociation editor { login } timelineItems(last: 1, itemTypes:"
+    " [RENAMED_TITLE_EVENT]) { nodes { ... on RenamedTitleEvent { actor { login } } } } } } }",
+    "--jq", '.data.repository.issue | (.author.login // ""), (.authorAssociation // ""),'
+    ' (.editor.login // ""), (.timelineItems.nodes[0].actor.login // "")',
+]
+
+
+@pytest.mark.parametrize("answer, authorship", [
+    ("ann\nNONE\nbob\ncid\n", ("ann", "NONE", "bob", "cid")),
+    ("ann\nOWNER\n\n\n", ("ann", "OWNER", "", "")),
+    ("\n\n\n\n", ("", "", "", "")),
+], ids=["all", "never-edited", "ghost"])
+def test_issue_authorship_is_the_author_association_editor_and_renamer(fixture_gh, answer, authorship):
+    fixture_gh.reply(AUTHORSHIP, answer)
+
+    assert real_gh(fixture_gh).issue_authorship(5) == authorship
+
+
 # --- issue writes ------------------------------------------------------------
 
 

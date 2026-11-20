@@ -46,6 +46,20 @@ T = TypeVar("T")
 # with is dropped, so the shape does not change with gh's version.
 ISSUE_JSON_JQ = "{number, title, body, labels: [.labels[].name]}"
 
+# The GraphQL query and --jq behind issue_authorship, gh.sh's own: one line,
+# so a logged argv stays one line.
+ISSUE_AUTHORSHIP_QUERY = (
+    "query($owner: String!, $name: String!, $number: Int!) { repository(owner:"
+    " $owner, name: $name) { issue(number: $number) { author { login }"
+    " authorAssociation editor { login } timelineItems(last: 1, itemTypes:"
+    " [RENAMED_TITLE_EVENT]) { nodes { ... on RenamedTitleEvent { actor { login"
+    " } } } } } } }"
+)
+ISSUE_AUTHORSHIP_JQ = (
+    '.data.repository.issue | (.author.login // ""), (.authorAssociation // ""),'
+    ' (.editor.login // ""), (.timelineItems.nodes[0].actor.login // "")'
+)
+
 
 class IssueRow(NamedTuple):
     """One issue of a titled listing: its number, its state as GitHub
@@ -136,7 +150,10 @@ _ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrst
 def label_listed(labels: Sequence[str], label: str) -> bool:
     """Whether <label> is one of <labels>, matched whole, literally and
     case-insensitively: GitHub's label names are case-insensitive, and it
-    attaches a label in the repo's existing casing."""
+    attaches a label in the repo's existing casing. A label holding a
+    newline is never listed, as the bash side's list_has refuses one."""
+    if "\n" in label:
+        return False
     want = label.translate(_ASCII_LOWER)
     return any(have.translate(_ASCII_LOWER) == want for have in labels)
 
@@ -464,6 +481,19 @@ class Gh:
         object, authorAssociation, createdAt, body and url, among gh's other
         fields. Unparsed when gh's answer is no comment list."""
         return parse_comments(self._gh(["issue", "view", str(n), "--json", "comments"]))
+
+    def issue_authorship(self, n: int) -> Tuple[str, str, str, str]:
+        """The issue author's login, the author's authorAssociation, the
+        login of whoever last edited the body and of whoever made the newest
+        rename of the title - each "" where GitHub answers none. One GraphQL
+        read, for the Trust module."""
+        lines = _captured_lines(self._gh(
+            ["api", "graphql", "-F", "owner={owner}", "-F", "name={repo}",
+             "-F", "number=%d" % n, "-f", "query=" + ISSUE_AUTHORSHIP_QUERY,
+             "--jq", ISSUE_AUTHORSHIP_JQ]
+        ))
+        lines += [""] * (4 - len(lines))
+        return lines[0], lines[1], lines[2], lines[3]
 
     def issue_state_labels(self, n: int) -> Tuple[str, List[str]]:
         """OPEN or CLOSED, and the labels."""

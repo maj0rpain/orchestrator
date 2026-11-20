@@ -70,3 +70,11 @@ def test_every_module_imports_with_site_packages_disabled():
     )
 
     assert (run.returncode, run.stdout, run.stderr) == (0, "imported\n", "")
+
+
+def test_the_issue_noun_is_converted(capsys):
+    with pytest.raises(SystemExit) as died:
+        main(["issue", "labels"])
+
+    assert died.value.code == 1
+    assert capsys.readouterr() == ("", "orch: usage: orch.sh issue labels <n>...\n")

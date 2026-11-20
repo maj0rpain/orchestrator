@@ -20,7 +20,8 @@ BASH_FAKE = SCRIPTS / "test" / "gh_adapter_fake.sh"
 # The bash suite's store helpers, by the file that defines each.
 BASH_HELPERS = {
     SCRIPTS / "test" / "orch" / "setup.sh": [
-        "fake_issue", "fake_issue_relabel", "fake_issue_title", "fake_issue_body",
+        "fake_issue", "fake_issue_authorship", "fake_issue_relabel", "fake_issue_title",
+        "fake_issue_body",
         "fake_comment_seed", "fake_comment", "fake_comment_bodies", "fake_label",
         "fake_next_issue", "fake_fail", "fake_fail_after", "fake_fail_times",
         "fake_unfail", "fake_offline", "fake_online", "fake_quota", "fake_lag",
@@ -169,6 +170,40 @@ printf '%s\n' 11 >>"$ORCH_GH_FAKE_STORE/no_dependency_summary"
     assert (gh.issue_open_blockers(12), gh.issue_open_blockers(11)) == (1, None)
     assert gh.blockers_states(12) == [(13, "CLOSED"), (14, "OPEN")]
     assert gh.blockers_states(11) == []
+
+
+def test_authorship_seeded_by_the_bash_helpers_reads_as_the_bash_fake_answers(store):
+    answers = bash(store, r"""
+fake_issue 5 open
+fake_issue_authorship 5 ann NONE bob
+fake_issue 6 open
+adapter_issue_authorship 5
+adapter_issue_authorship 6
+""")
+    gh = fake(store)
+
+    assert answers == "ann\nNONE\nbob\n\nfake-gh\nOWNER\n\n\n"
+    assert (gh.issue_authorship(5), gh.issue_authorship(6)) == (
+        ("ann", "NONE", "bob", ""), ("fake-gh", "OWNER", "", "")
+    )
+
+
+def test_python_seeded_sub_issues_blockers_and_authorship_read_back_through_the_bash_fake(store):
+    py = FakeStore(str(store))
+    for n in (10, 11, 12, 13):
+        py.issue(n, "open")
+    py.sub_issue(10, 11)
+    py.blocked_by(12, 13)
+    py.no_dependency_summary(11)
+    py.authorship(12, "ann", "NONE", "", "cid")
+
+    assert bash(store, r"""
+adapter_issue_parent 11
+adapter_issue_open_blockers 12
+adapter_issue_open_blockers 11
+adapter_blockers_states 12
+adapter_issue_authorship 12
+""") == "10\n1\n13\tOPEN\nann\nNONE\n\ncid\n"
 
 
 # --- writes the bash helpers read back ---------------------------------------

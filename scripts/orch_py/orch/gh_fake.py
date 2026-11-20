@@ -269,6 +269,19 @@ class FakeGh:
         self._known(n)
         return self._comments(n)
 
+    def issue_authorship(self, n: int) -> Tuple[str, str, str, str]:
+        """The stored authorship; absent, fake-gh as OWNER, the body never
+        edited nor the title renamed."""
+        self._failing("adapter_issue_authorship")
+        self._known(n)
+
+        def stored(name: str, absent: str) -> str:
+            value = _slurp(self._issue(n, name))
+            return absent if value is None else value
+
+        return (stored("author", COMMENT_AUTHOR), stored("association", "OWNER"),
+                stored("editor", ""), stored("renamer", ""))
+
     def issue_state_labels(self, n: int) -> Tuple[str, List[str]]:
         self._failing("adapter_issue_state_labels")
         stale = self._lagging("adapter_issue_state_labels")
@@ -432,6 +445,29 @@ class FakeStore:
         _write(os.path.join(directory, str(k), "created"), created + "\n")
         _write(os.path.join(directory, str(k), "association"), (association or "OWNER") + "\n")
         _write(os.path.join(directory, str(k), "body"), body)
+
+    def authorship(
+        self, n: int, author: str, association: str, editor: str = "", renamer: str = ""
+    ) -> None:
+        """Issue #n's author and association, the body's last editor and the
+        title's latest renamer, as fake_issue_authorship seeds them."""
+        for name, value in (("author", author), ("association", association),
+                            ("editor", editor), ("renamer", renamer)):
+            _write(self._path("issues", n, name), value + "\n")
+
+    def sub_issue(self, parent: int, child: int) -> None:
+        """Issue #child a sub-issue of #parent."""
+        _write(self._path("subs", parent), "%d\n" % child, "ab")
+
+    def blocked_by(self, n: int, *blockers: int) -> None:
+        """Issue #n blocked by the issues named, in that order; none named, an
+        empty blocked-by list."""
+        _write(self._path("blocked_by", n), "".join("%d\n" % b for b in blockers))
+
+    def no_dependency_summary(self, n: int) -> None:
+        """GitHub leaves #n's dependency summary off, so only its blocked-by
+        listing answers."""
+        _write(self._path("no_dependency_summary"), "%d\n" % n, "ab")
 
     def next_issue(self, n: int) -> None:
         _write(self._path("next_issue"), "%d\n" % n)
