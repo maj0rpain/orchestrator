@@ -3428,7 +3428,7 @@ hk_seed; printf '%s\n' "$(date +%s)" >"$hk_stamp"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a fresh stamp keeps the old log" "$(hk_kept)" "5-spec-20240101-000000.log 6-spec-20240101-000000.log notes.txt "
 # a stale, unparsable and future stamp each run it and rewrite the stamp
-for hk_case in "$(( $(date +%s) - 7200 ))" "garbage" "$(( $(date +%s) + 7200 ))"; do
+for hk_case in "$(( $(date +%s) - 7200 ))" "garbage" "089" "$(( $(date +%s) + 7200 ))"; do
   hk_seed; printf '%s\n' "$hk_case" >"$hk_stamp"
   "$ORCH" autopilot tick >/dev/null 2>&1
   assert_eq "stamp '$hk_case' runs housekeeping" "$(hk_kept)" "6-spec-20240101-000000.log notes.txt "
@@ -3493,7 +3493,6 @@ done
 fake_pr 61 merged quick/9-hs-done main
 fake_pr_head 61 "$(git rev-parse quick/9-hs-done)"
 fake_online
-hs_branch() { git rev-parse --verify --quiet "refs/heads/$1" >/dev/null && echo kept || echo gone; }
 # GitHub unreadable: nothing is removed, the tick warns and still picks up
 fake_fail adapter_prs_merged "$GH_502"
 fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Sweep 7"
@@ -3526,11 +3525,17 @@ assert_eq "the GitHub pause is written" "$(on_disk "$hs_dir/github-limit")" pres
 assert_eq "the tick ends before pickup" "$(tick_calls)" "2"
 fake_unfail
 rm -f "$hs_dir/github-limit"
-# a finished side checkout is removed and an unfinished one kept
+# a finished side checkout is removed and an unfinished one kept, even when the
+# log prune before the sweep fails
 rm -f "$hs_stamp" "$launcher_dir/release"
+mkdir -p "$hs_dir/logs"; : >"$hs_dir/logs/5-spec-20240101-000000.log"
+touch -t "$(date -d '15 days ago' +%Y%m%d%H%M 2>/dev/null || date -v-15d +%Y%m%d%H%M)" "$hs_dir/logs/5-spec-20240101-000000.log"
+hs_rm_bin="$(fails_bin rm '*5-spec-20240101*')"
 for hs_n in 7 8 9; do fake_issue "$hs_n" closed; done
-"$ORCH" autopilot tick >/dev/null 2>&1; st=$?
+out="$(PATH="$hs_rm_bin:$PATH" "$ORCH" autopilot tick 2>&1)"; st=$?
+rm -rf "$hs_rm_bin"
 assert_status "a tick with nothing to pick up succeeds" "$st" 0
+assert_contains "a failing log prune warns" "$out" "orch: could not delete the old session log"
 assert_eq "the finished side checkout is removed" "$(on_disk "$hs_done")" absent
-assert_eq "with its branch" "$(hs_branch quick/9-hs-done)" gone
+assert_eq "with its branch" "$(branch_presence refs/heads/quick/9-hs-done)" gone
 assert_eq "the unfinished one is kept" "$(on_disk "$hs_open")" present

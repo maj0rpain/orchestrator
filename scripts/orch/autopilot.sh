@@ -1219,15 +1219,14 @@ autopilot_rank() {
 # first; when it cannot be, the step warns and is skipped. A failed log prune
 # warns, and never fails the step; then the finished sweep runs the same way.
 autopilot_housekeeping() {
-  local stamp text="" now
+  local stamp text="" now_epoch
   stamp="$(autopilot_dir "$1")/housekeeping"
-  now="$(date +%s)"
-  file_read text "$stamp" 2>/dev/null || text=""
-  text="${text%%$'\n'}"
-  if [[ "$text" =~ ^[0-9]+$ ]] && [ "$text" -le "$now" ] && [ $((now - text)) -le 3600 ]; then
+  now_epoch="$(date +%s)"
+  file_read_text text "$stamp" 2>/dev/null
+  if [[ "$text" =~ ^[0-9]+$ ]] && [ "$((10#$text))" -le "$now_epoch" ] && [ $((now_epoch - 10#$text)) -le 3600 ]; then
     return 0
   fi
-  { mkdir -p "${stamp%/*}" && printf '%s\n' "$now" >"$stamp"; } 2>/dev/null || {
+  { mkdir -p "${stamp%/*}" && printf '%s\n' "$now_epoch" >"$stamp"; } 2>/dev/null || {
     warn "could not write the housekeeping stamp $stamp: housekeeping is skipped"
     return 0
   }
@@ -1249,10 +1248,10 @@ autopilot_housekeeping() {
 # straight after), one read of the done issues (autopilot_done_read), the
 # merged-PR close (which needs no session, so the usage-limit and early pauses
 # never hold it), the three limit-pause checks (usage, core, graphql), sync
-# detection (when auto-sync is true; housekeeping, at most hourly, runs just
-# before it), then pickup (see the spec's One tick),
-# the tick ending after any pickup, and after stale cleanup, that leaves a
-# GitHub pause holding.
+# housekeeping (at most hourly; it runs whatever auto-sync is), sync detection
+# (when auto-sync is true), then pickup (see the spec's One tick),
+# the tick ending after any pickup, after stale cleanup, and after
+# housekeeping, that leaves a GitHub pause holding.
 # The one done read feeds both passes: sync detection gets the done table
 # minus the issues the close closed. One listing of the flow issues
 # (autopilot_flow_ranked) fills Standing from its rows, drops the unpickable
