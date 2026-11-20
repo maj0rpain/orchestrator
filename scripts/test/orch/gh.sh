@@ -92,9 +92,10 @@ assert_eq "no bare capture or capture_err runs an adapter operation or gh" \
   "$(grep -hEv '^[[:space:]]*#' "$(dirname "$ORCH")"/orch/*.sh | grep -cE '(^|[^_[:alnum:]])capture(_err)? .*[[:space:]](adapter_[a-z_]+|gh)([[:space:]]|$)')" "0"
 
 # No usable repo: the first command that reaches GitHub dies naming GH_REPO,
-# in the parent shell (review-pass known-items) or in a command substitution
-# (ticket parent) alike - and behind capture_err's stderr capture too (ticket
-# parent, ticket close), whose own capture must not swallow the remedy (#846).
+# whether it pins the repo itself first (review-pass known-items' open-PR
+# lookup) or meets the guard in a command substitution (ticket parent) - and
+# behind capture_err's stderr capture too (ticket parent, ticket close), whose
+# own capture must not swallow the remedy (#846).
 git remote remove origin
 : >"$GH_FIXTURE/env.log"
 for args in "review-pass known-items 5 $known" "ticket parent 50" "ticket close 50"; do
