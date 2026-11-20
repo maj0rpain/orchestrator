@@ -53,10 +53,10 @@ when a flow does, or made when a human asks for one. It counts as a checkout in
 its own right, so it holds at most one flow. One made for a quick implementation
 records that implementation's issue, so a session opened in it picks the issue
 up without being told. It is removed when its flow is archived with `archive` or
-`/orchestrator:abort`, by `/orchestrator:finish` or the watcher once its work is finished, or
-by hand, and never with force. An autopilot flow gets one on its issue's first
-pickup, recording that issue as a quick implementation's does, and every later
-phase reuses it. _Avoid_: sibling worktree, flow worktree, second checkout.
+`/orchestrator:abort`, by `/orchestrator:finish` or the watcher once its work is
+finished, or by hand, and never with force. An autopilot flow gets one on its
+issue's first pickup, recording that issue as a quick implementation's does, and
+every later phase reuses it. _Avoid_: sibling worktree, flow worktree, second checkout.
 
 **Finished**:
 A side checkout is finished when a pull request from its branch has merged into
