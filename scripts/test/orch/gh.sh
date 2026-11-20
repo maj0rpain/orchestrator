@@ -2219,21 +2219,35 @@ first="${out%%$'\n'*}"
 assert_contains "a written pause and hit file leave the rate-limit message first" "$first" "orch: GitHub API rate limit reached - it resets at"
 assert_eq "and the first line ends with the message, no write clause" "${first##*the watcher picks the work up after the reset.}" ""
 assert_contains "and carries the whole message" "$first" "the watcher picks the work up after the reset."
-assert_eq "a session writes the pause" "$(cat "$pause_file")" "2033-05-18T03:33:20Z"
-assert_eq "and the hit file" "$(cat "$hit_file")" "2033-05-18T03:33:20Z"
+# pause_near <file> <seconds>: "near" when <file> holds now + <seconds>, +-10s
+pause_near() {
+  local want got
+  want="$(( $(date +%s) + $2 ))"; got="$(date -u -d "$(cat "$1" 2>/dev/null)" +%s 2>/dev/null)" || { echo unreadable; return; }
+  if [ "$(( got - want ))" -ge -10 ] && [ "$(( got - want ))" -le 10 ]; then echo near; else echo "far: $got vs $want"; fi
+}
+assert_eq "a session writes the pause, capped at an hour" "$(pause_near "$pause_file" 3600)" near
+assert_eq "and the hit file, capped too" "$(pause_near "$hit_file" 3600)" near
 rm -f "$pause_file" "$hit_file"
 ORCH_AUTOPILOT_TICK=1 ORCH_AUTOPILOT_HIT_FILE="$hit_file" sourced_orch adapter_issue_body 5 >/dev/null 2>&1
-assert_eq "a tick writes the pause" "$(cat "$pause_file")" "2033-05-18T03:33:20Z"
+assert_eq "a tick writes the pause, capped" "$(pause_near "$pause_file" 3600)" near
 assert_eq "but no hit file" "$(on_disk "$hit_file")" absent
 rm -f "$pause_file"
 ORCH_AUTOPILOT_RUN=1 sourced_orch adapter_issue_body 5 >/dev/null 2>&1
-assert_eq "the wrapper writes the pause" "$(cat "$pause_file")" "2033-05-18T03:33:20Z"
-fake_quota core 0 5000 1900000000
+assert_eq "the wrapper writes the pause, capped" "$(pause_near "$pause_file" 3600)" near
+rm -f "$pause_file"
+in_a_while="$(( $(date +%s) + 1800 ))"
+rm -f "$ORCH_GH_FAKE_STORE/quota"; fake_quota core 0 5000 "$in_a_while"
 ORCH_AUTOPILOT_RUN=1 sourced_orch adapter_issue_body 5 >/dev/null 2>&1
-assert_eq "an earlier reset leaves the later pause in place" "$(cat "$pause_file")" "2033-05-18T03:33:20Z"
-fake_quota core 0 5000 2100000000
+assert_eq "a reset within the hour is written as it is" "$(cat "$pause_file")" "$(iso_of "$in_a_while")"
+rm -f "$ORCH_GH_FAKE_STORE/quota"; fake_quota core 0 5000 "$(( in_a_while - 600 ))"
 ORCH_AUTOPILOT_RUN=1 sourced_orch adapter_issue_body 5 >/dev/null 2>&1
-assert_eq "a later reset extends it" "$(cat "$pause_file")" "2036-07-18T13:20:00Z"
+assert_eq "an earlier reset leaves the later pause in place" "$(cat "$pause_file")" "$(iso_of "$in_a_while")"
+rm -f "$ORCH_GH_FAKE_STORE/quota"; fake_quota core 0 5000 "$(( in_a_while + 600 ))"
+ORCH_AUTOPILOT_RUN=1 sourced_orch adapter_issue_body 5 >/dev/null 2>&1
+assert_eq "a later reset within the hour extends it" "$(cat "$pause_file")" "$(iso_of "$(( in_a_while + 600 ))")"
+rm -f "$ORCH_GH_FAKE_STORE/quota"; fake_quota core 0 5000 2100000000
+ORCH_AUTOPILOT_RUN=1 sourced_orch adapter_issue_body 5 >/dev/null 2>&1
+assert_eq "a later reset past the hour extends it only to the cap" "$(pause_near "$pause_file" 3600)" near
 fake_quota core 0 5000 2000000000
 rm -f "$pause_file"; mkdir -p "$hit_file"
 out="$(ORCH_AUTOPILOT=1 ORCH_AUTOPILOT_HIT_FILE="$hit_file" sourced_orch adapter_issue_body 5 2>"$ORCH_GH_FAKE_STORE/hit.err")"; st=$?

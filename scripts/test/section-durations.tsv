@@ -63,7 +63,7 @@
 72	86	autopilot questions, reply and resume	4da805d6b6928f4d16586d347eb40405f8ad8d2c
 0	1	autopilot_phase_arg refuses two adjacent phases (#1546)	236a5f8c3c11b75b24d0d7641de95c4d25666be5
 1	2	autopilot pause store	c370995aa5dd68dfcd4a64917da5d4e7a15c5574
-110	122	autopilot session end	953c159472afe93e2900c2e9cb5521dfaf8492d2
+112	124	autopilot session end	805b3c2701acbcbe9f3cfbd3984e81fa57613050
 23	26	autopilot tick: the trust check	fee7c9d2bfcb856df5a8e7d0a6658720a248eb87
 75	82	autopilot run: the budget and the final reply (#2004)	99d8b49071f6c5c09f8b0038a99ba350d52a7d2d
 2	3	autopilot answer on a truncated state.json (#1929)	9436eb3d4e492aca58e16ccc1ee44d805fba4d22
@@ -75,12 +75,12 @@
 16	18	autopilot tick: the merged-PR close backstop (#2478)	0033359ed474b5dd950f56f500c4fc9a6cd673ca
 40	31	autopilot tick: one read of the done issues (#2559)	97a136d2c4f927f2762892c8a812756b644683eb
 11	12	autopilot sync-finish, sync-dropped and sync-fail	78c02accdbb1a0a1177162e2b7cac98d10519259
-15	13	autopilot tick: the GitHub limit pause (#2577)	88e0746af43ccddb5015e049b5371eae1d66a9c6
+13	15	autopilot tick: the GitHub limit pause (#2577)	94bbeac964228cc1093a1cac3c75b8c84aea0288
 44	36	autopilot tick: a pickup that meets a GitHub limit (#2577)	b7506990f8e031e132734d5df6c4f88f4da1e243
 102	80	autopilot tick: stops that cannot land are contained (#3052)	7ec5cf27cf36197447177e1aebd51a80f7b8c9e0
 18	15	autopilot tick: one read of the claims on origin (#3062)	f500de4dd86cbabdf5452405fa18f36de6021d97
 16	18	autopilot run: a start-up read that meets a GitHub limit (#2577)	929190161e7c50cff18ab6e7bccb60001583384b
-47	38	autopilot tick: the early GitHub pause (#2577)	6e6a9b751bcc70cda56db94edf32dd17761c940e
+32	35	autopilot tick: the early GitHub pause (#2577)	146f1ca83b252013454faa2d68a2feadcee0b4fe
 17	19	autopilot run: the session log's GitHub usage line (#2577)	6bda132d04146540ce70f9650992e428ac2afb59
 28	22	autopilot candidates	8592ae15d07de5fdedc7f071630838ec706c1f4d
 7	7	autopilot answer: no repo (#3050)	43b2e7d2c6f7ae2f2e566aafa0fd64850f14e34a
@@ -174,7 +174,7 @@
 22	22	claim adapter operations (#1454)	434415cd39a7bb63f7146512c1dbdde13077c353
 2	3	label casing (#1943)	967a4a39f788b73ef75f50851a8a5e6a3aa92edb
 57	27	gh rate limits (#2577)	9219cc4b0792501f26ebae802267aa0a7cfad2aa
-9	7	gh rate limits: the GitHub pause and the hit file (#2577)	473c1e0574389227587fd9bd066c9ca6a5cc0a5a
+8	9	gh rate limits: the GitHub pause and the hit file (#2577)	63cba80dedc5bf3474d76b641c7846f1e2c8b556
 0	1	slug	aa1e8e6f64e5dd11e111097dfde9deca1248c258
 9	10	archive	0124b5e1112a0eae813a1e43c01b2f94b426ce16
 0	1	mp-skill	80c8160f5b342b489904f400b93e09e618b8ee00

@@ -1796,12 +1796,17 @@ assert_eq "while the limit file holds the early-pause reset" "$(se_limit)" "$(is
 # a GitHub-limited session end: the issue's hit file names a reset
 gh_pause="$top/.orchestrator/autopilot/github-limit"
 hit="$top/.orchestrator/autopilot/run/7.hit"
-gh_se_fresh() { se_fresh; rm -f "$gh_pause"; mkdir -p "$(dirname "$hit")"; printf '%s\n' "$i2" >"$hit"; }
+gh_hit_iso="$(iso_of "$((now_epoch + 1800))")"
+gh_se_fresh() { se_fresh; rm -f "$gh_pause"; mkdir -p "$(dirname "$hit")"; printf '%s\n' "$gh_hit_iso" >"$hit"; }
 printf '%s\n' "the session ended" >"$se_log"
 gh_se_fresh; se_end 1
 assert_first_line "and posts a limit stop with its github cause" "$(fake_comments_of 7)" "$(marker_of limited spec github)"
-assert_eq "and extends the GitHub pause to the reset, the usage limit untouched" "$(cat "$gh_pause" 2>/dev/null)|$(se_limit)" "$i2|absent"
+assert_eq "and extends the GitHub pause to the reset, the usage limit untouched" "$(cat "$gh_pause" 2>/dev/null)|$(se_limit)" "$gh_hit_iso|absent"
 assert_eq "the hit file is gone afterwards" "$(on_disk "$hit")" absent
+gh_se_fresh; printf '%s\n' "$(iso_of "$((now_epoch + 172800))")" >"$hit"; se_end 1
+se_gap="$(( $(date -u -d "$(cat "$gh_pause")" +%s) - $(date +%s) ))"
+assert_eq "a hit file naming a reset days out pauses GitHub for an hour only" "$(( se_gap > 3580 && se_gap <= 3600 ))" 1
+assert_not_contains "and the limit stop's comment names no reset past the hour" "$(fake_comments_of 7)" "$(iso_of "$((now_epoch + 172800))")"
 gh_se_fresh; printf '%s\n' "not a time" >"$hit"; se_end 1
 assert_eq "a hit file naming no reset is a plain failure" "$(se_kind)" failure
 assert_eq "and is removed too" "$(on_disk "$hit")" absent
@@ -2804,7 +2809,7 @@ echo "autopilot tick github limit"
 tick_fixture
 top="$(git rev-parse --show-toplevel)"
 fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Github limit 7"
-gh_reset="$(( $(date +%s) + 7200 ))"
+gh_reset="$(( $(date +%s) + 1800 ))"
 mkdir -p "$top/.orchestrator/autopilot"
 printf '%s\n' "$(iso_of "$gh_reset")" >"$top/.orchestrator/autopilot/github-limit"
 before="$(fake_labels_of 7)"
@@ -2820,6 +2825,37 @@ assert_eq "and touches no label" "$(fake_labels_of 7)" "$before"
 printf '2020-01-01T00:00:00Z\n' >"$top/.orchestrator/autopilot/github-limit"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a passed GitHub pause is removed" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" absent
+# a file more than an hour ahead is cut to an hour, warned once, and held
+gh_file="$top/.orchestrator/autopilot/github-limit"
+gl_calls="$(tick_calls)"
+printf '%s\n' "$(iso_of "$(( $(date +%s) + 7200 ))")" >"$gh_file"
+out="$("$ORCH" autopilot tick 2>&1 >/dev/null)"
+assert_contains "a GitHub pause over an hour ahead warns the cut line" "$out" "orch: the GitHub pause until $(iso_of "$(( $(date +%s) + 7200 ))")"
+assert_contains "naming its cause" "$out" "is more than an hour away, which no GitHub limit names; it is cut to "
+cut_iso="$(cat "$gh_file")"
+assert_contains "and holds the pause until the cut time" "$out" "the tick does nothing until $cut_iso"
+cut_gap="$(( $(date -u -d "$cut_iso" +%s) - $(date +%s) ))"
+assert_eq "the file now holds an hour from the read" "$(( cut_gap > 3590 && cut_gap <= 3600 ))" 1
+assert_eq "it picks nothing up" "$(tick_calls)" "$gl_calls"
+out="$("$ORCH" autopilot tick 2>&1 >/dev/null)"
+assert_not_contains "a later tick finds it within the hour: no cut warning" "$out" "is more than an hour away"
+assert_eq "and leaves the file as it is" "$(cat "$gh_file")" "$cut_iso"
+# an early-pool file over an hour ahead is cut the same way
+rm -f "$gh_file"
+printf '%s\n' "$(iso_of "$(( $(date +%s) + 7200 ))")" >"$top/.orchestrator/autopilot/github-early-core"
+out="$("$ORCH" autopilot tick 2>&1 >/dev/null)"
+assert_contains "an early-pool file over an hour ahead warns the cut line" "$out" "is more than an hour away, which no GitHub limit names; it is cut to "
+cut_gap="$(( $(date -u -d "$(cat "$top/.orchestrator/autopilot/github-early-core")" +%s) - $(date +%s) ))"
+assert_eq "and holds an hour from the read" "$(( cut_gap > 3590 && cut_gap <= 3600 ))" 1
+assert_eq "picking nothing up" "$(tick_calls)" "$gl_calls"
+rm -f "$top/.orchestrator/autopilot/github-early-core"
+# the usage limit file is never cut
+far_iso="$(iso_of "$(( $(date +%s) + 172800 ))")"
+printf '%s\n' "$far_iso" >"$top/.orchestrator/autopilot/limit"
+out="$("$ORCH" autopilot tick 2>&1)"
+assert_not_contains "a usage limit file days ahead gets no cut warning" "$out" "is more than an hour away"
+assert_eq "and stays as written" "$(cat "$top/.orchestrator/autopilot/limit")" "$far_iso"
+rm -f "$top/.orchestrator/autopilot/limit"
 
 # --- autopilot tick: a pickup that meets a GitHub limit (#2577) ---------------
 echo
@@ -3085,11 +3121,13 @@ quota_reset="$(( $(date +%s) + 7200 ))"
 rm -f "$ORCH_GH_FAKE_STORE/quota"; fake_quota core 5000 5000 "$((quota_reset - 100))"; fake_quota graphql 400 5000 "$quota_reset"
 out="$(counted_adapter_run "$rs_reads" "$rs_defs" "$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a tick with a pool under the reserve succeeds" "$st" 0
-assert_contains "its note names the pool and its reset" "$out" "GitHub graphql pool is below the github-reserve: no issue is picked up until $(iso_of "$quota_reset")"
+assert_contains "its note names the pool and its capped reset" "$out" "GitHub graphql pool is below the github-reserve: no issue is picked up until "
 assert_not_contains "and names no usage limit" "$out" "usage limit"
 assert_eq "it picks nothing up" "$(tick_calls)" "0"
 assert_eq "the pause is its own file, not the usage limit's" "$(on_disk "$top/.orchestrator/autopilot/limit")" absent
 assert_eq "the early pause is recorded" "$(on_disk "$top/.orchestrator/autopilot/github-early-graphql")" present
+rs_gap="$(( $(date -u -d "$(cat "$top/.orchestrator/autopilot/github-early-graphql")" +%s) - $(date +%s) ))"
+assert_eq "and its reset is capped at an hour ahead" "$(( rs_gap > 3580 && rs_gap <= 3600 ))" 1
 # the early pause still cleans this host's stale claims, from one claims read
 assert_eq "it stops the stale claim as a failure" "$(fake_labels_of 5)" "needs-human orch:spec ready-for-agent "
 assert_eq "releases its claim" "$(fake_claim_held 5)" free
