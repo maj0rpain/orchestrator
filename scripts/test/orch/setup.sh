@@ -150,6 +150,13 @@ counting_defs() {
     "$1() { printf '%s %s\\n' '$2' \"\${1-}\" >>\"\$COUNT_LOG\"; fake_$1_read \"\$@\"; }"
 }
 
+# default_reads_run <log> <cmd>...: runs <cmd> with the adapter's default-branch
+# read appending a line to <log> per call, so log_count <log> is how many times
+# <cmd> asked GitHub for it. It seeds nothing: the caller sets the fake's reply.
+default_reads_run() {
+  counted_adapter_run "$1" "$(counting_defs adapter_repo_default_branch branch)" "${@:2}"
+}
+
 # log_count <log> [<tag>]: the lines in <log>, only those starting with "<tag> "
 # when a tag is given.
 log_count() {
@@ -684,6 +691,15 @@ fake_pr_head() {
 
 # iso_of <epoch>: epoch seconds as a UTC timestamp, GNU or BSD date.
 iso_of() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; }
+
+# pause_near <file> <seconds>: "near" when <file> holds now + <seconds>, +-10s;
+# "unreadable" when it holds no timestamp, else "far: <got> vs <want>".
+pause_near() {
+  local want got iso
+  want="$(( $(date +%s) + $2 ))"; iso="$(cat "$1" 2>/dev/null)"
+  got="$(date -u -d "$iso" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$iso" +%s 2>/dev/null)" || { echo unreadable; return; }
+  if [ "$(( got - want ))" -ge -10 ] && [ "$(( got - want ))" -le 10 ]; then echo near; else echo "far: $got vs $want"; fi
+}
 
 # iso_ago <age-seconds>: the UTC timestamp <age-seconds> before the current
 # time.
