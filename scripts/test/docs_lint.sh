@@ -2727,15 +2727,21 @@ check "every build arg docker/compose.yaml interpolates is named in docker/.env.
 
 # The autopilot service's CPU limit reads ORCH_CPUS (0 = no limit when unset),
 # and .env.example documents it (#1587).
-# scan_cpu_limit <plugin root>: one line per break of that rule.
-scan_cpu_limit() {
-  local r="$1"
-  grep -qE '^ +cpus: \$\{ORCH_CPUS:-0\}$' "$r/docker/compose.yaml" ||
-    echo 'docker/compose.yaml: autopilot has no cpus: ${ORCH_CPUS:-0} line'
-  grep -q 'ORCH_CPUS' "$r/docker/.env.example" ||
-    echo "docker/.env.example: does not mention ORCH_CPUS"
+# compose_limit_breaks <plugin root> <var> <key>...: one line per break of the
+# rule that docker/compose.yaml sets each <key> to ${<var>:-0} and .env.example
+# mentions <var>. The one scanner behind the CPU and memory rules.
+compose_limit_breaks() {
+  local r="$1" var="$2" key
+  shift 2
+  for key in "$@"; do
+    grep -qE "^ +$key: \\$\\{$var:-0\\}\$" "$r/docker/compose.yaml" ||
+      echo "docker/compose.yaml: autopilot has no $key: \${$var:-0} line"
+  done
+  grep -q "$var" "$r/docker/.env.example" ||
+    echo "docker/.env.example: does not mention $var"
   return 0
 }
+scan_cpu_limit() { compose_limit_breaks "$1" ORCH_CPUS cpus; }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/docker"
 printf 'services:\n  a:\n    restart: no\n' >"$fixture/docker/compose.yaml"
@@ -2751,16 +2757,7 @@ check "docker/compose.yaml limits CPU from ORCH_CPUS and .env.example documents 
 # unset) through both mem_limit and memswap_limit (equal, so swap is off), and
 # .env.example documents it.
 # scan_memory_limit <plugin root>: one line per break of that rule.
-scan_memory_limit() {
-  local r="$1" key
-  for key in mem_limit memswap_limit; do
-    grep -qE "^ +$key: \\$\\{ORCH_MEMORY:-0\\}\$" "$r/docker/compose.yaml" ||
-      echo "docker/compose.yaml: autopilot has no $key: \${ORCH_MEMORY:-0} line"
-  done
-  grep -q 'ORCH_MEMORY' "$r/docker/.env.example" ||
-    echo "docker/.env.example: does not mention ORCH_MEMORY"
-  return 0
-}
+scan_memory_limit() { compose_limit_breaks "$1" ORCH_MEMORY mem_limit memswap_limit; }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/docker"
 printf 'services:\n  a:\n    restart: no\n' >"$fixture/docker/compose.yaml"

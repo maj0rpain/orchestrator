@@ -33,7 +33,7 @@
 0	0	the background child start (#3025)	f220e015537065a2c163be79d07de2b762404f7e
 2	1	the suite start (#3582)	2bbcc72545bb8c86426bb97cbb0200ce5cada1da
 2	2	the counting fixture's stdin counter (#3434)	3f9d3e5f4752d616b853d586ec384640401213ef
-117	99	affected.sh, the ticket verification (#2023)	d84cde8ad752984d2e57fba64573c6b997ffc266
+92	99	affected.sh, the ticket verification (#2023)	e922fb8b3739c9daeb048808fa02e08c8f9528b7
 1	1	the row rule (#3549)	d5025ef93fc07a442c5bbb184cebe1cf567c2cfc
 4	4	the shared test support, function by function (#3550)	a8668a1f16717d12d05ad6ab2787f81d50be6898
 2	2	the gh fake, operation by operation (#3551)	1ce7bff3167463ac98f8d773be5eadb253da52f3
@@ -47,44 +47,44 @@
 9	9	audit begin	eda1af9627a75a5db715c16d299179de30b2060e
 29	23	audit report	ae10a47e1f0db257b716316a4f7800b193c68623
 38	30	audit file batch	a1786986c75fd179a95f4411e35e32ab075dc8f0
-15	13	autopilot	fac73d9e25018ee1bda5cb77a45f527a65e80d78
-20	19	autopilot rounds, budget and start	f1d12b9bd7f39ba660a662b75aa3e239a0a8125f
-26	25	autopilot ask and answer	4e9dd5fa2ddb8e9d90d89d066d2e570d0dcdc16f
-24	24	autopilot reenter	2b5cc4ae59c0258d665ea4c70fd0d3692c11836f
-79	70	autopilot tick and run	ad54eb8db2291703ae40baf73ed6ec61fdce081f
-13	13	autopilot tick: started by a relative path (#3055)	9a7d4432ce1db6f01407fcedffadd5b3543e2ab1
-31	30	autopilot tick: the flow-issue read at the issue-list limit	16428b681688172bf786c7c253296415bbbb98d9
-35	35	autopilot tick: the direct read before each claim	f4f65b055f06648514b681305b224466ece77d6a
-164	154	autopilot tick: the cap, lost claims and the order	df63a201efe09b6924e9dfeb7ac64c6e61cc94c6
-124	119	autopilot tick: side checkouts, refusals and failed steps	5ea38d86a967717ab703690712c570ff60d2df5d
-20	10	autopilot watch	84658f6523144915eb6bdb9aff5cb19a21bc281b
-34	32	autopilot tick: the usage limit	4e1a4e8737a18d2e784d297cbb08ada7c3571bbf
-94	87	autopilot tick: limited issues	f9d8285b7e72f099717c085481ffed1f5060c296
-58	55	autopilot questions, reply and resume	70eb5b2f0f74e59adbd38f5aead49bd8e04d0206
-1	2	autopilot_phase_arg refuses two adjacent phases (#1546)	c20aaf46016a3c3220ad225cc0f81200c4d6f949
-2	2	autopilot pause store	b65e033b19420576edaa197de0614d4cbf4180ef
-104	96	autopilot session end	0b9b7c214d395025bb132d7d5c8c543bc1009136
-31	31	autopilot tick: the trust check	e881ed53c5649fe25015494ddc6b028322e16c87
-65	58	autopilot run: the budget and the final reply (#2004)	a1e56fd5d825f192ddcf9f64848793cc44075d97
-3	4	autopilot answer on a truncated state.json (#1929)	58a7d391dbfbdef266dd10ef17679a3523701b55
-24	23	autopilot: labels in the repo's casing (#1943)	a9228638fd818c94afa8e77dded9a4d1ee546b0f
-14	15	autopilot tick: the label check writes only drift (#2691)	67caed72c65167282e5f2b23128904d726b72e6d
-112	106	autopilot tick and run: sync requests	7f41307d1512e2410b382fc9e7bbb4fde69299e4
-143	133	autopilot tick: pickup rank and sync slots	a5a1526ee3870aabb9ec51e4235530046e07e038
-56	53	autopilot tick: sync request auto-detection (#2325)	5fd72c2920bb5f317e2c90318c416186d4d34d2a
-29	27	autopilot tick: the merged-PR close backstop (#2478)	cbd77a35eaba5eeec4b578ce66ae87c89bf2eb70
-60	57	autopilot tick: one read of the done issues (#2559)	9fdbcbadd549bc56e502587f4b255bd322695804
-13	13	autopilot sync-finish, sync-dropped and sync-fail	5c294c3625ff4843e76987f1449e96c6d23228ac
-14	14	autopilot tick: the GitHub limit pause (#2577)	ffd7c2d452597e94d3667e067ad65db84e5b7a67
-38	35	autopilot tick: a pickup that meets a GitHub limit (#2577)	3f97450867929d934da605f3ea4cdfac4df7b3e8
-9	96	autopilot tick: stops that cannot land are contained (#3052)	87dded042b0c3a07eb39769f2fddeec0cbf5ca76
-17	16	autopilot tick: one read of the claims on origin (#3062)	08de17dfced91a9f9602eae85909fed00b03438b
-23	20	autopilot run: a start-up read that meets a GitHub limit (#2577)	79330d69c78ad238dbdad0ace5fe98ea321189e7
-41	39	autopilot tick: the early GitHub pause (#2577)	eb613c01dc939e8409ff7279b0feb08d9729d588
-23	20	autopilot run: the session log's GitHub usage line (#2577)	157f80bf45f9ec1126eb83df69d71d7174d6e106
-31	30	autopilot candidates	62f36ebb6933f909813d9425acee6f14eef97e99
-5	5	autopilot answer: no repo (#3050)	9f42c8703bbd149559162e9ed0285b4ffd7b9ea9
-5	5	autopilot session ops read the issue in one jq	e4b6ae27174b1e7ceee64dd72eb4c1e0919b7f05
+12	13	autopilot	0de8834cdf8bd2ccc871a51e5abda748144d0337
+17	18	autopilot rounds, budget and start	41829146970a3ee47b79d27ccf9e27f2ba60d4f1
+23	24	autopilot ask and answer	646445929ad04febc7c3cdb6d5d7cdfc421084b0
+21	23	autopilot reenter	9f551d768335d7d0af0835fa7b4f8705fab0e6d1
+72	69	autopilot tick and run	c067855e4a07eaf151a1c28ba2cb409f11e8f5e9
+10	12	autopilot tick: started by a relative path (#3055)	d9dd0213e6dd303dc497f3a29838e810cd898ed6
+2	32	autopilot tick: the flow-issue read at the issue-list limit	8f47b14f4bdd9b5b0b0b2839a3173964f3b90228
+35	37	autopilot tick: the direct read before each claim	a20ed11001100a2786efc83540270687ac0a161b
+153	155	autopilot tick: the cap, lost claims and the order	67b423ea7891cc3d10ea5c8b26ec3066429c4c95
+114	117	autopilot tick: side checkouts, refusals and failed steps	1aa92e8d7d488673c7c6a9a17bc6f1e45c9fd64f
+16	10	autopilot watch	f8ebd62e40841558f499d7278d3f783f629c0bc6
+32	34	autopilot tick: the usage limit	c9216462a629b00d7c7549d3e550e46180653ac6
+85	88	autopilot tick: limited issues	0fcd2511a7f3362e1b1771a349b24c9dd2804687
+55	55	autopilot questions, reply and resume	4da805d6b6928f4d16586d347eb40405f8ad8d2c
+1	2	autopilot_phase_arg refuses two adjacent phases (#1546)	236a5f8c3c11b75b24d0d7641de95c4d25666be5
+2	3	autopilot pause store	c370995aa5dd68dfcd4a64917da5d4e7a15c5574
+95	95	autopilot session end	953c159472afe93e2900c2e9cb5521dfaf8492d2
+2	32	autopilot tick: the trust check	fee7c9d2bfcb856df5a8e7d0a6658720a248eb87
+60	59	autopilot run: the budget and the final reply (#2004)	99d8b49071f6c5c09f8b0038a99ba350d52a7d2d
+3	4	autopilot answer on a truncated state.json (#1929)	9436eb3d4e492aca58e16ccc1ee44d805fba4d22
+21	23	autopilot: labels in the repo's casing (#1943)	4fe0e50eec669f1ac8d428fcaa6deafe8c134bf1
+1	13	autopilot tick: the label check writes only drift (#2691)	34b464f4957b9f54da57eadc20d1a54bf6c0a5e8
+103	105	autopilot tick and run: sync requests	5f541b28b34516a510cddb69292ac757035ceb40
+133	135	autopilot tick: pickup rank and sync slots	330a67583d22dd486e90247cb07c64e6f9f7c521
+54	55	autopilot tick: sync request auto-detection (#2325)	8ff499aa276dd447c6ed361f0f3f232be3e16d37
+31	32	autopilot tick: the merged-PR close backstop (#2478)	0033359ed474b5dd950f56f500c4fc9a6cd673ca
+57	58	autopilot tick: one read of the done issues (#2559)	97a136d2c4f927f2762892c8a812756b644683eb
+10	11	autopilot sync-finish, sync-dropped and sync-fail	78c02accdbb1a0a1177162e2b7cac98d10519259
+11	12	autopilot tick: the GitHub limit pause (#2577)	88e0746af43ccddb5015e049b5371eae1d66a9c6
+36	37	autopilot tick: a pickup that meets a GitHub limit (#2577)	b7506990f8e031e132734d5df6c4f88f4da1e243
+62	71	autopilot tick: stops that cannot land are contained (#3052)	7ec5cf27cf36197447177e1aebd51a80f7b8c9e0
+15	16	autopilot tick: one read of the claims on origin (#3062)	f500de4dd86cbabdf5452405fa18f36de6021d97
+21	22	autopilot run: a start-up read that meets a GitHub limit (#2577)	929190161e7c50cff18ab6e7bccb60001583384b
+39	40	autopilot tick: the early GitHub pause (#2577)	6e6a9b751bcc70cda56db94edf32dd17761c940e
+19	20	autopilot run: the session log's GitHub usage line (#2577)	6bda132d04146540ce70f9650992e428ac2afb59
+29	31	autopilot candidates	8592ae15d07de5fdedc7f071630838ec706c1f4d
+4	5	autopilot answer: no repo (#3050)	43b2e7d2c6f7ae2f2e566aafa0fd64850f14e34a
+4	5	autopilot session ops read the issue in one jq	c951be202d457a4ea4c00d130cfba0b2f8ae5aeb
 15	13	base	1d30c92ace82dbeb31bd2bb0af57badfdbedaf1c
 37	38	a flow's base branch	45475caadc481a9fbcda51773787f44333982e42
 3	4	base set on a truncated state.json (#1929)	de4767097a86d163c76e27f57e97f2f368040804
@@ -360,15 +360,15 @@
 185	147	ticket reclaim (ADR-0054)	337f47e242db0b7a051702f11dbbdff63657ef9c
 1	1	ticket exists: no repo (#3050)	18f290c8db8140166817738f948443cd1b9a10dd
 22	20	trust module	cce71cee320a9a9df12b5d2fe25e74e2f6089609
-22	12	verification run	d6317bb4bd5452c2795fb755477997237a4fc069
-149	29	verification run: the run key, stale runs, the ceiling	6828b3fe2b7a9564e60349def84e7a97d5c5f8f5
-23	9	verification stop	82eda0619dec82af9342ef511adb5fec65766c84
-15	7	verification run orphans: a live run is stopped	6b0ab31cb8a191d0fba845352f39657c85e80cec
-26	6	verification run: block naps start no awk far from the end	c9c008c60374e4fa259532262d8de7ea3c820bc3
-1	2	verification run in help and the CLI conventions	9785b477cf1c93e59b5b104dae7daff9aa6a791f
+19	12	verification run	05e611f23e4d30bd2a77cb623293302bfbfb3f7a
+117	29	verification run: the run key, stale runs, the ceiling	f4dbfa1467100e29dcf78ec4291673e4502189fb
+1	9	verification stop	5e63df1eafef6b64a121bf7df5ffe6403fd6ba64
+1	7	verification run orphans: a live run is stopped	ad19d65733350bd74b1ed72e8d9000834c4d3e91
+19	6	verification run: block naps start no awk far from the end	06e4afaaaafe936e2802c8e42ea51ff059d6b706
+1	2	verification run in help and the CLI conventions	8afadaac8afea4eb7f4acd4424d3d5eccc14380b
 99	11	wait: a call's block is wall time	db923f27504e50d0a04527b359feb487abb3665d
 882	983	hooks_test.sh	8dec8318df78d1487d2d11c16c6ac962831bc14c
-201	164	docs_lint.sh	7c2512a42bf1ee83e0e5ceb392f456c57dfaad78
+158	193	docs_lint.sh	23fab420d2ef70cfe11d43e8f4e0172b71ceb451
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 8	8	autopilot_up_test.sh	25eb01b693309e8b681fe96ca4c386c741b9ecd8
