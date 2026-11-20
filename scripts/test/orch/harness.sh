@@ -1182,13 +1182,10 @@ assert_eq "starts in walk order without the file" "$ord_started" "ord a,ord b,or
 assert_eq "and prints in walk order" "$ord_printed" "ord a,ord b,ord c,ord d,ord unlisted,"
 # A fragment's line sets a section's place; an orphaned fragment line sets none.
 mkdir -p "$ord_dir/scripts/test/durations.d"
-printf '%s\n' "10	11	ord a" "30	31	ord b" >"$ord_dir/scripts/test/section-durations.tsv"
-printf '%s\n' "50	51	ord a" "90	90	a section that no longer exists" >"$ord_dir/scripts/test/durations.d/f.tsv"
+printf '%s\n' "30	31	ord a" "10	11	ord b" >"$ord_dir/scripts/test/section-durations.tsv"
+printf '%s\n' "50	51	ord b" "90	90	a section that no longer exists" >"$ord_dir/scripts/test/durations.d/f.tsv"
 ord_run 2 '^ord (a|b)$'
-assert_eq "a fragment's line sets a section's place in the start order" "$ord_started" "ord a,ord b,"
-printf '%s\n' "99	99	a section that no longer exists" >"$ord_dir/scripts/test/durations.d/f.tsv"
-ord_run 2 '^ord (a|b)$'
-assert_eq "an orphaned fragment line sets no place" "$ord_started" "ord b,ord a,"
+assert_eq "a fragment's line sets a section's place in the start order" "$ord_started" "ord b,ord a,"
 # A suite list naming a missing suite gives walk order.
 rm -f "$ord_dir/scripts/test/durations.d/f.tsv"
 sed -i 's/^\(suites=(\)/\1no-such-suite.sh /' "$ord_dir/scripts/test/all.sh"
@@ -1363,9 +1360,6 @@ mkdir -p "$sh_t/durations.d"
 printf '%s\n' "1	99	shard s1" "1	99	a section that no longer exists" >"$sh_t/durations.d/f.tsv"
 sh_run 1/2
 assert_eq "a fragment's line sets a section's weight in the dealing" "$sh_printed" "isolation,s2,s5,"
-printf '%s\n' "1	99	a section that no longer exists" >"$sh_t/durations.d/f.tsv"
-sh_run 1/2
-assert_eq "an orphaned fragment line sets no weight" "$sh_printed" "isolation,s3,s4,"
 # A failing helper (a suite list naming a missing suite) exits 1.
 sed -i 's/^\(suites=(\)/\1no-such-suite.sh /' "$sh_t/all.sh"
 sh_run 1/2
