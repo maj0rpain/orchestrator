@@ -2758,14 +2758,12 @@ check "docker/compose.yaml limits CPU from ORCH_CPUS and .env.example documents 
 # .env.example documents it.
 # scan_memory_limit <plugin root>: one line per break of that rule.
 scan_memory_limit() { compose_limit_breaks "$1" ORCH_MEMORY mem_limit memswap_limit; }
-fixture="$(new_fixture)"
-mkdir -p "$fixture/docker"
-printf 'services:\n  a:\n    restart: no\n' >"$fixture/docker/compose.yaml"
-printf '# FOO=\n' >"$fixture/docker/.env.example"
+# The CPU checks above only read $fixture, so its two files are still bare.
+bare_memory_scan="$(scan_memory_limit "$fixture")"
 flags "a compose file without either memory key is flagged for mem_limit" \
-  "$(scan_memory_limit "$fixture")" "no mem_limit"
+  "$bare_memory_scan" "no mem_limit"
 flags "a compose file without either memory key is flagged for memswap_limit" \
-  "$(scan_memory_limit "$fixture")" "no memswap_limit"
+  "$bare_memory_scan" "no memswap_limit"
 printf 'services:\n  a:\n    mem_limit: ${ORCH_MEMORY:-0}\n' >"$fixture/docker/compose.yaml"
 flags "a compose file with mem_limit but no memswap_limit is flagged" \
   "$(scan_memory_limit "$fixture")" "no memswap_limit"
