@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.9.5
+
+Clean up the ticket verification script: one name per loop variable, each file list written once, `suites_load` split from a new `support_load`, and an unreachable row guard removed. What it selects is unchanged.
+
 ## 6.9.4
 
 Simplify the agent copy marker check and its tests: `agent_copy_marked` has one failure branch, and the Junie session report test uses the shared counting fixture.
