@@ -394,9 +394,8 @@ assert_eq "image: busy skip removes nothing" "$(rm_calls)" "0"
 run_up --force
 assert_contains "image: --force recreate removes the old id" "$log" "image rm old1|"
 
-new_case ".env"
-echo "repo/img:tag" >"$FAKE_DIR/images.default"
-echo new1 >"$FAKE_DIR/img-after.repo_img_tag"
+img_case old1 new1
+rm "$FAKE_DIR/psa.default" "$FAKE_DIR/img.repo_img_tag"
 run_up
 assert_contains "image: first creation" "$out" "created"
 assert_eq "image: first creation removes nothing" "$(rm_calls)" "0"
