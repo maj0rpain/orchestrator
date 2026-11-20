@@ -1,5 +1,13 @@
 # Changelog
 
+## 6.9.11
+
+Test-only: the harness suite builds its three affected.sh --plan fixtures with one shared throwaway-repo helper set.
+
+## 6.9.10
+
+Move the bash version guard test helper into the global test file preamble, rename the guard's judged version to ORCH_BASH_JUDGED on its own line, and drop the stale bash 3.2 reason from the phase-order record. No behaviour changes.
+
 ## 6.9.9
 
 The Marked comment prelude's `marked_comment_list` now holds the one non-array guard, so `marked_comment_entries` and `marked_comment_of` refuse an object as `marked_comment_texts` and `marked_comment_drop` already did, and the two copied guards are gone. `comments_trusted` and `comments_rendered` die as a misuse, with status 1 even under `--exit 2`, on a kind other than `issue` or `pr`, where they reported unparseable comments before. `bundle_members_close` reads and renders a member's comments in one condition with one message. `handoff_comment_post` loses its mode argument: `autopilot start` posts its plan through its own `handoff_comment_post_url`, and both posts build the marked body through `handoff_comment_body`. Nothing `handoff post`, the minimal plan post or `autopilot start` prints or exits with changes. The tests drop a large PR comment case the Issue section already covers and give the review-pass issue-comments read failure its own case.
