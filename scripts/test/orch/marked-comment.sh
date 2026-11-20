@@ -135,10 +135,11 @@ mc texts "$(mc_object "keep" $'## Spec review\nx')" spec-review
 assert_eq "texts handed the issue object exits non-zero and prints nothing" "$([ "$mc_rc" != 0 ] && echo nonzero):$mc_out" "nonzero:"
 
 # The prelude's entries and of refuse the issue object themselves.
-for prog in 'marked_comment_entries' 'marked_comment_of("spec-review"; "")'; do
-  out="$(mc_jq "$prog" <<<"$(mc_object "keep" $'## Spec review\nx')" 2>/dev/null)"; rc=$?
-  assert_eq "the prelude's $prog handed the issue object fails and prints nothing" "$([ "$rc" != 0 ] && echo nonzero):$out" "nonzero:"
-done
+# shellcheck disable=SC2016 # the script is single-quoted, and the module expands in the child
+got="$(sourced_orch_script 'obj="$1"; for prog in marked_comment_entries "marked_comment_of(\"spec-review\"; \"\")"; do out="$(jq -c "$(marked_comment_jq)"" $prog" <<<"$obj" 2>/dev/null)" && rc=0 || rc=$?; echo "$prog:$([ "$rc" != 0 ] && echo nonzero):$out"; done' "$(mc_object "keep" $'## Spec review\nx')")"
+assert_eq "the prelude's entries and of handed the issue object fail and print nothing" "$got" \
+  'marked_comment_entries:nonzero:
+marked_comment_of("spec-review"; ""):nonzero:'
 
 # Spec ruling.
 mc texts "$(mc_array $'Spec ruling: a\r\n- b\r\n' "x")" spec-ruling
