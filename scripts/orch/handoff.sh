@@ -255,11 +255,13 @@ handoff_comment_body() {
 # `orch: gh could not post ...: <reason>` on stderr, when the post fails; each
 # caller chooses its reaction.
 handoff_comment_post() {
-  local issue="$1" name="$2" file="$3" body gh_err post_ok=1
+  local issue="$1" name="$2" file="$3" body gh_err
   handoff_comment_body "$name" "$file" body
-  gh_capture_err gh_err adapter_issue_comment "$issue" "$body" || post_ok=
+  if gh_capture_err gh_err adapter_issue_comment "$issue" "$body"; then
+    rm -f "$body"
+    return 0
+  fi
   rm -f "$body"
-  [ -n "$post_ok" ] && return 0
   warn "gh could not post the $name handoff on issue #$issue: $(gh_reason "$gh_err")"
   return 1
 }

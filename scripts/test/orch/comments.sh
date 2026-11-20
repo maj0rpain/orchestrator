@@ -95,15 +95,11 @@ rc=2"
 
 # A kind other than issue or pr is a misuse: it dies, status 1 even under
 # --exit 2, and no gh call is made.
-for cm_fn in comments_trusted comments_rendered; do
-  assert_eq "$cm_fn on kind repo dies as a misuse" \
-    "$(cm_run "($cm_fn repo 'read repo #7' 7 got) || rc=\$?")" \
-    "orch: comments_trusted: unknown kind: repo (want issue|pr)
+cm_misuse="orch: comments_trusted: unknown kind: repo (want issue|pr)
 rc=1"
-done
-assert_eq "comments_trusted on kind repo under --exit 2 still dies with status 1" \
-  "$(cm_run '(comments_trusted --exit 2 repo "read repo #7" 7 got) || rc=$?')" \
-  "orch: comments_trusted: unknown kind: repo (want issue|pr)
+assert_eq "comments_trusted and comments_rendered on kind repo die as a misuse, status 1 even under --exit 2" \
+  "$(cm_run 'for cm_call in "comments_trusted" "comments_rendered" "comments_trusted --exit 2"; do rc=0; ($cm_call repo "read repo #7" 7 got) || rc=$?; echo "rc=$rc"; done')" \
+  "$(printf '%s\n%s\n%s' "$cm_misuse" "$cm_misuse" "$cm_misuse")
 rc=1"
 
 # The rendered shape (COMMENTS_RENDER_JQ), run on normalised comments.

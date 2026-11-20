@@ -111,7 +111,7 @@
 12	13	checkout (#1078)	85b65822bd5ebac5cdac093e84c0a28d92c25cc0
 3	4	checkout current branch (#1079)	8ed29994be0d37ea761c6fba66a7f1594d5332d1
 19	14	checkout busy, redo-retired branch (#1981)	d6d2a1101edb4c54066c3be0085daad6d002bc7b
-18	21	comments module	739322b3d4c13677d2d97a98fa6d910f36f20073
+17	20	comments module	63b33670651b735a4d78b1ffbc11b8e920a9990a
 8	10	common.sh is the bottom layer	04f7eed4e1b745bc381196f09f7ddd3c7337cc02
 0	1	orch_dirs_unexcluded	12a7c2c452ab0556c398c46950d20b677e85748f
 2	2	exclude_line	91fd2dfe3a47af5e150b38ca04a8fa5232fb2954
