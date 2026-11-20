@@ -703,12 +703,22 @@ assert_eq "and in state.json" "$(orch_gh_failing state get base_sha)" "$new_tip"
 assert_eq "branch base-sha prints the merge's second parent" "$(orch_gh_failing branch base-sha)" "$new_tip"
 assert_eq "and pushing the resolution" "$(bs_origin_tip orch/11-bsync)" "$resolved"
 
+# A resolver's fix commit above the resolved merge: --finish still records the
+# merge's second parent.
+echo fix >fixup.txt; git add fixup.txt; git commit -qm "resolver fix"
+orch_gh_failing branch sync --finish >/dev/null 2>&1; st=$?
+assert_status "--finish with one fix commit above the merge exits 0" "$st" 0
+assert_eq "recording the merge's second parent with a fix commit above" "$(bs_sha)" "$new_tip"
+git reset -q --hard "$resolved"
+git push -q -f origin "orch/11-bsync:orch/11-bsync"
+
 # --finish refusals move nothing.
 sha_before="$(bs_sha)"
-git reset -q --hard HEAD^1
+git reset -q --hard "$(git rev-list --max-parents=0 HEAD | tail -1)"
 out="$(orch_gh_failing branch sync --finish 2>&1)"; st=$?
-assert_status "--finish refuses a HEAD that is not a merge commit" "$st" 1
+assert_status "--finish refuses a first-parent chain holding no merge" "$st" 1
 assert_eq "moving no base SHA (not a merge)" "$(bs_sha)" "$sha_before"
+assert_contains "saying the chain holds no merge" "$out" "no merge commit"
 git reset -q --hard "$resolved"
 side="$(git commit-tree -p HEAD -m side 'HEAD^{tree}')"
 git reset -q --hard "$(git commit-tree -p HEAD -p "$side" -m "foreign merge" 'HEAD^{tree}')"
