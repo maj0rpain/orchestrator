@@ -1742,7 +1742,8 @@ assert_eq "the line ends with four columns" "$(awk -F'\t' '$3 == "dur a" { print
 assert_eq "and every other line is as it was" "$(stale_except 'dur a')" "$(stale_except 'dur a' "$dur_dir/base.tsv")"
 stale_reset
 # Orphaned lines are not judged: nothing is out of date, nothing is measured
-# (a failing section planted but listed would fail a run) and no fragment is made.
+# (a failing section planted but listed would fail a run) and no fragment is
+# made.
 printf '5\t5\tgone\tabc\n' >>"$dur_file"
 cp "$dur_file" "$dur_dir/orphan.tsv"
 out="$(dur_stale)"; st=$?
@@ -1802,14 +1803,16 @@ assert_eq "it writes the line of the edited section in feat-x.tsv, and only that
 assert_eq "the durations file is byte for byte as it was" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
 assert_eq "and the other fragment too" "$(<"$dur_test/durations.d/zzz-other.tsv")" "$(<"$dur_dir/other.keep")"
 cp "$dur_frag" "$dur_dir/frag1.tsv"
-# Run again: a re-recorded title's line is replaced, a new line added, walk order kept.
+# Run again: a re-recorded title's line is replaced, a new line added, walk
+# order kept.
 echo '# edited again' >>"$dur_orch/zz-planted.sh"
 dur_plant_new
 out="$(dur_stale)"; st=$?
 assert_status "--stale over its own fragment exits 0" "$st" 0
 assert_eq "it keeps walk order, one line per title" "$(cut -f3 "$dur_frag" | tr '\n' ',')" "dur new,dur b,"
 assert_ne "the re-recorded title's line is replaced" "$(fp_of 'dur b' "$dur_frag")" "$(fp_of 'dur b' "$dur_dir/frag1.tsv")"
-# A title on two lines of its own fragment ends on one; a shellcheck line is never written.
+# A title on two lines of its own fragment ends on one; a shellcheck line is
+# never written.
 { cat "$dur_frag"; printf '1\t1\tdur new\tstale\n7\t7\tshellcheck\n'; } >"$dur_dir/frag2.tsv"
 cp "$dur_dir/frag2.tsv" "$dur_frag"
 out="$(dur_stale)"; st=$?

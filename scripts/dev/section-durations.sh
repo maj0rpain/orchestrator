@@ -37,8 +37,9 @@
 # leaves the committed file as it was; the file is replaced only when
 # everything passed; it then deletes every durations fragment (never `.gitkeep`)
 # along with it. On INT or TERM while it measures, it stops every run it
-# started, exits 130 and leaves the durations file and every fragment in place. A TERM during the
-# final copy into the durations file and the fragments' deletion is held until they end, so the file is
+# started, exits 130 and leaves the durations file and every fragment in
+# place. A TERM during the final copy into the durations file and the
+# fragments' deletion is held until they end, so the file is
 # then whole and new, never partial.
 #
 # With the argument --stale it records only what is out of date, in the
