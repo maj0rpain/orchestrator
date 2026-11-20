@@ -1493,9 +1493,11 @@ dur_plant_failing() {
     '  echo; echo "dur fails"; bad "dur fails" "planted"' |
     plant_file "$dur_orch" zzz-failing.sh
 }
+# dur_spin: the planted sections' loop, spinning only when DUR_BURN is set.
+dur_spin='[ -z "${DUR_BURN:-}" ] || for ((i = 0; i < 200000; i++)); do :; done'
 # dur_plant_new: one planted section, "dur new", in aa-new.sh.
 dur_plant_new() {
-  printf '%s\n' '  # --- dur new' '  echo; echo "dur new"; for ((i = 0; i < 200000; i++)); do :; done; ok "new ran"' |
+  printf '%s\n' '  # --- dur new' "  echo; echo \"dur new\"; $dur_spin; ok \"new ran\"" |
     plant_file "$dur_orch" aa-new.sh
 }
 printf 'stale line\n' >"$dur_out"
@@ -1619,24 +1621,24 @@ fp_of() { awk -F'\t' -v t="$1" '$3 == t { print $4 }' "${2:-$dur_file}"; }
 dur_stale() {
   "${dur_cmd[@]}" "$@" bash "$dur_dev_script" --stale 2>&1
 }
-# st_last <output>: the output's last line. st_cpu <title>: that line's CPU
-# tenths. st_set <cpu> <title>...: plants that CPU on each title's line.
-st_last() { printf '%s\n' "$1" | tail -n 1; }
-st_cpu() { awk -F'\t' -v t="$1" '$3 == t { print $2 }' "$dur_file"; }
-st_set() {
+# stale_last <output>: the output's last line. stale_cpu <title>: that line's
+# CPU tenths. stale_set <cpu> <title>...: plants that CPU on each title's line.
+stale_last() { printf '%s\n' "$1" | tail -n 1; }
+stale_cpu() { awk -F'\t' -v t="$1" '$3 == t { print $2 }' "$dur_file"; }
+stale_set() {
   local c="$1" titles
   shift
   titles="$(printf '%s\n' "$@")"
   awk -F'\t' -v OFS='\t' -v c="$c" -v ts="$titles" \
     'BEGIN { n = split(ts, a, "\n"); for (i = 1; i <= n; i++) want[a[i]] = 1 } $3 in want { $2 = c } 1' \
-    "$dur_file" >"$dur_dir/st.tmp" && cp "$dur_dir/st.tmp" "$dur_file"
+    "$dur_file" >"$dur_dir/stale.tmp" && cp "$dur_dir/stale.tmp" "$dur_file"
 }
-# st_except <title> [<file>]: <file> or the durations file, less the title.
-st_except() {
+# stale_except <title> [<file>]: <file> or the durations file, less the title.
+stale_except() {
   awk -F'\t' -v t="$1" '$3 != t' "${2:-$dur_file}"
 }
 printf '%s\n' '  # --- dur cal' \
-  '  echo; echo "dur cal"; for ((i = 0; i < 200000; i++)); do :; done; if [ -e "${DUR_FAIL:-/nonexistent}" ]; then bad "dur cal" "planted"; else ok "cal ran"; fi' |
+  "  echo; echo \"dur cal\"; $dur_spin; " 'if [ -e "${DUR_FAIL:-/nonexistent}" ]; then bad "dur cal" "planted"; else ok "cal ran"; fi' |
   plant_file "$dur_orch" zzz-cal.sh
 cp "$dur_orch/zz-planted.sh" "$dur_dir/planted.keep"
 cp "$dur_test/stub_a.sh" "$dur_dir/stub_a.keep"
@@ -1648,10 +1650,10 @@ assert_eq "every line but shellcheck's has four columns" \
   "$(awk -F'\t' '$3 != "shellcheck" && NF != 4 { n++ } END { print n + 0 }' "$dur_file")" "0"
 assert_eq "and shellcheck's keeps three" \
   "$(awk -F'\t' '$3 == "shellcheck" { print NF }' "$dur_file")" "3"
-assert_eq "a fingerprint is not empty" "$([ -n "$(fp_of 'dur a')" ] && echo yes)" "yes"
-assert_eq "two sections' fingerprints differ" "$([ "$(fp_of 'dur a')" != "$(fp_of 'dur b')" ] && echo yes)" "yes"
-# st_reset: the tree and the file as the base recorded them.
-st_reset() {
+assert_ne "a fingerprint is not empty" "$(fp_of 'dur a')" ""
+assert_ne "two sections' fingerprints differ" "$(fp_of 'dur a')" "$(fp_of 'dur b')"
+# stale_reset: the tree and the file as the base recorded them.
+stale_reset() {
   cp "$dur_dir/planted.keep" "$dur_orch/zz-planted.sh"
   cp "$dur_dir/stub_a.keep" "$dur_test/stub_a.sh"
   cp "$dur_dir/stub_b.keep" "$dur_test/stub_b.sh"
@@ -1666,36 +1668,32 @@ out="$(dur_stale)"; st=$?
 assert_status "--stale on a fresh ledger exits 0" "$st" 0
 assert_contains "saying nothing is out of date" "$out" "nothing out of date"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
-assert_contains "and ends on the total, the budget named as missing" "$(st_last "$out")" "budget missing"
+assert_contains "and ends on the total, the budget named as missing" "$(stale_last "$out")" "budget missing"
 printf '1100\n' >"$dur_test/suite-budget"
 out="$(dur_stale)"
 assert_eq "with a budget file it ends on the total and the budget" \
-  "$(st_last "$out" | sed 's/total [0-9.]* /total N /')" "section-durations.sh: total N CPU seconds, budget 1100 CPU seconds"
+  "$(stale_last "$out" | sed 's/total [0-9.]* /total N /')" "section-durations.sh: total N CPU seconds, budget 1100 CPU seconds"
 assert_eq "the total is the CPU column's sum" \
-  "$(( 10#$(st_last "$out" | sed "s/.*total \([0-9]*\)\.\([0-9]\) .*/\1\2/") ))" \
+  "$(( 10#$(stale_last "$out" | sed "s/.*total \([0-9]*\)\.\([0-9]\) .*/\1\2/") ))" \
   "$(awk -F'\t' '{ s += $2 } END { print s }' "$dur_file")"
-printf 'abc\n' >"$dur_test/suite-budget"
-out="$(dur_stale)"
-assert_contains "a budget file holding abc is named as missing" "$(st_last "$out")" "budget missing"
-rm -f "$dur_test/suite-budget"
 
 # A stale section: only its line changes, byte for byte otherwise.
 echo '# edited' >>"$dur_orch/zz-planted.sh"
 out="$(dur_stale)"; st=$?
 assert_status "--stale on an edited section exits 0" "$st" 0
-assert_eq "it rewrites that section's line, with a new fingerprint" \
-  "$([ "$(fp_of "dur b")" != "$(fp_of "dur b" "$dur_dir/base.tsv")" ] && echo yes)" "yes"
+assert_ne "it rewrites that section's line, with a new fingerprint" \
+  "$(fp_of "dur b")" "$(fp_of "dur b" "$dur_dir/base.tsv")"
 assert_eq "and leaves every other line byte for byte" \
-  "$(st_except 'dur b')" "$(st_except 'dur b' "$dur_dir/base.tsv")"
+  "$(stale_except 'dur b')" "$(stale_except 'dur b' "$dur_dir/base.tsv")"
 assert_eq "and the title keeps its place" "$(cut -f3 "$dur_file" | tr '\n' ',')" "$(cut -f3 "$dur_dir/base.tsv" | tr '\n' ',')"
-st_reset
+stale_reset
 # A three-column section line becomes a four-column one.
 awk -F'\t' -v OFS='\t' '$3 == "dur a" { NF = 3 } 1' "$dur_dir/base.tsv" >"$dur_file"
 out="$(dur_stale)"; st=$?
 assert_status "--stale on a three-column section line exits 0" "$st" 0
 assert_eq "the line ends with four columns" "$(awk -F'\t' '$3 == "dur a" { print NF }' "$dur_file")" "4"
-assert_eq "and every other line is as it was" "$(st_except 'dur a')" "$(st_except 'dur a' "$dur_dir/base.tsv")"
-st_reset
+assert_eq "and every other line is as it was" "$(stale_except 'dur a')" "$(stale_except 'dur a' "$dur_dir/base.tsv")"
+stale_reset
 # Orphaned lines are removed with nothing measured: a failing section planted
 # but listed would fail a run, so only the file shows nothing ran.
 printf '5\t5\tgone\tabc\n' >>"$dur_file"
@@ -1710,13 +1708,13 @@ assert_status "--stale on a title on two lines exits 0" "$st" 0
 assert_eq "it ends as one line for the title" "$(awk -F'\t' '$3 == "dur a"' "$dur_file" | wc -l | tr -d ' ')" "1"
 assert_eq "with the fingerprint the text has" \
   "$(fp_of "dur a")" "$(fp_of "dur a" "$dur_dir/base.tsv")"
-st_reset
+stale_reset
 # Two shellcheck lines end as the first.
 printf '7\t7\tshellcheck\n' >>"$dur_file"
 out="$(dur_stale)"; st=$?
 assert_status "--stale on two shellcheck lines exits 0" "$st" 0
 assert_eq "they end as the first, the rest removed, shellcheck not measured" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
-st_reset
+stale_reset
 # A missing section, in walk order, and the budget file missing.
 dur_plant_new
 out="$(dur_stale)"; st=$?
@@ -1724,19 +1722,20 @@ assert_status "--stale on a missing section exits 0" "$st" 0
 assert_eq "its new line sits in walk order" "$(cut -f3 "$dur_file" | tr '\n' ',')" \
   "isolation,dur new,dur a,dur b,dur cal,stub_a.sh,stub_b.sh,shellcheck,"
 assert_eq "with a fingerprint" "$(awk -F'\t' '$3 == "dur new" { print NF }' "$dur_file")" "4"
-assert_eq "and every other line as it was" "$(st_except 'dur new')" "$(<"$dur_dir/base.tsv")"
-assert_contains "the budget file missing still records, and the last line says so" "$(st_last "$out")" "budget missing"
-st_reset
-# A stale other suite is measured and its line rewritten.
-echo '# edited' >>"$dur_test/stub_a.sh"
+assert_eq "and every other line as it was" "$(stale_except 'dur new')" "$(<"$dur_dir/base.tsv")"
+assert_contains "the budget file missing still records, and the last line says so" "$(stale_last "$out")" "budget missing"
+stale_reset
+# A stale other suite is measured and its line rewritten. The edit plants a
+# guard, so the one run also proves a suite is measured with
+# DOCS_LINT_RECORDING=1 (docs_lint.sh skips the ledger-fresh rule under it).
+printf '#!/usr/bin/env bash\necho\n[ "${DOCS_LINT_RECORDING:-}" = 1 ] || exit 1\necho "1 passed, 0 failed"\n' >"$dur_test/stub_a.sh"
 printf 'abc\n' >"$dur_test/suite-budget"
 out="$(dur_stale)"; st=$?
 assert_status "--stale on an edited other suite exits 0" "$st" 0
-assert_contains "a malformed budget file still records, and the last line names it as missing" "$(st_last "$out")" "budget missing"
-assert_eq "its fingerprint changed" \
-  "$([ "$(fp_of stub_a.sh)" != "$(fp_of stub_a.sh "$dur_dir/base.tsv")" ] && echo yes)" "yes"
-assert_eq "and every other line is as it was" "$(st_except stub_a.sh)" "$(st_except stub_a.sh "$dur_dir/base.tsv")"
-st_reset
+assert_contains "a malformed budget file still records, and the last line names it as missing" "$(stale_last "$out")" "budget missing"
+assert_ne "its fingerprint changed" "$(fp_of stub_a.sh)" "$(fp_of stub_a.sh "$dur_dir/base.tsv")"
+assert_eq "and every other line is as it was" "$(stale_except stub_a.sh)" "$(stale_except stub_a.sh "$dur_dir/base.tsv")"
+stale_reset
 # A job count of 1 is refused.
 echo '# edited' >>"$dur_orch/zz-planted.sh"
 out="$(dur_stale ORCH_TEST_JOBS=1)"; st=$?
@@ -1748,31 +1747,25 @@ out="$(dur_stale DUR_FAIL=/etc/hostname)"; st=$?
 assert_status "a failing calibration section fails --stale" "$st" 1
 assert_contains "naming it" "$out" "dur cal"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
-st_reset
+stale_reset
 dur_plant_failing
 out="$(dur_stale)"; st=$?
 assert_status "a failing missing section fails --stale" "$st" 1
 assert_contains "naming it" "$out" "dur fails"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
-st_reset
+stale_reset
 echo '  bad "dur b" "planted"' >>"$dur_orch/zz-planted.sh"
 out="$(dur_stale)"; st=$?
 assert_status "a failing stale section fails --stale" "$st" 1
 assert_contains "naming it" "$out" "dur b"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
-st_reset
+stale_reset
 printf '#!/usr/bin/env bash\necho; echo "  FAIL x"; echo "0 passed, 1 failed"; exit 1\n' >"$dur_test/stub_b.sh"
 out="$(dur_stale)"; st=$?
 assert_status "a failing stale other suite fails --stale" "$st" 1
 assert_contains "naming it" "$out" "stub_b.sh"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
-st_reset
-# A suite is measured with DOCS_LINT_RECORDING=1, so docs_lint.sh can skip the
-# rule that the ledger it is being measured for is fresh.
-printf '#!/usr/bin/env bash\necho\n[ "${DOCS_LINT_RECORDING:-}" = 1 ] || exit 1\necho "1 passed, 0 failed"\n' >"$dur_test/stub_b.sh"
-out="$(dur_stale)"; st=$?
-assert_status "--stale measures a suite with DOCS_LINT_RECORDING=1" "$st" 0
-st_reset
+stale_reset
 # No fresh section: refused, naming the full refresh.
 echo '# edited' >>"$dur_orch/zz-planted.sh"
 awk -F'\t' -v OFS='\t' '{ NF = 3 } 1' "$dur_dir/base.tsv" >"$dur_file"
@@ -1785,26 +1778,27 @@ rm -f "$dur_file"
 out="$(dur_stale)"; st=$?
 assert_status "--stale with no durations file exits 1" "$st" 1
 assert_eq "and does not create the file" "$([ -e "$dur_file" ] && echo yes || echo no)" "no"
-st_reset
+stale_reset
 # Scaling, by direction and a wide bound: a missing section's line against
 # fresh lines planted far above, then far below, what they measure.
 dur_plant_new
-st_set 9000 'dur a' 'dur b' 'dur cal'
+stale_set 9000 'dur a' 'dur b' 'dur cal'
 cp "$dur_file" "$dur_dir/high.tsv"
-out="$(dur_stale)"; st=$?
+out="$(dur_stale DUR_BURN=1)"; st=$?
 assert_status "--stale beside fresh lines planted far above passes" "$st" 0
-assert_eq "the new line is far above its own measurement" "$([ "$(st_cpu 'dur new')" -ge 500 ] && echo yes)" "yes"
-assert_eq "and the fresh lines are as planted" "$(st_except 'dur new')" "$(<"$dur_dir/high.tsv")"
+assert_eq "the new line is far above its own measurement" "$([ "$(stale_cpu 'dur new')" -ge 500 ] && echo yes)" "yes"
+assert_eq "and the fresh lines are as planted" "$(stale_except 'dur new')" "$(<"$dur_dir/high.tsv")"
 cp "$dur_dir/base.tsv" "$dur_file"
-st_set 0 'dur a' 'dur b' 'dur cal'
-out="$(dur_stale)"
+stale_set 0 'dur a' 'dur b' 'dur cal'
+out="$(dur_stale DUR_BURN=1)"
 assert_eq "beside fresh lines planted far below, the new line is far below" \
-  "$([ "$(st_cpu 'dur new')" -le 20 ] && echo yes)" "yes"
-st_reset
+  "$([ "$(stale_cpu 'dur new')" -le 20 ] && echo yes)" "yes"
+stale_reset
 # The calibration choice: six more sections; the five nearest 5.0 seconds are
 # planted at 5.0, every other fresh line and isolation's at 0.
-printf '%s\n' '  # --- cal m1' '  echo; for ((i = 0; i < 200000; i++)); do :; done; ok "m1"' '  # --- cal m2' '  echo; for ((i = 0; i < 200000; i++)); do :; done; ok "m2"' '  # --- cal m3' '  echo; for ((i = 0; i < 200000; i++)); do :; done; ok "m3"' \
-  '  # --- cal m4' '  echo; for ((i = 0; i < 200000; i++)); do :; done; ok "m4"' '  # --- cal m5' '  echo; for ((i = 0; i < 200000; i++)); do :; done; ok "m5"' '  # --- cal m6' '  echo; for ((i = 0; i < 200000; i++)); do :; done; ok "m6"' |
+for m in 1 2 3 4 5 6; do
+  printf '%s\n' "  # --- cal m$m" "  echo; $dur_spin; ok \"m$m\""
+done |
   plant_file "$dur_orch" zzz-many.sh
 # The six sections have fresh four-column lines, as a full refresh writes.
 { grep -v $'\tshellcheck$' "$dur_dir/base.tsv"
@@ -1812,21 +1806,21 @@ printf '%s\n' '  # --- cal m1' '  echo; for ((i = 0; i < 200000; i++)); do :; do
     awk -F'\t' -v OFS='\t' '$1 ~ /^cal m/ { print 10, 10, $1, $2 }'
   grep $'\tshellcheck$' "$dur_dir/base.tsv"; } >"$dur_file"
 cp "$dur_file" "$dur_dir/many.tsv"
-st_set 0 isolation 'dur a' 'dur b' 'dur cal' 'cal m6'
-st_set 50 'cal m1' 'cal m2' 'cal m3' 'cal m4' 'cal m5'
+stale_set 0 isolation 'dur a' 'dur b' 'dur cal' 'cal m6'
+stale_set 50 'cal m1' 'cal m2' 'cal m3' 'cal m4' 'cal m5'
 dur_plant_new
-out="$(dur_stale)"; st=$?
+out="$(dur_stale DUR_BURN=1)"; st=$?
 assert_status "--stale with a planted calibration choice passes" "$st" 0
 assert_eq "a line scaled by the five sections nearest 5.0 is far above its own measurement" \
-  "$([ "$(st_cpu 'dur new')" -ge 10 ] && echo yes)" "yes"
+  "$([ "$(stale_cpu 'dur new')" -ge 10 ] && echo yes)" "yes"
 # With two fresh sections only, both planted far above: every other line is
 # cut to three columns, so it is measured, not fresh.
 cp "$dur_dir/many.tsv" "$dur_file"
 awk -F'\t' -v OFS='\t' '$3 == "dur a" || $3 == "dur b" { $2 = 9000; print; next } { NF = 3 } 1' "$dur_dir/many.tsv" >"$dur_file"
-out="$(dur_stale)"; st=$?
+out="$(dur_stale DUR_BURN=1)"; st=$?
 assert_status "--stale with two fresh sections passes" "$st" 0
-assert_eq "its new lines are far above their own measurement too" "$([ "$(st_cpu 'cal m1')" -ge 500 ] && echo yes)" "yes"
-st_reset
+assert_eq "its new lines are far above their own measurement too" "$([ "$(stale_cpu 'cal m1')" -ge 500 ] && echo yes)" "yes"
+stale_reset
 cp "$dur_dir/base.tsv" "$dur_dir/good.tsv"
 
 # TERM to the dev script (#2957), last in the section: a slow child records its
