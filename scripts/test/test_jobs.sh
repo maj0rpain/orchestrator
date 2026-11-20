@@ -104,10 +104,10 @@
 # section-durations.sh for every suite but orch_test.sh (it starts that one
 # through test_jobs_run_child), and orch_test.sh's parallel section start for
 # every section child. A suite is one script of a runner's suites list, or a
-# section child of orch_test.sh; each suite other than orch_test.sh, whose
-# coordinator mostly sleeps while its section children hold their own slots,
-# holds a slot while it runs. A suite's take step is test_jobs_slot_wait, above,
-# and a section child's is test_jobs_slot_take.
+# section child of orch_test.sh; each suite other than a whole orch_test.sh run
+# (its coordinator mostly sleeps while its section children hold their own
+# slots) holds a slot while it runs. A suite's take step is test_jobs_slot_wait,
+# above, and a section child's is test_jobs_slot_take.
 #
 # test_jobs_start_order <suite>...: sets the array TEST_JOBS_START_ORDER to the
 # indices of the suites named, in list order, with orch_test.sh's index last
