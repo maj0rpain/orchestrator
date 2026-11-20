@@ -88,12 +88,12 @@
 15	13	base	1d30c92ace82dbeb31bd2bb0af57badfdbedaf1c
 37	38	a flow's base branch	45475caadc481a9fbcda51773787f44333982e42
 3	4	base set on a truncated state.json (#1929)	de4767097a86d163c76e27f57e97f2f368040804
-23	18	branch create	5dc2fd66c97350a6d7b0913facf3518aef7ef412
+25	18	branch create	1dc2ff2bbd612ebe62e588cd8398e113e0eaa996
 21	16	branch off	a593304d47cbf00cd7703cb6cb488482578c09ae
 5	6	a quick implementation's base branch	46bcc2dc7b6d178534044f5ba9f13ebc3530850b
 3	4	a quick implementation's base SHA (#243)	35a26faa71afd7c0a5e72dedfebdc08736b4c9e3
 14	8	plugin-made branches have no upstream (#1152)	9fbf22e7b63732cecc65df507a97e629e4b2723b
-8	9	branch retire	cd615db2d50e5f2a3f6ef67d3f6bbafcc944c83d
+7	9	branch retire	3aacffdeb6d755080e2943b7462748b9dfce6681
 0	1	branch_records_base (#1713)	fe191a582c471d94004435e349209d91a1c7d92f
 38	40	branch sync (#792)	79b308cfbb3e0b2aaddebacc56f5d966a28c9eb0
 19	17	branch busy (#1201)	fafe7dc7d03fc92c6da1c58d3677d1034ffbde83
@@ -103,7 +103,7 @@
 11	11	the fork start point is decided where origin is asked (#1930)	3ceaf867c78b7705e4044fdf825391698dfedcca
 0	1	branch: unknown op	09ccbeff10e543f91244486e12686159f5541c9f
 2	3	branch retire beside a same-named tag (#2337)	4b6ee64b25b98b5c750805fad89df265fe42adb9
-13	8	branch create and branch off beside a same-named tag (#2337)	c7cda0ea0bd3fe50a3589436dfaec771f958366f
+14	7	branch create and branch off beside a same-named tag (#2337)	1128e41953f74cffde4492d138e78958e82ed68c
 47	33	breakdown publish	06e062e1f136bd148b926cae1ce00aa44fc8dfa3
 23	16	breakdown publish rewrites ## Blocked by	eca2fdd84bd9ad7527f6c1b3c8159b25d4c7067d
 2	3	breakdown state	3e39b6801eb24af84b286c35b744133ff1735fa8

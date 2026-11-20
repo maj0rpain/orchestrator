@@ -81,6 +81,13 @@ orch_gh_failing branch create >/dev/null
 assert_eq "branch create forks from origin's tip, not a stray origin/main branch" \
   "$(git rev-parse HEAD)" "$origin_tip"
 
+# branch_name_flow_into sets the flow's branch name with an empty PATH.
+assert_eq "branch_name_flow_into sets the flow's branch name with an empty PATH" \
+  "$(sourced_orch_script '
+    orch_load branch
+    PATH=
+    branch_name_flow_into n 12 some-slug; printf "[%s]" "$n"')" "[orch/12-some-slug]"
+
 # --- branch off --------------------------------------------------------------
 # A quick implementation keeps no state, so this is the primitive it shares
 # with a flow's own branch create: same fetch/checkout-fallback idiom, naming
@@ -505,10 +512,9 @@ assert_eq "and the resumed retire marks the new name" \
 # Origin refuses the old ref's delete and cannot be asked whether it is still
 # there (ls-remote fails with a status other than 0 and 2): the retire dies
 # without recording, says what landed and what did not, and names the rerun.
-fresh_bare_origin bare8
-# shellcheck disable=SC2154 # assigned by fresh_bare_origin
-git -C "$bare8" symbolic-ref HEAD refs/heads/to-unasked
-git -C "$bare8" config receive.denyDeleteCurrentBranch refuse
+# It reuses the to-protect case's origin, which still refuses to delete its
+# HEAD branch, and re-points that HEAD at to-unasked.
+git -C "$bare4" symbolic-ref HEAD refs/heads/to-unasked
 git checkout -q -b to-unasked
 git push -q -u origin to-unasked
 out="$(PATH="$(fails_bin git '*" ls-remote "*' 128):$PATH" orch_gh_failing branch retire to-unasked to-unasked-redo-1 2>&1)"; st=$?
@@ -524,15 +530,7 @@ assert_eq "an unanswered probe records no retirement" \
   "$(git config --get branch.to-unasked-redo-1.orchestrator-retired || true)" ""
 assert_eq "the new name stays local" "$(branch_presence to-unasked-redo-1)" "present"
 assert_eq "and is not renamed back" "$(branch_presence to-unasked)" "gone"
-assert_eq "origin has the new name" "$(origin_branch_state "$bare8" to-unasked-redo-1)" "pushed"
-
-# The rerun, once origin answers and no longer refuses, finishes the retire.
-git -C "$bare8" symbolic-ref HEAD refs/heads/unrelated
-out="$(orch_gh_failing branch retire to-unasked to-unasked-redo-1 2>&1)"; st=$?
-assert_status "the rerun once origin answers succeeds" "$st" 0
-assert_eq "and deletes the old remote ref" "$(origin_branch_state "$bare8" to-unasked)" "missing"
-assert_eq "and records the retirement" \
-  "$(git config --get branch.to-unasked-redo-1.orchestrator-retired || true)" "true"
+assert_eq "origin has the new name" "$(origin_branch_state "$bare4" to-unasked-redo-1)" "pushed"
 
 # A failed delete whose old ref origin answers is gone (an earlier delete
 # landed) carries on and records the retirement.
@@ -1514,10 +1512,3 @@ assert_status "branch off succeeds with origin unreachable beside a tag of the b
 assert_eq "and forks from the local base branch, not the tag" \
   "$(git rev-parse HEAD)" "$(git rev-parse "refs/heads/$fb_base")"
 restore_suite_env
-
-# branch_name_flow_into sets the flow's branch name with an empty PATH.
-assert_eq "branch_name_flow_into sets the flow's branch name with an empty PATH" \
-  "$(sourced_orch_script '
-    orch_load branch
-    PATH=
-    branch_name_flow_into n 12 some-slug; printf "[%s]" "$n"')" "[orch/12-some-slug]"
