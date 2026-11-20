@@ -556,8 +556,7 @@ readonly VERIFICATION_LABELS=("Ticket verification" "Full verification" "Branch 
 # The verification lines the agents read from the repo's instructions: a line
 # outside a fenced code block starting with `Ticket verification:`, `Full
 # verification:` or `Branch verification:` (ADR-0058). Doctor never judges
-# whether a command runs, only that each label is named once, with a command;
-# each label's report then ends on the installed check of that command.
+# whether a command runs, only that each label is named once, with a command.
 # Prints one tab-separated "<label> <file> <command>" line per verification
 # line, files in the order the agents read them, a label with no command
 # printing an empty command.
@@ -579,9 +578,11 @@ verification_lines() {
 
 # Reports one label by the first rule that holds: a label with no command is a
 # FAIL and the only line for it; two different commands warn; else the label is
-# found (ok) or not (warn for Full, ok naming the fallback for Ticket
-# and for Branch). A found label's report ends on the command line, the
-# installed check of its command (doctor never runs the command).
+# found (ok). A label no file names is reported by verification_missing. The
+# report of a found label, and of a label named twice with different commands
+# (for the first command, the one used), ends on the installed check of that
+# command, printed by verification_installed_check, which prints nothing for a
+# command that leaves no word (doctor never runs the command).
 # $1 is the label, $2 the scan's output.
 verification_report() {
   local label="$1" lines="$2" l f cmd first_f="" first_c="" have=0 bare="" other_f="" other_c=""
@@ -603,12 +604,12 @@ verification_report() {
   if [ -n "$other_f" ]; then
     d_warn "$label is named twice with different commands: '$first_c' in $first_f and '$other_c' in $other_f - the first, '$first_c', is the one used."
     d_remedy "remove the line '$label: $other_c' from $other_f, or make it match - see $setup"
-    verification_command_line "$label" "$first_f" "$first_c"
+    verification_installed_check "$label" "$first_f" "$first_c"
     return 0
   fi
   if [ "$have" -eq 0 ]; then verification_missing "$label"; return 0; fi
   d_ok "$label: $first_c ($first_f)"
-  verification_command_line "$label" "$first_f" "$first_c"
+  verification_installed_check "$label" "$first_f" "$first_c"
 }
 
 # The report of a label no file names: Full warns with its remedy, Ticket and
@@ -722,7 +723,7 @@ d_verification_found() {
 # arbitrary tool. A command that leaves no word says nothing. A function orch.sh
 # defines never counts as found: only a builtin, a keyword or a file does.
 # $1 is the label, $2 the file, $3 the command.
-verification_command_line() {
+verification_installed_check() {
   local word
   word="$(d_verification_word "$3")"
   [ -n "$word" ] || return 0
@@ -994,14 +995,14 @@ check_flow_pr() {
 # won't run. Listed for review alone, like check_flow_upstream's phases:
 # outside review, there is no loop to classify and nothing to say about one.
 check_flow_review_terminal() {
-  local i b terminal word detail
+  local i budget terminal word detail
   i="$D_FLOW_ITERATION"
-  b="$D_FLOW_BUDGET"
+  budget="$D_FLOW_BUDGET"
   # redo is read only when the flat record is gone (review_terminal_record).
   if review_flat_record_gone "$i"; then
     orch_load redo
   fi
-  terminal="$(review_terminal_state "$i" "$b")" || true
+  terminal="$(review_terminal_state "$i" "$budget")" || true
   lines_split "$terminal" word detail
   case "$word" in
     none)  d_ok "review loop: not started yet" ;;
@@ -1014,9 +1015,9 @@ check_flow_review_terminal() {
     # normally, where one whose last iteration recorded nothing looks like the
     # session that was driving it simply died.
     pending)
-      d_warn "review loop hasn't reached its budget yet (iteration $i of budget $b) - $(flow_cmd next) will resume it; redo refuses until it reaches a terminal state." ;;
+      d_warn "review loop hasn't reached its budget yet (iteration $i of budget $budget) - $(flow_cmd next) will resume it; redo refuses until it reaches a terminal state." ;;
     interrupted)
-      d_warn "review loop's last iteration ($i of budget $b) has no recorded terminal state - the session looks interrupted, not stopped. $(flow_cmd next) will resume it; redo refuses until it reaches a terminal state." ;;
+      d_warn "review loop's last iteration ($i of budget $budget) has no recorded terminal state - the session looks interrupted, not stopped. $(flow_cmd next) will resume it; redo refuses until it reaches a terminal state." ;;
     # A FAIL, not a warn: the record is there but unreadable, and
     # /orchestrator:next will not rewrite it - only a human editing it will.
     malformed)
@@ -1031,15 +1032,15 @@ check_flow_review_terminal() {
 # meant to be unreachable - an iteration count past it is not a loop still
 # running, it is state.json in a shape nothing produced on a healthy run.
 check_flow_review_budget() {
-  local i b
+  local i budget
   i="$D_FLOW_ITERATION"
-  b="$D_FLOW_BUDGET"
-  if [ "$i" -gt "$b" ]; then
-    d_fail "review loop iteration ($i) is past its budget ($b) - the loop's stop enforcement did not hold."
+  budget="$D_FLOW_BUDGET"
+  if [ "$i" -gt "$budget" ]; then
+    d_fail "review loop iteration ($i) is past its budget ($budget) - the loop's stop enforcement did not hold."
     d_remedy "$(flow_cmd abort)"
     return 0
   fi
-  d_ok "review loop iteration ($i) within budget ($b)"
+  d_ok "review loop iteration ($i) within budget ($budget)"
 }
 
 # The loop requires CI green (with one flake rerun) before it marks the PR
@@ -1129,7 +1130,7 @@ check_ticket_worktrees_left() {
 check_flow_worktree_clean() {
   local dirty err
   if ! capture dirty err dirty_outside_allowlist; then
-    d_fail "$(sed -n 's/^orch: //p' <<<"$err" | sed -n 1p)"
+    d_fail "$(err_line "$err")"
     return 0
   fi
   [ -n "$dirty" ] || return 0
