@@ -272,15 +272,16 @@ handoff_comment_post() {
 # (standing_start) is its only caller. Same failure contract as
 # handoff_comment_post.
 handoff_comment_post_url() {
-  local issue="$1" name="$2" file="$3" body gh_err posted_url="" post_ok=1
+  local issue="$1" name="$2" file="$3" body gh_err posted_url=""
   handoff_comment_body "$name" "$file" body
-  gh_capture posted_url gh_err adapter_issue_comment_url "$issue" "$body" || post_ok=
-  rm -f "$body"
-  if [ -z "$post_ok" ]; then
-    warn "gh could not post the $name handoff on issue #$issue: $(gh_reason "$gh_err")"
-    return 1
+  if gh_capture posted_url gh_err adapter_issue_comment_url "$issue" "$body"; then
+    rm -f "$body"
+    printf -v "$4" '%s' "$posted_url"
+    return 0
   fi
-  printf -v "$4" '%s' "$posted_url"
+  rm -f "$body"
+  warn "gh could not post the $name handoff on issue #$issue: $(gh_reason "$gh_err")"
+  return 1
 }
 
 # The Handoff store: where a flow's handoffs live, behind one interface with a
