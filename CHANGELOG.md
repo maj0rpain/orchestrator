@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.9.16
+
+Test-only: the affected-plan tests write the harness file's non-gate sections once, in `TR_HARNESS`.
+
 ## 6.9.15
 
 autopilot-up.sh removes the image a project's successful rebuild replaced, never forced, warning when Docker refuses. It never prunes the shared build cache; the container docs name `docker builder prune` and `docker image prune` as the manual reclaims.
