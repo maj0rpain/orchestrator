@@ -377,11 +377,9 @@ bundle_members_close() {
   for m in "${members[@]}"; do
     why=""
     held="left open"
-    if ! comments_trusted_read issue "$m" kept reason; then
+    if ! { comments_trusted_read issue "$m" kept reason && comments="$(comments_render <<<"$kept")"; }; then
       if [ -n "$reason" ]; then why="gh could not read member #$m's comments: $reason"
       else why="could not read member #$m's comments: its comments did not parse"; fi
-    elif ! comments="$(comments_render <<<"$kept")"; then
-      why="could not read member #$m's comments: its comments did not parse"
     elif ! grep -qE "Bundled into #$b([^0-9]|\$)" <<<"$comments" \
       && ! triage_comment_post err "$m" "$comment_file"; then
       why="gh could not comment on member #$m: $(gh_reason "$err")"

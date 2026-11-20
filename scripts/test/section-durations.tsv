@@ -48,7 +48,7 @@
 29	23	audit report	ae10a47e1f0db257b716316a4f7800b193c68623
 38	30	audit file batch	a1786986c75fd179a95f4411e35e32ab075dc8f0
 8	9	autopilot	60d914ab6aad1cf761d42e5d1385666f7090753d
-17	18	autopilot rounds, budget and start	41829146970a3ee47b79d27ccf9e27f2ba60d4f1
+19	22	autopilot rounds, budget and start	438dd73969d9a0fcb9ac7ba0b712a5babf88e033
 23	24	autopilot ask and answer	646445929ad04febc7c3cdb6d5d7cdfc421084b0
 21	23	autopilot reenter	9f551d768335d7d0af0835fa7b4f8705fab0e6d1
 62	63	autopilot tick and run	0f0958ef6beb91f659ddae98f3e535d6ad67c07d
@@ -111,7 +111,7 @@
 12	13	checkout (#1078)	85b65822bd5ebac5cdac093e84c0a28d92c25cc0
 3	4	checkout current branch (#1079)	8ed29994be0d37ea761c6fba66a7f1594d5332d1
 19	14	checkout busy, redo-retired branch (#1981)	d6d2a1101edb4c54066c3be0085daad6d002bc7b
-21	25	comments module	60c75de06b49ff19fe1f45024b92278062be3ab1
+17	20	comments module	63b33670651b735a4d78b1ffbc11b8e920a9990a
 8	10	common.sh is the bottom layer	04f7eed4e1b745bc381196f09f7ddd3c7337cc02
 0	1	orch_dirs_unexcluded	12a7c2c452ab0556c398c46950d20b677e85748f
 2	2	exclude_line	91fd2dfe3a47af5e150b38ca04a8fa5232fb2954
@@ -226,7 +226,7 @@
 8	10	orch_load	d6672871a4845b357d7ec3785e7b285cfddc1e25
 9	11	on-demand loading	6f5f8fdb61e60028685965dbdd5c3eb5ae8397b7
 10	11	stub table cache	f28bc3efe383c64ec4671e57784eb9058dec1d2e
-42	43	marked-comment module	af6dd53fa3dfe4fc5339996d6a1379bafdf42525
+42	44	marked-comment module	324231b375e7bb51bdb49f85cb5fc6f8a98b64b7
 1	2	parallel show	29ed0447ad25daddc7f71a506dad5df2ad3d3cba
 55	58	phase advance / phase boundary	db56fe480597de86f8a487c134e1e6b488336fee
 0	1	phase advance help names handoffs by role (#1066)	fb4e9c6b059ec9f7d1aed9b47f5b974a48096e04
@@ -260,7 +260,7 @@
 9	10	repo show	03b579d082d6e4e5353a860b91cb90f1006013d0
 7	8	default-branch	0177d6e5817d4d0befacac87fc2b2a0f621ad11b
 9	10	review-pass begin (#342)	c9a9274e4ded397a8c551e3b82717cd167110d2b
-52	65	review-pass known-items	c01aa6033c8a94081955880d1ea8ecdcc49dbb05
+52	64	review-pass known-items	1fef82c7211e3ec0461af015f37fbe44425ea8b8
 20	17	review ready's pointer to /orchestrator:finish (#727)	e8d2ed095a35df98ab05ed3f22261da9f491025c
 17	15	review begin	c4a68a37d613f9f5992ecf1b159a2ce1f9ba6bca
 4	5	review path	c78a5b250d2bed63c97a669e2cbac1fe74e42940
