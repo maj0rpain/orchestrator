@@ -156,7 +156,7 @@
 11	7	doctor --env: Standards declaration check (#3358)	db8ddf96af0952ab923f7cf7dd0cf95391a3537e
 8	6	doctor --env: glossary check (#3358)	4172d39e3dea88c444bbb7d3c631acd77046832e
 8	6	doctor --env: ADR directory check (#3358)	109f685c4bfd5cad8897ef55f9d3141822d4e817
-451	194	doctor --env: verification lines	a51e6873e722538705f4c710c1c7feb43423557f
+22	25	doctor --env: verification lines	a51e6873e722538705f4c710c1c7feb43423557f
 51	36	doctor --env: verification commands (#3346)	743a90c9a46a5ef85c7ea302c35fd60401839eb4
 0	1	is_filed_severity	41fb54217cc90b7a75a37b3ee336945167710410
 1	2	severity table	cbcec87893fb4d691f66b67cb960e1bc2f27d3d3
