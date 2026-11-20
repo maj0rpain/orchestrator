@@ -532,7 +532,8 @@ or accept it, then remove `needs-human`):
   claim: the phase is picked up again after the reset. The early GitHub pause
   acts before any limit is hit: a tick that finds `core` or `graphql` with
   less than `github-reserve` percent of its limit left pauses pickup until
-  that pool's reset, its note naming the pool. A failed read of the limits
+  that pool's reset, cut to an hour from the read when it is further out, its
+  note naming the pool. A failed read of the limits
   pauses nothing. The session log records how much `core` and `graphql`
   usage the session changed.
 

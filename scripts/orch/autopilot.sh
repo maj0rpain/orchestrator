@@ -1314,7 +1314,7 @@ autopilot_tick() {
 # any write, when the checkout or the claims cannot be read.
 autopilot_session_end() {
   local issue="$1" phase="$2" log="$3" rc="$4" mine="$5" main_root claim_after held=0 reply detail
-  local outcome=failure limit="" pause released_note hit_text hit_epoch=0 closing
+  local outcome=failure limit="" pause released_note hit_text hit_epoch=0 gh_reset=0 closing
   main_root="$(main_checkout_or_die)" || exit $?
   standing_claims_read
   if claim_after="$(standing_claim_fields "$issue")" && { [ -z "$mine" ] || [ "$claim_after" = "$mine" ]; }; then held=1; fi
@@ -1322,7 +1322,7 @@ autopilot_session_end() {
   hit_text="$(liveness_hit_take "$issue")" || exit $?
   [ -z "$hit_text" ] || hit_epoch="$(autopilot_iso_epoch "$hit_text")" || hit_epoch=0
   # A hit file from before the write cap may name a reset past the hour.
-  [ "$hit_epoch" -le 0 ] || hit_epoch="$(autopilot_github_reset_cap "$hit_epoch")"
+  [ "$hit_epoch" -le 0 ] || gh_reset="$(autopilot_github_reset_cap "$hit_epoch")"
   if [ "$held" = 0 ]; then
     outcome=released
   elif [ "$SESSION_LOG_LIMITED" = 1 ]; then
@@ -1336,7 +1336,7 @@ autopilot_session_end() {
   if [ -n "$limit" ] && { [ -z "$pause" ] || [ "$limit" -gt "$pause" ]; }; then pause="$limit"; fi
   if [ -n "$pause" ]; then autopilot_pause_extend "$(autopilot_usage_pause_file "$main_root")" "$pause" "$log"; fi
   if [ "$outcome" = github ]; then
-    autopilot_pause_extend "$(autopilot_github_pause_file "$main_root")" "$hit_epoch" "$log" GitHub
+    autopilot_pause_extend "$(autopilot_github_pause_file "$main_root")" "$gh_reset" "$log" GitHub
   fi
   closing="the session exited with code $rc"
   case "$outcome" in
@@ -1349,7 +1349,7 @@ autopilot_session_end() {
       autopilot_stop_attempts "$log" "$closing" standing_limit_stop "$issue" "$phase" "${SESSION_LOG_RESET:+$(autopilot_epoch_iso "$SESSION_LOG_RESET")}" "$(autopilot_epoch_iso "$limit")" "$rc" "$log"
       return ;;
     github)
-      autopilot_stop_attempts "$log" "$closing" standing_limit_stop "$issue" "$phase" "$(autopilot_epoch_iso "$hit_epoch")" "$(autopilot_epoch_iso "$hit_epoch")" "$rc" "$log" github
+      autopilot_stop_attempts "$log" "$closing" standing_limit_stop "$issue" "$phase" "$(autopilot_epoch_iso "$gh_reset")" "$(autopilot_epoch_iso "$gh_reset")" "$rc" "$log" github
       return ;;
   esac
   reply="$SESSION_LOG_REPLY"
