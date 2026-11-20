@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.10.5
+
+Pickup's contained-step wrapper and side-checkout step now capture their GitHub-reaching commands through the gh module's `gh_capture_err` and `gh_capture`, as CONTRIBUTING's rule requires. No behaviour changes.
+
 ## 6.10.4
 
 Each local in the review and doctor modules' budget and terminal-state helpers now holds one meaning, and the effective review budget is called `budget` throughout. No command output changes.
