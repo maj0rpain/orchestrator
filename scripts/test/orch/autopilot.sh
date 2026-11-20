@@ -3514,6 +3514,7 @@ rm -f "$hs_stamp"
 out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a tick whose sweep cannot read GitHub succeeds" "$st" 0
 assert_contains "it warns" "$out" "could not read GitHub"
+assert_eq "housekeeping's own sweep warns" "$(printf '%s\n' "$out" | grep -c 'the finished sweep failed - carrying on$')" 1
 assert_eq "the finished side checkout stays" "$(on_disk "$hs_done")" present
 assert_eq "and the tick still picks up" "$(tick_calls)" "1"
 fake_unfail
@@ -3525,6 +3526,7 @@ hs_git="$(git_fails_bin '*" worktree remove "*')"
 out="$(PATH="$hs_git:$PATH" "$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a failing sweep leaves the exit status" "$st" 0
 assert_contains "it warns" "$out" "orch: could not remove side checkout"
+assert_eq "housekeeping's own sweep warns" "$(printf '%s\n' "$out" | grep -c 'the finished sweep failed - carrying on$')" 1
 assert_eq "the stamp is written" "$(on_disk "$hs_stamp")" present
 assert_eq "and pickup happens" "$(tick_calls)" "2"
 rm -rf "$hs_git"
