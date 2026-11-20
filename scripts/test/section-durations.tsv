@@ -33,7 +33,7 @@
 0	0	the background child start (#3025)	f220e015537065a2c163be79d07de2b762404f7e
 2	1	the suite start (#3582)	2bbcc72545bb8c86426bb97cbb0200ce5cada1da
 2	3	the counting fixture's stdin counter (#3434)	f29dc9334a3bfe8fd184f087a5b2aafdd8ac7a1d
-50	44	affected.sh, the ticket verification (#2023)	899241a6f644b4bbcec2b6dafd3489c79ed6720c
+54	48	affected.sh, the ticket verification (#2023)	3cbd0e56475a1b6d76f85265bf8bf8939dbf6499
 1	1	the row rule (#3549)	d5025ef93fc07a442c5bbb184cebe1cf567c2cfc
 4	4	the shared test support, function by function (#3550)	a8668a1f16717d12d05ad6ab2787f81d50be6898
 2	2	the gh fake, operation by operation (#3551)	1ce7bff3167463ac98f8d773be5eadb253da52f3
