@@ -48,7 +48,7 @@
 29	23	audit report	ae10a47e1f0db257b716316a4f7800b193c68623
 38	30	audit file batch	a1786986c75fd179a95f4411e35e32ab075dc8f0
 8	9	autopilot	60d914ab6aad1cf761d42e5d1385666f7090753d
-17	18	autopilot rounds, budget and start	41829146970a3ee47b79d27ccf9e27f2ba60d4f1
+19	22	autopilot rounds, budget and start	438dd73969d9a0fcb9ac7ba0b712a5babf88e033
 23	24	autopilot ask and answer	646445929ad04febc7c3cdb6d5d7cdfc421084b0
 21	23	autopilot reenter	9f551d768335d7d0af0835fa7b4f8705fab0e6d1
 62	63	autopilot tick and run	0f0958ef6beb91f659ddae98f3e535d6ad67c07d
@@ -63,7 +63,7 @@
 55	55	autopilot questions, reply and resume	4da805d6b6928f4d16586d347eb40405f8ad8d2c
 1	2	autopilot_phase_arg refuses two adjacent phases (#1546)	236a5f8c3c11b75b24d0d7641de95c4d25666be5
 2	3	autopilot pause store	c370995aa5dd68dfcd4a64917da5d4e7a15c5574
-95	95	autopilot session end	953c159472afe93e2900c2e9cb5521dfaf8492d2
+112	124	autopilot session end	23e0a09e4b6f5e18acd4b16d4f92fce5eb5f9690
 2	32	autopilot tick: the trust check	fee7c9d2bfcb856df5a8e7d0a6658720a248eb87
 60	59	autopilot run: the budget and the final reply (#2004)	99d8b49071f6c5c09f8b0038a99ba350d52a7d2d
 3	4	autopilot answer on a truncated state.json (#1929)	9436eb3d4e492aca58e16ccc1ee44d805fba4d22
@@ -75,12 +75,12 @@
 31	32	autopilot tick: the merged-PR close backstop (#2478)	0033359ed474b5dd950f56f500c4fc9a6cd673ca
 57	58	autopilot tick: one read of the done issues (#2559)	97a136d2c4f927f2762892c8a812756b644683eb
 10	11	autopilot sync-finish, sync-dropped and sync-fail	78c02accdbb1a0a1177162e2b7cac98d10519259
-11	12	autopilot tick: the GitHub limit pause (#2577)	88e0746af43ccddb5015e049b5371eae1d66a9c6
+14	16	autopilot tick: the GitHub limit pause (#2577)	61eedb46e72a705776806ed346ca1e29f4d12cba
 36	37	autopilot tick: a pickup that meets a GitHub limit (#2577)	b7506990f8e031e132734d5df6c4f88f4da1e243
 62	71	autopilot tick: stops that cannot land are contained (#3052)	7ec5cf27cf36197447177e1aebd51a80f7b8c9e0
 15	16	autopilot tick: one read of the claims on origin (#3062)	f500de4dd86cbabdf5452405fa18f36de6021d97
 21	22	autopilot run: a start-up read that meets a GitHub limit (#2577)	929190161e7c50cff18ab6e7bccb60001583384b
-39	40	autopilot tick: the early GitHub pause (#2577)	6e6a9b751bcc70cda56db94edf32dd17761c940e
+32	36	autopilot tick: the early GitHub pause (#2577)	9ad21a1cc16ea2b5b29ba5aa5d510eb93478aa7c
 19	20	autopilot run: the session log's GitHub usage line (#2577)	6bda132d04146540ce70f9650992e428ac2afb59
 29	31	autopilot candidates	8592ae15d07de5fdedc7f071630838ec706c1f4d
 4	5	autopilot answer: no repo (#3050)	43b2e7d2c6f7ae2f2e566aafa0fd64850f14e34a
@@ -111,7 +111,7 @@
 12	13	checkout (#1078)	85b65822bd5ebac5cdac093e84c0a28d92c25cc0
 3	4	checkout current branch (#1079)	8ed29994be0d37ea761c6fba66a7f1594d5332d1
 19	14	checkout busy, redo-retired branch (#1981)	d6d2a1101edb4c54066c3be0085daad6d002bc7b
-21	25	comments module	60c75de06b49ff19fe1f45024b92278062be3ab1
+17	20	comments module	63b33670651b735a4d78b1ffbc11b8e920a9990a
 8	10	common.sh is the bottom layer	04f7eed4e1b745bc381196f09f7ddd3c7337cc02
 0	1	orch_dirs_unexcluded	12a7c2c452ab0556c398c46950d20b677e85748f
 2	2	exclude_line	91fd2dfe3a47af5e150b38ca04a8fa5232fb2954
@@ -167,14 +167,14 @@
 11	13	every gh call pinned to the repo (#520)	9050ead0ce8b006a7d6f4f8014f9cf72aea221c1
 1	2	gh_reason and capture_err (#846)	b1e6b22fd807869629678553c5c019b36b00fe4b
 1	2	label_listed	cbe133bb57a99edd13286a7b3c3bbc18b7d9f7b2
-21	23	gh failure verb and readers (#1022)	ffc1d9bcda9e186a0848b4b7f1f7f22a31a713d3
+20	22	gh failure verb and readers (#1022)	ffc1d9bcda9e186a0848b4b7f1f7f22a31a713d3
 4	5	verify_twice (#2658)	bb17bc92611d733be7609bb9fa29feb815519b8e
 8	10	gh fake (#280)	2cfce26f7d5cbdacc7499a2421bddb2ab35da8e8
-117	125	gh adapter contract (#280)	cc39c05926f818a5507f2842688f5a157ab6a73f
+121	130	gh adapter contract (#280)	cc39c05926f818a5507f2842688f5a157ab6a73f
 19	20	claim adapter operations (#1454)	e38d5ba7a6cc558f697cc9b45c94994637c720bf
 2	3	label casing (#1943)	c0b2710909262227f7983fc382544e2c13a57e55
-45	28	gh rate limits (#2577)	41ea1a9243d7cfb38a94d8b87258f1dbe0625d74
-6	7	gh rate limits: the GitHub pause and the hit file (#2577)	79123add1578c1d705a7a3da968448b63570cf10
+46	29	gh rate limits (#2577)	41ea1a9243d7cfb38a94d8b87258f1dbe0625d74
+8	9	gh rate limits: the GitHub pause and the hit file (#2577)	fcb666e7303479e77d20fa86573702cc89fbdd1c
 0	1	slug	aa1e8e6f64e5dd11e111097dfde9deca1248c258
 9	10	archive	0124b5e1112a0eae813a1e43c01b2f94b426ce16
 4	4	status	7fce07b49a54ac4525ddef4fa758b1aed3208ef3
@@ -227,7 +227,7 @@
 8	10	orch_load	d6672871a4845b357d7ec3785e7b285cfddc1e25
 9	11	on-demand loading	6f5f8fdb61e60028685965dbdd5c3eb5ae8397b7
 10	11	stub table cache	f28bc3efe383c64ec4671e57784eb9058dec1d2e
-42	43	marked-comment module	af6dd53fa3dfe4fc5339996d6a1379bafdf42525
+42	44	marked-comment module	324231b375e7bb51bdb49f85cb5fc6f8a98b64b7
 1	2	parallel show	29ed0447ad25daddc7f71a506dad5df2ad3d3cba
 55	58	phase advance / phase boundary	db56fe480597de86f8a487c134e1e6b488336fee
 0	1	phase advance help names handoffs by role (#1066)	fb4e9c6b059ec9f7d1aed9b47f5b974a48096e04
@@ -261,7 +261,7 @@
 9	10	repo show	03b579d082d6e4e5353a860b91cb90f1006013d0
 7	8	default-branch	0177d6e5817d4d0befacac87fc2b2a0f621ad11b
 9	10	review-pass begin (#342)	c9a9274e4ded397a8c551e3b82717cd167110d2b
-52	65	review-pass known-items	c01aa6033c8a94081955880d1ea8ecdcc49dbb05
+52	64	review-pass known-items	1fef82c7211e3ec0461af015f37fbe44425ea8b8
 20	17	review ready's pointer to /orchestrator:finish (#727)	e8d2ed095a35df98ab05ed3f22261da9f491025c
 17	15	review begin	c4a68a37d613f9f5992ecf1b159a2ce1f9ba6bca
 4	5	review path	c78a5b250d2bed63c97a669e2cbac1fe74e42940

@@ -524,12 +524,16 @@ or accept it, then remove `needs-human`):
 - A session that stops on Claude Code's usage limit pauses new pickups until
   the reset time. A GitHub API rate limit, hit by a tick or a session, pauses
   the whole tick (it does nothing, not even closing merged PRs) until the
-  limit's reset. The same limit met by the wrapper's own steps before a session
+  limit's reset - a reset recorded never more than an hour ahead, since
+  GitHub's limits reset hourly; one found further out is cut to an hour from
+  the read that finds it. The same limit met by the wrapper's own steps before
+  a session
   starts (the start-up read and the review budget record) releases only the
   claim: the phase is picked up again after the reset. The early GitHub pause
   acts before any limit is hit: a tick that finds `core` or `graphql` with
   less than `github-reserve` percent of its limit left pauses pickup until
-  that pool's reset, its note naming the pool. A failed read of the limits
+  that pool's reset, cut to an hour from the read when it is further out, its
+  note naming the pool. A failed read of the limits
   pauses nothing. The session log records how much `core` and `graphql`
   usage the session changed.
 
