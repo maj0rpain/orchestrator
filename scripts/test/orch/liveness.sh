@@ -186,6 +186,10 @@ assert_eq "log_path is logs/<issue>-<phase>-<stamp>.log" "$([[ "$path" =~ ^$logd
 assert_eq "and creates the logs directory" "$(on_disk "$logdir")" present
 : >"$path"
 assert_eq "latest_log agrees on the name" "$(sourced_orch liveness_latest_log 30 spec)" "$path"
+touch -t "$(date -d '15 days ago' +%Y%m%d%H%M 2>/dev/null || date -v-15d +%Y%m%d%H%M)" "$path"
+sourced_orch liveness_logs_prune
+assert_eq "the prune matches the name log_path writes" "$(on_disk "$path")" absent
+: >"$path"
 : >"$logdir/30-spec-20990101-000000.log"
 : >"$logdir/30-implement-20990202-000000.log"
 : >"$logdir/300-spec-20991212-000000.log"

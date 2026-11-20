@@ -2481,7 +2481,7 @@ assert_not_contains "no PR-less issue is warned about" "$out" "issue #38"
 assert_eq "no session starts for a sync request without a side checkout" "$(tick_calls)" "0"
 
 # several open PRs: warned about and skipped
-fake_done_pr 40 open CONFLICTING
+fake_issue 40 open orch:done; fake_pr 140 open orch/40-widget main; fake_pr_mergeable 140 CONFLICTING
 fake_pr 140 open orch/40-a main; fake_pr_mergeable 140 CONFLICTING
 fake_pr 240 open orch/40-b main; fake_pr_mergeable 240 CONFLICTING
 out="$("$ORCH" autopilot tick 2>&1)"
@@ -3399,3 +3399,178 @@ for ai_op in "autopilot_reenter review $ai_file" "autopilot_sync_finish" "autopi
   assert_eq "${ai_op%% *} with no issue recorded starts exactly one jq" "$(counting_starts "$ai_jq" jq)" "1"
 done
 restore_suite_env
+
+# --- autopilot tick: housekeeping prunes old session logs ---------------------
+# Once an hour, gated by the housekeeping stamp, after every pause check.
+echo
+echo "autopilot tick housekeeping"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+hk_dir="$top/.orchestrator/autopilot"
+hk_logs="$hk_dir/logs"
+hk_stamp="$hk_dir/housekeeping"
+hk_old="$(date -d '15 days ago' +%Y%m%d%H%M 2>/dev/null || date -v-15d +%Y%m%d%H%M)"
+hk_seed() {
+  rm -rf "$hk_logs"; mkdir -p "$hk_logs"
+  : >"$hk_logs/5-spec-20240101-000000.log"; touch -t "$hk_old" "$hk_logs/5-spec-20240101-000000.log"
+  : >"$hk_logs/6-spec-20240101-000000.log"
+  : >"$hk_logs/notes.txt"; touch -t "$hk_old" "$hk_logs/notes.txt"
+}
+hk_kept() { ls "$hk_logs" 2>/dev/null | tr '\n' ' '; }
+rm -f "$hk_stamp"
+hk_seed
+hk_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$hk_load" "$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick with no stamp succeeds" "$st" 0
+# a tick whose stamp is missing loads each module once
+assert_trace_loads_once "autopilot tick with no housekeeping stamp" "$hk_load"
+rm -f "$hk_load"
+assert_eq "an old session log is deleted, a fresh one and a non-log file kept" "$(hk_kept)" "6-spec-20240101-000000.log notes.txt "
+assert_eq "the stamp is written as an epoch" "$([[ "$(cat "$hk_stamp")" =~ ^[0-9]+$ ]] && echo ok)" "ok"
+# an old .log file whose stamp is not a dir_stamp is no session log: kept
+hk_seed; rm -f "$hk_stamp"
+for hk_name in 5-spec-notes.log 5-spec-copy.log; do : >"$hk_logs/$hk_name"; touch -t "$hk_old" "$hk_logs/$hk_name"; done
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "an old .log file without a session log stamp is kept" "$(hk_kept)" "5-spec-copy.log 5-spec-notes.log 6-spec-20240101-000000.log notes.txt "
+# a fresh stamp skips housekeeping
+hk_seed; printf '%s\n' "$(date +%s)" >"$hk_stamp"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a fresh stamp keeps the old log" "$(hk_kept)" "5-spec-20240101-000000.log 6-spec-20240101-000000.log notes.txt "
+# a stale, unparsable and future stamp each run it and rewrite the stamp
+for hk_case in "$(( $(date +%s) - 7200 ))" "garbage" "089" "$(( $(date +%s) + 7200 ))"; do
+  hk_seed; printf '%s\n' "$hk_case" >"$hk_stamp"
+  "$ORCH" autopilot tick >/dev/null 2>&1
+  assert_eq "stamp '$hk_case' runs housekeeping" "$(hk_kept)" "6-spec-20240101-000000.log notes.txt "
+  assert_eq "and rewrites the stamp" "$([ "$(cat "$hk_stamp")" -le "$(date +%s)" ] 2>/dev/null && [ "$(cat "$hk_stamp")" -gt "$(( $(date +%s) - 100 ))" ] && echo ok)" "ok"
+done
+# a missing logs directory is no failure
+rm -rf "$hk_logs"; rm -f "$hk_stamp"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a missing logs directory is no failure" "$st" 0
+assert_not_contains "and warns of nothing" "$out" "orch: could not"
+# a stamp that cannot be written warns, skips housekeeping, and pickup happens
+hk_seed; rm -f "$hk_stamp"; mkdir "$hk_stamp"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Housekeeping 7"
+printf '7\n' >"$launcher_dir/release"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick with an unwritable stamp succeeds" "$st" 0
+assert_contains "it warns" "$out" "orch: could not write the housekeeping stamp"
+assert_eq "the old log is kept" "$(hk_kept)" "5-spec-20240101-000000.log 6-spec-20240101-000000.log 7-spec-$(ls "$hk_logs" | sed -n "s/^7-spec-\(.*\).log$/\1/p").log notes.txt "
+assert_eq "and the tick still picks up" "$(tick_calls)" "1"
+rmdir "$hk_stamp"
+# a failing log prune warns, the stamp is written and pickup happens
+hk_seed; rm -f "$hk_stamp"
+hk_rm_bin="$(fails_bin rm '*5-spec-20240101*')"
+fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Housekeeping 8"
+printf '8\n' >"$launcher_dir/release"
+out="$(PATH="$hk_rm_bin:$PATH" "$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a failing prune leaves the exit status" "$st" 0
+assert_contains "it warns" "$out" "orch: could not delete the old session log"
+assert_eq "the stamp is still written" "$(on_disk "$hk_stamp")" present
+assert_eq "and pickup still happens" "$(tick_calls)" "2"
+rm -rf "$hk_rm_bin"
+# an unlistable logs directory warns, the stamp is written, pickup happens
+hk_seed; rm -f "$hk_stamp"; chmod 000 "$hk_logs"
+fake_issue 9 open ready-for-agent orch:spec; fake_issue_title 9 "Housekeeping 9"
+printf '9\n' >"$launcher_dir/release"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+hk_unlistable=1; [ -r "$hk_logs" ] && hk_unlistable=0
+chmod 755 "$hk_logs"
+if [ "$hk_unlistable" -eq 0 ]; then
+  skip "an unlistable logs directory warns" "permissions do not bite here, e.g. root"
+else
+  assert_status "an unlistable logs directory leaves the exit status" "$st" 0
+  assert_contains "it warns" "$out" "orch: could not prune the session logs"
+  assert_eq "the stamp is still written (unlistable logs)" "$(on_disk "$hk_stamp")" present
+fi
+# a holding usage limit pause and a holding GitHub rate-limit pause each skip it
+hk_seed; rm -f "$hk_stamp"
+printf '%s\n' "$(iso_of "$(( $(date +%s) + 7200 ))")" >"$hk_dir/limit"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a usage limit pause skips housekeeping" "$(hk_kept)" "5-spec-20240101-000000.log 6-spec-20240101-000000.log notes.txt "
+assert_eq "and writes no stamp" "$(on_disk "$hk_stamp")" absent
+rm -f "$hk_dir/limit"
+printf '%s\n' "$(iso_of "$(( $(date +%s) + 1800 ))")" >"$hk_dir/github-limit"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a GitHub pause skips housekeeping" "$(hk_kept)" "5-spec-20240101-000000.log 6-spec-20240101-000000.log notes.txt "
+assert_eq "and writes no stamp either" "$(on_disk "$hk_stamp")" absent
+rm -f "$hk_dir/github-limit"
+
+# --- autopilot tick: housekeeping sweeps finished side checkouts --------------
+# The finished sweep /orchestrator:finish runs, on a tick with no issue to pick
+# up, so add's own sweep cannot be what removes a checkout.
+echo
+echo "autopilot tick housekeeping sweep"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+hs_dir="$top/.orchestrator/autopilot"
+hs_stamp="$hs_dir/housekeeping"
+hs_done="$top/.orchestrator/checkouts/hs-done"
+hs_open="$top/.orchestrator/checkouts/hs-open"
+fake_offline
+for hs_slug in hs-done hs-open; do
+  sc_add "$hs_slug" >/dev/null
+  git -C "$top/.orchestrator/checkouts/$hs_slug" checkout -q -b "quick/9-$hs_slug"
+  git -C "$top/.orchestrator/checkouts/$hs_slug" commit -q --allow-empty -m "work on $hs_slug"
+done
+(cd "$hs_done" && orch_gh_failing init hs-done-flow >/dev/null && state_fixture phase "done" && state_fixture branch quick/9-hs-done && state_fixture pr 61)
+fake_pr 61 merged quick/9-hs-done main
+fake_pr_head 61 "$(git rev-parse quick/9-hs-done)"
+fake_online
+# GitHub unreadable: nothing is removed, the tick warns and still picks up
+fake_fail adapter_prs_merged "$GH_502"
+fake_issue 7 open ready-for-agent orch:spec; fake_issue_title 7 "Sweep 7"
+printf '7\n' >"$launcher_dir/release"
+rm -f "$hs_stamp"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick whose sweep cannot read GitHub succeeds" "$st" 0
+assert_contains "it warns" "$out" "could not read GitHub"
+assert_eq "housekeeping's own sweep warns" "$(printf '%s\n' "$out" | grep -c 'the finished sweep failed - carrying on$')" 1
+assert_eq "the finished side checkout stays" "$(on_disk "$hs_done")" present
+assert_eq "and the tick still picks up" "$(tick_calls)" "1"
+fake_unfail
+# a failing sweep warns, the stamp is written, the tick still picks up
+fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Sweep 8"
+printf '8\n' >"$launcher_dir/release"
+rm -f "$hs_stamp"
+hs_git="$(git_fails_bin '*" worktree remove "*')"
+out="$(PATH="$hs_git:$PATH" "$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a failing sweep leaves the exit status" "$st" 0
+assert_contains "it warns" "$out" "orch: could not remove side checkout"
+assert_eq "housekeeping's own sweep warns" "$(printf '%s\n' "$out" | grep -c 'the finished sweep failed - carrying on$')" 1
+assert_eq "the stamp is written" "$(on_disk "$hs_stamp")" present
+assert_eq "and pickup happens" "$(tick_calls)" "2"
+rm -rf "$hs_git"
+# a GitHub rate limit hit by the sweep writes the pause and ends the tick
+fake_issue 9 open ready-for-agent orch:spec; fake_issue_title 9 "Sweep 9"
+printf '9\n' >"$launcher_dir/release"
+fake_issue 40 open orch:done; fake_pr 140 open orch/40-widget main; fake_pr_mergeable 140 CONFLICTING
+rm -f "$hs_stamp" "$hs_dir/github-limit"
+fake_fail_times adapter_prs_merged 1 "API rate limit exceeded for user ID 1."
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "the GitHub pause is written" "$(on_disk "$hs_dir/github-limit")" present
+assert_eq "the tick ends before pickup" "$(tick_calls)" "2"
+assert_eq "and before sync detection" "$(fake_labels_of 40)" "orch:done "
+fake_unfail
+fake_issue 40 closed
+rm -f "$hs_dir/github-limit"
+# a finished side checkout is removed and an unfinished one kept, even when the
+# log prune before the sweep fails
+# the failing sweep above already archived the flow before its worktree remove
+# failed: give the checkout a fresh finished flow (init archives the remnant)
+# and clear the archive, so only this tick's sweep can archive it
+(cd "$hs_done" && orch_gh_failing init hs-done-flow >/dev/null && state_fixture phase "done" && state_fixture branch quick/9-hs-done && state_fixture pr 61)
+rm -rf "$top"/.orchestrator/archive/*-hs-done-flow
+rm -f "$hs_stamp" "$launcher_dir/release"
+mkdir -p "$hs_dir/logs"; : >"$hs_dir/logs/5-spec-20240101-000000.log"
+touch -t "$(date -d '15 days ago' +%Y%m%d%H%M 2>/dev/null || date -v-15d +%Y%m%d%H%M)" "$hs_dir/logs/5-spec-20240101-000000.log"
+hs_rm_bin="$(fails_bin rm '*5-spec-20240101*')"
+for hs_n in 7 8 9; do fake_issue "$hs_n" closed; done
+out="$(PATH="$hs_rm_bin:$PATH" "$ORCH" autopilot tick 2>&1)"; st=$?
+rm -rf "$hs_rm_bin"
+assert_status "a tick with nothing to pick up succeeds" "$st" 0
+assert_contains "a failing log prune warns" "$out" "orch: could not delete the old session log"
+assert_eq "the finished side checkout is removed" "$(on_disk "$hs_done")" absent
+assert_eq "with its branch" "$(branch_presence refs/heads/quick/9-hs-done)" gone
+assert_eq "its flow is archived into the main checkout" "$(find "$top/.orchestrator/archive" -maxdepth 1 -name "*-hs-done-flow" | wc -l | tr -d " ")" 1
+assert_eq "the unfinished one is kept" "$(on_disk "$hs_open")" present
