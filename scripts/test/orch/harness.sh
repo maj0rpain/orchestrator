@@ -3507,13 +3507,12 @@ rm -rf "${placement_dir%/orch}"
 echo
 echo "helper body copies (#3170)"
 
-# copies_tree: prints a copy of the real scripts/test/orch/ cut down to
-# setup.sh, with the sourceable test helpers copied beside it, where
-# helper_copies reads them.
+# copies_tree: prints a new empty orch/ directory filled by copies_reset with
+# setup.sh and the sourceable test helpers beside it, where helper_copies reads
+# them.
 copies_tree() {
   local d
-  d="$(tree_copy scripts/test/orch)" || return 1
-  find "$d" -name '*.sh' ! -name setup.sh -delete
+  d="$(mktemp -d)/orch" && mkdir "$d" || return 1
   copies_reset "$d" || return 1
   printf '%s\n' "$d"
 }
@@ -3591,7 +3590,7 @@ plant_file "$copies_dir" zz-q.sh <<'PLANTED'
   echo two
 PLANTED
 out="$(helper_copies "$copies_dir")"; st=$?
-assert_status "the scan exits 1 when: and the same body in another section file is left alone" "$st" 1
+assert_status "a preamble helper's body in another section file still leaves the scan failing on its own file's copy" "$st" 1
 assert_eq "and the same body in another section file is left alone" "$out" "$(copy_msg zz-p.sh 7 planted_pre zz-p.sh)"
 
 copies_reset "$copies_dir"
