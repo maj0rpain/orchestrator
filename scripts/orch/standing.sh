@@ -484,7 +484,7 @@ standing_start() {
   [ -z "$STANDING_PHASE_LABELS" ] ||
     die "issue #$issue already carries the phase label ${STANDING_PHASE_LABELS%% *} - it is already an autopilot flow"
   handoff_check "$file" "" 01-plan.md autopilot >&2 || die "plan $file is not valid - nothing posted"
-  handoff_comment_post "$issue" 01-plan "$file" url || exit 1
+  handoff_comment_post_url "$issue" 01-plan "$file" url || exit 1
   first="$(standing_phase_label "${PHASES%% *}")"
   gh_capture_err gh_err adapter_issue_relabel "$issue" --add "$first" ||
     die "posted the 01-plan comment on issue #$issue but adding $first failed: $(gh_reason "$gh_err") - the issue is unlabelled, so no watcher picks it up; re-run autopilot start"

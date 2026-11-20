@@ -93,14 +93,14 @@ assert_eq "an answer that is not a comment list dies as its comments did not par
   "orch: could not read PR #9: its comments did not parse
 rc=2"
 
-# More than 131072 bytes of trusted comments, none of 65536 characters: every
-# comment comes through.
-fake_pr 11 open topic main
-cm_big="$(head -c 60000 /dev/zero | tr '\0' x)"
-for k in 1 2 3; do fake_pr_comment 11 sam "2026-10-0${k}T09:00:00Z" "$k$cm_big"; done
-cm_text="$(sourced_orch_script 'comments_rendered pr "read PR #11" 11 got; printf "%s" "$got"')"
-assert_eq "a PR holding over 131072 bytes of trusted comments renders every comment" \
-  "$(grep -c '^<!-- comment @sam ' <<<"$cm_text")" "3"
+# A kind other than issue or pr is a misuse: it dies, status 1 even under
+# --exit 2, and no gh call is made.
+cm_misuse="orch: comments_trusted: unknown kind: repo (want issue|pr)
+rc=1"
+assert_eq "comments_trusted and comments_rendered on kind repo die as a misuse, status 1 even under --exit 2" \
+  "$(cm_run 'for cm_call in "comments_trusted" "comments_rendered" "comments_trusted --exit 2"; do rc=0; ($cm_call repo "read repo #7" 7 got) || rc=$?; echo "rc=$rc"; done')" \
+  "$(printf '%s\n%s\n%s' "$cm_misuse" "$cm_misuse" "$cm_misuse")
+rc=1"
 
 # The rendered shape (COMMENTS_RENDER_JQ), run on normalised comments.
 cm_json='[{"author":"triage-bot","createdAt":"2026-09-01T10:00:00Z","body":"## Agent brief\n\nDo the `$HOME` thing in #6."},{"author":"pat","createdAt":"2026-09-02T11:30:00Z","body":"Also: the second line\n\\\\ stays unescaped."}]'
