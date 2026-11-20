@@ -212,7 +212,7 @@ liveness_logs_prune() {
   while IFS= read -r f; do
     [[ "$f" == "$dir"/* ]] || continue
     base="${f##*/}"
-    [[ "$base" =~ ^[0-9]+-[^-]+-[0-9]{8}-[0-9]{6}\.log$ ]] || continue
+    [[ "$base" =~ ^[0-9]+-[^-]+-${DIR_STAMP_PATTERN}\.log$ ]] || continue
     rm -f -- "$f" 2>/dev/null || { warn "could not delete the old session log $f"; failed=1; }
   done <<<"$listing"
   return "$failed"
