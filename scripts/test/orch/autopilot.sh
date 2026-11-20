@@ -3520,7 +3520,7 @@ fake_unfail
 fake_issue 8 open ready-for-agent orch:spec; fake_issue_title 8 "Sweep 8"
 printf '8\n' >"$launcher_dir/release"
 rm -f "$hs_stamp"
-hs_git="$(fails_bin git '*" worktree remove "*')"
+hs_git="$(git_fails_bin '*" worktree remove "*')"
 out="$(PATH="$hs_git:$PATH" "$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a failing sweep leaves the exit status" "$st" 0
 assert_contains "it warns" "$out" "orch: could not remove side checkout"
