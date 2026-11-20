@@ -463,8 +463,8 @@ scripts/test/orch_test.sh`.
 
 `orch.sh`, its modules and the test suite target bash 4.2+: `mapfile`, `declare
 -A` and `printf -v` are fine. `orch.sh` refuses to start below 4.2: its version
-guard, the first statement after the shell options, prints one line and exits,
-and that one statement stays bash 3.2-compatible, beside the hook scripts.
+guard, the first lines after the shell options, prints one line and exits,
+and those lines stay bash 3.2-compatible, beside the hook scripts.
 The `hook-*.sh` scripts and every module a hook
 sources (`flow-state.sh`, `host.sh`, `bash-walk.sh`, `paste-guard.sh`,
 `planning-allowlist.sh`, `triage-labels.sh`) stay bash 3.2-compatible (no
