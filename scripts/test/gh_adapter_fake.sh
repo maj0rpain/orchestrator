@@ -94,6 +94,9 @@
 #                     call, the last repeating; absent, no checks
 #   checks/<n>/<scope>.n
 #                     how many calls the script has answered
+#                     (this cursor, comment_reads, prs/<n>/evidence_reads and
+#                     checks/<n>/reads are read-side bookkeeping:
+#                     fake_snapshot in the shared test setup leaves them out)
 #   checks/<n>/reads  one line per read of PR #n's checks, scripted scope or
 #                     not; rescripting a scope never resets it
 #   job_logs/<job>    the failed-step log of Actions job <job>; absent, the
@@ -1451,7 +1454,7 @@ adapter_branch_rules() {
 # store; no_base_ref makes the base tip's line empty. A commit's default list
 # is the PR's head alone.
 adapter_pr_commits_checked() {
-  local d oid ref s listed statuses base commits=""
+  local d oid ref s check_runs statuses listed base commits=""
   ! fake_failing adapter_pr_commits_checked || return 1
   fake_pr_known "$1" || return 1
   d="$(fake_pr_dir "$1")"
@@ -1459,14 +1462,13 @@ adapter_pr_commits_checked() {
   if [ -f "$d/evidence_raw" ]; then cat "$d/evidence_raw"; return 0; fi
   s="$(fake_store)"
   # Both lists are read once; each ref is then tested in bash.
-  file_read listed "$s/check_runs" || listed=""
-  file_read statuses "$s/statuses" || statuses=""
-  listed+=$'\n'"$statuses"
+  fake_slurp "$s/check_runs" || true; check_runs="$fake_slurped"
+  fake_slurp "$s/statuses" || true; statuses="$fake_slurped"
+  listed="$check_runs"$'\n'"$statuses"
   if [ -f "$d/no_base_ref" ]; then
     echo
   else
-    file_read base "$d/base" || base=""
-    base="${base%%$'\n'*}"
+    fake_read_state "$d/base" || true; base="$fake_state"
     if list_has "$listed" "$base"; then echo yes; else echo no; fi
   fi
   oid="$(fake_pr_head_oid "$d")"

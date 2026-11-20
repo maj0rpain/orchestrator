@@ -85,7 +85,7 @@ fake_evidence_raw() {
   shift
   printf '%s\n' "$@" >"$ORCH_GH_FAKE_STORE/prs/$n/evidence_raw"
 }
-fake_evidence_reads() { fake_lines_count "$ORCH_GH_FAKE_STORE/prs/$1/evidence_reads"; }
+fake_evidence_reads() { log_count "$ORCH_GH_FAKE_STORE/prs/$1/evidence_reads"; }
 
 # fake_ci_reset: no checks scripted, nothing required, no rules, and no ref
 # with a check run or status - every CI signal absent.

@@ -158,8 +158,9 @@ default_reads_run() {
 }
 
 # log_count <log> [<tag>]: the lines in <log>, only those starting with "<tag> "
-# when a tag is given.
+# when a tag is given; 0 for a <log> that is absent, in both forms.
 log_count() {
+  [ -f "$1" ] || { echo 0; return 0; }
   if [ -n "${2:-}" ]; then grep -c "^$2 " "$1" || true; else wc -l <"$1" | tr -d ' '; fi
 }
 
@@ -960,9 +961,11 @@ fake_issues() { ls "$ORCH_GH_FAKE_STORE/issues" 2>/dev/null | sort -n | tr '\n' 
 dir_snapshot() { (cd "$1" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r cksum); }
 
 # fake_snapshot: a digest of the whole store, so a test asserts a read-only
-# command left it as it was. The read counters (comment_reads and each PR's
-# evidence_reads) are reads, never writes, so they are left out.
-fake_snapshot() { dir_snapshot "$ORCH_GH_FAKE_STORE" | sed -E '/ \.\/(comment_reads|prs\/[^\/]+\/evidence_reads)$/d'; }
+# command left it as it was. The read-side files are reads, never writes, so
+# they are left out: comment_reads, each PR's evidence_reads, each PR's
+# checks/<n>/reads and each checks/<n>/<scope>.n cursor. The fail/ and lag/
+# countdowns stay in: a test seeds them, and any operation consumes them.
+fake_snapshot() { dir_snapshot "$ORCH_GH_FAKE_STORE" | sed -E '/ \.\/(comment_reads|prs\/[^\/]+\/evidence_reads|checks\/[^\/]+\/(reads|[^\/]+\.n))$/d'; }
 
 # fake_pr <n> <state> <head> <base>: seeds PR #n afresh, open, closed or
 # merged, from the head branch into the base - no body, comments or commits,
@@ -1032,13 +1035,7 @@ fake_fail() {
 
 # fake_comment_reads: how many comment-list reads (adapter_issue_comments)
 # the fake has answered or refused - 0 for none.
-fake_comment_reads() { fake_lines_count "$ORCH_GH_FAKE_STORE/comment_reads"; }
-
-# fake_lines_count <file>: how many lines a test log file holds; 0 when the
-# file is absent.
-fake_lines_count() {
-  if [ -f "$1" ]; then wc -l <"$1" | tr -d ' '; else echo 0; fi
-}
+fake_comment_reads() { log_count "$ORCH_GH_FAKE_STORE/comment_reads"; }
 
 # The seeded two-line gh stderr whose first line a death must carry.
 GH_502=$'HTTP 502: Bad Gateway\nsecond line'
@@ -1142,7 +1139,7 @@ fake_checks_clear() { rm -rf "$ORCH_GH_FAKE_STORE/checks"; }
 
 # fake_checks_reads <n>: how many times PR #n's checks were read, scripted
 # scope or not; 0 when never read.
-fake_checks_reads() { fake_lines_count "$ORCH_GH_FAKE_STORE/checks/$1/reads"; }
+fake_checks_reads() { log_count "$ORCH_GH_FAKE_STORE/checks/$1/reads"; }
 
 # calls_until_delivered <max> <err-file> <command>...: runs the command until
 # its status is not 75 (a re-callable command still going), at most <max>
@@ -1230,7 +1227,7 @@ GH
 # gh_calls: how many calls the fixture gh on PATH has answered or refused - 0
 # for none. A behaviour test on the store-backed fake asserts it stays 0, so
 # no command reached a gh subprocess.
-gh_calls() { fake_lines_count "$GH_FIXTURE/env.log"; }
+gh_calls() { log_count "$GH_FIXTURE/env.log"; }
 
 # orch.sh run with a PATH gh that fails - a fixture gh given no reply - for a
 # repo whose origin GitHub cannot answer for (a local bare repo): default-branch

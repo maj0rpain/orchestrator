@@ -2458,7 +2458,7 @@ fake_noauth
 : >"$ssh_calls"
 out="$(alias_doctor)"
 assert_eq "an SSH-alias origin calls ssh once in a doctor run" \
-  "$(wc -l <"$ssh_calls" | tr -d ' ')" "1"
+  "$(log_count "$ssh_calls")" "1"
 assert_contains "and the repo line names origin as the source" "$out" "(origin)"
 assert_contains "and the alias hint still prints for a host other than github.com" "$out" "$hint"
 write_ssh_stub 'exit 1' 1

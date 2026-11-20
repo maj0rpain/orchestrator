@@ -157,7 +157,7 @@ triage_gh
 out="$(PATH="$triage_dir:$ssh_stub_dir:$PATH" env -u ORCH_GH_ADAPTER "$ORCH" issue triage 5 2>&1)"; st=$?
 assert_status "issue triage on an SSH-alias origin runs" "$st" 0
 assert_eq "and ssh is called once for its read, relabel and read back" \
-  "$(wc -l <"$ssh_calls" | tr -d ' ')" "1"
+  "$(log_count "$ssh_calls")" "1"
 assert_eq "and every one of its gh calls carried the repo and its host" \
   "$(grep -cv '^GH_REPO=ghe.example.com/fork/widgets GH_HOST=ghe.example.com ' "$GH_FIXTURE/env.log")" "0"
 assert_eq "and it made more than one gh call" \
@@ -560,6 +560,26 @@ assert_eq "as --reason missing its value, with no unknown option" "$err" \
 rm -f "$pbody"
 assert_eq "and a refused close left the issue open" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/state")" "OPEN"
 assert_eq "and a refused relabel left its labels unchanged" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/labels")" ""
+# The optional check_runs and statuses lists read as empty with nothing on
+# stderr, and the snapshot hides every read-side file but no countdown.
+fake_github
+new_repo >/dev/null
+fake_pr 71 open feat main
+assert_eq "commits checked with no check_runs or statuses seeded prints nothing on stderr" \
+  "$(sourced_orch adapter_pr_commits_checked 71 2>&1 >/dev/null)" ""
+fake_checks 71 all green
+rs_before="$(fake_snapshot)"
+faked adapter_pr_checks 71 all >/dev/null 2>&1
+assert_eq "a scripted checks read leaves the snapshot as it was" "$(fake_snapshot)" "$rs_before"
+fake_fail_after adapter_issue_body 2
+rs_before="$(fake_snapshot)"
+faked adapter_issue_body 5 >/dev/null 2>&1
+assert_ne "a call consuming a fail countdown changes the snapshot" "$(fake_snapshot)" "$rs_before"
+fake_lag adapter_issue_title_labels 2
+rs_before="$(fake_snapshot)"
+faked adapter_issue_title_labels 5 >/dev/null 2>&1
+assert_ne "a call consuming a lag countdown changes the snapshot" "$(fake_snapshot)" "$rs_before"
+assert_eq "log_count of an absent log is 0 in its tagged form" "$(log_count "$ORCH_GH_FAKE_STORE/nope" tag)" "0"
 # A value that only begins with - or -- is a value: the fake refuses by option
 # name, never by prefix. A fresh store, with no failure seeded.
 fake_github
@@ -2059,7 +2079,7 @@ bare_case() {
   : >"$GH_FIXTURE/once2/calls"
   PATH="$GH_FIXTURE/once2:$PATH" contract "$@" >/dev/null 2>&1; st=$?
   assert_status "$name meeting a secondary limit the retry clears succeeds" "$st" 0
-  assert_eq "$name calls gh twice" "$(wc -l <"$GH_FIXTURE/once2/calls" | tr -d ' ')" "2"
+  assert_eq "$name calls gh twice" "$(log_count "$GH_FIXTURE/once2/calls")" "2"
 }
 compound_case "an issue close with a comment" issue close 5 --reason completed --comment 'done' -- \
   adapter_issue_close 5 --reason completed --comment 'done'
@@ -2076,7 +2096,7 @@ bare_case "an unmarked write (a comment)" adapter_pr_comment 7 "$GH_FIXTURE/body
 limit_once_gh "$GH_FIXTURE/once2" '' 'ok' 3
 out="$(ORCH_GH_LIMIT_WAIT=0 PATH="$GH_FIXTURE/once2:$PATH" contract eval 'adapter_pr_close 7 bye || true; adapter_pr_comment 7 "$GH_FIXTURE/body.md"; echo "status $?"' 2>&1)"
 assert_contains "a call made after a compound write is retried and succeeds" "$out" "status 0"
-assert_eq "and gh is called for the later call twice" "$(wc -l <"$GH_FIXTURE/once2/calls" | tr -d ' ')" "4"
+assert_eq "and gh is called for the later call twice" "$(log_count "$GH_FIXTURE/once2/calls")" "4"
 # a compound write failing on no limit passes stderr and status through
 gh_reply 1 '' 'HTTP 502: Bad Gateway' pr close 7 --comment bye
 out="$(contract adapter_pr_close 7 bye 2>&1)"; st=$?

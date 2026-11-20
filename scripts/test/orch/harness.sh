@@ -1373,7 +1373,7 @@ sh_all() {
 }
 sh_all 1/2
 assert_status "all.sh in group 1 passes" "$sh_st" 0
-assert_eq "group 1 runs every suite" "$(grep -c . "$sh_all_dir/scripts/test/log")" "${#SUITES[@]}"
+assert_eq "group 1 runs every suite" "$(log_count "$sh_all_dir/scripts/test/log")" "${#SUITES[@]}"
 assert_contains "orch_test.sh gets the setting" "$(cat "$sh_all_dir/scripts/test/log")" "orch_test.sh shard=1/2"
 assert_contains "no other suite does" "$(cat "$sh_all_dir/scripts/test/log")" "hooks_test.sh shard=unset"
 assert_eq "group 1 runs shellcheck" "$([ -s "$sh_all_dir/sc.log" ] && echo yes || echo no)" "yes"
@@ -4523,7 +4523,7 @@ assert_eq "the fallback counter passes the command's stdout through" "$csb_out" 
 assert_status "and its exit status" "$csb_st" 0
 printf '{"a":false}\n' | PATH="$csb_path" jq -e .a >/dev/null 2>&1; csb_st=$?
 assert_status "and a failing command's exit status" "$csb_st" 1
-assert_eq "and records one count per start" "$(wc -l <"$csb_fb/jq.bytes" | tr -d ' ')" "2"
+assert_eq "and records one count per start" "$(log_count "$csb_fb/jq.bytes")" "2"
 if [ "$csb_has_ds" = yes ]; then
   : >"$csb_fb/jq.bytes"
   PATH="$csb_path" "$csb_env" --default-signal=PIPE jq -nR "$csb_prog" <"$csb_in" >/dev/null
@@ -4885,7 +4885,7 @@ shellcheck: 0 findings
 affected.sh: PASS (4 parts)"
 assert_contains "orch_test.sh got the placement sections as its filter" \
   "$(cat "$af.log")" "orch_test.sh only=^(test-helper placement \\(#1006\\)|"
-assert_eq "no other suite ran" "$(grep -c . "$af.log")" "3"
+assert_eq "no other suite ran" "$(log_count "$af.log")" "3"
 
 # The base it works out is handed to docs_lint.sh in DOCS_LINT_BASE, on the
 # narrow selection and on the full-suite fallback alike. Stand-ins print what
@@ -4974,7 +4974,7 @@ af_out="$(cd "$af" && env -u CI ORCH_TEST_POOL_PERCENT=abc bash scripts/test/aff
 assert_status "an invalid ORCH_TEST_POOL_PERCENT makes affected.sh exit 1" "$st" 1
 assert_eq "and names the value" "$af_out" \
   "affected.sh: ORCH_TEST_POOL_PERCENT='abc' is not a positive integer"
-assert_eq "and runs no suite" "$(grep -c . "$af.log")" "0"
+assert_eq "and runs no suite" "$(log_count "$af.log")" "0"
 
 # Its shellcheck process draws a slot from the job pool: with the pool's one
 # slot held, the run waits and says so, then finishes once the slot is freed.
