@@ -19,7 +19,7 @@
 57	13	the test runners' CPU load (#1586)	c22faf75f630996277842a97d186d4623a821bf0
 0	1	shell code (#1411)	ea284fd385c9442fd3e129e2caef3218c88e0c1b
 57	58	test-helper placement (#1006)	dddbd47340bc0b216480c39b1595022584b4ea06
-33	33	helper body copies (#3170)	e2a94edc645988877b33306748052f582fb84a54
+29	30	helper body copies (#3170)	233659813199da9995b0764cc2fd51903a25c6b2
 32	33	gh op placement (#1037)	5158aa96d9e63a495cb4ec3ceda7d459968eeb68
 4	5	marked comment prelude placement (#1853)	e3857d23c982ad40b7a749a1f656a675adae85e8
 13	14	comment reader placement (#3085)	a25b3e58cc6685e5bfe1566f72063507b786dcf6
