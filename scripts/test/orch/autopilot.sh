@@ -204,7 +204,7 @@ out="$(TMPDIR="$start_tmp" "$ORCH" autopilot start 7 "$planf" 2>&1 >"$start_stdo
 assert_eq "a failed plan post prints nothing on stdout" "$(cat "$start_stdout")" ""
 fake_unfail
 assert_status "a failed plan post dies" "$st" 1
-assert_contains "showing the gh reason" "$out" "HTTP 502 post"
+assert_contains "showing the gh reason" "$out" "gh could not post the 01-plan handoff on issue #7: HTTP 502 post"
 assert_eq "adding no phase label" "$(fake_labels_of 7)" "ready-for-agent "
 assert_eq "leaving no temp file" "$(ls -A "$start_tmp")" ""
 
