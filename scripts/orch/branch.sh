@@ -112,11 +112,11 @@ forked_from_set() { git config "$(forked_from_key "$1")" "$2"; }
 # Name builders. A flow's branch from its issue and slug, its redo form from
 # that and a redo count, a ticket branch from its forked-from branch and
 # ticket number, and a quick implementation's branch from issue and slug.
+
 # branch_name_flow_into <var> <issue> <slug>: the flow's branch name, set into
 # the caller-named <var> with no subshell. The one place the format lives.
 branch_name_flow_into() { printf -v "$1" 'orch/%s-%s' "$2" "$3"; }
-branch_name_flow() { local _bnf; branch_name_flow_into _bnf "$1" "$2"; printf '%s\n' "$_bnf"; }
-branch_name_redo() { printf '%s-redo-%s\n' "$(branch_name_flow "$1" "$2")" "$3"; }
+branch_name_redo() { local _bnr; branch_name_flow_into _bnr "$1" "$2"; printf '%s-redo-%s\n' "$_bnr" "$3"; }
 branch_name_ticket() { printf '%s--t%s\n' "$1" "$2"; }
 branch_name_quick() { printf 'quick/%s-%s\n' "$1" "$2"; }
 

@@ -150,6 +150,13 @@ counting_defs() {
     "$1() { printf '%s %s\\n' '$2' \"\${1-}\" >>\"\$COUNT_LOG\"; fake_$1_read \"\$@\"; }"
 }
 
+# default_reads_run <log> <cmd>...: runs <cmd> with the adapter's default-branch
+# read appending a line to <log> per call, so log_count <log> is how many times
+# <cmd> asked GitHub for it. It seeds nothing: the caller sets the fake's reply.
+default_reads_run() {
+  counted_adapter_run "$1" "$(counting_defs adapter_repo_default_branch branch)" "${@:2}"
+}
+
 # log_count <log> [<tag>]: the lines in <log>, only those starting with "<tag> "
 # when a tag is given.
 log_count() {
@@ -1172,6 +1179,10 @@ fake_quota() { printf '%s\t%s\t%s\t%s\n' "$@" >>"$ORCH_GH_FAKE_STORE/quota"; }
 # (<unset> for an unset one), so a test asserts which repo a call was pinned to.
 # It also appends the name of every inherited variable starting REPO_ to
 # $GH_FIXTURE/repo_vars.log: the repo memo is never exported, so it stays empty.
+# Those two log lines are written once, by $GH_FIXTURE/log.sh, which the
+# fixture gh sources; any other gh a section puts on PATH to stand in for the
+# fixture gh, logging its calls to env.log as triage_gh's does, sources it too.
+# A gh that keeps its own call log instead, such as limit_once_gh's, does not.
 # A section that calls it ends with restore_suite_env GH_FIXTURE.
 gh_fixture() {
   GH_FIXTURE="$(mktemp -d)" || return 1
@@ -1183,11 +1194,15 @@ gh_fixture() {
 # arguments, NUL-terminated, its space turned into -.
 printf '%s\0' "$@" | cksum | tr ' ' -
 KEY
+  cat >"$GH_FIXTURE/log.sh" <<LOG
+# log.sh: sourced by a gh, it logs that gh's call; \$* is the gh's own argv.
+printf 'GH_REPO=%s GH_HOST=%s %s\n' "\${GH_REPO-<unset>}" "\${GH_HOST-<unset>}" "\$*" >>"$GH_FIXTURE/env.log"
+compgen -v REPO_ >>"$GH_FIXTURE/repo_vars.log"
+LOG
   cat >"$GH_FIXTURE/bin/gh" <<'GH'
 #!/usr/bin/env bash
 d="$(cd "$(dirname "$0")/.." && pwd)"
-printf 'GH_REPO=%s GH_HOST=%s %s\n' "${GH_REPO-<unset>}" "${GH_HOST-<unset>}" "$*" >>"$d/env.log"
-compgen -v REPO_ >>"$d/repo_vars.log"
+. "$d/log.sh"
 r="$d/replies/$("$d/key" "$@")"
 if [ -f "$r/argv" ] && printf '%s\0' "$@" | cmp -s - "$r/argv"; then
   cat "$r/stdout"

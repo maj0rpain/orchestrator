@@ -4220,7 +4220,26 @@ assert_eq "it lists that file alone, under the path as given: one-liners and nam
 out="$(cd / && "$index_dir/dev/helpers.sh" "$index_dir/orch/zz-planted.sh")"; st=$?
 assert_eq "an absolute file argument is its own header" \
   "$(printf '%s\n' "$out" | sed -n 1p)" "# $index_dir/orch/zz-planted.sh"
-out="$(cd / && "$index_dir/dev/helpers.sh")"
+plant_file "$index_dir/orch" zz-x1-ends-in-comment.sh <<'PLANTED'
+x1_fn() { :; }
+# a comment block ending the file, describing nothing in the next
+PLANTED
+plant_file "$index_dir/orch" zz-x2-opens-with-function.sh <<'PLANTED'
+x2_first() { :; }
+PLANTED
+: >"$index_dir/orch/zz-x3-empty.sh"
+index_awk="$(counting_bin awk)"
+out="$(cd / && PATH="$index_awk:$PATH" "$index_dir/dev/helpers.sh")"
+assert_eq "the default listing starts exactly one awk" "$(counting_starts "$index_awk" awk)" 1
+assert_eq "a comment block ending one file describes nothing in the next, and an empty module is headed: one blank line between files" \
+  "$(printf '%s\n' "$out" | sed -n '/^# scripts\/orch\/zz-x1-ends-in-comment.sh$/,$p')" \
+  "# scripts/orch/zz-x1-ends-in-comment.sh
+x1_fn	-
+
+# scripts/orch/zz-x2-opens-with-function.sh
+x2_first	-
+
+# scripts/orch/zz-x3-empty.sh"
 assert_eq "the default listing of a copy includes a planted module" \
   "$(printf '%s\n' "$out" | grep -c '^# scripts/orch/zz-planted.sh$')" 1
 
