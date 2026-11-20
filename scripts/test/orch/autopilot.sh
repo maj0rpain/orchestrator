@@ -3427,6 +3427,11 @@ assert_trace_loads_once "autopilot tick with no housekeeping stamp" "$hk_load"
 rm -f "$hk_load"
 assert_eq "an old session log is deleted, a fresh one and a non-log file kept" "$(hk_kept)" "6-spec-20240101-000000.log notes.txt "
 assert_eq "the stamp is written as an epoch" "$([[ "$(cat "$hk_stamp")" =~ ^[0-9]+$ ]] && echo ok)" "ok"
+# an old .log file whose stamp is not a dir_stamp is no session log: kept
+hk_seed; rm -f "$hk_stamp"
+for hk_name in 5-spec-notes.log 5-spec-copy.log; do : >"$hk_logs/$hk_name"; touch -t "$hk_old" "$hk_logs/$hk_name"; done
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "an old .log file without a session log stamp is kept" "$(hk_kept)" "5-spec-copy.log 5-spec-notes.log 6-spec-20240101-000000.log notes.txt "
 # a fresh stamp skips housekeeping
 hk_seed; printf '%s\n' "$(date +%s)" >"$hk_stamp"
 "$ORCH" autopilot tick >/dev/null 2>&1
