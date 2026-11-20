@@ -128,7 +128,7 @@
 5	6	doctor.sh is a one-way dependency (#281)	b86ca6ac46faa586b4d718a1aa26e9018e2539ea
 147	162	doctor	85d21e76a7b11fcc51673870bbc6d61b0ed25449
 36	40	doctor: host (#128)	0ff10dbdae9d20ee078396950c793cb2ec3a2d69
-97	105	doctor --flow	ec6c0771cdbf7af4d034b080907fded56e7409f3
+94	102	doctor --flow	8d28021dd7fd5c64f62d12573dc1792e590cfa6d
 40	44	doctor --env: finished side checkouts (#727)	8d56eb5df3a1cea24b7c1e0173d431eb1a742f7b
 12	14	doctor at the review phase	f758faa73c220475b21e8e6f7ce147e4217392d6
 8	9	doctor: upstream beside an ambiguous origin/<branch> (#1331)	330a42c2865d5a02fae709612f503ac7b23ea5da
@@ -177,6 +177,7 @@
 8	9	gh rate limits: the GitHub pause and the hit file (#2577)	fcb666e7303479e77d20fa86573702cc89fbdd1c
 0	1	slug	0e5d14cb85802ac178af168a4ee7e009fa0b927b
 9	11	archive	ab01c77d6d8c6c3784c7e3244adedb382528bdd9
+3	4	status	4dcdfbf9c3c90c6f28b94996bc2aeb4bef091a16
 0	1	mp-skill	42a828d6f818ccb7afe36031ee93138e2a7dfc35
 1	2	bash version guard	86cdad11a00c6e0ab6653370de5bfe34334218ba
 0	1	glossary terms	791773bc1306a4b30242cbf20709956dbdcb5101
@@ -232,8 +233,8 @@
 0	1	phase advance help names handoffs by role (#1066)	fb4e9c6b059ec9f7d1aed9b47f5b974a48096e04
 31	35	phase advance in an autopilot flow (#1457)	3f11f48e53c11f24a0c5683139056f0b493b1fe0
 7	8	phase advance with a failed phase write (#1931)	c82e166171de5000ca89ef4f8614cc5c24820382
-8	9	phase advance and boundary read the flow's state once (#3063)	0d138a2b1374e352088aabaffc5eb527472c8124
-60	64	pr open	f8e7d85f3b7aac428feb90a6b465eb53b8d509d2
+8	9	phase advance and boundary read the flow's state once (#3063)	77bfab77e7199983dcb02b7ba2f7e0f59aa1636e
+60	63	pr open	3d61a1ed5ffcfbf019c9e155be8f6555a491cf74
 20	23	pr publish	902d8d87fdb4ea7e9ea7e6451bc95df1467b527a
 9	10	pr draft (#967)	2fcf41b7bf15a3cb9053a6513a3f264017c4cd09
 18	19	pr ready (#967)	c09179592ea47f3380ff5e59efd231c6abcdb0d8
@@ -281,7 +282,8 @@
 15	15	review known-items in an autopilot flow (#1457)	1863aaadacbd252693177211ee326374b4967cd3
 17	16	review standards (#1532)	1815ab348b75d5b5acc0ed9523215d753520ea43
 12	10	review ready with a failed phase write (#1931)	ed1ef3a1e5d648b72a5b543383eec3fe6f47142d
-13	12	review reads its Flow state once	c7fc8289608d227fd729a49beb321266082d92c8
+13	11	review reads its Flow state once	611d87b106d7671b77c264aac6efe4914431ca16
+5	6	review_terminal_record fallback reads once	87d1a71c7589a8e2c101267be42920f11638f88a
 13	6	review ci <pr>	839ad07c48adf7f820c0db0cebb5d3959fcbefd3
 2	3	route show	e41cb9679b1f09b9a73382b655216a8aff604ccd
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
@@ -331,12 +333,11 @@
 16	17	the state writer accepts exactly the table's phases	8483d2441e21e1e5f965968522b0c3e00737359d
 7	8	state.json schema	425162b3d7cb59537674814f30ff0da8c11d57c4
 4	5	state set on a corrupt state.json	0813b93dd6fb8875d3936903ca0134a8792b0b9e
-27	29	the Flow state module, sourced alone	d5092a6f188e3ca5aef3a75f6ab6e4e6a960bc01
-3	4	commands on a truncated state.json (#1929)	5e88163687d9726fba605c88b9bc3e30e8f05b8d
-6	7	the shared and own-checkout readers on a truncated state.json	30feb996d686165c99297576f3823d8fc5286cb6
+36	33	the Flow state module, sourced alone	957f5f219317044f8b46f53fbbb6f91e674e48be
+4	4	commands on a truncated state.json (#1929)	13c01774543bda78ec2ac6965ee2467a5c58787b
+7	7	the shared and own-checkout readers on a truncated state.json	84f251301621e7e0eb35e16ed869c67daa50b697
 7	8	state set with a failed write (#1931)	277ecff0e3af2ccabe12e9fd2aebcc95a83b9bc3
-17	19	the entry read and the required-field helpers	421a88c5d4ef5960e3bcb0921ecf3a81e02d5083
-5	6	review_terminal_record fallback reads once	7f3fae7b01b9f68087b38c343c292315a4f86624
+19	21	the entry read and the required-field helpers	c5ef422d99a8f23876bf06ac8983f5bca2b684c6
 46	49	ticket-worktree (#619)	c52aa57c33965d3db61a8322267ddf19f3b096a0
 1	1	a ticket branch has no upstream (#1152)	bbc5298d4013eb4f017ecb7f6c59509725053f88
 2	3	the merged check beside a same-named tag (#2337)	b3482156347488560231482575e046eb972a8f39

@@ -109,9 +109,9 @@ cmd_redo_review() {
   # review and handoff are first reached inside a command substitution (the
   # terminal state reads handoff): load them here, once, in the main shell,
   # past the guard that refuses a run before it. branch loads here only when
-  # the terminal-state read reaches it, through redo_midway, which
-  # review_terminal_record calls when iteration is above 0, the last flat
-  # record is gone and redo_count is above 0; the load below is then a no-op.
+  # the terminal-state read reaches it: review_terminal_record calls
+  # redo_midway once the flat record is gone, and redo_midway reaches branch
+  # only when redo_count is above 0; the load below is then a no-op.
   orch_load review
   orch_load handoff
   if review_flat_record_gone "$i" && [ "$redo_count" -gt 0 ]; then
