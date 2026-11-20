@@ -35,36 +35,45 @@
 # the setting and exits 1 before measuring: a sequential run records nothing.
 # If anything it measures fails it names each failure on stderr, exits 1 and
 # leaves the committed file as it was; the file is replaced only when
-# everything passed. On INT or TERM while it measures, it stops every run it
-# started, exits 130 and leaves the durations file unchanged. A TERM during the
-# final copy into the durations file is held until the copy ends, so the file is
+# everything passed; it then deletes every durations fragment (never `.gitkeep`)
+# along with it. On INT or TERM while it measures, it stops every run it
+# started, exits 130 and leaves the durations file and every fragment in place. A TERM during the
+# final copy into the durations file and the fragments' deletion is held until they end, so the file is
 # then whole and new, never partial.
 #
-# With the argument --stale it records only what is out of date, in the same
-# durations file. It finds a section or suite with no line, a stale line (a
-# fingerprint that no longer matches the text, or a section or suite line of
-# three columns only), a line whose section or suite no longer exists, and a
-# title on two lines. A section or suite title on two lines has every line
-# removed and is measured afresh; two shellcheck lines end as the first, the
-# rest removed, and shellcheck is never measured (only a full refresh writes
-# it). The stale and missing sections are measured in one parallel orch_test.sh
-# run filtered to them, together with the five calibration sections: the fresh
+# With the argument --stale it records only what is out of date, in the
+# branch's own durations fragment, `durations.d/<branch>.tsv` beside the
+# durations file with each `/` of the branch name as `-`; it never edits the
+# durations file or another fragment (the full refresh and --fold write the
+# file). It refuses on a detached HEAD, naming the reason, writing nothing. It
+# judges staleness and calibrates against the effective record (test_tree.sh's
+# ledger_effective), so a line a fragment already supplies is fresh. It finds a
+# section or suite with no line, or a stale line (a fingerprint that no longer
+# matches the text, or a section or suite line of three columns only). The
+# stale and missing sections are measured in one parallel orch_test.sh run
+# filtered to them, together with the five calibration sections: the fresh
 # sections whose recorded CPU is nearest 5.0 seconds, ties in walk order, never
 # the isolation section (all of them when fewer than five). A stale or missing
 # other suite is timed as the full refresh times it. The ratio is the
 # calibration sections' recorded CPU, summed, over their measured CPU, summed;
 # each new line's wall and CPU are what was measured times the ratio, rounded
-# to tenths, and the line carries its fingerprint. New lines sit in walk order,
-# orphaned lines are removed, and every other line is left byte for byte. It
-# ends by printing the new total and the budget (the one number in suite-budget
-# beside the durations file) on one line, naming the budget as missing when
-# that file is missing or malformed; that does not stop the recording. Nothing
-# out of date measures nothing, says so and exits 0; only orphaned or surplus
-# lines are removed without measuring anything. Something to measure with no
-# fresh section is refused, naming the full refresh, and exits 1. Any failed
-# measurement is named, the file is left unchanged and it exits 1, as the full
-# refresh does; so is a job count of 1, refused, and an interrupt leaves the
-# file unchanged, as above.
+# to tenths, and the line carries its fingerprint. The fragment is created, with
+# durations.d, when missing; run again over its own fragment, it replaces the
+# line of a re-recorded title, adds new lines, keeps walk order, leaves a title
+# on two of its lines on one (the last), and drops its lines of no section or
+# suite. It never writes a `shellcheck` line: only a full refresh does. It ends
+# by printing the new effective total and the budget (the one number in
+# suite-budget beside the durations file) on one line, naming the budget as
+# missing when that file is missing or malformed; that does not stop the
+# recording. Nothing out of date measures nothing, says so and creates no
+# fragment (a fragment holding only surplus lines is mended without
+# measuring). Something to measure with no fresh section is refused, naming the
+# full refresh, and exits 1. When the effective record cannot be read it names
+# the fault and exits 1. Any failed measurement is named, the durations file
+# and every fragment are left unchanged and it exits 1, as the full refresh
+# does; so is a job count of 1, refused, and an interrupt leaves them
+# unchanged, as above. A TERM during the write of the fragment is held until
+# it ends, so the fragment is whole.
 #
 # With the argument --fold it folds the durations fragments (the *.tsv files of
 # durations.d beside the durations file; `.gitkeep` is no fragment) into the
@@ -187,7 +196,7 @@ suite_run() {
 # one positive whole number.
 stale_report() {
   local total budget
-  total="$(durations_total <"$target")" || return 1
+  total="$(ledger_effective "$dir" | durations_total)" || return 1
   if suite_budget_read "$dir/suite-budget"; then
     budget="$SUITE_BUDGET CPU seconds"
   else
@@ -210,51 +219,87 @@ measure_suite() {
   fi
 }
 
+# frag_build <new lines file>: prints the branch's fragment as it should end,
+# in walk order: the lines of its own fragment ($frag) for a title of the walk
+# that the new lines lack (the last line of a title stands; a `shellcheck` line
+# and a line of no section or suite are dropped), and the new lines
+# "<index> <wall> <cpu> <title> <fingerprint>".
+frag_build() {
+  local own=/dev/null
+  [ -f "$frag" ] && own="$frag"
+  awk -F'\t' -v OFS='\t' "$DURATIONS_AWK"'
+    FILENAME == ARGV[1] { if (!($1 in widx)) widx[$1] = $4; next }
+    FILENAME == ARGV[2] { skip[$4] = 1; print $1, $2, $3, $4, $5; next }
+    durations_line() && $3 != "shellcheck" && ($3 in widx) { keep[$3] = $0 }
+    END { for (t in keep) if (!(t in skip)) print widx[t], keep[t] }' \
+    "$tmp/walk" "$1" "$own" | sort -s -t "$TAB" -k1,1n | cut -f2-
+}
+
+# frag_write: replaces the branch's fragment with $tmp/frag whole (a copy
+# beside it, renamed over it), creating durations.d when it is missing; an
+# empty result removes the fragment. INT and TERM are held meanwhile, so an
+# interrupt leaves the fragment whole, old or new.
+frag_write() {
+  trap '' INT TERM
+  if [ ! -s "$tmp/frag" ]; then
+    rm -f "$frag"
+    return 0
+  fi
+  mkdir -p "$(dirname "$frag")" &&
+    cp "$tmp/frag" "$frag.$$" && mv "$frag.$$" "$frag"
+}
+
 # stale_run: the --stale mode (see the header); returns the script's status.
 stale_run() {
-  local regex src="$target"
+  local regex branch frag
+  branch="$(git -C "$root" symbolic-ref --short -q HEAD 2>/dev/null)" || branch=""
+  if [ -z "$branch" ]; then
+    echo "section-durations.sh: --stale records into the branch's own fragment, and no branch is checked out (detached HEAD); nothing recorded" >&2
+    return 1
+  fi
+  frag="$dir/durations.d/${branch//\//-}.tsv"
   # The ledger's walk: "<title> <fingerprint> <kind> <walk index>".
   awk -F'\t' -v OFS='\t' -v ns="${#LEDGER_OTHERS[@]}" 'NR == FNR { n = NR; next }
     { print $0, (FNR > n - ns ? "suite" : "section"), FNR }' "$tmp/fingerprints" "$tmp/fingerprints" >"$tmp/walk" || return 1
-  # A missing file reads as an empty one; only a recording creates it.
-  [ -f "$target" ] || src=/dev/null
-  # The states of the walk's titles and the file's (ledger_states), then pass 1:
-  # the lines kept byte for byte (kept), what to measure (todo: index, title,
-  # kind, fingerprint) and the fresh sections but isolation (fresh).
-  ledger_states "$tmp/walk" "$src" >"$tmp/states" || return 1
-  awk -F'\t' -v kept="$tmp/kept" -v todo="$tmp/todo" -v fresh="$tmp/fresh" "$DURATIONS_AWK"'
+  # Staleness and calibration are judged on the effective record.
+  ledger_effective "$dir" >"$tmp/eff" || {
+    echo "section-durations.sh: ${LEDGER_ERR:-could not read the durations record}, nothing recorded" >&2
+    return 1
+  }
+  # The states of the walk's titles and the record's (ledger_states), then
+  # what to measure (todo: index, title, kind, fingerprint) and the fresh
+  # sections but isolation (fresh).
+  ledger_states "$tmp/walk" "$tmp/eff" >"$tmp/states" || return 1
+  awk -F'\t' -v todo="$tmp/todo" -v fresh="$tmp/fresh" "$DURATIONS_AWK"'
     FILENAME == ARGV[1] { if (!($1 in fp)) { fp[$1] = $2; kind[$1] = $3; ttl[$4] = $1; top = $4 + 0 } next }
     FILENAME == ARGV[2] { state[$1] = $2; next }
-    { line[++n] = $0
-      ok[n] = durations_line()
-      if (ok[n]) { t[n] = $3; cpuv[n] = $2 + 0 } }
+    durations_line() && state[$3] == "fresh" { fcpu[$3] = $2 + 0 }
     END {
-      printf "" > kept; printf "" > todo; printf "" > fresh
-      for (i = 1; i <= n; i++) {
-        if (!ok[i]) { print line[i] > kept; continue }
-        name = t[i]
-        if (name == "shellcheck") { if (!seen) { seen = 1; print line[i] > kept } continue }
-        if (state[name] == "fresh") { print line[i] > kept; fcpu[name] = cpuv[i] }
-      }
+      printf "" > todo; printf "" > fresh
       for (k = 1; k <= top; k++) {
         name = ttl[k]
         if (name == "") continue
         if (state[name] != "fresh") printf "%d\t%s\t%s\t%s\n", k, name, kind[name], fp[name] > todo
         else if (kind[name] == "section" && k != 1) printf "%d\t%d\t%s\n", k, fcpu[name], name > fresh
       }
-    }' "$tmp/walk" "$tmp/states" "$src" || return 1
+    }' "$tmp/walk" "$tmp/states" "$tmp/eff" || return 1
   if [ ! -s "$tmp/todo" ]; then
-    if cmp -s "$tmp/kept" "$src"; then
-      echo "section-durations.sh: nothing out of date, durations file unchanged"
-    else
-      cp "$tmp/kept" "$target" || return 1
-      echo "section-durations.sh: removed the lines of no section or suite, measured nothing"
+    # Nothing to measure: only its own fragment's surplus is mended.
+    if [ -f "$frag" ]; then
+      frag_build /dev/null >"$tmp/frag" || return 1
+      if ! cmp -s "$tmp/frag" "$frag"; then
+        frag_write || return 1
+        echo "section-durations.sh: mended the branch's fragment, measured nothing"
+        stale_report
+        return
+      fi
     fi
+    echo "section-durations.sh: nothing out of date, durations file and fragments unchanged"
     stale_report
     return
   fi
   if [ ! -s "$tmp/fresh" ]; then
-    echo "section-durations.sh: no fresh section to calibrate against, durations file left unchanged; run the full refresh (section-durations.sh with no argument)" >&2
+    echo "section-durations.sh: no fresh section to calibrate against, nothing recorded; run the full refresh (section-durations.sh with no argument)" >&2
     return 1
   fi
   # The calibration sections: recorded CPU nearest 5.0 seconds, ties in walk
@@ -281,7 +326,7 @@ stale_run() {
     measure_suite "$title"
   done <"$tmp/todo"
   if [ "${#failed[@]}" -gt 0 ]; then
-    echo "section-durations.sh: failed, durations file left unchanged: ${failed[*]}" >&2
+    echo "section-durations.sh: failed, nothing recorded: ${failed[*]}" >&2
     return 1
   fi
   # The new lines, "<index> <wall> <cpu> <title> <fingerprint>": measured times
@@ -297,20 +342,9 @@ stale_run() {
       if (m < 1) m = 1
       for (name in idx) print idx[name], int(wall[name] * r / m + 0.5), int(cpu[name] * r / m + 0.5), name, fp[name]
     }' "$tmp/calib" "$tmp/todo" "$tmp/measured" | sort -t "$TAB" -k1,1n >"$tmp/new" || return 1
-  # Merge: a new line goes before the first kept line that is later in the walk.
-  awk -F'\t' -v OFS='\t' "$DURATIONS_AWK"'
-    FILENAME == ARGV[1] { widx[$1] = $4; next }
-    FILENAME == ARGV[2] { nn++; nidx[nn] = $1; $1 = ""; nline[nn] = substr($0, 2); next }
-    {
-      k = last
-      if (durations_line())
-        k = ($3 == "shellcheck" ? 1000000000 : ($3 in widx ? widx[$3] : last))
-      while (p < nn && nidx[p + 1] < k) print nline[++p]
-      last = k
-      print
-    }
-    END { while (p < nn) print nline[++p] }' "$tmp/walk" "$tmp/new" "$tmp/kept" >"$tmp/final" || return 1
-  cp "$tmp/final" "$target" || return 1
+  # The branch's fragment: its own lines and the new ones, in walk order.
+  frag_build "$tmp/new" >"$tmp/frag" || return 1
+  frag_write || return 1
   stale_report
 }
 if [ "$mode" = stale ]; then
@@ -352,5 +386,10 @@ if [ ! -s "$tmp/sections" ]; then
 fi
 cat "$tmp/sections" "$tmp/rest" |
   awk -F'\t' -v OFS='\t' 'NR == FNR { if (!($1 in fp)) fp[$1] = $2; next }
-    $3 in fp { print $0, fp[$3]; next } { print }' "$tmp/fingerprints" - >"$tmp/new" || exit 1
-cp "$tmp/new" "$target"
+    $3 in fp { print $0, fp[$3]; next } { print }' "$tmp/fingerprints" - |
+  awk -F'\t' '!seen[$3]++' >"$tmp/new" || exit 1
+# Whole or not at all: INT and TERM are held while the file is replaced and the
+# fragments deleted.
+trap '' INT TERM
+cp "$tmp/new" "$target" || exit 1
+while IFS= read -r frag_file; do rm -f "$frag_file"; done < <(ledger_fragments "$dir")

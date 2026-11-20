@@ -1657,12 +1657,21 @@ fp_of() { awk -F'\t' -v t="$1" '$3 == t { print $4 }' "${2:-$dur_file}"; }
 # change to one thing at a time. dur_stale [<env assignment>...]: the dev script
 # with --stale, stdout and stderr together.
 dur_stale() {
-  "${dur_cmd[@]}" "$@" bash "$dur_dev_script" --stale 2>&1
+  local o s
+  o="$("${dur_cmd[@]}" "$@" bash "$dur_dev_script" --stale 2>&1)"; s=$?
+  ledger_effective "$dur_test" >"$dur_eff" 2>/dev/null
+  printf '%s\n' "$o"
+  return "$s"
 }
+# dur_eff: the effective record (the file overlaid by the fragments) after the
+# last dur_stale; dur_frag: this branch's fragment.
+dur_eff="$dur_dir/eff.tsv"
+dur_frag="$dur_test/durations.d/feat-x.tsv"
+git -C "$dur_dir" init -q -b feat/x
 # stale_last <output>: the output's last line. stale_cpu <title>: that line's
 # CPU tenths. stale_set <cpu> <title>...: plants that CPU on each title's line.
 stale_last() { printf '%s\n' "$1" | tail -n 1; }
-stale_cpu() { awk -F'\t' -v t="$1" '$3 == t { print $2 }' "$dur_file"; }
+stale_cpu() { awk -F'\t' -v t="$1" '$3 == t { print $2 }' "$dur_eff"; }
 stale_set() {
   local c="$1" titles
   shift
@@ -1673,7 +1682,7 @@ stale_set() {
 }
 # stale_except <title> [<file>]: <file> or the durations file, less the title.
 stale_except() {
-  awk -F'\t' -v t="$1" '$3 != t' "${2:-$dur_file}"
+  awk -F'\t' -v t="$1" '$3 != t' "${2:-$dur_eff}"
 }
 printf '%s\n' '  # --- dur cal' \
   "  echo; echo \"dur cal\"; $dur_spin; " 'if [ -e "${DUR_FAIL:-/nonexistent}" ]; then bad "dur cal" "planted"; else ok "cal ran"; fi' |
@@ -1695,7 +1704,7 @@ stale_reset() {
   cp "$dur_dir/planted.keep" "$dur_orch/zz-planted.sh"
   cp "$dur_dir/stub_a.keep" "$dur_test/stub_a.sh"
   cp "$dur_dir/stub_b.keep" "$dur_test/stub_b.sh"
-  rm -f "$dur_orch/aa-new.sh" "$dur_orch/zzz-failing.sh" "$dur_orch/zzz-many.sh" "$dur_test/suite-budget"
+  rm -f "$dur_test"/durations.d/*.tsv "$dur_orch/aa-new.sh" "$dur_orch/zzz-failing.sh" "$dur_orch/zzz-many.sh" "$dur_test/suite-budget"
   cp "$dur_dir/base.tsv" "$dur_file"
 }
 out="$(bash "$dur_dev_script" --bogus 2>&1)"; st=$?
@@ -1713,53 +1722,60 @@ assert_eq "with a budget file it ends on the total and the budget" \
   "$(stale_last "$out" | sed 's/total [0-9.]* /total N /')" "section-durations.sh: total N CPU seconds, budget 1100 CPU seconds"
 assert_eq "the total is the CPU column's sum" \
   "$(( 10#$(stale_last "$out" | sed "s/.*total \([0-9]*\)\.\([0-9]\) .*/\1\2/") ))" \
-  "$(awk -F'\t' '{ s += $2 } END { print s }' "$dur_file")"
+  "$(awk -F'\t' '{ s += $2 } END { print s }' "$dur_eff")"
 
 # A stale section: only its line changes, byte for byte otherwise.
 echo '# edited' >>"$dur_orch/zz-planted.sh"
 out="$(dur_stale)"; st=$?
 assert_status "--stale on an edited section exits 0" "$st" 0
 assert_ne "it rewrites that section's line, with a new fingerprint" \
-  "$(fp_of "dur b")" "$(fp_of "dur b" "$dur_dir/base.tsv")"
+  "$(fp_of "dur b" "$dur_eff")" "$(fp_of "dur b" "$dur_dir/base.tsv")"
 assert_eq "and leaves every other line byte for byte" \
   "$(stale_except 'dur b')" "$(stale_except 'dur b' "$dur_dir/base.tsv")"
-assert_eq "and the title keeps its place" "$(cut -f3 "$dur_file" | tr '\n' ',')" "$(cut -f3 "$dur_dir/base.tsv" | tr '\n' ',')"
+assert_eq "and the title keeps its place" "$(cut -f3 "$dur_eff" | tr '\n' ',')" "$(cut -f3 "$dur_dir/base.tsv" | tr '\n' ',')"
 stale_reset
 # A three-column section line becomes a four-column one.
 awk -F'\t' -v OFS='\t' '$3 == "dur a" { NF = 3 } 1' "$dur_dir/base.tsv" >"$dur_file"
 out="$(dur_stale)"; st=$?
 assert_status "--stale on a three-column section line exits 0" "$st" 0
-assert_eq "the line ends with four columns" "$(awk -F'\t' '$3 == "dur a" { print NF }' "$dur_file")" "4"
+assert_eq "the line ends with four columns" "$(awk -F'\t' '$3 == "dur a" { print NF }' "$dur_eff")" "4"
 assert_eq "and every other line is as it was" "$(stale_except 'dur a')" "$(stale_except 'dur a' "$dur_dir/base.tsv")"
 stale_reset
-# Orphaned lines are removed with nothing measured: a failing section planted
-# but listed would fail a run, so only the file shows nothing ran.
+# Orphaned lines are not judged: nothing is out of date, nothing is measured
+# (a failing section planted but listed would fail a run) and no fragment is made.
 printf '5\t5\tgone\tabc\n' >>"$dur_file"
+cp "$dur_file" "$dur_dir/orphan.tsv"
 out="$(dur_stale)"; st=$?
 assert_status "--stale with only an orphaned line exits 0" "$st" 0
-assert_contains "measuring nothing" "$out" "measured nothing"
-assert_eq "the file is the base again" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
-# A title on two lines, one fresh and one stale, ends as one line.
+assert_contains "saying nothing is out of date" "$out" "nothing out of date"
+assert_eq "the file is as it was, the orphaned line too" "$(<"$dur_file")" "$(<"$dur_dir/orphan.tsv")"
+assert_eq "and no fragment is made" "$(ls "$dur_test/durations.d"/*.tsv 2>/dev/null | wc -l | tr -d ' ')" "0"
+# A title on two lines of the file, one fresh and one stale: the record's line
+# is the last, so it is re-recorded, in the fragment, once.
 printf '9\t9\tdur a\tstale\n' >>"$dur_file"
+cp "$dur_file" "$dur_dir/dup.tsv"
 out="$(dur_stale)"; st=$?
 assert_status "--stale on a title on two lines exits 0" "$st" 0
-assert_eq "it ends as one line for the title" "$(awk -F'\t' '$3 == "dur a"' "$dur_file" | wc -l | tr -d ' ')" "1"
+assert_eq "it ends as one line for the title in the fragment" "$(awk -F'\t' '$3 == "dur a"' "$dur_frag" | wc -l | tr -d ' ')" "1"
 assert_eq "with the fingerprint the text has" \
-  "$(fp_of "dur a")" "$(fp_of "dur a" "$dur_dir/base.tsv")"
+  "$(fp_of "dur a" "$dur_frag")" "$(fp_of "dur a" "$dur_dir/base.tsv")"
+assert_eq "and the file is byte for byte as it was" "$(<"$dur_file")" "$(<"$dur_dir/dup.tsv")"
 stale_reset
-# Two shellcheck lines end as the first.
+# Two shellcheck lines in the file: --stale leaves them, and writes none.
 printf '7\t7\tshellcheck\n' >>"$dur_file"
+cp "$dur_file" "$dur_dir/sc2.tsv"
 out="$(dur_stale)"; st=$?
 assert_status "--stale on two shellcheck lines exits 0" "$st" 0
-assert_eq "they end as the first, the rest removed, shellcheck not measured" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
+assert_eq "the file keeps them, and no fragment is made" \
+  "$(<"$dur_file")|$(ls "$dur_test/durations.d"/*.tsv 2>/dev/null | wc -l | tr -d ' ')" "$(<"$dur_dir/sc2.tsv")|0"
 stale_reset
 # A missing section, in walk order, and the budget file missing.
 dur_plant_new
 out="$(dur_stale)"; st=$?
 assert_status "--stale on a missing section exits 0" "$st" 0
-assert_eq "its new line sits in walk order" "$(cut -f3 "$dur_file" | tr '\n' ',')" \
+assert_eq "its new line sits in walk order" "$(cut -f3 "$dur_eff" | tr '\n' ',')" \
   "isolation,dur new,dur a,dur b,dur cal,stub_a.sh,stub_b.sh,shellcheck,"
-assert_eq "with a fingerprint" "$(awk -F'\t' '$3 == "dur new" { print NF }' "$dur_file")" "4"
+assert_eq "with a fingerprint" "$(awk -F'\t' '$3 == "dur new" { print NF }' "$dur_eff")" "4"
 assert_eq "and every other line as it was" "$(stale_except 'dur new')" "$(<"$dur_dir/base.tsv")"
 assert_contains "the budget file missing still records, and the last line says so" "$(stale_last "$out")" "budget missing"
 stale_reset
@@ -1771,8 +1787,72 @@ printf 'abc\n' >"$dur_test/suite-budget"
 out="$(dur_stale)"; st=$?
 assert_status "--stale on an edited other suite exits 0" "$st" 0
 assert_contains "a malformed budget file still records, and the last line names it as missing" "$(stale_last "$out")" "budget missing"
-assert_ne "its fingerprint changed" "$(fp_of stub_a.sh)" "$(fp_of stub_a.sh "$dur_dir/base.tsv")"
+assert_ne "its fingerprint changed" "$(fp_of stub_a.sh "$dur_eff")" "$(fp_of stub_a.sh "$dur_dir/base.tsv")"
 assert_eq "and every other line is as it was" "$(stale_except stub_a.sh)" "$(stale_except stub_a.sh "$dur_dir/base.tsv")"
+stale_reset
+# The fragment (#3877): --stale writes this branch's own fragment, named for the
+# branch with each `/` as `-`, and nothing else.
+echo '# edited' >>"$dur_orch/zz-planted.sh"
+mkdir -p "$dur_test/durations.d"
+printf '3\t3\tdur cal\tother\n' >"$dur_test/durations.d/zzz-other.tsv"
+cp "$dur_test/durations.d/zzz-other.tsv" "$dur_dir/other.keep"
+out="$(dur_stale)"; st=$?
+assert_status "--stale beside another fragment exits 0" "$st" 0
+assert_eq "it writes the line of the edited section in feat-x.tsv, and only that" "$(cut -f3 "$dur_frag")" "dur b"
+assert_eq "the durations file is byte for byte as it was" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
+assert_eq "and the other fragment too" "$(<"$dur_test/durations.d/zzz-other.tsv")" "$(<"$dur_dir/other.keep")"
+cp "$dur_frag" "$dur_dir/frag1.tsv"
+# Run again: a re-recorded title's line is replaced, a new line added, walk order kept.
+echo '# edited again' >>"$dur_orch/zz-planted.sh"
+dur_plant_new
+out="$(dur_stale)"; st=$?
+assert_status "--stale over its own fragment exits 0" "$st" 0
+assert_eq "it keeps walk order, one line per title" "$(cut -f3 "$dur_frag" | tr '\n' ',')" "dur new,dur b,"
+assert_ne "the re-recorded title's line is replaced" "$(fp_of 'dur b' "$dur_frag")" "$(fp_of 'dur b' "$dur_dir/frag1.tsv")"
+# A title on two lines of its own fragment ends on one; a shellcheck line is never written.
+{ cat "$dur_frag"; printf '1\t1\tdur new\tstale\n7\t7\tshellcheck\n'; } >"$dur_dir/frag2.tsv"
+cp "$dur_dir/frag2.tsv" "$dur_frag"
+out="$(dur_stale)"; st=$?
+assert_status "--stale over a fragment holding a title twice exits 0" "$st" 0
+assert_eq "the title ends on one line, and no shellcheck line is written" \
+  "$(cut -f3 "$dur_frag" | tr '\n' ',')" "dur new,dur b,"
+stale_reset
+# A missing durations.d is created.
+rm -rf "$dur_test/durations.d"
+echo '# edited' >>"$dur_orch/zz-planted.sh"
+out="$(dur_stale)"; st=$?
+assert_status "--stale with no durations.d exits 0" "$st" 0
+assert_eq "it creates the fragment" "$(cut -f3 "$dur_frag")" "dur b"
+: >"$dur_test/durations.d/.gitkeep"
+stale_reset
+# A failed measurement leaves the file and every fragment unchanged.
+echo '# edited' >>"$dur_orch/zz-planted.sh"
+out="$(dur_stale DUR_FAIL=/etc/hostname)"; st=$?
+assert_status "a failed measurement exits 1" "$st" 1
+assert_eq "no fragment is made" "$(ls "$dur_test/durations.d"/*.tsv 2>/dev/null | wc -l | tr -d ' ')" "0"
+stale_reset
+# A detached HEAD is refused, naming the reason, writing nothing.
+echo '# edited' >>"$dur_orch/zz-planted.sh"
+git -C "$dur_dir" -c user.name=t -c user.email=t@t commit -q --allow-empty -m x
+git -C "$dur_dir" checkout -q --detach
+out="$(dur_stale)"; st=$?
+assert_status "--stale on a detached HEAD exits 1" "$st" 1
+assert_contains "naming the reason" "$out" "detached HEAD"
+assert_eq "and writing nothing" "$(ls "$dur_test/durations.d"/*.tsv 2>/dev/null | wc -l | tr -d ' ')" "0"
+git -C "$dur_dir" checkout -q feat/x
+git -C "$dur_dir" checkout -q -b a/b/c
+out="$(dur_stale)"
+assert_eq "a branch name holding / is a fragment name with each / as -" "$(ls "$dur_test/durations.d" | grep -v '^\.')" "a-b-c.tsv"
+git -C "$dur_dir" checkout -q feat/x
+stale_reset
+# The effective record unreadable: named, exit 1, every file unchanged.
+echo '# edited' >>"$dur_orch/zz-planted.sh"
+sed -i 's/^suites=(.*)$/suites=(orch_test.sh stub_a.sh stub_b.sh missing.sh)/' "$dur_test/all.sh"
+out="$(dur_stale)"; st=$?
+assert_status "--stale with a failing walk exits 1" "$st" 1
+assert_contains "naming the fault" "$out" "missing.sh"
+assert_eq "and no fragment is made" "$(ls "$dur_test/durations.d"/*.tsv 2>/dev/null | wc -l | tr -d ' ')" "0"
+sed -i 's/^suites=(.*)$/suites=(orch_test.sh stub_a.sh stub_b.sh)/' "$dur_test/all.sh"
 stale_reset
 # A job count of 1 is refused.
 echo '# edited' >>"$dur_orch/zz-planted.sh"
@@ -1826,6 +1906,7 @@ out="$(dur_stale DUR_BURN=1)"; st=$?
 assert_status "--stale beside fresh lines planted far above passes" "$st" 0
 assert_eq "the new line is far above its own measurement" "$([ "$(stale_cpu 'dur new')" -ge 500 ] && echo yes)" "yes"
 assert_eq "and the fresh lines are as planted" "$(stale_except 'dur new')" "$(<"$dur_dir/high.tsv")"
+rm -f "$dur_frag"
 cp "$dur_dir/base.tsv" "$dur_file"
 stale_set 0 'dur a' 'dur b' 'dur cal'
 out="$(dur_stale DUR_BURN=1)"
@@ -1860,6 +1941,25 @@ assert_status "--stale with two fresh sections passes" "$st" 0
 assert_eq "its new lines are far above their own measurement too" "$([ "$(stale_cpu 'cal m1')" -ge 500 ] && echo yes)" "yes"
 stale_reset
 cp "$dur_dir/base.tsv" "$dur_dir/good.tsv"
+# The full refresh deletes every fragment, keeping .gitkeep (#3877).
+mkdir -p "$dur_test/durations.d"
+: >"$dur_test/durations.d/.gitkeep"
+printf '1\t1\tdur a\tstale\n' >"$dur_test/durations.d/f1.tsv"
+printf '2\t2\tdur b\tstale\n' >"$dur_test/durations.d/f2.tsv"
+dur_stub_passing stub_b.sh
+printf '#!/usr/bin/env bash\necho; echo "  FAIL x"; echo "0 passed, 1 failed"; exit 1\n' >"$dur_test/stub_b.sh"
+cp "$dur_file" "$dur_dir/pre-full.tsv"
+out="$(dur_script)"; st=$?
+assert_status "a full refresh with a failing suite exits 1" "$st" 1
+assert_eq "it leaves the file and both fragments in place" \
+  "$(<"$dur_file")|$(ls "$dur_test/durations.d"/*.tsv | wc -l | tr -d ' ')" "$(<"$dur_dir/pre-full.tsv")|2"
+cp "$dur_dir/stub_b.keep" "$dur_test/stub_b.sh"
+out="$(dur_script)"; st=$?
+assert_status "a full refresh over fragments exits 0" "$st" 0
+assert_eq "it deletes every fragment" "$(ls "$dur_test/durations.d"/*.tsv 2>/dev/null | wc -l | tr -d ' ')" "0"
+assert_eq "keeps .gitkeep" "$([ -e "$dur_test/durations.d/.gitkeep" ] && echo yes)" "yes"
+assert_eq "and writes no title twice" "$(cut -f3 "$dur_file" | sort | uniq -d | wc -l | tr -d ' ')" "0"
+stale_reset
 # The --fold mode (#3874): fragments in durations.d folded into the file.
 # dur_fold: the dev script with --fold, stdout and stderr together. fold_line
 # <title> <output>: the title's line of the durations file.
