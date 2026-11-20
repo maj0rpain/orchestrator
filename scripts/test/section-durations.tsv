@@ -4,7 +4,7 @@
 9	5	quiet mode (ORCH_TEST_QUIET, #614)	fe8a8a94caef1de7a5d0e0aa6e7b0481014534bf
 304	56	the parallel runner (ORCH_TEST_JOBS, #780)	c229e4950ab07deff911fb02b6d5493fe3ca3b78
 17	9	the parallel runner's start order (#2857)	99486a03af20356a33042d340887e03d858bc799
-131	41	the shard setting (#2859)	b151c3b638e093dad32fdaa7113ad3e0f6dded05
+95	46	the shard setting (#2859)	d0d3c77c810b452894806dd40698375e5afc72d4
 11	6	the seeded start (stub cache)	a47a33ec2b4f96a52b9b0525c635630459ec2d22
 374	206	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	ad5d8b92cbb0217d62cd4441bf6bf2f868ca9b72
 4	2	assertions in a subshell (#1904)	a9486bddc95711ae74421ea25a19a3e113e3c64a
