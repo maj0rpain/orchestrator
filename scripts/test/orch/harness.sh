@@ -23,7 +23,7 @@ SOURCEABLE_TEST_HELPERS=(gh_adapter_fake.sh tally.sh fifo.sh counting.sh fails.s
 # The throwaway repo the three affected.sh --plan sections plan in (the ticket
 # verification, the shared test support and the gh fake): tr_init <dir> makes it
 # - git init, a copy of the runner files, a stub of every suite, the harness
-# file (isolation, the five TR_GATE placement sections and the parallel runner)
+# file (isolation, the parallel runner and the five TR_GATE placement sections)
 # and the loader file - then the section plants its own files and calls
 # tr_commit <dir>, which commits them and records origin/main. tr_put <dir>
 # <path> [<line>...] writes a file: a shebang only for a .sh path, and a single
@@ -54,10 +54,10 @@ tr_init() {
   for s in "${SUITES[@]}"; do
     [ -e "$dir/scripts/test/$s" ] || tr_put "$dir" "scripts/test/$s"
   done
-  tr_put "$dir" scripts/test/orch/harness.sh '# --- isolation ---' \
+  tr_put "$dir" scripts/test/orch/harness.sh '# --- isolation ---' '# --- the parallel runner (#780) ---' \
     '# --- test-helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
     '# --- marked comment prelude placement (#1853) ---' '# --- comment reader placement (#3085) ---' \
-    '# --- helper body copies (#3170) ---' '# --- the parallel runner (#780) ---'
+    '# --- helper body copies (#3170) ---'
   tr_put "$dir" scripts/test/orch/loader.sh '# --- loader one ---'
 }
 tr_commit() {
@@ -4555,9 +4555,9 @@ for af_f in doctor init issue side-checkout spec-review; do
 done
 for af_f in scripts/orch.sh scripts/orch/common.sh scripts/orch/branch.sh \
   scripts/orch/state.sh scripts/test/orch/setup.sh \
-  scripts/test/orch_test.sh scripts/test/gh_adapter_fake.sh scripts/hook-guard.sh \
+  scripts/test/gh_adapter_fake.sh scripts/hook-guard.sh \
   scripts/version-bump.sh scripts/autopilot-container.sh scripts/autopilot-up.sh \
-  scripts/dev/lens-bench.sh scripts/dev/other.sh scripts/test/docs_lint.sh \
+  scripts/dev/lens-bench.sh scripts/dev/other.sh \
   scripts/flow-state.sh scripts/host.sh scripts/bash-walk.sh scripts/paste-guard.sh \
   scripts/planning-allowlist.sh scripts/triage-labels.sh scripts/dev/hook-edit-width.sh \
   scripts/dev/width.sh scripts/test/shell_code.awk \
