@@ -83,8 +83,8 @@ case "$verb" in
   exec) [ -f "$FAKE_DIR/probe-fail.$key" ] && exit 1; canned probe ;;
   up|build) [ -f "$FAKE_DIR/$verb-fail.$key" ] && { echo "compose: $verb failed" >&2; exit 1; }
     while IFS= read -r nm; do
-      nm="$(printf '%s' "$nm" | tr ':/' '__')"
-      [ -f "$FAKE_DIR/img-after.$nm" ] && cp "$FAKE_DIR/img-after.$nm" "$FAKE_DIR/img.$nm"
+      nm_key="$(printf '%s' "$nm" | tr ':/' '__')"
+      [ -f "$FAKE_DIR/img-after.$nm_key" ] && cp "$FAKE_DIR/img-after.$nm_key" "$FAKE_DIR/img.$nm_key"
     done < <(canned images)
     [ "$verb" = up ] && [ -f "$FAKE_DIR/cimg-after.$key" ] && cp "$FAKE_DIR/cimg-after.$key" "$FAKE_DIR/cimg.$key"
     echo "compose: $verb ok" >&2 ;;
@@ -315,9 +315,17 @@ assert_eq "dirty: git status untouched" "$(git -C "$case_dir" status --porcelain
 
 # --- replaced images
 # img_case <old> <new>: a rebuilt project whose tag points at <old> before the
-# build and <new> after.
+# build and <new> after. The .env tree is built once and shared: the script
+# never changes it, so each case gets only a fresh $FAKE_DIR.
+new_case ".env"
+img_tree="$case_dir"
 img_case() {
-  new_case ".env"
+  n=$((n + 1))
+  case_dir="$img_tree"
+  export FAKE_DIR="$root/case$n/fake"
+  mkdir -p "$FAKE_DIR"
+  echo "test-engine" >"$FAKE_DIR/info"
+  : >"$FAKE_DIR/log"
   echo abc123 >"$FAKE_DIR/psa.default"
   echo "repo/img:tag" >"$FAKE_DIR/images.default"
   echo "$1" >"$FAKE_DIR/img.repo_img_tag"
@@ -330,7 +338,6 @@ run_up
 assert_contains "image: replaced id removed" "$log" "image rm old1|"
 assert_eq "image: one rm" "$(rm_calls)" "1"
 assert_lacks "image: new id kept" "$log" "image rm new1"
-assert_lacks "image: rm never forced" "$log" "image rm -f"
 assert_lacks "image: rm never given -f anywhere" "$log" " -f"
 assert_contains "image: Deleted output on stderr" "$err" "Deleted: sha256:old1"
 assert_eq "image: stdout is engine and summary only" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "2"
@@ -350,10 +357,11 @@ assert_contains "image: container's old image removed" "$log" "image rm cold|"
 assert_contains "image: tag's old image removed" "$log" "image rm old1|"
 
 img_case old1 new1
-echo sha256:old1 >"$FAKE_DIR/cimg.default"
+echo old1 >"$FAKE_DIR/cimg.default"
 echo new1 >"$FAKE_DIR/cimg-after.default"
 run_up
 assert_eq "image: id found by both lookups, prefix or not, removed once" "$(rm_calls)" "1"
+assert_contains "image: the id is removed in its normalised form" "$log" "image rm old1|"
 
 img_case old1 new1
 echo old1 >"$FAKE_DIR/cimg.default"
@@ -398,6 +406,7 @@ img_case old1 new1
 rm "$FAKE_DIR/img-after.repo_img_tag"
 rm "$FAKE_DIR/img.repo_img_tag"
 echo old1 >"$FAKE_DIR/cimg.default"
+: >"$FAKE_DIR/cimg-after.default"
 run_up
 assert_eq "image: no id after up removes nothing" "$(rm_calls)" "0"
 

@@ -124,13 +124,19 @@ summary_line() { printf '%-13s (%s)  %-8s %s\n' "$file" "$pname" "$1" "$2"; }
 # and its container's image ID (compose images -q). A lookup that fails or
 # finds nothing adds none and prints nothing.
 image_ids() {
-  {
-    local img
-    while IFS= read -r img; do
-      [ -n "$img" ] && docker image inspect --format '{{.Id}}' "$img" 2>/dev/null
-    done < <(compose config --images 2>/dev/null)
-    compose images -q 2>/dev/null
-  } | sed -e 's/^sha256://' -e '/^[[:space:]]*$/d' | awk '!seen[$0]++'
+  local img id ids=""
+  while IFS= read -r img; do
+    [ -n "$img" ] || continue
+    while IFS= read -r id; do
+      id="${id#sha256:}"
+      [ -n "${id//[[:space:]]/}" ] && ! list_has "$ids" "$id" && ids+="${ids:+$'\n'}$id"
+    done < <(docker image inspect --format '{{.Id}}' "$img" 2>/dev/null)
+  done < <(compose config --images 2>/dev/null)
+  while IFS= read -r id; do
+    id="${id#sha256:}"
+    [ -n "${id//[[:space:]]/}" ] && ! list_has "$ids" "$id" && ids+="${ids:+$'\n'}$id"
+  done < <(compose images -q 2>/dev/null)
+  [ -z "$ids" ] || printf '%s\n' "$ids"
   return 0
 }
 
@@ -142,7 +148,7 @@ remove_replaced() {
   new="$(image_ids)"
   [ -n "$new" ] || return 0
   for id in $1; do
-    case $'\n'"$new"$'\n' in *$'\n'"$id"$'\n'*) continue ;; esac
+    list_has "$new" "$id" && continue
     docker image rm "$id" >&2 || warn "warning: could not remove image $id"
   done
   return 0
