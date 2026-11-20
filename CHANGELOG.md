@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.9.3
+
+Tidy the branch module and its tests: drop the branch_name_flow middle man and duplicated branch retire test setup and coverage.
+
 ## 6.9.2
 
 Reword six skill, agent brief and help passages that had drifted from the rules or code beside them: the review-pass smell-baseline list, the Standards reviewer report format, the to-spec no-label reason, the review-iterations route analogy, the spec-review wait paragraph and its help entry.
