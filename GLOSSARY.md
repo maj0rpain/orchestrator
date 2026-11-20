@@ -291,8 +291,8 @@ more, until the latest usage reset any of them named - or, for a stop that
 named none, an hour after it; and from an autopilot call meeting a GitHub
 API rate limit, or a tick finding a GitHub quota below its reserve, until
 that quota's reset - or, for a limit that named none, fifteen minutes after
-it. A GitHub API rate limit's pause also stops the tick's own GitHub calls.
-Running sessions are left alone.
+it - and never more than an hour ahead. A GitHub API rate limit's pause also
+stops the tick's own GitHub calls. Running sessions are left alone.
 
 **Cap**:
 The most autopilot sessions a repo runs at once, sync slots aside, counted as
@@ -339,8 +339,8 @@ _Avoid_: rebase, update branch.
 **Resolver**:
 The fresh agent that finishes one in-progress merge or rebase. It reads why
 each side changed before resolving a hunk, keeps both intents where it can,
-names any intent it drops, runs the repo's checks, and commits. It never
-aborts.
+names any intent it drops, commits, then runs the repo's checks on the
+finished merge or rebase and commits any fix on top. It never aborts.
 
 **Release record**:
 The per-PR versioning change a repo's own instructions require - a changelog

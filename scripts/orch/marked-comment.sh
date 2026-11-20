@@ -43,7 +43,8 @@ MARKED_COMMENT_SPEC_RULING_OPENING='Spec ruling:'
 
 # marked_comment_jq: prints the jq definitions every reader shares. Expand it
 # at call time. marked_comment_list is the comment array of the input, the
-# input itself; marked_comment_info is, for a comment,
+# input itself, and it refuses (errors on) any input that is not an array;
+# marked_comment_info is, for a comment,
 # {kind, arg, retired, cause} (kind and arg null for an unmarked comment,
 # retired a boolean, cause a string);
 # marked_comment_entries is, for the input, {key, c, info} of each comment: its
@@ -52,7 +53,7 @@ MARKED_COMMENT_SPEC_RULING_OPENING='Spec ruling:'
 marked_comment_jq() {
   local kinds="${MARKED_COMMENT_KINDS// /|}" causes="${MARKED_COMMENT_CAUSES// /|}"
   cat <<EOJQ
-def marked_comment_list: .;
+def marked_comment_list: if type != "array" then error("not a comment array") else . end;
 def marked_comment_info:
   ((.body // "") | split("\n")[0] // "" | rtrimstr("\r")) as \$l
   | ([\$l | capture("^<!-- orch:(?<kind>$kinds) (?<arg>[^ ]+)(?: (?<cause>$causes))?(?<retired> retired)? -->\$")?] | .[0]) as \$m
@@ -120,8 +121,7 @@ marked_comment_write() {
 marked_comment_texts() {
   local out
   out="$(jq -c --arg k "$1" --arg a "${2-}" --arg ruling "$MARKED_COMMENT_SPEC_RULING_OPENING" "$(marked_comment_jq)"'
-    if type != "array" then error("not a comment array") else . end
-    | marked_comment_of($k; $a)
+    marked_comment_of($k; $a)
     | map((.c.body // "") as $b
       | (if $k == "spec-ruling" then $b | ltrimstr($ruling)
          else ($b | index("\n")) as $n | if $n == null then "" else $b[$n + 1:] end end)
@@ -134,6 +134,5 @@ marked_comment_texts() {
 # nothing, when the input is not a comment array.
 marked_comment_drop() {
   jq -c --arg k "$1" "$(marked_comment_jq)"'
-    if type != "array" then error("not a comment array") else . end
-    | map(select((marked_comment_info).kind != $k))'
+    marked_comment_list | map(select((marked_comment_info).kind != $k))'
 }

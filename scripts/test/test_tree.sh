@@ -3,7 +3,8 @@
 # Sourced by orch_test.sh, all.sh, affected.sh, docs_lint.sh and
 # scripts/dev/section-durations.sh, and by harness.sh through orch_test.sh, so
 # the runners read the test tree one way: all.sh's suite list, the runners
-# that list leaves out (`suites_unlisted`), a section file's titles, the
+# that list leaves out (`suites_unlisted`), the membership test of a word in
+# a list (`listed`), a section file's titles, the
 # section files, the files shellcheck checks, the shellcheck command, the
 # pooled shellcheck step (`shellcheck_start` / `shellcheck_join`), the tenths
 # conversion, the durations-file grammar, the suite budget, the ledger's
@@ -50,6 +51,14 @@ suites_read() {
   done
 }
 
+# listed <word> <item>...: succeeds when the word equals one of the items.
+listed() {
+  local word="$1" item
+  shift
+  for item in "$@"; do [ "$item" = "$word" ] && return 0; done
+  return 1
+}
+
 # suites_unlisted <all.sh> <suite dir>: reads the list with suites_read, then
 # prints, in name order, one line per runner in <suite dir> that the list does
 # not name, and returns 0; nothing when every runner is listed. A runner is a
@@ -58,17 +67,13 @@ suites_read() {
 # is not in all.sh's suites list`. When suites_read fails it prints nothing and
 # returns 1, with SUITES_ERR holding the reader's message.
 suites_unlisted() {
-  local file="$1" suite_dir="$2" path name listed s
+  local file="$1" suite_dir="$2" path name
   suites_read "$file" "$suite_dir" || return 1
   for path in "$suite_dir"/*.sh; do
     [ -f "$path" ] || continue
     grep -Eq '^(source |\. ).*tally\.sh"$' "$path" || continue
     name="${path##*/}"
-    listed=no
-    for s in "${SUITES[@]}"; do
-      [ "$s" = "$name" ] && listed=yes
-    done
-    [ "$listed" = yes ] ||
+    listed "$name" "${SUITES[@]}" ||
       echo "orch: scripts/test/$name sources tally.sh but is not in all.sh's suites list"
   done
   return 0
@@ -134,7 +139,7 @@ ledger_fingerprints() {
     printf '%s\n' "$f" >>"$tmp/titles"
   done
   git hash-object --stdin-paths <"$tmp/paths" >"$tmp/hashes" || { rm -rf "$tmp"; return 1; }
-  awk 'NR == FNR { t[NR] = $0; next } { print t[FNR] "\t" $0 }' "$tmp/titles" "$tmp/hashes"
+  awk 'NR == FNR { t[NR] = $0; next } { print t[FNR] "\t" $0 }' "$tmp/titles" "$tmp/hashes" || { rm -rf "$tmp"; return 1; }
   rm -rf "$tmp"
 }
 
@@ -143,7 +148,7 @@ ledger_fingerprints() {
 # of it but orch_test.sh, and prints ledger_fingerprints of <test dir> and
 # those suites. A caller that wants LEDGER_OTHERS calls it with no pipe or
 # command substitution. It returns 1 when suites_read fails, SUITES_ERR then
-# holding its message, else ledger_fingerprints's status.
+# holding its message, 2 when ledger_fingerprints fails, and 0 otherwise.
 ledger_fingerprints_all() {
   local suite
   suites_read "$1/all.sh" "$1" || return 1
@@ -151,7 +156,7 @@ ledger_fingerprints_all() {
   for suite in "${SUITES[@]}"; do
     [ "$suite" = orch_test.sh ] || LEDGER_OTHERS+=("$suite")
   done
-  ledger_fingerprints "$1" ${LEDGER_OTHERS[@]+"${LEDGER_OTHERS[@]}"}
+  ledger_fingerprints "$1" ${LEDGER_OTHERS[@]+"${LEDGER_OTHERS[@]}"} || return 2
 }
 
 # The function titles_regex prints, from section titles on stdin, one per line,

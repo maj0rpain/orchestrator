@@ -236,30 +236,52 @@ handoff_name_check() {
   die "unknown handoff name: $1 (want $names)"
 }
 
-# handoff_comment_post <issue> <name> <file> [<url-var>]: posts <file>, already
-# validated, as a new comment on <issue> under <name>'s marker. The newest
-# tagged comment is the handoff, so a post never edits an earlier one. Its temp
-# body is removed on every path. <url-var> names a variable that receives the
-# posted comment's URL, empty where gh printed none; without one the post is
-# silent, as every comment post but autopilot start's is. Returns non-zero,
-# with `orch: gh could not post ...: <reason>` on stderr, when the post fails;
-# each caller chooses its reaction.
+# handoff_comment_body <name> <file> <body-var>: builds the body of a handoff
+# comment, <name>'s marker then <file>, already validated, in a temp file, and
+# assigns its path to <body-var>. The caller removes it. Dies when the temp
+# file cannot be made.
+handoff_comment_body() {
+  local name="$1" file="$2" made
+  temp_file_make made || die "could not create a temp file for the handoff comment"
+  { marked_comment_write handoff "$name"; cat "$file"; } >"$made"
+  printf -v "$3" '%s' "$made"
+}
+
+# handoff_comment_post <issue> <name> <file>: posts <file>, already validated,
+# silently as a new comment on <issue> under <name>'s marker, through
+# adapter_issue_comment; `handoff post` and the minimal plan post use it. The
+# newest tagged comment is the handoff, so a post never edits an earlier one.
+# The temp body is removed on every path. Returns non-zero, with
+# `orch: gh could not post ...: <reason>` on stderr, when the post fails; each
+# caller chooses its reaction.
 handoff_comment_post() {
-  local issue="$1" name="$2" file="$3" body gh_err posted_url="" post_ok=1
-  temp_file_make body || die "could not create a temp file for the handoff comment"
-  { marked_comment_write handoff "$name"; cat "$file"; } >"$body"
-  if [ -n "${4:-}" ]; then
-    gh_capture posted_url gh_err adapter_issue_comment_url "$issue" "$body" || post_ok=
-  else
-    gh_capture_err gh_err adapter_issue_comment "$issue" "$body" || post_ok=
-  fi
-  if [ -z "$post_ok" ]; then
+  local issue="$1" name="$2" file="$3" body gh_err
+  handoff_comment_body "$name" "$file" body
+  if gh_capture_err gh_err adapter_issue_comment "$issue" "$body"; then
     rm -f "$body"
-    warn "gh could not post the $name handoff on issue #$issue: $(gh_reason "$gh_err")"
-    return 1
+    return 0
   fi
   rm -f "$body"
-  [ -z "${4:-}" ] || printf -v "$4" '%s' "$posted_url"
+  warn "gh could not post the $name handoff on issue #$issue: $(gh_reason "$gh_err")"
+  return 1
+}
+
+# handoff_comment_post_url <issue> <name> <file> <url-var>: the post of
+# handoff_comment_post through adapter_issue_comment_url, assigning the posted
+# comment's URL to <url-var>, empty where gh printed none. `autopilot start`
+# (standing_start) is its only caller. Same failure contract as
+# handoff_comment_post.
+handoff_comment_post_url() {
+  local issue="$1" name="$2" file="$3" body gh_err posted_url=""
+  handoff_comment_body "$name" "$file" body
+  if gh_capture posted_url gh_err adapter_issue_comment_url "$issue" "$body"; then
+    rm -f "$body"
+    printf -v "$4" '%s' "$posted_url"
+    return 0
+  fi
+  rm -f "$body"
+  warn "gh could not post the $name handoff on issue #$issue: $(gh_reason "$gh_err")"
+  return 1
 }
 
 # The Handoff store: where a flow's handoffs live, behind one interface with a

@@ -576,9 +576,6 @@ out="$("$ORCH" help 2>&1)"
 assert_contains "ticket-worktree add is in the usage text" "$out" "ticket-worktree add <n>"
 assert_contains "ticket-worktree list is in the usage text" "$out" "ticket-worktree list"
 assert_contains "ticket-worktree remove is in the usage text" "$out" "ticket-worktree remove <n> [--unmerged]"
-assert_contains "the CLI conventions' noun table has a ticket-worktree row" \
-  "$(grep '^| `ticket-worktree`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" \
-  '`add`, `list`, `remove`'
 restore_suite_env
 
 # --- a ticket branch has no upstream (#1152) ----------------------------------

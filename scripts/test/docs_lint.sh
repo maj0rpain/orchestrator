@@ -8,7 +8,7 @@
 # "<file>: <problem>", and nothing when the root obeys it. Each rule runs first
 # against fixture plugin roots that break it, so a rule that stops flagging
 # anything fails here too, then once against the real plugin root.
-# Run with no argument it runs everything; --fragment-only runs the fragment
+# Run with no argument it runs everything; --base-rules runs the fragment
 # rule and the two suite budget rules that judge a change against a base
 # (scan_suite_budget and scan_suite_budget_alone) against the real plugin root
 # and nothing else, which is all the fragment workflow needs; any other
@@ -110,6 +110,8 @@
 #     every build arg the former interpolates is named in the latter
 #   scan_cpu_limit  the autopilot service limits CPU from ORCH_CPUS and
 #     docker/.env.example mentions it
+#   scan_memory_limit  the autopilot service sets mem_limit and memswap_limit
+#     from ORCH_MEMORY and docker/.env.example mentions it
 #   scan_autopilot_env  docker/.env.example names the ORCH_<NAME> variable of
 #     every setting in the autopilot module's AUTOPILOT_SETTING_NAMES
 #   scan_clone_dir  the autopilot service pins ORCH_CLONE_DIR to the repo
@@ -186,9 +188,9 @@
 #   scan_interview_closing  orch-interview's SKILL.md's Closing section has
 #     four numbered route options
 #   scan_repo_verification  this repo's CLAUDE.md Testing section names a
-#     Ticket verification:, Branch verification: and Full verification: command
-#   scan_branch_verification  CLAUDE.md's Branch verification: line, if any,
-#     has a command and sits in the Testing section
+#     Ticket verification:, Branch verification: and Full verification: command,
+#     and no other Branch verification: line is bare or outside the Testing
+#     section
 # <<< rules
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -204,6 +206,8 @@ source "$PLUGIN_ROOT/scripts/test/test_tree.sh"
 
 assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi; }
 assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected no output, got: $2"; fi; }
+# assert_contains <label> <output> <text>: passes when output holds the text.
+assert_contains() { case "$2" in *"$3"*) ok "$1" ;; *) bad "$1" "missing '$3' in: $2" ;; esac; }
 
 # flat_text [file]: the file, or stdin when given none, on one line with
 # every whitespace run collapsed to one space.
@@ -255,6 +259,14 @@ md_section_first_block() {
     | awk '/^[[:space:]]*```/ { if (inb) exit; inb = 1; next } inb' | sed 's/^[[:space:]]*//'
 }
 
+# compose_block <key> [<file>]: the lines indented under every `<key>:` line of
+# a compose file, read from <file> or, with none, stdin. The one reader both
+# docker scanners use.
+compose_block() {
+  K="$1" awk '$0 ~ "^ *" ENVIRON["K"] ":" { match($0, /^ */); n = RLENGTH; inb = 1; next }
+    inb { match($0, /^ */); if (RLENGTH <= n) inb = 0; else print }' ${2:+"$2"}
+}
+
 # check <rule> <findings>: ok when the scan found nothing, else one FAIL line
 # per finding, each naming the file and the problem.
 check() {
@@ -283,18 +295,19 @@ spares() {
   if [ -z "$hits" ]; then ok "$1"; else bad "$1" "expected no finding matching '$3', got: $hits"; fi
 }
 
-# The one optional argument, --fragment-only, narrows the run to the changelog
+# The one optional argument, --base-rules, narrows the run to the changelog
 # fragment rule and the suite budget rules 2 and 3. It is an argument, never an
 # environment variable, so the runners that start this file with none can never
-# narrow a full run. The one variable the full run reads is DOCS_LINT_RECORDING,
-# which only section-durations.sh sets: it skips the ledger freshness rule and
-# rule 2 while the ledger is recorded, and all.sh and affected.sh unset it.
-FRAGMENT_ONLY=0
+# narrow a full run. The one variable that narrows the full run is
+# DOCS_LINT_RECORDING, which only section-durations.sh sets: it skips the
+# ledger freshness rule and rule 2 while the ledger is recorded, and all.sh and
+# affected.sh unset it.
+BASE_RULES=0
 if [ "$#" -gt 0 ]; then
-  if [ "$#" -eq 1 ] && [ "$1" = --fragment-only ]; then
-    FRAGMENT_ONLY=1
+  if [ "$#" -eq 1 ] && [ "$1" = --base-rules ]; then
+    BASE_RULES=1
   else
-    echo "docs_lint.sh: usage: docs_lint.sh [--fragment-only]" >&2
+    echo "docs_lint.sh: usage: docs_lint.sh [--base-rules]" >&2
     exit 2
   fi
 fi
@@ -348,7 +361,7 @@ SHELL_CODE_AWK="$(<"$PLUGIN_ROOT/scripts/test/shell_code.awk")"
   echo "docs_lint.sh: scripts/test/shell_code.awk is missing or empty" >&2; exit 1; }
 
 # The changelog fragment rule and the helpers it reaches, defined before the
-# --fragment-only run below needs them; its fixture self-tests are in the
+# --base-rules run below needs them; its fixture self-tests are in the
 # version and CHANGELOG section.
 # version_field: the version field of the plugin.json on stdin, empty when
 # there is none. The linter needs no jq: plugin.json keeps it on one line.
@@ -432,7 +445,7 @@ issue_parent_url() {
 # check_real_changelog_fragments: the changelog fragment rule against the real
 # plugin root, once: the PR against CHANGELOG_BASE, honouring NO_VERSION_BUMP,
 # or a pass naming the skip when CHANGELOG_BASE is unset. The full run and the
-# --fragment-only run both call it.
+# --base-rules run both call it.
 check_real_changelog_fragments() {
   if [ -n "${CHANGELOG_BASE+set}" ]; then
     check "the PR adds one changelog fragment and bumps nothing by hand" \
@@ -450,9 +463,11 @@ BUDGET_FILE=scripts/test/suite-budget
 # scan_ledger_fresh <plugin root>: rule 1, the ledger is fresh. One line per
 # section or suite with no line, per line with no section or suite, per stale
 # line (no fingerprint, or one that no longer matches the text), per title on
-# two lines, and one for a missing shellcheck line. Each names the command that
-# fixes it: scripts/dev/section-durations.sh --stale, or the full refresh for
-# the missing line of shellcheck, which only a full refresh writes. The
+# two lines, and one for a missing shellcheck line. Each of these names the
+# command that fixes it: scripts/dev/section-durations.sh --stale, or the full
+# refresh for the missing line of shellcheck, which only a full refresh writes.
+# A failed all.sh suite list or a failed fingerprinting prints one line saying
+# so, and no line is judged. The
 # fingerprints come from test_tree.sh's ledger_fingerprints, a fixed number of
 # processes whatever the number of sections.
 scan_ledger_fresh() {
@@ -465,6 +480,10 @@ scan_ledger_fresh() {
   ledger_fingerprints_all "$td" >"$fps" || st=$?
   if [ "$st" -eq 1 ]; then
     echo "scripts/test/all.sh: $SUITES_ERR"
+    rm -f "$fps"
+    return 0
+  elif [ "$st" -eq 2 ]; then
+    echo "$LEDGER_FILE: could not fingerprint the test text, so no line is judged"
     rm -f "$fps"
     return 0
   fi
@@ -539,13 +558,13 @@ scan_suite_budget_alone() {
 # check_real_suite_budget: rules 2 and 3 against the real plugin root, once,
 # judged against DOCS_LINT_BASE, else CHANGELOG_BASE, else neither: the
 # comparison with the base and rule 3 are then skipped, and say so. The full
-# run (after the ledger check) and the --fragment-only run both call it.
+# run (after the ledger check) and the --base-rules run both call it.
 check_real_suite_budget() {
   local base="${DOCS_LINT_BASE:-${CHANGELOG_BASE:-}}"
   # While section-durations.sh records the ledger (DOCS_LINT_RECORDING), the
   # budget file may be missing or malformed and the recording still goes on, so
   # rule 2 is not judged in the full run; the budget-alone rule still is.
-  if [ "$FRAGMENT_ONLY" = 0 ] && [ -n "${DOCS_LINT_RECORDING:-}" ]; then
+  if [ "$BASE_RULES" = 0 ] && [ -n "${DOCS_LINT_RECORDING:-}" ]; then
     ok "the recorded total is not judged against the suite budget while the durations file is being recorded"
   else
     check "the recorded total is within the suite budget" "$(scan_suite_budget "$PLUGIN_ROOT" "$base")"
@@ -560,7 +579,7 @@ check_real_suite_budget() {
 # check_real_ledger_fresh: rule 1 against the real plugin root, once. While
 # section-durations.sh records the ledger (DOCS_LINT_RECORDING=1) the freshness
 # rule is not judged, and the pass says so: it would fail on the very lines
-# being replaced. Only the full run calls it, never --fragment-only.
+# being replaced. Only the full run calls it, never --base-rules.
 check_real_ledger_fresh() {
   if [ -n "${DOCS_LINT_RECORDING:-}" ]; then
     ok "the durations file's freshness is not judged while it is being recorded"
@@ -569,11 +588,11 @@ check_real_ledger_fresh() {
       "$(scan_ledger_fresh "$PLUGIN_ROOT")"
   fi
 }
-# --fragment-only: the changelog fragment rule and the suite budget rules 2 and
+# --base-rules: the changelog fragment rule and the suite budget rules 2 and
 # 3 against the real plugin root and nothing else: no section heading, no
 # fixture self-test, no other rule. It starts here, once the helpers the rules
 # reach are defined, and ends on the same summary line as the full run.
-if [ "$FRAGMENT_ONLY" = 1 ]; then
+if [ "$BASE_RULES" = 1 ]; then
   check_real_changelog_fragments
   check_real_suite_budget
   tally_summary
@@ -1081,10 +1100,10 @@ flags "the scan flags orch.sh resolved without the Junie step" \
 documented_orch_form() {
   local -a steps=("$orch_junie (the Junie CLI install)." "$orch_junie_one" "$orch_junie_many"
     "$orch_fallback two directories above this skill's own directory.")
-  local step omit
+  local step
   printf '%s\n' '```' "$orch_line" '```'
   for step in "${steps[@]}"; do
-    for omit in "$@"; do [ "$step" = "$omit" ] && continue 2; done
+    listed "$step" "$@" && continue
     printf '%s\n' "$step"
   done
 }
@@ -2304,9 +2323,13 @@ echo "no pipe into a quiet grep or head (#987, #1019)"
 # a scanned script that pipes into a quiet grep or into head, <text> the raw
 # line with leading whitespace trimmed.
 scan_early_exit_pipe() {
-  local f
-  while IFS= read -r f; do
-    F="$f" awk "$SHELL_CODE_AWK"'
+  local f files=()
+  while IFS= read -r f; do files+=("$f"); done < <(cd "$1" && find scripts -name '*.sh' 2>/dev/null | sort)
+  [ "${#files[@]}" -gt 0 ] || return 0
+  # One awk over every file: the pipe-continued state resets at each file's
+  # first line, as SHELL_CODE_AWK's own does.
+  (cd "$1" && awk "$SHELL_CODE_AWK"'
+      FNR == 1 { open = 0 }
       {
         t = $0; sub(/^[[:space:]]+/, "", t)
         shell_code_line($0)
@@ -2323,17 +2346,16 @@ scan_early_exit_pipe() {
           if ((k = index(g, SUBSEP)) && k < cut) cut = k
           m = split(substr(g, 1, cut - 1), w, /[[:space:]]+/)
           j = 1; while (j <= m && w[j] == "") j++
-          if (j <= m && w[j] ~ /^head([);&|]|$)/) { print ENVIRON["F"] ":" FNR ": " t; next }
+          if (j <= m && w[j] ~ /^head([);&|]|$)/) { print FILENAME ":" FNR ": " t; next }
           if (j > m || w[j] != "grep") continue
           for (j++; j <= m; j++) {
             o = w[j]; sub(/^["\047]+/, "", o)
             if (o ~ /^-[A-Za-z0-9]*[qm]/ || o ~ /^--(quiet|silent)$/ || o ~ /^--max-count(=|$)/) {
-              print ENVIRON["F"] ":" FNR ": " t; next
+              print FILENAME ":" FNR ": " t; next
             }
           }
         }
-      }' "$1/$f"
-  done < <(cd "$1" && find scripts -name '*.sh' 2>/dev/null | sort)
+      }' "${files[@]}")
   return 0
 }
 fixture="$(new_fixture)"
@@ -2367,7 +2389,14 @@ printf '%s\n' 'grep -q y <<<"$x"' >"$fixture/scripts/orch/herestring.sh"
 printf '%s\n' 'false || grep -q y f' >"$fixture/scripts/orch/oror.sh"
 printf '%s\n' '  # never write printf "%s" "$x" | grep -q y' >"$fixture/scripts/orch/comment.sh"
 printf '%s\n' 'echo "$x" | grep -q y' 'echo "$x" | head -n 1' >"$fixture/scripts/test/runner.sh"
-out="$(scan_early_exit_pipe "$fixture")"
+# An open pipe at one script's end is not carried into the next script.
+printf '%s\n' 'echo "$x" |' >"$fixture/scripts/orch/y-open-pipe.sh"
+printf '%s\n' 'grep -q y f' >"$fixture/scripts/orch/z-starts-grep.sh"
+pipe_awk="$(TMPDIR="$FIXTURES" counting_bin awk)"
+out="$(PATH="$pipe_awk:$PATH" scan_early_exit_pipe "$fixture")"
+assert_eq "the early-exit-pipe scan starts exactly one awk" "$(counting_starts "$pipe_awk" awk)" "1"
+spares "a trailing | at a script's end is not carried into the next script" \
+  "$out" '^scripts/orch/z-starts-grep\.sh:'
 flags "a pipe into grep -q is flagged" "$out" 'scripts/orch/flagged.sh:2: printf "%s\n" "$x" | grep -q y'
 flags "a pipe into grep -qxF is flagged, its leading whitespace trimmed" \
   "$out" 'scripts/orch/flagged.sh:3: printf "%s\n" "$x" | grep -qxF y'
@@ -2590,16 +2619,9 @@ check "host-capabilities has the Run a long command row" \
 check "the Run a long command row marks Junie Unverified" \
   "$(scan_row_unverified "$PLUGIN_ROOT" 'Run a long command')"
 # Each site that runs a re-callable command names the term (ADR-0065), by
-# structure only: the Run a long command sites minus the audit's timing run,
-# which is not re-callable.
-recall_sites='agents/orch-implementer.md
-agents/orch-fixer.md
-agents/orch-resolver.md
-skills/orch-review-pass/SKILL.md
-skills/orch-quick-implement/SKILL.md
-docs/driver-loop.md
-skills/orch-review/SKILL.md
-skills/orch-spec-review/SKILL.md'
+# structure only: derived from long_sites by dropping the test audit's site,
+# whose timing run is not re-callable.
+recall_sites="$(grep -vxF 'skills/orch-audit-tests/SKILL.md' <<<"$long_sites")"
 check "each site that runs a re-callable command names the term" \
   "$(scan_names_phrase "$PLUGIN_ROOT" "$recall_sites" 're-callable')"
 # CI looked at without waiting (#3179): the triage step names the look, and the
@@ -2685,9 +2707,7 @@ scan_build_args() {
     [ -f "$r/$f" ] || { echo "$f: missing"; missing=1; }
   done
   [ -z "$missing" ] || return 0
-  awk '/^ *args:/ { match($0, /^ */); n = RLENGTH; inargs = 1; next }
-    inargs { match($0, /^ */); if (RLENGTH <= n) inargs = 0; else print }' \
-    "$r/docker/compose.yaml" |
+  compose_block args "$r/docker/compose.yaml" |
     grep -o '\${[A-Za-z_][A-Za-z0-9_]*' | tr -d '${' | sort -u |
     while IFS= read -r v; do
       grep -q "^#* *$v=" "$r/docker/.env.example" ||
@@ -2716,15 +2736,21 @@ check "every build arg docker/compose.yaml interpolates is named in docker/.env.
 
 # The autopilot service's CPU limit reads ORCH_CPUS (0 = no limit when unset),
 # and .env.example documents it (#1587).
-# scan_cpu_limit <plugin root>: one line per break of that rule.
-scan_cpu_limit() {
-  local r="$1"
-  grep -qE '^ +cpus: \$\{ORCH_CPUS:-0\}$' "$r/docker/compose.yaml" ||
-    echo 'docker/compose.yaml: autopilot has no cpus: ${ORCH_CPUS:-0} line'
-  grep -q 'ORCH_CPUS' "$r/docker/.env.example" ||
-    echo "docker/.env.example: does not mention ORCH_CPUS"
+# compose_limit_breaks <plugin root> <var> <key>...: one line per break of the
+# rule that docker/compose.yaml sets each <key> to ${<var>:-0} and .env.example
+# mentions <var>. The one scanner behind the CPU and memory rules.
+compose_limit_breaks() {
+  local r="$1" var="$2" key
+  shift 2
+  for key in "$@"; do
+    grep -qE "^ +$key: \\$\\{$var:-0\\}\$" "$r/docker/compose.yaml" ||
+      echo "docker/compose.yaml: autopilot has no $key: \${$var:-0} line"
+  done
+  grep -q "$var" "$r/docker/.env.example" ||
+    echo "docker/.env.example: does not mention $var"
   return 0
 }
+scan_cpu_limit() { compose_limit_breaks "$1" ORCH_CPUS cpus; }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/docker"
 printf 'services:\n  a:\n    restart: no\n' >"$fixture/docker/compose.yaml"
@@ -2735,6 +2761,25 @@ flags "an .env.example without ORCH_CPUS is flagged" \
   "$(scan_cpu_limit "$fixture")" "does not mention ORCH_CPUS"
 check "docker/compose.yaml limits CPU from ORCH_CPUS and .env.example documents it" \
   "$(scan_cpu_limit "$PLUGIN_ROOT")"
+
+# The autopilot service's memory limit reads ORCH_MEMORY (0 = no limit when
+# unset) through both mem_limit and memswap_limit (equal, so swap is off), and
+# .env.example documents it.
+# scan_memory_limit <plugin root>: one line per break of that rule.
+scan_memory_limit() { compose_limit_breaks "$1" ORCH_MEMORY mem_limit memswap_limit; }
+# The CPU checks above only read $fixture, so its two files are still bare.
+bare_memory_scan="$(scan_memory_limit "$fixture")"
+flags "a compose file without either memory key is flagged for mem_limit" \
+  "$bare_memory_scan" "no mem_limit"
+flags "a compose file without either memory key is flagged for memswap_limit" \
+  "$bare_memory_scan" "no memswap_limit"
+printf 'services:\n  a:\n    mem_limit: ${ORCH_MEMORY:-0}\n' >"$fixture/docker/compose.yaml"
+flags "a compose file with mem_limit but no memswap_limit is flagged" \
+  "$(scan_memory_limit "$fixture")" "no memswap_limit"
+flags "an .env.example without ORCH_MEMORY is flagged" \
+  "$(scan_memory_limit "$fixture")" "does not mention ORCH_MEMORY"
+check "docker/compose.yaml limits memory from ORCH_MEMORY and .env.example documents it" \
+  "$(scan_memory_limit "$PLUGIN_ROOT")"
 
 # .env.example names the variable of every autopilot setting (#3103). The names
 # come from the autopilot module's one list, sourced from the real plugin root
@@ -2789,9 +2834,7 @@ scan_clone_dir() {
   local r="$1" pin mount def img svc
   svc="$(awk '/^  autopilot:/ { ins = 1; next } ins && /^(  )?[^ ]/ { ins = 0 } ins' \
     "$r/docker/compose.yaml")"
-  pin="$(awk '/^ *environment:/ { match($0, /^ */); n = RLENGTH; inenv = 1; next }
-    inenv { match($0, /^ */); if (RLENGTH <= n) inenv = 0; else print }' \
-    <<<"$svc" | sed -n '/^ *ORCH_CLONE_DIR: */{s///p;q}')"
+  pin="$(compose_block environment <<<"$svc" | sed -n '/^ *ORCH_CLONE_DIR: */{s///p;q}')"
   mount="$(sed -n '/^ *- *repo:/{s/^[^:]*:\([^: ]*\).*$/\1/p;q}' <<<"$svc")"
   def="$(sed -n '/ORCH_CLONE_DIR:-/{s/.*ORCH_CLONE_DIR:-\([^}]*\)}.*/\1/p;q}' "$r/scripts/autopilot-container.sh")"
   img="$(sed -n '/mkdir -p \/home/{s/.*mkdir -p \([^ ]*\).*/\1/p;q}' "$r/docker/Dockerfile")"
@@ -4116,44 +4159,61 @@ routed_nouns() {
       for (i = 1; i <= n; i++) if (names[i] !~ /^-/) print names[i]
     }' "$1"
 }
-# noun_verbs <module> <noun>: one line per verb the noun dispatches - each name
-# on a top-level arm of the first case in the module's cmd_<noun> (- mapped to
-# _), its option spellings, the catch-all and nested cases' arms left out.
+# noun_verbs <root> <noun>...: one "<noun><TAB><verb>" line per verb each named
+# noun dispatches - each name on a top-level arm of the first case in cmd_<noun>
+# (- mapped to _) of its module, scripts/orch/<noun>.sh under the root, its
+# option spellings, the catch-all and nested cases' arms left out. A noun with
+# no module yields none; when no named noun has one, no awk starts.
 noun_verbs() {
-  [ -f "$1" ] || return 0
-  F="cmd_${2//-/_}" awk "$SHELL_CODE_AWK"'
-    BEGIN { fn = ENVIRON["F"] }
+  local r="$1" noun files=()
+  shift
+  for noun in "$@"; do
+    [ -f "$r/scripts/orch/$noun.sh" ] && files+=("scripts/orch/$noun.sh")
+  done
+  [ "${#files[@]}" -gt 0 ] || return 0
+  (cd "$r" && awk "$SHELL_CODE_AWK"'
+    FNR == 1 {
+      noun = FILENAME; sub(/^.*\//, "", noun); sub(/\.sh$/, "", noun)
+      fn = "cmd_" noun; gsub(/-/, "_", fn)
+      inf = 0; fin = 0; depth = 0; started = 0
+    }
     { shell_code_line($0) }
+    fin { next }
     sc_top && index(sc_code, fn "()") == 1 { inf = 1; next }
     !inf { next }
-    sc_top && sc_code ~ /^\}/ { exit }
+    sc_top && sc_code ~ /^\}/ { fin = 1; next }
     {
       if (depth == 1 && sc_top && match(sc_code, /^[[:space:]]+[a-z-][a-z|-]*\)/)) {
         arm = substr(sc_code, RSTART, RLENGTH - 1); gsub(/[[:space:]]/, "", arm)
         n = split(arm, names, "|")
-        for (i = 1; i <= n; i++) if (names[i] !~ /^-/) print names[i]
+        for (i = 1; i <= n; i++) if (names[i] !~ /^-/) print noun "\t" names[i]
       }
       t = sc_words; opens = gsub(/(^|[;[:space:]])case[[:space:]]/, "", t)
       t = sc_words; closes = gsub(/(^|[;[:space:]])esac([;[:space:])]|$)/, "", t)
       if (opens) started = 1
       depth += opens - closes
-      if (started && depth <= 0) exit
-    }' "$1"
+      if (started && depth <= 0) fin = 1
+    }' "${files[@]}")
 }
 # scan_cli_nouns <plugin root>: each routed noun in neither the table nor the
 # Exceptions section, and each verb out of step with its noun's row or
 # Exceptions.
 scan_cli_nouns() {
   local r="$1" orch="scripts/orch.sh" doc="docs/agents/cli-conventions.md" table exceptions noun
-  local bare row row_verbs module verbs verb
+  local bare row row_verbs module verbs verb nouns=() all_verbs n v
+  local -A verbs_of=()
   table="$(md_section "$r/$doc" "## Current nouns" | grep -E '^[[:space:]]*\|')"
   exceptions="$(md_section "$r/$doc" "## Exceptions")"
   # The "Bare global commands" bullet, up to the next bullet.
   bare="$(awk '/^- \*\*Bare global commands\*\*/ { inb = 1; print; next } inb && /^- / { exit } inb' <<<"$exceptions")"
-  while IFS= read -r noun; do
-    [ -n "$noun" ] || continue
+  while IFS= read -r noun; do [ -n "$noun" ] && nouns+=("$noun"); done < <(routed_nouns "$r/$orch")
+  all_verbs="$(noun_verbs "$r" "${nouns[@]}")"
+  while IFS=$'\t' read -r n v; do
+    [ -n "$n" ] && verbs_of[$n]+="$v"$'\n'
+  done <<<"$all_verbs"
+  for noun in "${nouns[@]}"; do
     module="scripts/orch/$noun.sh"
-    verbs="$(noun_verbs "$r/$module" "$noun")"
+    verbs="${verbs_of[$noun]:-}"
     row="$(grep -E -- "^[[:space:]]*\|[[:space:]]*\`$noun\`" <<<"$table" | awk -v n=1 'NR<=n')"
     if [ -z "$row" ]; then
       if ! grep -qE -- "\`${noun}[\` ]" <<<"$exceptions"; then
@@ -4176,7 +4236,7 @@ scan_cli_nouns() {
       grep -qxF -- "$verb" <<<"$verbs" && continue
       echo "$doc: $noun verb $verb is in its Current nouns row but $module no longer dispatches it"
     done <<<"$row_verbs"
-  done < <(routed_nouns "$r/$orch")
+  done
   return 0
 }
 fixture="$(new_fixture)"
@@ -4225,6 +4285,14 @@ spares "nested-case arms, option spellings, the catch-all and a later case are n
 spares "a row verb, a redo <verb> in Exceptions, and a hyphenated noun's verbs are spared" \
   "$out" '(base verb (set|show) |redo verb (review|spec) |widget-thing verb )'
 spares "a bare global command in Exceptions has no verbs to check" "$out" '(doctor|routed noun) '
+# noun_verbs over the verbs fixture: one awk for every named noun, each
+# module's verbs from its own cmd_<noun>, a noun with no module none.
+verbs_awk="$(TMPDIR="$FIXTURES" counting_bin awk)"
+assert_eq "noun_verbs prints one line per verb of each module, none for a noun with no module" \
+  "$(PATH="$verbs_awk:$PATH" noun_verbs "$fixture" base redo doctor widget-thing ghost)" \
+  "$(printf '%s\t%s\n' base set base show base extra redo review redo spec redo zap \
+    doctor check widget-thing go widget-thing stop)"
+assert_eq "noun_verbs started exactly one awk" "$(counting_starts "$verbs_awk" awk)" "1"
 # Planted fixtures for the shared code rule: a case/esac in a trailing comment
 # or a quoted string, and a quoted arm pattern, inside cmd_<noun>, and an
 # arm-shaped line in a heredoc or a multi-line string in main(), change
@@ -4547,7 +4615,7 @@ check "the glossary defines Turn-final reply" \
 # real root only when CHANGELOG_BASE holds main's commit, and waives its
 # one-fragment part when NO_VERSION_BUMP is set; the workflow's "Read main's
 # commit" step (.github/workflows/fragment.yml) sets both, and its check step
-# runs the fragment rule and the suite budget rules 2 and 3 (--fragment-only)
+# runs the fragment rule and the suite budget rules 2 and 3 (--base-rules)
 # with the GH_TOKEN its parent lookup reads issues with.
 echo
 echo "version and CHANGELOG (CLAUDE.md Versioning)"
@@ -4787,18 +4855,18 @@ spares "with NO_VERSION_BUMP, no parent lookup runs" \
   "$(issue_parent_url() { echo "lookup ran"; return 1; }; scan_changelog_fragments "$fixture" main 1)" '.'
 eval "$real_issue_parent_url"
 check_real_changelog_fragments
-# The --fragment-only switch, run as a child of this file. Each fragment-only
+# The --base-rules switch, run as a child of this file. Each base-rules
 # child has CHANGELOG_BASE, DOCS_LINT_BASE and NO_VERSION_BUMP set or unset
 # here, whatever this run inherited, and shows its ok lines though this run may
-# be quiet. A fragment-only child runs no self-tests, so it starts no child of
+# be quiet. A base-rules child runs no self-tests, so it starts no child of
 # its own.
-# fragment_only_child [<env words>...]: runs the
+# base_rules_child [<env words>...]: runs the
 # child under env with those words, its status, stdout and stderr landing in
 # child_status, child_out and child_err.
-fragment_only_child() {
+base_rules_child() {
   local errfile="$FIXTURES/child.err" out st
   out="$(cd "$FIXTURES" && env -u CHANGELOG_BASE -u NO_VERSION_BUMP -u DOCS_LINT_BASE ORCH_TEST_QUIET= "$@" \
-    bash "$PLUGIN_ROOT/scripts/test/docs_lint.sh" --fragment-only 2>"$errfile")"
+    bash "$PLUGIN_ROOT/scripts/test/docs_lint.sh" --base-rules 2>"$errfile")"
   st=$?
   child_status="$st" child_out="$out" child_err="$(<"$errfile")"
 }
@@ -4809,46 +4877,46 @@ assert_child_fails() {
   # shellcheck disable=SC2053 # $3 is a glob on purpose
   if [[ "$child_out" == $3 ]]; then ok "$2"; else bad "$2" "got: $child_out"; fi
 }
-fragment_only_child
-assert_eq "--fragment-only with no base set exits 0" "$child_status" 0
-assert_eq "--fragment-only with no base set prints the three skipped or passing lines and a summary alone" \
+base_rules_child
+assert_eq "--base-rules with no base set exits 0" "$child_status" 0
+assert_eq "--base-rules with no base set prints the three skipped or passing lines and a summary alone" \
   "$child_out" "$(printf '  ok   the changelog fragment rule skipped (CHANGELOG_BASE unset)\n  ok   the recorded total is within the suite budget\n  ok   the suite budget comparison with the base and the budget-alone rule skipped (DOCS_LINT_BASE and CHANGELOG_BASE unset)\n\n3 passed, 0 failed')"
-assert_empty "--fragment-only with no base set prints nothing on stderr" "$child_err"
-fragment_only_child CHANGELOG_BASE=no-such-ref
-assert_child_fails "--fragment-only with a base with no merge-base exits non-zero" \
-  "--fragment-only names a base with no merge-base in all three rules and counts three failed" \
+assert_empty "--base-rules with no base set prints nothing on stderr" "$child_err"
+base_rules_child CHANGELOG_BASE=no-such-ref
+assert_child_fails "--base-rules with a base with no merge-base exits non-zero" \
+  "--base-rules names a base with no merge-base in all three rules and counts three failed" \
   "*FAIL*CHANGELOG_BASE: no merge-base with HEAD for 'no-such-ref'*section-durations.tsv: no merge-base with HEAD for 'no-such-ref'*suite-budget: no merge-base with HEAD for 'no-such-ref'*0 passed, 3 failed"
 if git -C "$PLUGIN_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   child_head="$(git -C "$PLUGIN_ROOT" rev-parse HEAD)"
-  fragment_only_child CHANGELOG_BASE="$child_head"
-  assert_child_fails "--fragment-only fails a PR adding no fragment" \
-    "--fragment-only says no changelog fragment added" \
+  base_rules_child CHANGELOG_BASE="$child_head"
+  assert_child_fails "--base-rules fails a PR adding no fragment" \
+    "--base-rules says no changelog fragment added" \
     "*no changelog fragment added*, 1 failed"
-  fragment_only_child CHANGELOG_BASE="$child_head" NO_VERSION_BUMP=1
-  assert_eq "--fragment-only honours NO_VERSION_BUMP" "$child_status:${child_out##*$'\n'}" "0:3 passed, 0 failed"
-  fragment_only_child DOCS_LINT_BASE="$child_head"
-  assert_eq "--fragment-only with only the budget base set skips the changelog rule and judges the budget rules" \
+  base_rules_child CHANGELOG_BASE="$child_head" NO_VERSION_BUMP=1
+  assert_eq "--base-rules honours NO_VERSION_BUMP" "$child_status:${child_out##*$'\n'}" "0:3 passed, 0 failed"
+  base_rules_child DOCS_LINT_BASE="$child_head"
+  assert_eq "--base-rules with only the budget base set skips the changelog rule and judges the budget rules" \
     "$child_status:$child_out" "0:$(printf '  ok   the changelog fragment rule skipped (CHANGELOG_BASE unset)\n  ok   the recorded total is within the suite budget\n  ok   the suite budget file changes alone\n\n3 passed, 0 failed')"
-  fragment_only_child DOCS_LINT_BASE=no-such-ref CHANGELOG_BASE="$child_head" NO_VERSION_BUMP=1
-  assert_child_fails "--fragment-only judges the budget rules against their own base before the changelog's" \
-    "--fragment-only names the budget base, not the changelog's, in both budget rules" \
+  base_rules_child DOCS_LINT_BASE=no-such-ref CHANGELOG_BASE="$child_head" NO_VERSION_BUMP=1
+  assert_child_fails "--base-rules judges the budget rules against their own base before the changelog's" \
+    "--base-rules names the budget base, not the changelog's, in both budget rules" \
     "*section-durations.tsv: no merge-base with HEAD for 'no-such-ref'*suite-budget: no merge-base with HEAD for 'no-such-ref'*1 passed, 2 failed"
 else
-  skip "--fragment-only with CHANGELOG_BASE at HEAD" "the plugin root is not a git work tree"
+  skip "--base-rules with CHANGELOG_BASE at HEAD" "the plugin root is not a git work tree"
 fi
-child_out="$(bash "$PLUGIN_ROOT/scripts/test/docs_lint.sh" --fragment-onyl 2>"$FIXTURES/child.err")"
+child_out="$(bash "$PLUGIN_ROOT/scripts/test/docs_lint.sh" --base-rulez 2>"$FIXTURES/child.err")"
 child_status=$?
 assert_eq "an unknown argument exits 2" "$child_status" 2
 assert_empty "an unknown argument prints nothing on stdout" "$child_out"
 assert_eq "an unknown argument prints the usage line alone on stderr" \
-  "$(<"$FIXTURES/child.err")" "docs_lint.sh: usage: docs_lint.sh [--fragment-only]"
+  "$(<"$FIXTURES/child.err")" "docs_lint.sh: usage: docs_lint.sh [--base-rules]"
 
 # --- suite budget rules (#3180) -----------------------------------------------
 # The three rules over fixture roots holding a scripts/test tree:
 # scan_ledger_fresh (rule 1), scan_suite_budget (rule 2) and
 # scan_suite_budget_alone (rule 3). The real root is checked by the full run's
 # own calls of check_real_ledger_fresh and check_real_suite_budget, below, and
-# by the real-root runs of check_real_suite_budget in the --fragment-only child
+# by the real-root runs of check_real_suite_budget in the --base-rules child
 # tests above.
 echo
 echo "suite budget rules (#3180)"
@@ -4925,6 +4993,16 @@ out="$(scan_ledger_fresh "$fixture")"
 flags "a missing shellcheck line is flagged, naming the full refresh" \
   "$out" "no shellcheck line; run the full refresh (scripts/dev/section-durations.sh with no argument)"
 spares "a missing shellcheck line does not name --stale" "$out" 'shellcheck.*--stale'
+fixture="$(ledger_fixture)"
+out="$(ledger_fingerprints() { return 1; }; scan_ledger_fresh "$fixture")"
+assert_eq "a failure to fingerprint is one line naming the durations file" \
+  "$out" "$LEDGER_FILE: could not fingerprint the test text, so no line is judged"
+fixture="$(ledger_fixture)"
+printf '%s\n' 'suites=()' >"$fixture/scripts/test/all.sh"
+out="$(scan_ledger_fresh "$fixture")"
+flags "an empty suites list is reported as an all.sh line" "$out" \
+  "scripts/test/all.sh: $fixture/scripts/test/all.sh holds an empty suites list"
+spares "an empty suites list is not a fingerprinting failure" "$out" 'fingerprint'
 # A ledger of many sections costs no more processes than one of three: the
 # counted commands are the ones the scan runs, at the docs lint seam.
 count_cmds=(awk git grep sort)
@@ -5053,33 +5131,37 @@ assert_empty "with no base, the budget-alone rule is skipped" "$(scan_suite_budg
 fixture="$(budget_fixture none)"
 out="$(ORCH_TEST_QUIET='' tally_file=/dev/null PLUGIN_ROOT="$fixture" DOCS_LINT_BASE='' CHANGELOG_BASE='' \
   DOCS_LINT_RECORDING=1 check_real_suite_budget)"
-assert_eq "a missing budget file is not judged while the ledger is recorded" \
-  "$([[ "$out" == *"ok   the recorded total is not judged against the suite budget"* ]] && echo yes)" yes
+assert_contains "a missing budget file is not judged while the ledger is recorded" \
+  "$out" "ok   the recorded total is not judged against the suite budget"
 out="$(ORCH_TEST_QUIET='' tally_file=/dev/null PLUGIN_ROOT="$fixture" DOCS_LINT_BASE='' CHANGELOG_BASE='' \
   DOCS_LINT_RECORDING='' check_real_suite_budget)"
-assert_eq "and is judged when the ledger is not being recorded" \
-  "$([[ "$out" == *"FAIL the recorded total is within the suite budget"* ]] && echo yes)" yes
+assert_contains "and is judged when the ledger is not being recorded" \
+  "$out" "FAIL the recorded total is within the suite budget"
 # section-durations.sh measures this file with DOCS_LINT_RECORDING=1 while it
 # replaces the ledger's lines, so the freshness rule would fail on the very
 # lines being recorded; only that script sets it, and rule 2 reads it too. The
 # full run's own call stands at column 0 here and nowhere else, as below, so the
 # two cases that follow, the function with it set and unset, are the full run's.
+# They call the function in-process, a deliberate exception to asserting what a
+# caller observes: a full-run child costs about 16 CPU seconds per run, and
+# inside docs_lint.sh it would recurse or, guarded off while recording,
+# under-count this file's own ledger line.
 fixture="$(ledger_fixture)"
 printf '%s\n' '# --- a two ---' 'echo 4' >>"$fixture/scripts/test/orch/a.sh"
 out="$(ORCH_TEST_QUIET='' tally_file=/dev/null PLUGIN_ROOT="$fixture" \
   DOCS_LINT_RECORDING=1 check_real_ledger_fresh)"
-assert_eq "a stale ledger's freshness is not judged while the ledger is recorded, and says so" \
-  "$([[ "$out" == *"ok   the durations file's freshness is not judged while it is being recorded"* ]] && echo yes)" yes
+assert_contains "a stale ledger's freshness is not judged while the ledger is recorded, and says so" \
+  "$out" "ok   the durations file's freshness is not judged while it is being recorded"
 out="$(ORCH_TEST_QUIET='' tally_file=/dev/null PLUGIN_ROOT="$fixture" \
   DOCS_LINT_RECORDING='' check_real_ledger_fresh)"
-assert_eq "and is judged when the ledger is not being recorded" \
-  "$([[ "$out" == *"FAIL the durations file has one fresh line"* ]] && echo yes)" yes
+assert_contains "and is judged when the ledger is not being recorded" \
+  "$out" "FAIL the durations file has one fresh line"
 assert_eq "the full run calls check_real_ledger_fresh" \
   "$(grep -c '^check_real_ledger_fresh$' "$PLUGIN_ROOT/scripts/test/docs_lint.sh")" 1
 check_real_ledger_fresh
 # The full run judges the suite budget rules 2 and 3 as well, so a ticket
 # verification enforces them before a push. The call stands at column 0 here
-# and nowhere else; the --fragment-only call is indented.
+# and nowhere else; the --base-rules call is indented.
 assert_eq "the full run calls check_real_suite_budget" \
   "$(grep -c '^check_real_suite_budget$' "$PLUGIN_ROOT/scripts/test/docs_lint.sh")" 1
 check_real_suite_budget
@@ -5269,19 +5351,21 @@ assert_empty "width.sh given an uncovered file prints nothing" \
 # One awk per root scan, whatever the file count and what each file leaves open.
 src_awk="$(TMPDIR="$FIXTURES" counting_bin awk)"
 fixture="$(new_fixture)"
-mkdir -p "$fixture/docs" "$fixture/scripts"
+mkdir -p "$fixture/docs" "$fixture/scripts" "$fixture/skills"
 { echo '```'; echo 'code never closed'; } >"$fixture/docs/a-fence.md"
 wide_line 'Some prose ' 81 >"$fixture/docs/b-after-fence.md"
 { echo '---'; echo 'title: never closed'; } >"$fixture/docs/c-frontmatter.md"
 { echo '---'; echo 'title: x'; echo '---'; wide_line 'Some prose ' 81; } \
   >"$fixture/docs/d-after-frontmatter.md"
-{ echo 'cat <<EOF'; echo 'body'; } >"$fixture/scripts/a-heredoc.sh"
+{ wide_line '# whole-line comment ' 90; wide_line 'echo code ' 90; echo 'cat <<EOF'; echo 'body'; } \
+  >"$fixture/scripts/a-heredoc.sh"
 wide_line '# after a heredoc file ' 90 >"$fixture/scripts/b-after-heredoc.sh"
 { echo 'echo "never closed'; } >"$fixture/scripts/c-quote.sh"
 wide_line '# after a quote file ' 90 >"$fixture/scripts/d-after-quote.sh"
 : >"$fixture/scripts/e-empty.sh"
 { wide_line '# whole-line comment ' 90; wide_line 'echo code ' 90; } \
-  >"$fixture/scripts/f-after-markdown.sh"
+  >"$fixture/scripts/f-after-empty.sh"
+wide_line 'Some prose ' 81 >"$fixture/skills/z.md"
 : >"$src_awk/awk.log"
 out="$(PATH="$src_awk:$PATH" scan_line_width "$fixture")"
 assert_eq "a root scan over several covered files starts exactly one awk" \
@@ -5289,18 +5373,10 @@ assert_eq "a root scan over several covered files starts exactly one awk" \
 assert_eq "a root scan's unsorted output is the expected lines in scan order" \
   "$out" "docs/b-after-fence.md:1: 81 columns, past 80
 docs/d-after-frontmatter.md:4: 81 columns, past 80
+scripts/a-heredoc.sh:1: 90 columns, past 80
 scripts/b-after-heredoc.sh:1: 90 columns, past 80
 scripts/d-after-quote.sh:1: 90 columns, past 80
-scripts/f-after-markdown.sh:1: 90 columns, past 80"
-fixture="$(new_fixture)"
-mkdir -p "$fixture/docs" "$fixture/scripts" "$fixture/skills"
-{ echo '# T'; wide_line '# a comment ' 90; wide_line 'echo code ' 90; } >"$fixture/scripts/a.sh"
-wide_line 'Some prose ' 81 >"$fixture/skills/z.md"
-wide_line 'Some prose ' 81 >"$fixture/docs/y.md"
-out="$(PATH="$src_awk:$PATH" scan_line_width "$fixture")"
-assert_eq "each file is judged by its own kind, Markdown after shell and the reverse" \
-  "$out" "docs/y.md:1: 81 columns, past 80
-scripts/a.sh:2: 90 columns, past 80
+scripts/f-after-empty.sh:1: 90 columns, past 80
 skills/z.md:1: 81 columns, past 80"
 fixture="$(new_fixture)"
 : >"$src_awk/awk.log"
@@ -5350,20 +5426,28 @@ assert_empty "an interview skill that names issue labels is not flagged" \
 check "orch-interview names issue labels" \
   "$(scan_names_phrase "$PLUGIN_ROOT" 'skills/orch-interview/SKILL.md' 'issue labels')"
 
-# This repo's CLAUDE.md Testing section names its two verification commands
-# (ADR-0058), so the ticket/full split cannot rot.
+# This repo's CLAUDE.md Testing section names its three verification commands
+# (ADR-0058), so the ticket/branch/full split cannot rot.
 # scan_repo_verification <plugin root>: one line per verification line the
-# Testing section of CLAUDE.md lacks. Structure only, never wording (ADR-0027).
+# Testing section of CLAUDE.md lacks, per bare `Branch verification:` line, and
+# per one outside the Testing section. Structure only, never wording (ADR-0027).
 scan_repo_verification() {
-  local r="$1" body label
-  body="$(md_section "$r/CLAUDE.md" "## Testing" 2>/dev/null)" || {
+  local r="$1" body label all
+  if body="$(md_section "$r/CLAUDE.md" "## Testing" 2>/dev/null)"; then
+    for label in "Ticket verification" "Branch verification" "Full verification"; do
+      grep -qE "^$label: [^[:space:]]" <<<"$body" ||
+        echo "CLAUDE.md: the ## Testing section has no '$label: <command>' line"
+    done
+  else
+    body=""
     echo "CLAUDE.md: has no ## Testing section"
-    return 0
-  }
-  for label in "Ticket verification" "Branch verification" "Full verification"; do
-    grep -qE "^$label: [^[:space:]]" <<<"$body" ||
-      echo "CLAUDE.md: the ## Testing section has no '$label: <command>' line"
-  done
+  fi
+  all="$(grep -E '^Branch verification:' "$r/CLAUDE.md" 2>/dev/null || true)"
+  [ -n "$all" ] || return 0
+  [ -z "$(grep -vE '^Branch verification:[[:space:]]*[^[:space:]]' <<<"$all" || true)" ] ||
+    echo "CLAUDE.md: a 'Branch verification:' line has no command"
+  [ "$(grep -cE '^Branch verification:' <<<"$body" || true)" = "$(wc -l <<<"$all")" ] ||
+    echo "CLAUDE.md: a 'Branch verification:' line is outside the ## Testing section"
   return 0
 }
 fixture="$(new_fixture)"
@@ -5387,37 +5471,23 @@ flags "verification lines outside the Testing section are flagged" \
   "$(scan_repo_verification "$fixture")" "no 'Ticket verification: <command>' line"
 check "CLAUDE.md's Testing section names a Ticket, a Branch and a Full verification" \
   "$(scan_repo_verification "$PLUGIN_ROOT")"
+printf '# C\n\nBranch verification:\nBranch verification: c.sh\n' >"$fixture/CLAUDE.md"
+out="$(scan_repo_verification "$fixture")"
+flags "a CLAUDE.md with no Testing section still flags a bare Branch verification line" \
+  "$out" "a 'Branch verification:' line has no command"
+flags "a CLAUDE.md with no Testing section still flags a Branch verification line outside it" \
+  "$out" "a 'Branch verification:' line is outside the ## Testing section"
 
-# A `Branch verification:` line, when CLAUDE.md has one, is well formed (a
-# command after the label) and sits in the Testing section (#3544).
-# scan_branch_verification <plugin root>: one line per fault. Structure only,
-# never wording (ADR-0027). No line at all is not a fault.
-scan_branch_verification() {
-  local r="$1" all body bad_lines
-  all="$(grep -E '^Branch verification:' "$r/CLAUDE.md" 2>/dev/null || true)"
-  [ -n "$all" ] || return 0
-  bad_lines="$(grep -vE '^Branch verification:[[:space:]]*[^[:space:]]' <<<"$all" || true)"
-  [ -z "$bad_lines" ] || echo "CLAUDE.md: a 'Branch verification:' line has no command"
-  body="$(md_section "$r/CLAUDE.md" "## Testing" 2>/dev/null || true)"
-  [ "$(grep -cE '^Branch verification:' <<<"$body" || true)" = "$(wc -l <<<"$all")" ] ||
-    echo "CLAUDE.md: a 'Branch verification:' line is outside the ## Testing section"
-  return 0
-}
-fixture="$(new_fixture)"
-printf '# C\n\n## Testing\n\nFull verification: b.sh\n' >"$fixture/CLAUDE.md"
-assert_empty "no Branch verification line is not flagged" \
-  "$(scan_branch_verification "$fixture")"
-printf '# C\n\n## Testing\n\nBranch verification: c.sh\n\n## Next\n' >"$fixture/CLAUDE.md"
-assert_empty "a well-formed Branch verification line in Testing is not flagged" \
-  "$(scan_branch_verification "$fixture")"
-printf '# C\n\n## Testing\n\nBranch verification:\n' >"$fixture/CLAUDE.md"
-flags "a Branch verification line with no command is flagged" \
-  "$(scan_branch_verification "$fixture")" "has no command"
-printf '# C\n\n## Testing\n\n## Next\n\nBranch verification: c.sh\n' >"$fixture/CLAUDE.md"
-flags "a Branch verification line outside Testing is flagged" \
-  "$(scan_branch_verification "$fixture")" "outside the ## Testing section"
-check "CLAUDE.md's Branch verification line, if any, is well formed in Testing" \
-  "$(scan_branch_verification "$PLUGIN_ROOT")"
+printf '# C\n\n## Testing\n\nTicket verification: a.sh\nBranch verification: a.sh\nBranch verification:\nFull verification: b.sh\n' \
+  >"$fixture/CLAUDE.md"
+flags "an extra bare Branch verification line beside a good one is flagged" \
+  "$(scan_repo_verification "$fixture")" "a 'Branch verification:' line has no command"
+printf '# C\n\n## Testing\n\nTicket verification: a.sh\nBranch verification: a.sh\nBranch verification:\nFull verification: b.sh\n\n## Next\n\nBranch verification: c.sh\nBranch verification:\n' \
+  >"$fixture/CLAUDE.md"
+assert_eq "extra Branch lines yield each fault line once" \
+  "$(scan_repo_verification "$fixture")" \
+  "CLAUDE.md: a 'Branch verification:' line has no command
+CLAUDE.md: a 'Branch verification:' line is outside the ## Testing section"
 
 # The sites that state the step f rule name the branch verification (#3545).
 branch_sites='docs/driver-loop.md
@@ -5425,16 +5495,6 @@ skills/orch-handoff/SKILL.md
 agents/orch-fixer.md
 skills/orch-review/SKILL.md
 skills/orch-quick-implement/SKILL.md'
-fixture="$(new_fixture)"
-mkdir -p "$fixture/docs" "$fixture/skills/orch-handoff" "$fixture/agents" \
-  "$fixture/skills/orch-review" "$fixture/skills/orch-quick-implement"
-for f in $branch_sites; do printf '# S\n\nRuns the branch\nverification.\n' >"$fixture/$f"; done
-printf '# F\n\nRuns the full verification.\n' >"$fixture/agents/orch-fixer.md"
-out="$(scan_names_phrase "$fixture" "$branch_sites" 'branch verification')"
-flags "a site that never names the branch verification is flagged" \
-  "$out" "agents/orch-fixer.md: does not name branch verification"
-spares "sites that name it, wrapped across lines or not, are not flagged" \
-  "$out" "driver-loop|orch-handoff|orch-review|quick-implement"
 check "each step f site names the branch verification" \
   "$(scan_names_phrase "$PLUGIN_ROOT" "$branch_sites" 'branch verification')"
 
