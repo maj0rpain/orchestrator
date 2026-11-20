@@ -8,6 +8,11 @@
 # ORCH_ENV_FILE to $FAKE_DIR/log and answers from canned files in $FAKE_DIR,
 # keyed by project (`default` without -p): info, config.<k>, psa.<k> (ps -a -q),
 # ps.<k> (ps -q), probe.<k>, probe-fail.<k>, up-fail.<k> and build-fail.<k>.
+# Images: images.<k> (config --images names), cimg.<k> (images -q IDs); `image
+# inspect <name>` answers img.<name> (/ and : turned into _), else fails as
+# Docker does; a successful up or build copies img-after.<name> onto it, and an
+# up copies cimg-after.<k> onto cimg.<k>; `image rm <id>` fails with an error
+# when rm-refuse.<id> exists, else prints a Deleted: line.
 # Assertions are on the log, the summary lines and the exit status.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -47,6 +52,18 @@ if [ "$1" = info ]; then
   [ -f "$FAKE_DIR/info-fail" ] && exit 1
   cat "$FAKE_DIR/info"; exit 0
 fi
+if [ "$1" = image ]; then
+  case "$2" in
+    inspect)
+      f="$FAKE_DIR/img.$(printf '%s' "${*: -1}" | tr ':/' '__')"
+      if [ -f "$f" ]; then echo "sha256:$(cat "$f")"; exit 0; fi
+      echo "Error: No such image: ${*: -1}" >&2; exit 1 ;;
+    rm)
+      [ -f "$FAKE_DIR/rm-refuse.$3" ] && { echo "Error: conflict: unable to delete $3" >&2; exit 1; }
+      echo "Deleted: sha256:$3"; exit 0 ;;
+  esac
+  exit 0
+fi
 shift  # compose
 key=default
 args=("$@")
@@ -55,14 +72,22 @@ for i in "${!args[@]}"; do
 done
 verb=""
 for a in "${args[@]}"; do
-  case "$a" in config|ps|exec|up|build) verb="$a"; break ;; esac
+  case "$a" in config|ps|exec|up|build|images) verb="$a"; break ;; esac
 done
 canned() { [ -f "$FAKE_DIR/$1.$key" ] && cat "$FAKE_DIR/$1.$key"; return 0; }
 case "$verb" in
-  config) if [ -f "$FAKE_DIR/config.$key" ]; then cat "$FAKE_DIR/config.$key"; else echo "name: $key"; fi ;;
+  images) canned cimg ;;
+  config) case " ${args[*]} " in *" --images "*) canned images; exit 0 ;; esac
+    if [ -f "$FAKE_DIR/config.$key" ]; then cat "$FAKE_DIR/config.$key"; else echo "name: $key"; fi ;;
   ps) case " ${args[*]} " in *" -a "*) canned psa ;; *) canned ps ;; esac ;;
   exec) [ -f "$FAKE_DIR/probe-fail.$key" ] && exit 1; canned probe ;;
-  up|build) [ -f "$FAKE_DIR/$verb-fail.$key" ] && { echo "compose: $verb failed" >&2; exit 1; }; echo "compose: $verb ok" >&2 ;;
+  up|build) [ -f "$FAKE_DIR/$verb-fail.$key" ] && { echo "compose: $verb failed" >&2; exit 1; }
+    while IFS= read -r nm; do
+      nm_key="$(printf '%s' "$nm" | tr ':/' '__')"
+      [ -f "$FAKE_DIR/img-after.$nm_key" ] && cp "$FAKE_DIR/img-after.$nm_key" "$FAKE_DIR/img.$nm_key"
+    done < <(canned images)
+    [ "$verb" = up ] && [ -f "$FAKE_DIR/cimg-after.$key" ] && cp "$FAKE_DIR/cimg-after.$key" "$FAKE_DIR/cimg.$key"
+    echo "compose: $verb ok" >&2 ;;
 esac
 exit 0
 FAKE
@@ -287,6 +312,116 @@ run_up
 assert_contains "dirty: warns" "$err" "uncommitted changes"
 assert_contains "dirty: still builds" "$log" "up -d --build"
 assert_eq "dirty: git status untouched" "$(git -C "$case_dir" status --porcelain)" "?? dirty.txt"
+
+# --- replaced images
+# img_case <old> <new>: a rebuilt project whose tag points at <old> before the
+# build and <new> after. The .env tree is built once and shared: the script
+# never changes it, so each case gets only a fresh $FAKE_DIR.
+new_case ".env"
+img_tree="$case_dir"
+img_case() {
+  n=$((n + 1))
+  case_dir="$img_tree"
+  export FAKE_DIR="$root/case$n/fake"
+  mkdir -p "$FAKE_DIR"
+  echo "test-engine" >"$FAKE_DIR/info"
+  : >"$FAKE_DIR/log"
+  echo abc123 >"$FAKE_DIR/psa.default"
+  echo "repo/img:tag" >"$FAKE_DIR/images.default"
+  echo "$1" >"$FAKE_DIR/img.repo_img_tag"
+  echo "$2" >"$FAKE_DIR/img-after.repo_img_tag"
+}
+rm_calls() { printf '%s\n' "$log" | grep -c '^image rm ' ; }
+
+img_case old1 new1
+run_up
+assert_contains "image: replaced id removed" "$log" "image rm old1|"
+assert_eq "image: one rm" "$(rm_calls)" "1"
+assert_lacks "image: new id kept" "$log" "image rm new1"
+assert_lacks "image: rm never given -f anywhere" "$log" " -f"
+assert_contains "image: Deleted output on stderr" "$err" "Deleted: sha256:old1"
+assert_eq "image: stdout is engine and summary only" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "2"
+assert_lacks "image: stdout has no Deleted" "$out" "Deleted"
+assert_lacks "image: no builder prune" "$log" "builder prune"
+assert_lacks "image: no image prune" "$log" "image prune"
+
+img_case same1 same1
+run_up
+assert_eq "image: unchanged id removes nothing" "$(rm_calls)" "0"
+
+img_case old1 new1
+echo cold >"$FAKE_DIR/cimg.default"
+echo cnew >"$FAKE_DIR/cimg-after.default"
+run_up
+assert_contains "image: container's old image removed" "$log" "image rm cold|"
+assert_contains "image: tag's old image removed" "$log" "image rm old1|"
+
+img_case old1 new1
+echo old1 >"$FAKE_DIR/cimg.default"
+echo new1 >"$FAKE_DIR/cimg-after.default"
+run_up
+assert_eq "image: id found by both lookups, prefix or not, removed once" "$(rm_calls)" "1"
+assert_contains "image: the id is removed in its normalised form" "$log" "image rm old1|"
+
+img_case old1 new1
+echo old1 >"$FAKE_DIR/cimg.default"
+echo old1 >"$FAKE_DIR/cimg-after.default"
+run_up
+assert_eq "image: old id matching the container's new image kept" "$(rm_calls)" "0"
+
+img_case old1 new1
+: >"$FAKE_DIR/up-fail.default"
+run_up
+assert_eq "image: failed up removes nothing" "$(rm_calls)" "0"
+
+img_case old1 new1
+: >"$FAKE_DIR/build-fail.default"
+run_up --fresh
+assert_eq "image: failed --fresh build removes nothing" "$(rm_calls)" "0"
+
+img_case old1 new1
+run_up --fresh
+assert_contains "image: --fresh removes the old id" "$log" "image rm old1|"
+order="$(printf '%s\n' "$log" | grep -oE 'image inspect|build --pull --no-cache|up -d --build|image rm' | uniq | tr '\n' ,)"
+assert_eq "image: --fresh looks up before the build" "$order" "image inspect,build --pull --no-cache,up -d --build,image inspect,image rm,"
+
+img_case old1 new1
+echo cid >"$FAKE_DIR/ps.default"
+echo "1590 implement" >"$FAKE_DIR/probe.default"
+run_up
+assert_contains "image: busy skip" "$out" "skipped"
+assert_eq "image: busy skip removes nothing" "$(rm_calls)" "0"
+run_up --force
+assert_contains "image: --force recreate removes the old id" "$log" "image rm old1|"
+
+img_case old1 new1
+rm "$FAKE_DIR/psa.default" "$FAKE_DIR/img.repo_img_tag"
+run_up
+assert_contains "image: first creation" "$out" "created"
+assert_eq "image: first creation removes nothing" "$(rm_calls)" "0"
+assert_eq "image: first creation is quiet" "$err" "compose: up ok"
+
+img_case old1 new1
+rm "$FAKE_DIR/img-after.repo_img_tag"
+rm "$FAKE_DIR/img.repo_img_tag"
+echo old1 >"$FAKE_DIR/cimg.default"
+: >"$FAKE_DIR/cimg-after.default"
+run_up
+assert_eq "image: no id after up removes nothing" "$(rm_calls)" "0"
+
+new_case ".env .env.work"
+for k in default work; do
+  echo abc123 >"$FAKE_DIR/psa.$k"
+  echo "repo/$k:tag" >"$FAKE_DIR/images.$k"
+  echo "old-$k" >"$FAKE_DIR/img.repo_${k}_tag"
+  echo "new-$k" >"$FAKE_DIR/img-after.repo_${k}_tag"
+done
+: >"$FAKE_DIR/rm-refuse.old-default"
+run_up
+assert_status "image: refused rm exits 0" "$status" 0
+assert_contains "image: refused rm warns naming the id" "$err" "warning: could not remove image old-default"
+assert_contains "image: refused rm keeps the summary" "$out" "(default)  rebuilt"
+assert_contains "image: next project still removed" "$log" "image rm old-work|"
 
 # >>> summary
 tally_summary

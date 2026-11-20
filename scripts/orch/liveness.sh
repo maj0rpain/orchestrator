@@ -6,19 +6,26 @@
 # record, run/<issue>.tick, the tick's record, and run/<issue>.hit, the hit
 # file: the reset of a GitHub API rate limit a session hit), the
 # `<pid> <start-time>` record format, the start-time reader
-# (/proc/<pid>/stat field 22 under $ORCH_PROC_DIR, else `ps -o lstart=`), the
+# (/proc/<pid>/stat field 22 under $ORCH_PROC_DIR; `ps -o lstart=` only where
+# no /proc is), the
 # record-alive rule, the watch pidfile and the session log naming
-# (logs/<issue>-<phase>-<stamp>.log). Of orch.sh's files only this one touches
-# /proc and ps and names paths under run/; a session writes the hit file only
+# (logs/<issue>-<phase>-<stamp>.log) and its retention: a session log last
+# modified more than 14 days ago is deleted (liveness_logs_prune). Of orch.sh's
+# files only this one touches /proc and ps and names paths under run/; a
+# session writes the hit file only
 # at the path the wrapper hands it. Its tests: scripts/test/orch/liveness.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 # liveness_proc_start <pid>: the process's start time as one whitespace-free
 # token. Fails when unreadable.
 liveness_proc_start() {
-  local pid="$1" root="${ORCH_PROC_DIR:-/proc}" stat rest t
+  local pid="$1" root="${ORCH_PROC_DIR:-/proc}" stat rest t IFS
+  local -a words
   [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-  if [ -r "$root/$pid/stat" ]; then
+  # a /proc host has the reading shell's own entry; there the stat entry
+  # alone decides, and ps could only fail where the stat read did
+  if [ -d "$root/$$" ]; then
+    [ -r "$root/$pid/stat" ] || return 1
     file_read stat "$root/$pid/stat" 2>/dev/null || stat=""
     rest="${stat##*) }"
     # shellcheck disable=SC2086
@@ -29,7 +36,9 @@ liveness_proc_start() {
     return 0
   fi
   t="$(ps -o lstart= -p "$pid" 2>/dev/null)" || return 1
-  t="$(printf '%s' "$t" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/[[:space:]][[:space:]]*/_/g')"
+  read -ra words <<<"${t//[[:space:]]/ }"
+  IFS=_
+  t="${words[*]}"
   [ -n "$t" ] || return 1
   printf '%s\n' "$t"
 }
@@ -188,6 +197,32 @@ liveness_latest_log() {
     # <phase>-<stamp>.log: order by the stamp, whatever the phase
     printf '%s %s\n' "${rest#*-}" "$f"
   done | sort | tail -n 1 | cut -d' ' -f2-
+}
+
+# LIVENESS_LOG_RETENTION_MINUTES: how old a session log must be, in minutes,
+# to be pruned: 14 days, a fixed constant and no setting.
+LIVENESS_LOG_RETENTION_MINUTES=$((14 * 24 * 60))
+
+# liveness_logs_prune: deletes the session logs
+# (logs/<issue>-<phase>-<stamp>.log)
+# last modified more than 14 days ago, and nothing else in the logs directory.
+# A missing logs directory is no failure; one that is not a directory, or a
+# file that cannot be deleted, or a directory that cannot be listed, fails with
+# an orch: line.
+liveness_logs_prune() {
+  local dir f base listing failed=0
+  dir="$(liveness_subdir logs)" || return $?
+  [ -e "$dir" ] || return 0
+  [ -d "$dir" ] || { warn "could not prune the session logs: $dir is not a directory"; return 1; }
+  listing="$(find "$dir" -maxdepth 1 -type f -mmin "+$LIVENESS_LOG_RETENTION_MINUTES" -print 2>/dev/null)" ||
+    { warn "could not prune the session logs: $dir could not be listed"; return 1; }
+  while IFS= read -r f; do
+    [[ "$f" == "$dir"/* ]] || continue
+    base="${f##*/}"
+    [[ "$base" =~ ^[0-9]+-[^-]+-${DIR_STAMP_PATTERN}\.log$ ]] || continue
+    rm -f -- "$f" 2>/dev/null || { warn "could not delete the old session log $f"; failed=1; }
+  done <<<"$listing"
+  return "$failed"
 }
 
 # clone_orchestrator_dir: prints the clone's orchestrator directory, under the

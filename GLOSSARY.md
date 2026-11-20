@@ -53,17 +53,18 @@ when a flow does, or made when a human asks for one. It counts as a checkout in
 its own right, so it holds at most one flow. One made for a quick implementation
 records that implementation's issue, so a session opened in it picks the issue
 up without being told. It is removed when its flow is archived with `archive` or
-`/orchestrator:abort`, by `/orchestrator:finish` once its work is finished, or
-by hand, and never with force. An autopilot flow gets one on its issue's first
-pickup, recording that issue as a quick implementation's does, and every later
-phase reuses it. _Avoid_: sibling worktree, flow worktree, second checkout.
+`/orchestrator:abort`, by `/orchestrator:finish` or the watcher once its work is
+finished, or by hand, and never with force. An autopilot flow gets one on its
+issue's first pickup, recording that issue as a quick implementation's does, and
+every later phase reuses it. _Avoid_: sibling worktree, flow worktree, second
+checkout.
 
 **Finished**:
 A side checkout is finished when a pull request from its branch has merged into
 its base branch, every commit on its branch is held by one of its merged pull
 requests, its working tree is clean, and it holds no flow or a flow at `done`.
 A flow is finished when it is at `done` and its pull request has merged.
-`/orchestrator:finish` cleans up only finished work.
+`/orchestrator:finish` and the watcher clean up only finished work.
 
 **Phase**:
 One of the four stages a flow passes through: **plan**, **spec**, **implement**,
@@ -489,9 +490,10 @@ its ticket's intent.
 **Stop report**:
 The report a ticket subagent returns, having built nothing,
 when its ticket verification cannot start - a missing tool, or a command
-not found or not executable. The driver loop lands no ticket on one: it
-saves no report, merges and closes nothing, and stops, naming the missing
-command.
+not found or not executable. The driver loop does not land its ticket: it
+neither saves the report nor merges or closes that ticket, and stops
+refilling; the tickets still in flight are processed as normal, then the
+loop stops, naming every missing command.
 
 **Ticket branch**:
 The branch one ticket subagent builds a single ticket on, forked from its
@@ -512,11 +514,12 @@ next` prints. Several can be built at once, up to the clone's parallel cap.
 **Driver loop**:
 The procedure that builds a ticket breakdown, one frontier
 after another: one ticket subagent per ticket, in parallel up to the clone's
-parallel cap or one at a time, each ticket's report but a stop report saved
-as it returns, then the ticket merged and closed - a collapsed breakdown's
-merged, never closed - then one verification of the combined branch. A stop
-report is not saved and its ticket neither merged nor closed; the loop stops
-instead. The implement phase and a quick implementation both run it.
+parallel cap or one at a time, each ticket's report saved as it returns,
+then the ticket merged and closed - a collapsed breakdown's merged, never
+closed - then one verification of the combined branch. A stop report is not
+saved and its ticket neither merged nor closed; the loop stops refilling,
+processes the tickets still in flight, then stops, naming every missing
+command. The implement phase and a quick implementation both run it.
 
 ### Spec review
 
@@ -726,11 +729,12 @@ is a host with no fresh subagent: there the review loop's driver takes the
 host-capabilities **Start a fresh subagent** fallback, does the fixer's
 and the closer's work in its own session, and records that as a host
 fallback. A driver loop's driver starts one ticket subagent per ticket
-and saves each ticket's report but a stop report as it returns, then merges
-and closes the ticket - a collapsed breakdown's merged, never closed; on a
-breakdown that did not collapse, it then writes the release record, before
-the combined branch's verification. On a stop report it saves, merges and
-closes nothing, and stops.
+and saves each ticket's report as it returns, then merges and closes the
+ticket - a collapsed breakdown's merged, never closed; on a breakdown that
+did not collapse, it then writes the release record, before the combined
+branch's verification. On a stop report it saves, merges and closes nothing
+of that ticket, stops refilling, and stops once the tickets in flight are
+processed, naming every missing command.
 
 **Reviewer**:
 A fresh agent a review loop's driver starts for one axis - Standards or Spec -

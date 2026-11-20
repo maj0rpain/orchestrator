@@ -385,7 +385,8 @@ autopilot_questions() {
 
 # autopilot_dir <main-root>: where a clone's autopilot files live - the run
 # records, the session logs, the limit files (limit, github-limit,
-# github-early-<pool>) and the per-issue hit marks - under its main checkout.
+# github-early-<pool>), the housekeeping stamp (housekeeping) and the per-issue
+# hit marks - under its main checkout.
 autopilot_dir() { printf '%s/%s/autopilot\n' "$1" "$ORCH_DIR_NAME"; }
 
 # autopilot_epoch_iso <epoch>: epoch seconds as a UTC timestamp, GNU or BSD
@@ -1211,6 +1212,37 @@ autopilot_rank() {
   printf '%s' "$((n + 1))"
 }
 
+# autopilot_housekeeping <main>: the tick's hourly housekeeping step. The
+# housekeeping stamp (<autopilot dir>/housekeeping, the epoch of the last run)
+# gates it: a missing stamp, one that does not parse as an epoch, one dated in
+# the future and one more than an hour old each run it. The stamp is written
+# first; when it cannot be, the step warns and is skipped. A failed log prune
+# warns, and never fails the step; then the finished sweep runs the same way.
+autopilot_housekeeping() {
+  local stamp text="" now_epoch
+  stamp="$(autopilot_dir "$1")/housekeeping"
+  now_epoch="$(date +%s)"
+  file_read_text text "$stamp" 2>/dev/null
+  if is_positive_int "$text" && [ "$((10#$text))" -le "$now_epoch" ] && [ $((now_epoch - 10#$text)) -le 3600 ]; then
+    return 0
+  fi
+  { mkdir -p "${stamp%/*}" && printf '%s\n' "$now_epoch" >"$stamp"; } 2>/dev/null || {
+    warn "could not write the housekeeping stamp $stamp: housekeeping is skipped"
+    return 0
+  }
+  liveness_logs_prune || :
+  # The finished sweep /orchestrator:finish runs, its report on stderr as in
+  # side-checkout add; a failed sweep warns and never fails the step.
+  orch_load branch
+  orch_load trust
+  orch_load ticket-worktree
+  orch_load state
+  orch_load side-checkout
+  ( cmd_side_checkout_prune ) >&2 \
+    || warn "the finished sweep failed - carrying on"
+  return 0
+}
+
 # autopilot_tick: one pass - the GitHub-limit pause check (while it holds the
 # tick ends there, making no GitHub call, not even closing merged PRs), the
 # early-pause quota read (autopilot_github_early), labels,
@@ -1219,10 +1251,11 @@ autopilot_rank() {
 # it released; the claim count is the read's claims less that number, taken
 # straight after), one read of the done issues (autopilot_done_read), the
 # merged-PR close (which needs no session, so the usage-limit and early pauses
-# never hold it), the three limit-pause checks (usage, core, graphql), sync
-# detection (when auto-sync is true), then pickup (see the spec's One tick),
-# the tick ending after any pickup, and after stale cleanup, that leaves a
-# GitHub pause holding.
+# never hold it), the three limit-pause checks (usage, core, graphql),
+# housekeeping (at most hourly; it runs whatever auto-sync is), sync detection
+# (when auto-sync is true), then pickup (see the spec's One tick),
+# the tick ending after any pickup, after stale cleanup, and after
+# housekeeping, that leaves a GitHub pause holding.
 # The one done read feeds both passes: sync detection gets the done table
 # minus the issues the close closed. One listing of the flow issues
 # (autopilot_flow_ranked) fills Standing from its rows, drops the unpickable
@@ -1239,6 +1272,8 @@ autopilot_tick() {
   orch_load standing
   orch_load gh
   orch_load handoff
+  orch_load checkout
+  orch_load liveness
   local main_root cap count released issue gh_err phase rc limited_arg auto_sync
   local ranked="" slots limit done_table reserve
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"
@@ -1261,6 +1296,8 @@ autopilot_tick() {
     if autopilot_pause_until "$main_root" core; then return 0; fi
     if autopilot_pause_until "$main_root" graphql; then return 0; fi
   fi
+  autopilot_housekeeping "$main_root"
+  if autopilot_pause_until "$main_root" github; then return 0; fi
   if [ "$auto_sync" = true ]; then autopilot_sync_detect "$done_table"; fi
   slots=$((cap / 2))
   autopilot_flow_ranked ranked

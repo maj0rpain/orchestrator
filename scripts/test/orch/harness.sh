@@ -30,9 +30,11 @@ SOURCEABLE_TEST_HELPERS=(gh_adapter_fake.sh tally.sh fifo.sh counting.sh fails.s
 # x line for any other path given no lines, so no planted file is empty. tr_git
 # <dir> runs git in it, tr_plan <dir> [<arg>...] prints affected.sh's --plan
 # <arg>... on one line (no default ref), and tr_reset <dir> drops the tree's
-# changes. TR_GATE and TR_CORE are the plan's always-run items and the core set.
+# changes. TR_GATE, TR_HARNESS and TR_CORE are the plan's always-run items, the
+# harness file's non-gate sections (in planted order) and the core set.
 TR_GATE="orch_test.sh,test-helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853),comment reader placement (#3085),helper body copies (#3170)"
-TR_CORE="isolation,the parallel runner (#780),loader one,hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh"
+TR_HARNESS="isolation,the parallel runner (#780)"
+TR_CORE="$TR_HARNESS,loader one,hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh"
 tr_git() { local dir="$1"; shift; git -C "$dir" -c user.name=t -c user.email=t@example.com "$@"; }
 tr_put() {
   local dir="$1" path="$2"
@@ -3507,24 +3509,23 @@ rm -rf "${placement_dir%/orch}"
 echo
 echo "helper body copies (#3170)"
 
-# copies_tree: prints a copy of the real scripts/test/orch/ cut down to
-# setup.sh, with the sourceable test helpers copied beside it, where
-# helper_copies reads them.
+# copies_tree: prints a new empty orch/ directory filled by copies_reset with
+# setup.sh and the sourceable test helpers beside it, where helper_copies reads
+# them.
 copies_tree() {
   local d
-  d="$(tree_copy scripts/test/orch)" || return 1
-  find "$d" -name '*.sh' ! -name setup.sh -delete
-  (cd "$PLUGIN_ROOT/scripts/test" && cp "${SOURCEABLE_TEST_HELPERS[@]}" "${d%/orch}/") || return 1
+  d="$(mktemp -d)/orch" && mkdir "$d" || return 1
+  copies_reset "$d" || return 1
   printf '%s\n' "$d"
 }
-# copies_reset: puts setup.sh and the sourceable helpers back as copies_tree
-# made them and removes the planted zz-*.sh, so each case starts from the same
-# tree without copying scripts/test/orch/ again.
+# copies_reset <tree dir>: puts setup.sh and the sourceable helpers in the
+# tree from the real tree and removes the planted zz-*.sh, so each case starts
+# from setup.sh and the helpers alone.
 copies_reset() {
-  cp "$copies_pristine/setup.sh" "$copies_dir/setup.sh"
-  cp "$copies_pristine"/helpers/*.sh "${copies_dir%/orch}/"
-  rm -f "$copies_dir"/zz-*.sh
-  rm -f "${copies_dir%/orch}"/zz-*.sh
+  cp "$PLUGIN_ROOT/scripts/test/orch/setup.sh" "$1/setup.sh" || return 1
+  (cd "$PLUGIN_ROOT/scripts/test" && cp "${SOURCEABLE_TEST_HELPERS[@]}" "${1%/orch}/") || return 1
+  rm -f "$1"/zz-*.sh
+  rm -f "${1%/orch}"/zz-*.sh
 }
 # copy_msg <copy file> <line> <helper> <defined in>: helper_copies' line for a
 # copy.
@@ -3537,15 +3538,11 @@ copy_msg() {
 plant_append() { sed 's/^  //' >>"$1/$2"; }
 
 copies_dir="$(copies_tree)"
-copies_pristine="$(mktemp -d)"
-mkdir "$copies_pristine/helpers"
-cp "$copies_dir/setup.sh" "$copies_pristine/"
-cp "${copies_dir%/orch}"/*.sh "$copies_pristine/helpers/"
 out="$(helper_copies "$PLUGIN_ROOT/scripts/test/orch")"; st=$?
 assert_status "the real tree has no helper body copy" "$st" 0
 assert_eq "and prints nothing" "$out" ""
 
-copies_reset
+copies_reset "$copies_dir"
 plant_append "$copies_dir" setup.sh <<'PLANTED'
   planted_two() {
     local a="$1"
@@ -3570,11 +3567,12 @@ plant_file "$copies_dir" zz-b.sh <<'PLANTED'
   printf '%s\n' "$a"
 PLANTED
 out="$(helper_copies "$copies_dir")"; st=$?
+assert_status "two copies of a setup helper in two files fail" "$st" 1
 assert_eq "two copies in two files print two lines, sorted" "$out" \
   "$(copy_msg zz-a.sh 3 planted_two setup.sh)
 $(copy_msg zz-b.sh 2 planted_two setup.sh)"
 
-copies_reset
+copies_reset "$copies_dir"
 plant_file "$copies_dir" zz-p.sh <<'PLANTED'
   planted_pre() {
     echo one
@@ -3594,9 +3592,10 @@ plant_file "$copies_dir" zz-q.sh <<'PLANTED'
   echo two
 PLANTED
 out="$(helper_copies "$copies_dir")"; st=$?
+assert_status "a preamble helper's body in another section file still leaves the scan failing on its own file's copy" "$st" 1
 assert_eq "and the same body in another section file is left alone" "$out" "$(copy_msg zz-p.sh 7 planted_pre zz-p.sh)"
 
-copies_reset
+copies_reset "$copies_dir"
 plant_file "${copies_dir%/orch}" tally.sh <<'PLANTED'
   planted_tally() {
     echo t1
@@ -3616,11 +3615,13 @@ plant_append "$copies_dir" setup.sh <<'PLANTED'
   echo t1
   echo t2
 PLANTED
-out="$(helper_copies "$copies_dir")"
-assert_eq "a copy in setup.sh is reported as setup.sh:<line>" "$(printf '%s\n' "$out" | grep -c '^setup.sh:')" "1"
-assert_contains "at its line" "$out" "$(copy_msg setup.sh "$((n + 1))" planted_tally ../tally.sh)"
+out="$(helper_copies "$copies_dir")"; st=$?
+assert_status "with a copy in setup.sh too, the scan still fails" "$st" 1
+assert_eq "a copy in setup.sh is reported as setup.sh:<line>, before the section file's" "$out" \
+  "$(copy_msg setup.sh "$((n + 1))" planted_tally ../tally.sh)
+$(copy_msg zz-s.sh 2 planted_tally ../tally.sh)"
 
-copies_reset
+copies_reset "$copies_dir"
 plant_append "$copies_dir" setup.sh <<'PLANTED'
   planted_two() {
     local a="$1"
@@ -3641,7 +3642,7 @@ out="$(helper_copies "$copies_dir")"; st=$?
 assert_status "inside a sourceable helper, a copy of that file's own helper fails" "$st" 1
 assert_eq "and a copy of a setup helper there is left alone" "$out" "$(copy_msg ../fifo.sh 5 planted_fifo ../fifo.sh)"
 
-copies_reset
+copies_reset "$copies_dir"
 plant_file "${copies_dir%/orch}" tally.sh <<'PLANTED'
   planted_ta() {
     echo x1
@@ -3660,11 +3661,12 @@ plant_file "$copies_dir" zz-m.sh <<'PLANTED'
   echo x2
 PLANTED
 out="$(helper_copies "$copies_dir")"; st=$?
+assert_status "a run equal to the bodies of two helpers fails" "$st" 1
 assert_eq "a run equal to the bodies of two helpers prints a line for each" "$out" \
   "$(copy_msg zz-m.sh 2 planted_fi ../fifo.sh)
 $(copy_msg zz-m.sh 2 planted_ta ../tally.sh)"
 
-copies_reset
+copies_reset "$copies_dir"
 plant_append "$copies_dir" setup.sh <<'PLANTED'
   planted_l39() { echo abcdefghijklmnopqrstuvwxyzabcdefgh; }
   planted_l40() { echo 01234567890123456789012345678901234; }
@@ -3684,6 +3686,7 @@ plant_file "$copies_dir" zz-l.sh <<'PLANTED'
   out="$(echo 01234567890123456789012345678901234)"
 PLANTED
 out="$(helper_copies "$copies_dir")"; st=$?
+assert_status "a 40-character one-line body in a command substitution fails" "$st" 1
 assert_eq "a one-line body of 40 characters fails inside a command substitution, one of 39 passes" "$out" \
   "$(copy_msg zz-l.sh 3 planted_l40 setup.sh)"
 plant_file "$copies_dir" zz-l.sh <<'PLANTED'
@@ -3707,7 +3710,8 @@ plant_file "$copies_dir" zz-m.sh <<'PLANTED'
   local a="$1"  # a trailing comment
   printf '%s\n' "$a"
 PLANTED
-out="$(helper_copies "$copies_dir")"
+out="$(helper_copies "$copies_dir")"; st=$?
+assert_status "a copy with comment and blank lines and a trailing comment fails" "$st" 1
 assert_eq "comment and blank lines inside a copy, and a trailing comment on one, do not stop the match" "$out" \
   "$(copy_msg zz-l.sh 2 planted_two setup.sh)
 $(copy_msg zz-m.sh 2 planted_two setup.sh)"
@@ -3724,7 +3728,8 @@ plant_file "$copies_dir" zz-m.sh <<'PLANTED'
   echo c1
   echo c2
 PLANTED
-out="$(helper_copies "$copies_dir")"
+out="$(helper_copies "$copies_dir")"; st=$?
+assert_status "a copy without the helper line's trailing comment fails" "$st" 1
 assert_eq "a copy that drops a helper line's trailing comment still fails" "$out" "$(copy_msg zz-m.sh 2 planted_cmt setup.sh)"
 rm -f "$copies_dir/zz-m.sh"
 plant_file "$copies_dir" zz-l.sh <<'PLANTED'
@@ -3765,16 +3770,17 @@ plant_file "$copies_dir" zz-l.sh <<'PLANTED'
   printf '%s\n' "$a"
 PLANTED
 out="$(helper_copies "$copies_dir")"; st=$?
+assert_status "runs with a wrong, reasonless or detached marker fail" "$st" 1
 assert_eq "only a marker naming the helper, with a reason, on the line just before the run exempts it" "$out" \
   "$(copy_msg zz-l.sh 13 planted_two setup.sh)
 $(copy_msg zz-l.sh 6 planted_two setup.sh)
 $(copy_msg zz-l.sh 9 planted_two setup.sh)"
 
-copies_reset
+copies_reset "$copies_dir"
 rm -f "${copies_dir%/orch}/counting.sh"
 out="$(helper_copies "$copies_dir")"; st=$?
 assert_status "a sourceable helper missing beside the tree is a scan failure" "$st" 2
-rm -rf "${copies_dir%/orch}" "$copies_pristine"
+rm -rf "${copies_dir%/orch}"
 
 # --- gh op placement (#1037) --------------------------------------------------
 # gh_op_placement over the real scripts/, then over copies of it, each with a
@@ -4638,7 +4644,7 @@ af_reset
 printf '%s\n' '# --- more ---' >>"$af/scripts/test/orch/harness.sh"
 assert_eq "harness.sh selects all of its sections, the placement ones once" \
   "$(tr_plan "$af" origin/rel)" \
-  "$TR_GATE,isolation,the parallel runner (#780),more,docs_lint.sh,scripts/test/orch/harness.sh"
+  "$TR_GATE,$TR_HARNESS,more,docs_lint.sh,scripts/test/orch/harness.sh"
 
 # One row each.
 af_row() {
@@ -4685,7 +4691,7 @@ af_row "a module with no section file of its own falls back to all.sh" \
 # orch_test.sh, together with the rest of the diff's selection.
 af_row "orch.sh selects the core set" scripts/orch.sh "$TR_GATE,$TR_CORE,scripts/orch.sh"
 af_row "the common module selects the core set and its own section file" scripts/orch/common.sh \
-  "$TR_GATE,common one,isolation,the parallel runner (#780),loader one,$af_core_s,scripts/orch/common.sh"
+  "$TR_GATE,common one,$TR_HARNESS,loader one,$af_core_s,scripts/orch/common.sh"
 af_row "the loader module selects the core set" scripts/orch/loader.sh \
   "$TR_GATE,$TR_CORE,scripts/orch/loader.sh"
 for af_f in all.sh git_env.sh orch_test.sh affected.sh test_jobs.sh report.sh test_tree.sh; do
@@ -4698,7 +4704,7 @@ tr_put "$af" scripts/orch.sh changed
 tr_put "$af" scripts/orch/branch.sh 'z=3'
 tr_put "$af" scripts/test/orch/zz-new.sh '# --- zz new ---'
 assert_eq "the core set comes together with the rest of the diff's selection" "$(tr_plan "$af" origin/rel)" \
-  "$TR_GATE,$af_branch_titles,isolation,the parallel runner (#780),loader one,zz new,$af_core_s,scripts/orch.sh,scripts/orch/branch.sh,scripts/test/orch/zz-new.sh"
+  "$TR_GATE,$af_branch_titles,$TR_HARNESS,loader one,zz new,$af_core_s,scripts/orch.sh,scripts/orch/branch.sh,scripts/test/orch/zz-new.sh"
 af_reset
 tr_put "$af" scripts/orch.sh changed
 tr_put "$af" docs/a.md again
@@ -4711,9 +4717,9 @@ assert_eq "the common module's section file selects its own sections alone" "$(t
 # The new rows (#3548).
 af_hooks_s="hooks_test.sh,docs_lint.sh"
 af_row "flow-state.sh selects the core set and the state, init and side-checkout sections" scripts/flow-state.sh \
-  "$TR_GATE,isolation,the parallel runner (#780),init s,loader one,side-checkout s,state,$af_core_s,scripts/flow-state.sh"
+  "$TR_GATE,$TR_HARNESS,init s,loader one,side-checkout s,state,$af_core_s,scripts/flow-state.sh"
 af_row "host.sh selects the core set and the doctor sections" scripts/host.sh \
-  "$TR_GATE,doctor s,isolation,the parallel runner (#780),loader one,$af_core_s,scripts/host.sh"
+  "$TR_GATE,doctor s,$TR_HARNESS,loader one,$af_core_s,scripts/host.sh"
 af_row "bash-walk.sh selects the hooks suite" scripts/bash-walk.sh "$TR_GATE,$af_hooks_s,scripts/bash-walk.sh"
 af_row "paste-guard.sh selects the hooks suite and the spec-review sections" scripts/paste-guard.sh \
   "$TR_GATE,spec-review s,$af_hooks_s,scripts/paste-guard.sh"
@@ -4722,13 +4728,13 @@ af_row "planning-allowlist.sh selects the hooks suite and the doctor sections" s
 af_row "triage-labels.sh selects the hooks suite and the doctor and issue sections" scripts/triage-labels.sh \
   "$TR_GATE,doctor s,issue s,$af_hooks_s,scripts/triage-labels.sh"
 af_row "a dev script other than the lens bench selects the harness sections" scripts/dev/other.sh \
-  "$TR_GATE,isolation,the parallel runner (#780),docs_lint.sh,scripts/dev/other.sh"
+  "$TR_GATE,$TR_HARNESS,docs_lint.sh,scripts/dev/other.sh"
 af_row "the edit width hook selects the harness sections and the hooks suite" scripts/dev/hook-edit-width.sh \
-  "$TR_GATE,isolation,the parallel runner (#780),$af_hooks_s,scripts/dev/hook-edit-width.sh"
+  "$TR_GATE,$TR_HARNESS,$af_hooks_s,scripts/dev/hook-edit-width.sh"
 af_row "width.sh selects the harness sections and the hooks suite" scripts/dev/width.sh \
-  "$TR_GATE,isolation,the parallel runner (#780),$af_hooks_s,scripts/dev/width.sh"
+  "$TR_GATE,$TR_HARNESS,$af_hooks_s,scripts/dev/width.sh"
 af_row "the shell-code awk program selects the harness sections and the hooks suite" scripts/test/shell_code.awk \
-  "$TR_GATE,isolation,the parallel runner (#780),$af_hooks_s"
+  "$TR_GATE,$TR_HARNESS,$af_hooks_s"
 af_row "a docker file selects the container and up suites" docker/Dockerfile \
   "$TR_GATE,docs_lint.sh,autopilot_container_test.sh,autopilot_up_test.sh"
 af_row ".dockerignore selects the container and up suites" .dockerignore \
@@ -4742,7 +4748,7 @@ af_reset
 tr_put "$af" .shellcheckrc changed
 af_sc_all="$(cd "$af" && shopt -s globstar && printf '%s\n' scripts/**/*.sh | LC_ALL=C sort -u | paste -sd, -)"
 assert_eq ".shellcheckrc selects the harness sections and shellchecks every script" "$(tr_plan "$af" origin/rel)" \
-  "$TR_GATE,isolation,the parallel runner (#780),docs_lint.sh,$af_sc_all"
+  "$TR_GATE,$TR_HARNESS,docs_lint.sh,$af_sc_all"
 
 # The line order, with every kind of change at once.
 af_reset
