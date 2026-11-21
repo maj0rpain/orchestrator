@@ -109,14 +109,21 @@ def file_write_atomic(path: str, text: str, make_directory: bool = True) -> bool
     return True
 
 
+def read_raw(path: str) -> Optional[str]:
+    """The file's whole text, decoded as UTF-8 with surrogateescape so bytes
+    that are not UTF-8 survive; None when it cannot be read."""
+    try:
+        with open(path, "rb") as f:
+            return f.read().decode("utf-8", "surrogateescape")
+    except OSError:
+        return None
+
+
 def read_text(path: str) -> Optional[str]:
     """The file's text, its trailing newlines dropped as bash's $(<file)
     drops them; None when it cannot be read."""
-    try:
-        with open(path, "rb") as f:
-            return f.read().decode("utf-8", "surrogateescape").rstrip("\n")
-    except OSError:
-        return None
+    text = read_raw(path)
+    return None if text is None else text.rstrip("\n")
 
 
 def text_file_write(file: Union[str, int], text: str, unwritten: str) -> None:
@@ -216,9 +223,6 @@ def exclude_missing(lines: Sequence[str], git) -> List[str]:
     """Each of the non-empty <lines> the clone's shared info/exclude, read
     through the git adapter <git>, lacks as a whole line, in order: every one
     when the file cannot be read."""
-    try:
-        with open(_exclude_file(git), "rb") as f:
-            present = set(f.read().decode("utf-8", "surrogateescape").split("\n"))
-    except OSError:
-        present = set()
+    text = read_raw(_exclude_file(git))
+    present = set() if text is None else set(text.split("\n"))
     return [line for line in lines if line and line not in present]

@@ -16,14 +16,9 @@ import pytest
 
 from orch import audit, common
 from orch.git import FakeGit
-from conftest import AUDIT_FIXTURES, AUDIT_USAGE, edit
+from conftest import AUDIT_FIXTURES, AUDIT_USAGE, edit, orch_audit
 
 CHECKOUT = "/nonexistent/checkout"
-
-def report(*args):
-    """`audit report <args>` in a checkout; its exit code."""
-    return audit.run(["report", *(str(arg) for arg in args)],
-                     git=FakeGit(toplevel=CHECKOUT), env={})
 
 
 def golden(name):
@@ -34,7 +29,8 @@ def golden(name):
 @pytest.mark.parametrize("name", ["full", "none"])
 def test_report_writes_the_golden_page_byte_for_byte(tmp_path, capsys, name):
     out = tmp_path / "report.html"
-    assert report(os.path.join(AUDIT_FIXTURES, name), out) == 0
+    assert orch_audit(FakeGit(toplevel=CHECKOUT), "report",
+                      os.path.join(AUDIT_FIXTURES, name), str(out)) == 0
     assert out.read_bytes() == golden(name)
     assert capsys.readouterr() == (str(out) + "\n", "")
 
@@ -58,9 +54,7 @@ def refused(tmp_path, capsys, run, out, message):
     <message>`, printing nothing and changing no file under <tmp_path>."""
     before = listing(tmp_path)
     contents = out.read_bytes() if out.is_file() else None
-    with pytest.raises(SystemExit) as death:
-        report(run, out)
-    assert death.value.code == 1
+    assert orch_audit(FakeGit(toplevel=CHECKOUT), "report", str(run), str(out)) == 1
     assert capsys.readouterr() == ("", "orch: " + message + "\n")
     assert listing(tmp_path) == before
     assert (out.read_bytes() if out.is_file() else None) == contents
@@ -213,7 +207,8 @@ def test_report_refuses_a_run_with_no_ranked_file(tmp_path, capsys, run_dir):
 def test_report_takes_a_reference_split_spanned_or_fenced(tmp_path, capsys, run_dir,
                                                          old, new):
     edit(run_dir / "ranked.md", old, new)
-    assert report(run_dir, tmp_path / "report.html") == 0
+    assert orch_audit(FakeGit(toplevel=CHECKOUT), "report",
+                      str(run_dir), str(tmp_path / "report.html")) == 0
 
 
 def test_report_refuses_an_out_html_whose_directory_is_missing(tmp_path, capsys):
@@ -253,9 +248,7 @@ def test_an_out_html_in_a_read_only_directory_keeps_the_earlier_report(tmp_path,
 
 @pytest.mark.parametrize("args", [[], ["only-one"], ["a", "b", "c"]])
 def test_report_refuses_any_count_of_arguments_but_two_with_the_usage(capsys, args):
-    with pytest.raises(SystemExit) as death:
-        report(*args)
-    assert death.value.code == 1
+    assert orch_audit(FakeGit(toplevel=CHECKOUT), "report", *args) == 1
     assert capsys.readouterr() == ("", AUDIT_USAGE)
 
 

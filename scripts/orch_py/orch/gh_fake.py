@@ -28,7 +28,7 @@ import time
 from typing import Callable, List, Mapping, Optional, Sequence, Tuple
 
 from orch import gh as real
-from orch.common import plain_number, read_text
+from orch.common import plain_number, read_raw, read_text
 from orch.gh import GhFailed, IssueRow, LabelledBody, Limits
 
 # The author and timestamp of every comment the fake's own operations write.
@@ -36,15 +36,6 @@ COMMENT_AUTHOR = "fake-gh"
 COMMENT_CREATED = "2026-01-01T00:00:00Z"
 OFFLINE = "dial tcp: lookup api.github.com: no such host\n"
 NOAUTH = "HTTP 401: Bad credentials (https://api.github.com/graphql)\n"
-
-
-def _read(path: str) -> Optional[str]:
-    """The file's contents byte for byte, or None where it is unreadable."""
-    try:
-        with open(path, "rb") as f:
-            return f.read().decode("utf-8", "surrogateescape")
-    except OSError:
-        return None
 
 
 def _write(path: str, text: str, mode: str = "wb") -> None:
@@ -55,19 +46,19 @@ def _write(path: str, text: str, mode: str = "wb") -> None:
 
 def _first_line(path: str) -> str:
     """The file's first line; "" where it is missing or empty."""
-    lines = real.lines_of(_read(path) or "")
+    lines = real.lines_of(read_raw(path) or "")
     return lines[0] if lines else ""
 
 
 def _lines(path: str) -> List[str]:
     """The file's non-empty lines; none where it is unreadable."""
-    return [line for line in real.lines_of(_read(path) or "") if line]
+    return [line for line in real.lines_of(read_raw(path) or "") if line]
 
 
 def _countdown(path: str) -> bool:
     """True while the count the file holds is above zero, counting it down
     by one; False where it is absent or at zero."""
-    text = _read(path)
+    text = read_raw(path)
     if text is None:
         return False
     count = real.number_of(text)
@@ -149,7 +140,7 @@ class FakeGh:
         """The stderr of the failure the store seeds for <operation>, a
         countdown counted; None where none fails it."""
         if operation != "adapter_rate_limit":
-            limited = _read(_store_path(self.store, "ratelimit"))
+            limited = read_raw(_store_path(self.store, "ratelimit"))
             if limited is not None:
                 return limited
         if os.path.isfile(_store_path(self.store, "offline")):
@@ -157,10 +148,10 @@ class FakeGh:
         if os.path.isfile(_store_path(self.store, "noauth")):
             return NOAUTH
         fail = _store_path(self.store, "fail", operation)
-        stderr = _read(fail)
+        stderr = read_raw(fail)
         if stderr is None or _countdown(fail + ".after"):
             return None
-        times = _read(fail + ".times")
+        times = read_raw(fail + ".times")
         if times is not None:
             if real.number_of(times) <= 1:
                 os.remove(fail)
@@ -188,11 +179,11 @@ class FakeGh:
             return None
         if not _countdown(lag):
             return None
-        return _read(lag + ".stale") or ""
+        return read_raw(lag + ".stale") or ""
 
     def _rate_limit(self) -> str:
         self._fail_raw("adapter_rate_limit")
-        quota = _read(_store_path(self.store, "quota"))
+        quota = read_raw(_store_path(self.store, "quota"))
         if quota is not None:
             return quota
         reset = int(self.now()) + 3600
@@ -222,7 +213,7 @@ class FakeGh:
                 "author": {"login": read_text(os.path.join(comment, "author")) or ""},
                 "authorAssociation": read_text(os.path.join(comment, "association")) or "OWNER",
                 "createdAt": read_text(os.path.join(comment, "created")) or "",
-                "body": _read(os.path.join(comment, "body")) or "",
+                "body": read_raw(os.path.join(comment, "body")) or "",
                 "url": "https://github.com/o/r/issues/%d#issuecomment-%s" % (n, k),
             })
         return comments
@@ -264,7 +255,7 @@ class FakeGh:
     def issue_body(self, n: int) -> str:
         self._failing("adapter_issue_body")
         self._known(n)
-        return _read(_issue_path(self.store, n, "body")) or ""
+        return read_raw(_issue_path(self.store, n, "body")) or ""
 
     def issue_json(self, n: int) -> dict:
         self._failing("adapter_issue_json")
@@ -272,7 +263,7 @@ class FakeGh:
         return {
             "number": n,
             "title": read_text(_issue_path(self.store, n, "title")) or "",
-            "body": _read(_issue_path(self.store, n, "body")) or "",
+            "body": read_raw(_issue_path(self.store, n, "body")) or "",
             "labels": self._labels(n),
         }
 
@@ -365,7 +356,7 @@ class FakeGh:
         n = self._next_number()
         _write(_issue_path(self.store, n, "state"), "OPEN\n")
         _write(_issue_path(self.store, n, "title"), title + "\n")
-        _write(_issue_path(self.store, n, "body"), _read(body_file) or "")
+        _write(_issue_path(self.store, n, "body"), read_raw(body_file) or "")
         kept: List[str] = []
         for label in labels:
             if not real.label_listed(kept, label):
@@ -376,12 +367,12 @@ class FakeGh:
     def issue_body_edit(self, n: int, body_file: str) -> None:
         self._failing("adapter_issue_body_edit")
         self._known(n)
-        _write(_issue_path(self.store, n, "body"), _read(body_file) or "")
+        _write(_issue_path(self.store, n, "body"), read_raw(body_file) or "")
 
     def issue_comment(self, n: int, body_file: str) -> None:
         self._failing("adapter_issue_comment")
         self._known(n)
-        self._comment_append(_issue_path(self.store, n, "comments"), _read(body_file) or "")
+        self._comment_append(_issue_path(self.store, n, "comments"), read_raw(body_file) or "")
 
     def issue_relabel(
         self, n: int, add: Sequence[str] = (), remove: Sequence[str] = ()
@@ -454,7 +445,7 @@ class FakeGh:
         self._known(n)
         subs = _store_path(self.store, "subs")
         for parent in sorted(os.listdir(subs)) if os.path.isdir(subs) else []:
-            if str(n) in real.lines_of(_read(os.path.join(subs, parent)) or ""):
+            if str(n) in real.lines_of(read_raw(os.path.join(subs, parent)) or ""):
                 return int(parent)
         return None
 
@@ -465,7 +456,7 @@ class FakeGh:
     def issue_open_blockers(self, n: int) -> Optional[int]:
         self._failing("adapter_issue_open_blockers")
         self._known(n)
-        if str(n) in real.lines_of(_read(_store_path(self.store, "no_dependency_summary")) or ""):
+        if str(n) in real.lines_of(read_raw(_store_path(self.store, "no_dependency_summary")) or ""):
             return None
         return sum(1 for b in self._blockers(n)
                    if _first_line(_issue_path(self.store, b, "state")) == "OPEN")

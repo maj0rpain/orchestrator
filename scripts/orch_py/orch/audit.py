@@ -42,6 +42,7 @@ from orch.common import (
     exclude_orch_dirs,
     file_write_atomic,
     plain_number,
+    read_raw,
     read_text,
     warn,
 )
@@ -361,10 +362,8 @@ def _blank(line: str) -> bool:
 def _file_lines(path: str) -> Optional[List[str]]:
     """The lines of the file at <path> as bash's `read -r` loop reads them,
     a last line with no newline included; None when it cannot be read."""
-    try:
-        with open(path, "rb") as f:
-            text = f.read().decode("utf-8", "surrogateescape")
-    except OSError:
+    text = read_raw(path)
+    if text is None:
         return None
     lines = text.split("\n")
     lines.pop()
@@ -456,15 +455,23 @@ def ref_find(text: str) -> Optional[Tuple[str, int]]:
     return None
 
 
-def _para_reference(para: str, starts: List[int], lines: List[int]) -> Optional[Tuple[str, int]]:
-    """ref_find's look at one paragraph: each inline span, which may wrap,
-    blanked to as many spaces, and the ASCII letters lowered."""
-    low = ""
-    rest = para
+def _spans(text: str) -> Tuple[List[Tuple[str, str]], str]:
+    """<text>'s inline backtick spans (a backtick, text, a backtick), as
+    (text before, span) pairs in order, and the text after the last."""
+    spans: List[Tuple[str, str]] = []
+    rest = text
     while rest.count("`") >= 2:
         pre, _, rest = rest.partition("`")
         span, _, rest = rest.partition("`")
-        low += pre + " " * (len(span) + 2)
+        spans.append((pre, span))
+    return spans, rest
+
+
+def _para_reference(para: str, starts: List[int], lines: List[int]) -> Optional[Tuple[str, int]]:
+    """ref_find's look at one paragraph: each inline span, which may wrap,
+    blanked to as many spaces, and the ASCII letters lowered."""
+    spans, rest = _spans(para)
+    low = "".join(pre + " " * (len(span) + 2) for pre, span in spans)
     # Each character lowered alone, as bash's ${low,,} lowers it: U+0130
     # lowers to i, never to two characters, so the positions still hold.
     low = "".join(c.lower()[:1] for c in low + rest)
@@ -489,11 +496,7 @@ def _record_read(audit_run: Run) -> None:
     path = audit_run.directory + "/record"
     if not os.path.isfile(path):
         die("%s holds no audit run record: make a run with orch.sh audit begin" % audit_run.directory)
-    try:
-        with open(path, "rb") as f:
-            text = f.read().decode("utf-8", "surrogateescape")
-    except OSError:
-        text = ""
+    text = read_raw(path) or ""
     for line in text.split("\n")[:-1]:
         key, value = _RECORD_LINE.fullmatch(line.strip(" \t")).groups()
         if key == "kind":
@@ -741,13 +744,8 @@ def esc(text: str) -> str:
 def inline(text: str) -> str:
     """<text> escaped, each inline backtick span (a backtick, text, a
     backtick) as <code>."""
-    out = ""
-    rest = text
-    while rest.count("`") >= 2:
-        pre, _, rest = rest.partition("`")
-        span, _, rest = rest.partition("`")
-        out += esc(pre) + "<code>" + esc(span) + "</code>"
-    return out + esc(rest)
+    spans, rest = _spans(text)
+    return "".join(esc(pre) + "<code>" + esc(span) + "</code>" for pre, span in spans) + esc(rest)
 
 
 def _para(para: str) -> str:
