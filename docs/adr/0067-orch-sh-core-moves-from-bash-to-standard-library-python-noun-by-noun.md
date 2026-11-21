@@ -17,7 +17,9 @@ first, so skills, agents and hooks never change. Shared file formats
 tested against while both exist. A converted noun's bash tests are deleted
 with it. Its replacement tests are pytest (dev-only, pinned in
 `requirements-dev.txt`), in-process against fakes of the `git` and `gh`
-adapters, plus a few end-to-end CLI checks. Hooks move last.
+adapters, plus a few end-to-end CLI checks; a concept module whose logic is
+git's history semantics, such as Lines fate, is tested against real
+repositories instead, since a fake would only restate it. Hooks move last.
 
 ## Considered Options
 

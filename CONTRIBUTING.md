@@ -75,8 +75,8 @@ pytest's result as a suite's FAIL lines and summary, and prints
 pytest suite sits outside the suite budget: it is in neither all.sh's suites
 list nor the durations file, has no durations file of its own, and its growth
 is guarded by review alone. In affected.sh a change under `scripts/orch_py/`
-selects the spec, spec-review, ticket and finding-triage sections, the bash
-nouns whose sections run an `issue` verb through the dispatch.
+selects the spec, spec-review and ticket sections, the bash nouns whose
+sections run an `issue` verb through the dispatch.
 
 orch_test.sh is the suite's runner and holds no test. Its `# ---` sections live
 under `scripts/test/orch/`: `<noun>.sh` holds the sections for one orch.sh noun
@@ -88,8 +88,7 @@ a section file named as the module is, beside the per-noun files: `checkout.sh`
 for `scripts/orch/checkout.sh`, `comments.sh` for `scripts/orch/comments.sh`,
 `filed-finding.sh` for `scripts/orch/filed-finding.sh`,
 `issue-timeline.sh` for `scripts/orch/issue-timeline.sh`, `known-items.sh` for
-`scripts/orch/known-items.sh`, `lines-fate.sh` for `scripts/orch/lines-fate.sh`,
-`liveness.sh` for `scripts/orch/liveness.sh`,
+`scripts/orch/known-items.sh`, `liveness.sh` for `scripts/orch/liveness.sh`,
 `marked-comment.sh` for
 `scripts/orch/marked-comment.sh`, `session-log.sh` for
 `scripts/orch/session-log.sh`, `standing.sh` for
@@ -298,12 +297,7 @@ the finding categories, and the input checks `review file`, `audit file` and
 issue's comment history, read once and asked in domain terms),
 `known-items.sh` (the Known items module: splitting a record's text
 into entries, appending them as tagged bullets, and writing a known-items
-file), `lines-fate.sh` (the Lines fate module: what became of a range of a
-file's lines at a ref since a commit filed them: the existence check, the test
-that the file differs at all, the line mapping, the deleted ranges, the
-deleting-commit lookup and its squash walk, the range expander and the
-never-reached rule, behind `lines_fate`),
-`liveness.sh` (the Liveness module: whether the process behind a record
+file), `liveness.sh` (the Liveness module: whether the process behind a record
 (a claim, a watch) is still running - the run records,
 the start-time reader, the record-alive rule, the watch pidfile and the
 session log naming and its 14-day retention),
@@ -514,13 +508,16 @@ noun's `run` its fakes (`issue.run(argv, gh=..., git=..., env=...)`).
   `fake_*` helpers write. `orch.gh.adapter` picks the fake whenever
   `ORCH_GH_FAKE_STORE` is set, as `fake_github` sets it, and the fake honours
   the store's failure files (`fail/<operation>` with `.after` and `.times`,
-  `offline`, `ratelimit`) under the bash adapter's operation names, so a
-  bash section's `fake_fail` reaches a converted noun it runs through
-  orch.sh. A bash stand-in (`adapter_stood_in`) cannot reach
-  Python: a case that needs one for a converted verb is a pytest test.
+  `offline`, `ratelimit`) under `adapter_<method name>`, the bash adapter's
+  name for an operation both keep, so a bash section's `fake_fail` reaches a
+  converted noun it runs through orch.sh. A bash stand-in
+  (`adapter_stood_in`) cannot reach Python: a case that needs one for a
+  converted verb is a pytest test.
 - `orch.git.FakeGit`, the git adapter's in-memory fake. Each git operation is
   tested against a real repository in `tmp_path` and against the fake,
-  asserting the same answers.
+  asserting the same answers. The operations `orch.git.COULD_NOT` names answer
+  what `seed(<operation>, <args>..., answer=...)` set for their arguments, and
+  their "could not" value for a call nothing was seeded for.
 - In `conftest.py`: `clean_env`, autouse, clears the variables that would
   change what a test resolves and puts the real-gh guard first on `PATH`,
   failing a test that reaches gh; `fixture_gh` is a fixture gh answering by
@@ -609,7 +606,7 @@ skills/orch-audit-docs/      audits a repo's documentation against its code read
 skills/orch-audit-code/      audits a repo's source code for latent bugs, inefficiencies and architecture deepenings read-only: scope, partition into areas, hunt in read-only orch-code-auditor subagents, rank, HTML report, hand off to orch-interview and `orch.sh audit file`
 scripts/orch.sh               the entry point for every deterministic operation (mechanism): path resolution, shared constants, the module list, main, whose one case naming the converted nouns hands each to the orch package through orch_python
 scripts/orch/<noun>.sh        one module per orch.sh noun still in bash (branch.sh, ticket.sh, ...), sourced by orch.sh, named as its test file
-scripts/orch_py/orch/         the orch Python package (ADR-0067), one module per converted noun (issue.py) beside the helpers it rebuilt: standard library only, Python 3.9+; __main__.py the entry point (the version check, in syntax every python3 compiles), cli.py the noun table, gh.py and git.py the only places gh and git run, gh_fake.py the gh adapter's fake on the shared fake store, root.py the ROOT block
+scripts/orch_py/orch/         the orch Python package (ADR-0067), one module per converted noun (issue.py, finding_triage.py, each named as its noun with each - as _) beside the helpers it rebuilt, among them lines_fate.py (the Lines fate module, a concept module with no noun: what became of a range of a file's lines at a ref since a commit filed them, read by finding triage's scan) and base.py (the base concept's default-branch lookup alone): standard library only, Python 3.9+; __main__.py the entry point (the version check, in syntax every python3 compiles), cli.py the noun table, gh.py and git.py the only places gh and git run, gh_fake.py the gh adapter's fake on the shared fake store, root.py the ROOT block
 scripts/orch_py/tests/        the pytest suite: in-process tests of each noun against the fakes, the gh adapter's contract tests against a fixture gh, the git adapter's tests against a real repository and its fake, and the end-to-end checks of orch.sh's dispatch (test_dispatch.py); conftest.py the clean environment and the real-gh guard
 scripts/orch_py/requirements-dev.txt the pinned dev dependencies: pytest, pytest-xdist, pytest-timeout (the package itself needs none)
 scripts/orch_py/pytest.ini    the pytest settings: the tests folder, the package on the module path, the per-test timeout, no cache directory
@@ -618,7 +615,6 @@ scripts/orch/comments.sh      the Comments module, a concept module with no noun
 scripts/orch/filed-finding.sh the Filed finding module, a concept module with no noun: a filed finding's severities and labels, rendering and parsing its issue body, the finding categories, and the input checks `review file`, `audit file` and `audit report` share
 scripts/orch/issue-timeline.sh the Issue timeline module, a concept module with no noun: an issue's comment history, read once and asked for its newest question, latest stop, limit stops, re-entry comments and live handoffs
 scripts/orch/known-items.sh   the Known items module, a concept module with no noun: a known-items file's entries, tagged bullets and writing
-scripts/orch/lines-fate.sh    the Lines fate module, a concept module with no noun: what became of a range of a file's lines at a ref since a commit filed them - the existence check, the test that the file differs at all, the line mapping, deleted ranges, deleting-commit lookup and its squash walk, the range expander (`range_segments`) and the never-reached rule, behind `lines_fate`
 scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a record (a claim, a watch) is alive - the run records, the start-time reader, the record-alive rule, the watch pidfile, the session log names, deleted after 14 days
 scripts/orch/marked-comment.sh the Marked comment module, a concept module with no noun: the kinds of marked issue comment, writing their first line and reading them
 scripts/orch/session-log.sh   the Session log module, a concept module with no noun: what a phase session's log says about usage limits - one pass over the log, its limit stop, reset, early pause and final reply
@@ -670,7 +666,6 @@ scripts/test/orch/comments.sh      the Comments module's sections, named as the 
 scripts/test/orch/filed-finding.sh the Filed finding module's sections, named as the module is
 scripts/test/orch/issue-timeline.sh the Issue timeline module's sections, named as the module is
 scripts/test/orch/known-items.sh the Known items module's sections, named as the module is
-scripts/test/orch/lines-fate.sh    the Lines fate module's sections, named as the module is
 scripts/test/orch/liveness.sh      the Liveness module's sections, named as the module is
 scripts/test/orch/marked-comment.sh the Marked comment module's sections, named as the module is
 scripts/test/orch/session-log.sh    the Session log module's sections, named as the module is

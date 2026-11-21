@@ -59,43 +59,40 @@ comments_render() {
   jq -r "$COMMENTS_RENDER_JQ"' render_comments'
 }
 
-# comments_trusted [--exit 2] [--hint <h>] <issue|pr> <what> <n> <var>: issue or
-# PR <n>'s trusted comments as a JSON array (comments_trusted_read's), assigned
-# to <var>; the Trust filter's stderr line names <n>. A gh failure dies as "gh
-# could not <what>" (--hint passed on to gh_die, never added to the parse
-# failure); a comment object that does not parse dies as "could not <what>: its
-# comments did not parse", both with status 1, or status 2 under --exit 2 (a
-# caller that reserves exit 1, like pr comments). The options are
-# die_opt_check's and may come in either order. A kind other than issue or pr is
-# a misuse: it dies as "comments_trusted: unknown kind: <kind> (want issue|pr)"
-# with status 1, even under --exit 2, before any gh call.
+# comments_trusted [--exit 2] <issue|pr> <what> <n> <var>: issue or PR <n>'s
+# trusted comments as a JSON array (comments_trusted_read's), assigned to
+# <var>; the Trust filter's stderr line names <n>. A gh failure dies as "gh
+# could not <what>"; a comment object that does not parse dies as "could not
+# <what>: its comments did not parse", both with status 1, or status 2 under
+# --exit 2 (a caller that reserves exit 1, like pr comments), the option checked
+# by die_opt_check. A kind other than issue or pr is a misuse: it dies as
+# "comments_trusted: unknown kind: <kind> (want issue|pr)" with status 1, even
+# under --exit 2, before any gh call.
 comments_trusted() {
-  local __ct_opts=() __ct_exit=() __ct_err __ct_out
-  while [ "${1-}" = --hint ] || [ "${1-}" = --exit ]; do
+  local __ct_exit=() __ct_err __ct_out
+  if [ "${1-}" = --exit ]; then
     die_opt_check comments_trusted $# "$@"
-    [ "$1" != --exit ] || __ct_exit=(--exit 2)
-    __ct_opts+=("$1" "$2"); shift 2
-  done
+    __ct_exit=(--exit 2); shift 2
+  fi
   case "$1" in issue | pr) ;; *) die "comments_trusted: unknown kind: $1 (want issue|pr)" ;; esac
   comments_trusted_read "$1" "$3" __ct_out __ct_err || {
-    [ -z "$__ct_err" ] || gh_die ${__ct_opts[@]+"${__ct_opts[@]}"} "$2" "$__ct_err"
+    [ -z "$__ct_err" ] || gh_die ${__ct_exit[@]+"${__ct_exit[@]}"} "$2" "$__ct_err"
     die_hinted ${__ct_exit[@]+"${__ct_exit[@]}"} "could not $2: its comments did not parse"
   }
   printf -v "$4" '%s' "$__ct_out"
 }
 
-# comments_rendered [--exit 2] [--hint <h>] <issue|pr> <what> <n> <var>:
-# comments_trusted's comments rendered by comments_render, assigned to <var>;
-# no placeholder for a dropped comment. Its failures (a kind misuse included),
-# --exit and --hint are comments_trusted's.
+# comments_rendered [--exit 2] <issue|pr> <what> <n> <var>: comments_trusted's
+# comments rendered by comments_render, assigned to <var>; no placeholder for a
+# dropped comment. Its failures (a kind misuse included) and --exit are
+# comments_trusted's.
 comments_rendered() {
-  local __cd_opts=() __cd_exit=() __cd_kept __cd_out
-  while [ "${1-}" = --hint ] || [ "${1-}" = --exit ]; do
+  local __cd_exit=() __cd_kept __cd_out
+  if [ "${1-}" = --exit ]; then
     die_opt_check comments_rendered $# "$@"
-    [ "$1" != --exit ] || __cd_exit=(--exit 2)
-    __cd_opts+=("$1" "$2"); shift 2
-  done
-  comments_trusted ${__cd_opts[@]+"${__cd_opts[@]}"} "$1" "$2" "$3" __cd_kept
+    __cd_exit=(--exit 2); shift 2
+  fi
+  comments_trusted ${__cd_exit[@]+"${__cd_exit[@]}"} "$1" "$2" "$3" __cd_kept
   __cd_out="$(comments_render <<<"$__cd_kept")" \
     || die_hinted ${__cd_exit[@]+"${__cd_exit[@]}"} "could not $2: its comments did not parse"
   printf -v "$4" '%s' "$__cd_out"

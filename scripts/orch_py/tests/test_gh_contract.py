@@ -8,9 +8,11 @@ import json
 
 import pytest
 
-from orch.gh import Gh, GhFailed, IssueRow, Unparsed, gh_die, gh_or_die
+from orch.gh import Gh, GhFailed, IssueRow, LabelledBody, Unparsed, gh_die, gh_or_die
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY, RepoPin
+
+from conftest import died_of
 
 FORK = "https://github.com/fork/widgets.git"
 BODY = ["issue", "view", "5", "--json", "body", "--jq", ".body"]
@@ -96,11 +98,9 @@ def test_an_ssh_alias_origin_is_resolved_through_ssh_once(fixture_gh):
 def test_with_no_repo_a_call_dies_with_the_remedy_and_reaches_no_gh(fixture_gh, capsys):
     gh = real_gh(fixture_gh, origin=None)
 
-    with pytest.raises(SystemExit) as died:
-        gh.issue_body(5)
+    code, _, err = died_of(capsys, lambda: gh.issue_body(5))
 
-    assert died.value.code == 1
-    assert capsys.readouterr().err == "orch: " + REPO_REMEDY + "\n"
+    assert (code, err) == (1, "orch: " + REPO_REMEDY + "\n")
     assert REPO_REMEDY.endswith("set GH_REPO=<owner>/<repo>")
     assert fixture_gh.calls() == []
 
@@ -246,6 +246,70 @@ def test_the_issue_list_limit_stops_at_github_s_search_cap(fixture_gh, capsys):
     assert capsys.readouterr().err == ""
 
 
+def state_argv(number):
+    return ["issue", "view", str(number), "--json", "state,url",
+            "--jq", 'if (.url | test("/pull/")) then "PULL" else .state end']
+
+
+def test_issue_state_is_open_closed_or_pull_for_a_pull_request(fixture_gh):
+    fixture_gh.reply(state_argv(5), "OPEN\n")
+    fixture_gh.reply(state_argv(62), "PULL\n")
+    gh = real_gh(fixture_gh)
+
+    assert (gh.issue_state(5), gh.issue_state(62)) == ("OPEN", "PULL")
+
+
+BODIES_JQ = ('.[] | .number, (.labels | length), (.labels[].name),'
+             ' ((.body | indices("\\n") | length) + 1), .body')
+
+
+def bodies_argv(*labels, limit="1000"):
+    argv = ["issue", "list", "--state", "open"]
+    for label in labels:
+        argv += ["--label", label]
+    return argv + ["--search", "sort:created-asc", "--limit", limit,
+                   "--json", "number,labels,body", "--jq", BODIES_JQ]
+
+
+def test_issues_labelled_bodies_reads_each_record_with_its_labels_and_body(fixture_gh, capsys):
+    fixture_gh.reply(bodies_argv("review:nit", "triage me"),
+                     "3\n1\nreview:nit\n2\nline one\r\nline two\n"
+                     "012\n0\n1\n\n"
+                     "9\n2\nreview:nit\ntriage me\n4\nlast\n\n")
+
+    assert real_gh(fixture_gh).issues_labelled_bodies("review:nit", "triage me") == [
+        LabelledBody(3, ["review:nit"], "line one\r\nline two"),
+        LabelledBody(12, [], ""),
+        LabelledBody(9, ["review:nit", "triage me"], "last"),
+    ]
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("answer", [
+    "x\n0\n1\nbody\n", "3\nmany\n", "3\n2\nreview:nit\n", "3\n0\n", "3\n0\nlines\nbody\n",
+], ids=["number", "label-count", "labels-run-out", "no-line-count", "line-count"])
+def test_a_bodies_listing_that_does_not_parse_fails(fixture_gh, answer):
+    fixture_gh.reply(bodies_argv("review:nit"), answer)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).issues_labelled_bodies("review:nit")
+    assert failed.value.stderr == "gh answered a listing that does not parse"
+
+
+def test_a_bodies_listing_at_the_issue_list_limit_warns_naming_every_label(fixture_gh, capsys):
+    fixture_gh.reply(bodies_argv("review:major", "needs-triage", limit="2"),
+                     "1\n0\n1\nA\n2\n0\n1\nB\n")
+
+    rows = real_gh(fixture_gh, ORCH_ISSUE_LIST_LIMIT="2").issues_labelled_bodies(
+        "review:major", "needs-triage")
+
+    assert [row.number for row in rows] == [1, 2]
+    assert capsys.readouterr().err == (
+        "orch: the open issues labelled review:major and needs-triage reached the"
+        " issue-list limit of 2 - the newest past it are missing from this list\n"
+    )
+
+
 def parent_argv(number):
     return ["api", "repos/{owner}/{repo}/issues/%d" % number, "--jq", ".parent_issue_url // empty"]
 
@@ -382,6 +446,51 @@ def test_a_failed_write_passes_gh_s_stderr_through(fixture_gh):
     assert failed.value.stderr == "HTTP 502: Bad Gateway\nsecond line\n"
 
 
+LABEL_CREATE = ["label", "create", "bug", "--color", "d73a4a",
+                "--description", "Something isn't working"]
+
+
+def test_label_create_creates_a_missing_label_never_with_force(fixture_gh):
+    fixture_gh.reply(LABEL_CREATE, "created\n")
+
+    assert real_gh(fixture_gh).label_create("bug", "d73a4a", "Something isn't working") is None
+    assert fixture_gh.argvs() == [LABEL_CREATE]
+
+
+def test_label_create_of_a_label_that_exists_fails_with_gh_s_stderr(fixture_gh):
+    exists = ('label with name "bug" already exists; use `--force` to update its color'
+              " and description\n")
+    fixture_gh.reply(LABEL_CREATE, stderr=exists, exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).label_create("bug", "d73a4a", "Something isn't working")
+    assert failed.value.stderr == exists
+
+
+# --- repo operations ---------------------------------------------------------
+
+
+def default_branch_argv(repo):
+    return ["repo", "view", repo, "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"]
+
+
+def test_repo_default_branch_names_the_repo_in_the_argv(fixture_gh):
+    fixture_gh.reply(default_branch_argv("acme/widgets"), "trunk\n")
+
+    assert real_gh(fixture_gh).repo_default_branch("acme/widgets") == "trunk"
+    assert fixture_gh.calls() == [
+        ("fork/widgets", "github.com", default_branch_argv("acme/widgets"))]
+
+
+def test_a_repo_gh_cannot_resolve_fails_its_default_branch_read(fixture_gh):
+    gone = "GraphQL: Could not resolve to a Repository with the name 'acme/gone'. (repository)\n"
+    fixture_gh.reply(default_branch_argv("acme/gone"), stderr=gone, exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).repo_default_branch("acme/gone")
+    assert failed.value.stderr == gone
+
+
 # --- rate limits -------------------------------------------------------------
 
 SECONDARY = "You have exceeded a secondary rate limit. Please wait a few minutes"
@@ -498,13 +607,6 @@ def test_a_failure_that_is_no_limit_passes_through_untouched(fixture_gh):
 
 
 # --- the gh could not death --------------------------------------------------
-
-
-def died_of(capsys, run):
-    with pytest.raises(SystemExit) as died:
-        run()
-    out, err = capsys.readouterr()
-    return died.value.code, out, err
 
 
 def test_a_failed_call_dies_naming_the_action_gh_s_first_line_and_the_hint(fixture_gh, capsys):

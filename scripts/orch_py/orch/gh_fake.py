@@ -7,8 +7,9 @@ the other way round. orch.gh.adapter() picks it whenever ORCH_GH_FAKE_STORE
 is set.
 
 Each operation honours the store's failure files under the bash adapter's
-operation name - adapter_<the method's name> - read before the operation
-touches the store: fail/<operation>, with its fail/<operation>.after and
+operation name - adapter_<the method's name>, kept by an operation whose bash
+counterpart is gone, as adapter_issues_labelled_bodies is - read before the
+operation touches the store: fail/<operation>, with its fail/<operation>.after and
 fail/<operation>.times countdowns, offline, ratelimit and noauth. A failure
 goes through the real adapter's rate-limit handling (orch.gh.Limits), the
 rate_limit read answering from the store's quota. The reads the bash fake
@@ -28,7 +29,7 @@ from typing import Callable, List, Mapping, Optional, Sequence, Tuple
 
 from orch import gh as real
 from orch.common import plain_number
-from orch.gh import GhFailed, IssueRow, Limits
+from orch.gh import GhFailed, IssueRow, LabelledBody, Limits
 
 # The author and timestamp of every comment the fake's own operations write.
 COMMENT_AUTHOR = "fake-gh"
@@ -244,6 +245,13 @@ class FakeGh:
                 numbers.append(int(name))
         return numbers
 
+    def _labelled_open(self, *labels: str) -> List[int]:
+        """The open issues carrying every label, cut at the search limit as a
+        labelled listing is."""
+        limit = min(real.issue_list_limit(self.env), real.ISSUE_SEARCH_CAP)
+        return [n for n in self._open_numbers()
+                if all(real.label_listed(self._labels(n), label) for label in labels)][:limit]
+
     def _next_number(self) -> int:
         """The number a new issue takes - next_issue's, or one past the
         highest issue or PR number the store holds - the counter advanced."""
@@ -297,6 +305,17 @@ class FakeGh:
         return (stored("author", COMMENT_AUTHOR), stored("association", "OWNER"),
                 stored("editor", ""), stored("renamer", ""))
 
+    def issue_state(self, n: int) -> str:
+        """PULL for a PR the store holds or an issue number marked pull, the
+        stored state otherwise."""
+        self._failing("adapter_issue_state")
+        if os.path.isdir(_store_path(self.store, "prs", n)):
+            return "PULL"
+        self._known(n)
+        if os.path.exists(_issue_path(self.store, n, "pull")):
+            return "PULL"
+        return _slurp(_issue_path(self.store, n, "state")) or ""
+
     def issue_state_labels(self, n: int) -> Tuple[str, List[str]]:
         self._failing("adapter_issue_state_labels")
         stale = self._lagging("adapter_issue_state_labels")
@@ -325,15 +344,22 @@ class FakeGh:
         if stale is not None:
             rows = real.parse_titled_rows(stale)
         else:
-            limit = min(real.issue_list_limit(self.env), real.ISSUE_SEARCH_CAP)
-            labelled = [n for n in self._open_numbers()
-                        if real.label_listed(self._labels(n), label)]
             rows = [
                 IssueRow(n, _first_line(_issue_path(self.store, n, "state")),
                          _slurp(_issue_path(self.store, n, "title")) or "", self._labels(n))
-                for n in labelled[:limit]
+                for n in self._labelled_open(label)
             ]
         real.labelled_limit_warn(self.env, len(rows), label)
+        return rows
+
+    def issues_labelled_bodies(self, *labels: str) -> List[LabelledBody]:
+        self._failing("adapter_issues_labelled_bodies")
+        rows = [
+            LabelledBody(n, self._labels(n),
+                         (_read(_issue_path(self.store, n, "body")) or "").rstrip("\n"))
+            for n in self._labelled_open(*labels)
+        ]
+        real.labelled_limit_warn(self.env, len(rows), *labels)
         return rows
 
     def issue_create(self, title: str, body_file: str, labels: Sequence[str]) -> int:
@@ -394,6 +420,34 @@ class FakeGh:
             _write(_issue_path(self.store, n, "duplicate_of"), "%d\n" % duplicate_of)
         else:
             _write(_issue_path(self.store, n, "reason"), (reason or "completed") + "\n")
+
+    # --- label operations ---
+
+    def label_create(self, name: str, colour: str, description: str) -> None:
+        """The label added to the store where it has none of that name in
+        any casing; one it has fails the call, as gh does, left as it is."""
+        self._failing("adapter_label_create")
+        labels = _store_path(self.store, "labels")
+        if any(real.label_listed([line.split("\t", 1)[0]], name) for line in _lines(labels)):
+            raise GhFailed(
+                'label with name "%s" already exists; use `--force` to update its color'
+                " and description\n" % name
+            )
+        _write(labels, "%s\t%s\t%s\n" % (name, colour, description), "ab")
+
+    # --- repo operations ---
+
+    def repo_default_branch(self, repo: str) -> str:
+        """The stored default_branch answer less its trailing newlines; a
+        store with none fails it, as gh does for a repo it cannot resolve."""
+        self._failing("adapter_repo_default_branch")
+        answer = _slurp(_store_path(self.store, "default_branch"))
+        if answer is None:
+            raise GhFailed(
+                "GraphQL: Could not resolve to a Repository with the name '%s'."
+                " (repository)\n" % repo
+            )
+        return answer
 
     # --- sub-issue and dependency operations ---
 
@@ -476,6 +530,11 @@ class FakeStore:
         """GitHub leaves #n's dependency summary off, so only its blocked-by
         listing answers."""
         _write(_store_path(self.store, "no_dependency_summary"), "%d\n" % n, "ab")
+
+    def default_branch(self, answer: str) -> None:
+        """The repo's default branch as GitHub answers it, byte for byte, as
+        fake_default_branch seeds it."""
+        _write(_store_path(self.store, "default_branch"), answer)
 
     def next_issue(self, n: int) -> None:
         _write(_store_path(self.store, "next_issue"), "%d\n" % n)

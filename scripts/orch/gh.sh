@@ -328,12 +328,11 @@ verify_twice() {
 #   adapter_labels_detail
 # - rate limit: adapter_rate_limit
 # - issue: adapter_issue_body, adapter_issue_comments,
-#   adapter_issue_state_labels, adapter_issue_state_labels_body,
-#   adapter_issue_title_labels, adapter_issue_authorship, adapter_issue_state,
+#   adapter_issue_state_labels, adapter_issue_title_labels,
+#   adapter_issue_authorship, adapter_issue_state,
 #   adapter_issue_created_at, adapter_issues_labelled_rows,
 #   adapter_issues_any_labelled_rows,
 #   adapter_issues_open_rows, adapter_issues_titled_rows,
-#   adapter_issues_labelled_bodies,
 #   adapter_issue_create, adapter_issue_body_edit, adapter_issue_comment,
 #   adapter_issue_comment_url,
 #   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
@@ -516,65 +515,24 @@ gh_issue_not_found() {
   [[ "$1" == *"Could not resolve to an issue or pull request with the number of"* ]]
 }
 
-# adapter_issue_state_labels_body <n>: OPEN or CLOSED on the first line, the
-# label count on the second, then one label per line, then the body as GitHub
-# holds it and a newline - the count marks where the labels end and the body
-# begins.
-adapter_issue_state_labels_body() {
-  gh issue view "$1" --json state,labels,body --jq '.state, (.labels | length), (.labels[].name), .body'
-}
-
-# issue_state_labels_body_read <n> <state_var> <labels_var> <body_var>
-# <err_var>: reads issue <n> once through adapter_issue_state_labels_body and
-# writes its state, its labels (one per line, possibly none) and its body into
-# the first three caller-named variables. Non-zero when the read fails or its
-# answer does not parse, writing none of them, and writing gh's stderr into
-# <err_var>, as gh_lines_read does.
-issue_state_labels_body_read() {
-  local __islbr_state __islbr_count __islbr_labels="" __islbr_body __islbr_i
-  gh_lines_read adapter_issue_state_labels_body "$1" "$5" \
-    __islbr_state __islbr_count __islbr_body || return 1
-  case "$__islbr_count" in
-    ''|*[!0-9]*) printf -v "$5" '%s' "gh answered no label count"; return 1 ;;
-  esac
-  for (( __islbr_i = 0; __islbr_i < __islbr_count; __islbr_i++ )); do
-    __islbr_labels="$__islbr_labels${__islbr_body%%$'\n'*}"$'\n'
-    case "$__islbr_body" in
-      *$'\n'*) __islbr_body="${__islbr_body#*$'\n'}" ;;
-      *) __islbr_body="" ;;
-    esac
-  done
-  printf -v "$2" '%s' "$__islbr_state"
-  printf -v "$3" '%s' "${__islbr_labels%$'\n'}"
-  printf -v "$4" '%s' "$__islbr_body"
-}
-
-# open_issue_read [--hint <h>] <n> <not-open message> <labels_var>
-# [<body_var>]: reads issue <n> once through the gh adapter - its body too,
-# only when <body_var> is given - and writes its labels (one per line,
-# possibly none) and its body into the caller-named variables. A failed read
-# dies through gh_die "read issue #<n>", with --hint passed on as given; an
-# issue that is not OPEN dies with <not-open message>, verbatim, since the
-# callers' messages are not one shape. It checks no label: each caller keeps
-# its own label test.
+# open_issue_read [--hint <h>] <n> <not-open message> <labels_var>: reads
+# issue <n> once through the gh adapter and writes its labels (one per line,
+# possibly none) into the caller-named variable. A failed read dies through
+# gh_die "read issue #<n>", with --hint passed on as given; an issue that is not
+# OPEN dies with <not-open message>, verbatim, since the callers' messages are
+# not one shape. It checks no label: each caller keeps its own label test.
 # Out-params through `printf -v`, its locals prefixed so no caller's variable
 # name is shadowed.
 open_issue_read() {
-  local __oir_hint=() __oir_state __oir_labels __oir_body __oir_err
+  local __oir_hint=() __oir_state __oir_labels __oir_err
   if [ "${1-}" = --hint ]; then
     die_opt_check open_issue_read $# "$@"
     __oir_hint=(--hint "$2"); shift 2
   fi
-  if [ $# -ge 4 ]; then
-    issue_state_labels_body_read "$1" __oir_state __oir_labels __oir_body __oir_err \
-      || gh_die ${__oir_hint[@]+"${__oir_hint[@]}"} "read issue #$1" "$__oir_err"
-  else
-    issue_state_labels_read "$1" __oir_state __oir_labels __oir_err \
-      || gh_die ${__oir_hint[@]+"${__oir_hint[@]}"} "read issue #$1" "$__oir_err"
-  fi
+  issue_state_labels_read "$1" __oir_state __oir_labels __oir_err \
+    || gh_die ${__oir_hint[@]+"${__oir_hint[@]}"} "read issue #$1" "$__oir_err"
   [ "$__oir_state" = OPEN ] || die "$2"
   printf -v "$3" '%s' "$__oir_labels"
-  [ $# -lt 4 ] || printf -v "$4" '%s' "$__oir_body"
 }
 
 # adapter_issue_title_labels <n>: the title on the first line, then one label
@@ -696,8 +654,8 @@ issues_any_labelled_limit_warn() {
 # (<err_var> "gh answered a listing that does not parse"). Warns through
 # issues_labelled_limit_warn when the listing reaches the issue-list limit. Dies
 # when an array name is not a declared associative array. Elements are assigned
-# by eval on a validated name, the value by reference, as
-# issues_labelled_bodies_read does.
+# by eval on a validated name, the value by reference, as finding_body_parse
+# does.
 issues_labelled_rows_read() {
   issues_rows_read_via issues_labelled_rows_read adapter_issues_labelled_rows issues_labelled_limit_warn "$@"
 }
@@ -814,81 +772,6 @@ issues_rows_read_via() {
   "$__ilrr_warn" "${#__ilrr_nums[@]}" "${@:5}"
 }
 
-# adapter_issues_labelled_bodies <label>...: the open issues carrying every
-# label named, oldest first and cut at ISSUE_LIST_LIMIT as
-# adapter_issues_labelled_rows is, each as one count-marked record: its number,
-# its label count, one label per line,
-# its body's line count (one more than the newlines the body holds, counted
-# with `indices`, never `split`, whose answer on an empty string differs
-# between jq implementations), then the body's lines.
-adapter_issues_labelled_bodies() {
-  local args=() l
-  for l in "$@"; do args+=(--label "$l"); done
-  gh issue list --state open ${args[@]+"${args[@]}"} --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number,labels,body \
-    --jq '.[] | .number, (.labels | length), (.labels[].name), ((.body | indices("\n") | length) + 1), .body'
-}
-
-# issues_labelled_bodies_read <labels_array> <bodies_array> <count_var>
-# <err_var> <label>...: reads the listing once through
-# adapter_issues_labelled_bodies and adds each record to two caller-declared
-# associative arrays keyed by issue number: its labels (one per line, possibly
-# none) and its body, CRs kept and trailing newlines dropped as capture drops
-# them from a single read. It adds to the arrays, never clearing them, so
-# several listings accumulate and an issue listed twice is held once; the
-# number of records in this listing goes into <count_var>. capture strips the
-# answer's trailing newlines, so the last record's body lines missing at the
-# end are empty lines. Non-zero, writing no element, on a failed read (gh's
-# stderr into <err_var>, as gh_lines_read) or an answer that does not parse
-# (<err_var> "gh answered a listing that does not parse"). Warns on stderr
-# through issues_labelled_limit_warn when the listing reaches the issue-list
-# limit, as issues_labelled_rows_read does. Dies when an array
-# name is not a declared associative array. Bash 4.0: elements are assigned by
-# eval on a validated name, the value by reference, as finding_body_parse does.
-issues_labelled_bodies_read() {
-  assoc_array_require issues_labelled_bodies_read "$1" __ilbr_
-  assoc_array_require issues_labelled_bodies_read "$2" __ilbr_
-  local __ilbr_out __ilbr_err __ilbr_lines=() __ilbr_nums=() __ilbr_labs=() __ilbr_bods=()
-  local __ilbr_i=0 __ilbr_total __ilbr_n __ilbr_label_count __ilbr_body_line_count
-  local __ilbr_record_labels __ilbr_body __ilbr_k
-  local __ilbr_bad="gh answered a listing that does not parse"
-  local __ilbr_whole='^[0-9]+$'
-  if ! gh_capture __ilbr_out __ilbr_err adapter_issues_labelled_bodies "${@:5}"; then
-    printf -v "$4" '%s' "$__ilbr_err"
-    return 1
-  fi
-  [ -z "$__ilbr_out" ] || mapfile -t __ilbr_lines <<<"$__ilbr_out"
-  __ilbr_total="${#__ilbr_lines[@]}"
-  while [ "$__ilbr_i" -lt "$__ilbr_total" ]; do
-    __ilbr_n="${__ilbr_lines[__ilbr_i]}"
-    __ilbr_label_count="${__ilbr_lines[__ilbr_i+1]-}"
-    [[ $__ilbr_n =~ $__ilbr_whole && $__ilbr_label_count =~ $__ilbr_whole ]] \
-      || { printf -v "$4" '%s' "$__ilbr_bad"; return 1; }
-    __ilbr_i=$(( __ilbr_i + 2 ))
-    issues_label_block_read __ilbr_lines __ilbr_i __ilbr_record_labels "$__ilbr_label_count" \
-      || { printf -v "$4" '%s' "$__ilbr_bad"; return 1; }
-    __ilbr_body_line_count="${__ilbr_lines[__ilbr_i]-}"
-    [ "$__ilbr_i" -lt "$__ilbr_total" ] && [[ $__ilbr_body_line_count =~ $__ilbr_whole ]] \
-      || { printf -v "$4" '%s' "$__ilbr_bad"; return 1; }
-    __ilbr_i=$(( __ilbr_i + 1 ))
-    __ilbr_body=""
-    for (( __ilbr_k = 0; __ilbr_k < 10#$__ilbr_body_line_count; __ilbr_k++ )); do
-      # Lines missing at the end of the answer belong to the last record's
-      # body, which capture trimmed.
-      [ "$__ilbr_k" -eq 0 ] || __ilbr_body="$__ilbr_body"$'\n'
-      if [ "$__ilbr_i" -lt "$__ilbr_total" ]; then __ilbr_body="$__ilbr_body${__ilbr_lines[__ilbr_i]}"; fi
-      __ilbr_i=$(( __ilbr_i + 1 ))
-    done
-    newlines_strip __ilbr_body
-    __ilbr_nums+=("$(( 10#$__ilbr_n ))")
-    __ilbr_labs+=("$__ilbr_record_labels")
-    __ilbr_bods+=("$__ilbr_body")
-  done
-  assoc_pairs_assign "$1" __ilbr_nums __ilbr_labs
-  assoc_pairs_assign "$2" __ilbr_nums __ilbr_bods
-  printf -v "$3" '%s' "${#__ilbr_nums[@]}"
-  issues_labelled_limit_warn "${#__ilbr_nums[@]}" "${@:5}"
-}
-
 # adapter_issues_open_titles: every open issue, one per line as
 # <number><TAB><title>, pull requests left out. The listing is paginated, not
 # searched or cut at ISSUE_LIST_LIMIT, so the caller's exact comparison sees
@@ -953,27 +836,24 @@ adapter_issue_relabel() {
   gh issue edit "$n" "${args[@]}" >/dev/null
 }
 
-# adapter_issue_close <n> [--reason <r>] [--comment <c>] [--duplicate-of <B>]:
-# closes the issue, reason "completed" or "not planned" (absent, gh's
-# default), or as a duplicate of issue <B> - never given with --reason, and
-# needing gh 2.102 or newer - posting the comment on it where one is given.
+# adapter_issue_close <n> [--reason <r>] [--comment <c>]: closes the issue,
+# reason "completed" or "not planned" (absent, gh's default), posting the
+# comment on it where one is given.
 # Prints nothing. Given a comment it declares its gh call a compound write:
 # gh posts the comment first and closes second, so a failed close can leave the
 # comment, and a rerun would post it twice.
 adapter_issue_close() {
-  local n="$1" reason="" comment="" duplicate_of="" compound="" args=() options="--reason --comment --duplicate-of"
+  local n="$1" reason="" comment="" compound="" args=() options="--reason --comment"
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --reason)       option_value adapter_issue_close "$options" "$@" || return; reason="$2"; shift 2 ;;
-      --comment)      option_value adapter_issue_close "$options" "$@" || return; comment="$2"; shift 2 ;;
-      --duplicate-of) option_value adapter_issue_close "$options" "$@" || return; duplicate_of="$2"; shift 2 ;;
+      --reason)  option_value adapter_issue_close "$options" "$@" || return; reason="$2"; shift 2 ;;
+      --comment) option_value adapter_issue_close "$options" "$@" || return; comment="$2"; shift 2 ;;
       *) unknown_option adapter_issue_close "$1"; return ;;
     esac
   done
   [ -z "$reason" ] || args+=(--reason "$reason")
   [ -z "$comment" ] || { args+=(--comment "$comment"); compound=1; }
-  [ -z "$duplicate_of" ] || args+=(--duplicate-of "$duplicate_of")
   GH_LIMIT_COMPOUND=$compound gh issue close "$n" ${args[@]+"${args[@]}"} >/dev/null
 }
 

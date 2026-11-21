@@ -556,19 +556,6 @@ adapter_issue_state_labels() {
   fake_issue_labels "$1"
 }
 
-# adapter_issue_state_labels_body <n>: the stored state, its label count, its
-# labels, then its body byte for byte and a newline.
-adapter_issue_state_labels_body() {
-  ! fake_failing adapter_issue_state_labels_body || return 1
-  fake_issue_known "$1" || return 1
-  local d
-  d="$(fake_issue_dir "$1")"
-  cat "$d/state"
-  fake_issue_labels_counted "$1"
-  cat "$d/body" 2>/dev/null
-  printf '\n'
-}
-
 # adapter_issue_title_labels <n>: the stored title, then its labels. Lagging
 # (fake_lag), it answers the stale answer fake_lag was given, or an empty
 # title and no labels.
@@ -731,30 +718,6 @@ fake_search_cut() {
   awk -v n="$ISSUE_LIST_LIMIT" -v cap="$ISSUE_SEARCH_CAP" 'BEGIN{if(n>cap)n=cap} NR<=n'
 }
 
-# adapter_issues_labelled_bodies <label>...: the open issues in the store
-# carrying every label named, oldest first and cut as
-# adapter_issues_labelled_rows is, each as the count-marked
-# record the gh adapter prints: number, label count, labels, the body's line
-# count (its newlines plus one), then the body byte for byte and a newline. The
-# body is read once in bash from the store's path, its newlines counted there.
-adapter_issues_labelled_bodies() {
-  local n nums body nl
-  ! fake_failing adapter_issues_labelled_bodies || return 1
-  fake_need_store || return 1
-  nums="$(fake_labelled_numbers all "$@")" || return 1
-  for n in $nums; do
-    body=""
-    if [ -r "$ORCH_GH_FAKE_STORE/issues/$n/body" ]; then
-      IFS= read -r -d '' body <"$ORCH_GH_FAKE_STORE/issues/$n/body" || true
-    fi
-    nl="${body//[!$'\n']/}"
-    printf '%s\n' "$n"
-    fake_issue_labels_counted "$n"
-    printf '%s\n' "$(( ${#nl} + 1 ))"
-    printf '%s\n' "$body"
-  done
-}
-
 # adapter_issues_open_titles: every open issue in the store, one per line as
 # <number><TAB><title>, newest first, as gh lists them - not cut at
 # ISSUE_LIST_LIMIT.
@@ -881,21 +844,18 @@ adapter_issue_relabel() {
   done
 }
 
-# adapter_issue_close <n> [--reason <r>] [--comment <c>] [--duplicate-of <B>]:
-# the stored issue CLOSED, its reason (completed where none is given, as
-# GitHub defaults; duplicate with --duplicate-of) in reason, the target of a
-# duplicate close in duplicate_of, and the comment, where given, appended by
-# fake-gh - except as GitHub behaves: closing an issue already CLOSED succeeds
-# and leaves it as it is, with no comment and its reason and duplicate target
-# unchanged.
+# adapter_issue_close <n> [--reason <r>] [--comment <c>]: the stored issue
+# CLOSED, its reason (completed where none is given, as GitHub defaults) in
+# reason, and the comment, where given, appended by fake-gh - except as GitHub
+# behaves: closing an issue already CLOSED succeeds and leaves it as it is,
+# with no comment and its reason unchanged.
 adapter_issue_close() {
-  local n="$1" reason=completed comment="" duplicate_of="" d options="--reason --comment --duplicate-of"
+  local n="$1" reason=completed comment="" d options="--reason --comment"
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --reason)       fake_option_value adapter_issue_close "$options" "$@" || return; reason="$2"; shift 2 ;;
-      --comment)      fake_option_value adapter_issue_close "$options" "$@" || return; comment="$2"; shift 2 ;;
-      --duplicate-of) fake_option_value adapter_issue_close "$options" "$@" || return; duplicate_of="$2"; shift 2 ;;
+      --reason)  fake_option_value adapter_issue_close "$options" "$@" || return; reason="$2"; shift 2 ;;
+      --comment) fake_option_value adapter_issue_close "$options" "$@" || return; comment="$2"; shift 2 ;;
       *) fake_unknown_option adapter_issue_close "$1"; return ;;
     esac
   done
@@ -906,12 +866,7 @@ adapter_issue_close() {
   [ "$(cat "$d/state" 2>/dev/null)" != CLOSED ] || return 0
   [ -z "$comment" ] || fake_close_comment "$d/comments" "$comment"
   printf 'CLOSED\n' >"$d/state"
-  if [ -n "$duplicate_of" ]; then
-    printf 'duplicate\n' >"$d/reason"
-    printf '%s\n' "$duplicate_of" >"$d/duplicate_of"
-  else
-    printf '%s\n' "$reason" >"$d/reason"
-  fi
+  printf '%s\n' "$reason" >"$d/reason"
 }
 
 # adapter_issue_reopen <n>: the stored issue OPEN again.

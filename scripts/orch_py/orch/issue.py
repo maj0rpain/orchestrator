@@ -16,11 +16,18 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from typing import List, Mapping, Optional
 
 from orch import audit, comments, marked_comment, standing, trust
-from orch.common import die, file_write_atomic, list_join, plain_number, state_word, warn
+from orch.common import (
+    die,
+    file_write_atomic,
+    list_join,
+    plain_number,
+    state_word,
+    temp_text_file,
+    warn,
+)
 from orch.filed_finding import finding_untriaged, review_labels
 from orch.gh import (
     GhFailed,
@@ -29,6 +36,7 @@ from orch.gh import (
     gh_or_die,
     gh_reason,
     label_listed,
+    open_issue_read,
     verify_twice,
 )
 from orch.git import Git
@@ -282,9 +290,8 @@ class Issue:
             die(usage)
         ready = self.triage_labels.label("ready-for-agent")
 
-        state, labels = gh_or_die("read issue #" + n, self.gh.issue_state_labels, int(n))
-        if state != "OPEN":
-            die("issue #%s is not open - only an open issue is triaged to '%s'" % (n, ready))
+        labels, _ = open_issue_read(
+            self.gh, n, "issue #%s is not open - only an open issue is triaged to '%s'" % (n, ready))
         # One walk over the triage roles the issue carries: whether
         # ready-for-agent is among them, the held label, and every other one,
         # to remove.
@@ -341,20 +348,17 @@ class Issue:
         """Posts the comment naming the label issue #<n> now carries; a
         failure only warns, the relabel already verified."""
         try:
-            fd, path = tempfile.mkstemp()
-        except OSError:
-            die("could not create a temp file for the triage comment on issue #" + n)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write("An orchestrator planning session triaged this issue to `%s`.\n" % ready)
-            self.gh.issue_comment(int(n), path)
+            with temp_text_file(
+                "An orchestrator planning session triaged this issue to `%s`.\n" % ready,
+                "could not create a temp file for the triage comment on issue #" + n,
+                "could not write the temp file for the triage comment on issue #" + n,
+            ) as path:
+                self.gh.issue_comment(int(n), path)
         except GhFailed as failed:
             warn(
                 "warning: issue #%s is labelled %s, but gh could not post the triage"
                 " comment on it: %s" % (n, ready, gh_reason(failed.stderr))
             )
-        finally:
-            os.remove(path)
 
     def close(self, args: List[str]) -> int:
         """`issue close <n> (--completed | --duplicate-of <m>) --comment-file

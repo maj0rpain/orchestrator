@@ -82,9 +82,6 @@ assert_eq "comments_trusted issue assigns the trusted array" \
 assert_eq "comments_rendered pr assigns the rendered text" \
   "$(sourced_orch_script 'comments_rendered pr "read PR #9" 9 got; printf "%s" "$got"')" \
   "$(printf '<!-- comment @sam 2026-10-01T09:00:00Z -->\na PR comment')"
-assert_gh_dies "comments_rendered issue on a gh failure dies with its hint" adapter_issue_comments "$GH_502" 1 \
-  "orch: gh could not read #7: HTTP 502: Bad Gateway - the hint" \
-  sourced_orch_script 'comments_rendered --hint "the hint" issue "read #7" 7 got'
 assert_gh_dies "comments_trusted pr under --exit 2 dies with status 2" adapter_pr_comments "" 2 \
   "orch: gh could not read PR #9: gh gave no reason" \
   sourced_orch_script 'comments_trusted --exit 2 pr "read PR #9" 9 got'

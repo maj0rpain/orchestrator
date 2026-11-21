@@ -4,9 +4,9 @@
 # severity's label colour and description, its label rules, and its issue
 # body, rendered from its parts and parsed back - with the finding categories
 # and the input checks review file, audit file and audit report share. Review
-# file, audit file, audit report and finding triage read it; `issue`, a
-# converted noun, keeps its own copy of what issue triage needs
-# (orch/filed_finding.py).
+# file, audit file and audit report read it; `issue` and `finding-triage`,
+# converted nouns, keep their own copy of what issue triage and finding triage
+# need (orch/filed_finding.py).
 # Its tests: scripts/test/orch/filed-finding.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -118,18 +118,6 @@ finding_untriaged() {
   done
 }
 
-# has_filed_severity_label <labels>: whether some review label carries a
-# filed severity.
-has_filed_severity_label() {
-  local label lower
-  while IFS= read -r label; do
-    [ -n "$label" ] || continue
-    lower="${label,,}"
-    ! is_filed_severity "${lower#review:}" || return 0
-  done <<<"$(review_labels "$1")"
-  return 1
-}
-
 # The severity label a filed finding carries, so triage can filter on it. It is
 # this plugin's own, so overwriting it is safe: adapter_label_upsert updates a
 # label that exists rather than failing on it, and filing works on a repo that
@@ -165,17 +153,6 @@ category_for_axis() {
     return 0
   done
   return 1
-}
-
-# category_other <category>: the opposite category - the one a finding loses
-# when triage settles on <category>. Prints nothing and fails for anything but
-# bug or enhancement.
-category_other() {
-  case "$1" in
-    bug)         printf 'enhancement\n' ;;
-    enhancement) printf 'bug\n' ;;
-    *) return 1 ;;
-  esac
 }
 
 # The category label - one per category in the table - is the repo's too, like

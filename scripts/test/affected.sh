@@ -49,11 +49,10 @@
 #   scripts/dev/ other than the lens bench, hook-edit-width.sh, width.sh
 #                                     the harness section file's sections
 #   the Python package (scripts/orch_py/), its tests and dev files included
-#                                     the spec, spec-review, ticket and
-#                                     finding-triage sections, the bash nouns
-#                                     whose sections run an issue verb through
-#                                     the dispatch (the pytest suite runs on
-#                                     every call)
+#                                     the spec, spec-review and ticket
+#                                     sections, the bash nouns whose sections
+#                                     run an issue verb through the dispatch
+#                                     (the pytest suite runs on every call)
 #   the pytest suite's wrapper (scripts/test/orch_py_test.sh)
 #                                     the harness section file's sections
 #   hook-edit-width.sh, width.sh, shell_code.awk
@@ -463,7 +462,7 @@ classify() {
       scripts/dev/hook-edit-width.sh | scripts/dev/width.sh | scripts/test/shell_code.awk)
         want+=(hooks_test.sh); sections_of harness ;;
       scripts/dev/*) sections_of harness ;;
-      scripts/orch_py/*) sections_of spec spec-review ticket finding-triage ;;
+      scripts/orch_py/*) sections_of spec spec-review ticket ;;
       scripts/test/orch_py_test.sh) sections_of harness ;;
       docker/* | .dockerignore) want+=(autopilot_container_test.sh autopilot_up_test.sh) ;;
       .claude-plugin/*) want+=(version_bump_test.sh autopilot_up_test.sh) ;;

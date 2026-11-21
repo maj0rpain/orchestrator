@@ -1,6 +1,7 @@
 """The primitives no concept owns: the `orch: ` message lines, the
 plain-number test every verb checks its issue numbers with, the atomic file
-write, and the words a list and a state read as in a line.
+write, the temporary file a comment is handed to gh from, and the words a
+list and a state read as in a line.
 
 Every `orch: ` message goes through die or warn, as in the bash side's
 common.sh: die(message, 2) is the bash die2, for a command that reserves exit
@@ -14,7 +15,8 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
-from typing import Iterable, NoReturn
+from contextlib import contextmanager
+from typing import Callable, Iterable, Iterator, NoReturn, Tuple
 
 
 def die(message: str, code: int = 1) -> NoReturn:
@@ -60,6 +62,33 @@ def file_write_atomic(path: str, text: str) -> bool:
         os.unlink(tmp)
         return False
     return True
+
+
+@contextmanager
+def temp_text_file(
+    text: str,
+    unmade: str,
+    unwritten: str,
+    mkstemp: Callable[[], Tuple[int, str]] = tempfile.mkstemp,
+) -> Iterator[str]:
+    """Yields the path of a temporary file, made by <mkstemp>, holding
+    <text> as UTF-8 - surrogateescape, so bytes read that way come back as
+    they were - and removes it on exit, a death included. Dies with <unmade>
+    when the file cannot be made, and with <unwritten> when it cannot be
+    written."""
+    try:
+        fd, path = mkstemp()
+    except OSError:
+        die(unmade)
+    try:
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(text.encode("utf-8", "surrogateescape"))
+        except OSError:
+            die(unwritten)
+        yield path
+    finally:
+        os.remove(path)
 
 
 def list_join(items: Iterable[str]) -> str:

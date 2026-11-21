@@ -30,6 +30,10 @@ contract() { env -u ORCH_GH_ADAPTER bash -c 'source "$1"; shift; "$@"' _ "$ORCH"
 # default. fake_online lifts it.
 fake_ratelimit() { printf '%s\n' "${1-API rate limit exceeded for user ID 1.}" >"$ORCH_GH_FAKE_STORE/ratelimit"; }
 
+# fake_duplicate_of <n>: the issue a duplicate close of issue #n named, as the
+# store holds it.
+fake_duplicate_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/duplicate_of" 2>/dev/null; }
+
 # exists_gh: a gh on PATH for issue 5, a collapsed breakdown - no sub-issue,
 # and a body under the ## Ticket heading - for ticket exists 5; it sources the
 # fixture's log.sh to log its calls.
@@ -394,14 +398,6 @@ enhancement"
 out="$(sourced_orch_script 'issue_state_labels_read 9 out st err; printf "%s|%s" "$out" "$st"')"
 assert_eq "issue_state_labels_read fills them too" "$out" "OPEN|bug
 enhancement"
-fake_issue_body 9 $'Line one.\n\nLine three.\n'
-out="$(sourced_orch_script 'issue_state_labels_body_read 9 out st err gh_err
-  printf "%s|%s|%s" "$out" "$st" "$err"')"
-assert_eq "issue_state_labels_body_read writes the state, the labels and the body" "$out" \
-  "OPEN|bug
-enhancement|Line one.
-
-Line three."
 fake_fail adapter_issue_title_labels "$GH_502"
 out="$(sourced_orch_script 'out=x err=x; st=0; gh_lines_read adapter_issue_title_labels 9 gh_err out err || st=$?
   printf "%s|%s|%s|%s" "$st" "$out" "$err" "$gh_err"' 2>"$rerr")"
@@ -412,12 +408,6 @@ out="$(sourced_orch_script 'out=x st=x; rc=0; issue_title_labels_read 9 out st e
   printf "%s|%s|%s|%s" "$rc" "$out" "$st" "$err"' 2>"$rerr")"
 assert_eq "a failed reader writes the error into a variable named err" "$out" \
   "1|x|x|$GH_502"
-fake_fail adapter_issue_state_labels_body "$GH_502"
-out="$(sourced_orch_script 'state=x labels=x body=x; st=0; issue_state_labels_body_read 9 state labels body err || st=$?
-  printf "%s|%s|%s|%s|%s" "$st" "$state" "$labels" "$body" "$err"' 2>"$rerr")"
-assert_eq "a failed issue_state_labels_body_read writes none and fills the error variable" \
-  "$out" "1|x|x|x|$GH_502"
-assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
 rm -f "$rerr"
 unset rerr
 fake_unfail
@@ -523,7 +513,6 @@ for bad_args in "adapter_issue_relabel 14 --label x" "adapter_issue_relabel 14 -
            "adapter_issue_relabel 14 --remove" "adapter_issue_relabel 14 x y" \
            "adapter_issue_close 14 --why x" "adapter_issue_close 14 --reason" \
            "adapter_issue_close 14 --comment" "adapter_issue_close 14 completed" \
-           "adapter_issue_close 14 --duplicate-of" \
            "adapter_pr_create main x X $pbody --ready" "adapter_pr_create main x X $pbody true" \
            "adapter_pr_create main x X $pbody --label" "adapter_pr_create main x X $pbody --label --draft"; do
   # shellcheck disable=SC2086 # each case is a word list on purpose
@@ -597,11 +586,6 @@ assert_status "the fake takes a comment beginning with --" "$st" 0
 fake_issue 18 open
 faked adapter_issue_close 18 --reason completed --comment "--x"; st=$?
 assert_status "and after an earlier option" "$st" 0
-fake_issue 19 open
-faked adapter_issue_close 19 --duplicate-of 30; st=$?
-assert_status "the fake closes an issue as a duplicate" "$st" 0
-assert_eq "CLOSED, its reason duplicate" "$(fake_state_of 19) $(fake_reason_of 19)" "CLOSED duplicate"
-assert_eq "naming the issue it duplicates" "$(fake_duplicate_of 19)" "30"
 # fake_fail_after seeds a failure after n good calls: with an explicit empty
 # stderr a silent one (#846), and with the third argument omitted fake_fail's
 # message.
@@ -644,16 +628,15 @@ assert_eq "pr close: an unreadable origin still closes the PR" "$(cat "$ORCH_GH_
 assert_eq "and appends its comment" "$(fake_pr_comments_of 73)" "Redone."
 cd "$close_saved" || exit 1
 # adapter_issue_close models GitHub too: an issue already CLOSED stays as it is:
-# no comment, and its reason and duplicate target unchanged.
+# no comment, and its reason unchanged.
 fake_github
 fake_issue 74 open
 faked adapter_issue_close 74 --reason "not planned"
-faked adapter_issue_close 74 --comment "Again." --reason completed --duplicate-of 30; st=$?
+faked adapter_issue_close 74 --comment "Again." --reason completed; st=$?
 assert_status "issue close: an already CLOSED issue closes again, exit 0" "$st" 0
 assert_eq "leaving its comments as they were" "$(fake_comments_of 74)" ""
 assert_eq "its state CLOSED" "$(cat "$ORCH_GH_FAKE_STORE/issues/74/state")" "CLOSED"
-assert_eq "its reason unchanged" "$(cat "$ORCH_GH_FAKE_STORE/issues/74/reason")" "not planned"
-assert_eq "and no duplicate target" "$(ls "$ORCH_GH_FAKE_STORE/issues/74/duplicate_of" 2>/dev/null)" ""
+assert_eq "and its reason unchanged" "$(cat "$ORCH_GH_FAKE_STORE/issues/74/reason")" "not planned"
 # One head rule for every read of a PR's head: absent is forty zeros, present is
 # as stored, so an empty head stands for GitHub's null headRefOid. A sentinel
 # keeps the trailing empty line a command substitution would strip.
@@ -770,18 +753,13 @@ assert_status "an operation with no store fails" "$st" 1
 assert_contains "saying to call fake_github" "$err" "the gh fake has no store - call fake_github"
 # The second group answers from the store in bash too (#2862): each bare PATH
 # holds only what the function may keep - nothing for a plain read, jq for the
-# comments' JSON, sort and awk for a listing (and grep, which the unconverted
-# fake_issue_labels_counted runs), cat and date for the quota.
-mkdir "$bare_dir/jq" "$bare_dir/catdate" "$bare_dir/sortawkcat"
+# comments' JSON, cat and date for the quota.
+mkdir "$bare_dir/jq" "$bare_dir/catdate"
 ln -s "$(command -v jq)" "$bare_dir/jq/jq"
 for c in cat date; do ln -s "$(command -v $c)" "$bare_dir/catdate/$c"; done
-for c in sort awk tr grep; do ln -s "$(command -v $c)" "$bare_dir/sortawkcat/$c"; done
 fake_issue 40 open Lbl
-printf 'the body\nsecond\n' >"$S/issues/40/body"
 assert_eq "adapter_issue_state_labels gives the state then the labels on an empty PATH" \
   "$(barely empty adapter_issue_state_labels 40 | tr '\n' ' ')" "OPEN Lbl "
-assert_eq "adapter_issues_labelled_bodies gives the count-marked record with sort, awk and the unconverted helper's grep" \
-  "$(barely sortawkcat adapter_issues_labelled_bodies Lbl | tr '\n' '|')" "40|1|Lbl|3|the body|second||"
 printf 'someone\n' >"$S/issues/40/author"; printf 'MEMBER\n' >"$S/issues/40/association"
 printf 'ed\n' >"$S/issues/40/editor"
 assert_eq "adapter_issue_authorship gives author, association, editor and an empty renamer on an empty PATH" \
@@ -955,18 +933,6 @@ out="$(contract adapter_issue_state_labels 23 2>&1)"; st=$?
 assert_status "issue state and labels: reads both" "$st" 0
 assert_eq "the state first, then one label per line" "$out" "$(writeln OPEN review:nit needs-triage)"
 
-gh_reply 0 $'OPEN\n2\nreview:nit\nready-for-agent\n## Finding\n\n**PR:** x\n' '' \
-  issue view 23 --json state,labels,body --jq '.state, (.labels | length), (.labels[].name), .body'
-out="$(contract adapter_issue_state_labels_body 23 2>&1)"; st=$?
-assert_status "issue state, labels and body: reads all three in one call" "$st" 0
-assert_eq "the state, the label count, one label per line, then the body" "$out" \
-  "$(writeln OPEN 2 review:nit ready-for-agent '## Finding' '' '**PR:** x')"
-gh_reply 1 '' 'HTTP 502: Bad Gateway' \
-  issue view 404 --json state,labels,body --jq '.state, (.labels | length), (.labels[].name), .body'
-out="$(contract adapter_issue_state_labels_body 404 2>&1)"; st=$?
-assert_status "issue state, labels and body: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through (state, labels and body)" "$out" "HTTP 502: Bad Gateway"
-
 gh_reply 0 $'Widgets need a handle\nready-for-agent\n' '' \
   issue view 23 --json title,labels --jq '.title, (.labels[].name)'
 out="$(contract adapter_issue_title_labels 23 2>&1)"; st=$?
@@ -1020,13 +986,6 @@ gh_reply 1 '' 'HTTP 502: Bad Gateway' \
 out="$(contract adapter_issues_titled_rows review:nit 2>&1)"; st=$?
 assert_status "issues titled rows: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
-
-gh_reply 0 $'3\n1\nreview:nit\n2\nline one\nline two\n' '' \
-  issue list --state open --label review:nit --label "triage me" --search "sort:created-asc" --limit 1000 --json number,labels,body \
-  --jq '.[] | .number, (.labels | length), (.labels[].name), ((.body | indices("\n") | length) + 1), .body'
-out="$(contract adapter_issues_labelled_bodies review:nit "triage me" 2>&1)"; st=$?
-assert_status "issues labelled with bodies: lists the open issues carrying every label" "$st" 0
-assert_eq "one count-marked record per issue" "$out" "$(writeln 3 1 review:nit 2 'line one' 'line two')"
 
 # The warning helper's effective limit is the lesser of ISSUE_LIST_LIMIT and
 # GitHub's 1000-row search cap, so a raised override cannot silence a cut.
@@ -1155,9 +1114,6 @@ assert_status "issue close: with a reason and a comment" "$st" 0
 gh_reply 0 '' '' issue close 25 --comment "Redone."
 out="$(contract adapter_issue_close 25 --comment "Redone." 2>&1)"; st=$?
 assert_status "issue close: with a comment and gh's default reason" "$st" 0
-gh_reply 0 '' '' issue close 26 --duplicate-of 30
-out="$(contract adapter_issue_close 26 --duplicate-of 30 2>&1)"; st=$?
-assert_status "issue close: as a duplicate of the issue named" "$st" 0
 calls="$(gh_calls)"
 for bad_args in "--why completed" "--reason" "--comment" "completed" "--reason completed --comment"; do
   # shellcheck disable=SC2086 # each case is a word list on purpose

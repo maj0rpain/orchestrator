@@ -42,6 +42,43 @@ def seed(store):
     return FakeStore(str(store))
 
 
+def read(store, *parts):
+    """A file of the store, or None where it is absent."""
+    path = os.path.join(str(store), *(str(part) for part in parts))
+    if not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def snapshot(store):
+    """Every file the store holds, with its contents - but the comment-read
+    counter, which a read bumps."""
+    files = {}
+    for directory, _, names in os.walk(str(store)):
+        for name in names:
+            path = os.path.join(directory, name)
+            relative = os.path.relpath(path, str(store))
+            if relative != "comment_reads":
+                with open(path, "rb") as f:
+                    files[relative] = f.read()
+    return files
+
+
+def labels_of(store, n):
+    return (read(store, "issues", n, "labels") or "").split("\n")[:-1]
+
+
+def comments_of(store, n):
+    """The bodies of issue #n's comments, in order."""
+    bodies = []
+    k = 1
+    while read(store, "issues", n, "comments", k, "body") is not None:
+        bodies.append(read(store, "issues", n, "comments", k, "body"))
+        k += 1
+    return bodies
+
+
 def write_labels_doc(root, text):
     """Writes <text> as the triage-labels doc of the checkout at <root>, a
     Path, making its directories as needed."""
@@ -75,11 +112,13 @@ def checkout(tmp_path, doc=None):
     return FakeGit(toplevel=str(root))
 
 
-def git_repo(path, origin=None):
+def git_repo(path, origin=None, object_format=None):
     """A fresh repository at <path>, with <origin> as its origin remote when
-    one is given: its Git adapter."""
+    one is given, its objects named by <object_format> (sha1 or sha256) when
+    one is given, else git's default: its Git adapter."""
+    formats = ["--object-format=" + object_format] if object_format else []
     subprocess.run(
-        ["git", "init", "-q", str(path)], check=True, stdin=subprocess.DEVNULL
+        ["git", "init", "-q", *formats, str(path)], check=True, stdin=subprocess.DEVNULL
     )
     if origin is not None:
         subprocess.run(
@@ -88,6 +127,51 @@ def git_repo(path, origin=None):
             stdin=subprocess.DEVNULL,
         )
     return Git(cwd=str(path))
+
+
+def run_git(root, *args, env=None):
+    """git <args> in the repository at <root>, as a test author t with
+    signing off, in <env> when given, else this process's environment: its
+    stdout, stripped. A failure raises."""
+    return subprocess.run(
+        ["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@t",
+         "-c", "commit.gpgsign=false", *args],
+        check=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, env=env,
+    ).stdout.decode().strip()
+
+
+def write_staged(root, files):
+    """Writes the files named, removes those mapped to None, and stages
+    every change."""
+    for name, text in files.items():
+        path = root / name
+        if text is None:
+            path.unlink()
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    run_git(root, "add", "-A")
+
+
+def committed(root, files, message):
+    """Writes the files named, removes those mapped to None, commits; the
+    new commit's SHA."""
+    write_staged(root, files)
+    run_git(root, "commit", "-qm", message)
+    return run_git(root, "rev-parse", "HEAD")
+
+
+def fake(seed):
+    """The gh fake on <seed>'s store, its retries never sleeping."""
+    return FakeGh(seed.store, {}, sleep=lambda _: None)
+
+
+def died_of(capsys, run):
+    """(exit code, stdout, stderr) of <run>, which must die."""
+    with pytest.raises(SystemExit) as died:
+        run()
+    out, err = capsys.readouterr()
+    return died.value.code, out, err
 
 
 def orch_issue(seed, *argv, gh=None, git=None, env=None, pin=None):
