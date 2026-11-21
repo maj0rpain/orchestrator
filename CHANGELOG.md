@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.11.3
+
+`orch.sh audit` now runs as Python, the fourth noun moved out of bash. `audit begin`, `audit report`, `audit file` and `audit file --run` keep their arguments, output, exit codes and messages, and `audit report` writes the same page byte for byte, pinned by two golden pages. The filing checks, `dir_stamp`, the git-exclude writer and the open-titles read it shares now live in the Python modules of the concepts they serve, the bash audit module and its tests are gone, and CONTRIBUTING's layout paragraph now describes bash and converted nouns as they are (#3927).
+
 ## 6.11.2
 
 `orch.sh verification` now runs as Python, the third noun moved out of bash, and a verification runner can no longer outlive its run. The runner waits on its command instead of polling its record, so removing the record no longer leaves it spinning to the hour-long ceiling. It also watches its own checkout and stops its command once the checkout is gone or its identity token changes. `ORCH_VERIFICATION_WATCH` sets how often it looks (default 2 s). `run` and `stop` keep their arguments, output and exit codes. `affected.sh` now shellchecks one file per process from the job pool, as `all.sh` does, so a ticket touching many bash files can no longer exhaust the host's memory. ADR-0067 points at #3951 for what goes with the last bash section.
