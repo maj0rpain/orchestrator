@@ -14,7 +14,7 @@ import os
 import subprocess
 from typing import Mapping, Optional
 
-from orch.common import plain_number
+from orch.common import plain_number, read_text
 
 
 def proc_start(pid: int, env: Mapping[str, str]) -> Optional[str]:
@@ -22,10 +22,8 @@ def proc_start(pid: int, env: Mapping[str, str]) -> Optional[str]:
     cannot be read."""
     root = env.get("ORCH_PROC_DIR", "") or "/proc"
     if os.path.isdir(os.path.join(root, str(os.getpid()))):
-        try:
-            with open(os.path.join(root, str(pid), "stat"), "rb") as f:
-                stat = f.read().decode("utf-8", "surrogateescape")
-        except OSError:
+        stat = read_text(os.path.join(root, str(pid), "stat"))
+        if stat is None:
             return None
         # After the command name, field 22 is the 20th word.
         words = stat.rsplit(") ", 1)[-1].split()

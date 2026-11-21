@@ -446,11 +446,7 @@ class Verification:
         except OSError:
             die("could not create a record in %s" % self.store)
         for name, text in (("root", self.root), ("id", token), ("state", state)):
-            try:
-                with open(os.path.join(tmp, name), "w", encoding="utf-8",
-                          errors="surrogateescape") as f:
-                    f.write(text + "\n")
-            except OSError:
+            if not record_write(tmp, name, text + "\n"):
                 record_remove(tmp)
                 die("could not write the record of the run in %s" % tmp)
         try:
