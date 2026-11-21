@@ -49,10 +49,13 @@
 #   scripts/dev/ other than the lens bench, hook-edit-width.sh, width.sh
 #                                     the harness section file's sections
 #   the Python package (scripts/orch_py/), its tests and dev files included
-#                                     the spec, spec-review and ticket
-#                                     sections, the bash nouns whose sections
-#                                     run an issue verb through the dispatch
-#                                     (the pytest suite runs on every call)
+#                                     the spec, spec-review, ticket and
+#                                     autopilot sections, the bash nouns whose
+#                                     sections run a converted noun's verb
+#                                     through the dispatch, plus the
+#                                     side-checkout sections, whose entry
+#                                     classification scans the package (the
+#                                     pytest suite runs on every call)
 #   the pytest suite's wrapper (scripts/test/orch_py_test.sh)
 #                                     the harness section file's sections
 #   hook-edit-width.sh, width.sh, shell_code.awk
@@ -130,6 +133,14 @@
 # is free: they start first, in selection order, then orch_test.sh, which holds
 # none (its sections take their own), then the pytest suite, which holds none
 # either, then shellcheck.
+#
+# The shellcheck run is one process per lint target, through test_tree.sh's
+# pooled shellcheck_start and shellcheck_join, as all.sh's is, so no one process
+# holds every target in memory. Each process holds a job-pool slot, at most
+# test_jobs_count's job count at once (the pool's default count when
+# ORCH_TEST_JOBS is invalid, see below); their outputs are joined in sorted
+# path order and the highest exit is the status, so the report is the one
+# summary line a single run printed.
 #
 # Output is like all.sh's: each part's FAIL lines and one summary line, in a
 # fixed order - the pytest suite, then the suites in all.sh's list order,
@@ -462,7 +473,7 @@ classify() {
       scripts/dev/hook-edit-width.sh | scripts/dev/width.sh | scripts/test/shell_code.awk)
         want+=(hooks_test.sh); sections_of harness ;;
       scripts/dev/*) sections_of harness ;;
-      scripts/orch_py/*) sections_of spec spec-review ticket ;;
+      scripts/orch_py/*) sections_of spec spec-review ticket autopilot side-checkout ;;
       scripts/test/orch_py_test.sh) sections_of harness ;;
       docker/* | .dockerignore) want+=(autopilot_container_test.sh autopilot_up_test.sh) ;;
       .claude-plugin/*) want+=(version_bump_test.sh autopilot_up_test.sh) ;;
@@ -587,12 +598,16 @@ source "$dir/test_jobs.sh"
 source "$dir/report.sh"
 test_jobs_lower_priority
 test_jobs_pool_init affected.sh || exit 1
+# The shellcheck cap. An invalid ORCH_TEST_JOBS is orch_test.sh's to refuse, so
+# here it falls back to the pool's default count, already checked above.
+sc_jobs="$(test_jobs_count affected.sh 2>/dev/null)" || sc_jobs="$(test_jobs_default affected.sh)"
 export ORCH_TEST_QUIET=1
 unset DOCS_LINT_RECORDING
 tmp="$(mktemp -d)" || exit 1
 pids=()
 py_pid=""
-trap 'test_jobs_stop_children "${pids[@]}" ${py_pid:+"$py_pid"}' INT TERM
+SHELLCHECK_PIDS=()
+trap 'test_jobs_stop_children "${pids[@]}" ${py_pid:+"$py_pid"} "${SHELLCHECK_PIDS[@]}"' INT TERM
 trap 'rm -rf "$tmp"' EXIT
 
 # The suites other than orch_test.sh start first, in selection order, each under
@@ -619,15 +634,12 @@ unset ORCH_TEST_ONLY
 test_jobs_suite_start bash "$dir/$PYTEST_SUITE" >"$tmp/$PYTEST_SUITE"
 py_pid="$TEST_JOBS_SUITE_PID"
 
+# The pooled start, one shellcheck process per file, as all.sh's.
 have_sc=0
-sc_pid=""
 if [ "${#sc_sorted[@]}" -gt 0 ] && command -v shellcheck >/dev/null 2>&1; then
   have_sc=1
-  test_jobs_slot_wait
-  test_jobs_job "${SHELLCHECK_CMD[@]}" "${sc_sorted[@]}" >"$tmp/shellcheck" 2>&1 &
-  sc_pid=$!
-  test_jobs_slot_release "$sc_pid"
-  pids+=("$sc_pid")
+  SHELLCHECK_FILES=("${sc_sorted[@]}")
+  shellcheck_start "$root" "$tmp" "$sc_jobs"
 fi
 
 suite_exits=()
@@ -637,8 +649,7 @@ for n in "${!selected[@]}"; do
 done
 wait "$py_pid"
 py_exit=$?
-sc_status=0
-[ "$have_sc" -eq 1 ] && { wait "$sc_pid"; sc_status=$?; }
+[ "$have_sc" -eq 1 ] && shellcheck_join "$tmp"
 
 report_suite "$PYTEST_SUITE" "$py_exit" "$(<"$tmp/$PYTEST_SUITE")"
 for n in "${!selected[@]}"; do
@@ -647,8 +658,7 @@ for n in "${!selected[@]}"; do
 done
 
 if [ "$have_sc" -eq 1 ]; then
-  sc_out="$(<"$tmp/shellcheck")"
-  report_shellcheck "$sc_status" "$sc_out"
+  report_shellcheck "$SHELLCHECK_STATUS" "$SHELLCHECK_OUT"
 elif [ "${#sc_sorted[@]}" -gt 0 ]; then
   report_shellcheck_missing
 else

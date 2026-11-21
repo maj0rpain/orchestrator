@@ -5,6 +5,26 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# vrun_start <dir> <command>: starts a run of the command in <dir>, left going.
+vrun_start() { (cd "$1" && ORCH_WAIT_BLOCK=0.2 "$ORCH" verification run "$2" >/dev/null 2>&1); }
+# vrun_rec <store> <root>: prints the record directory of the run kept for
+# <root> in the verification store <store>.
+vrun_rec() {
+  local r
+  for r in "$1"/*/; do
+    [ "$(cat "$r/root" 2>/dev/null)" = "$2" ] && { printf '%s\n' "${r%/}"; return 0; }
+  done
+  return 1
+}
+# vrun_live <store> <root>: whether the process group of the run kept for <root>
+# exists.
+vrun_live() {
+  local r pid
+  r="$(vrun_rec "$1" "$2")" || return 1
+  pid="$(cut -d' ' -f1 "$r/pid")"
+  kill -0 -- "-$pid" 2>/dev/null
+}
+
 # tick_calls: how many sessions the launcher has been asked for.
 tick_calls() { local n; n="$(grep -c '^argv:' "$launcher_dir/calls" 2>/dev/null)"; printf '%s\n' "${n:-0}"; }
 # picked: the side checkouts the launcher started sessions in, in order, one

@@ -384,3 +384,98 @@ def test_the_branch_name_check_reads_the_same_from_a_real_repo_and_the_fake(
 def test_the_fake_refuses_to_seed_an_operation_it_does_not_have():
     with pytest.raises(ValueError, match="no seeded operation 'run'"):
         FakeGit().seed("run", "status", answer="")
+
+
+# --- the verification noun's operations --------------------------------------
+
+# The working-tree state the bash verification noun hashed before its
+# conversion, verbatim but for ROOT and ORCH_DIR_NAME: the source of truth the
+# adapter's tree_state answers as, so a record a bash runner left matches when
+# its tree does.
+BASH_TREE_STATE = r'''
+ROOT="$1" ORCH_DIR_NAME=.orchestrator
+{
+  printf 'head %s\n' "$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo none)"
+  git -C "$ROOT" diff HEAD --binary 2>/dev/null || git -C "$ROOT" diff --binary 2>/dev/null || true
+  git -C "$ROOT" ls-files --others --exclude-standard -z -- ":!$ORCH_DIR_NAME" 2>/dev/null | (
+    cd "$ROOT" && while IFS= read -r -d '' f; do
+      printf 'untracked %s %s\n' "$f" "$(git hash-object -- "$f" 2>/dev/null)"
+    done
+  )
+} | git hash-object --stdin
+'''
+
+
+def bash_tree_state(root):
+    return subprocess.run(
+        ["bash", "-c", BASH_TREE_STATE, "_", str(root)], check=True, cwd=str(root),
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+    ).stdout.decode().strip()
+
+
+@pytest.fixture
+def worked(tmp_path):
+    """A repository with one commit, then a staged edit, an unstaged edit, a
+    binary file, an untracked file in a sub directory, an ignored file and a
+    file under .orchestrator: its root."""
+    root = tmp_path / "worked"
+    git_repo(root)
+    committed(root, {".gitignore": "ig.log\n", "a.txt": "a\n", "b.txt": "b\n",
+                     "sub/keep.txt": "k\n"}, "first")
+    write_staged(root, {"a.txt": "a2\n"})
+    (root / "b.txt").write_text("b2\n")
+    (root / "bin.dat").write_bytes(b"\0\1\2")
+    (root / "sub" / "new.txt").write_text("new\n")
+    (root / "ig.log").write_text("ignored\n")
+    (root / ".orchestrator").mkdir()
+    (root / ".orchestrator" / "x").write_text("x\n")
+    return root
+
+
+def test_the_tree_state_reads_as_the_bash_noun_s_and_the_same_from_the_fake(worked, where):
+    assert alike(adapter(worked, where), "tree_state") == bash_tree_state(worked)
+
+
+def test_an_unborn_branch_s_tree_state_reads_as_the_bash_noun_s(tmp_path):
+    root = tmp_path / "unborn"
+    git_repo(root)
+    (root / "new.txt").write_text("new\n")
+
+    assert Git(cwd=str(root)).tree_state() == bash_tree_state(root)
+
+
+def test_the_tree_state_follows_tracked_and_untracked_content_but_no_ignored_file(worked):
+    git = Git(cwd=str(worked))
+    before = git.tree_state()
+    (worked / "ig.log").write_text("ignored again\n")
+    (worked / ".orchestrator" / "x").write_text("x again\n")
+    unmoved = git.tree_state()
+    (worked / "sub" / "new.txt").write_text("newer\n")
+
+    assert (unmoved, git.tree_state() != before) == (before, True)
+
+
+def test_outside_a_repository_there_is_no_tree_state(tmp_path):
+    assert fails_alike(Git(cwd=str(tmp_path)), "tree_state") is None
+
+
+def test_a_text_s_hash_reads_as_git_s_object_name_and_the_same_from_the_fake(worked):
+    # The blob name of "root /r\n", as `git hash-object --stdin` gives it.
+    assert alike(Git(cwd=str(worked)), "text_hash", "root /r\n") == \
+        "2768d62fb131c996f9397aaddaab1f0600ac4382"
+
+
+def test_a_config_value_reads_the_same_from_a_real_repo_and_the_fake(worked):
+    run_git(worked, "config", "orchestrator.verification.timeout", "1.5")
+    git = Git(cwd=str(worked))
+
+    assert alike(git, "config_value", "orchestrator.verification.timeout") == "1.5"
+    assert fails_alike(git, "config_value", "orchestrator.unset") is None
+
+
+def test_the_main_checkout_reads_the_same_from_a_worktree_and_the_fake(worked, tmp_path):
+    wt = tmp_path / "wt"
+    run_git(worked, "worktree", "add", "-q", str(wt), "-b", "side")
+
+    assert alike(Git(cwd=str(wt)), "main_checkout") == str(worked.resolve())
+    assert fails_alike(Git(cwd=str(tmp_path)), "main_checkout") is None

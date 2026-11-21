@@ -24,23 +24,14 @@ wt_slow_awk() {
 echo
 echo "wait: a call's block is wall time"
 new_repo >/dev/null
-wt_dir="$(mktemp -d)"
 wt_awk="$(wt_slow_awk 0.3)"
-
-wt_cmd="while [ ! -f \"$wt_dir/gate\" ]; do sleep 0.1; done"
-wt_t0=$SECONDS
-PATH="$wt_awk:$PATH" ORCH_WAIT_BLOCK=2 "$ORCH" verification run "$wt_cmd" >/dev/null 2>&1; st=$?
-assert_status "verification run with slow polls still exits 75" "$st" 75
-assert_eq "and ends within the wall-clock block, not the summed sleep" \
-  "$(( SECONDS - wt_t0 < 5 ))" "1"
-: >"$wt_dir/gate"
 
 wt_lens="$(mktemp -d)"
 wt_t0=$SECONDS
 PATH="$wt_awk:$PATH" ORCH_SPEC_REVIEW_WAIT_TIMEOUT=100 ORCH_SPEC_REVIEW_WAIT_INTERVAL=0.2 \
   ORCH_WAIT_BLOCK=2 "$ORCH" spec-review wait "$wt_lens" fidelity >/dev/null 2>&1; st=$?
 assert_status "spec-review wait with slow polls still exits 75" "$st" 75
-assert_eq "and ends within the wall-clock block too" \
+assert_eq "and ends within the wall-clock block, not the summed sleep" \
   "$(( SECONDS - wt_t0 < 5 ))" "1"
 
 # A call never sleeps past its block: the sleep is clamped to what is left, and
@@ -66,7 +57,7 @@ sourced_orch_script 'WAIT_FILE=$1; WAIT_MARK=$1.m; WAIT_START=1; WAIT_SLEPT=7; w
 assert_status "with the mark, it ends the call as still running" "$st" 75
 assert_eq "keeps the stored start" "$(sed -n 1p "$wt_wf")" "1"
 assert_eq "stores the seconds slept" "$(sed -n 2p "$wt_wf")" "7"
-assert_status "and consumes the mark" "$([ -e "$wt_wf.m" ]; echo $?)" 1
+assert_eq "and consumes the mark" "$([ -e "$wt_wf.m" ] && echo kept || echo gone)" gone
 : >"$wt_wf.m"
 sourced_orch_script 'WAIT_FILE=$1; WAIT_MARK=$1.m; wait_forget; [ ! -e "$WAIT_FILE" ] && [ ! -e "$WAIT_MARK" ]' "$wt_wf" >/dev/null 2>&1; st=$?
 assert_status "wait_forget removes the total and WAIT_MARK" "$st" 0
@@ -78,7 +69,7 @@ sourced_orch_script 'unset WAIT_FILE WAIT_MARK; ORCH_WAIT_BLOCK=0; wait_limit_fi
 assert_status "wait_limit_fits with no wait open fits even under a block that cannot hold it" "$st" 0
 sourced_orch_script 'WAIT_MARK=$1.limited; ORCH_WAIT_BLOCK=570; wait_limit_fits 1' "$wt_wf" >/dev/null 2>&1; st=$?
 assert_status "a block that can hold the wait fits" "$st" 0
-assert_status "and leaves no mark" "$([ -e "$wt_wf.limited" ]; echo $?)" 1
+assert_eq "and leaves no mark" "$([ -e "$wt_wf.limited" ] && echo kept || echo gone)" gone
 sourced_orch_script 'WAIT_FILE=$1; WAIT_MARK=$1.limited; WAIT_START=1; WAIT_SLEPT=0; ORCH_WAIT_BLOCK=0; wait_limit_fits 60 && exit 9; wait_limited_check' "$wt_wf" >/dev/null 2>&1; st=$?
 assert_status "a block that cannot hold it does not fit, and wait_limited_check ends the call as still running" "$st" 75
 rm -f "$wt_wf" "$wt_wf.limited"
