@@ -351,6 +351,7 @@ class Issue:
             with temp_text_file(
                 "An orchestrator planning session triaged this issue to `%s`.\n" % ready,
                 "could not create a temp file for the triage comment on issue #" + n,
+                "could not write the temp file for the triage comment on issue #" + n,
             ) as path:
                 self.gh.issue_comment(int(n), path)
         except GhFailed as failed:

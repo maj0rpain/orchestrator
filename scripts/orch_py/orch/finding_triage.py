@@ -32,6 +32,7 @@ from orch.filed_finding import (
     category_other,
     filed_severity_label_or_die,
     finding_body_parse,
+    label_ensure,
 )
 from orch.gh import (
     GhFailed,
@@ -286,12 +287,8 @@ class FindingTriage:
             self.bundle_members_close(into, pending)
             return 0
         # The finding-bundle label is the plugin's, but created only where
-        # missing, as the triage labels are: a failed create is forgiven, and
-        # a truly missing label then fails the issue create.
-        try:
-            self.gh.label_create(*BUNDLE_LABEL)
-        except GhFailed:
-            pass
+        # missing, as the triage labels are.
+        label_ensure(self.gh, *BUNDLE_LABEL)
         category_label_ensure(self.gh, category)
         b = gh_or_die("create the bundle issue", self.gh.issue_create, title, path,
                       [BUNDLE_LABEL[0], self.triage_labels.label(state), category],
@@ -346,6 +343,7 @@ class FindingTriage:
             return  # every member was already closed into B
         with temp_text_file("Bundled into #%s\n" % b,
                             "could not create a temp file for the bundle comments",
+                            "could not write the temp file for the bundle comments",
                             mkstemp=self.mkstemp) as comment_file:
             marker = bundled_marker(b)
             for i, m in enumerate(members):

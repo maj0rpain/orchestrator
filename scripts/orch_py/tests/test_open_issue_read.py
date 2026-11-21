@@ -6,16 +6,10 @@ from __future__ import annotations
 import pytest
 
 from orch.gh import open_issue_read
-from orch.gh_fake import FakeGh
 
-from conftest import GH_502, died_of
+from conftest import GH_502, died_of, fake
 
 NOT_OPEN = "issue #5 is not open - finding triage takes open filed findings only"
-
-
-def fake(seed):
-    return FakeGh(seed.store, {}, sleep=lambda _: None)
-
 
 
 def test_an_open_issue_answers_its_labels_and_its_body_when_asked(seed):

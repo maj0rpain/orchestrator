@@ -159,6 +159,11 @@ def committed(root, files, message):
     return run_git(root, "rev-parse", "HEAD")
 
 
+def fake(seed):
+    """The gh fake on <seed>'s store, its retries never sleeping."""
+    return FakeGh(seed.store, {}, sleep=lambda _: None)
+
+
 def died_of(capsys, run):
     """(exit code, stdout, stderr) of <run>, which must die."""
     with pytest.raises(SystemExit) as died:

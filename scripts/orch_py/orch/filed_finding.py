@@ -2,8 +2,9 @@
 issue a review loop filed carries a review:<severity> label until finding
 triage gives it one of its own labels (ADR-0031). The issue and
 finding-triage nouns read it - issue triage and finding triage: its filed
-severities and their label test, its categories with each one's label, and
-its issue body parsed back into its fields. The bash side's copy serves
+severities and their label test, its categories with each one's label, the
+create that makes a missing label, and its issue body parsed back into its
+fields. The bash side's copy serves
 review file, audit file and audit report.
 """
 from __future__ import annotations
@@ -100,17 +101,24 @@ def category_other(category: str) -> Optional[str]:
     return CATEGORY_OTHER.get(category)
 
 
+def label_ensure(gh, name: str, colour: str, description: str) -> None:
+    """Creates label <name>, with <colour> and <description>, where the repo
+    has none: the label is the repo's, so it is never rewritten, and a failed
+    create - most often because the label exists - is forgiven; a label truly
+    missing then fails the write that applies it."""
+    try:
+        gh.label_create(name, colour, description)
+    except GhFailed:
+        pass
+
+
 def category_label_ensure(gh, category: str) -> bool:
     """Creates <category>'s label where the repo has none, with its colour
-    and description: the label is the repo's, so it is never rewritten, and
-    a failed create - most often because the label exists - is forgiven. False,
-    creating nothing, for a category not in the table."""
+    and description, through label_ensure. False, creating nothing, for a
+    category not in the table."""
     for name, colour, description in FILED_CATEGORIES:
         if name == category:
-            try:
-                gh.label_create(name, colour, description)
-            except GhFailed:
-                pass
+            label_ensure(gh, name, colour, description)
             return True
     return False
 

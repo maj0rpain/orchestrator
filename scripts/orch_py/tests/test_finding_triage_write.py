@@ -739,6 +739,19 @@ def test_a_temp_file_for_the_bundle_comments_that_cannot_be_made_dies_after_the_
     assert [comments_of(store, m) for m in (11, 12)] == [[], []]
 
 
+def test_a_temp_file_for_the_bundle_comments_that_cannot_be_written_dies_after_the_create(
+    orch, seed, store, new_bundle
+):
+    triaged(seed, 11, *MEMBER_11)
+    triaged(seed, 12, *MEMBER_11)
+    seed.next_issue(20)
+    orch.mkstemp = unwritable_temp_file(orch.tmp)
+
+    assert new_bundle("ready-for-agent", "bug", "11", "12") == (
+        1, "20\n", "orch: could not write the temp file for the bundle comments\n")
+    assert [comments_of(store, m) for m in (11, 12)] == [[], []]
+
+
 class CloseDoesNothing(FakeGh):
     """The gh fake, its close reporting success and closing nothing."""
 

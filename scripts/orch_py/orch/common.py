@@ -16,7 +16,7 @@ import os
 import sys
 import tempfile
 from contextlib import contextmanager
-from typing import Callable, Iterable, Iterator, NoReturn, Optional, Tuple
+from typing import Callable, Iterable, Iterator, NoReturn, Tuple
 
 
 def die(message: str, code: int = 1) -> NoReturn:
@@ -68,14 +68,14 @@ def file_write_atomic(path: str, text: str) -> bool:
 def temp_text_file(
     text: str,
     unmade: str,
-    unwritten: Optional[str] = None,
+    unwritten: str,
     mkstemp: Callable[[], Tuple[int, str]] = tempfile.mkstemp,
 ) -> Iterator[str]:
     """Yields the path of a temporary file, made by <mkstemp>, holding
     <text> as UTF-8 - surrogateescape, so bytes read that way come back as
     they were - and removes it on exit, a death included. Dies with <unmade>
     when the file cannot be made, and with <unwritten> when it cannot be
-    written; with no <unwritten>, that failure's OSError goes on up."""
+    written."""
     try:
         fd, path = mkstemp()
     except OSError:
@@ -85,8 +85,6 @@ def temp_text_file(
             with os.fdopen(fd, "wb") as f:
                 f.write(text.encode("utf-8", "surrogateescape"))
         except OSError:
-            if unwritten is None:
-                raise
             die(unwritten)
         yield path
     finally:

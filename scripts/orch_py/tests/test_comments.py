@@ -6,17 +6,12 @@ from __future__ import annotations
 import pytest
 
 from orch import comments
-from orch.gh_fake import FakeGh
 
-from conftest import GH_502, died_of
+from conftest import GH_502, died_of, fake
 
 WHAT = "read issue #66's comments"
 TRUSTED = {"author": "ann", "createdAt": "2026-02-01T00:00:00Z", "body": "Bundled into #63",
            "url": "https://github.com/o/r/issues/66#issuecomment-1"}
-
-
-def fake(seed):
-    return FakeGh(seed.store, {}, sleep=lambda _: None)
 
 
 def seeded(seed):

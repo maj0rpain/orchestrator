@@ -254,11 +254,11 @@ def parse_labelled_bodies(text: str) -> List[LabelledBody]:
         i += int(count)
         if i >= len(lines) or not plain_number(lines[i]):
             raise GhFailed(LISTING_UNPARSED)
-        body_lines = int(lines[i])
+        body_line_count = int(lines[i])
         i += 1
-        body = lines[i:i + body_lines]
-        body += [""] * (body_lines - len(body))
-        i += body_lines
+        body = lines[i:i + body_line_count]
+        body += [""] * (body_line_count - len(body))
+        i += body_line_count
         rows.append(LabelledBody(int(number), labels, "\n".join(body).rstrip("\n")))
     return rows
 
