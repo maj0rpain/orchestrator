@@ -1,7 +1,8 @@
-"""The Comments module (scripts/orch/comments.sh), kept to what the issue
-and finding-triage nouns use: the one reader of an issue's trusted comments,
-in a dying form and one that hands its failure back, and the rendered shape
-every comments read writes.
+"""The Comments module (scripts/orch/comments.sh), kept to what the issue,
+finding-triage and review-pass nouns use: the one reader of an issue's or a
+PR's trusted comments, in a dying form and one that hands its failure back,
+the rendered shape every comments read writes, the rendered read, and the
+split of a rendered text into its comments.
 
 The adapter answers gh's raw comment objects; here they are normalised to
 {author, createdAt, body, url}, the author its login, and the untrusted ones
@@ -10,13 +11,18 @@ dropped (orch.trust) before anything else reads them.
 from __future__ import annotations
 
 import json
+import re
 from typing import List, Optional, Tuple
 
 from orch import trust
-from orch.common import die
+from orch.common import die, lines_of
 from orch.gh import GhFailed, Unparsed, gh_die, gh_reason
 
 FIELDS = ("createdAt", "body", "url")
+# The kinds of thing a comment read reads the comments of.
+KINDS = ("issue", "pr")
+# The marker line opening each rendered comment, as split() recognises it.
+_MARKER = re.compile(r"<!-- comment @[^ ]* [^ ]* -->")
 
 
 def normalised(comments: List[object]) -> List[dict]:
@@ -38,12 +44,17 @@ def normalised(comments: List[object]) -> List[dict]:
     return out
 
 
-def trusted_read(gh, n: str) -> Tuple[Optional[List[dict]], str]:
-    """Issue <n>'s trusted comments, each {author, createdAt, body, url}, <n>
-    a plain number as given, and "" - never dying: on a gh failure None and
-    gh's reason; on an answer that is no comment list None and ""."""
+def trusted_read(gh, n: str, kind: str = "issue") -> Tuple[Optional[List[dict]], str]:
+    """Issue or PR <n>'s trusted comments, by <kind> (issue or pr), each
+    {author, createdAt, body, url}, <n> a plain number as given, and "" -
+    never dying: on a gh failure None and gh's reason; on an answer that is
+    no comment list None and "". The trust filter's line names #<n>. Any
+    other <kind> is a programming error, a ValueError."""
+    if kind not in KINDS:
+        raise ValueError("comments: unknown kind: %s (want issue|pr)" % kind)
+    read = gh.issue_comments if kind == "issue" else gh.pr_comments
     try:
-        raw = gh.issue_comments(int(n))
+        raw = read(int(n))
         comments = normalised(raw)
     except GhFailed as failed:
         return None, gh_reason(failed.stderr)
@@ -55,12 +66,12 @@ def trusted_read(gh, n: str) -> Tuple[Optional[List[dict]], str]:
     return kept, ""
 
 
-def trusted(gh, what: str, n: str, hint: str = "") -> List[dict]:
+def trusted(gh, what: str, n: str, hint: str = "", kind: str = "issue") -> List[dict]:
     """trusted_read's comments, dying where it fails: a gh failure as "gh
     could not <what>", then " - <hint>" when a hint is given; an answer that
     is no comment list as "could not <what>: its comments did not parse",
     never hinted."""
-    kept, reason = trusted_read(gh, n)
+    kept, reason = trusted_read(gh, n, kind)
     if kept is None:
         if reason:
             gh_die(what, reason, hint)
@@ -87,3 +98,25 @@ def render(comments: List[dict]) -> str:
         )
         for c in comments
     )
+
+
+def rendered(gh, what: str, n: str, kind: str = "issue") -> str:
+    """trusted's comments rendered, as bash's comments_rendered assigns them:
+    the trailing newlines dropped, as a `$(...)` capture drops them. Its
+    failures are trusted's."""
+    return render(trusted(gh, what, n, kind=kind)).rstrip("\n")
+
+
+def split(text: str) -> List[str]:
+    """<text>, comments in their rendered shape, split as bash's
+    comments_split splits a file: a comment opens at every line that is a
+    comment marker, one quoted inside a body included, and holds the lines
+    up to the next, each newline-terminated; lines before the first marker
+    belong to none."""
+    comments: List[List[str]] = []
+    for line in lines_of(text):
+        if _MARKER.fullmatch(line):
+            comments.append([])
+        elif comments:
+            comments[-1].append(line)
+    return ["".join(line + "\n" for line in comment) for comment in comments]

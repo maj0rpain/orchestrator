@@ -18,12 +18,12 @@ def main_checkout_or_die(git) -> str:
     return main
 
 
-def current_branch_or_die(git) -> str:
+def current_branch_or_die(git, code: int = 1) -> str:
     """The current branch, through the git adapter <git>; dies on a detached
-    HEAD."""
+    HEAD, exit <code> - 2 where the bash caller dies through die2."""
     branch = git.current_branch()
     if branch is None:
-        die("not on a branch (detached HEAD)")
+        die("not on a branch (detached HEAD)", code)
     return branch
 
 

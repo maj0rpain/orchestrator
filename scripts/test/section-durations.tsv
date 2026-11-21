@@ -202,7 +202,7 @@
 14	16	init seeds the review loop	4fdc693af71369d7c69cb32de471d5038986af35
 5	6	init --issue trust warning	e3f8a66b3ae93ca44a635cd3eae2decbe1c33c24
 185	223	issue-timeline module	c60c74521e712ce2d67cc0b5fceb0a3a9673363e
-3	4	known-items module	822bb4b7d6bc24d8ddf679e4aa02e11d5f0562a4
+8	6	known-items module	091cffc0be5ee724d23395b87046a36491894c7e
 8	9	Liveness module	a3eb853321244ddc291751d37b820bf4e3a80df7
 12	14	orch_load	78936724de415f7d72a2cb1732f2ec537485646c
 9	11	on-demand loading	6f5f8fdb61e60028685965dbdd5c3eb5ae8397b7

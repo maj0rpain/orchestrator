@@ -4,6 +4,7 @@ fake writes reads back through the bash helpers, and the store's failure
 files inject failures under the bash adapter's operation names."""
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from pathlib import Path
@@ -27,7 +28,8 @@ BASH_HELPERS = {
         "fake_unfail", "fake_offline", "fake_online", "fake_quota", "fake_lag",
         "fake_state_of", "fake_reason_of",
         "fake_title_of", "fake_body_of", "fake_labels_of", "fake_comments_of",
-        "fake_pr", "fake_labels", "fake_default_branch",
+        "fake_pr", "fake_pr_body", "fake_pr_comment", "fake_pr_cross", "fake_labels",
+        "fake_default_branch",
     ],
     SCRIPTS / "test" / "orch" / "gh.sh": ["fake_ratelimit", "fake_duplicate_of"],
     SCRIPTS / "test" / "orch" / "ticket.sh": ["fake_lag_after"],
@@ -287,9 +289,13 @@ def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
     ("adapter_label_create", lambda gh: gh.label_create("bug", "d73a4a", "d")),
     ("adapter_repo_default_branch", lambda gh: gh.repo_default_branch("acme/widgets")),
     ("adapter_issues_open_titles", lambda gh: gh.issues_open_titles()),
+    ("adapter_prs_open", lambda gh: gh.prs_open("topic")),
+    ("adapter_pr_body", lambda gh: gh.pr_body(6)),
+    ("adapter_pr_comments", lambda gh: gh.pr_comments(6)),
 ])
 def test_the_added_operations_fail_under_the_bash_operation_names(store, operation, call):
     bash(store, "fake_issue 5 open review:nit; fake_default_branch trunk; "
+                "fake_pr 6 open topic main; "
                 "fake_fail %s 'HTTP 502: Bad Gateway'" % operation)
 
     with pytest.raises(GhFailed) as failed:
@@ -313,6 +319,74 @@ adapter_issues_open_titles
 
     assert fake(store).issues_open_titles() == [(12, "Newest\t tab"), (5, ""), (3, "Oldest")]
     assert bash_answer == "12\tNewest\t tab\n5\t\n3\tOldest\n"
+
+
+# --- the PR reads review-pass known-items adds --------------------------------
+
+
+def test_the_prs_of_a_bash_seeded_store_read_as_the_bash_fake_answers_them(store):
+    bash_answer = bash(store, r"""
+fake_pr 4 open topic main
+fake_pr 9 open topic trunk; fake_pr_cross 9
+fake_pr 12 open topic main; fake_pr_cross 12 maybe
+fake_pr 7 closed topic main
+fake_pr 8 open other main
+fake_pr_body 4 $'Body\r\nline\n'
+fake_pr_comment 4 ann 2026-03-01T00:00:00Z 'First.'
+fake_pr_comment 4 bob 2026-03-02T00:00:00Z $'Second\n' NONE
+adapter_prs_open topic; echo
+adapter_prs_open topic main; echo
+adapter_pr_body 4 | od -An -c | tr -s ' '
+adapter_pr_comments 4 | jq -c '.comments[]'
+adapter_pr_comments 9 | jq -c '.comments'
+""")
+    gh = fake(store)
+
+    assert gh.prs_open("topic") == ["12\tmaybe", "9\ttrue", "4\tfalse"]
+    assert gh.prs_open("topic", "main") == ["12\tmaybe", "4\tfalse"]
+    assert gh.pr_body(4) == "Body\r\nline\n"
+    assert gh.pr_body(9) == ""
+    comments = gh.pr_comments(4)
+    assert comments == [
+        {"author": {"login": "ann"}, "authorAssociation": "OWNER",
+         "createdAt": "2026-03-01T00:00:00Z", "body": "First.",
+         "url": "https://github.com/o/r/issues/4#issuecomment-1"},
+        {"author": {"login": "bob"}, "authorAssociation": "NONE",
+         "createdAt": "2026-03-02T00:00:00Z", "body": "Second\n",
+         "url": "https://github.com/o/r/issues/4#issuecomment-2"},
+    ]
+    assert gh.pr_comments(9) == []
+    bash_lines = bash_answer.split("\n")
+    assert bash_lines[:6] == ["12\tmaybe", "9\ttrue", "4\tfalse", "", "12\tmaybe", "4\tfalse"]
+    assert bash_lines[7] == " B o d y \\r \\n l i n e \\n \\n"
+    assert [json.loads(line) for line in bash_lines[8:10]] == comments
+    assert bash_lines[10] == "[]"
+
+
+def test_a_pr_number_the_store_does_not_hold_fails_as_gh_does(store):
+    for read in (lambda gh: gh.pr_body(9), lambda gh: gh.pr_comments(9)):
+        with pytest.raises(GhFailed) as failed:
+            read(fake(store))
+
+        assert failed.value.stderr == (
+            "GraphQL: Could not resolve to a PullRequest with the number of 9."
+            " (repository.pullRequest)\n"
+        )
+
+
+def test_prs_seeded_by_the_python_seeders_read_back_through_the_bash_fake(store):
+    seed = FakeStore(str(store))
+    seed.pr(4, "open", "topic", "main")
+    seed.pr(9, "open", "topic", "main")
+    seed.pr_cross(9)
+    seed.pr_body(4, "Body\r\n")
+    seed.pr_comment(4, "ann", "2026-03-01T00:00:00Z", "Hi.", "NONE")
+
+    assert bash(store, r"""
+adapter_prs_open topic
+adapter_pr_body 4 | od -An -c | tr -s ' '
+adapter_pr_comments 4 | jq -c '.comments[0] | [.author.login, .authorAssociation, .createdAt, .body]'
+""") == '9\ttrue\n4\tfalse\n B o d y \\r \\n \\n\n["ann","NONE","2026-03-01T00:00:00Z","Hi."]\n'
 
 
 # --- writes the bash helpers read back ---------------------------------------

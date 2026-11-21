@@ -74,6 +74,17 @@ if [ "$(id -u)" -ne 0 ]; then
     "$(cat "$out_dir/known.md")" "$before"
 fi
 
+# The golden known-items pair the Python Known items helpers' tests build too:
+# the source's Deviations entries and its Review entries, tagged declined,
+# written as a known-items file byte for byte as the expected file holds it.
+ki_golden="${ORCH%/*}/orch_py/tests/known_items"
+# shellcheck disable=SC2016 # expanded by the inner bash
+sourced_orch_script 'section_entries_append d "$1" "## Deviations"
+  section_entries_append k "$1" "## Review" declined
+  known_items_write "$2" "${d-}" "${k-}"' "$ki_golden/source.md" "$out_dir/golden.md"
+assert_eq "section_entries_append and known_items_write build the golden known-items file byte for byte" \
+  "$(cmp "$out_dir/golden.md" "$ki_golden/expected.md" 2>&1 && echo same)" "same"
+
 # Where each helper is defined: extdebug makes `declare -F` print the file.
 # shellcheck disable=SC2016 # expanded by the inner bash
 defined_in="$(sourced_orch_script 'shopt -s extdebug

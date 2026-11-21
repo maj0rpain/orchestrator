@@ -509,6 +509,54 @@ def test_a_repo_gh_cannot_resolve_fails_its_default_branch_read(fixture_gh):
     assert failed.value.stderr == gone
 
 
+# --- PR operations -----------------------------------------------------------
+
+
+def prs_open_argv(head, *base):
+    return ["pr", "list", "--head", head, *base, "--state", "open",
+            "--json", "number,isCrossRepository",
+            "--jq", '.[] | "\\(.number)\\t\\(.isCrossRepository)"']
+
+
+def test_prs_open_lists_each_open_pr_from_the_head_with_its_fork_flag_unfiltered(fixture_gh):
+    fixture_gh.reply(prs_open_argv("topic"), "12\ttrue\n4\tfalse\n")
+    fixture_gh.reply(prs_open_argv("topic", "--base", "main"), "4\tfalse\n")
+    fixture_gh.reply(prs_open_argv("none"), "")
+    gh = real_gh(fixture_gh)
+
+    assert gh.prs_open("topic") == ["12\ttrue", "4\tfalse"]
+    assert gh.prs_open("topic", "main") == ["4\tfalse"]
+    assert gh.prs_open("none") == []
+
+
+PR_BODY = ["pr", "view", "4", "--json", "body", "--jq", ".body"]
+
+
+def test_pr_body_keeps_carriage_returns_and_drops_only_gh_s_newline(fixture_gh):
+    fixture_gh.reply(PR_BODY, "Body\r\nline\n\n")
+
+    assert real_gh(fixture_gh).pr_body(4) == "Body\r\nline\n"
+
+
+PR_COMMENTS = ["pr", "view", "4", "--json", "comments"]
+
+
+def test_pr_comments_are_gh_s_raw_comment_objects(fixture_gh):
+    comment = {"author": {"login": "ann"}, "authorAssociation": "OWNER",
+               "createdAt": "2026-01-01T00:00:00Z", "body": "Hi", "url": "u"}
+    fixture_gh.reply(PR_COMMENTS, '{"comments": [%s]}\n' % json.dumps(comment))
+
+    assert real_gh(fixture_gh).pr_comments(4) == [comment]
+
+
+@pytest.mark.parametrize("answer", ["nope\n", '{"comments": 3}\n'])
+def test_pr_comments_that_are_no_comment_list_are_unparsed(fixture_gh, answer):
+    fixture_gh.reply(PR_COMMENTS, answer)
+
+    with pytest.raises(Unparsed):
+        real_gh(fixture_gh).pr_comments(4)
+
+
 # --- rate limits -------------------------------------------------------------
 
 SECONDARY = "You have exceeded a secondary rate limit. Please wait a few minutes"
