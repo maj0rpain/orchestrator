@@ -514,6 +514,13 @@ cat "$ORCH_GH_FAKE_STORE/next_issue"
          '["ann","NONE","2026-02-01T00:00:00Z"]\n30\n')
 
 
+def test_the_python_default_branch_seeder_answers_the_bash_fake_byte_for_byte(store):
+    FakeStore(str(store)).default_branch("trunk\n")
+
+    assert bash(store, "adapter_repo_default_branch acme/widgets | od -An -c | tr -s ' '") == (
+        " t r u n k \\n\n")
+
+
 def test_the_python_seeders_set_failures_the_bash_fake_honours(store):
     seed = FakeStore(str(store))
     seed.issue(5, "open")
@@ -541,6 +548,16 @@ def test_the_fake_is_the_adapter_whenever_a_store_is_set(store, tmp_path):
     assert isinstance(adapter({"ORCH_GH_FAKE_STORE": str(store)}, cwd=str(tmp_path)), FakeGh)
     assert isinstance(adapter({"ORCH_GH_FAKE_STORE": ""}, cwd=str(tmp_path)), Gh)
     assert isinstance(adapter({}, cwd=str(tmp_path)), Gh)
+
+
+def test_the_adapter_pins_by_the_repo_pin_handed_in(store, tmp_path):
+    origin = RepoPin({}, FakeGit({"origin": "https://github.com/o/r.git"}))
+    none = RepoPin({}, FakeGit())
+
+    assert adapter({"ORCH_GH_FAKE_STORE": str(store)}, pin=origin).pin() is True
+    assert adapter({"ORCH_GH_FAKE_STORE": str(store)}, pin=none).pin() is False
+    assert adapter({}, cwd=str(tmp_path), pin=origin).pin() is True
+    assert adapter({}, cwd=str(tmp_path), pin=none).pin() is False
 
 
 def test_the_fake_pins_as_the_repo_pin_it_is_given(store):

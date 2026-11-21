@@ -726,12 +726,18 @@ def open_issue_read(
     return labels, text
 
 
-def adapter(env: Optional[Mapping[str, str]] = None, cwd: Optional[str] = None):
+def adapter(
+    env: Optional[Mapping[str, str]] = None,
+    cwd: Optional[str] = None,
+    pin: Optional[RepoPin] = None,
+):
     """The gh adapter a command runs on: the store-backed fake when
     ORCH_GH_FAKE_STORE is set in <env> (the process's own when None), else
-    the real one; either pinned to the repo of the checkout at <cwd>."""
+    the real one; either pinned by <pin>, else to the repo of the checkout at
+    <cwd> - a caller that reads the pin itself hands it in, so the repo is
+    resolved once."""
     env = os.environ if env is None else env
-    pin = RepoPin(env, Git(cwd=cwd))
+    pin = RepoPin(env, Git(cwd=cwd)) if pin is None else pin
     store = env.get("ORCH_GH_FAKE_STORE", "")
     if store:
         from orch.gh_fake import FakeGh

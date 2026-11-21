@@ -78,3 +78,12 @@ def test_the_issue_noun_is_converted(capsys):
 
     assert died.value.code == 1
     assert capsys.readouterr() == ("", "orch: usage: orch.sh issue labels <n>...\n")
+
+
+def test_the_finding_triage_noun_is_converted(capsys):
+    with pytest.raises(SystemExit) as died:
+        main(["finding-triage", "scan", "--all", "--all"])
+
+    assert died.value.code == 1
+    assert capsys.readouterr() == (
+        "", "orch: usage: orch.sh finding-triage scan [--all] [<issue> | --pr <n>]\n")
