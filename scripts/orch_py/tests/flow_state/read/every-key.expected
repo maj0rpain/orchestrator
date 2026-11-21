@@ -1,0 +1,14 @@
+slug	golden-flöw
+phase	review
+issue	4003
+base	main
+branch	orch/4003-golden
+pr	4100
+base_sha	0123456789abcdef0123456789abcdef01234567
+budget	0
+iteration	2
+flake_rerun_used	false
+redo_count	1
+host_fallbacks	true
+created	2026-11-21T10:00:00Z
+updated	2026-11-21T11:30:00Z

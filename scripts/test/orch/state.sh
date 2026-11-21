@@ -454,6 +454,29 @@ for jq_status in 1 2; do
   assert_eq "and leaves the file untouched for that, jq exiting $jq_status" "$(cat "$fs_dir/str.json")" "$(cat "$fs_dir/str.before")"
   assert_eq "with no temp file beside it for that, jq exiting $jq_status" "$(ls -A "$fs_dir")" "$before_ls"
 done
+# The golden state.json files the Python Flow state reader's tests read too,
+# with the same expected values: each under read/ reads every key its
+# .expected file lists, <key><TAB><value> a line, as that file says, and each
+# under refused/ is a failed read, assigning nothing.
+fs_golden="${ORCH%/*}/orch_py/tests/flow_state"
+# shellcheck disable=SC2016 # expanded by fs_run's bash, GOLDEN set before it
+fs_golden_read='fs_args=() fs_keys=()
+while read -r k _; do fs_keys+=("$k"); fs_args+=("v_$k=$k"); done <"${GOLDEN%.json}.expected"
+if flow_state_get_many "$GOLDEN" "${fs_args[@]}"; then
+  for k in "${fs_keys[@]}"; do v="v_$k"; printf "%s\t%s\n" "$k" "${!v}"; done
+fi'
+for fs_file in "$fs_golden"/read/*.json; do
+  fs_name="${fs_file##*/}"
+  assert_eq "flow_state_get_many reads the golden ${fs_name%.json} file as its expected file says" \
+    "$(fs_run "GOLDEN=$(printf '%q' "$fs_file"); $fs_golden_read")" "$(cat "${fs_file%.json}.expected")
+status 0"
+done
+for fs_file in "$fs_golden"/refused/*.json; do
+  fs_name="${fs_file##*/}"
+  assert_eq "flow_state_get_many on the golden ${fs_name%.json} file returns 1, assigning nothing" \
+    "$(fs_run "a=keep; flow_state_get_many $(printf '%q' "$fs_file") a=slug 2>/dev/null; echo \"rc=\$? \$a\"")" "rc=1 keep
+status 0"
+done
 restore_suite_env
 
 # --- commands on a truncated state.json (#1929) -----------------------------
