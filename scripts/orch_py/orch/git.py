@@ -6,9 +6,10 @@ the issue noun finds the triage-labels doc under, the toplevel of another
 directory's checkout the outside-a-checkout remedy names, the comparisons
 an audit body's drift line reads, the commit resolution, fetches, file and
 line histories finding triage's scan, Lines fate and the default-branch
-lookup read, and the working-tree state, object names, config value and main
-checkout the verification noun reads, and the common directory the git
-exclude writer (orch.common) appends under. There is no generic run: each later noun adds the operations it
+lookup read, the working-tree state, object names, config value and main
+checkout the verification noun reads, the common directory the git exclude
+writer (orch.common) appends under, and the current branch a review pass
+starts on. There is no generic run: each later noun adds the operations it
 needs, each with a test run against a real repository and against FakeGit,
 asserting the same answers. The scan's, Lines fate's and the lookup's
 operations run at the checkout's top level, and answer their "could not"
@@ -54,6 +55,7 @@ COULD_NOT: Dict[str, Any] = {
     "config_value": None,
     "main_checkout": None,
     "git_common_dir": None,
+    "current_branch": None,
 }
 
 # A commit's full SHA-1 name, the only one the bash scan's line-range log
@@ -352,6 +354,19 @@ class Git:
         outside a repository."""
         return self._output(["rev-parse", "--git-common-dir"])
 
+    # The review pass's operation, run where the adapter runs, as bash's
+    # checkout_branch runs its `git -C .`.
+
+    def current_branch(self) -> Optional[str]:
+        """The branch HEAD names, its refs/heads/ taken off, as `symbolic-ref
+        --quiet HEAD` reads it: an unborn one included. None on a detached
+        HEAD, or outside a repository."""
+        ref = self._output(["symbolic-ref", "--quiet", "HEAD"])
+        if ref is None:
+            return None
+        prefix = "refs/heads/"
+        return ref[len(prefix):] if ref.startswith(prefix) else ref
+
 
 class FakeGit:
     """The in-process fake: a repository held in memory. <remotes> maps each
@@ -478,6 +493,9 @@ class FakeGit:
 
     def git_common_dir(self) -> Optional[str]:
         return self._answer("git_common_dir")
+
+    def current_branch(self) -> Optional[str]:
+        return self._answer("current_branch")
 
 
 def _call_key(name: str, args: Sequence[Any]) -> Tuple[Any, ...]:

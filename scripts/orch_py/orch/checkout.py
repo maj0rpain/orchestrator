@@ -1,6 +1,6 @@
 """The checkout concept's module, as far as a converted noun needs it: the
-main checkout, and whether a path is a ticket worktree's, as the bash side's
-checkout.sh reads them.
+main checkout, the current branch, and whether a path is a ticket
+worktree's, as the bash side's checkout.sh reads them.
 """
 from __future__ import annotations
 
@@ -16,6 +16,15 @@ def main_checkout_or_die(git) -> str:
     if main is None:
         die("could not read the checkouts - git worktree list failed")
     return main
+
+
+def current_branch_or_die(git) -> str:
+    """The current branch, through the git adapter <git>; dies on a detached
+    HEAD."""
+    branch = git.current_branch()
+    if branch is None:
+        die("not on a branch (detached HEAD)")
+    return branch
 
 
 def ticket_path(path: str, checkout: str) -> bool:

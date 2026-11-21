@@ -499,3 +499,29 @@ def test_a_worktree_s_common_dir_is_its_main_checkout_s_git_directory(worked, tm
 
 def test_outside_a_repository_there_is_no_common_dir(tmp_path):
     assert fails_alike(Git(cwd=str(tmp_path)), "git_common_dir") is None
+
+
+# --- the review pass's operation ------------------------------------------------
+
+
+def test_the_current_branch_reads_the_same_from_a_real_repo_and_the_fake(worked, where):
+    run_git(worked, "checkout", "-qb", "quick/12-foo")
+
+    assert alike(adapter(worked, where), "current_branch") == "quick/12-foo"
+
+
+def test_an_unborn_branch_is_the_current_branch(tmp_path):
+    git_repo(tmp_path / "fresh")
+    run_git(tmp_path / "fresh", "symbolic-ref", "HEAD", "refs/heads/first")
+
+    assert alike(Git(cwd=str(tmp_path / "fresh")), "current_branch") == "first"
+
+
+def test_a_detached_head_has_no_current_branch(worked):
+    run_git(worked, "checkout", "-q", "--detach")
+
+    assert fails_alike(Git(cwd=str(worked)), "current_branch") is None
+
+
+def test_outside_a_repository_there_is_no_current_branch(tmp_path):
+    assert fails_alike(Git(cwd=str(tmp_path)), "current_branch") is None
