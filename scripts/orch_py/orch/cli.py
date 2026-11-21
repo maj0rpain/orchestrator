@@ -1,22 +1,18 @@
-"""The entry point: the interpreter check first, then the converted noun.
+"""The converted nouns' dispatch, run by the entry point (orch/__main__.py)
+once its interpreter check has passed.
 
-main(argv) takes `<noun> <verb> ...` as orch.sh hands them on. Below Python
-3.9 it dies before doing anything, exit 1, naming the version found. A noun
-not in NOUNS dies as orch.sh dies on an unknown command.
+main(argv) takes `<noun> <verb> ...` as orch.sh hands them on. A noun not in
+NOUNS dies as orch.sh dies on an unknown command.
 """
 from __future__ import annotations
 
-import sys
 from typing import Callable, Dict, List
 
 from orch.common import die
 
-MIN_PYTHON = (3, 9)
-
 
 def _issue(argv: List[str]) -> int:
-    # Imported on call, after the interpreter check, so an older Python dies
-    # with that check's message, never a syntax error in the noun.
+    # Imported on call, so a run loads only the noun it runs.
     from orch.issue import run
 
     return run(argv)
@@ -27,20 +23,8 @@ def _issue(argv: List[str]) -> int:
 NOUNS: Dict[str, Callable[[List[str]], int]] = {"issue": _issue}
 
 
-def require_python(noun: str) -> None:
-    """Dies, exit 1, when the running Python is older than MIN_PYTHON."""
-    if tuple(sys.version_info[:2]) >= MIN_PYTHON:
-        return
-    found = ".".join(str(part) for part in sys.version_info[:3])
-    die(
-        "orch.sh %s needs python3 3.9 or newer (found %s) - run orch.sh doctor"
-        % (noun, found)
-    )
-
-
 def main(argv: List[str]) -> int:
     noun = argv[0] if argv else ""
-    require_python(noun)
     run = NOUNS.get(noun)
     if run is None:
         die("unknown command: %s (run 'orch.sh help')" % noun)

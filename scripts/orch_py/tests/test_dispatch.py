@@ -12,8 +12,6 @@ from pathlib import Path
 
 import pytest
 
-from orch.gh_fake import FakeStore
-
 SCRIPTS = Path(__file__).resolve().parents[2]
 
 
@@ -29,15 +27,10 @@ def repo(tmp_path):
     return repo
 
 
-@pytest.fixture
-def store(tmp_path):
-    return FakeStore(str(tmp_path / "store"))
-
-
-def orch_sh(tmp_path, repo, store, *args, path=None):
-    """`orch.sh <args>` run by bash in <repo> on the store, PATH <path> (the
-    test's own when None): its stdout, stderr and exit code."""
-    env = dict(os.environ, HOME=str(tmp_path), ORCH_GH_FAKE_STORE=store.store,
+def orch_sh(tmp_path, repo, seed, *args, path=None):
+    """`orch.sh <args>` run by bash in <repo> on <seed>'s store, PATH <path>
+    (the test's own when None): its stdout, stderr and exit code."""
+    env = dict(os.environ, HOME=str(tmp_path), ORCH_GH_FAKE_STORE=seed.store,
                PYTHONDONTWRITEBYTECODE="1")
     if path is not None:
         env["PATH"] = path
@@ -66,68 +59,76 @@ def path_without_python3(tmp_path):
     return os.pathsep.join(kept)
 
 
-def test_issue_fetch_writes_the_body_through_the_dispatch(tmp_path, repo, store):
-    store.issue(12, "open", "bug")
-    store.body(12, "# Spec\r\n\r\nThe body.")
+def test_issue_fetch_writes_the_body_through_the_dispatch(tmp_path, repo, seed):
+    seed.issue(12, "open", "bug")
+    seed.body(12, "# Spec\r\n\r\nThe body.")
     out = tmp_path / "body.md"
 
-    answer = orch_sh(tmp_path, repo, store, "issue", "fetch", "12", str(out))
+    answer = orch_sh(tmp_path, repo, seed, "issue", "fetch", "12", str(out))
 
     assert answer == ("", "", 0)
     assert out.read_text() == "# Spec\n\nThe body.\n"
 
 
-def test_issue_comment_posts_the_file_through_the_dispatch(tmp_path, repo, store):
-    store.issue(12, "open")
+def test_issue_comment_posts_the_file_through_the_dispatch(tmp_path, repo, seed):
+    seed.issue(12, "open")
     note = tmp_path / "note.md"
     note.write_text("A note.\n")
 
-    answer = orch_sh(tmp_path, repo, store, "issue", "comment", "12", str(note))
+    answer = orch_sh(tmp_path, repo, seed, "issue", "comment", "12", str(note))
 
     assert answer == ("", "", 0)
-    assert (Path(store.store) / "issues" / "12" / "comments" / "1" / "body").read_text() \
+    assert (Path(seed.store) / "issues" / "12" / "comments" / "1" / "body").read_text() \
         == "A note.\n"
 
 
-def test_a_usage_error_exits_1_with_the_usage_line(tmp_path, repo, store):
-    assert orch_sh(tmp_path, repo, store, "issue", "labels") == (
+def test_a_usage_error_exits_1_with_the_usage_line(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "issue", "labels") == (
         "", "orch: usage: orch.sh issue labels <n>...\n", 1)
 
 
-def test_issue_ready_exits_2_when_github_cannot_answer(tmp_path, repo, store):
-    store.issue(12, "open", "ready-for-agent")
-    store.fail("adapter_issue_state_labels", "HTTP 502: Bad Gateway")
+def test_issue_ready_exits_2_when_github_cannot_answer(tmp_path, repo, seed):
+    seed.issue(12, "open", "ready-for-agent")
+    seed.fail("adapter_issue_state_labels", "HTTP 502: Bad Gateway")
 
-    assert orch_sh(tmp_path, repo, store, "issue", "ready", "12") == (
+    assert orch_sh(tmp_path, repo, seed, "issue", "ready", "12") == (
         "", "orch: gh could not read issue #12: HTTP 502: Bad Gateway\n", 2)
 
 
-def test_a_converted_verb_dies_before_doing_anything_without_python3(tmp_path, repo, store):
-    store.issue(12, "open")
+def test_a_converted_verb_dies_before_doing_anything_without_python3(tmp_path, repo, seed):
+    seed.issue(12, "open")
     note = tmp_path / "note.md"
     note.write_text("A note.\n")
 
-    answer = orch_sh(tmp_path, repo, store, "issue", "comment", "12", str(note),
+    answer = orch_sh(tmp_path, repo, seed, "issue", "comment", "12", str(note),
                      path=path_without_python3(tmp_path))
 
     assert answer == ("", "orch: orch.sh issue needs python3 3.9 or newer (found none)"
                           " - run orch.sh doctor\n", 1)
-    assert not (Path(store.store) / "issues" / "12" / "comments").exists()
+    assert not (Path(seed.store) / "issues" / "12" / "comments").exists()
 
 
-def test_a_converted_verb_runs_with_site_packages_disabled(tmp_path, repo, store):
+def test_a_converted_verb_runs_with_site_packages_disabled(tmp_path, repo, seed):
     shim = tmp_path / "python3-S" / "python3"
     shim.parent.mkdir()
     shim.write_text('#!/bin/sh\necho ran >>"%s"\nexec "%s" -S "$@"\n'
                     % (tmp_path / "shim.log", sys.executable))
     shim.chmod(0o755)
-    store.issue(12, "open", "ready-for-agent")
+    seed.issue(12, "open", "ready-for-agent")
 
-    answer = orch_sh(tmp_path, repo, store, "issue", "ready", "12",
+    answer = orch_sh(tmp_path, repo, seed, "issue", "ready", "12",
                      path="%s%s%s" % (shim.parent, os.pathsep, os.environ["PATH"]))
 
     assert answer == ("", "", 0)
     assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+@pytest.mark.parametrize("module", ["json.py", "orch.py"])
+def test_a_module_file_in_the_callers_directory_shadows_nothing(tmp_path, repo, seed, module):
+    (repo / module).write_text("import sys\nsys.stderr.write('shadowed\\n')\nsys.exit(7)\n")
+
+    assert orch_sh(tmp_path, repo, seed, "issue", "labels") == (
+        "", "orch: usage: orch.sh issue labels <n>...\n", 1)
 
 
 @pytest.mark.parametrize("came_from", ["sub", None], ids=["oldpwd-in-a-checkout", "no-oldpwd"])

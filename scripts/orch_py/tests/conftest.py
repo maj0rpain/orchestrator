@@ -15,6 +15,44 @@ import sys
 
 import pytest
 
+from orch import issue
+from orch.gh_fake import FakeGh, FakeStore
+from orch.git import FakeGit
+
+# A gh failure's stderr: its first line is the reason a message names.
+GH_502 = "HTTP 502: Bad Gateway\nsecond line"
+# The root of the checkout a test runs in when it needs no file there: no
+# triage-labels doc, so every role is its own label.
+CHECKOUT = "/nonexistent/checkout"
+
+
+@pytest.fixture
+def store(tmp_path):
+    """The gh fake's store, an empty directory: tmp_path/store."""
+    path = tmp_path / "store"
+    path.mkdir()
+    return path
+
+
+@pytest.fixture
+def seed(store):
+    """The store's seeder and reader, as the bash suite's fake_* helpers."""
+    return FakeStore(str(store))
+
+
+def orch_issue(seed, *argv, gh=None, git=None, env=None, pin=None):
+    """`orch.sh issue <argv>` in-process: its exit code, a SystemExit's
+    included. <gh> is the gh fake on <seed>'s store when None, <pin> its repo
+    pin (a resolved one when None); <git> a checkout at CHECKOUT when None."""
+    env = {} if env is None else env
+    if gh is None:
+        gh = FakeGh(seed.store, env, pin=pin, sleep=lambda _: None)
+    try:
+        return issue.run(list(argv), gh=gh, git=git or FakeGit(toplevel=CHECKOUT), env=env)
+    except SystemExit as died:
+        return died.code
+
+
 # The fixture gh's program: it holds no logic and parses no flags. It logs
 # each call - GH_REPO, GH_HOST and the argv, as one JSON line - then looks the
 # whole argv up among the replies, exactly, and answers that reply's stdout,

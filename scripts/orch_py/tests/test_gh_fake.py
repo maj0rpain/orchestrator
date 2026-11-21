@@ -74,13 +74,6 @@ def bash(store, script):
     return run.stdout.decode()
 
 
-@pytest.fixture
-def store(tmp_path):
-    path = tmp_path / "store"
-    path.mkdir()
-    return path
-
-
 def fake(store, sleeps=None, **env):
     slept = sleeps if sleeps is not None else []
     return FakeGh(str(store), env, sleep=slept.append, now=lambda: NOW)

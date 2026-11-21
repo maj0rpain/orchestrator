@@ -49,10 +49,12 @@ jobs:
   # write-error bugs, and the PR gate must see what main sees. Its verify step
   # states SIGPIPE ignored itself, so a change in what the runner hands the job
   # cannot move it. The default disposition is covered by local runs, where the
-  # shell starts at it (a WSL shell may not).
+  # shell starts at it (a WSL shell may not). It runs on ubuntu-24.04, not
+  # ubuntu-latest: setup-python has Python 3.9, the minimum, only for 22.04
+  # and 24.04 (the actions/python-versions manifest).
   runner:
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -106,9 +108,12 @@ jobs:
 
   # A PR: the pytest suite alone, on Python 3.9, the minimum version; the
   # container groups run it on the image's python3. The suite gate needs it.
+  # Pinned to ubuntu-24.04, as the runner job is: setup-python has no 3.9 for
+  # a newer image (the actions/python-versions manifest builds 3.9 for 22.04
+  # and 24.04 only).
   pytest:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:

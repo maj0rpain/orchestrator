@@ -32,7 +32,7 @@
 4	5	runner git isolation (#1905)	8a9fdfa474a45f0cec209eae61f2a39017a72878
 1	1	the background child start (#3025)	354c49d28c4e3a750db2908e06024e2d6d5bc65f
 2	2	the suite start (#3582)	bfaaeecc9758c77d4bc24ba781558792eeb10bec
-9	9	the pytest suite (#3912)	a51b8ff0c372862319780618afa9e2deb7053c5e
+8	8	the pytest suite (#3912)	0d1f56e811a57b7b853c2ce132f071b271092d44
 2	3	the counting fixture's stdin counter (#3434)	a145120e7c438785387cdcf0178edcf7e2f9dcaa
 83	90	affected.sh, the ticket verification (#2023)	6d2f0e3497f26635e6206d83fa1cab160d418e08
 3	4	the row rule (#3549)	01fe024c61ad3fd46f0efb0820a8ee0ff79809d9
@@ -129,8 +129,8 @@
 0	1	die_hinted and die_opt_check	a31d5ea9ef99f315cf022f51ad5894482feffb9e
 0	1	host detection (host.sh, #281)	9d7272356d7fbf0f5fdca9c46ffa86f8c5c036cd
 5	6	doctor.sh is a one-way dependency (#281)	b86ca6ac46faa586b4d718a1aa26e9018e2539ea
-151	166	doctor	85d21e76a7b11fcc51673870bbc6d61b0ed25449
-12	13	doctor: python3 check (#3912)	92742cbbd3df076d44c03c8a3a08dba02273ee7c
+201	219	doctor	9d2d2d59740f1be906e1c255723925b28a5134f8
+7	10	doctor: python3 check (#3912)	94a9d42f7c56e2c5c7e10b58becce6663ae6e07e
 36	40	doctor: host (#128)	0ff10dbdae9d20ee078396950c793cb2ec3a2d69
 94	102	doctor --flow	8d28021dd7fd5c64f62d12573dc1792e590cfa6d
 40	44	doctor --env: finished side checkouts (#727)	8d56eb5df3a1cea24b7c1e0173d431eb1a742f7b
@@ -360,7 +360,7 @@
 0	1	verification run in help	28e484325ea5c39e7d957ba95f689dcdbb9ecc1a
 99	11	wait: a call's block is wall time	db923f27504e50d0a04527b359feb487abb3665d
 882	983	hooks_test.sh	8dec8318df78d1487d2d11c16c6ac962831bc14c
-171	205	docs_lint.sh	4c95f6b5f93c87939f8702378cb9a0ae72da8a95
+215	258	docs_lint.sh	88d5d753d8888772271a0d6f5cd078e65c5f0d97
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 17	17	autopilot_up_test.sh	e83bb3b5d6213ab54507233be7cc6e624358622c

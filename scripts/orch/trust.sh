@@ -119,9 +119,10 @@ trust_writer_text() {
     "$1" "$TRUST_WHAT" "$TRUST_WRITER"
 }
 
-# trust_warn_issue <n>: the attended reads' trust check - `issue fetch` and
-# `init --issue` warn rather than refuse, so a human can still plan from an
-# outside bug report. One `orch: ` warning line on stderr names an untrusted
+# trust_warn_issue <n>: the attended read's trust check - `init --issue` warns
+# rather than refuses, so a human can still plan from an outside bug report
+# (`issue fetch`, a converted noun's verb, keeps its own copy, in
+# orch/trust.py). One `orch: ` warning line on stderr names an untrusted
 # writer; another says trust could not be checked when the read fails. Always
 # returns 0. Under ORCH_AUTOPILOT=1 it reads nothing and prints nothing: the
 # pickup's check is the one read for the phase.

@@ -91,6 +91,17 @@ def _numbered(directory: str) -> List[str]:
     return sorted(names, key=lambda name: int(name) if name.isdigit() else 0)
 
 
+def _comment_write(directory: str, author: str, created: str, association: str,
+                   body: str) -> None:
+    """A comment after any <directory> holds: the next number's directory,
+    with its author, created, association and body files."""
+    comment = os.path.join(directory, str(len(_numbered(directory)) + 1))
+    _write(os.path.join(comment, "author"), author + "\n")
+    _write(os.path.join(comment, "created"), created + "\n")
+    _write(os.path.join(comment, "association"), association + "\n")
+    _write(os.path.join(comment, "body"), body)
+
+
 class FakeGh:
     """The fake operations on the store at <store>. <env> holds the knobs
     the rate-limit handling and the listing read; <pin>, when given, answers
@@ -190,7 +201,7 @@ class FakeGh:
         casing, else as given."""
         for line in _lines(self._path("labels")):
             known = line.split("\t", 1)[0]
-            if known.lower() == name.lower():
+            if real.label_listed([known], name):
                 return known
         return name
 
@@ -198,11 +209,7 @@ class FakeGh:
         _write(self._issue(n, "labels"), "".join(label + "\n" for label in labels))
 
     def _comment_append(self, directory: str, body: str) -> None:
-        k = len(_numbered(directory)) + 1
-        _write(os.path.join(directory, str(k), "author"), COMMENT_AUTHOR + "\n")
-        _write(os.path.join(directory, str(k), "created"), COMMENT_CREATED + "\n")
-        _write(os.path.join(directory, str(k), "association"), "OWNER\n")
-        _write(os.path.join(directory, str(k), "body"), body)
+        _comment_write(directory, COMMENT_AUTHOR, COMMENT_CREATED, "OWNER", body)
 
     def _comments(self, n: int) -> List[dict]:
         directory = self._issue(n, "comments")
@@ -312,7 +319,7 @@ class FakeGh:
         else:
             limit = min(real.issue_list_limit(self.env), real.ISSUE_SEARCH_CAP)
             labelled = [n for n in self._open_numbers()
-                        if label.lower() in (have.lower() for have in self._labels(n))]
+                        if real.label_listed(self._labels(n), label)]
             rows = [
                 IssueRow(n, _first_line(self._issue(n, "state")),
                          _slurp(self._issue(n, "title")) or "", self._labels(n))
@@ -329,7 +336,7 @@ class FakeGh:
         _write(self._issue(n, "body"), _read(body_file) or "")
         kept: List[str] = []
         for label in labels:
-            if label.lower() not in (have.lower() for have in kept):
+            if not real.label_listed(kept, label):
                 kept.append(self._label_canon(label))
         self._labels_write(n, kept)
         return n
@@ -352,10 +359,9 @@ class FakeGh:
             return
         self._failing("adapter_issue_relabel")
         self._known(n)
-        dropped = {label.lower() for label in remove}
-        labels = [have for have in self._labels(n) if have.lower() not in dropped]
+        labels = [have for have in self._labels(n) if not real.label_listed(remove, have)]
         for label in add:
-            if label.lower() not in (have.lower() for have in labels):
+            if not real.label_listed(labels, label):
                 labels.append(self._label_canon(label))
         self._labels_write(n, labels)
 
@@ -439,12 +445,8 @@ class FakeStore:
     def comment(self, n: int, author: str, created: str, body: str, association: str = "") -> None:
         """A comment after any issue #n has; its association OWNER unless
         given."""
-        directory = self._path("issues", n, "comments")
-        k = len(_numbered(directory)) + 1
-        _write(os.path.join(directory, str(k), "author"), author + "\n")
-        _write(os.path.join(directory, str(k), "created"), created + "\n")
-        _write(os.path.join(directory, str(k), "association"), (association or "OWNER") + "\n")
-        _write(os.path.join(directory, str(k), "body"), body)
+        _comment_write(self._path("issues", n, "comments"), author, created,
+                       association or "OWNER", body)
 
     def authorship(
         self, n: int, author: str, association: str, editor: str = "", renamer: str = ""

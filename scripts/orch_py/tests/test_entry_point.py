@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from orch.cli import main
+from orch.__main__ import main
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 

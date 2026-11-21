@@ -36,7 +36,7 @@ from typing import (
     TypeVar,
 )
 
-from orch.common import die, warn
+from orch.common import die, plain_number, warn
 from orch.git import Git
 from orch.repo import REPO_REMEDY, RepoPin
 
@@ -200,10 +200,6 @@ def _captured_lines(text: str) -> List[str]:
     return lines_of(text.rstrip("\n"))
 
 
-def _whole(text: str) -> bool:
-    return text.isdigit() and text.isascii()
-
-
 def parse_titled_rows(text: str) -> List[IssueRow]:
     """The count-marked records of a titled listing: number, state and title
     joined by a tab, label count, then one label per line. Raises GhFailed
@@ -215,7 +211,7 @@ def parse_titled_rows(text: str) -> List[IssueRow]:
         number = lines[i]
         field = lines[i + 1] if i + 1 < len(lines) else ""
         count = lines[i + 2] if i + 2 < len(lines) else ""
-        if not (_whole(number) and field and _whole(count)):
+        if not (plain_number(number) and field and plain_number(count)):
             raise GhFailed(LISTING_UNPARSED)
         i += 3
         labels = lines[i:i + int(count)]
@@ -233,7 +229,7 @@ def parse_state_labels_body(text: str) -> Tuple[str, List[str], str]:
     answered no label count" when the count is not a number."""
     state, _, rest = text.rstrip("\n").partition("\n")
     count, _, rest = rest.partition("\n")
-    if not _whole(count):
+    if not plain_number(count):
         raise GhFailed("gh answered no label count")
     labels = []
     for _ in range(int(count)):
@@ -247,7 +243,7 @@ def parse_blocker_states(text: str) -> List[Tuple[int, str]]:
     states = []
     for line in _captured_lines(text):
         number, _, state = line.partition("\t")
-        if not _whole(number):
+        if not plain_number(number):
             raise GhFailed("gh answered a blocker that does not parse: " + line)
         states.append((int(number), state))
     return states
@@ -598,7 +594,7 @@ class Gh:
         if not url:
             return None
         number = url.rsplit("/", 1)[-1]
-        if not _whole(number):
+        if not plain_number(number):
             raise GhFailed("gh api printed a parent URL with no issue number: " + url)
         return int(number)
 
@@ -612,7 +608,7 @@ class Gh:
         ).strip("\n")
         if not count:
             return None
-        if not _whole(count):
+        if not plain_number(count):
             raise GhFailed("gh answered a blocker count that is not a number: " + count)
         return int(count)
 

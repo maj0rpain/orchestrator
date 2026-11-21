@@ -4554,13 +4554,21 @@ ln -s "$py_root/venv/bin/python" "$py_root/py3/python3"
 printf '#!/bin/sh\n[ "$1" = -c ] && exit 1\necho "ran without pytest" >"$PY_LOG"\n' >"$py_root/nopytest/python3"
 chmod +x "$py_root/nopytest/python3"
 pool_cpu_file "$py_root/cpu" 3
+# The pool's size is the quota file's alone: a getconf reporting 8 online
+# cores, more than any quota here, so the machine's own count never lowers it.
+mkdir "$py_root/getconf"
+printf '#!/bin/sh\necho 8\n' >"$py_root/getconf/getconf"
+chmod +x "$py_root/getconf/getconf"
 # py_run [VAR=value...]: the copied wrapper with the stub venv, the section's
-# pool, TMPDIR in the tree, and CI, ORCH_TEST_JOBS and the inherited pool
-# marker unset, then each given assignment applied. Its stdout goes to py_out,
-# its stderr to <tree>/err, its status to st.
+# pool and its getconf, TMPDIR in the tree, and CI, ORCH_TEST_JOBS and the
+# inherited pool marker unset, then each given assignment applied (a PATH given
+# replaces the one with the stub getconf, so only a case whose pool size does
+# not matter gives one). Its stdout goes to py_out, its stderr to <tree>/err,
+# its status to st.
 py_run() {
   rm -f "$py_root/log"
   py_out="$(cd "$py_root" && env -u CI -u ORCH_TEST_JOBS -u ORCH_TEST_POOL_HELD \
+    PATH="$py_root/getconf:$PATH" \
     TMPDIR="$py_root/tmp" ORCH_TEST_PYTEST_VENV="$py_root/venv" PY_LOG="$py_root/log" \
     PY_POOL="$py_root/pool" ORCH_TEST_POOL_DIR="$py_root/pool" ORCH_TEST_POOL_PERCENT=50 \
     ORCH_TEST_CPU_MAX_FILE="$py_root/cpu" PY_STUB=pass "$@" \

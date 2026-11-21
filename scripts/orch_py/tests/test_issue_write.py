@@ -9,22 +9,19 @@ import subprocess
 
 import pytest
 
-from orch import issue
+from conftest import GH_502, orch_issue
 from orch.cli import main
 from orch.gh import label_listed
-from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit
-
-GH_502 = "HTTP 502: Bad Gateway\nsecond line"
 
 
 class Noun:
-    """`orch.sh issue ...` in-process: the fake gh on <store>, a fake
+    """`orch.sh issue ...` in-process: the fake gh on <seed>'s store, a fake
     checkout at <root> - its triage-labels doc written by labels_doc() - and
     <env> for the host the messages name."""
 
-    def __init__(self, store, root, capsys):
-        self.store = store
+    def __init__(self, seed, root, capsys):
+        self.seed = seed
         self.root = root
         self.capsys = capsys
         self.env = {}
@@ -44,33 +41,17 @@ class Noun:
 
     def __call__(self, *argv):
         """(exit code, stdout, stderr) of `orch.sh issue <argv>`."""
-        gh = FakeGh(str(self.store), self.env)
-        git = FakeGit(toplevel=str(self.root))
-        try:
-            code = issue.run(list(argv), gh=gh, git=git, env=self.env)
-        except SystemExit as died:
-            code = died.code
+        code = orch_issue(self.seed, *argv, git=FakeGit(toplevel=str(self.root)),
+                          env=self.env)
         out, err = self.capsys.readouterr()
         return code, out, err
 
 
 @pytest.fixture
-def store(tmp_path):
-    path = tmp_path / "store"
-    path.mkdir()
-    return path
-
-
-@pytest.fixture
-def seed(store):
-    return FakeStore(str(store))
-
-
-@pytest.fixture
-def orch(store, tmp_path, capsys):
+def orch(seed, tmp_path, capsys):
     root = tmp_path / "repo"
     root.mkdir()
-    return Noun(store, root, capsys)
+    return Noun(seed, root, capsys)
 
 
 def read(store, *parts):

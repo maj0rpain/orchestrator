@@ -42,11 +42,19 @@ It ends on one verdict line, `all.sh: PASS (<n> parts)` or `all.sh: FAIL
 `orch` package, `scripts/orch_py/orch/`, and its tests are pytest, in
 `scripts/orch_py/tests/` (still no top-level `tests/`). `orch.sh` stays the one
 entry point: main's one case naming the converted nouns calls `orch_python`,
-which runs `python3 -m orch <noun> <arg>...` in place of orch.sh, the package
-directory first on `PYTHONPATH`, so stdin, stdout, stderr and the exit code are
-the noun's own. With no `python3` on `PATH` it dies before doing anything, exit
-1, naming `orch.sh doctor`; the package's entry point dies the same way below
-Python 3.9. orch.sh's ROOT block still runs first, and the package's own
+which runs the package as `python3 -m orch <noun> <arg>...` would, in place of
+orch.sh, so stdin, stdout, stderr and the exit code are the noun's own. It runs
+it through a `-c` bootstrap rather than `-m`: `-m` puts the caller's directory
+ahead of `PYTHONPATH` and the standard library, so a `json.py` or `orch.py`
+there would shadow the package or its imports, and Python 3.9 has no `-P`. The
+bootstrap drops that directory from `sys.path` before importing anything, then
+runs `orch/__main__.py` through `runpy`, the package directory first on
+`PYTHONPATH`. The entry point, `orch/__main__.py`, is in syntax every python3
+compiles (no annotations, f-strings or `from __future__` imports) and imports
+the rest of the package only after its version check. With no `python3` on
+`PATH`, `orch_python` dies before doing anything, exit 1, naming `orch.sh
+doctor`; the package's entry point dies the same way below Python 3.9.
+orch.sh's ROOT block still runs first, and the package's own
 (`orch/root.py`) gives the same death outside a checkout when it is run
 directly. A converted noun keeps the bash noun's arguments, stdout, exit codes
 and `orch:` messages, and its bash module and section file are deleted with it.
@@ -303,7 +311,9 @@ the stub table, its per-copy cache under `~/.cache/orchestrator/`, the stub
 dispatch (`orch_stubs`, `orch_stub`), `orch_load`, which sources a module once
 per shell, and the load trace (`ORCH_LOAD_TRACE=<file>` appends `<module>
 <depth>` per load). orch.sh names no module: it loads each through
-`orch_load`, so a new noun gets its own module and a case in `main`.
+`orch_load`, so a bash noun's module needs only a case in `main`; a new noun
+is Python (ADR-0067), in the `orch` package, as **The Python package** above
+says.
 Run as a command, `orch.sh` loads a module only when one of its functions is
 first called: at start the loader defines a stub for each function a module
 defines at column 0, and the first call loads that module. Sourced, it loads
@@ -588,9 +598,9 @@ skills/orch-questions/        gathers the pending autopilot questions, a fresh s
 skills/orch-audit-tests/     audits a repo's test suite for cost-cutting refactors read-only: scope, measure sequentially, partition into areas, hunt in read-only orch-test-auditor subagents, rank by cost saved, HTML report, hand off to orch-interview and `orch.sh audit file`
 skills/orch-audit-docs/      audits a repo's documentation against its code read-only: scope, partition into areas, hunt in read-only orch-doc-auditor subagents, rank, HTML report, hand off to orch-interview and `orch.sh audit file`
 skills/orch-audit-code/      audits a repo's source code for latent bugs, inefficiencies and architecture deepenings read-only: scope, partition into areas, hunt in read-only orch-code-auditor subagents, rank, HTML report, hand off to orch-interview and `orch.sh audit file`
-scripts/orch.sh               the entry point for every deterministic operation (mechanism): path resolution, shared constants, the module list, main, whose one case naming the converted nouns hands each to `python3 -m orch` through orch_python
+scripts/orch.sh               the entry point for every deterministic operation (mechanism): path resolution, shared constants, the module list, main, whose one case naming the converted nouns hands each to the orch package through orch_python
 scripts/orch/<noun>.sh        one module per orch.sh noun still in bash (branch.sh, ticket.sh, ...), sourced by orch.sh, named as its test file
-scripts/orch_py/orch/         the orch Python package (ADR-0067), one module per converted noun (issue.py) beside the helpers it rebuilt: standard library only, Python 3.9+; cli.py the entry point (the version check, the noun table), gh.py and git.py the only places gh and git run, gh_fake.py the gh adapter's fake on the shared fake store, root.py the ROOT block
+scripts/orch_py/orch/         the orch Python package (ADR-0067), one module per converted noun (issue.py) beside the helpers it rebuilt: standard library only, Python 3.9+; __main__.py the entry point (the version check, in syntax every python3 compiles), cli.py the noun table, gh.py and git.py the only places gh and git run, gh_fake.py the gh adapter's fake on the shared fake store, root.py the ROOT block
 scripts/orch_py/tests/        the pytest suite: in-process tests of each noun against the fakes, the gh adapter's contract tests against a fixture gh, the git adapter's tests against a real repository and its fake, and the end-to-end checks of orch.sh's dispatch (test_dispatch.py); conftest.py the clean environment and the real-gh guard
 scripts/orch_py/requirements-dev.txt the pinned dev dependencies: pytest, pytest-xdist, pytest-timeout (the package itself needs none)
 scripts/orch_py/pytest.ini    the pytest settings: the tests folder, the package on the module path, the per-test timeout, no cache directory

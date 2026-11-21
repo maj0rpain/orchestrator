@@ -4164,9 +4164,9 @@ routed_nouns() {
 # the Python module of a noun converted to Python (ADR-0067),
 # scripts/orch_py/orch/<noun>.py with each - as _. Starts no process.
 noun_module() {
-  local -n __nm_out="$3"
-  __nm_out="scripts/orch/$2.sh"
-  [ -f "$1/$__nm_out" ] || __nm_out="scripts/orch_py/orch/${2//-/_}.py"
+  local __nm_path="scripts/orch/$2.sh"
+  [ -f "$1/$__nm_path" ] || __nm_path="scripts/orch_py/orch/${2//-/_}.py"
+  printf -v "$3" '%s' "$__nm_path"
 }
 # noun_verbs <root> <noun>...: one "<noun><TAB><verb>" line per verb each named
 # noun dispatches - each name on a top-level arm of the first case in cmd_<noun>

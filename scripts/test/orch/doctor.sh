@@ -189,11 +189,15 @@ if on_windows_bash; then
   skip_no_jq "fails when jq is missing"
   skip_no_jq "names jq rather than dying mid-report"
   skip_no_jq "still reaches the summary line without jq"
+  skip_no_jq "a missing python3 fails, naming none found"
 else
   out="$(PATH="$nojq_path" "$ORCH" doctor --env 2>&1)"; st=$?
   assert_status "fails when jq is missing" "$st" 1
   assert_contains "names jq rather than dying mid-report" "$out" "jq"
   assert_contains "still reaches the summary line without jq" "$out" " FAIL"
+  # The no-jq PATH has no python3 either, and the python3 check needs no jq.
+  assert_contains "a missing python3 fails, naming none found" "$out" \
+    "FAIL  python3 3.9 or newer not found (found none)"
 fi
 
 # Severity is the behaviour under test, not the wording: "GitHub said no" must
@@ -947,8 +951,8 @@ restore_suite_env
 
 # --- doctor: python3 check (#3912) --------------------------------------------
 # A converted noun runs on python3 3.9 or newer (ADR-0067). A stub python3 first
-# on PATH answers the version doctor asks for; the missing case takes python3
-# away, as the jq case takes jq.
+# on PATH answers the version doctor asks for; the missing case is the no-jq
+# run's, whose PATH has no python3 either.
 echo
 echo "doctor: python3 check (#3912)"
 healthy_repo
@@ -968,24 +972,8 @@ assert_status "python3 3.8 fails" "$st" 1
 assert_contains "naming the version found" "$out" "FAIL  python3 3.9 or newer not found (found 3.8.10)"
 assert_contains "with a platform-package remedy" "$out" \
   "$(printf '\n      brew install python3    # or your platform')"
-# path_without_python3: path_without_jq's PATH, with jq and without python3.
-path_without_python3() {
-  local d t p
-  d="$(mktemp -d)"
-  for t in env bash git gh jq awk sed grep tr cat sort tail head date mktemp mv rm mkdir chmod basename dirname printf; do
-    if p="$(command -v "$t" 2>/dev/null)"; then ln -sf "$p" "$d/$t"; fi
-  done
-  printf '%s\n' "$d"
-}
-if on_windows_bash; then
-  skip_no_jq "a missing python3 fails"
-else
-  out="$(PATH="$(gh_fixture && path_without_python3)" "$ORCH" doctor --env 2>&1)"; st=$?
-  assert_status "a missing python3 fails" "$st" 1
-  assert_contains "naming none found" "$out" "FAIL  python3 3.9 or newer not found (found none)"
-fi
 rm -rf "$py3_dir"
-unset -f py3_doctor path_without_python3
+unset -f py3_doctor
 
 # --- doctor: host (#128) ---
 # Reduced enforcement has to be visible: doctor says which host it believes it
