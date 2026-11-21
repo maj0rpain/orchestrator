@@ -36,7 +36,7 @@ from typing import (
     TypeVar,
 )
 
-from orch.common import die, message_line, plain_number, warn
+from orch.common import die, lines_of, message_line, plain_number, warn
 from orch.git import Git
 from orch.repo import REPO_REMEDY, RepoPin
 
@@ -191,17 +191,6 @@ def labelled_limit_warn(env: Mapping[str, str], count: int, *labels: str) -> Non
             "the open issues labelled %s reached the issue-list limit of %d"
             " - the newest past it are missing from this list" % (" and ".join(labels), limit)
         )
-
-
-def lines_of(text: str) -> List[str]:
-    """<text>'s lines, a final newline ending the last rather than starting
-    an empty one; none for empty text. Splits on newlines alone."""
-    if not text:
-        return []
-    lines = text.split("\n")
-    if lines[-1] == "":
-        lines.pop()
-    return lines
 
 
 def _captured_lines(text: str) -> List[str]:

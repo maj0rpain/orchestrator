@@ -40,6 +40,7 @@ from orch.common import (
     die,
     dir_stamp,
     exclude_orch_dirs,
+    file_lines,
     file_write_atomic,
     plain_number,
     read_raw,
@@ -60,7 +61,7 @@ from orch.filed_finding import (
     finding_location_ok,
     needs_triage_label_ready,
 )
-from orch.gh import adapter, gh_or_die, lines_of
+from orch.gh import adapter, gh_or_die
 from orch.git import Git
 from orch.root import checkout_root
 from orch.triage_labels import TriageLabels
@@ -360,13 +361,6 @@ def _blank(line: str) -> bool:
     return _trim(line) == ""
 
 
-def _file_lines(path: str) -> Optional[List[str]]:
-    """The lines of the file at <path> as bash's `read -r` loop reads them,
-    a last line with no newline included; None when it cannot be read."""
-    text = read_raw(path)
-    return None if text is None else lines_of(text)
-
-
 def list_split(text: str) -> List[str]:
     """<text>'s comma-separated entries, trimmed, empty ones dropped."""
     return [item for item in (_trim(part) for part in text.split(",")) if item]
@@ -409,7 +403,7 @@ def area_load(directory: str, name: str) -> Optional[Dict[str, Tuple[str, int]]]
         return None
     blocks: Dict[str, List] = {}
     key = ""
-    for number, line in enumerate(_file_lines(path) or [], 1):
+    for number, line in enumerate(file_lines(path), 1):
         match = _AREA_BLOCK.fullmatch(line)
         if match:
             key = "%s:%s" % (name, match.group(1))
@@ -507,7 +501,7 @@ def _ranked_sections(path: str) -> List[Tuple[str, str, str, int]]:
     tuples, the argument trimmed and the text every line after it to the
     next, each newline-ended."""
     sections: List[List] = []
-    for number, line in enumerate(_file_lines(path) or [], 1):
+    for number, line in enumerate(file_lines(path), 1):
         if line.startswith("@@"):
             match = _SECTION.fullmatch(line)
             if not match:

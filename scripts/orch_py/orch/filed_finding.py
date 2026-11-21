@@ -15,7 +15,7 @@ import re
 from contextlib import contextmanager
 from typing import Iterator, List, NamedTuple, Optional, Sequence, Tuple
 
-from orch.common import die, temp_text_file, text_file_write
+from orch.common import die, read_raw, temp_text_file, text_file_write
 from orch.gh import GhFailed, label_listed
 from orch.triage_labels import TriageLabels
 
@@ -172,12 +172,8 @@ def finding_input_check(title: str, finding_file: str) -> None:
         die("the title is empty")
     if not os.path.isfile(finding_file):
         die("finding file not found: " + finding_file)
-    try:
-        with open(finding_file, "rb") as f:
-            data = f.read()
-    except OSError:
-        data = b""
-    if not data.translate(None, (SPACE + "\0").encode()):
+    text = read_raw(finding_file) or ""
+    if not text.strip(SPACE + "\0"):
         die("finding file is empty: " + finding_file)
 
 

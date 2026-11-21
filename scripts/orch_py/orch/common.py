@@ -1,10 +1,10 @@
 """The primitives no concept owns: the `orch: ` message lines, the
 plain-number test every verb checks its issue numbers with, the decimal-number
 tests and the poll-knob check a waiting verb reads its knobs with, the atomic
-file write, the file read as bash's $(<file) gives it, the temporary file a
-comment is handed to gh from, the words a list and a state read as in a
-line, the orchestrator's directory name, the UTC stamp a run directory is
-named with, and the git exclude writer.
+file write, the file read as bash's $(<file) gives it, the lines of a text
+and of a file, the temporary file a comment is handed to gh from, the words a
+list and a state read as in a line, the orchestrator's directory name, the
+UTC stamp a run directory is named with, and the git exclude writer.
 
 Every `orch: ` message goes through die or warn, as in the bash side's
 common.sh: die(message, 2) is the bash die2, for a command that reserves exit
@@ -117,6 +117,23 @@ def read_raw(path: str) -> Optional[str]:
             return f.read().decode("utf-8", "surrogateescape")
     except OSError:
         return None
+
+
+def lines_of(text: str) -> List[str]:
+    """<text>'s lines, a final newline ending the last rather than starting
+    an empty one; none for empty text. Splits on newlines alone."""
+    if not text:
+        return []
+    lines = text.split("\n")
+    if lines[-1] == "":
+        lines.pop()
+    return lines
+
+
+def file_lines(path: str) -> List[str]:
+    """The lines of the file at <path> as bash's `read -r` loop reads them,
+    a last line with no newline included; none when it cannot be read."""
+    return lines_of(read_raw(path) or "")
 
 
 def read_text(path: str) -> Optional[str]:
