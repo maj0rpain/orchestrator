@@ -16,9 +16,7 @@ import pytest
 
 from orch import audit, common
 from orch.git import FakeGit
-from conftest import AUDIT_FIXTURES, AUDIT_USAGE, edit, orch_audit
-
-CHECKOUT = "/nonexistent/checkout"
+from conftest import AUDIT_FIXTURES, AUDIT_USAGE, CHECKOUT, edit, orch_audit
 
 
 def golden(name):

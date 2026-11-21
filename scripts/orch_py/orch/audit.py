@@ -20,12 +20,14 @@ and a rerun finds them open by title rather than filing them again.
 
 An audit-filed body is the finding's text, a blank line, one **Location:**
 line per location and the **Audited at:** line naming the commit audited,
-each followed by a blank line. Its drift line says which of the cited files
-changed since the audited commit: compared tree to tree with HEAD, so no
-ancestry is needed, uncommitted changes are not counted, and a renamed file is
-listed as the path the body cites. The body is untrusted: only a hexadecimal
-value reaches git as the commit, and every path reaches it as a literal one
-(orch.git).
+each followed by a blank line. In a --run body the finding's fields, each a
+paragraph with its label in bold, stand in for the finding's text, and a
+**Related:** line may follow the **Audited at:** line. Its drift line says
+which of the cited files changed since the audited commit: compared tree to
+tree with HEAD, so no ancestry is needed, uncommitted changes are not
+counted, and a renamed file is listed as the path the body cites. The body
+is untrusted: only a hexadecimal value reaches git as the commit, and every
+path reaches it as a literal one (orch.git).
 """
 from __future__ import annotations
 
@@ -93,6 +95,15 @@ def audit_body_render(finding: str, sha: str, locations: Sequence[str]) -> str:
     return finding.rstrip("\n") + "\n\n" + audit_body_tail(sha, locations)
 
 
+def head_commit(git) -> str:
+    """The HEAD commit, read through the git adapter <git>; dies when it
+    cannot be read."""
+    sha = git.resolve_commit("HEAD")
+    if sha is None:
+        die("cannot read the HEAD commit")
+    return sha
+
+
 def audit_open_find(listing: Sequence[Tuple[int, str]], title: str) -> Optional[int]:
     """The number of the first open issue in <listing> whose title is
     exactly <title>; None when there is none."""
@@ -143,9 +154,7 @@ def audit_file(args: List[str], gh, git) -> int:
             % (finding, text_reference[1], text_reference[0], ALONE))
     for location in locations:
         finding_location_check(location)
-    sha = git.resolve_commit("HEAD")
-    if sha is None:
-        die("cannot read the HEAD commit")
+    sha = head_commit(git)
 
     body = audit_body_render(text, sha, locations)
     with finding_body_file_new(body) as body_file:
@@ -203,9 +212,7 @@ def audit_begin(argv: List[str], git, root: str, clock: Callable[[], float]) -> 
     if len(argv) != 1 or argv[0] not in AUDIT_KINDS:
         die(audit_usage())
     kind = argv[0]
-    sha = git.resolve_commit("HEAD")
-    if sha is None:
-        die("cannot read the HEAD commit")
+    sha = head_commit(git)
     audits = os.path.join(root, ORCH_DIR_NAME, "audit")
     run_dir = os.path.join(audits, "%s-%s" % (kind, dir_stamp(clock)))
     if os.path.exists(run_dir):
