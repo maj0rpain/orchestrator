@@ -21,13 +21,13 @@ SCRIPTS = Path(__file__).resolve().parents[2]
 @pytest.fixture
 def repo(tmp_path):
     """A repository at tmp_path/repo pinned to a GitHub origin."""
-    repo = tmp_path / "repo"
-    git_repo(repo, "https://github.com/acme/widgets.git")
-    return repo
+    root = tmp_path / "repo"
+    git_repo(root, "https://github.com/acme/widgets.git")
+    return root
 
 
-def orch_sh(tmp_path, repo, seed, *args, path=None):
-    """`orch.sh <args>` run by bash in <repo> on <seed>'s store, PATH <path>
+def orch_sh(tmp_path, cwd, seed, *args, path=None):
+    """`orch.sh <args>` run by bash in <cwd> on <seed>'s store, PATH <path>
     (the test's own when None): its stdout, stderr and exit code."""
     env = dict(os.environ, HOME=str(tmp_path), ORCH_GH_FAKE_STORE=seed.store,
                PYTHONDONTWRITEBYTECODE="1")
@@ -35,7 +35,7 @@ def orch_sh(tmp_path, repo, seed, *args, path=None):
         env["PATH"] = path
     run = subprocess.run(
         ["/bin/bash", str(SCRIPTS / "orch.sh"), *args],
-        cwd=str(repo), env=env, stdin=subprocess.DEVNULL,
+        cwd=str(cwd), env=env, stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
     )
     return run.stdout.decode(), run.stderr.decode(), run.returncode
@@ -178,17 +178,17 @@ def test_a_finding_triage_usage_error_exits_1_with_the_usage_line(tmp_path, repo
 
 
 def test_finding_triage_scan_reads_a_real_history_fetched_from_a_bare_origin(tmp_path, seed):
-    origin, repo = tmp_path / "origin.git", tmp_path / "repo"
+    origin, clone = tmp_path / "origin.git", tmp_path / "repo"
     subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True,
                    stdin=subprocess.DEVNULL)
-    git_repo(repo, str(origin))
+    git_repo(clone, str(origin))
 
     def commit(text, message):
-        sha = committed(repo, {"src/app.sh": text}, message)
-        run_git(repo, "push", "-q", "origin", "HEAD:refs/heads/main")
+        sha = committed(clone, {"src/app.sh": text}, message)
+        run_git(clone, "push", "-q", "origin", "HEAD:refs/heads/main")
         return sha
 
-    run_git(repo, "checkout", "-q", "-B", "main")
+    run_git(clone, "checkout", "-q", "-B", "main")
     filed = commit("one\ntwo\nthree\nfour\n", "reviewed")
     fix = commit("one\ntwo, fixed\nthree\nfour\n", "fix line 2")
     for n, line in ((3, 2), (4, 4)):
@@ -196,7 +196,7 @@ def test_finding_triage_scan_reads_a_real_history_fetched_from_a_bare_origin(tmp
         seed.body(n, "**Location:** `src/app.sh:%d` at %s\n\n"
                      "**PR:** https://github.com/acme/widgets/pull/7\n" % (line, filed[:10]))
 
-    assert orch_sh(tmp_path, repo, seed, "finding-triage", "scan") == ("".join([
+    assert orch_sh(tmp_path, clone, seed, "finding-triage", "scan") == ("".join([
         "3\t7\tsrc/app.sh:2\tchanged\t%s\tneeds-triage\n" % fix,
         "4\t7\tsrc/app.sh:4\tunchanged\t-\tneeds-triage\n",
     ]), "", 0)

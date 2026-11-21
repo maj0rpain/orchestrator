@@ -24,11 +24,11 @@ REF = "refs/remotes/origin/main"
 def body(location, pr="7"):
     """A filed finding's body in the closer's shape, its **Location:** line
     <location>; with no **PR:** line when <pr> is None."""
-    lines = ["## Finding", "", "> The reviewer said this.", "", "**Axis:** Standards", "",
-             "**Severity:** nit - a reason.", "", "**Location:** " + location, ""]
+    text = ["## Finding", "", "> The reviewer said this.", "", "**Axis:** Standards", "",
+            "**Severity:** nit - a reason.", "", "**Location:** " + location, ""]
     if pr is not None:
-        lines += ["**PR:** https://github.com/acme/widgets/pull/" + pr, ""]
-    return "\n".join(lines + ["**Why not fixed in the loop:** found in the final iteration.\n"])
+        text += ["**PR:** https://github.com/acme/widgets/pull/" + pr, ""]
+    return "\n".join(text + ["**Why not fixed in the loop:** found in the final iteration.\n"])
 
 
 def finding(seed, n, labels, location, pr="7", state="open"):
@@ -38,10 +38,11 @@ def finding(seed, n, labels, location, pr="7", state="open"):
     seed.body(n, body(location, pr))
 
 
-def repo(toplevel=CHECKOUT):
+def repo(toplevel=CHECKOUT, git=None):
     """The checkout: origin acme/widgets, origin/HEAD naming main, main
-    fetched, and the filing commit HEAD resolved."""
-    git = FakeGit(ORIGIN, toplevel=toplevel)
+    fetched, and the filing commit HEAD resolved - seeded on <git> when one is
+    given, else on a FakeGit of its own."""
+    git = FakeGit(ORIGIN, toplevel=toplevel) if git is None else git
     git.seed("is_branch_name", "main", answer=True)
     git.seed("origin_head_branch", answer="main")
     git.seed("fetch_default_branch", "main", answer=True)
@@ -62,18 +63,23 @@ class Fates:
         return self.fates.get(path, Fate("unchanged", ""))
 
 
-def scan(seed, *argv, git=None, fate=None, env=None):
-    """`orch.sh finding-triage scan <argv>` in-process: its exit code, a
+def orch_finding_triage(seed, *argv, git=None, fate=None, env=None):
+    """`orch.sh finding-triage <argv>` in-process: its exit code, a
     SystemExit's included."""
     env = {} if env is None else env
     git = repo() if git is None else git
     pin = RepoPin(env, git)
     gh = FakeGh(seed.store, env, pin=pin, sleep=lambda _: None)
     try:
-        return finding_triage.run(["scan", *argv], gh=gh, git=git, env=env, pin=pin,
+        return finding_triage.run(list(argv), gh=gh, git=git, env=env, pin=pin,
                                   fate=Fates() if fate is None else fate)
     except SystemExit as died:
         return died.code
+
+
+def scan(seed, *argv, **kwargs):
+    """`orch.sh finding-triage scan <argv>` in-process, as orch_finding_triage."""
+    return orch_finding_triage(seed, "scan", *argv, **kwargs)
 
 
 def lines(out):
@@ -180,10 +186,7 @@ class PrHeadGit(FakeGit):
 def test_a_sha_only_the_pr_head_holds_is_fetched_once_and_scanned(seed, capsys):
     pr_head = "b" * 40
     finding(seed, 7, ["review:nit", "needs-triage"], "`src/other.sh:2` at " + pr_head, pr="8")
-    git = PrHeadGit("8", pr_head, remotes=ORIGIN, toplevel=CHECKOUT)
-    git.seed("is_branch_name", "main", answer=True)
-    git.seed("origin_head_branch", answer="main")
-    git.seed("fetch_default_branch", "main", answer=True)
+    git = repo(git=PrHeadGit("8", pr_head, remotes=ORIGIN, toplevel=CHECKOUT))
     fate = Fates()
 
     assert scan(seed, git=git, fate=fate) == 0
@@ -343,13 +346,6 @@ def test_a_failed_fetch_of_the_default_branch_dies_before_any_line(seed, capsys)
 
 @pytest.mark.parametrize("argv", [[], ["prune"]])
 def test_an_unknown_verb_dies_with_the_noun_s_usage(seed, capsys, argv):
-    env = {}
-    git = repo()
-    pin = RepoPin(env, git)
-    gh = FakeGh(seed.store, env, pin=pin, sleep=lambda _: None)
-    with pytest.raises(SystemExit) as died:
-        finding_triage.run(argv, gh=gh, git=git, env=env, pin=pin)
-
-    assert died.value.code == 1
+    assert orch_finding_triage(seed, *argv) == 1
     assert capsys.readouterr() == (
         "", "orch: usage: orch.sh finding-triage <scan|apply|bundle> ...\n")

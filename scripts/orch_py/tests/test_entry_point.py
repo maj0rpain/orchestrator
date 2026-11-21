@@ -7,8 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
+from conftest import died_of
 from orch.__main__ import main
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
@@ -17,36 +16,25 @@ PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 def test_a_python_below_3_9_dies_before_doing_anything(monkeypatch, capsys):
     monkeypatch.setattr(sys, "version_info", (3, 8, 10, "final", 0))
 
-    with pytest.raises(SystemExit) as died:
-        main(["issue", "fetch", "12"])
-
-    assert died.value.code == 1
-    out, err = capsys.readouterr()
-    assert out == ""
-    assert err == (
+    assert died_of(capsys, lambda: main(["issue", "fetch", "12"])) == (
+        1, "",
         "orch: orch.sh issue needs python3 3.9 or newer (found 3.8.10)"
-        " - run orch.sh doctor\n"
+        " - run orch.sh doctor\n",
     )
 
 
 def test_python_3_9_passes_the_check(monkeypatch, capsys):
     monkeypatch.setattr(sys, "version_info", (3, 9, 0, "final", 0))
 
-    with pytest.raises(SystemExit) as died:
-        main(["no-such-noun"])
+    code, _, err = died_of(capsys, lambda: main(["no-such-noun"]))
 
-    _, err = capsys.readouterr()
     assert "needs python3" not in err
-    assert died.value.code == 1
+    assert code == 1
 
 
 def test_an_unconverted_noun_is_an_unknown_command(capsys):
-    with pytest.raises(SystemExit) as died:
-        main(["no-such-noun", "verb"])
-
-    assert died.value.code == 1
-    assert capsys.readouterr().err == (
-        "orch: unknown command: no-such-noun (run 'orch.sh help')\n"
+    assert died_of(capsys, lambda: main(["no-such-noun", "verb"])) == (
+        1, "", "orch: unknown command: no-such-noun (run 'orch.sh help')\n"
     )
 
 
@@ -73,17 +61,10 @@ def test_every_module_imports_with_site_packages_disabled():
 
 
 def test_the_issue_noun_is_converted(capsys):
-    with pytest.raises(SystemExit) as died:
-        main(["issue", "labels"])
-
-    assert died.value.code == 1
-    assert capsys.readouterr() == ("", "orch: usage: orch.sh issue labels <n>...\n")
+    assert died_of(capsys, lambda: main(["issue", "labels"])) == (
+        1, "", "orch: usage: orch.sh issue labels <n>...\n")
 
 
 def test_the_finding_triage_noun_is_converted(capsys):
-    with pytest.raises(SystemExit) as died:
-        main(["finding-triage", "scan", "--all", "--all"])
-
-    assert died.value.code == 1
-    assert capsys.readouterr() == (
-        "", "orch: usage: orch.sh finding-triage scan [--all] [<issue> | --pr <n>]\n")
+    assert died_of(capsys, lambda: main(["finding-triage", "scan", "--all", "--all"])) == (
+        1, "", "orch: usage: orch.sh finding-triage scan [--all] [<issue> | --pr <n>]\n")

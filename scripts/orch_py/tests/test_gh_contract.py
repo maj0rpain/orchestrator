@@ -98,11 +98,9 @@ def test_an_ssh_alias_origin_is_resolved_through_ssh_once(fixture_gh):
 def test_with_no_repo_a_call_dies_with_the_remedy_and_reaches_no_gh(fixture_gh, capsys):
     gh = real_gh(fixture_gh, origin=None)
 
-    with pytest.raises(SystemExit) as died:
-        gh.issue_body(5)
+    code, _, err = died_of(capsys, lambda: gh.issue_body(5))
 
-    assert died.value.code == 1
-    assert capsys.readouterr().err == "orch: " + REPO_REMEDY + "\n"
+    assert (code, err) == (1, "orch: " + REPO_REMEDY + "\n")
     assert REPO_REMEDY.endswith("set GH_REPO=<owner>/<repo>")
     assert fixture_gh.calls() == []
 

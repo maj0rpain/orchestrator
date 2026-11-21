@@ -867,16 +867,16 @@ def test_a_member_holding_bundled_into_b_open_is_closed_but_not_commented_again(
 
 
 @pytest.mark.parametrize(
-    "comment",
+    "prior",
     [None, ("rando", "Bundled into #63", "NONE"), ("maj0rpain", "Bundled into #630", "OWNER")],
     ids=["no-marker", "strangers-marker", "another-bundle"],
 )
 def test_into_refuses_a_closed_member_never_closed_into_the_bundle(
-    orch, seed, store, open_bundle, comment
+    orch, seed, store, open_bundle, prior
 ):
     triaged(seed, 64, "review:major", "ready-for-agent", "bug", state="closed")
-    if comment:
-        author, body, association = comment
+    if prior:
+        author, body, association = prior
         seed.comment(64, author, "2026-10-01T09:00:00Z", body, association)
     before = snapshot(store)
 
