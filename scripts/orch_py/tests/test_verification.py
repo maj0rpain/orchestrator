@@ -53,8 +53,9 @@ def repo(tmp_path):
 
 @pytest.fixture(scope="module")
 def refusing_repo(tmp_path_factory):
-    """A repository with one commit shared by the module's refusal cases,
-    each refused before the store is touched: its root."""
+    """A repository with one commit shared by the module's cases that never
+    touch the store - the refusal cases and the stop with no run: its
+    root."""
     return one_commit_repo(tmp_path_factory.mktemp("refusing") / "repo")
 
 
@@ -193,8 +194,19 @@ def test_a_grace_of_zero_is_a_number(repo, capsys):
     assert verify(repo, "run", "true", ORCH_VERIFICATION_GRACE="0") == 0
 
 
+@pytest.fixture
+def ceiling_unset_after(refusing_repo):
+    """<refusing_repo>, its orchestrator.verification.timeout, which the test
+    sets, unset again once the test ends, so no other case sharing it meets
+    the key."""
+    yield refusing_repo
+    git(refusing_repo, "config", "--unset", "orchestrator.verification.timeout")
+
+
 @pytest.mark.parametrize("ceiling", ["abc", "0", "-1", "1.2.3"])
-def test_a_ceiling_that_is_no_positive_number_is_refused_naming_its_key(repo, capsys, ceiling):
+def test_a_ceiling_that_is_no_positive_number_is_refused_naming_its_key(
+        ceiling_unset_after, capsys, ceiling):
+    repo = ceiling_unset_after
     git(repo, "config", "orchestrator.verification.timeout", ceiling)
 
     code = verify(repo, "run", "true")
@@ -335,8 +347,8 @@ def test_stop_stops_the_live_runs_of_a_checkout_and_its_ticket_worktrees(
     assert records(repo) == sorted([other.name, finished.name])
 
 
-def test_stop_with_no_live_run_is_a_no_op(repo, capsys):
-    assert (verify(repo, "stop", str(repo)), records(repo)) == (0, [])
+def test_stop_with_no_live_run_is_a_no_op(refusing_repo, capsys):
+    assert (verify(refusing_repo, "stop", str(refusing_repo)), records(refusing_repo)) == (0, [])
 
 
 def signalling_nothing_to(monkeypatch, group):
