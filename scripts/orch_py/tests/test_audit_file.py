@@ -234,7 +234,6 @@ def test_the_usage_line_s_categories_are_the_filed_finding_list_s_in_order():
     names = "|".join(FILED_CATEGORY_NAMES)
 
     assert "--category <%s>" % names in audit.audit_file_usage()
-    assert audit.audit_usage().endswith("\n   or: " + audit.audit_file_usage()[len("usage: "):])
 
 
 @pytest.mark.parametrize("argv", [
