@@ -210,6 +210,16 @@ def _captured_lines(text: str) -> List[str]:
     return lines_of(text.rstrip("\n"))
 
 
+def _label_block(lines: List[str], i: int, count: str) -> Tuple[List[str], int]:
+    """The <count> labels of a record's label block starting at lines[i], and
+    the index past them. Raises GhFailed "gh answered a listing that does not
+    parse" when fewer are left."""
+    labels = lines[i:i + int(count)]
+    if len(labels) < int(count):
+        raise GhFailed(LISTING_UNPARSED)
+    return labels, i + int(count)
+
+
 def parse_titled_rows(text: str) -> List[IssueRow]:
     """The count-marked records of a titled listing: number, state and title
     joined by a tab, label count, then one label per line. Raises GhFailed
@@ -223,11 +233,7 @@ def parse_titled_rows(text: str) -> List[IssueRow]:
         count = lines[i + 2] if i + 2 < len(lines) else ""
         if not (plain_number(number) and field and plain_number(count)):
             raise GhFailed(LISTING_UNPARSED)
-        i += 3
-        labels = lines[i:i + int(count)]
-        if len(labels) < int(count):
-            raise GhFailed(LISTING_UNPARSED)
-        i += int(count)
+        labels, i = _label_block(lines, i + 3, count)
         state, _, title = field.partition("\t")
         rows.append(IssueRow(int(number), state, title, labels))
     return rows
@@ -247,11 +253,7 @@ def parse_labelled_bodies(text: str) -> List[LabelledBody]:
         count = lines[i + 1] if i + 1 < len(lines) else ""
         if not (plain_number(number) and plain_number(count)):
             raise GhFailed(LISTING_UNPARSED)
-        i += 2
-        labels = lines[i:i + int(count)]
-        if len(labels) < int(count):
-            raise GhFailed(LISTING_UNPARSED)
-        i += int(count)
+        labels, i = _label_block(lines, i + 2, count)
         if i >= len(lines) or not plain_number(lines[i]):
             raise GhFailed(LISTING_UNPARSED)
         body_line_count = int(lines[i])

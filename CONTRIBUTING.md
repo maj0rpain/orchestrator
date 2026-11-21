@@ -508,10 +508,11 @@ noun's `run` its fakes (`issue.run(argv, gh=..., git=..., env=...)`).
   `fake_*` helpers write. `orch.gh.adapter` picks the fake whenever
   `ORCH_GH_FAKE_STORE` is set, as `fake_github` sets it, and the fake honours
   the store's failure files (`fail/<operation>` with `.after` and `.times`,
-  `offline`, `ratelimit`) under the bash adapter's operation names, so a
-  bash section's `fake_fail` reaches a converted noun it runs through
-  orch.sh. A bash stand-in (`adapter_stood_in`) cannot reach
-  Python: a case that needs one for a converted verb is a pytest test.
+  `offline`, `ratelimit`) under `adapter_<method name>`, the bash adapter's
+  name for an operation both keep, so a bash section's `fake_fail` reaches a
+  converted noun it runs through orch.sh. A bash stand-in
+  (`adapter_stood_in`) cannot reach Python: a case that needs one for a
+  converted verb is a pytest test.
 - `orch.git.FakeGit`, the git adapter's in-memory fake. Each git operation is
   tested against a real repository in `tmp_path` and against the fake,
   asserting the same answers. The operations `orch.git.COULD_NOT` names answer

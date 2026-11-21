@@ -513,7 +513,6 @@ for bad_args in "adapter_issue_relabel 14 --label x" "adapter_issue_relabel 14 -
            "adapter_issue_relabel 14 --remove" "adapter_issue_relabel 14 x y" \
            "adapter_issue_close 14 --why x" "adapter_issue_close 14 --reason" \
            "adapter_issue_close 14 --comment" "adapter_issue_close 14 completed" \
-           "adapter_issue_close 14 --duplicate-of" \
            "adapter_pr_create main x X $pbody --ready" "adapter_pr_create main x X $pbody true" \
            "adapter_pr_create main x X $pbody --label" "adapter_pr_create main x X $pbody --label --draft"; do
   # shellcheck disable=SC2086 # each case is a word list on purpose
@@ -587,11 +586,6 @@ assert_status "the fake takes a comment beginning with --" "$st" 0
 fake_issue 18 open
 faked adapter_issue_close 18 --reason completed --comment "--x"; st=$?
 assert_status "and after an earlier option" "$st" 0
-fake_issue 19 open
-faked adapter_issue_close 19 --duplicate-of 30; st=$?
-assert_status "the fake closes an issue as a duplicate" "$st" 0
-assert_eq "CLOSED, its reason duplicate" "$(fake_state_of 19) $(fake_reason_of 19)" "CLOSED duplicate"
-assert_eq "naming the issue it duplicates" "$(fake_duplicate_of 19)" "30"
 # fake_fail_after seeds a failure after n good calls: with an explicit empty
 # stderr a silent one (#846), and with the third argument omitted fake_fail's
 # message.
@@ -634,16 +628,15 @@ assert_eq "pr close: an unreadable origin still closes the PR" "$(cat "$ORCH_GH_
 assert_eq "and appends its comment" "$(fake_pr_comments_of 73)" "Redone."
 cd "$close_saved" || exit 1
 # adapter_issue_close models GitHub too: an issue already CLOSED stays as it is:
-# no comment, and its reason and duplicate target unchanged.
+# no comment, and its reason unchanged.
 fake_github
 fake_issue 74 open
 faked adapter_issue_close 74 --reason "not planned"
-faked adapter_issue_close 74 --comment "Again." --reason completed --duplicate-of 30; st=$?
+faked adapter_issue_close 74 --comment "Again." --reason completed; st=$?
 assert_status "issue close: an already CLOSED issue closes again, exit 0" "$st" 0
 assert_eq "leaving its comments as they were" "$(fake_comments_of 74)" ""
 assert_eq "its state CLOSED" "$(cat "$ORCH_GH_FAKE_STORE/issues/74/state")" "CLOSED"
-assert_eq "its reason unchanged" "$(cat "$ORCH_GH_FAKE_STORE/issues/74/reason")" "not planned"
-assert_eq "and no duplicate target" "$(ls "$ORCH_GH_FAKE_STORE/issues/74/duplicate_of" 2>/dev/null)" ""
+assert_eq "and its reason unchanged" "$(cat "$ORCH_GH_FAKE_STORE/issues/74/reason")" "not planned"
 # One head rule for every read of a PR's head: absent is forty zeros, present is
 # as stored, so an empty head stands for GitHub's null headRefOid. A sentinel
 # keeps the trailing empty line a command substitution would strip.
@@ -1121,9 +1114,6 @@ assert_status "issue close: with a reason and a comment" "$st" 0
 gh_reply 0 '' '' issue close 25 --comment "Redone."
 out="$(contract adapter_issue_close 25 --comment "Redone." 2>&1)"; st=$?
 assert_status "issue close: with a comment and gh's default reason" "$st" 0
-gh_reply 0 '' '' issue close 26 --duplicate-of 30
-out="$(contract adapter_issue_close 26 --duplicate-of 30 2>&1)"; st=$?
-assert_status "issue close: as a duplicate of the issue named" "$st" 0
 calls="$(gh_calls)"
 for bad_args in "--why completed" "--reason" "--comment" "completed" "--reason completed --comment"; do
   # shellcheck disable=SC2086 # each case is a word list on purpose

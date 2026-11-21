@@ -836,27 +836,24 @@ adapter_issue_relabel() {
   gh issue edit "$n" "${args[@]}" >/dev/null
 }
 
-# adapter_issue_close <n> [--reason <r>] [--comment <c>] [--duplicate-of <B>]:
-# closes the issue, reason "completed" or "not planned" (absent, gh's
-# default), or as a duplicate of issue <B> - never given with --reason, and
-# needing gh 2.102 or newer - posting the comment on it where one is given.
+# adapter_issue_close <n> [--reason <r>] [--comment <c>]: closes the issue,
+# reason "completed" or "not planned" (absent, gh's default), posting the
+# comment on it where one is given.
 # Prints nothing. Given a comment it declares its gh call a compound write:
 # gh posts the comment first and closes second, so a failed close can leave the
 # comment, and a rerun would post it twice.
 adapter_issue_close() {
-  local n="$1" reason="" comment="" duplicate_of="" compound="" args=() options="--reason --comment --duplicate-of"
+  local n="$1" reason="" comment="" compound="" args=() options="--reason --comment"
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --reason)       option_value adapter_issue_close "$options" "$@" || return; reason="$2"; shift 2 ;;
-      --comment)      option_value adapter_issue_close "$options" "$@" || return; comment="$2"; shift 2 ;;
-      --duplicate-of) option_value adapter_issue_close "$options" "$@" || return; duplicate_of="$2"; shift 2 ;;
+      --reason)  option_value adapter_issue_close "$options" "$@" || return; reason="$2"; shift 2 ;;
+      --comment) option_value adapter_issue_close "$options" "$@" || return; comment="$2"; shift 2 ;;
       *) unknown_option adapter_issue_close "$1"; return ;;
     esac
   done
   [ -z "$reason" ] || args+=(--reason "$reason")
   [ -z "$comment" ] || { args+=(--comment "$comment"); compound=1; }
-  [ -z "$duplicate_of" ] || args+=(--duplicate-of "$duplicate_of")
   GH_LIMIT_COMPOUND=$compound gh issue close "$n" ${args[@]+"${args[@]}"} >/dev/null
 }
 

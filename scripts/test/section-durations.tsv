@@ -170,8 +170,8 @@
 2	2	label_listed	a8ee5ba113a5b8ad46d21d87f9f5a69bec86286e
 26	27	gh failure verb and readers (#1022)	d42eaadd21f5b460ceef3fde92d86dd208a3f973
 5	6	verify_twice (#2658)	aa521269c4c6af09438f04e9d4b0f6ed45b716c6
-15	17	gh fake (#280)	72ead2fb3f5d0b424ac4e6d1cb04c18540099040
-143	155	gh adapter contract (#280)	80b7c797ddef9d3658f262ef88c0edbd7783b712
+15	18	gh fake (#280)	f5a0ba0f423d803d1dda0fde9aecce6db2e7fc64
+162	175	gh adapter contract (#280)	e32d728acc800337850114304416363eb73cc454
 22	24	claim adapter operations (#1454)	00d248bcaf92e509ae82a735118d19ee3eaae9f4
 4	5	label casing (#1943)	7e3b89c80227bd15583b493104e3fd6e36ff9f1c
 61	46	gh rate limits (#2577)	9ff503560d53d5f90fc4290850ee8e77ae779f07
