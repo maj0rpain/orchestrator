@@ -291,6 +291,18 @@ def parse_blocker_states(text: str) -> List[Tuple[int, str]]:
     return states
 
 
+def parse_numbered_titles(text: str) -> List[Tuple[int, str]]:
+    """<number><TAB><title> lines; GhFailed "gh answered a listing that does
+    not parse" on a line whose number is not one."""
+    rows = []
+    for line in _captured_lines(text):
+        number, _, title = line.partition("\t")
+        if not plain_number(number):
+            raise GhFailed(LISTING_UNPARSED)
+        rows.append((int(number), title))
+    return rows
+
+
 def urlnumber_of(out: str) -> Optional[int]:
     """The number in the last issue URL of what gh issue create printed - the
     URL alone on its line - or None."""
@@ -575,6 +587,15 @@ class Gh:
         ))
         labelled_limit_warn(self.env, len(rows), label)
         return rows
+
+    def issues_open_titles(self) -> List[Tuple[int, str]]:
+        """Every open issue, pull requests left out, as its number and title,
+        newest first as GitHub lists them - every page, never cut at the
+        issue-list limit."""
+        return parse_numbered_titles(self._gh(
+            ["api", "--paginate", "repos/{owner}/{repo}/issues?state=open&per_page=100",
+             "--jq", '.[] | select(has("pull_request") | not) | "\\(.number)\\t\\(.title)"']
+        ))
 
     def issues_labelled_bodies(self, *labels: str) -> List[LabelledBody]:
         """The open issues carrying every label named, oldest first and cut

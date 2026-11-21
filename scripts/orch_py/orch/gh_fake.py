@@ -345,6 +345,11 @@ class FakeGh:
         real.labelled_limit_warn(self.env, len(rows), label)
         return rows
 
+    def issues_open_titles(self) -> List[Tuple[int, str]]:
+        self._failing("adapter_issues_open_titles")
+        return [(n, read_text(_issue_path(self.store, n, "title")) or "")
+                for n in reversed(self._open_numbers())]
+
     def issues_labelled_bodies(self, *labels: str) -> List[LabelledBody]:
         self._failing("adapter_issues_labelled_bodies")
         rows = [

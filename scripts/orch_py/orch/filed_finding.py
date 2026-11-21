@@ -4,15 +4,18 @@ triage gives it one of its own labels (ADR-0031). The issue and
 finding-triage nouns read it - issue triage and finding triage: its filed
 severities and their label test, its categories with each one's label, the
 create that makes a missing label, and its issue body parsed back into its
-fields. The bash side's copy serves
-review file, audit file and audit report.
+fields. It also holds the filing checks audit file makes, under their bash
+names: the flag parse, the input and location checks, the needs-triage label
+made ready, and the body temp file. The bash side's copy serves review file.
 """
 from __future__ import annotations
 
+import os
 import re
-from typing import List, NamedTuple, Optional, Sequence
+from contextlib import contextmanager
+from typing import Iterator, List, NamedTuple, Optional, Sequence, Tuple
 
-from orch.common import die
+from orch.common import die, temp_text_file
 from orch.gh import GhFailed, label_listed
 from orch.triage_labels import TriageLabels
 
@@ -121,6 +124,80 @@ def category_label_ensure(gh, category: str) -> bool:
             label_ensure(gh, name, colour, description)
             return True
     return False
+
+
+def needs_triage_label_ready(gh, triage: TriageLabels) -> str:
+    """The repo's needs-triage label, read through <triage>, made through
+    label_ensure where it is missing, with bash's triage_label_ensure colour
+    and description: the label is the repo's, so it is never rewritten."""
+    label = triage.label("needs-triage")
+    label_ensure(gh, label, "e4e669", "Not yet triaged")
+    return label
+
+
+# --- the filing checks ------------------------------------------------------
+
+# A location's line part: <line> or <start>-<end>.
+LOCATION_LINES = re.compile(r"[0-9]+(-[0-9]+)?")
+
+
+def finding_flags_parse(usage: str, allowed: Sequence[str],
+                        args: Sequence[str]) -> List[Tuple[str, str]]:
+    """A finding filer's flag/value pairs, in the order given, each value
+    trimmed. Dies with <usage> on a flag not in <allowed>, a flag with no
+    value, or an empty value."""
+    pairs = []
+    for i in range(0, len(args), 2):
+        if args[i] not in allowed or i + 1 >= len(args):
+            die(usage)
+        value = args[i + 1].strip(SPACE)
+        if not value:
+            die(usage)
+        pairs.append((args[i], value))
+    return pairs
+
+
+def finding_input_check(title: str, finding_file: str) -> None:
+    """Dies unless the title is not empty and the finding file exists and
+    holds more than whitespace - the checks a finding's filer makes before it
+    renders anything. An unreadable file holds nothing, as bash's `tr` over a
+    failed redirect reads it, and a NUL is dropped, as bash's $(...) drops
+    one."""
+    if not title:
+        die("the title is empty")
+    if not os.path.isfile(finding_file):
+        die("finding file not found: " + finding_file)
+    try:
+        with open(finding_file, "rb") as f:
+            data = f.read()
+    except OSError:
+        data = b""
+    if not data.translate(None, (SPACE + "\0").encode()):
+        die("finding file is empty: " + finding_file)
+
+
+def finding_location_ok(location: str) -> bool:
+    """Whether <location> is <file>:<line> or <file>:<start>-<end>, split at
+    its last colon, the file part not empty."""
+    file, colon, lines = location.rpartition(":")
+    return bool(colon and file) and LOCATION_LINES.fullmatch(lines) is not None
+
+
+def finding_location_check(location: str) -> None:
+    """Dies unless <location> is <file>:<line> or <file>:<start>-<end>,
+    naming both shapes in the refusal."""
+    if not finding_location_ok(location):
+        die("not a location: %s (want <file>:<line> or <file>:<start>-<end>)" % location)
+
+
+@contextmanager
+def finding_body_file_new(body: str) -> Iterator[str]:
+    """Yields the path of the temp file holding a finding's issue body
+    <body>, removed on exit, so a refusal or a gh failure that dies leaves
+    none behind."""
+    with temp_text_file(body, "could not create a temp file for the issue body",
+                        "could not write the issue body to its temp file") as path:
+        yield path
 
 
 def _labelled(line: str, label: str) -> Optional[str]:

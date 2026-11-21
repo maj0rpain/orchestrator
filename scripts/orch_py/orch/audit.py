@@ -1,22 +1,24 @@
 """The audit module (scripts/orch/audit.sh): the audit noun's begin verb,
 which makes an audit run's working directory (ADR-0064), its report verb,
 which renders a run directory's ranked file and area files into one HTML
-page, byte for byte as the bash renderer does, and an audit-filed body's
-drift line, which the issue noun reads. orch.sh still runs the noun's verbs
-from the bash module; run() is the Python noun they move to.
+page, byte for byte as the bash renderer does, its file verb, which files one
+audit finding as a GitHub issue, and an audit-filed body's drift line, which
+the issue noun reads. orch.sh still runs the noun's verbs from the bash
+module; run() is the Python noun they move to.
 
 begin's checks all come before the run directory is made, and a write
 failing after it is made removes it again; the git exclude lines already
 written stay, as in bash. report's checks of the ranked file all come before
-anything is written.
+anything is written, and file's checks before any write or GitHub call.
 
-An audit-filed body has exactly one **Audited at:** line, its value
-hexadecimal, and at least one well-formed **Location:** line. Its drift line
-says which of the cited files changed since the audited commit: compared
-tree to tree with HEAD, so no ancestry is needed, uncommitted changes are not
-counted, and a renamed file is listed as the path the body cites. The body is
-untrusted: only a hexadecimal value reaches git as the commit, and every path
-reaches it as a literal one (orch.git).
+An audit-filed body is the finding's text, a blank line, one **Location:**
+line per location and the **Audited at:** line naming the commit audited,
+each followed by a blank line. Its drift line says which of the cited files
+changed since the audited commit: compared tree to tree with HEAD, so no
+ancestry is needed, uncommitted changes are not counted, and a renamed file is
+listed as the path the body cites. The body is untrusted: only a hexadecimal
+value reaches git as the commit, and every path reaches it as a literal one
+(orch.git).
 """
 from __future__ import annotations
 
@@ -24,16 +26,36 @@ import os
 import re
 import shutil
 import time
-from typing import Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from orch.common import ORCH_DIR_NAME, die, dir_stamp, exclude_orch_dirs, file_write_atomic
-from orch.filed_finding import FILED_CATEGORIES
+from orch.common import (
+    ORCH_DIR_NAME,
+    die,
+    dir_stamp,
+    exclude_orch_dirs,
+    file_write_atomic,
+    read_text,
+    warn,
+)
+from orch.filed_finding import (
+    FILED_CATEGORIES,
+    category_label_ensure,
+    finding_body_file_new,
+    finding_flags_parse,
+    finding_input_check,
+    finding_location_check,
+    finding_location_ok,
+    needs_triage_label_ready,
+)
+from orch.gh import adapter, gh_or_die
 from orch.git import Git
 from orch.root import checkout_root
+from orch.triage_labels import TriageLabels
 
-# The verbs, each a function of VERBS. docs_lint.sh reads a converted noun's
-# verbs from this line, so it stays one `OPS = "<verb>|..."` line.
-OPS = "begin|report"
+# The verbs, each a function of VERBS but file, which takes the gh adapter
+# too. docs_lint.sh reads a converted noun's verbs from this line, so it stays
+# one `OPS = "<verb>|..."` line.
+OPS = "begin|report|file"
 
 # The kinds of audit `audit begin` takes, one per audit skill.
 AUDIT_KINDS = ("code", "docs", "tests")
@@ -42,8 +64,100 @@ MARKER = "**Audited at:**"
 LOCATION = "**Location:**"
 _LOCATION_LINE = re.compile(r"\*\*Location:\*\* `([^`]*)`")
 _HEX = re.compile(r"[0-9a-fA-F]+")
-_LINES = re.compile(r"[0-9]+(-[0-9]+)?")
 _SPACE = " \t\n\r\f\v"
+
+
+def audit_body_tail(sha: str, locations: Sequence[str]) -> str:
+    """The body's tail: one **Location:** line per location in the order
+    given, then the **Audited at:** line, each followed by a blank line."""
+    lines = ["%s `%s`" % (LOCATION, location) for location in locations]
+    lines.append("%s %s" % (MARKER, sha))
+    return "".join(line + "\n\n" for line in lines)
+
+
+def audit_body_render(finding: str, sha: str, locations: Sequence[str]) -> str:
+    """The issue body: the finding's text <finding>, its trailing newlines
+    stripped, a blank line, then audit_body_tail."""
+    return finding.rstrip("\n") + "\n\n" + audit_body_tail(sha, locations)
+
+
+def audit_open_find(listing: Sequence[Tuple[int, str]], title: str) -> Optional[int]:
+    """The number of the first open issue in <listing> whose title is
+    exactly <title>; None when there is none."""
+    for n, name in listing:
+        if name == title:
+            return n
+    return None
+
+
+def audit_file(args: List[str], gh, git) -> int:
+    """`audit file <title> --category <c> --finding-file <f> --location
+    <loc>...`: files one finding as a GitHub issue and prints its number.
+    Every check - the title, the finding file, the category, the locations, a
+    reference to a report's numbering in the title or the finding, HEAD's SHA
+    and the round trip of the rendered body - comes before any GitHub read or
+    write. An open issue with exactly the title files nothing: its number is
+    printed, with the already-open line on stderr, and the exit is 0."""
+    usage = audit_file_usage()
+    if not args:
+        die(usage)
+    title = args[0]
+    category, finding, locations = "", "", []
+    for flag, value in finding_flags_parse(
+            usage, ("--category", "--finding-file", "--location"), args[1:]):
+        if flag == "--location":
+            locations.append(value)
+        elif flag == "--category":
+            if category:
+                die(usage)
+            category = value
+        else:
+            if finding:
+                die(usage)
+            finding = value
+    if not (finding and category and locations):
+        die(usage)
+    if category not in (name for name, _, _ in FILED_CATEGORIES):
+        die(usage)
+
+    finding_input_check(title, finding)
+    reference = ref_find(title)
+    if reference:
+        die("the title says '%s': %s" % (reference[0], ALONE))
+    text = read_text(finding) or ""
+    reference = ref_find(text)
+    if reference:
+        die("%s line %d says '%s': %s" % (finding, reference[1], reference[0], ALONE))
+    for location in locations:
+        finding_location_check(location)
+    sha = git.resolve_commit("HEAD")
+    if sha is None:
+        die("cannot read the HEAD commit")
+
+    body = audit_body_render(text, sha, locations)
+    with finding_body_file_new(body) as body_file:
+        got_locations, got_shas = body_parse(body)
+        given, parsed = "\n".join(locations), "\n".join(got_locations)
+        if parsed != given:
+            die("the rendered body does not parse back: locations (given '%s', parsed '%s')"
+                % (given, parsed))
+        if got_shas != [sha]:
+            die("the rendered body does not parse back: audited at (given '%s', parsed '%s')"
+                % (sha, "\n".join(got_shas)))
+
+        # An open issue with this exact title is the finding already filed.
+        existing = audit_open_find(
+            gh_or_die("list the open issues", gh.issues_open_titles), title)
+        if existing is not None:
+            warn("#%d is already open with this title; nothing filed" % existing)
+            print(existing)
+            return 0
+
+        triage = needs_triage_label_ready(gh, TriageLabels(git.toplevel))
+        category_label_ensure(gh, category)
+        n = gh_or_die("create the issue", gh.issue_create, title, body_file, [triage, category])
+    print(n)
+    return 0
 
 
 def audit_file_usage() -> str:
@@ -117,13 +231,6 @@ def body_parse(body: str) -> Tuple[List[str], List[str]]:
     return locations, shas
 
 
-def location_ok(location: str) -> bool:
-    """Whether <location> is <file>:<line> or <file>:<start>-<end>, split at
-    its last colon."""
-    file, colon, lines = location.rpartition(":")
-    return bool(colon and file) and _LINES.fullmatch(lines) is not None
-
-
 def drift_line(body: str, git) -> Optional[str]:
     """The drift line of an audit-filed body - `cited files changed since
     <sha>: ` then none, the changed files joined by ", " in body order, each
@@ -135,7 +242,7 @@ def drift_line(body: str, git) -> Optional[str]:
     sha = shas[0]
     cited: List[str] = []
     for location in locations:
-        if location_ok(location):
+        if finding_location_ok(location):
             file = location.rpartition(":")[0]
             if file not in cited:
                 cited.append(file)
@@ -511,7 +618,7 @@ def _finding_check(n: int, finding: Finding, line: int, count: int,
     if not entries:
         die("%s: finding %d has no location" % (at, n))
     for location in list_lines(location_field):
-        if not location_ok(location):
+        if not finding_location_ok(location):
             die("%s: finding %d's location '%s' is not <file>:<line> or <file>:<start>-<end>"
                 % (finding.where.get(("loc", location)) or at, n, location))
     for label, value in finding.fields:
@@ -777,17 +884,20 @@ VERBS = {"begin": audit_begin, "report": audit_report}
 
 def run(
     argv: List[str],
+    gh=None,
     git=None,
     env: Optional[Mapping[str, str]] = None,
     clock: Callable[[], float] = time.time,
 ) -> int:
-    """`orch.sh audit <op> ...`: the real git adapter, the process's
-    environment and the system clock unless a test hands in others. Outside
-    a checkout it dies first, as orch.sh does, whatever the op."""
+    """`orch.sh audit <op> ...`: the real adapters, the process's environment
+    and the system clock unless a test hands in others. Outside a checkout it
+    dies first, as orch.sh does, whatever the op."""
     env = os.environ if env is None else env
     git = Git() if git is None else git
     root = checkout_root(git, env)
     op = argv[0] if argv else ""
-    if op not in OPS.split("|"):
+    if op not in OPS.split("|") or argv[1:2] == ["--run"]:
         die(audit_usage())
+    if op == "file":
+        return audit_file(argv[1:], adapter(env) if gh is None else gh, git)
     return VERBS[op](argv[1:], git, root, clock)
