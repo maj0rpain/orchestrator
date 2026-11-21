@@ -12,6 +12,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 import pytest
@@ -193,6 +194,8 @@ def test_a_run_nobody_waits_on_is_stopped_at_its_ceiling_and_the_next_call_fails
     ("ORCH_VERIFICATION_GRACE", "-1", "ORCH_VERIFICATION_GRACE is not a number: -1"),
     ("ORCH_VERIFICATION_INTERVAL", "0.0", "ORCH_VERIFICATION_INTERVAL must be greater than zero: 0.0"),
     ("ORCH_VERIFICATION_INTERVAL", "1.2.3", "ORCH_VERIFICATION_INTERVAL is not a number: 1.2.3"),
+    ("ORCH_VERIFICATION_WATCH", "0", "ORCH_VERIFICATION_WATCH must be greater than zero: 0"),
+    ("ORCH_VERIFICATION_WATCH", "-2", "ORCH_VERIFICATION_WATCH is not a number: -2"),
 ])
 @pytest.mark.parametrize("verb", ["run", "stop"])
 def test_a_knob_out_of_range_is_refused(repo, capsys, verb, knob, value, message):
@@ -228,14 +231,16 @@ def test_a_usage_error_exits_1_with_the_usage_line(repo, capsys, argv, usage):
     assert (verify(repo, *argv), capsys.readouterr().err) == (1, "orch: %s\n" % usage)
 
 
-def started(capsys, root, tmp_path, command, at=None):
+def started(capsys, root, tmp_path, command, at=None, **knobs):
     """Starts <command> as a live run in the checkout <root> (a call that
-    exits 75) and waits for its start: its record, the one new in the store
-    of the main checkout <at> (<root> when None). What the call printed is
-    dropped, so a test's capsys reads only the calls after it."""
+    exits 75), under <knobs> over KNOBS, and waits for its start: its record,
+    the one new in the store of the main checkout <at> (<root> when None).
+    What the call printed is dropped, so a test's capsys reads only the calls
+    after it."""
     main = root if at is None else at
     before, count = set(records(main)), starts(tmp_path)
-    assert verify(root, "run", command, ORCH_WAIT_BLOCK="0.05") == 75
+    knobs.setdefault("ORCH_WAIT_BLOCK", "0.05")
+    assert verify(root, "run", command, **knobs) == 75
     assert until(lambda: starts(tmp_path) == count + 1)
     capsys.readouterr()
     (name,) = set(records(main)) - before
@@ -384,13 +389,16 @@ def test_a_stale_live_run_whose_group_survives_the_kill_is_refused(
            " - stop it by hand\n" % group)
     assert (records(repo), starts(tmp_path)) == ([record.name], 1)
 
+# A watch interval no test outlasts, so the orphan sweep, never the runner's own
+# checkout watch, is what stops a run in a removed checkout.
+SWEPT_FIRST = {"ORCH_VERIFICATION_WATCH": "600"}
 
 
 def test_the_orphan_sweep_stops_a_live_run_in_a_removed_checkout_and_drops_its_record(
         repo, tmp_path, capsys):
     wt = (tmp_path / "wt").resolve()
     git(repo, "worktree", "add", "-q", str(wt), "-b", "wt")
-    group = group_of(started(capsys, wt, tmp_path, gated(tmp_path), at=repo))
+    group = group_of(started(capsys, wt, tmp_path, gated(tmp_path), at=repo, **SWEPT_FIRST))
     git(repo, "worktree", "remove", "--force", str(wt))
 
     code = verify(repo, "run", "true")
@@ -402,7 +410,7 @@ def test_the_orphan_sweep_drops_a_record_whose_group_survives_the_kill_warning_o
         repo, tmp_path, capsys, monkeypatch):
     wt = (tmp_path / "wt").resolve()
     git(repo, "worktree", "add", "-q", str(wt), "-b", "wt")
-    group = group_of(started(capsys, wt, tmp_path, gated(tmp_path), at=repo))
+    group = group_of(started(capsys, wt, tmp_path, gated(tmp_path), at=repo, **SWEPT_FIRST))
     git(repo, "worktree", "remove", "--force", str(wt))
     signalling_nothing_to(monkeypatch, group)
 
@@ -658,3 +666,90 @@ def test_a_run_is_delivered_with_no_setsid_on_the_path(repo, tmp_path, capsys, m
     code = verify(repo, "run", "echo ok")
 
     assert (code, capsys.readouterr().out) == (0, "ok\n")
+
+
+# A watch interval short enough for a runner to look at its checkout many times
+# inside a test.
+FAST_WATCH = "0.05"
+
+
+def trapping(tmp_path):
+    """A command line that logs one start, and, on TERM, writes TERM to
+    tmp_path/termed and keeps running: only a KILL ends it."""
+    return "trap 'echo TERM >\"%s\"' TERM; %s" % (tmp_path / "termed", gated(tmp_path))
+
+
+# How a runner its checkout watch stopped is seen: TERM first, the group still
+# there just after it, then the group gone and the record removed after the
+# grace.
+WATCH_STOPPED = (True, True, True, False)
+
+
+def watch_stop(tmp_path, record, group):
+    """How the runner of <record>, its group <group>, ended: whether TERM
+    came, the group was there just after it, the group went, and the record
+    is still there."""
+    termed = until(lambda: (tmp_path / "termed").exists())
+    there = not gone(group)
+    return (termed, there, until(lambda: gone(group)), record.exists())
+
+
+def test_a_runner_whose_checkout_root_is_removed_stops_its_command_and_its_record(
+        repo, tmp_path, capsys):
+    wt = (tmp_path / "wt").resolve()
+    git(repo, "worktree", "add", "-q", str(wt), "-b", "wt")
+    record = started(capsys, wt, tmp_path, trapping(tmp_path), at=repo,
+                     ORCH_VERIFICATION_WATCH=FAST_WATCH)
+    group = group_of(record)
+
+    shutil.rmtree(str(wt))
+
+    assert watch_stop(tmp_path, record, group) == WATCH_STOPPED
+
+
+def test_a_runner_whose_identity_token_is_rewritten_stops_and_its_waiting_call_dies(
+        repo, tmp_path, capsys):
+    knobs = {"ORCH_WAIT_BLOCK": "30", "ORCH_VERIFICATION_WATCH": FAST_WATCH}
+    waited = []
+    waiting = threading.Thread(
+        target=lambda: waited.append(verify(repo, "run", trapping(tmp_path), **knobs)))
+    waiting.start()
+    assert until(lambda: starts(tmp_path) == 1 and (the_record(repo) / "pid").exists())
+    record = the_record(repo)
+    group = group_of(record)
+
+    (store(repo) / "id").write_text("another-token\n")
+
+    assert watch_stop(tmp_path, record, group) == WATCH_STOPPED
+    waiting.join(timeout=5)
+    assert (waited, capsys.readouterr().err) == (
+        [1], "orch: the run ended without a status - run the same command again\n")
+
+
+def test_a_record_removed_mid_run_never_reads_as_a_changed_token(repo, tmp_path, capsys):
+    record = started(capsys, repo, tmp_path, gated(tmp_path, ': >"%s"; sleep 0.3; : >"%s"'
+                                                   % (tmp_path / "gated", tmp_path / "ended")),
+                     ORCH_VERIFICATION_WATCH=FAST_WATCH)
+    group = group_of(record)
+    shutil.rmtree(str(record))
+
+    (tmp_path / "gate").write_text("")
+
+    assert until(lambda: gone(group))
+    assert ((tmp_path / "ended").exists(), record.exists()) == (True, False)
+
+
+def test_a_runner_whose_checkout_is_gone_before_its_command_starts_removes_its_record(
+        tmp_path):
+    record = tmp_path / "store" / "record"
+    record.mkdir(parents=True)
+    for name, text in (("root", tmp_path / "gone"), ("id", "token"), ("state", "state")):
+        (record / name).write_text("%s\n" % text)
+
+    runner = subprocess.run(
+        [sys.executable, "-c", verification.RUNNER_BOOTSTRAP, str(record), "true", "10", "0.1",
+         FAST_WATCH],
+        env=dict(os.environ, PYTHONPATH=verification.package_dir()), stdin=subprocess.DEVNULL,
+        timeout=10)
+
+    assert (runner.returncode, record.exists()) == (1, False)

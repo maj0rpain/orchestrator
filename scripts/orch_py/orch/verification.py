@@ -39,6 +39,15 @@ The noun's terms:
   renames it, never making the directory: when the record is gone the write
   fails and the runner exits. When its checkout is already gone it cannot
   start the command, and removes its record and exits.
+- The **checkout watch** is the runner's wait on its command, timing out every
+  watch interval (ORCH_VERIFICATION_WATCH, default 2 s): after each timeout it
+  checks that its checkout root still exists and that the checkout's identity
+  token still holds the record's id as the runner read it at its start, kept
+  in memory, so a record removed mid-run never reads as a changed token. When
+  either check fails, it sends TERM to the group, waits the grace, removes its
+  own record, then sends KILL to the group, which ends the runner too: no call
+  will ever deliver to a gone checkout, so no verification process outlives
+  the checkout it ran in, however the checkout was removed.
 - The **ceiling** is git config orchestrator.verification.timeout (default
   3600 s), the runner's own timer on its wait: at the ceiling it sends TERM to
   the group, waits the grace (ORCH_VERIFICATION_GRACE, default 5 s), writes
@@ -113,9 +122,11 @@ RUN_USAGE = "usage: orch.sh verification run <command>"
 STOP_USAGE = "usage: orch.sh verification stop <checkout>"
 
 # The knobs' defaults: the grace a stopped group has after TERM, and after
-# KILL, and how often a waiting call looks for status, in seconds.
+# KILL, how often a waiting call looks for status, and how often a runner
+# watches its checkout, in seconds.
 GRACE_DEFAULT = "5"
 INTERVAL_DEFAULT = "0.2"
+WATCH_DEFAULT = "2"
 
 CEILING_KEY = "orchestrator.verification.timeout"
 CEILING_DEFAULT = "3600"
@@ -265,10 +276,13 @@ class Verification:
         self.block_text = wait_block(self.env)
         grace = self.env.get("ORCH_VERIFICATION_GRACE", "") or GRACE_DEFAULT
         interval = self.env.get("ORCH_VERIFICATION_INTERVAL", "") or INTERVAL_DEFAULT
+        watch = self.env.get("ORCH_VERIFICATION_WATCH", "") or WATCH_DEFAULT
         require_poll_knobs(
             [("ORCH_VERIFICATION_GRACE", grace), ("ORCH_VERIFICATION_INTERVAL", interval)]
         )
+        require_poll_knobs([("ORCH_VERIFICATION_WATCH", watch)])
         self.grace_text = grace
+        self.watch_text = watch
         self.grace = float(grace)
         self.interval = float(interval)
         self.store = os.path.join(main_checkout_or_die(self.git), ORCH_DIR_NAME, "verification")
@@ -417,7 +431,8 @@ class Verification:
         env["PYTHONPATH"] = package_dir() + (os.pathsep + inherited if inherited else "")
         try:
             runner = Popen(
-                [sys.executable, "-c", RUNNER_BOOTSTRAP, d, command, ceiling, self.grace_text],
+                [sys.executable, "-c", RUNNER_BOOTSTRAP, d, command, ceiling, self.grace_text,
+                 self.watch_text],
                 stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL, start_new_session=True,
                 env=env, cwd="/",
             )
@@ -551,11 +566,20 @@ def command_env() -> Dict[str, str]:
     return env
 
 
+def checkout_holds(root: str, token: Optional[str]) -> bool:
+    """The checkout watch's check: whether the checkout root <root> still
+    exists and its identity token still holds <token>."""
+    return os.path.isdir(root) and read_text(
+        os.path.join(root, ORCH_DIR_NAME, "verification", "id")) == token
+
+
 def runner_main(argv: List[str]) -> int:
-    """The runner, on the record <d>, the command, the ceiling and the grace
-    its call hands it."""
-    d, command, ceiling, grace = argv
-    root = record_read(d, "root")
+    """The runner, on the record <d>, the command, the ceiling, the grace and
+    the watch interval its call hands it. The record's root and id are read
+    once, at its start, so a record removed mid-run never reads as a changed
+    token."""
+    d, command, ceiling, grace, watch = argv
+    root, token = record_read(d, "root"), record_read(d, "id")
     if root is None:
         return 1
     try:
@@ -567,23 +591,44 @@ def runner_main(argv: List[str]) -> int:
         record_remove(d)
         return 1
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
-    try:
-        code = child.wait(timeout=float(ceiling))
-    except subprocess.TimeoutExpired:
-        group = os.getpgrp()
-        signal_groups([group], signal.SIGTERM)
+    group = os.getpgrp()
+    deadline = time.monotonic() + float(ceiling)
+    while True:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            break
         try:
-            child.wait(timeout=float(grace))
+            code = child.wait(timeout=min(float(watch), left))
         except subprocess.TimeoutExpired:
-            pass
-        try:
-            if record_write(d, "overrun", ceiling + "\n"):
-                record_write(d, "status", "1\n")
-        finally:
-            signal_groups([group], signal.SIGKILL)
-        return 1
-    record_write(d, "status", "%d\n" % exit_status(code))
-    return 0
+            if not checkout_holds(root, token):
+                # No call will ever deliver to a gone checkout: its record
+                # goes before the KILL that ends this runner too.
+                signal_groups([group], signal.SIGTERM)
+                wait_grace(child, grace)
+                try:
+                    record_remove(d)
+                finally:
+                    signal_groups([group], signal.SIGKILL)
+                return 1
+            continue
+        record_write(d, "status", "%d\n" % exit_status(code))
+        return 0
+    signal_groups([group], signal.SIGTERM)
+    wait_grace(child, grace)
+    try:
+        if record_write(d, "overrun", ceiling + "\n"):
+            record_write(d, "status", "1\n")
+    finally:
+        signal_groups([group], signal.SIGKILL)
+    return 1
+
+
+def wait_grace(child: Popen, grace: str) -> None:
+    """Waits the grace for the command <child> to end after a TERM."""
+    try:
+        child.wait(timeout=float(grace))
+    except subprocess.TimeoutExpired:
+        pass
 
 
 if __name__ == "__main__":
