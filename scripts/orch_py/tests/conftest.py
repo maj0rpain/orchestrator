@@ -112,11 +112,13 @@ def checkout(tmp_path, doc=None):
     return FakeGit(toplevel=str(root))
 
 
-def git_repo(path, origin=None):
+def git_repo(path, origin=None, object_format=None):
     """A fresh repository at <path>, with <origin> as its origin remote when
-    one is given: its Git adapter."""
+    one is given, its objects named by <object_format> (sha1 or sha256) when
+    one is given, else git's default: its Git adapter."""
+    formats = ["--object-format=" + object_format] if object_format else []
     subprocess.run(
-        ["git", "init", "-q", str(path)], check=True, stdin=subprocess.DEVNULL
+        ["git", "init", "-q", *formats, str(path)], check=True, stdin=subprocess.DEVNULL
     )
     if origin is not None:
         subprocess.run(

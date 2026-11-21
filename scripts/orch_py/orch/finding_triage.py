@@ -37,7 +37,6 @@ from orch.filed_finding import (
 from orch.gh import (
     GhFailed,
     adapter,
-    gh_die,
     gh_or_die,
     gh_reason,
     label_listed,
@@ -204,10 +203,7 @@ class FindingTriage:
                   if label_listed(labels, label)]
         outcome_label = self.triage_labels.label(outcome)
         if not self.triage_comment_posted(issue, path):
-            try:
-                self.triage_comment_post(issue, path)
-            except GhFailed as failed:
-                gh_die("comment on issue #" + issue, failed.stderr)
+            gh_or_die("comment on issue #" + issue, self.triage_comment_post, issue, path)
         relabel = "relabel issue #" + issue
         close = "close issue #" + issue
         if outcome == "close-fixed":

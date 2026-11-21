@@ -8,7 +8,7 @@ import pytest
 
 from orch import filed_finding
 from orch.filed_finding import FindingBody, finding_body_parse
-from orch.gh_fake import FakeGh
+from conftest import fake
 
 SHA = "0123456789abcdef0123456789abcdef01234567"
 URL = "https://github.com/acme/widgets/pull/42"
@@ -72,8 +72,9 @@ def test_the_category_table_holds_each_category_s_colour_and_description():
     )
 
 
-def test_the_category_label_is_created_where_missing_with_its_colour_and_description(store):
-    gh = FakeGh(str(store), {})
+def test_the_category_label_is_created_where_missing_with_its_colour_and_description(
+        store, seed):
+    gh = fake(seed)
 
     assert filed_finding.category_label_ensure(gh, "enhancement") is True
     assert (store / "labels").read_text() == "enhancement\ta2eeef\tNew feature or request\n"
@@ -82,7 +83,7 @@ def test_the_category_label_is_created_where_missing_with_its_colour_and_descrip
 def test_a_category_label_that_exists_is_left_as_it_is_and_the_failed_create_forgiven(
         store, seed, capsys):
     (store / "labels").write_text("Bug\tffffff\tours\n")
-    gh = FakeGh(str(store), {})
+    gh = fake(seed)
 
     assert filed_finding.category_label_ensure(gh, "bug") is True
     seed.fail("adapter_label_create", "HTTP 502: Bad Gateway")
@@ -92,8 +93,8 @@ def test_a_category_label_that_exists_is_left_as_it_is_and_the_failed_create_for
     assert capsys.readouterr() == ("", "")
 
 
-def test_an_unknown_category_creates_no_label(store):
-    assert filed_finding.category_label_ensure(FakeGh(str(store), {}), "question") is False
+def test_an_unknown_category_creates_no_label(store, seed):
+    assert filed_finding.category_label_ensure(fake(seed), "question") is False
     assert not (store / "labels").exists()
 
 

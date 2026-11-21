@@ -20,11 +20,12 @@ def lines(prefix, count):
 
 
 class Author:
-    """The repository the history is written in, on its main branch."""
+    """The repository the history is written in, on its main branch, its
+    objects named by <object_format> when one is given."""
 
-    def __init__(self, root):
+    def __init__(self, root, object_format=None):
         self.root = root
-        git_repo(root)
+        git_repo(root, object_format=object_format)
         self.git("checkout", "-q", "-B", "main")
 
     def git(self, *args):
@@ -262,6 +263,38 @@ def expected(history, answer):
 @pytest.mark.parametrize("filed, path, start, end, answer", CASES.values(), ids=list(CASES))
 def test_lines_fate_reads_what_became_of_the_filed_lines(history, filed, path, start, end, answer):
     assert ask(history, filed, path, start, end) == expected(history, answer)
+
+
+@pytest.fixture(scope="module")
+def sha256_history(tmp_path_factory):
+    """A SHA-256 repository's history, as history's is: its Git adapter, and
+    each named commit's full SHA."""
+    author = Author(
+        tmp_path_factory.mktemp("lines-fate-sha256") / "repo", object_format="sha256")
+    sha = {}
+    sha["head"] = author.commit(
+        {"src/app.sh": lines("app", 12), "src/del.sh": lines("del", 30)}, "reviewed")
+    sha["fix"] = author.edit("src/app.sh", replace(3, "app line 3, fixed"), "fix line 3")
+    sha["del"] = author.edit("src/del.sh", delete((8, 12)), "delete the range")
+    sha["later_edit"] = author.edit("src/del.sh", reword(1), "a later, unrelated edit")
+    return Git(cwd=str(author.root)), sha
+
+
+# In a SHA-256 repository the line-range log's and the reverse blame's commit
+# names are 64 hex digits, which the bash scan's 40-digit match never took:
+# touched lines read unchanged, and deleted lines take the newest commit to
+# touch the file, its file logs unfiltered, as their stand-in.
+SHA256_CASES = {
+    "lines changed": ("head", "src/app.sh", 3, 3, fate("unchanged")),
+    "deleted, then the file edited": ("head", "src/del.sh", 10, 10, fate("changed", "later_edit")),
+}
+
+
+@pytest.mark.parametrize(
+    "filed, path, start, end, answer", SHA256_CASES.values(), ids=list(SHA256_CASES))
+def test_a_sha256_repository_s_lines_fate_is_the_bash_scan_s(
+        sha256_history, filed, path, start, end, answer):
+    assert ask(sha256_history, filed, path, start, end) == expected(sha256_history, answer)
 
 
 class Failing:

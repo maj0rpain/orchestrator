@@ -265,8 +265,8 @@ def parse_labelled_bodies(text: str) -> List[LabelledBody]:
 
 def parse_state_labels_body(text: str) -> Tuple[str, List[str], str]:
     """State, label count, the labels, then the body, its trailing newlines
-    dropped as the bash reader's capture drops them. Raises GhFailed "gh
-    answered no label count" when the count is not a number."""
+    dropped, as a `$(...)` capture drops them. Raises GhFailed "gh answered
+    no label count" when the count is not a number."""
     state, _, rest = text.rstrip("\n").partition("\n")
     count, _, rest = rest.partition("\n")
     if not plain_number(count):

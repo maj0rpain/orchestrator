@@ -47,9 +47,11 @@ COULD_NOT: Dict[str, Any] = {
     "is_branch_name": False,
 }
 
-# A commit's full SHA, as a log's %H prints it: SHA-1, or SHA-256.
-_FULL_SHA = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
-# A porcelain blame's header line: the commit's full SHA, then line numbers.
+# A commit's full SHA-1 name, the only one the bash scan's line-range log
+# and blame took: a SHA-256 name matches neither, as it matched neither there.
+_FULL_SHA = re.compile(r"[0-9a-f]{40}")
+# A porcelain blame's header line: the commit's full SHA-1 name, then line
+# numbers.
 _BLAME_HEADER = re.compile(r"(%s) [0-9]" % _FULL_SHA.pattern)
 
 
@@ -107,14 +109,15 @@ class Git:
 
     def _file_log(self, flags: List[str], ref: str, since: str, path: str) -> Optional[List[str]]:
         """The full SHAs a `log <flags>` of the commits of <ref> since
-        <since> touching <path> lists, in its order; None when it cannot run,
+        <since> touching <path> lists, in its order, each line taken as it
+        is, unfiltered as the bash scan took them; None when it cannot run,
         never the empty list of a log that found no commit."""
         text = self._text_at_top(
             ["log", *flags, "--format=%H", ref, "^" + since, "--", ":(top,literal)" + path]
         )
         if text is None:
             return None
-        return [line for line in text.splitlines() if _FULL_SHA.fullmatch(line)]
+        return text.split()
 
     def origin_url(self) -> Optional[str]:
         """The `origin` remote's URL; None when the repository has no origin,
@@ -227,8 +230,9 @@ class Git:
     ) -> Optional[List[str]]:
         """The newest commit of <ref> not in <since> to touch any of the
         <ranges>, (start, end) line ranges of <path> at <ref>, alone in its
-        list: `log -1 -L <start>,<end>:<path>...`. Empty when none did; None
-        when the log cannot run, as for a range past the file's end."""
+        list: `log -1 -L <start>,<end>:<path>...`. Empty when none did, or
+        its first line is no full SHA-1 name; None when the log cannot run,
+        as for a range past the file's end."""
         follow = [arg for start, end in ranges for arg in ("-L", "%d,%d:%s" % (start, end, path))]
         text = self._text_at_top(["log", "-1", "--format=%H", *follow, ref, "^" + since])
         if text is None:
@@ -241,8 +245,8 @@ class Git:
     ) -> Optional[List[str]]:
         """The commits a reverse blame of lines <start>-<end> of <path> at
         <old> names, from <old> to <ref>: each line's last commit to hold it,
-        <ref>'s own for a line it still holds. Sorted, each once; None when
-        the blame cannot run."""
+        <ref>'s own for a line it still holds, read from the headers naming
+        a full SHA-1. Sorted, each once; None when the blame cannot run."""
         text = self._text_at_top(
             ["blame", "--reverse", "--porcelain", "-L", "%d,%d" % (start, end),
              "%s..%s" % (old, ref), "--", path]
