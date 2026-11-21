@@ -4,12 +4,21 @@ stdout, its exit code, its `orch:` message and the GitHub state the store
 holds afterwards."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
 
-from conftest import GH_502, checkout, labels_doc, orch_issue, write_labels_doc
+from conftest import (
+    GH_502,
+    checkout,
+    comments_of,
+    labels_doc,
+    labels_of,
+    orch_issue,
+    read,
+    snapshot,
+    write_labels_doc,
+)
 from orch.gh import label_listed
 
 
@@ -38,29 +47,6 @@ class Noun:
 @pytest.fixture
 def orch(seed, tmp_path, capsys):
     return Noun(seed, checkout(tmp_path), capsys)
-
-
-def read(store, *parts):
-    """A file of the store, or None where it is absent."""
-    path = os.path.join(str(store), *(str(part) for part in parts))
-    if not os.path.isfile(path):
-        return None
-    with open(path, encoding="utf-8") as f:
-        return f.read()
-
-
-def snapshot(store):
-    """Every file the store holds, with its contents - but the comment-read
-    counter, which a read bumps."""
-    files = {}
-    for directory, _, names in os.walk(str(store)):
-        for name in names:
-            path = os.path.join(directory, name)
-            relative = os.path.relpath(path, str(store))
-            if relative != "comment_reads":
-                with open(path, "rb") as f:
-                    files[relative] = f.read()
-    return files
 
 
 @pytest.fixture
@@ -306,20 +292,6 @@ RENAMED = (
     ("ready-for-agent", "agent go"), ("ready-for-human", "human go"), ("wontfix", "nope"),
 )
 TRIAGE_COMMENT = "An orchestrator planning session triaged this issue to `%s`.\n"
-
-
-def labels_of(store, n):
-    return (read(store, "issues", n, "labels") or "").split("\n")[:-1]
-
-
-def comments_of(store, n):
-    """The bodies of issue #n's comments, in order."""
-    bodies = []
-    k = 1
-    while read(store, "issues", n, "comments", k, "body") is not None:
-        bodies.append(read(store, "issues", n, "comments", k, "body"))
-        k += 1
-    return bodies
 
 
 @pytest.mark.parametrize(
