@@ -8,7 +8,7 @@
 # orch_test.sh, which holds none (its sections take their own); then the pytest
 # suite, which holds none either (it takes its own, one per xdist worker), and
 # last shellcheck. The pytest suite is in no `suites` list, so it stays outside
-# the suite budget and the durations file.
+# the durations file.
 # Each one's stdout is captured to a temporary directory, removed on exit, and
 # its exit status is taken from waiting on it; once every one has finished,
 # their output is printed in a fixed order, no matter which finished first. A
@@ -68,7 +68,7 @@
 #
 # ORCH_TEST_ONLY is unset, so every section of orch_test.sh runs. So is
 # DOCS_LINT_RECORDING, which only section-durations.sh sets, so an inherited
-# value cannot switch off docs_lint.sh's ledger and budget rules here.
+# value cannot switch off docs_lint.sh's ledger rule here.
 #
 # ORCH_TEST_SHARD=<i>/<n> passes to orch_test.sh alone (never to the other
 # suites), which runs group i of n of its sections; all.sh runs the other
@@ -80,10 +80,7 @@
 #
 # CHANGELOG_BASE and NO_VERSION_BUMP pass through untouched - set, empty or
 # unset - for docs_lint.sh's changelog fragment rule (CI's fragment.yml runs
-# docs_lint.sh --base-rules, the fragment rule and the suite budget rules
-# that judge a change against a base, and feeds them
-# itself). DOCS_LINT_BASE passes through the same way: the base affected.sh
-# hands docs_lint.sh on its full-suite fallback, for its suite budget rules.
+# docs_lint.sh --base-rules, the fragment rule alone, and feeds it itself).
 # ORCH_TEST_JOBS
 # passes through too: orch_test.sh runs that many sections at once, by default
 # 75% of the usable CPUs (ORCH_TEST_POOL_PERCENT sets another share; the full

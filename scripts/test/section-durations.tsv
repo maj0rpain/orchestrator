@@ -6,7 +6,7 @@
 20	30	the parallel runner's start order (#2857)	56a44db6d1903f093d0469065769c3aa1cf913f8
 129	120	the shard setting (#2859)	d45e824a06a74fe8e3446123af78328c1d7f7259
 17	22	the seeded start (stub cache)	88d964812dc589c6ef9473313af2ba6620902718
-299	213	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	3b8c121388d645913b63bb79a849b240c0ca9dbc
+423	243	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	cdeb5ceb87cd77cf7f4d0b1ffcea7a5c6e05661e
 4	6	assertions in a subshell (#1904)	d014fd33336efb56452ef867c7bb0e21e3ceff0f
 2	3	the standalone suites' tally (#1904)	707a9e71b502be145a7caf7dc03134806f77c691
 18	22	the section files (#932)	f8498d1cacab2b7d6fec79f5991b623c211589f5
@@ -34,7 +34,7 @@
 2	2	the suite start (#3582)	7661d78242588461a38289fb228211e159d899f8
 7	8	the pytest suite (#3912)	21deea025158b43b9892524639c0a4fbc5b9bf3c
 2	3	the counting fixture's stdin counter (#3434)	b19a94c28ffbd5db955a5f10a39d0b15791cbc4f
-88	95	affected.sh, the ticket verification (#2023)	0866c015a7f059a2cfab106c2b624fbad3a1f5d8
+119	101	affected.sh, the ticket verification (#2023)	2a87c4c5df9c8a9e9e40b5b57b43b9f071a4e3a0
 4	5	the row rule (#3549)	9fdb50e7e723c26a4127289109f27a68989c4579
 7	9	the shared test support, function by function (#3550)	de45838253c482219d70d5af6fd3b26e2079c3f8
 5	7	the gh fake, operation by operation (#3551)	987935a277e021eabb9c02e391ba40e84607a315
@@ -356,7 +356,7 @@
 0	1	verification run in help	28e484325ea5c39e7d957ba95f689dcdbb9ecc1a
 99	11	wait: a call's block is wall time	db923f27504e50d0a04527b359feb487abb3665d
 882	983	hooks_test.sh	8dec8318df78d1487d2d11c16c6ac962831bc14c
-215	258	docs_lint.sh	88d5d753d8888772271a0d6f5cd078e65c5f0d97
+295	203	docs_lint.sh	6d1887e6488b1d2ac7a5bf8eb56a972ff9a1ada4
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 17	17	autopilot_up_test.sh	e83bb3b5d6213ab54507233be7cc6e624358622c
