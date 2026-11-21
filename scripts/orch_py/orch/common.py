@@ -1,8 +1,9 @@
 """The primitives no concept owns: the `orch: ` message lines, the
 plain-number test every verb checks its issue numbers with, the decimal-number
 tests and the poll-knob check a waiting verb reads its knobs with, the atomic
-file write, the temporary file a comment is handed to gh from, and the words a
-list and a state read as in a line.
+file write, the file read as bash's $(<file) gives it, the temporary file a
+comment is handed to gh from, and the words a list and a state read as in a
+line.
 
 Every `orch: ` message goes through die or warn, as in the bash side's
 common.sh: die(message, 2) is the bash die2, for a command that reserves exit
@@ -18,7 +19,7 @@ import re
 import sys
 import tempfile
 from contextlib import contextmanager
-from typing import Callable, Iterable, Iterator, NoReturn, Sequence, Tuple
+from typing import Callable, Iterable, Iterator, NoReturn, Optional, Sequence, Tuple
 
 
 def die(message: str, code: int = 1) -> NoReturn:
@@ -98,6 +99,16 @@ def file_write_atomic(path: str, text: str, make_directory: bool = True) -> bool
             pass
         return False
     return True
+
+
+def read_text(path: str) -> Optional[str]:
+    """The file's text, its trailing newlines dropped as bash's $(<file)
+    drops them; None when it cannot be read."""
+    try:
+        with open(path, "rb") as f:
+            return f.read().decode("utf-8", "surrogateescape").rstrip("\n")
+    except OSError:
+        return None
 
 
 @contextmanager

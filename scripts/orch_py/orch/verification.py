@@ -104,6 +104,7 @@ from orch.common import (
     file_write_atomic,
     is_positive_number,
     plain_number,
+    read_text,
     require_poll_knobs,
     warn,
 )
@@ -228,16 +229,6 @@ def stop_batch(groups: Sequence[int], grace: float) -> Set[int]:
         signal_groups(left, signal.SIGKILL)
         left = groups_left(left, grace)
     return set(left)
-
-
-def read_text(path: str) -> Optional[str]:
-    """The file's text, its trailing newlines dropped as bash's $(<file)
-    drops them; None when it cannot be read."""
-    try:
-        with open(path, "rb") as f:
-            return f.read().decode("utf-8", "surrogateescape").rstrip("\n")
-    except OSError:
-        return None
 
 
 def record_read(d: str, name: str) -> Optional[str]:
