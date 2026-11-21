@@ -7,7 +7,8 @@ directory's checkout the outside-a-checkout remedy names, the comparisons
 an audit body's drift line reads, the commit resolution, fetches, file and
 line histories finding triage's scan, Lines fate and the default-branch
 lookup read, and the working-tree state, object names, config value and main
-checkout the verification noun reads. There is no generic run: each later noun adds the operations it
+checkout the verification noun reads, and the common directory the git
+exclude writer (orch.common) appends under. There is no generic run: each later noun adds the operations it
 needs, each with a test run against a real repository and against FakeGit,
 asserting the same answers. The scan's, Lines fate's and the lookup's
 operations run at the checkout's top level, and answer their "could not"
@@ -52,6 +53,7 @@ COULD_NOT: Dict[str, Any] = {
     "text_hash": None,
     "config_value": None,
     "main_checkout": None,
+    "git_common_dir": None,
 }
 
 # A commit's full SHA-1 name, the only one the bash scan's line-range log
@@ -340,6 +342,17 @@ class Git:
         return None
 
 
+    # The git exclude writer's operation, run where the adapter runs, as the
+    # bash writer's `git rev-parse` is.
+
+    def git_common_dir(self) -> Optional[str]:
+        """The clone's common directory, whose info/exclude is the one git
+        reads for every worktree of it, as `rev-parse --git-common-dir` prints
+        it: relative to the adapter's directory where git prints it so. None
+        outside a repository."""
+        return self._output(["rev-parse", "--git-common-dir"])
+
+
 class FakeGit:
     """The in-process fake: a repository held in memory. <remotes> maps each
     remote's name to its URL; <toplevel> is its top-level directory, None
@@ -462,6 +475,9 @@ class FakeGit:
 
     def main_checkout(self) -> Optional[str]:
         return self._answer("main_checkout")
+
+    def git_common_dir(self) -> Optional[str]:
+        return self._answer("git_common_dir")
 
 
 def _call_key(name: str, args: Sequence[Any]) -> Tuple[Any, ...]:

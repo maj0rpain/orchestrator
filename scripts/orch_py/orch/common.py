@@ -2,8 +2,9 @@
 plain-number test every verb checks its issue numbers with, the decimal-number
 tests and the poll-knob check a waiting verb reads its knobs with, the atomic
 file write, the file read as bash's $(<file) gives it, the temporary file a
-comment is handed to gh from, and the words a list and a state read as in a
-line.
+comment is handed to gh from, the words a list and a state read as in a
+line, the orchestrator's directory name, the UTC stamp a run directory is
+named with, and the git exclude writer.
 
 Every `orch: ` message goes through die or warn, as in the bash side's
 common.sh: die(message, 2) is the bash die2, for a command that reserves exit
@@ -18,8 +19,15 @@ import os
 import re
 import sys
 import tempfile
+import time
 from contextlib import contextmanager
-from typing import Callable, Iterable, Iterator, NoReturn, Optional, Sequence, Tuple
+from typing import Callable, Iterable, Iterator, List, NoReturn, Optional, Sequence, Tuple
+
+# The directory every checkout keeps the orchestrator's own files in.
+ORCH_DIR_NAME = ".orchestrator"
+# The directories the plugin writes to and keeps out of git status: its own,
+# and .scratch/, where planning drafts land.
+EXCLUDED_DIRS = (ORCH_DIR_NAME + "/", ".scratch/")
 
 
 def die(message: str, code: int = 1) -> NoReturn:
@@ -150,3 +158,60 @@ def state_word(state: str) -> str:
     """GitHub's uppercase issue or PR state as the lowercase word a message
     prints; any other value unchanged."""
     return STATE_WORDS.get(state, state)
+
+
+def dir_stamp(clock: Callable[[], float] = time.time) -> str:
+    """The time <clock> reads, in UTC, as a directory name's stamp:
+    %Y%m%d-%H%M%S."""
+    return time.strftime("%Y%m%d-%H%M%S", time.gmtime(clock()))
+
+
+def _exclude_file(git) -> str:
+    """The clone's shared info/exclude, under the common directory the git
+    adapter <git> reads - the only one git reads, so a linked worktree writes
+    it too. Under "" when the read fails, as the bash writer's is."""
+    return (git.git_common_dir() or "") + "/info/exclude"
+
+
+def exclude_orch_dirs(git) -> None:
+    """Keeps every EXCLUDED_DIRS entry out of git status through the clone's
+    shared info/exclude, never a tracked .gitignore, read through the git
+    adapter <git>; dies as exclude_line does."""
+    exclude_line(EXCLUDED_DIRS, git)
+
+
+def exclude_line(lines: Sequence[str], git) -> None:
+    """Makes each of <lines> a line of the clone's shared info/exclude,
+    through the git adapter <git>: appends those exclude_missing finds absent,
+    making the file's directory first and ending an unterminated last line
+    first, so the first line added is never glued onto the user's pattern.
+    Does nothing when none is missing; dies naming the missing lines and the
+    file when the write fails."""
+    missing = exclude_missing(lines, git)
+    if not missing:
+        return
+    path = _exclude_file(git)
+    added = "".join(line + "\n" for line in missing).encode("utf-8", "surrogateescape")
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a+b") as f:
+            end = f.seek(0, os.SEEK_END)
+            if end:
+                f.seek(end - 1)
+                if f.read(1) != b"\n":
+                    added = b"\n" + added
+            f.write(added)
+    except OSError:
+        die("cannot add %s to the git exclude file %s" % (list_join(missing), path))
+
+
+def exclude_missing(lines: Sequence[str], git) -> List[str]:
+    """Each of the non-empty <lines> the clone's shared info/exclude, read
+    through the git adapter <git>, lacks as a whole line, in order: every one
+    when the file cannot be read."""
+    try:
+        with open(_exclude_file(git), "rb") as f:
+            present = set(f.read().decode("utf-8", "surrogateescape").split("\n"))
+    except OSError:
+        present = set()
+    return [line for line in lines if line and line not in present]

@@ -479,3 +479,23 @@ def test_the_main_checkout_reads_the_same_from_a_worktree_and_the_fake(worked, t
 
     assert alike(Git(cwd=str(wt)), "main_checkout") == str(worked.resolve())
     assert fails_alike(Git(cwd=str(tmp_path)), "main_checkout") is None
+
+
+# --- the exclude writer's operation -------------------------------------------
+
+
+def test_the_common_dir_reads_the_same_from_a_real_repo_and_the_fake(worked, where):
+    expected = ".git" if where == "top" else "../.git"
+
+    assert alike(adapter(worked, where), "git_common_dir") == expected
+
+
+def test_a_worktree_s_common_dir_is_its_main_checkout_s_git_directory(worked, tmp_path):
+    wt = tmp_path / "wt"
+    run_git(worked, "worktree", "add", "-q", str(wt), "-b", "common")
+
+    assert alike(Git(cwd=str(wt)), "git_common_dir") == str((worked / ".git").resolve())
+
+
+def test_outside_a_repository_there_is_no_common_dir(tmp_path):
+    assert fails_alike(Git(cwd=str(tmp_path)), "git_common_dir") is None
