@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.11.1
+
+`orch.sh finding-triage` now runs as Python, the second noun moved out of bash: `scan`, `apply` and `bundle` keep their arguments, output and exit codes, and the bash `finding-triage` and Lines fate modules are gone. The Python package's `git` and `gh` adapters gain the operations it needs, each with an in-process fake, and Lines fate is tested against real repositories (ADR-0067).
+
 ## 6.11.0
 
 `orch.sh issue` now runs as Python, the first noun moved out of bash: `orch.sh` hands a converted noun to `python3 -m orch`, and every `issue` verb keeps its arguments, output and exit codes. The plugin now needs `python3` 3.9 or newer, which the README's Requirements list and `orch.sh doctor` checks; without it, a converted verb stops before doing anything and says so. The new `orch` package under `scripts/orch_py/` brings `gh` and `git` adapters with in-process fakes and a pytest suite that `all.sh`, `affected.sh`, the autopilot image and CI run (ADR-0067).
