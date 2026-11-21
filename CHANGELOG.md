@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.11.0
+
+`orch.sh issue` now runs as Python, the first noun moved out of bash: `orch.sh` hands a converted noun to `python3 -m orch`, and every `issue` verb keeps its arguments, output and exit codes. The plugin now needs `python3` 3.9 or newer, which the README's Requirements list and `orch.sh doctor` checks; without it, a converted verb stops before doing anything and says so. The new `orch` package under `scripts/orch_py/` brings `gh` and `git` adapters with in-process fakes and a pytest suite that `all.sh`, `affected.sh`, the autopilot image and CI run (ADR-0067).
+
 ## 6.10.5
 
 Pickup's contained-step wrapper and side-checkout step now capture their GitHub-reaching commands through the gh module's `gh_capture_err` and `gh_capture`, as CONTRIBUTING's rule requires. No behaviour changes.
