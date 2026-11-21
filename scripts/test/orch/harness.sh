@@ -4738,7 +4738,7 @@ tr_init "$af"
 tr_put "$af" scripts/test/orch/branch.sh 'x=1' '# --- branch create ---' '# --- branch (x.y) retire ---'
 tr_put "$af" scripts/test/orch/state.sh '# --- state ---'
 tr_put "$af" scripts/test/orch/common.sh '# --- common one ---'
-for af_f in doctor init side-checkout spec-review spec ticket; do
+for af_f in autopilot doctor init side-checkout spec-review spec ticket; do
   tr_put "$af" "scripts/test/orch/$af_f.sh" "# --- $af_f s ---"
 done
 for af_f in scripts/orch.sh scripts/orch/common.sh scripts/orch/branch.sh \
@@ -4852,8 +4852,8 @@ af_row "a markdown lens-bench fixture selects the lens bench suite" scripts/dev/
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
 af_row "a markdown lens-bench test fixture selects the lens bench suite" scripts/test/lens-bench/run-1/map.md \
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
-af_py_s="spec-review s,spec s,ticket s"
-af_row "a Python package module selects the sections of the nouns that run an issue verb, not the full suite" \
+af_py_s="autopilot s,side-checkout s,spec-review s,spec s,ticket s"
+af_row "a Python package module selects the sections of the nouns that run a converted noun's verb and the side-checkout ones, not the full suite" \
   scripts/orch_py/orch/cli.py "$TR_GATE,$af_py_s,docs_lint.sh"
 af_row "the pytest suite's wrapper selects the harness sections, and shellchecks itself" \
   "scripts/test/$PYTEST_SUITE" "$TR_GATE,$TR_HARNESS,docs_lint.sh,scripts/test/$PYTEST_SUITE"
@@ -5066,8 +5066,25 @@ done
 exit "$found"
 STUB
 chmod +x "$af_sc/shellcheck"
-af_out="$(cd "$af" && env -u ORCH_TEST_JOBS PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+# The first run's shellcheck counts its starts (#3955): it logs each start's
+# arguments, then runs the stub. Two shell files changed, both selecting
+# hooks_test.sh.
+af_cnt="$af.sc-count"
+mkdir -p "$af_cnt"
+cat >"$af_cnt/shellcheck" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"$af_cnt/shellcheck.log"
+exec "$af_sc/shellcheck" "\$@"
+STUB
+chmod +x "$af_cnt/shellcheck"
+tr_put "$af" scripts/bash-walk.sh 'echo walk'
+af_out="$(cd "$af" && env -u ORCH_TEST_JOBS PATH="$af_cnt:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
 assert_status "a passing run exits 0" "$st" 0
+assert_eq "shellcheck starts once per selected file, each given exactly one file" \
+  "$(LC_ALL=C sort "$af_cnt/shellcheck.log")" \
+  "-S warning -f gcc scripts/bash-walk.sh
+-S warning -f gcc scripts/hook-guard.sh"
+rm -rf "$af_cnt"
 assert_eq "printing each part's summary in order, the pytest suite's first, shellcheck last" "$af_out" \
   "$PYTEST_SUITE: 7 passed, 0 failed
 orch_test.sh: 7 passed, 0 failed

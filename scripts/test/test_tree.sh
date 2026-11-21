@@ -194,9 +194,9 @@ titles_regex() {
 # repo root with the files to check appended. all.sh, affected.sh and
 # section-durations.sh all run it, so the three cannot drift.
 #
-# The functions shellcheck_start and shellcheck_join (below): all.sh and
-# section-durations.sh's pooled shellcheck step; the caller sources
-# test_jobs.sh and inits the pool, and stops SHELLCHECK_PIDS with
+# The functions shellcheck_start and shellcheck_join (below): all.sh,
+# affected.sh and section-durations.sh's pooled shellcheck step; the caller
+# sources test_jobs.sh and inits the pool, and stops SHELLCHECK_PIDS with
 # test_jobs_stop_children on INT and TERM.
 # shellcheck disable=SC2034 # read by the sourcing runners
 TENTHS_AWK='function tenths(s) { sub(/\./, "", s); return s + 0 }'

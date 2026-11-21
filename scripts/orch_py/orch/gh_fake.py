@@ -28,7 +28,7 @@ import time
 from typing import Callable, List, Mapping, Optional, Sequence, Tuple
 
 from orch import gh as real
-from orch.common import plain_number
+from orch.common import plain_number, read_text
 from orch.gh import GhFailed, IssueRow, LabelledBody, Limits
 
 # The author and timestamp of every comment the fake's own operations write.
@@ -51,13 +51,6 @@ def _write(path: str, text: str, mode: str = "wb") -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, mode) as f:
         f.write(text.encode("utf-8", "surrogateescape"))
-
-
-def _slurp(path: str) -> Optional[str]:
-    """The file's contents less trailing newlines, as "$(cat)" reads it; None
-    where it is unreadable."""
-    text = _read(path)
-    return None if text is None else text.rstrip("\n")
 
 
 def _first_line(path: str) -> str:
@@ -226,9 +219,9 @@ class FakeGh:
         for k in _numbered(directory):
             comment = os.path.join(directory, k)
             comments.append({
-                "author": {"login": _slurp(os.path.join(comment, "author")) or ""},
-                "authorAssociation": _slurp(os.path.join(comment, "association")) or "OWNER",
-                "createdAt": _slurp(os.path.join(comment, "created")) or "",
+                "author": {"login": read_text(os.path.join(comment, "author")) or ""},
+                "authorAssociation": read_text(os.path.join(comment, "association")) or "OWNER",
+                "createdAt": read_text(os.path.join(comment, "created")) or "",
                 "body": _read(os.path.join(comment, "body")) or "",
                 "url": "https://github.com/o/r/issues/%d#issuecomment-%s" % (n, k),
             })
@@ -256,7 +249,7 @@ class FakeGh:
         """The number a new issue takes - next_issue's, or one past the
         highest issue or PR number the store holds - the counter advanced."""
         counter = _store_path(self.store, "next_issue")
-        seeded = _slurp(counter)
+        seeded = read_text(counter)
         if seeded:
             n = real.number_of(seeded)
         else:
@@ -278,7 +271,7 @@ class FakeGh:
         self._known(n)
         return {
             "number": n,
-            "title": _slurp(_issue_path(self.store, n, "title")) or "",
+            "title": read_text(_issue_path(self.store, n, "title")) or "",
             "body": _read(_issue_path(self.store, n, "body")) or "",
             "labels": self._labels(n),
         }
@@ -299,7 +292,7 @@ class FakeGh:
         self._known(n)
 
         def stored(name: str, absent: str) -> str:
-            value = _slurp(_issue_path(self.store, n, name))
+            value = read_text(_issue_path(self.store, n, name))
             return absent if value is None else value
 
         return (stored("author", COMMENT_AUTHOR), stored("association", "OWNER"),
@@ -314,7 +307,7 @@ class FakeGh:
         self._known(n)
         if os.path.exists(_issue_path(self.store, n, "pull")):
             return "PULL"
-        return _slurp(_issue_path(self.store, n, "state")) or ""
+        return read_text(_issue_path(self.store, n, "state")) or ""
 
     def issue_state_labels(self, n: int) -> Tuple[str, List[str]]:
         self._failing("adapter_issue_state_labels")
@@ -322,12 +315,12 @@ class FakeGh:
         if stale is not None:
             return real.first_and_rest(stale)
         self._known(n)
-        return _slurp(_issue_path(self.store, n, "state")) or "", self._labels(n)
+        return read_text(_issue_path(self.store, n, "state")) or "", self._labels(n)
 
     def issue_state_labels_body(self, n: int) -> Tuple[str, List[str], str]:
         self._failing("adapter_issue_state_labels_body")
         self._known(n)
-        body = (_read(_issue_path(self.store, n, "body")) or "").rstrip("\n")
+        body = read_text(_issue_path(self.store, n, "body")) or ""
         return _first_line(_issue_path(self.store, n, "state")), self._labels(n), body
 
     def issue_title_labels(self, n: int) -> Tuple[str, List[str]]:
@@ -336,7 +329,7 @@ class FakeGh:
         if stale is not None:
             return real.first_and_rest(stale)
         self._known(n)
-        return _slurp(_issue_path(self.store, n, "title")) or "", self._labels(n)
+        return read_text(_issue_path(self.store, n, "title")) or "", self._labels(n)
 
     def issues_titled_rows(self, label: str) -> List[IssueRow]:
         self._failing("adapter_issues_titled_rows")
@@ -346,7 +339,7 @@ class FakeGh:
         else:
             rows = [
                 IssueRow(n, _first_line(_issue_path(self.store, n, "state")),
-                         _slurp(_issue_path(self.store, n, "title")) or "", self._labels(n))
+                         read_text(_issue_path(self.store, n, "title")) or "", self._labels(n))
                 for n in self._labelled_open(label)
             ]
         real.labelled_limit_warn(self.env, len(rows), label)
@@ -356,7 +349,7 @@ class FakeGh:
         self._failing("adapter_issues_labelled_bodies")
         rows = [
             LabelledBody(n, self._labels(n),
-                         (_read(_issue_path(self.store, n, "body")) or "").rstrip("\n"))
+                         read_text(_issue_path(self.store, n, "body")) or "")
             for n in self._labelled_open(*labels)
         ]
         real.labelled_limit_warn(self.env, len(rows), *labels)
@@ -410,7 +403,7 @@ class FakeGh:
         CLOSED succeeds and leaves it as it is, with no comment."""
         self._failing("adapter_issue_close", compound=bool(comment))
         self._known(n)
-        if _slurp(_issue_path(self.store, n, "state")) == "CLOSED":
+        if read_text(_issue_path(self.store, n, "state")) == "CLOSED":
             return
         if comment:
             self._comment_append(_issue_path(self.store, n, "comments"), comment)
@@ -441,7 +434,7 @@ class FakeGh:
         """The stored default_branch answer less its trailing newlines; a
         store with none fails it, as gh does for a repo it cannot resolve."""
         self._failing("adapter_repo_default_branch")
-        answer = _slurp(_store_path(self.store, "default_branch"))
+        answer = read_text(_store_path(self.store, "default_branch"))
         if answer is None:
             raise GhFailed(
                 "GraphQL: Could not resolve to a Repository with the name '%s'."

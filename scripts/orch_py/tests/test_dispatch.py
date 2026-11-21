@@ -1,19 +1,33 @@
 """orch.sh's handoff of a converted noun to the orch package, run as
 `python3 -m orch` would be, through a `-c` bootstrap (ADR-0067), end to end:
-each check runs `orch.sh issue <verb>` or `orch.sh finding-triage <verb>` as a
-command, in a checkout under tmp_path, against a fake store seeded in the
+each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>` or
+`orch.sh verification <verb>` as a command, in a checkout under tmp_path, against a fake store seeded in the
 layout the bash suite's fake_* helpers write, with ORCH_GH_FAKE_STORE set as
 fake_github sets it."""
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from conftest import comments_of, committed, git_repo, labels_of, read, run_git
+from conftest import (
+    VERIFICATION_KNOBS,
+    comments_of,
+    committed,
+    git_repo,
+    gone,
+    labels_of,
+    path_without,
+    read,
+    run_git,
+    until,
+    verification_records,
+    verification_store,
+)
 
 SCRIPTS = Path(__file__).resolve().parents[2]
 
@@ -26,11 +40,14 @@ def repo(tmp_path):
     return root
 
 
-def orch_sh(tmp_path, cwd, seed, *args, path=None):
+def orch_sh(tmp_path, cwd, seed, *args, path=None, knobs=None, unset=()):
     """`orch.sh <args>` run by bash in <cwd> on <seed>'s store, PATH <path>
-    (the test's own when None): its stdout, stderr and exit code."""
+    (the test's own when None), with the variables <knobs> set and those
+    named in <unset> unset: its stdout, stderr and exit code."""
     env = dict(os.environ, HOME=str(tmp_path), ORCH_GH_FAKE_STORE=seed.store,
-               PYTHONDONTWRITEBYTECODE="1")
+               PYTHONDONTWRITEBYTECODE="1", **(knobs or {}))
+    for name in unset:
+        env.pop(name, None)
     if path is not None:
         env["PATH"] = path
     run = subprocess.run(
@@ -41,21 +58,7 @@ def orch_sh(tmp_path, cwd, seed, *args, path=None):
     return run.stdout.decode(), run.stderr.decode(), run.returncode
 
 
-def path_without_python3(tmp_path):
-    """The test's PATH with no python3 on it: each directory holding one is
-    replaced by a directory of its own linking every other command there."""
-    kept = []
-    for k, directory in enumerate(os.environ["PATH"].split(os.pathsep)):
-        if not os.path.exists(os.path.join(directory, "python3")):
-            kept.append(directory)
-            continue
-        links = tmp_path / ("no-python3-%d" % k)
-        links.mkdir()
-        for name in os.listdir(directory):
-            if name != "python3":
-                (links / name).symlink_to(os.path.join(directory, name))
-        kept.append(str(links))
-    return os.pathsep.join(kept)
+
 
 
 def test_issue_fetch_writes_the_body_through_the_dispatch(tmp_path, repo, seed):
@@ -100,7 +103,7 @@ def test_a_converted_verb_dies_before_doing_anything_without_python3(tmp_path, r
     note.write_text("A note.\n")
 
     answer = orch_sh(tmp_path, repo, seed, "issue", "comment", "12", str(note),
-                     path=path_without_python3(tmp_path))
+                     path=path_without(tmp_path, "python3"))
 
     assert answer == ("", "orch: orch.sh issue needs python3 3.9 or newer (found none)"
                           " - run orch.sh doctor\n", 1)
@@ -200,3 +203,69 @@ def test_finding_triage_scan_reads_a_real_history_fetched_from_a_bare_origin(tmp
         "3\t7\tsrc/app.sh:2\tchanged\t%s\tneeds-triage\n" % fix,
         "4\t7\tsrc/app.sh:4\tunchanged\t-\tneeds-triage\n",
     ]), "", 0)
+
+
+# --- verification ------------------------------------------------------------
+
+def test_verification_run_delivers_a_run_through_the_dispatch(tmp_path, repo, seed):
+    committed(repo, {"README.md": "readme\n"}, "first")
+
+    answer = orch_sh(tmp_path, repo, seed, "verification", "run",
+                     "echo out; echo err >&2; exit 3", knobs=VERIFICATION_KNOBS)
+
+    assert answer == ("out\n", "err\n", 3)
+    assert verification_records(repo) == []
+
+
+@pytest.mark.parametrize("given", [None, "", "/the/caller/s/path"],
+                         ids=["unset", "empty", "set"])
+def test_verification_run_hands_the_command_the_pythonpath_orch_sh_was_given(
+        tmp_path, repo, seed, given):
+    committed(repo, {"README.md": "readme\n"}, "first")
+    knobs = dict(VERIFICATION_KNOBS)
+    if given is not None:
+        knobs["PYTHONPATH"] = given
+
+    answer = orch_sh(tmp_path, repo, seed, "verification", "run",
+                     'echo "${PYTHONPATH-unset}"', knobs=knobs,
+                     unset=["PYTHONPATH"] if given is None else [])
+
+    assert answer == ("%s\n" % ("unset" if given is None else given), "", 0)
+
+
+def test_verification_stop_stops_a_live_run_through_the_dispatch(tmp_path, repo, seed):
+    committed(repo, {"README.md": "readme\n"}, "first")
+    going = orch_sh(tmp_path, repo, seed, "verification", "run", "sleep 30",
+                    knobs=dict(VERIFICATION_KNOBS, ORCH_WAIT_BLOCK="0.3"))
+    record, = verification_records(repo)
+    group = int((verification_store(repo) / record / "pid").read_text().split()[0])
+    try:
+        answer = orch_sh(tmp_path, repo, seed, "verification", "stop", str(repo),
+                         knobs=VERIFICATION_KNOBS)
+
+        assert going == ("", "orch: still running after 0.3s - run the same command again\n", 75)
+        assert answer == ("", "", 0)
+        assert until(lambda: gone(group))
+        assert verification_records(repo) == []
+    finally:
+        try:
+            os.killpg(group, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def test_verification_usage_names_its_two_verbs_and_no_runner_entry_point(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "verification", "runner") == (
+        "", "orch: usage: orch.sh verification run <command> | stop <checkout>\n", 1)
+
+
+def test_help_lists_both_verification_verbs_and_no_runner_entry_point(tmp_path, repo, seed):
+    out, err, code = orch_sh(tmp_path, repo, seed, "help")
+    lines = [line for line in out.splitlines() if "verification" in line]
+
+    assert (err, code) == ("", 0)
+    assert [line.split()[:2] for line in lines if line.startswith("  verification ")] == [
+        ["verification", "run"], ["verification", "stop"]]
+    assert "ORCH_WAIT_BLOCK" in out
+    for name in ("orch.verification", "runner_main", "__main__", "RUNNER_BOOTSTRAP"):
+        assert name not in out

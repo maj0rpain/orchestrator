@@ -38,6 +38,7 @@ repositories instead, since a fake would only restate it. Hooks move last.
 Users need `python3` 3.9+. Bash and Python coexist for a
 while, with some helpers duplicated. The suite budget,
 `section-durations.tsv`, `affected.sh` and the bash job pool shrink with each
-noun and go when the last bash section does. The pytest suite sits outside
+noun and go when the last bash section does. What goes then, and is deleted
+rather than ported, is listed on #3951. The pytest suite sits outside
 the suite budget, so its growth is guarded by review alone; this amends
 ADR-0063's and ADR-0066's suite-budget line for that suite.

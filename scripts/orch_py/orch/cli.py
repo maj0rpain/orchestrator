@@ -24,11 +24,18 @@ def _finding_triage(argv: List[str]) -> int:
     return run(argv)
 
 
+def _verification(argv: List[str]) -> int:
+    from orch.verification import run
+
+    return run(argv)
+
+
 # The converted nouns: each takes the arguments after the noun and returns its
 # exit code.
 NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "issue": _issue,
     "finding-triage": _finding_triage,
+    "verification": _verification,
 }
 
 

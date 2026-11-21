@@ -13,10 +13,11 @@ import os
 import stat
 import subprocess
 import sys
+import time
 
 import pytest
 
-from orch import issue
+from orch import issue, verification
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit, Git
 from orch.triage_labels import LABELS_DOC
@@ -159,6 +160,67 @@ def committed(root, files, message):
     write_staged(root, files)
     run_git(root, "commit", "-qm", message)
     return run_git(root, "rev-parse", "HEAD")
+
+
+# The verification knobs every verification call runs under unless a test
+# sets its own: a short grace and a fast poll, so a stop and a delivery take a
+# fraction of a second.
+VERIFICATION_KNOBS = {"ORCH_VERIFICATION_GRACE": "0.3", "ORCH_VERIFICATION_INTERVAL": "0.02"}
+
+
+def verification_store(root):
+    """The verification store of the main checkout <root>, a Path."""
+    return root / ".orchestrator" / "verification"
+
+
+def verification_records(root):
+    """The names of the records in the verification store of the main
+    checkout <root>, its temporary directories (and the main checkout's own
+    identity token) left out."""
+    store = verification_store(root)
+    if not store.is_dir():
+        return []
+    return sorted(path.name for path in store.iterdir()
+                  if path.is_dir() and not path.name.startswith("."))
+
+
+def until(check, bound=5.0):
+    """Waits up to <bound> seconds for <check>() to hold: whether it did."""
+    deadline = time.monotonic() + bound
+    while not check():
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.02)
+    return True
+
+
+def gone(group):
+    """Whether the process group <group> is gone, the verification module's
+    in-process runners reaped first, so an ended one is never counted as a
+    zombie."""
+    verification.reap_runners()
+    try:
+        os.killpg(group, 0)
+    except ProcessLookupError:
+        return True
+    return False
+
+
+def path_without(tmp_path, command):
+    """The test's PATH with no <command> on it: each directory holding one is
+    replaced by a directory of its own linking every other command there."""
+    kept = []
+    for k, directory in enumerate(os.environ["PATH"].split(os.pathsep)):
+        if not os.path.exists(os.path.join(directory, command)):
+            kept.append(directory)
+            continue
+        links = tmp_path / ("no-%s-%d" % (command, k))
+        links.mkdir()
+        for name in os.listdir(directory):
+            if name != command:
+                (links / name).symlink_to(os.path.join(directory, name))
+        kept.append(str(links))
+    return os.pathsep.join(kept)
 
 
 def fake(seed):
