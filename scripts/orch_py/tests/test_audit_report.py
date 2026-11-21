@@ -211,6 +211,21 @@ def test_report_takes_a_reference_split_spanned_or_fenced(tmp_path, capsys, run_
                       str(run_dir), str(tmp_path / "report.html")) == 0
 
 
+def test_report_reads_a_top_number_with_leading_zeros_as_decimal(tmp_path, capsys, run_dir):
+    # Bash's range check read `@@ top 010` as 10 but its title lookup as octal
+    # 8; the ruling on #3985 keeps the decimal reading, as #3979 did for
+    # Overlaps:, so 010 names finding 10.
+    edit(run_dir / "ranked.md", "@@ top 1\n", "@@ top 010\n")
+    with open(str(run_dir / "ranked.md"), "a") as f:
+        for n in range(4, 11):
+            f.write("@@ finding %d\nTitle: Finding number %d\nCategory: bug\nLocation: z.sh:%d\n"
+                    % (n, n, n))
+    out = tmp_path / "report.html"
+    assert orch_audit(FakeGit(toplevel=CHECKOUT), "report", str(run_dir), str(out)) == 0
+    top = out.read_text().split('<section id="top"', 1)[1].split("</section>", 1)[0]
+    assert 'href="#finding-010">Finding 010: Finding number 10</a>' in top
+
+
 def test_report_refuses_an_out_html_whose_directory_is_missing(tmp_path, capsys):
     out = tmp_path / "nodir" / "r.html"
     refused(tmp_path, capsys, os.path.join(AUDIT_FIXTURES, "full"), out,
