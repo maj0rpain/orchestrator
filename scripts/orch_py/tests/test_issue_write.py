@@ -8,7 +8,7 @@ import os
 
 import pytest
 
-from conftest import GH_502, orch_issue
+from conftest import GH_502, orch_issue, write_labels_doc
 from orch.gh import label_listed
 from orch.git import FakeGit
 
@@ -33,9 +33,7 @@ class Noun:
             "| -------------------------- | -------------------- | ------- |",
         ]
         lines += ["| `%s` | `%s` | Meant |" % row for row in rows]
-        doc = self.root / "docs" / "agents" / "triage-labels.md"
-        doc.parent.mkdir(parents=True, exist_ok=True)
-        doc.write_text("\n".join(lines) + "\n")
+        write_labels_doc(self.root, "\n".join(lines) + "\n")
 
     def __call__(self, *argv):
         """(exit code, stdout, stderr) of `orch.sh issue <argv>`."""

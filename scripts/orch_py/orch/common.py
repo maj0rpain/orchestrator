@@ -5,7 +5,9 @@ write, and the words a list and a state read as in a line.
 Every `orch: ` message goes through die or warn, as in the bash side's
 common.sh: die(message, 2) is the bash die2, for a command that reserves exit
 1 for a meaningful "no". Both flush stdout first, so a line printed ahead of
-the message comes ahead of it, as bash's unbuffered output does.
+the message comes ahead of it, as bash's unbuffered output does. Both build
+the line with message_line, which a message handed on rather than printed -
+the gh adapter's rate-limit failure - uses alone.
 """
 from __future__ import annotations
 
@@ -24,7 +26,13 @@ def die(message: str, code: int = 1) -> NoReturn:
 def warn(message: str) -> None:
     """die's line on stderr, without the exit."""
     sys.stdout.flush()
-    print("orch: " + message, file=sys.stderr)
+    sys.stderr.write(message_line(message))
+
+
+def message_line(message: str) -> str:
+    """The `orch: <message>` line die and warn print, newline included, for a
+    caller that hands the line on rather than printing it."""
+    return "orch: " + message + "\n"
 
 
 def plain_number(text: str) -> bool:

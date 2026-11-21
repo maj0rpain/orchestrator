@@ -36,7 +36,7 @@ from typing import (
     TypeVar,
 )
 
-from orch.common import die, plain_number, warn
+from orch.common import die, message_line, plain_number, warn
 from orch.git import Git
 from orch.repo import REPO_REMEDY, RepoPin
 
@@ -359,7 +359,7 @@ class Limits:
                     self.sleep(float(self.env.get("ORCH_GH_LIMIT_WAIT", "") or LIMIT_WAIT_DEFAULT))
                     retried = True
                     continue
-                raise GhFailed("orch: " + self.message() + "\n") from None
+                raise GhFailed(message_line(self.message())) from None
 
     def reset(self) -> int:
         """The epoch second a limit is waited out until: the latest reset

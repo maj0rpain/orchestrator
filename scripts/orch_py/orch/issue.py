@@ -191,10 +191,10 @@ class Issue:
             if gh_or_die("read the parent of issue #%d" % n,
                          self.gh.issue_parent, n, code=2) is not None:
                 continue
-            blockers = "read the blockers of issue #%d" % n
-            open_count = gh_or_die(blockers, self.gh.issue_open_blockers, n, code=2)
+            blockers_what = "read the blockers of issue #%d" % n
+            open_count = gh_or_die(blockers_what, self.gh.issue_open_blockers, n, code=2)
             if open_count is None:
-                states = gh_or_die(blockers, self.gh.blockers_states, n, code=2)
+                states = gh_or_die(blockers_what, self.gh.blockers_states, n, code=2)
                 open_count = sum(1 for _, state in states if state == "OPEN")
             if open_count == 0:
                 print("%d\t%s" % (n, row.title))
@@ -319,8 +319,10 @@ class Issue:
         gh_or_die("relabel issue #" + n, self.gh.issue_relabel, int(n), add=[ready], remove=removed)
 
         def verified() -> bool:
-            _, now = self.gh.issue_state_labels(int(n))
-            return label_listed(now, ready) and not any(label_listed(now, gone) for gone in removed)
+            _, labels_now = self.gh.issue_state_labels(int(n))
+            return label_listed(labels_now, ready) and not any(
+                label_listed(labels_now, gone) for gone in removed
+            )
 
         # Either death leaves the relabel standing and posts no comment.
         verify_twice(

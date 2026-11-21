@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from conftest import write_labels_doc
 from orch.triage_labels import TRIAGE_ROLES, TriageLabels
 
 TRIAGE_LABELS_SH = Path(__file__).resolve().parents[2] / "triage-labels.sh"
@@ -19,9 +20,7 @@ HEADER = (
 
 def mapping(tmp_path, doc):
     if doc is not None:
-        path = tmp_path / "docs" / "agents" / "triage-labels.md"
-        path.parent.mkdir(parents=True)
-        path.write_text(doc)
+        write_labels_doc(tmp_path, doc)
     return TriageLabels(lambda: str(tmp_path))
 
 

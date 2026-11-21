@@ -18,6 +18,7 @@ import pytest
 from orch import issue
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit
+from orch.triage_labels import LABELS_DOC
 
 # A gh failure's stderr: its first line is the reason a message names.
 GH_502 = "HTTP 502: Bad Gateway\nsecond line"
@@ -38,6 +39,14 @@ def store(tmp_path):
 def seed(store):
     """The store's seeder and reader, as the bash suite's fake_* helpers."""
     return FakeStore(str(store))
+
+
+def write_labels_doc(root, text):
+    """Writes <text> as the triage-labels doc of the checkout at <root>, a
+    Path, making its directories as needed."""
+    path = root / LABELS_DOC
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
 
 
 def orch_issue(seed, *argv, gh=None, git=None, env=None, pin=None):

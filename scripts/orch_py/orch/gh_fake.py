@@ -91,6 +91,16 @@ def _numbered(directory: str) -> List[str]:
     return sorted(names, key=lambda name: int(name) if name.isdigit() else 0)
 
 
+def _store_path(store: str, *parts: object) -> str:
+    """The path of <parts> under the store at <store>, in the fake_* layout."""
+    return os.path.join(store, *(str(part) for part in parts))
+
+
+def _issue_path(store: str, n: int, *parts: str) -> str:
+    """The path of <parts> under issue #n's directory in the store."""
+    return _store_path(store, "issues", n, *parts)
+
+
 def _comment_write(directory: str, author: str, created: str, association: str,
                    body: str) -> None:
     """A comment after any <directory> holds: the next number's directory,
@@ -126,15 +136,9 @@ class FakeGh:
 
     # --- the store ---
 
-    def _path(self, *parts: object) -> str:
-        return os.path.join(self.store, *(str(part) for part in parts))
-
-    def _issue(self, n: int, *parts: str) -> str:
-        return self._path("issues", n, *parts)
-
     def _known(self, n: int) -> None:
         """Fails as `gh issue view` does where the store holds no issue #n."""
-        if not os.path.isdir(self._issue(n)):
+        if not os.path.isdir(_issue_path(self.store, n)):
             raise GhFailed(
                 "GraphQL: Could not resolve to an issue or pull request with the"
                 " number of %d. (repository.issue)\n" % n
@@ -144,14 +148,14 @@ class FakeGh:
         """The stderr of the failure the store seeds for <operation>, a
         countdown counted; None where none fails it."""
         if operation != "adapter_rate_limit":
-            limited = _read(self._path("ratelimit"))
+            limited = _read(_store_path(self.store, "ratelimit"))
             if limited is not None:
                 return limited
-        if os.path.isfile(self._path("offline")):
+        if os.path.isfile(_store_path(self.store, "offline")):
             return OFFLINE
-        if os.path.isfile(self._path("noauth")):
+        if os.path.isfile(_store_path(self.store, "noauth")):
             return NOAUTH
-        fail = self._path("fail", operation)
+        fail = _store_path(self.store, "fail", operation)
         stderr = _read(fail)
         if stderr is None or _countdown(fail + ".after"):
             return None
@@ -178,7 +182,7 @@ class FakeGh:
     def _lagging(self, operation: str) -> Optional[str]:
         """The stale answer while the operation's lag countdown is above zero,
         counting it down ("" where fake_lag gave none); else None."""
-        lag = self._path("lag", operation)
+        lag = _store_path(self.store, "lag", operation)
         if not os.path.isfile(lag) or _countdown(lag + ".after"):
             return None
         if not _countdown(lag):
@@ -187,32 +191,32 @@ class FakeGh:
 
     def _rate_limit(self) -> str:
         self._fail_raw("adapter_rate_limit")
-        quota = _read(self._path("quota"))
+        quota = _read(_store_path(self.store, "quota"))
         if quota is not None:
             return quota
         reset = int(self.now()) + 3600
         return "core\t5000\t5000\t%d\ngraphql\t5000\t5000\t%d\n" % (reset, reset)
 
     def _labels(self, n: int) -> List[str]:
-        return _lines(self._issue(n, "labels"))
+        return _lines(_issue_path(self.store, n, "labels"))
 
     def _label_canon(self, name: str) -> str:
         """GitHub's casing rule: the name as the repo's labels hold it in any
         casing, else as given."""
-        for line in _lines(self._path("labels")):
+        for line in _lines(_store_path(self.store, "labels")):
             known = line.split("\t", 1)[0]
             if real.label_listed([known], name):
                 return known
         return name
 
     def _labels_write(self, n: int, labels: Sequence[str]) -> None:
-        _write(self._issue(n, "labels"), "".join(label + "\n" for label in labels))
+        _write(_issue_path(self.store, n, "labels"), "".join(label + "\n" for label in labels))
 
     def _comment_append(self, directory: str, body: str) -> None:
         _comment_write(directory, COMMENT_AUTHOR, COMMENT_CREATED, "OWNER", body)
 
     def _comments(self, n: int) -> List[dict]:
-        directory = self._issue(n, "comments")
+        directory = _issue_path(self.store, n, "comments")
         comments = []
         for k in _numbered(directory):
             comment = os.path.join(directory, k)
@@ -229,23 +233,23 @@ class FakeGh:
         """The open issues the store holds, pull requests left out, oldest
         first."""
         numbers = []
-        for name in _numbered(self._path("issues")):
-            if not name.isdigit() or os.path.exists(self._issue(int(name), "pull")):
+        for name in _numbered(_store_path(self.store, "issues")):
+            if not name.isdigit() or os.path.exists(_issue_path(self.store, int(name), "pull")):
                 continue
-            if _first_line(self._issue(int(name), "state")) == "OPEN":
+            if _first_line(_issue_path(self.store, int(name), "state")) == "OPEN":
                 numbers.append(int(name))
         return numbers
 
     def _next_number(self) -> int:
         """The number a new issue takes - next_issue's, or one past the
         highest issue or PR number the store holds - the counter advanced."""
-        counter = self._path("next_issue")
+        counter = _store_path(self.store, "next_issue")
         seeded = _slurp(counter)
         if seeded:
             n = real.number_of(seeded)
         else:
             held = [int(name) for kind in ("issues", "prs")
-                    for name in _numbered(self._path(kind)) if name.isdigit()]
+                    for name in _numbered(_store_path(self.store, kind)) if name.isdigit()]
             n = max(held, default=0) + 1
         _write(counter, "%d\n" % (n + 1))
         return n
@@ -255,20 +259,20 @@ class FakeGh:
     def issue_body(self, n: int) -> str:
         self._failing("adapter_issue_body")
         self._known(n)
-        return _read(self._issue(n, "body")) or ""
+        return _read(_issue_path(self.store, n, "body")) or ""
 
     def issue_json(self, n: int) -> dict:
         self._failing("adapter_issue_json")
         self._known(n)
         return {
             "number": n,
-            "title": _slurp(self._issue(n, "title")) or "",
-            "body": _read(self._issue(n, "body")) or "",
+            "title": _slurp(_issue_path(self.store, n, "title")) or "",
+            "body": _read(_issue_path(self.store, n, "body")) or "",
             "labels": self._labels(n),
         }
 
     def issue_comments(self, n: int) -> List[dict]:
-        _write(self._path("comment_reads"), "x\n", "ab")
+        _write(_store_path(self.store, "comment_reads"), "x\n", "ab")
         self._failing("adapter_issue_comments")
         stale = self._lagging("adapter_issue_comments")
         if stale is not None:
@@ -283,7 +287,7 @@ class FakeGh:
         self._known(n)
 
         def stored(name: str, absent: str) -> str:
-            value = _slurp(self._issue(n, name))
+            value = _slurp(_issue_path(self.store, n, name))
             return absent if value is None else value
 
         return (stored("author", COMMENT_AUTHOR), stored("association", "OWNER"),
@@ -295,13 +299,13 @@ class FakeGh:
         if stale is not None:
             return real.first_and_rest(stale)
         self._known(n)
-        return _slurp(self._issue(n, "state")) or "", self._labels(n)
+        return _slurp(_issue_path(self.store, n, "state")) or "", self._labels(n)
 
     def issue_state_labels_body(self, n: int) -> Tuple[str, List[str], str]:
         self._failing("adapter_issue_state_labels_body")
         self._known(n)
-        body = (_read(self._issue(n, "body")) or "").rstrip("\n")
-        return _first_line(self._issue(n, "state")), self._labels(n), body
+        body = (_read(_issue_path(self.store, n, "body")) or "").rstrip("\n")
+        return _first_line(_issue_path(self.store, n, "state")), self._labels(n), body
 
     def issue_title_labels(self, n: int) -> Tuple[str, List[str]]:
         self._failing("adapter_issue_title_labels")
@@ -309,7 +313,7 @@ class FakeGh:
         if stale is not None:
             return real.first_and_rest(stale)
         self._known(n)
-        return _slurp(self._issue(n, "title")) or "", self._labels(n)
+        return _slurp(_issue_path(self.store, n, "title")) or "", self._labels(n)
 
     def issues_titled_rows(self, label: str) -> List[IssueRow]:
         self._failing("adapter_issues_titled_rows")
@@ -321,8 +325,8 @@ class FakeGh:
             labelled = [n for n in self._open_numbers()
                         if real.label_listed(self._labels(n), label)]
             rows = [
-                IssueRow(n, _first_line(self._issue(n, "state")),
-                         _slurp(self._issue(n, "title")) or "", self._labels(n))
+                IssueRow(n, _first_line(_issue_path(self.store, n, "state")),
+                         _slurp(_issue_path(self.store, n, "title")) or "", self._labels(n))
                 for n in labelled[:limit]
             ]
         real.labelled_limit_warn(self.env, len(rows), label)
@@ -331,9 +335,9 @@ class FakeGh:
     def issue_create(self, title: str, body_file: str, labels: Sequence[str]) -> int:
         self._failing("adapter_issue_create")
         n = self._next_number()
-        _write(self._issue(n, "state"), "OPEN\n")
-        _write(self._issue(n, "title"), title + "\n")
-        _write(self._issue(n, "body"), _read(body_file) or "")
+        _write(_issue_path(self.store, n, "state"), "OPEN\n")
+        _write(_issue_path(self.store, n, "title"), title + "\n")
+        _write(_issue_path(self.store, n, "body"), _read(body_file) or "")
         kept: List[str] = []
         for label in labels:
             if not real.label_listed(kept, label):
@@ -344,12 +348,12 @@ class FakeGh:
     def issue_body_edit(self, n: int, body_file: str) -> None:
         self._failing("adapter_issue_body_edit")
         self._known(n)
-        _write(self._issue(n, "body"), _read(body_file) or "")
+        _write(_issue_path(self.store, n, "body"), _read(body_file) or "")
 
     def issue_comment(self, n: int, body_file: str) -> None:
         self._failing("adapter_issue_comment")
         self._known(n)
-        self._comment_append(self._issue(n, "comments"), _read(body_file) or "")
+        self._comment_append(_issue_path(self.store, n, "comments"), _read(body_file) or "")
 
     def issue_relabel(
         self, n: int, add: Sequence[str] = (), remove: Sequence[str] = ()
@@ -376,43 +380,44 @@ class FakeGh:
         CLOSED succeeds and leaves it as it is, with no comment."""
         self._failing("adapter_issue_close", compound=bool(comment))
         self._known(n)
-        if _slurp(self._issue(n, "state")) == "CLOSED":
+        if _slurp(_issue_path(self.store, n, "state")) == "CLOSED":
             return
         if comment:
-            self._comment_append(self._issue(n, "comments"), comment)
-        _write(self._issue(n, "state"), "CLOSED\n")
+            self._comment_append(_issue_path(self.store, n, "comments"), comment)
+        _write(_issue_path(self.store, n, "state"), "CLOSED\n")
         if duplicate_of is not None:
-            _write(self._issue(n, "reason"), "duplicate\n")
-            _write(self._issue(n, "duplicate_of"), "%d\n" % duplicate_of)
+            _write(_issue_path(self.store, n, "reason"), "duplicate\n")
+            _write(_issue_path(self.store, n, "duplicate_of"), "%d\n" % duplicate_of)
         else:
-            _write(self._issue(n, "reason"), (reason or "completed") + "\n")
+            _write(_issue_path(self.store, n, "reason"), (reason or "completed") + "\n")
 
     # --- sub-issue and dependency operations ---
 
     def issue_parent(self, n: int) -> Optional[int]:
         self._failing("adapter_issue_parent")
         self._known(n)
-        subs = self._path("subs")
+        subs = _store_path(self.store, "subs")
         for parent in sorted(os.listdir(subs)) if os.path.isdir(subs) else []:
             if str(n) in real.lines_of(_read(os.path.join(subs, parent)) or ""):
                 return int(parent)
         return None
 
     def _blockers(self, n: int) -> List[int]:
-        return [int(line) for line in _lines(self._path("blocked_by", n)) if line.isdigit()]
+        return [int(line) for line in _lines(_store_path(self.store, "blocked_by", n))
+                if line.isdigit()]
 
     def issue_open_blockers(self, n: int) -> Optional[int]:
         self._failing("adapter_issue_open_blockers")
         self._known(n)
-        if str(n) in real.lines_of(_read(self._path("no_dependency_summary")) or ""):
+        if str(n) in real.lines_of(_read(_store_path(self.store, "no_dependency_summary")) or ""):
             return None
         return sum(1 for b in self._blockers(n)
-                   if _first_line(self._issue(b, "state")) == "OPEN")
+                   if _first_line(_issue_path(self.store, b, "state")) == "OPEN")
 
     def blockers_states(self, n: int) -> List[Tuple[int, str]]:
         self._failing("adapter_blockers_states")
         self._known(n)
-        return [(b, _first_line(self._issue(b, "state"))) for b in self._blockers(n)]
+        return [(b, _first_line(_issue_path(self.store, b, "state"))) for b in self._blockers(n)]
 
 
 class FakeStore:
@@ -422,30 +427,27 @@ class FakeStore:
     def __init__(self, store: str) -> None:
         self.store = store
 
-    def _path(self, *parts: object) -> str:
-        return os.path.join(self.store, *(str(part) for part in parts))
-
     def issue(self, n: int, state: str, *labels: str) -> None:
         """Issue #n afresh, open or closed, carrying the labels named - no
         title, body or comments."""
-        directory = self._path("issues", n)
+        directory = _issue_path(self.store, n)
         shutil.rmtree(directory, ignore_errors=True)
         _write(os.path.join(directory, "state"), state.upper() + "\n")
         self.labels(n, *labels)
 
     def labels(self, n: int, *labels: str) -> None:
-        _write(self._path("issues", n, "labels"), "".join(label + "\n" for label in labels))
+        _write(_issue_path(self.store, n,"labels"), "".join(label + "\n" for label in labels))
 
     def title(self, n: int, title: str) -> None:
-        _write(self._path("issues", n, "title"), title + "\n")
+        _write(_issue_path(self.store, n,"title"), title + "\n")
 
     def body(self, n: int, body: str) -> None:
-        _write(self._path("issues", n, "body"), body)
+        _write(_issue_path(self.store, n,"body"), body)
 
     def comment(self, n: int, author: str, created: str, body: str, association: str = "") -> None:
         """A comment after any issue #n has; its association OWNER unless
         given."""
-        _comment_write(self._path("issues", n, "comments"), author, created,
+        _comment_write(_issue_path(self.store, n,"comments"), author, created,
                        association or "OWNER", body)
 
     def authorship(
@@ -455,47 +457,47 @@ class FakeStore:
         title's latest renamer, as fake_issue_authorship seeds them."""
         for name, value in (("author", author), ("association", association),
                             ("editor", editor), ("renamer", renamer)):
-            _write(self._path("issues", n, name), value + "\n")
+            _write(_issue_path(self.store, n,name), value + "\n")
 
     def sub_issue(self, parent: int, child: int) -> None:
         """Issue #child a sub-issue of #parent."""
-        _write(self._path("subs", parent), "%d\n" % child, "ab")
+        _write(_store_path(self.store, "subs", parent), "%d\n" % child, "ab")
 
     def blocked_by(self, n: int, *blockers: int) -> None:
         """Issue #n blocked by the issues named, in that order; none named, an
         empty blocked-by list."""
-        _write(self._path("blocked_by", n), "".join("%d\n" % b for b in blockers))
+        _write(_store_path(self.store, "blocked_by", n), "".join("%d\n" % b for b in blockers))
 
     def no_dependency_summary(self, n: int) -> None:
         """GitHub leaves #n's dependency summary off, so only its blocked-by
         listing answers."""
-        _write(self._path("no_dependency_summary"), "%d\n" % n, "ab")
+        _write(_store_path(self.store, "no_dependency_summary"), "%d\n" % n, "ab")
 
     def next_issue(self, n: int) -> None:
-        _write(self._path("next_issue"), "%d\n" % n)
+        _write(_store_path(self.store, "next_issue"), "%d\n" % n)
 
     def fail(self, operation: str, stderr: Optional[str] = None) -> None:
         """Every later call of the operation fails with <stderr>, default
         "fake gh: <operation> failed"; an empty one prints nothing."""
         text = "fake gh: %s failed" % operation if stderr is None else stderr
-        _write(self._path("fail", operation), text + "\n" if text else "")
+        _write(_store_path(self.store, "fail", operation), text + "\n" if text else "")
 
     def fail_times(self, operation: str, times: int, stderr: str = "") -> None:
         """The next <times> calls of the operation fail, then it succeeds."""
-        _write(self._path("fail", operation), stderr)
-        _write(self._path("fail", operation + ".times"), "%d\n" % times)
+        _write(_store_path(self.store, "fail", operation), stderr)
+        _write(_store_path(self.store, "fail", operation + ".times"), "%d\n" % times)
 
     def fail_after(self, operation: str, after: int, stderr: Optional[str] = None) -> None:
         """fail, but only once <after> calls of the operation have answered."""
         self.fail(operation, stderr)
-        _write(self._path("fail", operation + ".after"), "%d\n" % after)
+        _write(_store_path(self.store, "fail", operation + ".after"), "%d\n" % after)
 
     def lag(self, operation: str, times: int, stale: Optional[str] = None) -> None:
         """The next <times> reads of the operation answer <stale>, in the
         shape gh prints it - nothing where none is given - then current."""
-        _write(self._path("lag", operation), "%d\n" % times)
+        _write(_store_path(self.store, "lag", operation), "%d\n" % times)
         if stale is not None:
-            _write(self._path("lag", operation + ".stale"), stale + "\n")
+            _write(_store_path(self.store, "lag", operation + ".stale"), stale + "\n")
 
     def lag_after(
         self, operation: str, after: int, times: int, stale: Optional[str] = None
@@ -503,15 +505,15 @@ class FakeStore:
         """lag, but only once <after> reads of the operation have answered
         current."""
         self.lag(operation, times, stale)
-        _write(self._path("lag", operation + ".after"), "%d\n" % after)
+        _write(_store_path(self.store, "lag", operation + ".after"), "%d\n" % after)
 
     def unfail(self) -> None:
-        shutil.rmtree(self._path("fail"), ignore_errors=True)
+        shutil.rmtree(_store_path(self.store, "fail"), ignore_errors=True)
 
     def offline(self) -> None:
-        _write(self._path("offline"), "")
+        _write(_store_path(self.store, "offline"), "")
 
     def online(self) -> None:
         for name in ("offline", "noauth", "ratelimit"):
-            if os.path.exists(self._path(name)):
-                os.remove(self._path(name))
+            if os.path.exists(_store_path(self.store, name)):
+                os.remove(_store_path(self.store, name))

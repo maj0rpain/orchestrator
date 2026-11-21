@@ -11,37 +11,38 @@ against FakeGit, asserting the same answers.
 from __future__ import annotations
 
 import subprocess
-from typing import Dict, List, Mapping, Optional, Sequence, Set
+from typing import Dict, List, Optional, Sequence, Set
 
 
 class Git:
     """The real operations, each a `git` run in <cwd> (the current directory
-    when None) with <env> (the process's own when None)."""
+    when None)."""
 
-    def __init__(
-        self, cwd: Optional[str] = None, env: Optional[Mapping[str, str]] = None
-    ) -> None:
+    def __init__(self, cwd: Optional[str] = None) -> None:
         self.cwd = cwd
-        self.env = None if env is None else dict(env)
 
     def _run(self, args: List[str]) -> "subprocess.CompletedProcess[bytes]":
         return subprocess.run(
             ["git", *args],
             cwd=self.cwd,
-            env=self.env,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
 
+    def _output(self, args: List[str]) -> Optional[str]:
+        """The one line a `git` run prints, its newline stripped; None when
+        the run fails."""
+        run = self._run(args)
+        if run.returncode != 0:
+            return None
+        return run.stdout.decode("utf-8", "surrogateescape").rstrip("\n")
+
     def origin_url(self) -> Optional[str]:
         """The `origin` remote's URL; None when the repository has no origin,
         or there is no repository - any failure of the read, as the bash
         resolver's `git remote get-url origin 2>/dev/null` takes it."""
-        run = self._run(["remote", "get-url", "origin"])
-        if run.returncode != 0:
-            return None
-        return run.stdout.decode("utf-8", "surrogateescape").rstrip("\n")
+        return self._output(["remote", "get-url", "origin"])
 
     def toplevel(self) -> Optional[str]:
         """The checkout's root, as orch.sh's ROOT block reads it; None outside
@@ -52,10 +53,9 @@ class Git:
         """The root of the checkout directory <path> is in (this adapter's
         own directory when None), as `git -C <path> rev-parse --show-toplevel`
         reads it; None when it is in no repository or does not exist."""
-        run = self._run((["-C", path] if path is not None else []) + ["rev-parse", "--show-toplevel"])
-        if run.returncode != 0:
-            return None
-        return run.stdout.decode("utf-8", "surrogateescape").rstrip("\n")
+        return self._output(
+            (["-C", path] if path is not None else []) + ["rev-parse", "--show-toplevel"]
+        )
 
     def changed_paths(self, base: str, paths: Sequence[str]) -> Optional[Set[str]]:
         """Which of <paths> differ between commit <base>'s tree and HEAD's:

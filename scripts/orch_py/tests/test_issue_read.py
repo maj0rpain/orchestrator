@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import CHECKOUT, GH_502, orch_issue
+from conftest import CHECKOUT, GH_502, orch_issue, write_labels_doc
 from orch.gh import Unparsed
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit
@@ -84,9 +84,9 @@ def checkout(tmp_path, labels_doc=None):
     """A checkout's git adapter, rooted at tmp_path/repo, holding <labels_doc>
     as its triage-labels doc when one is given."""
     root = tmp_path / "repo"
-    (root / "docs" / "agents").mkdir(parents=True)
+    root.mkdir()
     if labels_doc is not None:
-        (root / "docs" / "agents" / "triage-labels.md").write_text(labels_doc)
+        write_labels_doc(root, labels_doc)
     return FakeGit(toplevel=str(root))
 
 
