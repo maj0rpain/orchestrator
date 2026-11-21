@@ -153,9 +153,9 @@ assert_eq "a sourced orch.sh never reaches the next statement" "$guard_out" ""
 # --- outside a checkout (#931) ------------------------------------------------
 # Run from the suite's own non-repo cwd: the death names the cwd and the
 # remedy. It comes before dispatch, so any subcommand reaches it, a converted
-# noun's included. The remedy names the checkout OLDPWD resolves to, when it
-# resolves to one (#1523); every case pins OLDPWD, so the suite's own leftover
-# never decides it.
+# noun's included (test_dispatch.py pins that one). The remedy names the
+# checkout OLDPWD resolves to, when it resolves to one (#1523); every case pins
+# OLDPWD, so the suite's own leftover never decides it.
 echo
 echo "outside a checkout (#931)"
 outside_repo="$(new_repo)"
@@ -174,6 +174,3 @@ assert_eq "an OLDPWD outside any repo gives the generic remedy" "$err" "$outside
 err="$(OLDPWD='' bash "$ORCH" status 2>&1 >/dev/null)"; st=$?
 assert_status "with an empty OLDPWD, exits 1" "$st" 1
 assert_eq "an empty OLDPWD gives the generic remedy" "$err" "$outside_generic"
-err="$(env -u OLDPWD bash "$ORCH" issue fetch 931 out.md 2>&1 >/dev/null)"; st=$?
-assert_status "a converted noun outside a git repository exits 1" "$st" 1
-assert_eq "with the generic remedy" "$err" "$outside_generic"

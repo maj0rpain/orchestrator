@@ -27,6 +27,7 @@ import time
 from typing import Callable, List, Mapping, Optional, Sequence, Tuple
 
 from orch import gh as real
+from orch.common import plain_number
 from orch.gh import GhFailed, IssueRow, Limits
 
 # The author and timestamp of every comment the fake's own operations write.
@@ -88,7 +89,7 @@ def _numbered(directory: str) -> List[str]:
         names = os.listdir(directory)
     except OSError:
         return []
-    return sorted(names, key=lambda name: int(name) if name.isdigit() else 0)
+    return sorted(names, key=lambda name: int(name) if plain_number(name) else 0)
 
 
 def _store_path(store: str, *parts: object) -> str:
@@ -234,7 +235,7 @@ class FakeGh:
         first."""
         numbers = []
         for name in _numbered(_store_path(self.store, "issues")):
-            if not name.isdigit() or os.path.exists(_issue_path(self.store, int(name), "pull")):
+            if not plain_number(name) or os.path.exists(_issue_path(self.store, int(name), "pull")):
                 continue
             if _first_line(_issue_path(self.store, int(name), "state")) == "OPEN":
                 numbers.append(int(name))
@@ -249,7 +250,7 @@ class FakeGh:
             n = real.number_of(seeded)
         else:
             held = [int(name) for kind in ("issues", "prs")
-                    for name in _numbered(_store_path(self.store, kind)) if name.isdigit()]
+                    for name in _numbered(_store_path(self.store, kind)) if plain_number(name)]
             n = max(held, default=0) + 1
         _write(counter, "%d\n" % (n + 1))
         return n
@@ -404,7 +405,7 @@ class FakeGh:
 
     def _blockers(self, n: int) -> List[int]:
         return [int(line) for line in _lines(_store_path(self.store, "blocked_by", n))
-                if line.isdigit()]
+                if plain_number(line)]
 
     def issue_open_blockers(self, n: int) -> Optional[int]:
         self._failing("adapter_issue_open_blockers")

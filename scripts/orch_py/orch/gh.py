@@ -372,7 +372,7 @@ class Limits:
         latest = 0
         for line in lines_of(answer):
             fields = line.split()
-            if len(fields) >= 4 and fields[1].isdigit() and int(fields[1]) == 0:
+            if len(fields) >= 4 and plain_number(fields[1]) and int(fields[1]) == 0:
                 latest = max(latest, number_of(fields[3]))
         return latest or int(self.now()) + LIMIT_RESET_FALLBACK
 

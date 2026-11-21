@@ -50,6 +50,13 @@ def issue_number(n: str, usage: str, code: int = 1) -> None:
         die("issue must be a plain issue number, got: %s (%s)" % (n, usage), code)
 
 
+def check_body_file(path: str) -> None:
+    """Dies unless <path> is a file: the check of the body file update,
+    comment and publish send."""
+    if not os.path.isfile(path):
+        die("body file not found: " + path)
+
+
 class Issue:
     """The verbs, on the gh adapter <gh>, in the checkout <git> reads, with
     <env> naming the host and the knobs."""
@@ -206,8 +213,7 @@ class Issue:
     def update(self, args: List[str]) -> int:
         n = self.file_op("update", "", args)
         path = args[1]
-        if not os.path.isfile(path):
-            die("body file not found: " + path)
+        check_body_file(path)
         # --body-file, never --body: an issue body carries tables, fences and
         # `#nn` references, which a shell mangles.
         gh_or_die("replace the body of issue #" + n, self.gh.issue_body_edit, int(n), path)
@@ -218,8 +224,7 @@ class Issue:
         posts its summary on whatever issue it was pointed at."""
         n = self.file_op("comment", "", args)
         path = args[1]
-        if not os.path.isfile(path):
-            die("body file not found: " + path)
+        check_body_file(path)
         gh_or_die("comment on issue #" + n, self.gh.issue_comment, int(n), path)
         return 0
 
@@ -234,8 +239,7 @@ class Issue:
         title, body_file = args
         if not title:
             die("the title is empty")
-        if not os.path.isfile(body_file):
-            die("body file not found: " + body_file)
+        check_body_file(body_file)
         ready = self.triage_labels.label("ready-for-agent")
         n = gh_or_die("create the issue", self.gh.issue_create, title, body_file, [ready])
 

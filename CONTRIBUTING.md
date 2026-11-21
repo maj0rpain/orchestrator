@@ -28,15 +28,17 @@ section titles (every top-level branch of an alternation must match a section),
 e.g. `ORCH_TEST_ONLY='^branch create$'` or `ORCH_TEST_ONLY='^ticket'`. Run
 `scripts/test/affected.sh` before each commit. CI runs the whole suite on every
 PR through all.sh, which starts its other suites one by one, each waiting for
-a pool slot when none is free, then orch_test.sh, then shellcheck over every
-shell file, so they overlap, carries on past a
-failing one, and once all have finished prints each suite's FAIL lines and a
-summary line, then shellcheck's findings and a `shellcheck: N findings` summary
-line, or `shellcheck: not installed - skipped`, which fails the run only in CI.
-It ends on one verdict line, `all.sh: PASS (<n> parts)` or `all.sh: FAIL
-(<part>, <part>, ...)`, naming each failed part by its summary line's prefix
-(leftover temp files as `temp files`); affected.sh ends the same way on
-`affected.sh: ...`, or on all.sh's verdict when it falls back to the full suite.
+a pool slot when none is free, then orch_test.sh, then the pytest suite
+(orch_py_test.sh), then shellcheck over every shell file, so they overlap,
+carries on past a failing one, and once all have finished prints each suite's
+FAIL lines and a summary line, the pytest suite's first, then the others' in
+the order of all.sh's `suites` list, then shellcheck's findings and a
+`shellcheck: N findings` summary line, or `shellcheck: not installed -
+skipped`, which fails the run only in CI. It ends on one verdict line, `all.sh:
+PASS (<n> parts)` or `all.sh: FAIL (<part>, <part>, ...)`, naming each failed
+part by its summary line's prefix (leftover temp files as `temp files`);
+affected.sh ends the same way on `affected.sh: ...`, or on all.sh's verdict when
+it falls back to the full suite.
 
 **The Python package.** A noun converted to Python (ADR-0067) lives in the
 `orch` package, `scripts/orch_py/orch/`, and its tests are pytest, in
@@ -247,15 +249,17 @@ under `~/.cache/orchestrator/test-job-pool`, as many as that default (so
 `ORCH_TEST_POOL_PERCENT`, read from each run's own environment, sizes the pool;
 an invalid value fails every runner with
 `<runner>: ORCH_TEST_POOL_PERCENT='<value>' is not a positive integer`), each
-held with `flock` while one section child, one shellcheck process or one whole
-suite other than `orch_test.sh` runs, so the pool share bounds the whole run,
-every suite included, and no more test jobs run at once than the pool holds; two
-or three sessions verifying at once queue for slots (`orch_test.sh: waiting for
-a job slot (N in use)` on stderr, once) and a killed holder's slot is freed by
-the kernel. `ORCH_TEST_JOBS=N` caps how many slots a run asks for and never
-bypasses the pool, bounding the whole run at min(N, the pool's size) slots,
-nested runners included; a run asking for more jobs than the pool holds queues;
-`ORCH_TEST_JOBS=1` holds one slot for its whole one-shell run. `CI` bypasses the
+held with `flock` while one section child, one shellcheck process, one xdist
+worker of the pytest suite (`orch_py_test.sh` holds a slot per worker) or one
+whole suite other than `orch_test.sh` and the pytest suite runs, so the pool
+share bounds the whole run, every suite included, and no more test jobs run at
+once than the pool holds; two or three sessions verifying at once queue for
+slots (`orch_test.sh: waiting for a job slot (N in use)` on stderr, once) and a
+killed holder's slot is freed by the kernel. `ORCH_TEST_JOBS=N` caps how many
+slots a run asks for and never bypasses the pool, bounding the whole run at
+min(N, the pool's size) slots, nested runners included; a run asking for more
+jobs than the pool holds queues; `ORCH_TEST_JOBS=1` holds one slot for its whole
+one-shell run. `CI` bypasses the
 pool, as does a runner started inside a slot of the same pool (the runner marks
 its children with `ORCH_TEST_POOL_HELD`); a pool that cannot be created, opened
 or locked runs unpooled. The test-only `ORCH_TEST_POOL_DIR` names another pool
