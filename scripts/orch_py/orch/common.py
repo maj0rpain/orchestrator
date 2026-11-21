@@ -1,6 +1,7 @@
 """The primitives no concept owns: the `orch: ` message lines, the
-plain-number test every verb checks its issue numbers with, the atomic file
-write, the temporary file a comment is handed to gh from, and the words a
+plain-number test every verb checks its issue numbers with, the decimal-number
+tests and the poll-knob check a waiting verb reads its knobs with, the atomic
+file write, the temporary file a comment is handed to gh from, and the words a
 list and a state read as in a line.
 
 Every `orch: ` message goes through die or warn, as in the bash side's
@@ -13,10 +14,11 @@ the gh adapter's rate-limit failure - uses alone.
 from __future__ import annotations
 
 import os
+import re
 import sys
 import tempfile
 from contextlib import contextmanager
-from typing import Callable, Iterable, Iterator, NoReturn, Tuple
+from typing import Callable, Iterable, Iterator, NoReturn, Sequence, Tuple
 
 
 def die(message: str, code: int = 1) -> NoReturn:
@@ -43,14 +45,45 @@ def plain_number(text: str) -> bool:
     return text.isdigit() and text.isascii()
 
 
-def file_write_atomic(path: str, text: str) -> bool:
+_NUMBER = re.compile(r"[0-9]+\.?[0-9]*|\.[0-9]+")
+
+
+def is_number(text: str) -> bool:
+    """Whether <text> is a non-negative decimal number, as bash's is_number
+    reads one: digits with at most one point, and not the point alone."""
+    return _NUMBER.fullmatch(text) is not None
+
+
+def is_positive_number(text: str) -> bool:
+    """Whether <text> is a number (is_number) above zero: some character of
+    it neither a zero nor the point."""
+    return is_number(text) and text.strip("0.") != ""
+
+
+def require_poll_knobs(knobs: Sequence[Tuple[str, str]]) -> None:
+    """Dies unless every (name, value) of <knobs> holds a number and the
+    last, the poll interval, one greater than zero, with bash's
+    require_poll_knobs messages: a non-number would make a poll loop's
+    comparisons meaningless, and a zero interval would poll as fast as it
+    can."""
+    for name, value in knobs:
+        if not is_number(value):
+            die("%s is not a number: %s" % (name, value))
+    name, value = knobs[-1]
+    if not is_positive_number(value):
+        die("%s must be greater than zero: %s" % (name, value))
+
+
+def file_write_atomic(path: str, text: str, make_directory: bool = True) -> bool:
     """Writes <text> to <path> through a temporary file beside it, renamed
-    over it, its directory made first: a reader never sees half a file, and
-    a failed write leaves the file as it was and no temporary file behind.
-    Whether it succeeded."""
+    over it, its directory made first unless <make_directory> is False: a
+    reader never sees half a file, and a failed write leaves the file as it
+    was and no temporary file behind. Whether it succeeded - False, with
+    <make_directory> False, when the directory is gone."""
     directory = os.path.dirname(path) or "."
     try:
-        os.makedirs(directory, exist_ok=True)
+        if make_directory:
+            os.makedirs(directory, exist_ok=True)
         fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".", dir=directory)
     except OSError:
         return False
@@ -59,7 +92,10 @@ def file_write_atomic(path: str, text: str) -> bool:
             f.write(text.encode("utf-8", "surrogateescape"))
         os.replace(tmp, path)
     except OSError:
-        os.unlink(tmp)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
         return False
     return True
 

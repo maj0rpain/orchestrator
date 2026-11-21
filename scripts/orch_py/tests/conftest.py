@@ -161,6 +161,23 @@ def committed(root, files, message):
     return run_git(root, "rev-parse", "HEAD")
 
 
+def path_without(tmp_path, command):
+    """The test's PATH with no <command> on it: each directory holding one is
+    replaced by a directory of its own linking every other command there."""
+    kept = []
+    for k, directory in enumerate(os.environ["PATH"].split(os.pathsep)):
+        if not os.path.exists(os.path.join(directory, command)):
+            kept.append(directory)
+            continue
+        links = tmp_path / ("no-%s-%d" % (command, k))
+        links.mkdir()
+        for name in os.listdir(directory):
+            if name != command:
+                (links / name).symlink_to(os.path.join(directory, name))
+        kept.append(str(links))
+    return os.pathsep.join(kept)
+
+
 def fake(seed):
     """The gh fake on <seed>'s store, its retries never sleeping."""
     return FakeGh(seed.store, {}, sleep=lambda _: None)

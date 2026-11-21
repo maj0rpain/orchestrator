@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import comments_of, committed, git_repo, labels_of, read, run_git
+from conftest import comments_of, committed, git_repo, labels_of, path_without, read, run_git
 
 SCRIPTS = Path(__file__).resolve().parents[2]
 
@@ -41,21 +41,7 @@ def orch_sh(tmp_path, cwd, seed, *args, path=None):
     return run.stdout.decode(), run.stderr.decode(), run.returncode
 
 
-def path_without_python3(tmp_path):
-    """The test's PATH with no python3 on it: each directory holding one is
-    replaced by a directory of its own linking every other command there."""
-    kept = []
-    for k, directory in enumerate(os.environ["PATH"].split(os.pathsep)):
-        if not os.path.exists(os.path.join(directory, "python3")):
-            kept.append(directory)
-            continue
-        links = tmp_path / ("no-python3-%d" % k)
-        links.mkdir()
-        for name in os.listdir(directory):
-            if name != "python3":
-                (links / name).symlink_to(os.path.join(directory, name))
-        kept.append(str(links))
-    return os.pathsep.join(kept)
+
 
 
 def test_issue_fetch_writes_the_body_through_the_dispatch(tmp_path, repo, seed):
@@ -100,7 +86,7 @@ def test_a_converted_verb_dies_before_doing_anything_without_python3(tmp_path, r
     note.write_text("A note.\n")
 
     answer = orch_sh(tmp_path, repo, seed, "issue", "comment", "12", str(note),
-                     path=path_without_python3(tmp_path))
+                     path=path_without(tmp_path, "python3"))
 
     assert answer == ("", "orch: orch.sh issue needs python3 3.9 or newer (found none)"
                           " - run orch.sh doctor\n", 1)
