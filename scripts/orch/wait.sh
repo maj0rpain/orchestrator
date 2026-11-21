@@ -131,8 +131,9 @@ wait_block_check() {
 }
 
 # wait_exit_running: says on stderr that the call's wait is not over and exits
-# 75; the one ending of every re-callable call that blocked ORCH_WAIT_BLOCK
-# seconds without an outcome.
+# 75; the one ending of every call of the two bash re-callable commands
+# (`review ci`, `spec-review wait`) that blocked ORCH_WAIT_BLOCK seconds
+# without an outcome.
 wait_exit_running() {
   warn "still running after ${ORCH_WAIT_BLOCK}s - run the same command again"
   exit 75

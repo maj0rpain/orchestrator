@@ -36,14 +36,26 @@ from orch.git import Git
 KNOBS = dict(VERIFICATION_KNOBS, ORCH_WAIT_BLOCK="10")
 
 
+def one_commit_repo(root):
+    """A repository at <root> with one commit: its root, resolved as git
+    names it."""
+    git_repo(root)
+    committed(root, {"README.md": "readme\n"}, "first")
+    return root.resolve()
+
+
 @pytest.fixture
 def repo(tmp_path):
     """A repository at tmp_path/repo with one commit: its root, resolved as
     git names it."""
-    root = tmp_path / "repo"
-    git_repo(root)
-    committed(root, {"README.md": "readme\n"}, "first")
-    return root.resolve()
+    return one_commit_repo(tmp_path / "repo")
+
+
+@pytest.fixture(scope="module")
+def refusing_repo(tmp_path_factory):
+    """A repository with one commit shared by the module's refusal cases,
+    each refused before the store is touched: its root."""
+    return one_commit_repo(tmp_path_factory.mktemp("refusing") / "repo")
 
 
 # os.killpg as it is before any test fakes it, for the teardown to stop every
@@ -169,10 +181,12 @@ def test_a_run_nobody_waits_on_is_stopped_at_its_ceiling_and_the_next_call_fails
     ("ORCH_VERIFICATION_WATCH", "-2", "ORCH_VERIFICATION_WATCH is not a number: -2"),
 ])
 @pytest.mark.parametrize("verb", ["run", "stop"])
-def test_a_knob_out_of_range_is_refused(repo, capsys, verb, knob, value, message):
-    code = verify(repo, verb, "true" if verb == "run" else str(repo), **{knob: value})
+def test_a_knob_out_of_range_is_refused(refusing_repo, capsys, verb, knob, value, message):
+    code = verify(refusing_repo, verb, "true" if verb == "run" else str(refusing_repo),
+                  **{knob: value})
 
-    assert (code, capsys.readouterr().err, records(repo)) == (1, "orch: %s\n" % message, [])
+    assert (code, capsys.readouterr().err, records(refusing_repo)) == (
+        1, "orch: %s\n" % message, [])
 
 
 def test_a_grace_of_zero_is_a_number(repo, capsys):
@@ -198,8 +212,8 @@ def test_a_ceiling_that_is_no_positive_number_is_refused_naming_its_key(repo, ca
     (("run", "a", "b"), "usage: orch.sh verification run <command>"),
     (("stop",), "usage: orch.sh verification stop <checkout>"),
 ])
-def test_a_usage_error_exits_1_with_the_usage_line(repo, capsys, argv, usage):
-    assert (verify(repo, *argv), capsys.readouterr().err) == (1, "orch: %s\n" % usage)
+def test_a_usage_error_exits_1_with_the_usage_line(refusing_repo, capsys, argv, usage):
+    assert (verify(refusing_repo, *argv), capsys.readouterr().err) == (1, "orch: %s\n" % usage)
 
 
 def started(capsys, root, tmp_path, command, at=None, **knobs):
@@ -610,17 +624,6 @@ def test_a_record_removed_once_its_status_is_there_never_keeps_its_runner(
     assert until(lambda: gone(group), bound=2)
 
 
-def test_a_record_removed_mid_run_lets_its_runner_end_with_its_command_writing_nothing(
-        repo, tmp_path, capsys):
-    record = started(capsys, repo, tmp_path, gated(tmp_path))
-    group = group_of(record)
-    shutil.rmtree(str(record))
-    (tmp_path / "gate").write_text("")
-
-    assert until(lambda: gone(group), bound=2)
-    assert (record.exists(), records(repo)) == (False, [])
-
-
 def test_a_record_removed_under_a_command_ignoring_term_is_killed_at_the_ceiling(
         repo, tmp_path, capsys):
     git(repo, "config", "orchestrator.verification.timeout", "0.5")
@@ -708,7 +711,7 @@ def test_a_record_removed_mid_run_never_reads_as_a_changed_token(repo, tmp_path,
     (tmp_path / "gate").write_text("")
 
     assert until(lambda: gone(group))
-    assert ((tmp_path / "ended").exists(), record.exists()) == (True, False)
+    assert ((tmp_path / "ended").exists(), record.exists(), records(repo)) == (True, False, [])
 
 
 def test_a_runner_whose_checkout_is_gone_before_its_command_starts_removes_its_record(
