@@ -1,12 +1,14 @@
-"""The audit module (scripts/orch/audit.sh): the audit noun's begin verb,
-which makes an audit run's working directory (ADR-0064), its report verb,
-which renders a run directory's ranked file and area files into one HTML
-page, byte for byte as the bash renderer does, its file verb, which files one
-audit finding as a GitHub issue, or with --run a run's picked findings from
-its ranked file, linking the overlapping ones by a **Related:** line, and an
-audit-filed body's drift line, which the issue noun reads. orch.sh still
-runs the noun's verbs from the bash module; run() is the Python noun they
-move to.
+"""The audit noun, a converted noun orch.sh hands to the package: its begin
+verb, which makes an audit run's working directory (ADR-0064), its report
+verb, which renders a run directory's ranked file and area files into one
+HTML page, byte for byte as the bash renderer it replaced did (the golden
+files in tests/audit_report/ pin it), its file verb, which files one audit
+finding as a GitHub issue, or with --run a run's picked findings from its
+ranked file, linking the overlapping ones by a **Related:** line, and an
+audit-filed body's drift line, which the issue noun reads. run() is the
+noun's entry point; its filing checks are the Filed finding module's
+(orch/filed_finding.py), its run-directory stamp and git exclude writer the
+common module's.
 
 begin's checks all come before the run directory is made, and a write
 failing after it is made removes it again; the git exclude lines already
