@@ -47,6 +47,7 @@ from orch.common import (
 from orch.filed_finding import (
     FILED_CATEGORY_NAMES,
     SPACE,
+    SPACE_CLASS,
     category_label_ensure,
     finding_body_file_new,
     finding_flags_parse,
@@ -283,33 +284,35 @@ ALONE = ("a finding must read alone, so name no other finding by number and neve
 # the finding's content.
 STEERING = ("From", "Title", "Category", "Overlaps")
 
-_SECTION = re.compile(r"@@[ \t\n\v\f\r]+([a-z]+)([ \t\n\v\f\r]+(.*))?", re.S)
+_SECTION = re.compile(r"@@" + SPACE_CLASS + r"+([a-z]+)(" + SPACE_CLASS + r"+(.*))?", re.S)
 _SECTION_KINDS = ("scope", "areas", "note", "top", "finding", "none")
-_FIELD = re.compile(r"([A-Z][A-Za-z /]*):[ \t\n\v\f\r]*(.*)", re.S)
-_AREA_BLOCK = re.compile(r"@@[ \t\n\v\f\r]+finding[ \t\n\v\f\r]+([0-9]+)[ \t\n\v\f\r]*")
+_FIELD = re.compile(r"([A-Z][A-Za-z /]*):" + SPACE_CLASS + r"*(.*)", re.S)
+_AREA_BLOCK = re.compile(
+    r"@@" + SPACE_CLASS + r"+finding" + SPACE_CLASS + r"+([0-9]+)" + SPACE_CLASS + r"*")
 _SOURCE = re.compile(r"(area-[0-9]+):([0-9]+)")
 _DIGITS = re.compile(r"[0-9]+")
 RELATED = "**Related:**"
 _RELATED_TAIL = re.compile(r"#[0-9]+( #[0-9]+)*")
 _RECORD_LINE = re.compile(r"([^ \t]*)[ \t]*(.*)", re.S)
 _REFERENCE = re.compile(
-    r"(^|[^a-z0-9_])((findings?|candidates?)[ \t\n\v\f\r]+#?[0-9]+|this[ \t\n\v\f\r]+report)"
-    r"($|[^a-z0-9_])")
+    r"(^|[^a-z0-9_])((findings?|candidates?)" + SPACE_CLASS + r"+#?[0-9]+"
+    r"|this" + SPACE_CLASS + r"+report)($|[^a-z0-9_])")
 
 
 class Finding:
     """A resolved finding: its fields in resolved order, as (label, value)
-    pairs, where each label's value was written (`<file> line <k>`, by label,
-    and by location under ("loc", <location>)), and once checked its title,
-    category, locations (newline-joined, as the page lists them) and the
+    pairs, where each label's value was written (`<file> line <k>`) by label,
+    where each location was written by location, and once checked its title,
+    category, locations (one per line, as the page lists them) and the
     finding numbers it overlaps on either side."""
 
     def __init__(self) -> None:
         self.fields: List[Tuple[str, str]] = []
-        self.where: Dict[object, str] = {}
+        self.where: Dict[str, str] = {}
+        self.location_where: Dict[str, str] = {}
         self.title = ""
         self.category = ""
-        self.locations = ""
+        self.locations: List[str] = []
         self.links: List[int] = []
 
     def field(self, label: str) -> Optional[str]:
@@ -574,7 +577,7 @@ def _finding_resolve(n: int, body: str, first: int, directory: str,
             if restates_location:
                 continue
             for location in list_lines(value):
-                finding.where.setdefault(("loc", location), "%s.md line %d" % (area, at))
+                finding.location_where.setdefault(location, "%s.md line %d" % (area, at))
     for label, value, where in restated:
         if label in labels:
             k = labels.index(label)
@@ -628,7 +631,7 @@ def _finding_check(n: int, finding: Finding, line: int, count: int,
     for location in list_lines(location_field):
         if not finding_location_ok(location):
             die("%s: finding %d's location '%s' is not <file>:<line> or <file>:<start>-<end>"
-                % (finding.where.get(("loc", location)) or location_at, n, location))
+                % (finding.location_where.get(location) or location_at, n, location))
     for label, value in finding.fields:
         # Narrower than STEERING on purpose: Title and Category are read here
         # too, so one naming another finding is still refused.
@@ -640,7 +643,7 @@ def _finding_check(n: int, finding: Finding, line: int, count: int,
                 " field in the ranked block" % (finding.at(label, line), n, label, found[0],
                                                 found[1], ALONE))
     finding.title, finding.category = title, category
-    finding.locations = "\n".join(entries)
+    finding.locations = [line for entry in entries for line in entry.split("\n")]
     overlaps = finding.field("Overlaps")
     if overlaps is None:
         return
@@ -846,7 +849,7 @@ def page_render(audit_run: Run) -> str:
                 out.append(_field_heading(label))
                 if label == "Location":
                     out.append(LIST_OPEN)
-                    for location in finding.locations.split("\n"):
+                    for location in finding.locations:
                         out.append("<li><code>%s</code></li>\n" % esc(location))
                     out.append("</ul>\n")
                 else:
@@ -894,7 +897,7 @@ def audit_batch_body(finding: Finding, commit: str) -> str:
     recorded."""
     paragraphs = ["**%s:** %s\n\n" % (label, value) for label, value in finding.fields
                   if label not in STEERING and label != "Location"]
-    return "".join(paragraphs) + audit_body_tail(commit, finding.locations.split("\n"))
+    return "".join(paragraphs) + audit_body_tail(commit, finding.locations)
 
 
 def audit_body_norm(text: str) -> str:
@@ -942,7 +945,7 @@ def audit_file_batch(argv: List[str], gh, git) -> int:
         finding = audit_run.findings[n - 1]
         base[n] = audit_body_norm(audit_batch_body(finding, audit_run.commit))
         got_locations, got_shas = body_parse(base[n])
-        if got_locations != finding.locations.split("\n"):
+        if got_locations != finding.locations:
             die("the rendered body does not parse back: locations of finding %d" % n)
         if got_shas != [audit_run.commit]:
             die("the rendered body does not parse back: audited at of finding %d" % n)

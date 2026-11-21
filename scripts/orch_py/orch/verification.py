@@ -105,8 +105,9 @@ from subprocess import DEVNULL, Popen
 from typing import Dict, List, Mapping, Optional, Sequence, Set
 
 import orch
-from orch.checkout import ORCH_DIR_NAME, main_checkout_or_die, ticket_path
+from orch.checkout import main_checkout_or_die, ticket_path
 from orch.common import (
+    ORCH_DIR_NAME,
     die,
     file_write_atomic,
     is_positive_number,

@@ -6,6 +6,8 @@ GitHub call. Every case checks that no body temp file is left behind."""
 from __future__ import annotations
 
 import io
+import os
+import shutil
 import sys
 import tempfile
 
@@ -354,29 +356,10 @@ def test_the_report_a_span_and_a_fence_are_no_reference(seed, store, root, findi
 
 # --- a run's picked findings: file --run ---------------------------------------
 
+# The committed run directory whose two area files a batch run reads.
+FULL_RUN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "audit_report", "full")
 # The commit the run's record names: not HEAD, which has moved on since.
 RECORDED = "abcdef0123456789abcdef0123456789abcdef01"
-AREA_1 = """@@ finding 1
-Kind: latent bug
-Location: a.sh:1, b.sh:2-3
-Evidence: it <breaks> when `x & y` runs
-```mermaid
-graph TD; A-->B
-```
-Confidence: certain
-@@ finding 2
-Kind: inefficiency
-Location: b.sh:2-3, c.sh:9
-Evidence: slow
-"""
-AREA_2 = """@@ finding 1
-Kind: architecture deepening
-Location: d.sh:5
-Evidence: friction
-```
-Note: kept in a fence
-```
-"""
 RANKED = """@@ scope the audit's scope
 @@ areas 2
 @@ top 1
@@ -410,14 +393,16 @@ BODY_1 = (
 
 @pytest.fixture
 def batch(tmp_path, seed, store):
-    """An audit run's directory, its record naming RECORDED, holding two
-    area files and a ranked file of three findings, 1 overlapping 3; the
+    """An audit run's directory, its record naming RECORDED, holding the
+    committed full/ run's two area files and a ranked file of three
+    findings, 1 overlapping 3; the
     store holds the repo's own needs-triage label and numbers the next issue
     #40."""
     path = tmp_path / "run"
     path.mkdir()
-    for name, text in (("record", "kind code\ncommit %s\n" % RECORDED), ("area-1.md", AREA_1),
-                       ("area-2.md", AREA_2), ("ranked.md", RANKED)):
+    for name in ("area-1.md", "area-2.md"):
+        shutil.copy(os.path.join(FULL_RUN, name), str(path / name))
+    for name, text in (("record", "kind code\ncommit %s\n" % RECORDED), ("ranked.md", RANKED)):
         (path / name).write_text(text)
     (store / "labels").write_text("needs-triage\t000000\tThe repo's own\n")
     seed.next_issue(40)

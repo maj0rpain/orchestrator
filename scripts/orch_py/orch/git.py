@@ -20,7 +20,7 @@ import re
 import subprocess
 from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Set, Tuple
 
-from orch.checkout import ORCH_DIR_NAME
+from orch.common import ORCH_DIR_NAME
 
 
 class FileDiff(NamedTuple):

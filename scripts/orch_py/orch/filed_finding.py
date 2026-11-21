@@ -47,9 +47,11 @@ CATEGORY_OTHER = {"bug": "enhancement", "enhancement": "bug"}
 
 # The whitespace bash's [:space:] trims, ASCII alone.
 SPACE = " \t\n\v\f\r"
+# SPACE as one regex character class.
+SPACE_CLASS = "[%s]" % re.escape(SPACE)
 LOCATION = re.compile(r"`([^`:]+):([0-9]+(-[0-9]+)?)`")
 AT_SHA = re.compile(r" at ([0-9a-fA-F]+)")
-PR_URL = re.compile(r"/pull/([0-9]+)/*[ \t\n\v\f\r]*$")
+PR_URL = re.compile(r"/pull/([0-9]+)/*" + SPACE_CLASS + r"*$")
 
 
 class FindingBody(NamedTuple):

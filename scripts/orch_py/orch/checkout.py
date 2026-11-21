@@ -6,8 +6,6 @@ from __future__ import annotations
 
 import os
 
-# ORCH_DIR_NAME lives in orch.common, which imports nothing from the package;
-# it is imported here for the modules that read it from this one.
 from orch.common import ORCH_DIR_NAME, die, plain_number
 
 
