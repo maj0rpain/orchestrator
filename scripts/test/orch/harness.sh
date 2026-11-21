@@ -22,7 +22,8 @@ SOURCEABLE_TEST_HELPERS=(gh_adapter_fake.sh tally.sh fifo.sh counting.sh fails.s
 
 # The throwaway repo the three affected.sh --plan sections plan in (the ticket
 # verification, the shared test support and the gh fake): tr_init <dir> makes it
-# - git init, a copy of the runner files, a stub of every suite, the harness
+# - git init, a copy of the runner files, a stub of every suite and of the
+# pytest suite, the harness
 # file (isolation, the parallel runner and the five TR_GATE placement sections)
 # and the loader file - then the section plants its own files and calls
 # tr_commit <dir>, which commits them and records origin/main. tr_put <dir>
@@ -32,7 +33,7 @@ SOURCEABLE_TEST_HELPERS=(gh_adapter_fake.sh tally.sh fifo.sh counting.sh fails.s
 # <arg>... on one line (no default ref), and tr_reset <dir> drops the tree's
 # changes. TR_GATE, TR_HARNESS and TR_CORE are the plan's always-run items, the
 # harness file's non-gate sections (in planted order) and the core set.
-TR_GATE="orch_test.sh,test-helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853),comment reader placement (#3085),helper body copies (#3170)"
+TR_GATE="$PYTEST_SUITE,orch_test.sh,test-helper placement (#1006),gh op placement (#1037),marked comment prelude placement (#1853),comment reader placement (#3085),helper body copies (#3170)"
 TR_HARNESS="isolation,the parallel runner (#780)"
 TR_CORE="$TR_HARNESS,loader one,hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh"
 tr_git() { local dir="$1"; shift; git -C "$dir" -c user.name=t -c user.email=t@example.com "$@"; }
@@ -53,7 +54,7 @@ tr_init() {
   tr_git "$dir" init -q -b main
   mkdir -p "$dir/scripts/test/orch" "$dir/scripts/orch"
   (cd "$tests" && cp "${ALL_RUNNER_FILES[@]}" affected.sh git_env.sh "$dir/scripts/test/")
-  for s in "${SUITES[@]}"; do
+  for s in "${SUITES[@]}" "$PYTEST_SUITE"; do
     [ -e "$dir/scripts/test/$s" ] || tr_put "$dir" "scripts/test/$s"
   done
   tr_put "$dir" scripts/test/orch/harness.sh '# --- isolation ---' '# --- the parallel runner (#780) ---' \
@@ -118,10 +119,11 @@ pool_cpu_file() { printf '%s 100000\n' "$(($2 * 200000))" >"$1"; }
 
 # stub_all_tree <dir> <shellcheck log> [<extra tool>...]: builds <dir> as a copy
 # of ALL_RUNNER_FILES beside a passing stub for each name in
-# SUITES (suites_read first), with <dir>/bin holding links to the tools all.sh
-# needs, the extra ones included, and a shellcheck stub that logs "+" to the log
-# when it starts and "-" when it ends, 0.2 seconds apart. A stub suite logs
-# "<name> ran" to scripts/test/log.
+# SUITES (suites_read first) and a passing stub of the pytest suite
+# (PYTEST_SUITE), which logs nothing, with <dir>/bin holding links to the tools
+# all.sh needs, the extra ones included, and a shellcheck stub that logs "+" to
+# the log when it starts and "-" when it ends, 0.2 seconds apart. A stub suite
+# logs "<name> ran" to scripts/test/log.
 stub_all_tree() {
   local dir="$1" log="$2" tool stub
   shift 2
@@ -134,6 +136,7 @@ stub_all_tree() {
     printf '#!/usr/bin/env bash\necho "%s ran" >>"$(dirname "$0")/log"\necho; echo "1 passed, 0 failed"\n' \
       "$stub" >"$dir/scripts/test/$stub"
   done
+  printf '#!/usr/bin/env bash\necho; echo "1 passed, 0 failed"\n' >"$dir/scripts/test/$PYTEST_SUITE"
   printf '#!/usr/bin/env bash\necho + >>%q\nsleep 0.2\necho - >>%q\nexit 0\n' "$log" "$log" \
     >"$dir/bin/shellcheck"
   chmod +x "$dir/bin/shellcheck"
@@ -152,8 +155,9 @@ plant_file() {
   sed 's/^  //' >"$1/$2"
 }
 
-# planted_minimal_tree: a minimal test tree - the runners,
-# setup.sh, the dev script section-durations.sh and an isolation-only harness.sh
+# planted_minimal_tree: a minimal test tree - the runners, a passing stub of
+# the pytest suite (PYTEST_SUITE), setup.sh, the dev script
+# section-durations.sh and an isolation-only harness.sh
 # in a fresh temp directory - with the section lines read from stdin planted as
 # scripts/test/orch/zz-planted.sh. Prints the directory; the caller removes it.
 planted_minimal_tree() {
@@ -165,6 +169,7 @@ planted_minimal_tree() {
     git_env.sh "${SOURCEABLE_TEST_HELPERS[@]}" shell_code.awk "$t/" && cp orch/setup.sh "$t/orch/" &&
     cp ../flow-state.sh "$dir/scripts/" && cp ../dev/section-durations.sh "$dir/scripts/dev/") || return 1
   printf '%s\n' '# --- isolation ---' 'echo; echo isolation; ok "isolation ran"' >"$t/orch/harness.sh" || return 1
+  printf '#!/usr/bin/env bash\necho; echo "1 passed, 0 failed"\n' >"$t/$PYTEST_SUITE" || return 1
   plant_file "$t/orch" zz-planted.sh || return 1
   printf '%s\n' "$dir"
 }
@@ -1379,8 +1384,8 @@ assert_eq "group 1 runs every suite" "$(log_count "$sh_all_dir/scripts/test/log"
 assert_contains "orch_test.sh gets the setting" "$(cat "$sh_all_dir/scripts/test/log")" "orch_test.sh shard=1/2"
 assert_contains "no other suite does" "$(cat "$sh_all_dir/scripts/test/log")" "hooks_test.sh shard=unset"
 assert_eq "group 1 runs shellcheck" "$([ -s "$sh_all_dir/sc.log" ] && echo yes || echo no)" "yes"
-assert_eq "and its verdict counts every part" "$(printf '%s\n' "$sh_out" | tail -n 1)" \
-  "all.sh: PASS ($((${#SUITES[@]} + 1)) parts)"
+assert_eq "and its verdict counts every part, the pytest suite's included" "$(printf '%s\n' "$sh_out" | tail -n 1)" \
+  "all.sh: PASS ($((${#SUITES[@]} + 2)) parts)"
 sh_all 2/2
 assert_status "all.sh in group 2 passes" "$sh_st" 0
 assert_eq "group 2 runs orch_test.sh alone" "$(cat "$sh_all_dir/scripts/test/log")" "orch_test.sh shard=2/2"
@@ -2197,15 +2202,16 @@ for root_suite in hooks_test.sh version_bump_test.sh lens_bench_test.sh; do
 done
 
 # all.sh checks every full run for leaks: a copy of it beside a stub for each
-# suite in its list, all passing, run with no shellcheck on its PATH, once with
-# an orch_test.sh stub that leaves a file in its TMPDIR.
+# suite in its list and for the pytest suite, all passing, run on a PATH
+# with no shellcheck, once with an orch_test.sh stub that leaves a file in its
+# TMPDIR.
 root_all="$root_dir/all"
 mkdir -p "$root_all/scripts/test" "$root_all/bin" "$root_all/tmp"
 (cd "$(dirname "$SUITE_SCRIPT")" && cp "${ALL_RUNNER_FILES[@]}" "$root_all/scripts/test/")
 for root_tool in bash dirname awk tail mktemp rm mkdir; do
   ln -s "$(command -v "$root_tool")" "$root_all/bin/$root_tool"
 done
-for root_stub in "${SUITES[@]}"; do
+for root_stub in "${SUITES[@]}" "$PYTEST_SUITE"; do
   printf '#!/usr/bin/env bash\necho; echo "1 passed, 0 failed"\n' >"$root_all/scripts/test/$root_stub"
 done
 out="$(unset CI; TMPDIR="$root_all/tmp" PATH="$root_all/bin" bash "$root_all/scripts/test/all.sh" 2>&1)"; st=$?
@@ -2289,10 +2295,15 @@ for all_suite in "${SUITES[@]}"; do
     fi
   } >"$all_dir/$all_suite"
 done
-# all_summaries <orch_test.sh's summary>: the expected summary line of every
-# suite, in list order, orch_test.sh's as given, the others' the stubs' own.
+# The pytest suite's stub passes, logging nothing.
+printf '%s\n' '#!/usr/bin/env bash' 'echo; echo "3 passed, 0 failed"' >"$all_dir/$PYTEST_SUITE"
+all_written+=("scripts/test/$PYTEST_SUITE")
+# all_summaries <orch_test.sh's summary>: the expected summary line of the
+# pytest suite, then of every suite in list order, orch_test.sh's as given, the
+# others' the stubs' own.
 all_summaries() {
   local suite
+  echo "$PYTEST_SUITE: 3 passed, 0 failed"
   for suite in "${SUITES[@]}"; do
     if [ "$suite" = orch_test.sh ]; then
       echo "$suite: $1"
@@ -2367,14 +2378,14 @@ all_run() {
 }
 all_finding1='scripts/lint_me.sh:1:1: warning: a planted finding [SC2034]'
 all_finding2='scripts/test/lint_me.sh:2:5: error: another finding [SC2086]'
-all_order="$(printf '%s ' "${SUITES[@]}")shellcheck "
+all_order="$PYTEST_SUITE $(printf '%s ' "${SUITES[@]}")shellcheck "
 all_n="${#SUITES[@]}"
 
 all_sc_stub 0
 out="$(all_run ORCH_TEST_ONLY='^isolation$' CHANGELOG_BASE=abc123 NO_VERSION_BUMP=1 2>&1)"; st=$?
 assert_status "exits non-zero when a suite failed" "$st" 1
 assert_eq "runs every suite after the first one fails" "$(log_count "$all_dir/log")" "$all_n"
-assert_eq "prints the suites' summaries in order, shellcheck's last" \
+assert_eq "prints the pytest suite's summary first, then the suites' in order, shellcheck's last" \
   "$(all_print_order "$out")" "$all_order"
 assert_eq "unsets ORCH_TEST_ONLY for every suite" "$(grep -c 'only=unset' "$all_dir/log")" "$all_n"
 assert_eq "sets ORCH_TEST_QUIET=1 for every suite" "$(grep -c 'quiet=1 ' "$all_dir/log")" "$all_n"
@@ -2415,8 +2426,8 @@ assert_eq "passes an empty CHANGELOG_BASE through as set" "$(grep -c 'base= ' "$
 assert_eq "passes an empty NO_VERSION_BUMP through as set" "$(grep -c 'nobump=$' "$all_dir/log")" "$all_n"
 assert_eq "prints shellcheck: 0 findings when shellcheck is clean" \
   "$(printf '%s\n' "$out" | sed '$d' | tail -n 1)" "shellcheck: 0 findings"
-assert_eq "an all-pass run ends on a PASS verdict counting the suites and shellcheck" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: PASS ($((all_n + 1)) parts)"
+assert_eq "an all-pass run ends on a PASS verdict counting the suites, the pytest suite and shellcheck" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: PASS ($((all_n + 2)) parts)"
 
 rm -f "$all_dir/log"
 all_sc_stub 1 "$all_finding1" "$all_finding2"
@@ -2490,6 +2501,17 @@ assert_contains "says a suite printed FAIL lines but exited 0, after its summary
 assert_eq "a suite that printed FAIL lines but exited 0 is named in the FAIL verdict" \
   "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: FAIL (orch_test.sh)"
 
+# A failing pytest suite fails the run, its FAIL lines first.
+all_swap "$PYTEST_SUITE" "printf '  FAIL tests/test_a.py::test_one\\n     AssertionError\\n'" \
+  'echo "2 passed, 1 failed"; exit 1'
+out="$(all_run 2>&1)"; st=$?
+all_restore "$PYTEST_SUITE"
+assert_status "exits non-zero when the pytest suite failed" "$st" 1
+assert_contains "prints the pytest suite's FAIL lines and summary" "$out" \
+  "$(printf '  FAIL tests/test_a.py::test_one\n     AssertionError\n%s: 2 passed, 1 failed' "$PYTEST_SUITE")"
+assert_eq "a failing pytest suite is named in the FAIL verdict" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: FAIL ($PYTEST_SUITE)"
+
 # A suite that exits non-zero after printing a valid summary line still fails
 # the run: the verdict needs no raw-exit flag.
 all_swap orch_test.sh "trap 'exit 1' EXIT"
@@ -2516,9 +2538,10 @@ all_swap orch_test.sh 'sleep 1' 'echo; echo "a section header"' \
 out="$(all_run 2>&1)"; st=$?
 all_restore orch_test.sh
 assert_status "a slow failing suite still fails the run" "$st" 1
-assert_eq "a slow orch_test.sh's FAIL block and summary still print first, shellcheck's summary last" \
+assert_eq "a slow orch_test.sh's FAIL block and summary still print in their place, shellcheck's summary last" \
   "$out" \
-  "$(printf '  FAIL a slow failure\n     its detail line\n%s\nshellcheck: 0 findings\nall.sh: FAIL (orch_test.sh)' "$(all_summaries '1 passed, 1 failed')")"
+  "$(printf '%s\n  FAIL a slow failure\n     its detail line\n%s\nshellcheck: 0 findings\nall.sh: FAIL (orch_test.sh)' \
+    "$(all_summaries '1 passed, 1 failed' | sed -n 1p)" "$(all_summaries '1 passed, 1 failed' | sed 1d)")"
 
 # The overlap: every suite but orch_test.sh and the stub shellcheck are
 # swapped for ones that drop a marker file named after themselves in
@@ -2607,7 +2630,7 @@ out="$(export CI=true; all_run 2>&1)"; st=$?
 assert_eq "says shellcheck was skipped when it is not installed" \
   "$(printf '%s\n' "$out" | sed '$d' | tail -n 1)" "shellcheck: not installed - skipped"
 assert_eq "a missing shellcheck outside CI ends on a PASS verdict counting the skipped line" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: PASS ($((all_n + 1)) parts)"
+  "$(printf '%s\n' "$out" | tail -n 1)" "all.sh: PASS ($((all_n + 2)) parts)"
 assert_status "a missing shellcheck does not fail the run outside CI" "$st" 0
 out="$(all_run CI=true 2>&1)"; st=$?
 assert_status "a missing shellcheck fails the run in CI" "$st" 1
@@ -2920,8 +2943,8 @@ assert_eq "every stub suite ran" "$(grep -c '^+ ' "$jp_log")" "$((${#SUITES[@]} 
 assert_eq "the stub shellcheck ran for the planted tree" "$(grep -c '^+sc$' "$jp_log" | awk '{ print ($1 > 0) }')" "1"
 assert_contains "the failing suite's report line reads FAIL" "$(grep '^docs_lint.sh:' "$jp_dir/out")" "0 passed, 1 failed"
 assert_contains "the verdict names it" "$(tail -n 1 "$jp_dir/out")" "all.sh: FAIL (docs_lint.sh"
-assert_eq "the report lines follow the suite list" \
-  "$(grep -oE '^[a-z_]+\.sh: [0-9]+ passed' "$jp_dir/out" | cut -d: -f1 | tr '\n' ' ')" "${SUITES[*]} "
+assert_eq "the report lines follow the suite list, after the pytest suite's" \
+  "$(grep -oE '^[a-z_]+\.sh: [0-9]+ passed' "$jp_dir/out" | cut -d: -f1 | tr '\n' ' ')" "$PYTEST_SUITE ${SUITES[*]} "
 assert_eq "the waiting notice appears once" "$(grep -c 'all.sh: waiting for a job slot (' "$jp_dir/errout")" "1"
 assert_eq "the other suites start before any orch_test.sh section" \
   "$(awk '/^\+ / { n++ } /^\+$/ { print n + 0; exit }' "$jp_log")" "$((${#SUITES[@]} - 1))"
@@ -2940,7 +2963,7 @@ assert_status "affected.sh over a failing stub suite exits 1" "$jp_s1" 1
 assert_eq "affected.sh on a 2-slot pool runs at most 2 jobs at once" "$(log_peak "$jp_log")" "2"
 assert_eq "its selected stub suites all ran" "$(grep -c '^+ ' "$jp_log")" "3"
 assert_eq "its report keeps the selection order" \
-  "$(grep -oE '^[a-z_]+\.sh: [0-9]+ passed' "$jp_dir/out" | cut -d: -f1 | tr '\n' ' ')" "orch_test.sh hooks_test.sh docs_lint.sh version_bump_test.sh "
+  "$(grep -oE '^[a-z_]+\.sh: [0-9]+ passed' "$jp_dir/out" | cut -d: -f1 | tr '\n' ' ')" "$PYTEST_SUITE orch_test.sh hooks_test.sh docs_lint.sh version_bump_test.sh "
 assert_contains "the verdict names the failing suite" "$(tail -n 1 "$jp_dir/out")" "affected.sh: FAIL (docs_lint.sh"
 assert_eq "affected.sh starts its other suites before any orch_test.sh section" \
   "$(awk '/^\+ / { n++ } /^\+$/ { print n + 0; exit }' "$jp_log")" "3"
@@ -2990,7 +3013,7 @@ wait "$jp_p2"; jp_s2=$?
 assert_status "two concurrent all.sh runs on a 1-slot pool pass" "$((jp_s1 + jp_s2))" 0
 assert_eq "their shellcheck processes never overlap on a 1-slot pool" "$(log_peak "$jp_log")" "1"
 assert_eq "every file was still checked, twice over" \
-  "$(grep -c '^+' "$jp_log")" "$((2 * (${#SUITES[@]} + ${#ALL_RUNNER_FILES[@]})))"
+  "$(grep -c '^+' "$jp_log")" "$((2 * (${#SUITES[@]} + ${#ALL_RUNNER_FILES[@]} + 1)))"
 assert_contains "a waiting all.sh names itself in the notice" \
   "$(cat "$jp_dir/erra" "$jp_dir/errb2")" "all.sh: waiting for a job slot (1 in use)"
 else
@@ -3004,7 +3027,7 @@ rm -rf "$jp_dir"
 echo
 echo "the slot fd contract (#2300)"
 fd_tests="$(dirname "$SUITE_SCRIPT")"
-for fd_file in all.sh affected.sh orch_test.sh report.sh test_tree.sh ../dev/section-durations.sh; do
+for fd_file in all.sh affected.sh orch_test.sh orch_py_test.sh report.sh test_tree.sh ../dev/section-durations.sh; do
   assert_eq "$fd_file holds no raw slot fd" \
     "$(grep -cE '8>&-|exec 8' "$fd_tests/$fd_file")" "0"
 done
@@ -3110,7 +3133,7 @@ out="$(load_run_all ORCH_TEST_JOBS=2 2>&1)"; st=$?
 assert_status "all.sh with ORCH_TEST_JOBS=2 passes" "$st" 0
 assert_eq "all.sh with ORCH_TEST_JOBS=2 runs at most 2 shellcheck at once" "$(log_peak "$load_all/sc_log")" "2"
 assert_eq "all.sh with ORCH_TEST_JOBS=2 still checks every file" \
-  "$(grep -c '^+' "$load_all/sc_log")" "$((${#SUITES[@]} + ${#ALL_RUNNER_FILES[@]}))"
+  "$(grep -c '^+' "$load_all/sc_log")" "$((${#SUITES[@]} + ${#ALL_RUNNER_FILES[@]} + 1))"
 assert_eq "all.sh with ORCH_TEST_JOBS=2 ends on the shellcheck summary" \
   "$(printf '%s\n' "$out" | sed '$d' | tail -n 1)" "shellcheck: 0 findings"
 : >"$load_all/sc_log"
@@ -4488,6 +4511,153 @@ assert_eq "and with none held, the inherited marker" "$ss_out" "/other"
 rm -f "$ss_file"
 unset ss_helpers ss_out ss_file
 
+# --- the pytest suite (#3912) -------------------------------------------------
+# scripts/test/orch_py_test.sh, copied with test_jobs.sh and report.sh into a
+# throwaway tree beside an empty package folder, over a stub python in a stub
+# venv that the test-only ORCH_TEST_PYTEST_VENV names. The stub passes the
+# import check; run as pytest, it logs its working directory and arguments,
+# writes a file into its --basetemp, counts the pool's slots it finds locked,
+# and prints the result PY_STUB names. The pool is the section's own: 3 slots.
+echo
+echo "the pytest suite (#3912)"
+py_root="$(mktemp -d)"
+mkdir -p "$py_root/scripts/test" "$py_root/scripts/orch_py" "$py_root/venv/bin" "$py_root/tmp" \
+  "$py_root/py3" "$py_root/nopytest"
+(cd "$(dirname "$SUITE_SCRIPT")" && cp orch_py_test.sh test_jobs.sh report.sh "$py_root/scripts/test/")
+cat >"$py_root/venv/bin/python" <<'STUB'
+#!/usr/bin/env bash
+[ "$1" = -c ] && exit 0
+printf '%s\n' "$PWD" "$@" >"$PY_LOG"
+busy=0
+for slot in "$PY_POOL"/slot.*; do
+  [ -f "$slot" ] || continue
+  flock -n -E 100 "$slot" true; [ "$?" -eq 100 ] && busy=$((busy + 1))
+done
+echo "busy=$busy" >>"$PY_LOG"
+for arg in "$@"; do
+  case "$arg" in --basetemp=*) mkdir -p "${arg#--basetemp=}" && : >"${arg#--basetemp=}/left" ;; esac
+done
+case "$PY_STUB" in
+  pass) echo "...."; echo "4 passed in 0.10s"; exit 0 ;;
+  fail)
+    echo ".F.sE"
+    echo "=========================== short test summary info ============================"
+    echo "FAILED tests/test_a.py::test_one - AssertionError: assert 1 == 2"
+    echo "ERROR tests/test_b.py::test_two - RuntimeError: boom"
+    echo "1 failed, 2 passed, 1 skipped, 1 error in 0.20s"
+    exit 1 ;;
+  crash) echo "INTERNALERROR> a crash"; exit 3 ;;
+esac
+STUB
+chmod +x "$py_root/venv/bin/python"
+ln -s "$py_root/venv/bin/python" "$py_root/py3/python3"
+printf '#!/bin/sh\n[ "$1" = -c ] && exit 1\necho "ran without pytest" >"$PY_LOG"\n' >"$py_root/nopytest/python3"
+chmod +x "$py_root/nopytest/python3"
+pool_cpu_file "$py_root/cpu" 3
+# The pool's size is the quota file's alone: a getconf reporting 8 online
+# cores, more than any quota here, so the machine's own count never lowers it.
+mkdir "$py_root/getconf"
+printf '#!/bin/sh\necho 8\n' >"$py_root/getconf/getconf"
+chmod +x "$py_root/getconf/getconf"
+# py_run [VAR=value...]: the copied wrapper with the stub venv, the section's
+# pool and its getconf, TMPDIR in the tree, and CI, ORCH_TEST_JOBS and the
+# inherited pool marker unset, then each given assignment applied (a PATH given
+# replaces the one with the stub getconf, so only a case whose pool size does
+# not matter gives one). Its stdout goes to py_out, its stderr to <tree>/err,
+# its status to st.
+py_run() {
+  rm -f "$py_root/log"
+  py_out="$(cd "$py_root" && env -u CI -u ORCH_TEST_JOBS -u ORCH_TEST_POOL_HELD \
+    PATH="$py_root/getconf:$PATH" \
+    TMPDIR="$py_root/tmp" ORCH_TEST_PYTEST_VENV="$py_root/venv" PY_LOG="$py_root/log" \
+    PY_POOL="$py_root/pool" ORCH_TEST_POOL_DIR="$py_root/pool" ORCH_TEST_POOL_PERCENT=50 \
+    ORCH_TEST_CPU_MAX_FILE="$py_root/cpu" PY_STUB=pass "$@" \
+    bash scripts/test/orch_py_test.sh 2>"$py_root/err")"
+  st=$?
+}
+# py_args: the stub pytest's logged arguments, one line, after its directory.
+py_args() { sed -n '2,/^busy=/p' "$py_root/log" | sed '$d' | paste -sd' ' -; }
+# py_report <status> <output>: report.sh's report of the wrapper's run.
+py_report() { (source "$py_root/scripts/test/report.sh"; report_suite orch_py_test.sh "$@"); }
+
+py_run
+assert_status "a passing pytest run passes the suite" "$st" 0
+assert_eq "and prints the summary line report_suite reads" "$py_out" "4 passed, 0 failed"
+assert_eq "pytest runs from the package folder" "$(sed -n 1p "$py_root/log")" "$py_root/scripts/orch_py"
+assert_contains "with the pytest module of the venv's python" "$(py_args)" "-m pytest"
+assert_contains "with its basetemp under its own temporary directory" "$(py_args)" "--basetemp=$py_root/tmp/"
+assert_eq "and leaves no temporary file behind" "$(ls -A "$py_root/tmp")" ""
+
+py_run PY_STUB=fail
+assert_status "a failing pytest run fails the suite" "$st" 1
+assert_eq "printing a FAIL line and its reason for each failed test and error, then the summary" "$py_out" \
+  "  FAIL tests/test_a.py::test_one
+     AssertionError: assert 1 == 2
+  FAIL tests/test_b.py::test_two
+     RuntimeError: boom
+2 passed, 2 failed, 1 skipped"
+assert_contains "and pytest's own output on stderr" "$(cat "$py_root/err")" "short test summary info"
+py_rep="$(py_report "$st" "$py_out")"; py_rep_st=$?
+assert_status "report_suite fails the suite on a pytest failure" "$py_rep_st" 1
+assert_contains "naming its summary" "$py_rep" "orch_py_test.sh: 2 passed, 2 failed, 1 skipped"
+assert_eq "a failed run leaves no temporary file behind either" "$(ls -A "$py_root/tmp")" ""
+
+py_run PY_STUB=crash
+assert_status "a pytest run that ends with no result exits with pytest's status" "$st" 3
+py_rep="$(py_report "$st" "$py_out")"
+assert_contains "as one that died before its summary" "$py_rep" "orch_py_test.sh: died before its summary"
+
+py_run ORCH_TEST_PYTEST_VENV="$py_root/no-venv" PATH="$py_root/py3:$PATH"
+assert_eq "with no venv it runs pytest through python3 on PATH" "$py_out" "4 passed, 0 failed"
+py_run ORCH_TEST_PYTEST_VENV="$py_root/no-venv" PATH="$py_root/nopytest:$PATH"
+assert_status "without pytest the suite passes outside CI" "$st" 0
+assert_eq "saying it was skipped" "$py_out" "not installed - skipped"
+assert_eq "and runs nothing" "$(log_count "$py_root/log")" "0"
+py_rep="$(py_report "$st" "$py_out")"; py_rep_st=$?
+assert_status "report_suite passes the skipped suite outside CI" "$py_rep_st" 0
+assert_eq "printing its skipped line" "$py_rep" "orch_py_test.sh: not installed - skipped"
+py_run ORCH_TEST_PYTEST_VENV="$py_root/no-venv" PATH="$py_root/nopytest:$PATH" CI=true
+assert_status "without pytest the suite fails under CI" "$st" 1
+assert_eq "still saying it was skipped" "$py_out" "not installed - skipped"
+assert_status "and report_suite fails it there" "$(py_report "$st" "$py_out" >/dev/null; echo $?)" 1
+
+# The job pool: the wrapper holds a slot per xdist worker, as many as are free.
+if command -v flock >/dev/null 2>&1; then
+  py_run
+  assert_contains "with the pool's 3 slots free it runs 3 xdist workers" "$(py_args)" "-n 3"
+  assert_eq "holding all 3 slots while pytest runs" "$(tail -n 1 "$py_root/log")" "busy=3"
+  slot_hold "$py_root/pool" 2 || bad "holds slot 2"
+  py_run
+  assert_contains "with one slot held elsewhere it runs 2 workers" "$(py_args)" "-n 2"
+  assert_eq "holding the other 2 slots while pytest runs" "$(tail -n 1 "$py_root/log")" "busy=3"
+  slot_release
+  py_run ORCH_TEST_JOBS=1
+  assert_contains "ORCH_TEST_JOBS=1 narrows it to 1 worker" "$(py_args)" "-n 1"
+  py_holders=()
+  for py_slot in 1 2 3; do
+    slot_hold "$py_root/pool" "$py_slot" || bad "holds slot $py_slot"
+    py_holders+=("$SLOT_HOLDER")
+  done
+  (py_run; echo "$st" >"$py_root/st") &
+  py_pid=$!
+  notice_wait "$py_root/err"
+  assert_eq "with every slot held it waits and says so" \
+    "$(cat "$py_root/err")" "orch_py_test.sh: waiting for a job slot (3 in use)"
+  kill -9 "${py_holders[@]}" 2>/dev/null
+  wait "${py_holders[@]}" 2>/dev/null
+  wait "$py_pid"
+  assert_eq "and runs once a slot is freed" "$(cat "$py_root/st")" "0"
+else
+  skip "the pytest suite's job pool cases" "flock is not installed"
+fi
+pool_cpu_file "$py_root/cpu" 1
+py_run CI=true
+assert_contains "under CI it runs as many workers as there are usable CPUs" "$(py_args)" "-n 2"
+assert_eq "bypassing the pool" "$(tail -n 1 "$py_root/log")" "busy=0"
+rm -rf "$py_root"
+unset py_root py_out py_rep py_rep_st py_pid py_slot py_holders
+unset -f py_run py_args py_report
+
 # --- the counting fixture's stdin counter (#3434) ----------------------------
 # counting_stdin_bin jq, fed an input far larger than any pipe buffer or tee
 # read-ahead that a jq program stops reading after its first line: the count
@@ -4557,7 +4727,7 @@ tr_init "$af"
 tr_put "$af" scripts/test/orch/branch.sh 'x=1' '# --- branch create ---' '# --- branch (x.y) retire ---'
 tr_put "$af" scripts/test/orch/state.sh '# --- state ---'
 tr_put "$af" scripts/test/orch/common.sh '# --- common one ---'
-for af_f in doctor init issue side-checkout spec-review; do
+for af_f in doctor init side-checkout spec-review spec ticket finding-triage; do
   tr_put "$af" "scripts/test/orch/$af_f.sh" "# --- $af_f s ---"
 done
 for af_f in scripts/orch.sh scripts/orch/common.sh scripts/orch/branch.sh \
@@ -4672,6 +4842,11 @@ af_row "a markdown lens-bench fixture selects the lens bench suite" scripts/dev/
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
 af_row "a markdown lens-bench test fixture selects the lens bench suite" scripts/test/lens-bench/run-1/map.md \
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
+af_py_s="finding-triage s,spec-review s,spec s,ticket s"
+af_row "a Python package module selects the sections of the nouns that run an issue verb, not the full suite" \
+  scripts/orch_py/orch/cli.py "$TR_GATE,$af_py_s,docs_lint.sh"
+af_row "the pytest suite's wrapper selects the harness sections, and shellchecks itself" \
+  "scripts/test/$PYTEST_SUITE" "$TR_GATE,$TR_HARNESS,docs_lint.sh,scripts/test/$PYTEST_SUITE"
 af_row "a skill selects nothing more" skills/s/SKILL.md "$TR_GATE,docs_lint.sh"
 af_row "an agent selects nothing more" agents/a.md "$TR_GATE,docs_lint.sh"
 af_row "a non-markdown file under commands falls back to all.sh" commands/x.txt "all.sh"
@@ -4725,8 +4900,8 @@ af_row "paste-guard.sh selects the hooks suite and the spec-review sections" scr
   "$TR_GATE,spec-review s,$af_hooks_s,scripts/paste-guard.sh"
 af_row "planning-allowlist.sh selects the hooks suite and the doctor sections" scripts/planning-allowlist.sh \
   "$TR_GATE,doctor s,$af_hooks_s,scripts/planning-allowlist.sh"
-af_row "triage-labels.sh selects the hooks suite and the doctor and issue sections" scripts/triage-labels.sh \
-  "$TR_GATE,doctor s,issue s,$af_hooks_s,scripts/triage-labels.sh"
+af_row "triage-labels.sh selects the hooks suite and the doctor sections" scripts/triage-labels.sh \
+  "$TR_GATE,doctor s,$af_hooks_s,scripts/triage-labels.sh"
 af_row "a dev script other than the lens bench selects the harness sections" scripts/dev/other.sh \
   "$TR_GATE,$TR_HARNESS,docs_lint.sh,scripts/dev/other.sh"
 af_row "the edit width hook selects the harness sections and the hooks suite" scripts/dev/hook-edit-width.sh \
@@ -4856,7 +5031,7 @@ af_reset
 
 # End to end, with stub suites for the real ones.
 suites_read "$af_tests/all.sh" "$af_tests" || bad "reads all.sh's suite list" "$SUITES_ERR"
-for af_s in "${SUITES[@]}"; do
+for af_s in "${SUITES[@]}" "$PYTEST_SUITE"; do
   tr_put "$af" "scripts/test/$af_s" \
     "echo \"$af_s only=\${ORCH_TEST_ONLY-unset}\" >>\"$af.log\"" \
     'echo; echo "7 passed, 0 failed"'
@@ -4883,15 +5058,16 @@ STUB
 chmod +x "$af_sc/shellcheck"
 af_out="$(cd "$af" && env -u ORCH_TEST_JOBS PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
 assert_status "a passing run exits 0" "$st" 0
-assert_eq "printing each part's summary in order, shellcheck last" "$af_out" \
-  "orch_test.sh: 7 passed, 0 failed
+assert_eq "printing each part's summary in order, the pytest suite's first, shellcheck last" "$af_out" \
+  "$PYTEST_SUITE: 7 passed, 0 failed
+orch_test.sh: 7 passed, 0 failed
 hooks_test.sh: 7 passed, 0 failed
 docs_lint.sh: 7 passed, 0 failed
 shellcheck: 0 findings
-affected.sh: PASS (4 parts)"
+affected.sh: PASS (5 parts)"
 assert_contains "orch_test.sh got the placement sections as its filter" \
   "$(cat "$af.log")" "orch_test.sh only=^(test-helper placement \\(#1006\\)|"
-assert_eq "no other suite ran" "$(log_count "$af.log")" "3"
+assert_eq "no other suite ran" "$(log_count "$af.log")" "4"
 
 # The base it works out is handed to docs_lint.sh in DOCS_LINT_BASE, on the
 # narrow selection and on the full-suite fallback alike. Stand-ins print what
@@ -5014,6 +5190,19 @@ assert_contains "and shellcheck's findings" "$af_out" "shellcheck: 1 findings"
 assert_eq "ending on a FAIL verdict naming the failing parts" "$(printf '%s\n' "$af_out" | tail -n 1)" \
   "affected.sh: FAIL (hooks_test.sh, shellcheck)"
 
+# A failing pytest suite fails the run, whatever the selection.
+tr_put "$af" scripts/test/hooks_test.sh 'echo; echo "7 passed, 0 failed"'
+tr_put "$af" scripts/hook-guard.sh 'echo ok'
+tr_put "$af" "scripts/test/$PYTEST_SUITE" 'printf "  FAIL tests/test_a.py::test_one\n"' \
+  'echo "0 passed, 1 failed"; exit 1'
+af_out="$(cd "$af" && env -u ORCH_TEST_JOBS PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+assert_status "a failing pytest suite makes the run exit 1" "$st" 1
+assert_contains "printing its FAIL line and summary" "$af_out" \
+  "$(printf '  FAIL tests/test_a.py::test_one\n%s: 0 passed, 1 failed' "$PYTEST_SUITE")"
+assert_eq "ending on a FAIL verdict naming it" "$(printf '%s\n' "$af_out" | tail -n 1)" \
+  "affected.sh: FAIL ($PYTEST_SUITE)"
+tr_git "$af" checkout -q -- "scripts/test/$PYTEST_SUITE"
+
 # A suite that exits 0 on a header, with no summary line, died before it.
 tr_put "$af" scripts/test/hooks_test.sh 'echo "a section header"'
 tr_put "$af" scripts/hook-guard.sh 'echo ok'
@@ -5050,7 +5239,7 @@ assert_status "a passing selection exits 0 without shellcheck outside CI" "$st" 
 assert_contains "a missing shellcheck outside CI prints its skipped line" "$af_out" \
   "shellcheck: not installed - skipped"
 assert_eq "a missing shellcheck outside CI ends on a PASS verdict counting the skipped line" \
-  "$(printf '%s\n' "$af_out" | tail -n 1)" "affected.sh: PASS (4 parts)"
+  "$(printf '%s\n' "$af_out" | tail -n 1)" "affected.sh: PASS (5 parts)"
 af_verdict_run CI=1 -- HEAD
 assert_status "a missing shellcheck under CI exits 1" "$st" 1
 assert_eq "a missing shellcheck under CI ends on a FAIL verdict naming shellcheck" \
@@ -5061,12 +5250,12 @@ rm -f "$af/scripts/hook-guard.sh"
 tr_git "$af" reset -q --hard "$af_feat"
 af_verdict_run -- HEAD
 assert_eq "a selection with no changed shell file counts shellcheck's line" \
-  "$(printf '%s\n' "$af_out" | tail -n 1)" "affected.sh: PASS (3 parts)"
+  "$(printf '%s\n' "$af_out" | tail -n 1)" "affected.sh: PASS (4 parts)"
 # The full-suite fallback ends on all.sh's verdict.
 tr_put "$af" Makefile 'echo changed'
 af_verdict_run -- HEAD
 assert_eq "a full-suite fallback ends on all.sh's verdict, never affected.sh's" \
-  "$(printf '%s\n' "$af_out" | tail -n 1)" "all.sh: PASS ($((${#SUITES[@]} + 1)) parts)"
+  "$(printf '%s\n' "$af_out" | tail -n 1)" "all.sh: PASS ($((${#SUITES[@]} + 2)) parts)"
 af_reset
 # Paths that end before the report print no verdict.
 af_verdict_run -- --bogus
@@ -5096,7 +5285,7 @@ af_verdict_run ORCH_TEST_SHARD=2/4 -- HEAD
 assert_eq "and its fallback to all.sh runs the whole suite, the setting unset" \
   "$(grep "^shard=" "$af.log" | sort -u)" "shard=unset"
 assert_eq "ending on all.sh's verdict counting every part" "$(printf '%s\n' "$af_out" | tail -n 1)" \
-  "all.sh: PASS ($((${#SUITES[@]} + 1)) parts)"
+  "all.sh: PASS ($((${#SUITES[@]} + 2)) parts)"
 af_reset
 rm -rf "$af_bin" "$af_sc" "$af.pid" "$af.stdout"
 rm -rf "$af" "$af.log"

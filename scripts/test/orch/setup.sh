@@ -1096,16 +1096,6 @@ fake_lag() {
   if [ $# -ge 3 ]; then printf '%s\n' "$3" >"$ORCH_GH_FAKE_STORE/lag/$1.stale"; fi
 }
 
-# fake_lag_after <operation> <k> <n> [stale]: fake_lag, but only once k calls
-# of the operation have answered current - a readback that lags after the
-# reads ahead of a write did not.
-fake_lag_after() {
-  local op="$1" k="$2"
-  shift 2
-  fake_lag "$op" "$@"
-  printf '%s\n' "$k" >"$ORCH_GH_FAKE_STORE/lag/$op.after"
-}
-
 # fake_body_read <n> <format> [arg...]: seeds issue #n's body so that a read
 # of it - the stored body, then a newline, as gh's --jq .body prints it -
 # answers exactly what printf prints, which ends in a newline.
@@ -1187,7 +1177,7 @@ fake_quota() { printf '%s\t%s\t%s\t%s\n' "$@" >>"$ORCH_GH_FAKE_STORE/quota"; }
 # $GH_FIXTURE/repo_vars.log: the repo memo is never exported, so it stays empty.
 # Those two log lines are written once, by $GH_FIXTURE/log.sh, which the
 # fixture gh sources; any other gh a section puts on PATH to stand in for the
-# fixture gh, logging its calls to env.log as triage_gh's does, sources it too.
+# fixture gh, logging its calls to env.log as exists_gh's does, sources it too.
 # A gh that keeps its own call log instead, such as limit_once_gh's, does not.
 # A section that calls it ends with restore_suite_env GH_FIXTURE.
 gh_fixture() {

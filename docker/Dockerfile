@@ -4,7 +4,7 @@ FROM node:22-bookworm-slim
 ARG EXTRA_APT_PACKAGES=""
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends bash ca-certificates curl git gnupg jq \
+ && apt-get install -y --no-install-recommends bash ca-certificates curl git gnupg jq python3 python3-venv \
  && mkdir -p -m 755 /etc/apt/keyrings \
  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli.gpg \
  && echo "deb [signed-by=/etc/apt/keyrings/githubcli.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
@@ -12,6 +12,13 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends gh $EXTRA_APT_PACKAGES \
  && rm -rf /var/lib/apt/lists/* \
  && npm install -g @anthropic-ai/claude-code
+
+# python3 runs orch.sh's converted nouns (ADR-0067). The /opt/orch-dev venv holds
+# the pinned dev requirements the pytest suite (scripts/test/orch_py_test.sh)
+# runs on, so the image can run the Python tests.
+COPY scripts/orch_py/requirements-dev.txt /opt/orch-dev-requirements.txt
+RUN python3 -m venv /opt/orch-dev \
+ && /opt/orch-dev/bin/pip install --no-cache-dir -r /opt/orch-dev-requirements.txt
 
 # Per-project build hook, run as root once the base tools are installed. Declared
 # here so the apt layer stays cached when only the command changes. bash, not

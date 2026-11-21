@@ -26,8 +26,11 @@ a judgement call.
 
 Never write a hand-rolled `printf 'orch: ...' >&2`. `die` and `die2` print the
 message and exit; `warn` prints it and returns, for a non-fatal message.
-The one exception is the bash version guard at the top of `orch.sh`, which runs
-before `die` can be sourced and prints its own `orch: ` line.
+The two exceptions are the version checks that run before `die` can be
+loaded, each printing its own `orch: ` line: the bash version guard at the top
+of `orch.sh`, and `require_python` in the Python entry point
+(`scripts/orch_py/orch/__main__.py`), which runs before `orch.common`'s `die`
+is imported.
 
 A command that reserves exit 1 for a meaningful "no" exits 1 only for that "no"
 and exits 2 on every other failure: each death that is not the "no" itself goes
@@ -35,7 +38,11 @@ through `die2`, or through a helper's `--exit 2`, while a helper misused by its
 own caller may keep its option check's status 1. The gh guard's death for want
 of a Repo exits 1 whatever the command reserved, so such a command that reaches
 GitHub resolves the Repo itself before its first GitHub read
-(`repo_pin || die2 "$REPO_REMEDY"`).
+(`repo_pin || die2 "$REPO_REMEDY"`). Likewise a noun converted to Python
+(ADR-0067) dies exit 1, whatever its verb reserved, when it finds no python3
+or one below 3.9 (`orch_python` in `orch.sh`, `require_python` in the Python
+entry point): the verb never started, so the death comes before any "no" it
+could mean.
 
 ## 3. No variable named after a file-level helper
 

@@ -1865,7 +1865,6 @@ spec_review_ticket_numbers() {
 spec_review_apply() {
   # Subshells below call into these: load each once here, not once per subshell.
   orch_load gh
-  orch_load issue
   orch_load ticket
   local usage="usage: orch.sh spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>] [--tickets <answer> [--ticket-reasons <file>]] [--issue <n>] [--unattended] [--host-fallbacks <file>] | orch.sh spec-review apply <dir> --resume --round <k>/<n>"
   local dir="" answer="" have_answer="" round="" reasons="" issue="" unattended=false hosts_file="" hosts=""
@@ -2087,8 +2086,9 @@ spec_review_apply() {
   spec_review_local_write "$dir/changelog.md" "$log"$'\n'
 
   # Flow mode writes through the spec command, whose guards hold; the
-  # standalone entry through the stateless issue commands.
-  local update=(cmd_issue update "$issue") comment=(cmd_issue comment "$issue")
+  # standalone entry through the stateless issue commands, run as orch.sh
+  # issue commands of their own (orch_run), never calls into the issue module.
+  local update=(orch_run issue update "$issue") comment=(orch_run issue comment "$issue")
   [ -z "$flow" ] || { update=(cmd_spec update); comment=(cmd_spec comment); }
   # Ticket text edits, then edges, then the body, then the retire: a ticket's
   # text edit before its edge, whose ## Blocked by rewrite reads the edited
@@ -2099,7 +2099,7 @@ spec_review_apply() {
     word_listed "$done_t" "${ST_T[$i]}" && continue
     done_t="$done_t${ST_T[$i]} "
     spec_review_write "$dir" "ticket #${ST_T[$i]}'s body" \
-      cmd_issue update "${ST_T[$i]}" "$dir/ticket-${ST_T[$i]}.md"
+      orch_run issue update "${ST_T[$i]}" "$dir/ticket-${ST_T[$i]}.md"
   done
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
     case "${ST_KIND[$i]}:${ST_DISP[$i]:-}" in

@@ -17,7 +17,8 @@ when no planning close agreed the test seams.
 ## Requirements
 
 - Claude Code, or the Junie CLI (see [Install](#install)).
-- `gh`, `jq`, and `git`, with `gh` signed in to the repo's GitHub.
+- `gh`, `jq`, `git` and `python3` 3.9 or newer, with `gh` signed in to the
+  repo's GitHub.
 - bash 4.2 or newer. macOS ships 3.2 as `/bin/bash`: run `brew install bash`.
 - Little per-repo setup, all optional but the triage labels: the five
   canonical triage label names (`needs-triage`, `needs-info`,

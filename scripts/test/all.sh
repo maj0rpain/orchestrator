@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 #
 # The whole test run, the one command to run before committing: every suite in
-# the `suites` list below, each in quiet mode, and shellcheck, overlapping. The
-# suites other than orch_test.sh start first, in list order, each holding a slot
-# of the job pool while it runs (waiting for one when none is free); then
-# orch_test.sh, which holds none (its sections take their own); then shellcheck.
+# the `suites` list below, each in quiet mode, the pytest suite
+# (orch_py_test.sh, test_tree.sh's PYTEST_SUITE) and shellcheck, overlapping.
+# The suites other than orch_test.sh start first, in list order, each holding a
+# slot of the job pool while it runs (waiting for one when none is free); then
+# orch_test.sh, which holds none (its sections take their own); then the pytest
+# suite, which holds none either (it takes its own, one per xdist worker), and
+# last shellcheck. The pytest suite is in no `suites` list, so it stays outside
+# the suite budget and the durations file.
 # Each one's stdout is captured to a temporary directory, removed on exit, and
 # its exit status is taken from waiting on it; once every one has finished,
 # their output is printed in a fixed order, no matter which finished first. A
-# failing suite does not stop the others. Printed per suite, in the order of
-# the `suites` list: its FAIL lines with their detail lines, then one summary
+# failing suite does not stop the others. Printed per suite, the pytest suite
+# first, then in the order of the `suites` list: its FAIL lines with their
+# detail lines, then one summary
 # line, "<suite>: <its last line>", or "<suite>: died before its summary (exit
 # N)" when its last line is not a summary line, whatever its exit status. A
 # suite whose output has a "  FAIL " line is failed whatever its exit status:
@@ -66,10 +71,11 @@
 # value cannot switch off docs_lint.sh's ledger and budget rules here.
 #
 # ORCH_TEST_SHARD=<i>/<n> passes to orch_test.sh alone (never to the other
-# suites), which runs group i of n of its sections; all.sh runs the other suites
-# and shellcheck only when i is 1, and in any other group runs orch_test.sh
-# alone, its verdict line counting the parts it ran. An empty value is unset; a
-# malformed one makes all.sh print "all.sh: ORCH_TEST_SHARD='<value>' is not
+# suites), which runs group i of n of its sections; all.sh runs the other
+# suites, the pytest suite and shellcheck only when i is 1, and in any other
+# group runs orch_test.sh alone, its verdict line counting the parts it ran. An
+# empty value is unset; a malformed one makes all.sh print "all.sh:
+# ORCH_TEST_SHARD='<value>' is not
 # <i>/<n> with 1 <= i <= n" on stderr and exit 1 before anything starts.
 #
 # CHANGELOG_BASE and NO_VERSION_BUMP pass through untouched - set, empty or
@@ -124,7 +130,8 @@ pids=()
 SHELLCHECK_PIDS=()
 # On INT or TERM, TERM every suite and shellcheck started, wait for each, and
 # exit 130; the EXIT trap removes the temp directory only after that.
-trap 'test_jobs_stop_children "${pids[@]}" "${SHELLCHECK_PIDS[@]}"' INT TERM
+py_pid=""
+trap 'test_jobs_stop_children "${pids[@]}" ${py_pid:+"$py_pid"} "${SHELLCHECK_PIDS[@]}"' INT TERM
 trap 'rm -rf "$tmp"' EXIT
 suites_tmp="$tmp/suites-tmp"
 mkdir "$suites_tmp" || exit 1
@@ -146,6 +153,11 @@ for suite_n in "${TEST_JOBS_START_ORDER[@]}"; do
   fi
   pids[suite_n]="$TEST_JOBS_SUITE_PID"
 done
+# The pytest suite, in the first group: it takes its own slots, so none here.
+if [ "$all_runs_rest" -eq 1 ]; then
+  TMPDIR="$suites_tmp" test_jobs_suite_start bash "$dir/$PYTEST_SUITE" >"$tmp/$PYTEST_SUITE"
+  py_pid="$TEST_JOBS_SUITE_PID"
+fi
 have_sc=0
 if [ "$all_runs_rest" -eq 1 ] && command -v shellcheck >/dev/null 2>&1; then
   have_sc=1
@@ -160,10 +172,13 @@ for suite_pid in "${pids[@]}"; do
   suite_exit=$?
   suite_exits+=("$suite_exit")
 done
+py_exit=0
+[ -z "$py_pid" ] || { wait "$py_pid"; py_exit=$?; }
 if [ "$have_sc" -eq 1 ]; then
   shellcheck_join "$tmp"
 fi
 
+[ -z "$py_pid" ] || report_suite "$PYTEST_SUITE" "$py_exit" "$(<"$tmp/$PYTEST_SUITE")"
 for suite_n in "${!suites[@]}"; do
   suite="${suites[$suite_n]}"
   report_suite "$suite" "${suite_exits[$suite_n]}" "$(<"$tmp/$suite")"

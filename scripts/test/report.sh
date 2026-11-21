@@ -8,7 +8,10 @@
 # report_suite <suite> <status> <output>: prints the suite's FAIL lines with
 # their detail lines, then one summary line, "<suite>: <its last line>", or
 # "<suite>: died before its summary (exit N)" when the last line of <output> is
-# not a summary line, whatever <status> is, even 0. When <output> has a
+# not a summary line, whatever <status> is, even 0. A summary line is "<n>
+# passed, <m> failed" with an optional ", <k> skipped", or "not installed -
+# skipped", the line of a suite whose tool is missing (orch_py_test.sh without
+# pytest), which passes or fails by <status> alone. When <output> has a
 # "  FAIL " line and <status> is 0, "<suite>: printed FAIL lines but exited 0"
 # follows. Returns 1 when <status> is non-zero, <output> has a FAIL line, or its
 # last line is not a summary line, else 0.
@@ -52,7 +55,8 @@ report_suite() {
     /^  FAIL / { print; in_fail = 1 }')"
   [ -z "$fail_block" ] || printf '%s\n' "$fail_block"
   last="$(printf '%s\n' "$out" | tail -n 1)"
-  if ! [[ "$last" =~ ^[0-9]+\ passed,\ [0-9]+\ failed(,\ [0-9]+\ skipped)?$ ]]; then
+  if ! [[ "$last" =~ ^[0-9]+\ passed,\ [0-9]+\ failed(,\ [0-9]+\ skipped)?$ ]] &&
+    [ "$last" != "not installed - skipped" ]; then
     echo "$suite: died before its summary (exit $status)"
     rc=1
   else

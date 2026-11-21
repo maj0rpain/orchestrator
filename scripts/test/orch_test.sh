@@ -6,14 +6,15 @@
 # The tests live under scripts/test/orch/: every `# ---` section in the file
 # for the orch.sh noun it tests, scripts/test/orch/<noun>.sh (the harness's own
 # sections in harness.sh), and the shared setup and the summary in setup.sh.
-# A ticket's tests go in the file for the noun it touches; a new noun gets a
-# new file, which the runner picks up with no edit here. A noun file holds
+# A ticket's tests go in the file for the noun it touches; a new noun is
+# Python, its tests pytest in scripts/orch_py/tests/, and a new section file
+# is picked up by the runner with no edit here. A noun file holds
 # only `# ---` sections, optionally preceded by its preamble: the text before
 # its first `# ---` line, eval'd before that file's sections whenever one of
 # them runs. Every preamble opens with the same shellcheck lines - the shell
 # directive and a never-true `(( 0 )) && source setup.sh` behind a
 # `source=setup.sh` directive - so all.sh's shellcheck follows setup.sh's
-# definitions; a new noun file copies them.
+# definitions; a new section file copies them.
 #
 # orch.sh is where silent wrongness hides: `doctor` returning success on a
 # deleted branch, a missing triage label, or a handoff with an empty required

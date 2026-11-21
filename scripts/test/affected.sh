@@ -45,9 +45,16 @@
 #   paste-guard.sh                    hooks_test.sh, plus the spec-review
 #                                     sections
 #   planning-allowlist.sh             hooks_test.sh, plus the doctor sections
-#   triage-labels.sh                  hooks_test.sh, plus the doctor and issue
-#                                     sections
+#   triage-labels.sh                  hooks_test.sh, plus the doctor sections
 #   scripts/dev/ other than the lens bench, hook-edit-width.sh, width.sh
+#                                     the harness section file's sections
+#   the Python package (scripts/orch_py/), its tests and dev files included
+#                                     the spec, spec-review, ticket and
+#                                     finding-triage sections, the bash nouns
+#                                     whose sections run an issue verb through
+#                                     the dispatch (the pytest suite runs on
+#                                     every call)
+#   the pytest suite's wrapper (scripts/test/orch_py_test.sh)
 #                                     the harness section file's sections
 #   hook-edit-width.sh, width.sh, shell_code.awk
 #                                     the harness sections, plus hooks_test.sh
@@ -111,7 +118,9 @@
 # ORCH_TEST_SHARD is unset at start: a ticket verification is never split, its
 # fallback to the full verification (all.sh) included.
 #
-# Always run: docs_lint.sh, orch_test.sh's placement sections (test-helper
+# Always run: the pytest suite (orch_py_test.sh, test_tree.sh's PYTEST_SUITE,
+# which takes its own job-pool slots), docs_lint.sh, orch_test.sh's placement
+# sections (test-helper
 # placement, gh op placement, marked comment prelude placement, comment
 # reader placement, helper body copies), and the shellcheck run, at warning
 # severity, on the changed scripts/**/*.sh files that still exist. Sections are
@@ -120,13 +129,15 @@
 # Each suite other than orch_test.sh holds a slot of the job pool while it runs
 # (test_jobs.sh's suite start, as all.sh's suites do), waiting for one when none
 # is free: they start first, in selection order, then orch_test.sh, which holds
-# none (its sections take their own), then shellcheck.
+# none (its sections take their own), then the pytest suite, which holds none
+# either, then shellcheck.
 #
 # Output is like all.sh's: each part's FAIL lines and one summary line, in a
-# fixed order - the suites in all.sh's list order, orch_test.sh carrying the
-# placement and selected sections, then shellcheck last. Exits 1 when anything
-# failed. --plan prints the selection instead, one item per line in that order
-# (each suite, each orch_test.sh section title, each shellcheck file), or the
+# fixed order - the pytest suite, then the suites in all.sh's list order,
+# orch_test.sh carrying the placement and selected sections, then shellcheck
+# last. Exits 1 when anything failed. --plan prints the selection instead, one
+# item per line in that order (the pytest suite, each suite, each orch_test.sh
+# section title, each shellcheck file), or the
 # single line "all.sh" on the fallback, and runs nothing.
 #
 # The last stdout line is the verdict (report.sh): "affected.sh: PASS (<n>
@@ -432,7 +443,7 @@ classify() {
       scripts/bash-walk.sh) want+=(hooks_test.sh) ;;
       scripts/paste-guard.sh) want+=(hooks_test.sh); sections_of spec-review ;;
       scripts/planning-allowlist.sh) want+=(hooks_test.sh); sections_of doctor ;;
-      scripts/triage-labels.sh) want+=(hooks_test.sh); sections_of doctor issue ;;
+      scripts/triage-labels.sh) want+=(hooks_test.sh); sections_of doctor ;;
       scripts/orch/*.sh)
         if [ "$state" != deleted ]; then
           [ -f "scripts/test/orch/$file_name" ] || unnamed
@@ -452,6 +463,8 @@ classify() {
       scripts/dev/hook-edit-width.sh | scripts/dev/width.sh | scripts/test/shell_code.awk)
         want+=(hooks_test.sh); sections_of harness ;;
       scripts/dev/*) sections_of harness ;;
+      scripts/orch_py/*) sections_of spec spec-review ticket finding-triage ;;
+      scripts/test/orch_py_test.sh) sections_of harness ;;
       docker/* | .dockerignore) want+=(autopilot_container_test.sh autopilot_up_test.sh) ;;
       .claude-plugin/*) want+=(version_bump_test.sh autopilot_up_test.sh) ;;
       .shellcheckrc) sc_all=1; sections_of harness ;;
@@ -552,6 +565,7 @@ if [ "${#sc_files[@]}" -gt 0 ]; then
 fi
 
 if [ "$plan" -eq 1 ]; then
+  echo "$PYTEST_SUITE"
   for suite in "${selected[@]}"; do
     echo "$suite"
     if [ "$suite" = orch_test.sh ] && [ "${#titles[@]}" -gt 0 ]; then
@@ -578,7 +592,8 @@ export ORCH_TEST_QUIET=1
 unset DOCS_LINT_RECORDING
 tmp="$(mktemp -d)" || exit 1
 pids=()
-trap 'test_jobs_stop_children "${pids[@]}"' INT TERM
+py_pid=""
+trap 'test_jobs_stop_children "${pids[@]}" ${py_pid:+"$py_pid"}' INT TERM
 trap 'rm -rf "$tmp"' EXIT
 
 # The suites other than orch_test.sh start first, in selection order, each under
@@ -600,6 +615,10 @@ for suite_n in "${TEST_JOBS_START_ORDER[@]}"; do
   fi
   pids[suite_n]="$TEST_JOBS_SUITE_PID"
 done
+# The pytest suite, on every call: it takes its own slots, so none here.
+unset ORCH_TEST_ONLY
+test_jobs_suite_start bash "$dir/$PYTEST_SUITE" >"$tmp/$PYTEST_SUITE"
+py_pid="$TEST_JOBS_SUITE_PID"
 
 have_sc=0
 sc_pid=""
@@ -617,9 +636,12 @@ for n in "${!selected[@]}"; do
   wait "${pids[$n]}"
   suite_exits+=("$?")
 done
+wait "$py_pid"
+py_exit=$?
 sc_status=0
 [ "$have_sc" -eq 1 ] && { wait "$sc_pid"; sc_status=$?; }
 
+report_suite "$PYTEST_SUITE" "$py_exit" "$(<"$tmp/$PYTEST_SUITE")"
 for n in "${!selected[@]}"; do
   suite="${selected[$n]}"
   report_suite "$suite" "${suite_exits[$n]}" "$(<"$tmp/$suite")"

@@ -450,8 +450,9 @@ adapter_rate_limit() {
 # The trimmed issue object the whole-issue adapter prints (#528): the issue's
 # number, title and body and its label names - every other field gh answers
 # with is dropped, so the shape does not change with gh's version. It carries
-# no comments: they are read by adapter_issue_comments, and `issue fetch --json`
-# joins the two.
+# no comments: they are read by adapter_issue_comments. No bash caller is left:
+# `issue fetch --json` is Python now, with its own ISSUE_JSON_JQ in
+# orch/gh.py, and the adapter stays as a recorded deviation (#3916).
 ISSUE_JSON_JQ='{number, title, body, labels: [.labels[].name]}'
 
 # adapter_issue_body <n>: the issue's body as GitHub holds it, then a newline.
@@ -468,8 +469,8 @@ adapter_issue_comments() {
 }
 
 # adapter_issue_json <n>: the issue as ISSUE_JSON_JQ's one JSON object, with no
-# comments - an operation that prints JSON rather than plain text, because
-# `issue fetch --json` joins it with the comments.
+# comments - an operation that prints JSON rather than plain text. It has no
+# bash caller left: the Python issue noun joins its own copy with the comments.
 adapter_issue_json() {
   gh issue view "$1" --json number,title,body,labels --jq "$ISSUE_JSON_JQ"
 }
@@ -546,6 +547,34 @@ issue_state_labels_body_read() {
   printf -v "$2" '%s' "$__islbr_state"
   printf -v "$3" '%s' "${__islbr_labels%$'\n'}"
   printf -v "$4" '%s' "$__islbr_body"
+}
+
+# open_issue_read [--hint <h>] <n> <not-open message> <labels_var>
+# [<body_var>]: reads issue <n> once through the gh adapter - its body too,
+# only when <body_var> is given - and writes its labels (one per line,
+# possibly none) and its body into the caller-named variables. A failed read
+# dies through gh_die "read issue #<n>", with --hint passed on as given; an
+# issue that is not OPEN dies with <not-open message>, verbatim, since the
+# callers' messages are not one shape. It checks no label: each caller keeps
+# its own label test.
+# Out-params through `printf -v`, its locals prefixed so no caller's variable
+# name is shadowed.
+open_issue_read() {
+  local __oir_hint=() __oir_state __oir_labels __oir_body __oir_err
+  if [ "${1-}" = --hint ]; then
+    die_opt_check open_issue_read $# "$@"
+    __oir_hint=(--hint "$2"); shift 2
+  fi
+  if [ $# -ge 4 ]; then
+    issue_state_labels_body_read "$1" __oir_state __oir_labels __oir_body __oir_err \
+      || gh_die ${__oir_hint[@]+"${__oir_hint[@]}"} "read issue #$1" "$__oir_err"
+  else
+    issue_state_labels_read "$1" __oir_state __oir_labels __oir_err \
+      || gh_die ${__oir_hint[@]+"${__oir_hint[@]}"} "read issue #$1" "$__oir_err"
+  fi
+  [ "$__oir_state" = OPEN ] || die "$2"
+  printf -v "$3" '%s' "$__oir_labels"
+  [ $# -lt 4 ] || printf -v "$4" '%s' "$__oir_body"
 }
 
 # adapter_issue_title_labels <n>: the title on the first line, then one label
@@ -711,14 +740,6 @@ issues_open_rows_read() {
 adapter_issues_titled_rows() {
   gh issue list --state open --label "$1" --search "sort:created-asc" --limit "$ISSUE_LIST_LIMIT" --json number,state,title,labels \
     --jq '.[] | .number, (.state + "\t" + .title), (.labels | length), (.labels[].name)'
-}
-
-# issues_titled_rows_read <nums_var> <state_titles_array> <labels_array>
-# <err_var> <label>: issues_labelled_rows_read through
-# adapter_issues_titled_rows, the second field of each record the state and the
-# title, tab-joined, the limit warning issues_labelled_limit_warn's.
-issues_titled_rows_read() {
-  issues_rows_read_via issues_titled_rows_read adapter_issues_titled_rows issues_labelled_limit_warn "$@"
 }
 
 # issues_label_block_read <lines_array> <index_var> <out_var> <count>: reads

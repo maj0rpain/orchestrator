@@ -4159,16 +4159,41 @@ routed_nouns() {
       for (i = 1; i <= n; i++) if (names[i] !~ /^-/) print names[i]
     }' "$1"
 }
+# noun_module <root> <noun> <var>: sets <var> to the root-relative path of the
+# noun's module: scripts/orch/<noun>.sh, or, when the root holds no such file,
+# the Python module of a noun converted to Python (ADR-0067),
+# scripts/orch_py/orch/<noun>.py with each - as _. Starts no process.
+noun_module() {
+  local __nm_path="scripts/orch/$2.sh"
+  [ -f "$1/$__nm_path" ] || __nm_path="scripts/orch_py/orch/${2//-/_}.py"
+  printf -v "$3" '%s' "$__nm_path"
+}
 # noun_verbs <root> <noun>...: one "<noun><TAB><verb>" line per verb each named
 # noun dispatches - each name on a top-level arm of the first case in cmd_<noun>
 # (- mapped to _) of its module, scripts/orch/<noun>.sh under the root, its
-# option spellings, the catch-all and nested cases' arms left out. A noun with
-# no module yields none; when no named noun has one, no awk starts.
+# option spellings, the catch-all and nested cases' arms left out. A noun
+# converted to Python, with no bash module, has its verbs on the one top-level
+# `OPS = "<verb>|..."` line of its Python module, printed first, by bash alone.
+# A noun with no module yields none; when no named noun has a bash one, no awk
+# starts.
 noun_verbs() {
-  local r="$1" noun files=()
+  local r="$1" noun line op module files=()
+  local -a ops=()
   shift
   for noun in "$@"; do
-    [ -f "$r/scripts/orch/$noun.sh" ] && files+=("scripts/orch/$noun.sh")
+    noun_module "$r" "$noun" module
+    case "$module" in
+      *.sh) [ -f "$r/$module" ] && files+=("$module") ;;
+      *)
+        [ -f "$r/$module" ] || continue
+        while IFS= read -r line; do
+          [[ $line =~ ^OPS\ =\ \"([a-z|-]+)\"$ ]] || continue
+          IFS='|' read -ra ops <<<"${BASH_REMATCH[1]}"
+          for op in "${ops[@]}"; do printf '%s\t%s\n' "$noun" "$op"; done
+          break
+        done <"$r/$module"
+        ;;
+    esac
   done
   [ "${#files[@]}" -gt 0 ] || return 0
   (cd "$r" && awk "$SHELL_CODE_AWK"'
@@ -4212,7 +4237,7 @@ scan_cli_nouns() {
     [ -n "$n" ] && verbs_of[$n]+="$v"$'\n'
   done <<<"$all_verbs"
   for noun in "${nouns[@]}"; do
-    module="scripts/orch/$noun.sh"
+    noun_module "$r" "$noun" module
     verbs="${verbs_of[$noun]:-}"
     row="$(grep -E -- "^[[:space:]]*\|[[:space:]]*\`$noun\`" <<<"$table" | awk -v n=1 'NR<=n')"
     if [ -z "$row" ]; then
@@ -4258,8 +4283,12 @@ spares "nor an option spelling, the catch-all, or an arm outside main" "$out" 'n
 fixture="$(new_fixture)"
 mkdir -p "$fixture/scripts/orch" "$fixture/docs/agents"
 printf '%s\n' 'main() {' '  case "$cmd" in' '    base) cmd_base "$@" ;;' '    redo) cmd_redo "$@" ;;' \
-  '    doctor) cmd_doctor "$@" ;;' '    widget-thing) cmd_widget_thing "$@" ;;' '    *) die nope ;;' '  esac' '}' \
+  '    doctor) cmd_doctor "$@" ;;' '    widget-thing) cmd_widget_thing "$@" ;;' \
+  '    gadget-box) orch_python "$cmd" "$@" ;;' '    *) die nope ;;' '  esac' '}' \
   >"$fixture/scripts/orch.sh"
+mkdir -p "$fixture/scripts/orch_py/orch"
+printf '%s\n' '"""A converted noun."""' '# OPS = "commented|out"' 'OPS = "spin|stop"' 'MORE = "x|y"' \
+  >"$fixture/scripts/orch_py/orch/gadget_box.py"
 printf '%s\n' 'cmd_base() {' '  case "$1" in' '    set)' '      case "$2" in' '        major)' '          x=1 ;;' \
   '        green)' '          x=2 ;;' '      esac' '      ;;' '    show|-x|--long) echo ;;' '    extra) echo ;;' \
   '    *) die "unknown base op" ;;' '  esac' '  case "$1" in' '    later) echo ;;' '  esac' '}' >"$fixture/scripts/orch/base.sh"
@@ -4270,7 +4299,8 @@ printf '%s\n' 'cmd_doctor() {' '  case "$1" in' '    --flow) echo ;;' '    check
 printf '%s\n' 'cmd_widget_thing() {' '  case "$1" in' '    go|stop) echo ;;' '  esac' '}' \
   >"$fixture/scripts/orch/widget-thing.sh"
 printf '%s\n' '# CLI' '' '## Current nouns' '' '| Noun | Verbs |' '| --- | --- |' \
-  '| `base` | `set`, `show`, `clear` |' '| `widget-thing` | `go`, `stop` |' '' '## Exceptions' '' \
+  '| `base` | `set`, `show`, `clear` |' '| `widget-thing` | `go`, `stop` |' '| `gadget-box` | `spin`, `halt` |' \
+  '' '## Exceptions' '' \
   '- **Bare global commands**: `doctor`.' '- **`redo review` / `redo spec`**: not ops belonging to a `redo` noun.' \
   >"$fixture/docs/agents/cli-conventions.md"
 out="$(scan_cli_nouns "$fixture")"
@@ -4285,12 +4315,17 @@ spares "nested-case arms, option spellings, the catch-all and a later case are n
 spares "a row verb, a redo <verb> in Exceptions, and a hyphenated noun's verbs are spared" \
   "$out" '(base verb (set|show) |redo verb (review|spec) |widget-thing verb )'
 spares "a bare global command in Exceptions has no verbs to check" "$out" '(doctor|routed noun) '
+flags "a converted noun's verb its OPS line names, in neither its row nor Exceptions, is flagged" \
+  "$out" "docs/agents/cli-conventions.md: gadget-box verb stop is dispatched but in neither"
+flags "a converted noun's row verb its OPS line lacks is flagged, naming its Python module" \
+  "$out" "docs/agents/cli-conventions.md: gadget-box verb halt is in its Current nouns row but scripts/orch_py/orch/gadget_box.py no longer dispatches it"
+spares "a converted noun's verbs come from its OPS line alone" "$out" 'verb (spin|commented|out|x|y) '
 # noun_verbs over the verbs fixture: one awk for every named noun, each
 # module's verbs from its own cmd_<noun>, a noun with no module none.
 verbs_awk="$(TMPDIR="$FIXTURES" counting_bin awk)"
 assert_eq "noun_verbs prints one line per verb of each module, none for a noun with no module" \
-  "$(PATH="$verbs_awk:$PATH" noun_verbs "$fixture" base redo doctor widget-thing ghost)" \
-  "$(printf '%s\t%s\n' base set base show base extra redo review redo spec redo zap \
+  "$(PATH="$verbs_awk:$PATH" noun_verbs "$fixture" base redo doctor widget-thing gadget-box ghost)" \
+  "$(printf '%s\t%s\n' gadget-box spin gadget-box stop base set base show base extra redo review redo spec redo zap \
     doctor check widget-thing go widget-thing stop)"
 assert_eq "noun_verbs started exactly one awk" "$(counting_starts "$verbs_awk" awk)" "1"
 # Planted fixtures for the shared code rule: a case/esac in a trailing comment

@@ -125,12 +125,8 @@ assert_eq "spec-review allows trailing spaces and tabs" "$mc_rc:$mc_out" "0:0"
 mc_newest "$(mc_array $'## Spec review of x\nRound 1')" spec-review
 assert_eq "spec-review is exactly the heading" "$mc_rc:$mc_out" "1:"
 arr="$(mc_array "keep" $'## Spec review\nRound 1 of 2' "also")"
-mc drop "$arr" spec-review
-assert_eq "drop leaves the other comments unchanged, in the array shape" "$mc_out" '[{"body":"keep"},{"body":"also"}]'
 mc texts "$arr" spec-review
 assert_eq "texts drops the spec-review heading line" "$mc_out" '["Round 1 of 2"]'
-mc drop "$(mc_object "keep" $'## Spec review\nx')" spec-review
-assert_eq "drop handed the issue object exits non-zero and prints nothing" "$([ "$mc_rc" != 0 ] && echo nonzero):$mc_out" "nonzero:"
 mc texts "$(mc_object "keep" $'## Spec review\nx')" spec-review
 assert_eq "texts handed the issue object exits non-zero and prints nothing" "$([ "$mc_rc" != 0 ] && echo nonzero):$mc_out" "nonzero:"
 
@@ -155,8 +151,6 @@ assert_eq "a ruling that is only its opening gives an empty string" "$mc_out" '[
 mc texts "not json" spec-ruling
 assert_eq "texts on unreadable comments exits 2, printing nothing" "$mc_rc:$mc_out" "2:"
 assert_contains "and reports jq's parse error on stderr" "$mc_err" "parse error"
-mc drop "not json" spec-review
-assert_eq "drop on unreadable comments fails, printing nothing" "$([ "$mc_rc" != 0 ] && echo failed):$mc_out" "failed:"
 mc_newest "$(mc_array "$q" "$(marker_of reentry review)"$'\nrecorded')" reentry review
 assert_eq "a re-entry comment is found by its kind and phase" "$mc_rc:$mc_out" "0:1"
 got="$(mc_jq 'marked_comment_list | map(marked_comment_info)' <<<"$(mc_array "$(marker_of reentry review)")")"

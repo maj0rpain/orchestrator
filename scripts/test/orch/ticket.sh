@@ -33,6 +33,16 @@ switched_ticket_worktree() {
   printf '%s\n' "$wt"
 }
 
+# fake_lag_after <operation> <k> <n> [stale]: fake_lag, but only once k calls
+# of the operation have answered current - a readback that lags after the
+# reads ahead of a write did not.
+fake_lag_after() {
+  local op="$1" k="$2"
+  shift 2
+  fake_lag "$op" "$@"
+  printf '%s\n' "$k" >"$ORCH_GH_FAKE_STORE/lag/$op.after"
+}
+
 # fake_unlag: every readback fake_lag_after named is current again.
 fake_unlag() { rm -rf "$ORCH_GH_FAKE_STORE/lag"; }
 

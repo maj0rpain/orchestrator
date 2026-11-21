@@ -4,8 +4,10 @@
 # severity's label colour and description, its label rules, and its issue
 # body, rendered from its parts and parsed back - with the finding categories
 # and the input checks review file, audit file and audit report share. Review
-# file, audit file, audit report, finding triage and issue triage read it. Its
-# tests: scripts/test/orch/filed-finding.sh.
+# file, audit file, audit report and finding triage read it; `issue`, a
+# converted noun, keeps its own copy of what issue triage needs
+# (orch/filed_finding.py).
+# Its tests: scripts/test/orch/filed-finding.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 # filed_table_keys <table>: the keys of a space-separated table of
@@ -104,8 +106,9 @@ has_review_label() {
 
 # finding_untriaged <labels>: whether the issue is a filed finding finding
 # triage has not yet triaged - it carries a review label and none of
-# ready-for-agent, ready-for-human or wontfix. The one gate issue triage and
-# the quick autopilot's candidates share; each keeps its own reaction.
+# ready-for-agent, ready-for-human or wontfix. The quick autopilot's
+# candidates' gate; issue triage, a converted noun's verb, keeps its own copy
+# (orch/filed_finding.py).
 finding_untriaged() {
   local role label
   has_review_label "$1" || return 1

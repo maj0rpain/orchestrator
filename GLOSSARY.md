@@ -94,7 +94,8 @@ valid; the step back of a Redo retires the handoffs it makes stale.
 The set of test job slots, one per home directory, that every test runner under
 that home directory draws from, sized to a share of the usable CPUs - three
 quarters unless the run's environment sets another - so concurrent runs queue
-instead of oversubscribing the machine. CI bypasses it.
+instead of oversubscribing the machine. The pytest suite draws from it too,
+running no more workers than the slots it holds. CI bypasses it.
 
 **Handoff**:
 The written record one phase leaves for the next, and the only thing that
@@ -390,6 +391,15 @@ A project-scope copy of one of the plugin's agents that `orch.sh agent sync`
 writes into a checkout's `.junie/agents/`, its frontmatter carrying that role's
 Junie agent setting and a marker line saying sync owns it. Never committed; sync
 writes over or deletes only a file that carries the marker.
+
+**Converted noun**:
+An `orch.sh` noun whose code has moved from bash to the plugin's Python
+package, one noun at a time. `orch.sh` stays its one entry point, and the noun
+keeps its arguments, output, exit codes and messages, so no skill, agent or
+hook calling it changes; its bash code and bash tests are gone, and its tests
+are the pytest suite's. It needs `python3` 3.9 or newer, and dies saying so,
+pointing at `orch.sh doctor`, without one. `issue` is the first.
+_Avoid_: Python noun, ported noun.
 
 ### Quick implementation and blueprint
 
@@ -1047,7 +1057,9 @@ each other suite and the shellcheck run has one recorded cost, in the
 durations file, on the scale of the machine that last measured them all. A
 change whose total is over the suite budget and above its base's total cannot
 land: its session makes the tests it added or edited cheaper, or stops for
-the human. Not the review loop's **budget**.
+the human. The recorded costs cover the bash suite's parts only: the pytest
+suite of the converted nouns has no recorded cost and sits outside the suite
+budget, its growth guarded by review alone. Not the review loop's **budget**.
 
 ### Hosts
 

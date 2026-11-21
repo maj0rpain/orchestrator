@@ -18,8 +18,8 @@
 # opening), spec-review (the first line `## Spec review`) and spec-ruling (a
 # first line beginning `Spec ruling:`).
 #
-# The readers: marked_comment_texts (the opening-stripped texts of a kind) and
-# _drop, over the prelude's marked_comment_list, _info, _entries and _of.
+# The reader: marked_comment_texts (the opening-stripped texts of a kind), over
+# the prelude's marked_comment_list, _info, _entries and _of.
 #
 # Every reader takes the bare comment array on stdin (the Comments module's
 # trusted read) and, on any other input, exits non-zero and prints nothing.
@@ -127,12 +127,4 @@ marked_comment_texts() {
          else ($b | index("\n")) as $n | if $n == null then "" else $b[$n + 1:] end end)
       | gsub("\r"; ""))')" || return 2
   printf '%s\n' "$out"
-}
-
-# marked_comment_drop <kind>: the comment array on stdin with every comment of
-# <kind> dropped; each kept comment unchanged. Exits non-zero, printing
-# nothing, when the input is not a comment array.
-marked_comment_drop() {
-  jq -c --arg k "$1" "$(marked_comment_jq)"'
-    marked_comment_list | map(select((marked_comment_info).kind != $k))'
 }

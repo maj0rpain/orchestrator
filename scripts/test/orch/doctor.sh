@@ -189,11 +189,15 @@ if on_windows_bash; then
   skip_no_jq "fails when jq is missing"
   skip_no_jq "names jq rather than dying mid-report"
   skip_no_jq "still reaches the summary line without jq"
+  skip_no_jq "a missing python3 fails, naming none found"
 else
   out="$(PATH="$nojq_path" "$ORCH" doctor --env 2>&1)"; st=$?
   assert_status "fails when jq is missing" "$st" 1
   assert_contains "names jq rather than dying mid-report" "$out" "jq"
   assert_contains "still reaches the summary line without jq" "$out" " FAIL"
+  # The no-jq PATH has no python3 either, and the python3 check needs no jq.
+  assert_contains "a missing python3 fails, naming none found" "$out" \
+    "FAIL  python3 3.9 or newer not found (found none)"
 fi
 
 # Severity is the behaviour under test, not the wording: "GitHub said no" must
@@ -944,6 +948,32 @@ out="$(env -u CLAUDE_PLUGIN_ROOT CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "running orch.sh by hand is not a broken install" "$st" 0
 assert_contains "warns about the unset plugin root" "$out" "CLAUDE_PLUGIN_ROOT"
 restore_suite_env
+
+# --- doctor: python3 check (#3912) --------------------------------------------
+# A converted noun runs on python3 3.9 or newer (ADR-0067). A stub python3 first
+# on PATH answers the version doctor asks for; the missing case is the no-jq
+# run's, whose PATH has no python3 either.
+echo
+echo "doctor: python3 check (#3912)"
+healthy_repo
+doctor_github
+py3_dir="$(mktemp -d)"
+# py3_doctor <version>: doctor --env with a stub python3 reporting <version>.
+py3_doctor() {
+  printf '#!/bin/sh\necho %s\n' "$1" >"$py3_dir/python3"
+  chmod +x "$py3_dir/python3"
+  out="$(PATH="$py3_dir:$PATH" "$ORCH" doctor --env 2>&1)"; st=$?
+}
+py3_doctor 3.9.0
+assert_status "python3 3.9 passes" "$st" 0
+assert_contains "naming the version found" "$out" "ok    python3 3.9.0"
+py3_doctor 3.8.10
+assert_status "python3 3.8 fails" "$st" 1
+assert_contains "naming the version found" "$out" "FAIL  python3 3.9 or newer not found (found 3.8.10)"
+assert_contains "with a platform-package remedy" "$out" \
+  "$(printf '\n      brew install python3    # or your platform')"
+rm -rf "$py3_dir"
+unset -f py3_doctor
 
 # --- doctor: host (#128) ---
 # Reduced enforcement has to be visible: doctor says which host it believes it

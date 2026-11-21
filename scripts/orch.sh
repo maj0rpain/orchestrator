@@ -9,8 +9,8 @@
 #
 # This file is the one entry point, and a thin one: path resolution, the
 # constants more than one module reads, the top-level statements whose order
-# matters, the module load and main's dispatch. Each noun's code lives in its
-# own module, scripts/orch/<noun>.sh, named as its tests in
+# matters, the module load and main's dispatch. Each bash noun's code lives in
+# its own module, scripts/orch/<noun>.sh, named as its tests in
 # scripts/test/orch/<noun>.sh are; each helper lives in the module of the
 # concept it serves, and scripts/orch/common.sh holds only the primitives no
 # concept owns. scripts/orch/loader.sh, loaded beside common.sh, sources the
@@ -20,8 +20,11 @@
 # function replaced after the source line stays replaced; the one exception is
 # a plain, unexported ORCH_SOURCE_LAZY=1 set before the source line, which loads
 # on demand as a command does. A sourced start always unsets the variable. A
-# new noun gets its own module and a case in main. PHASES, the flow phase list,
-# is the Handoff module's: read it after orch_load handoff.
+# new noun is Python (ADR-0067), as is a noun converted to it: it has no module
+# here, and main's one case naming the converted nouns hands it to the orch
+# package in scripts/orch_py/, through orch_python.
+# PHASES, the flow phase list, is the Handoff module's: read it after orch_load
+# handoff.
 #
 # Usage: orch.sh <command> [args]   (run `orch.sh help` for the list)
 
@@ -167,10 +170,37 @@ fi
 # never disagree about them.
 source "$ORCH_SCRIPTS/planning-allowlist.sh"
 
+# orch_python <noun> [<arg>...]: runs a noun converted to Python (ADR-0067) as
+# `python3 -m orch <noun> <arg>...` would, in place of this process, so stdin,
+# stdout, stderr and the exit code are the noun's own. `-m` itself is not used:
+# it puts the caller's directory ahead of PYTHONPATH and the standard library,
+# so a json.py or orch.py there would shadow the package or its imports, and
+# Python 3.9 has no -P to stop it. A -c bootstrap instead drops the empty
+# entry -c puts first on sys.path, the caller's directory, before importing
+# anything, then runs the package's __main__ through runpy; the package
+# directory is first on PYTHONPATH. With no python3 on PATH it dies before
+# doing anything, exit 1 even for a verb that reserves 1 for a "no" (the
+# carve-out in coding-standards rule 2); the package's entry point checks the
+# version itself.
+orch_python() {
+  command -v python3 >/dev/null 2>&1 \
+    || die "orch.sh $1 needs python3 3.9 or newer (found none) - run orch.sh doctor"
+  PYTHONPATH="$ORCH_PLUGIN/scripts/orch_py${PYTHONPATH:+:$PYTHONPATH}" exec python3 -c '
+import sys
+if sys.path and sys.path[0] == "":
+    del sys.path[0]
+import runpy
+runpy.run_module("orch", run_name="__main__", alter_sys=True)
+' "$@"
+}
+
 main() {
   local cmd="${1:-help}"
   shift || true
   case "$cmd" in
+    # The nouns converted to Python, the one place naming them: each runs
+    # through orch_python, and has no module of its own here.
+    issue)         orch_python "$cmd" "$@" ;;
     doctor|health) cmd_doctor "$@" ;;
     default-branch) cmd_default_branch "$@" ;;
     base)          cmd_base "$@" ;;
@@ -187,7 +217,6 @@ main() {
     phase)         cmd_phase "$@" ;;
     branch)        cmd_branch "$@" ;;
     breakdown)     cmd_breakdown "$@" ;;
-    issue)         cmd_issue "$@" ;;
     pr)            cmd_pr "$@" ;;
     ticket)        cmd_ticket "$@" ;;
     ticket-worktree) cmd_ticket_worktree "$@" ;;

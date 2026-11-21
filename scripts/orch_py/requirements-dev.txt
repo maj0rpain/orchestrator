@@ -1,0 +1,6 @@
+# The Python side's dev dependencies, pinned: local runs, the autopilot image
+# and CI install this one file. Runtime needs none - the package is standard
+# library only. Each pin supports Python 3.9, the minimum version.
+pytest==8.3.5
+pytest-xdist==3.6.1
+pytest-timeout==2.3.1

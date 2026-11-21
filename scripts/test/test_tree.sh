@@ -13,10 +13,17 @@
 # section-durations.sh share (`titles_regex`). A runner that calls the step
 # first sources test_jobs.sh and inits the job pool. Runs nothing.
 #
+# PYTEST_SUITE: the file name of the pytest suite
+# (scripts/test/orch_py_test.sh), which affected.sh runs on every call and
+# all.sh in every call but a shard group other than the first, beside the
+# suites list, outside the suite budget and the durations file.
+#
 # SECTION_TITLE_AWK: the awk function title(s) as text, for a program to start
 # with. It drops a header's leading `# --- `, then its trailing spaces and
 # dashes. This is the one definition of a section title.
 
+# shellcheck disable=SC2034 # read by the sourcing runners
+PYTEST_SUITE=orch_py_test.sh
 # shellcheck disable=SC2034 # read by the sourcing runners
 SECTION_TITLE_AWK='function title(s) { sub(/^# --- /, "", s); sub(/[ -]+$/, "", s); return s }'
 
