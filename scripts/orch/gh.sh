@@ -328,8 +328,8 @@ verify_twice() {
 #   adapter_labels_detail
 # - rate limit: adapter_rate_limit
 # - issue: adapter_issue_body, adapter_issue_comments,
-#   adapter_issue_state_labels, adapter_issue_state_labels_body,
-#   adapter_issue_title_labels, adapter_issue_authorship, adapter_issue_state,
+#   adapter_issue_state_labels, adapter_issue_title_labels,
+#   adapter_issue_authorship, adapter_issue_state,
 #   adapter_issue_created_at, adapter_issues_labelled_rows,
 #   adapter_issues_any_labelled_rows,
 #   adapter_issues_open_rows, adapter_issues_titled_rows,
@@ -515,65 +515,24 @@ gh_issue_not_found() {
   [[ "$1" == *"Could not resolve to an issue or pull request with the number of"* ]]
 }
 
-# adapter_issue_state_labels_body <n>: OPEN or CLOSED on the first line, the
-# label count on the second, then one label per line, then the body as GitHub
-# holds it and a newline - the count marks where the labels end and the body
-# begins.
-adapter_issue_state_labels_body() {
-  gh issue view "$1" --json state,labels,body --jq '.state, (.labels | length), (.labels[].name), .body'
-}
-
-# issue_state_labels_body_read <n> <state_var> <labels_var> <body_var>
-# <err_var>: reads issue <n> once through adapter_issue_state_labels_body and
-# writes its state, its labels (one per line, possibly none) and its body into
-# the first three caller-named variables. Non-zero when the read fails or its
-# answer does not parse, writing none of them, and writing gh's stderr into
-# <err_var>, as gh_lines_read does.
-issue_state_labels_body_read() {
-  local __islbr_state __islbr_count __islbr_labels="" __islbr_body __islbr_i
-  gh_lines_read adapter_issue_state_labels_body "$1" "$5" \
-    __islbr_state __islbr_count __islbr_body || return 1
-  case "$__islbr_count" in
-    ''|*[!0-9]*) printf -v "$5" '%s' "gh answered no label count"; return 1 ;;
-  esac
-  for (( __islbr_i = 0; __islbr_i < __islbr_count; __islbr_i++ )); do
-    __islbr_labels="$__islbr_labels${__islbr_body%%$'\n'*}"$'\n'
-    case "$__islbr_body" in
-      *$'\n'*) __islbr_body="${__islbr_body#*$'\n'}" ;;
-      *) __islbr_body="" ;;
-    esac
-  done
-  printf -v "$2" '%s' "$__islbr_state"
-  printf -v "$3" '%s' "${__islbr_labels%$'\n'}"
-  printf -v "$4" '%s' "$__islbr_body"
-}
-
-# open_issue_read [--hint <h>] <n> <not-open message> <labels_var>
-# [<body_var>]: reads issue <n> once through the gh adapter - its body too,
-# only when <body_var> is given - and writes its labels (one per line,
-# possibly none) and its body into the caller-named variables. A failed read
-# dies through gh_die "read issue #<n>", with --hint passed on as given; an
-# issue that is not OPEN dies with <not-open message>, verbatim, since the
-# callers' messages are not one shape. It checks no label: each caller keeps
-# its own label test.
+# open_issue_read [--hint <h>] <n> <not-open message> <labels_var>: reads
+# issue <n> once through the gh adapter and writes its labels (one per line,
+# possibly none) into the caller-named variable. A failed read dies through
+# gh_die "read issue #<n>", with --hint passed on as given; an issue that is not
+# OPEN dies with <not-open message>, verbatim, since the callers' messages are
+# not one shape. It checks no label: each caller keeps its own label test.
 # Out-params through `printf -v`, its locals prefixed so no caller's variable
 # name is shadowed.
 open_issue_read() {
-  local __oir_hint=() __oir_state __oir_labels __oir_body __oir_err
+  local __oir_hint=() __oir_state __oir_labels __oir_err
   if [ "${1-}" = --hint ]; then
     die_opt_check open_issue_read $# "$@"
     __oir_hint=(--hint "$2"); shift 2
   fi
-  if [ $# -ge 4 ]; then
-    issue_state_labels_body_read "$1" __oir_state __oir_labels __oir_body __oir_err \
-      || gh_die ${__oir_hint[@]+"${__oir_hint[@]}"} "read issue #$1" "$__oir_err"
-  else
-    issue_state_labels_read "$1" __oir_state __oir_labels __oir_err \
-      || gh_die ${__oir_hint[@]+"${__oir_hint[@]}"} "read issue #$1" "$__oir_err"
-  fi
+  issue_state_labels_read "$1" __oir_state __oir_labels __oir_err \
+    || gh_die ${__oir_hint[@]+"${__oir_hint[@]}"} "read issue #$1" "$__oir_err"
   [ "$__oir_state" = OPEN ] || die "$2"
   printf -v "$3" '%s' "$__oir_labels"
-  [ $# -lt 4 ] || printf -v "$4" '%s' "$__oir_body"
 }
 
 # adapter_issue_title_labels <n>: the title on the first line, then one label

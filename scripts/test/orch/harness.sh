@@ -410,7 +410,7 @@ helper_copies() {
 
 # The multi-field gh ops gh_op_placement looks for outside the gh module,
 # space-separated, and the trust read it also lets the Trust module name.
-GH_MULTI_FIELD_OPS="adapter_issue_state_labels adapter_issue_state_labels_body adapter_issue_title_labels adapter_pr_state_draft adapter_pr_refs adapter_pr_url_head"
+GH_MULTI_FIELD_OPS="adapter_issue_state_labels adapter_issue_title_labels adapter_pr_state_draft adapter_pr_refs adapter_pr_url_head"
 GH_TRUST_READ_OPS="adapter_issue_authorship"
 
 # The gh op placement rule, as gh_op_placement's message states it.
@@ -3849,12 +3849,12 @@ rm -rf "${gh_op_dir%/scripts}"
 
 gh_op_dir="$(tree_copy scripts)"
 plant_file "$gh_op_dir/orch" zz-capture.sh <<'PLANTED'
-  if ! capture out err adapter_issue_state_labels_body "$n"; then :; fi
+  if ! capture out err adapter_pr_url_head "$n"; then :; fi
 PLANTED
 out="$(gh_op_placement "$gh_op_dir")"; st=$?
 assert_status "an op as an argument to capture fails" "$st" 1
 assert_eq "naming the file and the op" "$out" \
-  "scripts/orch/zz-capture.sh names adapter_issue_state_labels_body. $GH_OP_PLACEMENT_RULE"
+  "scripts/orch/zz-capture.sh names adapter_pr_url_head. $GH_OP_PLACEMENT_RULE"
 rm -rf "${gh_op_dir%/scripts}"
 
 gh_op_dir="$(tree_copy scripts)"
@@ -3898,7 +3898,7 @@ plant_file "$gh_op_dir/orch" zz-heredoc.sh <<'PLANTED'
   EOF
 PLANTED
 plant_file "$gh_op_dir/orch" zz-literal.sh <<'PLANTED'
-  trap 'adapter_issue_state_labels_body' EXIT
+  trap 'adapter_pr_url_head' EXIT
   echo "adapter_pr_refs"
 PLANTED
 out="$(gh_op_placement "$gh_op_dir")"; st=$?
@@ -3906,8 +3906,8 @@ assert_status "an op after a # in \${...}, in \$'...', on a heredoc body line or
 assert_eq "naming each file and op" "$out" \
   "scripts/orch/zz-ansi.sh names adapter_pr_state_draft. $GH_OP_PLACEMENT_RULE
 scripts/orch/zz-heredoc.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE
-scripts/orch/zz-literal.sh names adapter_issue_state_labels_body. $GH_OP_PLACEMENT_RULE
 scripts/orch/zz-literal.sh names adapter_pr_refs. $GH_OP_PLACEMENT_RULE
+scripts/orch/zz-literal.sh names adapter_pr_url_head. $GH_OP_PLACEMENT_RULE
 scripts/orch/zz-multiline.sh names adapter_pr_refs. $GH_OP_PLACEMENT_RULE
 scripts/orch/zz-param.sh names adapter_issue_state_labels. $GH_OP_PLACEMENT_RULE"
 rm -rf "${gh_op_dir%/scripts}"

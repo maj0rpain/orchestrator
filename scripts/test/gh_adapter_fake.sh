@@ -556,19 +556,6 @@ adapter_issue_state_labels() {
   fake_issue_labels "$1"
 }
 
-# adapter_issue_state_labels_body <n>: the stored state, its label count, its
-# labels, then its body byte for byte and a newline.
-adapter_issue_state_labels_body() {
-  ! fake_failing adapter_issue_state_labels_body || return 1
-  fake_issue_known "$1" || return 1
-  local d
-  d="$(fake_issue_dir "$1")"
-  cat "$d/state"
-  fake_issue_labels_counted "$1"
-  cat "$d/body" 2>/dev/null
-  printf '\n'
-}
-
 # adapter_issue_title_labels <n>: the stored title, then its labels. Lagging
 # (fake_lag), it answers the stale answer fake_lag was given, or an empty
 # title and no labels.

@@ -245,6 +245,13 @@ class FakeGh:
                 numbers.append(int(name))
         return numbers
 
+    def _labelled_open(self, *labels: str) -> List[int]:
+        """The open issues carrying every label, cut at the search limit as a
+        labelled listing is."""
+        limit = min(real.issue_list_limit(self.env), real.ISSUE_SEARCH_CAP)
+        return [n for n in self._open_numbers()
+                if all(real.label_listed(self._labels(n), label) for label in labels)][:limit]
+
     def _next_number(self) -> int:
         """The number a new issue takes - next_issue's, or one past the
         highest issue or PR number the store holds - the counter advanced."""
@@ -337,26 +344,20 @@ class FakeGh:
         if stale is not None:
             rows = real.parse_titled_rows(stale)
         else:
-            limit = min(real.issue_list_limit(self.env), real.ISSUE_SEARCH_CAP)
-            labelled = [n for n in self._open_numbers()
-                        if real.label_listed(self._labels(n), label)]
             rows = [
                 IssueRow(n, _first_line(_issue_path(self.store, n, "state")),
                          _slurp(_issue_path(self.store, n, "title")) or "", self._labels(n))
-                for n in labelled[:limit]
+                for n in self._labelled_open(label)
             ]
         real.labelled_limit_warn(self.env, len(rows), label)
         return rows
 
     def issues_labelled_bodies(self, *labels: str) -> List[LabelledBody]:
         self._failing("adapter_issues_labelled_bodies")
-        limit = min(real.issue_list_limit(self.env), real.ISSUE_SEARCH_CAP)
-        labelled = [n for n in self._open_numbers()
-                    if all(real.label_listed(self._labels(n), label) for label in labels)]
         rows = [
             LabelledBody(n, self._labels(n),
                          (_read(_issue_path(self.store, n, "body")) or "").rstrip("\n"))
-            for n in labelled[:limit]
+            for n in self._labelled_open(*labels)
         ]
         real.labelled_limit_warn(self.env, len(rows), *labels)
         return rows

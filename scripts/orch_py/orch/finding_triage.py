@@ -241,10 +241,10 @@ class FindingTriage:
         enough), and B is never edited."""
         title, path, state, category, into, members = bundle_args(args)
         if into:
-            labels, _ = open_issue_read(
+            bundle_labels, _ = open_issue_read(
                 self.gh, into, "bundle #%s is not open - --into resumes an open bundle only" % into,
                 hint=UNTOUCHED)
-            if not label_listed(labels, BUNDLE_LABEL[0]):
+            if not label_listed(bundle_labels, BUNDLE_LABEL[0]):
                 die("issue #%s carries no '%s' label - --into resumes a bundle only"
                     % (into, BUNDLE_LABEL[0]))
         else:

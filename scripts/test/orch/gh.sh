@@ -398,14 +398,6 @@ enhancement"
 out="$(sourced_orch_script 'issue_state_labels_read 9 out st err; printf "%s|%s" "$out" "$st"')"
 assert_eq "issue_state_labels_read fills them too" "$out" "OPEN|bug
 enhancement"
-fake_issue_body 9 $'Line one.\n\nLine three.\n'
-out="$(sourced_orch_script 'issue_state_labels_body_read 9 out st err gh_err
-  printf "%s|%s|%s" "$out" "$st" "$err"')"
-assert_eq "issue_state_labels_body_read writes the state, the labels and the body" "$out" \
-  "OPEN|bug
-enhancement|Line one.
-
-Line three."
 fake_fail adapter_issue_title_labels "$GH_502"
 out="$(sourced_orch_script 'out=x err=x; st=0; gh_lines_read adapter_issue_title_labels 9 gh_err out err || st=$?
   printf "%s|%s|%s|%s" "$st" "$out" "$err" "$gh_err"' 2>"$rerr")"
@@ -416,12 +408,6 @@ out="$(sourced_orch_script 'out=x st=x; rc=0; issue_title_labels_read 9 out st e
   printf "%s|%s|%s|%s" "$rc" "$out" "$st" "$err"' 2>"$rerr")"
 assert_eq "a failed reader writes the error into a variable named err" "$out" \
   "1|x|x|$GH_502"
-fake_fail adapter_issue_state_labels_body "$GH_502"
-out="$(sourced_orch_script 'state=x labels=x body=x; st=0; issue_state_labels_body_read 9 state labels body err || st=$?
-  printf "%s|%s|%s|%s|%s" "$st" "$state" "$labels" "$body" "$err"' 2>"$rerr")"
-assert_eq "a failed issue_state_labels_body_read writes none and fills the error variable" \
-  "$out" "1|x|x|x|$GH_502"
-assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
 rm -f "$rerr"
 unset rerr
 fake_unfail
@@ -953,18 +939,6 @@ gh_reply 0 $'OPEN\nreview:nit\nneeds-triage\n' '' issue view 23 --json state,lab
 out="$(contract adapter_issue_state_labels 23 2>&1)"; st=$?
 assert_status "issue state and labels: reads both" "$st" 0
 assert_eq "the state first, then one label per line" "$out" "$(writeln OPEN review:nit needs-triage)"
-
-gh_reply 0 $'OPEN\n2\nreview:nit\nready-for-agent\n## Finding\n\n**PR:** x\n' '' \
-  issue view 23 --json state,labels,body --jq '.state, (.labels | length), (.labels[].name), .body'
-out="$(contract adapter_issue_state_labels_body 23 2>&1)"; st=$?
-assert_status "issue state, labels and body: reads all three in one call" "$st" 0
-assert_eq "the state, the label count, one label per line, then the body" "$out" \
-  "$(writeln OPEN 2 review:nit ready-for-agent '## Finding' '' '**PR:** x')"
-gh_reply 1 '' 'HTTP 502: Bad Gateway' \
-  issue view 404 --json state,labels,body --jq '.state, (.labels | length), (.labels[].name), .body'
-out="$(contract adapter_issue_state_labels_body 404 2>&1)"; st=$?
-assert_status "issue state, labels and body: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through (state, labels and body)" "$out" "HTTP 502: Bad Gateway"
 
 gh_reply 0 $'Widgets need a handle\nready-for-agent\n' '' \
   issue view 23 --json title,labels --jq '.title, (.labels[].name)'

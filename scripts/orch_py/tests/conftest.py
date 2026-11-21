@@ -127,13 +127,14 @@ def git_repo(path, origin=None):
     return Git(cwd=str(path))
 
 
-def run_git(root, *args):
+def run_git(root, *args, env=None):
     """git <args> in the repository at <root>, as a test author t with
-    signing off: its stdout, stripped. A failure raises."""
+    signing off, in <env> when given, else this process's environment: its
+    stdout, stripped. A failure raises."""
     return subprocess.run(
         ["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@t",
          "-c", "commit.gpgsign=false", *args],
-        check=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        check=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, env=env,
     ).stdout.decode().strip()
 
 

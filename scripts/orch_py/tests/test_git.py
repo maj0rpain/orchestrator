@@ -163,11 +163,7 @@ def test_head_and_commit_presence_read_the_same_from_a_real_repo_and_the_fake(au
 def dated(root, when, *args):
     """A git run in <root> committing as of minute <when>."""
     stamp = "@%d +0000" % (1700000000 + when * 60)
-    env = dict(os.environ, GIT_AUTHOR_DATE=stamp, GIT_COMMITTER_DATE=stamp)
-    subprocess.run(
-        ["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@t", *args],
-        check=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, env=env,
-    )
+    run_git(root, *args, env=dict(os.environ, GIT_AUTHOR_DATE=stamp, GIT_COMMITTER_DATE=stamp))
     return run_git(root, "rev-parse", "HEAD")
 
 
