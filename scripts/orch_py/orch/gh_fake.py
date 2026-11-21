@@ -529,6 +529,11 @@ class FakeStore:
         listing answers."""
         _write(_store_path(self.store, "no_dependency_summary"), "%d\n" % n, "ab")
 
+    def default_branch(self, answer: str) -> None:
+        """The repo's default branch as GitHub answers it, byte for byte, as
+        fake_default_branch seeds it."""
+        _write(_store_path(self.store, "default_branch"), answer)
+
     def next_issue(self, n: int) -> None:
         _write(_store_path(self.store, "next_issue"), "%d\n" % n)
 
