@@ -6,7 +6,7 @@
 20	30	the parallel runner's start order (#2857)	56a44db6d1903f093d0469065769c3aa1cf913f8
 129	120	the shard setting (#2859)	d45e824a06a74fe8e3446123af78328c1d7f7259
 17	22	the seeded start (stub cache)	88d964812dc589c6ef9473313af2ba6620902718
-299	213	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	3b8c121388d645913b63bb79a849b240c0ca9dbc
+423	243	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	cdeb5ceb87cd77cf7f4d0b1ffcea7a5c6e05661e
 4	6	assertions in a subshell (#1904)	d014fd33336efb56452ef867c7bb0e21e3ceff0f
 2	3	the standalone suites' tally (#1904)	707a9e71b502be145a7caf7dc03134806f77c691
 18	22	the section files (#932)	f8498d1cacab2b7d6fec79f5991b623c211589f5
@@ -350,7 +350,7 @@
 20	22	trust module	dfb000c56ba19484f278d67a5e9d3d661b2728a7
 82	14	wait: a call's block is wall time	12313962ae192f692a6bf9948173a94ce462aa53
 882	983	hooks_test.sh	8dec8318df78d1487d2d11c16c6ac962831bc14c
-215	258	docs_lint.sh	88d5d753d8888772271a0d6f5cd078e65c5f0d97
+295	203	docs_lint.sh	6d1887e6488b1d2ac7a5bf8eb56a972ff9a1ada4
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 17	17	autopilot_up_test.sh	e83bb3b5d6213ab54507233be7cc6e624358622c

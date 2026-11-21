@@ -74,9 +74,8 @@ workers.
 and all.sh on every call but a shard group other than the first: it reports
 pytest's result as a suite's FAIL lines and summary, and prints
 `not installed - skipped` without pytest, which fails only under CI. The
-pytest suite sits outside the suite budget: it is in neither all.sh's suites
-list nor the durations file, has no durations file of its own, and its growth
-is guarded by review alone. In affected.sh a change under `scripts/orch_py/`
+pytest suite is in neither all.sh's suites list nor the durations file, and has
+no durations file of its own. In affected.sh a change under `scripts/orch_py/`
 selects the spec, spec-review, ticket and autopilot sections, the bash nouns
 whose sections run a converted noun's verb through the dispatch, and the
 side-checkout sections, whose `.orchestrator` entry classification scans the
@@ -145,7 +144,7 @@ parallel run write one line per section it ran, then times each other suite of
 all.sh's list and the shellcheck step, and writes a fingerprint on every line
 but shellcheck's. A full refresh is unscaled: it sets the scale every later
 recording is held to, so it is the human's call, made on a tree whose suite
-passes, in the autopilot container, and its change restates the suite budget.
+passes, in the autopilot container.
 It unsets `ORCH_TEST_ONLY` and `ORCH_TEST_SHARD`, refuses
 `ORCH_TEST_JOBS=1`, and leaves the file unchanged, naming what failed, when
 anything it measured fails.
@@ -161,7 +160,7 @@ the isolation section (all of them when fewer than five are fresh). Each new
 line is what was measured times the ratio of the calibration sections' recorded
 CPU to their measured CPU, so a line is scaled to the full refresh's machine
 and corrected for load. Every other line stays byte for byte. It prints the new
-total and the suite budget on its last line. With nothing out of date it
+total on its last line. With nothing out of date it
 changes nothing and exits 0; with only orphaned lines it removes them and
 measures nothing; with something to measure and no fresh section it refuses,
 naming the full refresh, and exits 1; anything it measures failing leaves the
@@ -170,44 +169,25 @@ file unchanged and exits 1; it refuses `ORCH_TEST_JOBS=1`.
 Both modes time every other suite with `DOCS_LINT_RECORDING=1`, which only
 `section-durations.sh` sets (`all.sh` and `affected.sh` unset it, CI never sets
 it, and `docs_lint.sh --base-rules` ignores it). With it set, the full run
-of `docs_lint.sh` skips the ledger freshness rule and the suite budget total
-rule (rule 2) and says so, so the suite it is measuring does not fail on the
-very lines being replaced; the budget-alone rule (rule 3) still runs. With it
-unset it judges both.
+of `docs_lint.sh` skips the ledger freshness rule and says so, so the suite it
+is measuring does not fail on the very lines being replaced. With it unset it
+judges it.
 
-**The suite budget** is `scripts/test/suite-budget`: one positive whole number
-of CPU seconds, which the total (the sum of the durations file's CPU column,
-the first line per title) may not pass. `docs_lint.sh` fails a change whose
-total is over the budget and above its base's total (the same sum at the
-merge-base), so a change that adds nothing or cuts cost always passes. It also
-fails a change that edits the budget file beside any file but the durations
-file, the change that introduces the budget file excepted. What a session does:
+The durations file orders the sections; nothing caps its total (ADR-0068). What
+a session does:
 
 - **Record before verifying.** A session that adds or edits tests runs
   `section-durations.sh --stale` before its ticket verification and commits the
   durations file with its change. After a forgotten recording, only
   `docs_lint.sh` needs running again.
-- **Over the budget**, it makes cheaper only the tests its change added or
-  edited, which the ledger charges by section: in a section the change edited,
-  the tests it did not touch are not its to cut. Cost is never a reason to test
-  less. It then records again.
-- **Still over**, it stops for the human. A session that cannot ask (a ticket
-  subagent, a fixer, a resolver) reports it and changes nothing more; a resolver
-  still commits its merge resolution and reports the stop beside it, and the
-  same holds when its `--stale` refuses for want of a fresh section. The session
-  that started it asks: an autopilot session with `orch.sh autopilot ask`, an
-  attended session with a blocking question. Either question gives the total
-  and the budget and offers two answers, raise the budget on `main` or name
-  what to cut. A fixer's stop reaches the human only when the review loop stops.
-- **Nobody raises the number in a feature change.** After the human raises it on
-  `main`, a base sync brings it in.
-- **Changing the number** is a human's say, in a change that touches the budget
-  file alone, or the budget file and the durations file at a full refresh. Such
-  a change is repo hygiene and carries the `no-version-bump` label.
 - **A conflict in the durations file**: keep both sides' lines, then run
   `section-durations.sh --stale`.
 - **A full refresh** is the human's call. A session whose `--stale` refuses for
-  want of a fresh section stops for the human, as when still over.
+  want of a fresh section stops for the human. A session that cannot ask (a
+  ticket subagent, a fixer, a resolver) reports it and changes nothing more; a
+  resolver still commits its merge resolution and reports the stop beside it.
+  The session that started it asks: an autopilot session with `orch.sh
+  autopilot ask`, an attended session with a blocking question.
 
 CI (`.github/workflows/test.yml`): a PR runs the whole suite once, in the
 autopilot container, as 4 jobs, each `all.sh` with its `ORCH_TEST_SHARD=<i>/4`
@@ -419,12 +399,9 @@ files in place and does not commit. `scripts/test/version_bump_test.sh` tests
 it.
 
 CI enforces the rule through its own workflow, `.github/workflows/fragment.yml`,
-which runs the fragment rule and the suite budget's two rules with a base (the
-total within the budget, the budget file changing alone) through
-`docs_lint.sh --base-rules`, and reruns on a PR's body and label edits; the
-ledger's freshness rule runs in the suite's whole lint, on a push to `main`
-too, where the budget comparison is skipped: a PR
-to `main` adds exactly one
+which runs the fragment rule through `docs_lint.sh --base-rules`, and reruns
+on a PR's body and label edits; the ledger's freshness rule runs in the
+suite's whole lint, on a push to `main` too: a PR to `main` adds exactly one
 well-formed fragment, and never changes `version`, adds a `## ` heading to
 `CHANGELOG.md`, or modifies or deletes an existing fragment or `.gitkeep`;
 the fragment's issue is no sub-issue, its parent looked up with `gh api` and
@@ -650,19 +627,18 @@ scripts/version-bump.sh       the version-bump Action's script: changelog fragme
 scripts/dev/helpers.sh        the helper index: every module or test helper with its one-line purpose (Develop, Test helpers)
 scripts/dev/lens-bench.sh     the lens benchmark: run collects headless runs of a lens definition, measure turns them into a Markdown report of per-run cost, coverage, a summary and a diagnosis of the turns spent locating code the spec names (Develop, Measuring a lens)
 scripts/dev/section-durations.sh rewrites scripts/test/section-durations.tsv: a full refresh measures every orch_test.sh section, the other suites and shellcheck; `--stale` records only the lines out of date (Develop)
-scripts/test/suite-budget     the suite budget: one positive whole number of CPU seconds, which the durations file's CPU column may not sum past (Develop)
 scripts/dev/width.sh          the line-width rule, whole: which files it covers and which lines are past 80 columns; docs_lint.sh's scan_line_width wraps it (Develop)
 scripts/dev/hook-edit-width.sh the project's edit hook, registered in .claude/settings.json: width.sh and shellcheck on each edited file and each file a Bash call changed (Develop)
 scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per lens: its spec body, baseline map and snapshot commit
 scripts/test/                 shell tests: the suites in all.sh's `suites` list (orch_test.sh is the orch.sh suite's runner), all.sh, and affected.sh, the ticket and branch verification, which runs what a change selects and falls back to all.sh only in the cases its header lists
-scripts/test/orch_py_test.sh  the pytest suite's wrapper, run by all.sh and affected.sh outside the suite budget: pytest from the /opt/orch-dev venv or python3, its xdist workers drawn from the job pool, its result as a suite's FAIL lines and summary
+scripts/test/orch_py_test.sh  the pytest suite's wrapper, run by all.sh and affected.sh outside the durations file: pytest from the /opt/orch-dev venv or python3, its xdist workers drawn from the job pool, its result as a suite's FAIL lines and summary
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
 scripts/test/tally.sh         the assertion tally every suite sources: ok, bad and skip append to a per-run file, so an assertion inside a subshell counts; tally_summary is the ending each standalone suite calls
 scripts/test/counting.sh      the counting fixture the orch.sh suite's runner, hooks_test.sh and docs_lint.sh source: counting_bin makes a directory holding a stub, which its caller puts first on PATH, that logs one line per start and runs the real command, counting_starts reads the count, counting_argv_bin makes the stub log only the starts whose joined arguments equal a given string, counting_stdin_bin makes counting_bin's stub also record the bytes offered on its stdin, counting_bytes sums them
 scripts/test/fails.sh         the failing-command fixture the orch.sh suite's runner and hooks_test.sh source: fails_bin makes a directory holding a stub, which its caller puts first on PATH, that exits with a given status (0 allowed), after an optional stderr line, when its space-padded arguments match a glob, and runs the real command for every other call
 scripts/test/test_jobs.sh     the job-count, job pool and priority helpers orch_test.sh, all.sh, affected.sh and section-durations.sh all source: the default ORCH_TEST_JOBS (ORCH_TEST_POOL_PERCENT) and the renice to 10, and the signal-reachable child start (test_jobs_run_child, with its INT/TERM stop) that section-durations.sh and lens-bench.sh use, and the suite start (test_jobs_suite_start, with its start order test_jobs_start_order and children marker test_jobs_held_marker) all.sh and affected.sh start each suite through, orch_test.sh's parallel section start each section child, and section-durations.sh each suite but orch_test.sh
 scripts/test/report.sh       the report helpers all.sh, affected.sh and section-durations.sh source: a suite's FAIL block and summary line, the shellcheck summary, the temp-files failure record, and the run's verdict line, whose PASS or FAIL comes from the failed parts recorded
-scripts/test/test_tree.sh    how the runners read the test tree, which orch_test.sh, all.sh, affected.sh, docs_lint.sh and section-durations.sh source (harness.sh reaches it through orch_test.sh): SECTION_TITLE_AWK, the section-title rule, suites_read, the reader of all.sh's suite list, suites_unlisted, the runners all.sh's list leaves out, listed, the runners' one membership test of a word in a list, section_files, the noun files of the walk, ledger_fingerprints and ledger_fingerprints_all, the ledger's fingerprints, ledger_states, the ledger's freshness rule, titles_regex, the anchored ORCH_TEST_ONLY pattern for a list of titles, suite_budget_read, the reader of the suite budget, durations_total, tenths_text, the shared tenths formatter, shellcheck_files, SHELLCHECK_CMD, shellcheck_start and shellcheck_join (the pooled shellcheck step), TENTHS_AWK and DURATIONS_AWK
+scripts/test/test_tree.sh    how the runners read the test tree, which orch_test.sh, all.sh, affected.sh, docs_lint.sh and section-durations.sh source (harness.sh reaches it through orch_test.sh): SECTION_TITLE_AWK, the section-title rule, suites_read, the reader of all.sh's suite list, suites_unlisted, the runners all.sh's list leaves out, listed, the runners' one membership test of a word in a list, section_files, the noun files of the walk, ledger_fingerprints and ledger_fingerprints_all, the ledger's fingerprints, ledger_states, the ledger's freshness rule, titles_regex, the anchored ORCH_TEST_ONLY pattern for a list of titles, durations_total, tenths_text, the shared tenths formatter, shellcheck_files, SHELLCHECK_CMD, shellcheck_start and shellcheck_join (the pooled shellcheck step), TENTHS_AWK and DURATIONS_AWK
 scripts/test/git_env.sh      `test_git_env_clear`, which every suite runner sources and calls first: it unsets git's repo-local variables and the commit-identity variables, so a suite run from a git hook never writes to the caller's repository
 scripts/test/shell_code.awk    the SHELL_CODE_AWK library, the one rule of what counts as code in a shell file: setup.sh, docs_lint.sh, width.sh and the helper index each load it whole
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary

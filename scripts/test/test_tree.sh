@@ -7,7 +7,7 @@
 # a list (`listed`), a section file's titles, the
 # section files, the files shellcheck checks, the shellcheck command, the
 # pooled shellcheck step (`shellcheck_start` / `shellcheck_join`), the tenths
-# conversion, the durations-file grammar, the suite budget, the ledger's
+# conversion, the durations-file grammar, the ledger's
 # fingerprints (`ledger_fingerprints`), the ledger's freshness rule
 # (`ledger_states`) and the ORCH_TEST_ONLY pattern that affected.sh and
 # section-durations.sh share (`titles_regex`). A runner that calls the step
@@ -16,7 +16,7 @@
 # PYTEST_SUITE: the file name of the pytest suite
 # (scripts/test/orch_py_test.sh), which affected.sh runs on every call and
 # all.sh in every call but a shard group other than the first, beside the
-# suites list, outside the suite budget and the durations file.
+# suites list, outside the durations file.
 #
 # SECTION_TITLE_AWK: the awk function title(s) as text, for a program to start
 # with. It drops a header's leading `# --- `, then its trailing spaces and
@@ -172,21 +172,6 @@ ledger_fingerprints_all() {
 # section-durations.sh both call it, so the two cannot drift.
 titles_regex() {
   printf '^(%s)$\n' "$(sed 's/[].\\[*^$+?(){}|]/\\&/g' | paste -sd'|' -)"
-}
-
-# The function suite_budget_read <budget file> reads the suite budget into
-# SUITE_BUDGET: the file must hold exactly one line, a positive whole number.
-# It returns 0, 1 when the file is missing, 2 when it is not one positive whole
-# number; each caller words its own message.
-suite_budget_read() {
-  local lines=()
-  SUITE_BUDGET=""
-  [ -f "$1" ] || return 1
-  mapfile -t lines <"$1"
-  if [ "${#lines[@]}" -ne 1 ] || ! [[ "${lines[0]}" =~ ^[1-9][0-9]*$ ]]; then
-    return 2
-  fi
-  SUITE_BUDGET="${lines[0]}"
 }
 
 # TENTHS_AWK: the awk function tenths(s) as text, for a program to start with.

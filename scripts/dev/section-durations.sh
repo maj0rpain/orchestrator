@@ -25,9 +25,8 @@
 # Both modes time each other suite with DOCS_LINT_RECORDING=1, which only this
 # script sets (all.sh and affected.sh unset it, CI never sets it, and
 # docs_lint.sh --base-rules ignores it). docs_lint.sh's full run, with it
-# set, skips the ledger freshness rule and the budget total rule (rules 1 and
-# 2) and says so, so it does not fail on the lines being replaced; rule 3 still
-# runs. With it unset it judges them all.
+# set, skips the ledger freshness rule and says so, so it does not fail on the
+# lines being replaced. With it unset it judges it.
 #
 # ORCH_TEST_ONLY and ORCH_TEST_SHARD are unset, so the whole suite is always
 # measured. With a job count of 1 (ORCH_TEST_JOBS=1) it prints a message naming
@@ -55,11 +54,9 @@
 # each new line's wall and CPU are what was measured times the ratio, rounded
 # to tenths, and the line carries its fingerprint. New lines sit in walk order,
 # orphaned lines are removed, and every other line is left byte for byte. It
-# ends by printing the new total and the budget (the one number in suite-budget
-# beside the durations file) on one line, naming the budget as missing when
-# that file is missing or malformed; that does not stop the recording. Nothing
-# out of date measures nothing, says so and exits 0; only orphaned or surplus
-# lines are removed without measuring anything. Something to measure with no
+# ends by printing the new total on one line. Nothing out of date measures
+# nothing, says so and exits 0; only orphaned or surplus lines are removed
+# without measuring anything. Something to measure with no
 # fresh section is refused, naming the full refresh, and exits 1. Any failed
 # measurement is named, the file is left unchanged and it exits 1, as the full
 # refresh does; so is a job count of 1, refused, and an interrupt leaves the
@@ -132,18 +129,11 @@ suite_run() {
   return "$st"
 }
 
-# stale_report: prints the durations file's new total and the budget on one
-# line; the budget is named as missing when suite-budget is missing or is not
-# one positive whole number.
+# stale_report: prints the durations file's new total on one line.
 stale_report() {
-  local total budget
+  local total
   total="$(durations_total <"$target")" || return 1
-  if suite_budget_read "$dir/suite-budget"; then
-    budget="$SUITE_BUDGET CPU seconds"
-  else
-    budget=missing
-  fi
-  echo "section-durations.sh: total $(tenths_text "$total") CPU seconds, budget $budget"
+  echo "section-durations.sh: total $(tenths_text "$total") CPU seconds"
 }
 
 # measure_suite <name>: times the other suite <name> as the full refresh does,

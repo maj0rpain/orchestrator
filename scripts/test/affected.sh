@@ -66,9 +66,8 @@
 #   .shellcheckrc                     shellcheck over every scripts/**/*.sh,
 #                                     plus the harness sections
 #   skills, agents, docs, markdown, changelog fragments, the durations file
-#   (section-durations.tsv) and the budget file (suite-budget, beside it), the
-#   workflow files, .gitignore, .gitattributes, .ignore, LICENSE and
-#   .claude/settings.json
+#   (section-durations.tsv), the workflow files, .gitignore, .gitattributes,
+#   .ignore, LICENSE and .claude/settings.json
 #                                     nothing beyond the always-run checks
 #   anything else                     all.sh
 #   scripts/test/orch/setup.sh, counting.sh, fails.sh, fifo.sh, tally.sh
@@ -110,12 +109,6 @@
 # catch-all takes and for a scripts/orch/ module with no section file of its
 # own. It exits 0 either way, matches a path by name whether or not it exists,
 # and is refused (exit 2) beside --plan or a <ref>.
-#
-# The base worked out above, a ticket branch's own included, is handed to
-# docs_lint.sh in DOCS_LINT_BASE, the
-# docs lint's own base setting for its suite budget rules, on the narrow
-# selection and on the full-suite fallback alike (all.sh passes it through to
-# its docs_lint.sh). With no base the setting is unset, never inherited.
 #
 # ORCH_TEST_SHARD is unset at start: a ticket verification is never split, its
 # fallback to the full verification (all.sh) included.
@@ -208,7 +201,6 @@ full_suite() {
     echo "all.sh"
     exit 0
   fi
-  if [ -n "${merge_base:-}" ]; then export DOCS_LINT_BASE="$merge_base"; else unset DOCS_LINT_BASE; fi
   exec bash "$dir/all.sh"
 }
 
@@ -480,7 +472,7 @@ classify() {
       .shellcheckrc) sc_all=1; sections_of harness ;;
       .github/workflows/* | .gitignore | .gitattributes | .ignore | LICENSE | .claude/settings.json) return 0 ;;
       scripts/test/docs_lint.sh) ;;
-      scripts/test/section-durations.tsv | scripts/test/suite-budget) return 0 ;;
+      scripts/test/section-durations.tsv) return 0 ;;
       skills/* | agents/* | docs/* | changelog.d/* | *.md) return 0 ;;
       *) unnamed ;;
     esac
@@ -618,10 +610,6 @@ for suite_n in "${TEST_JOBS_START_ORDER[@]}"; do
   suite="${selected[$suite_n]}"
   if [ "$suite" = orch_test.sh ] && [ -n "$only" ]; then
     ORCH_TEST_ONLY="$only" test_jobs_suite_start bash "$dir/$suite" >"$tmp/$suite"
-  elif [ "$suite" = docs_lint.sh ]; then
-    unset ORCH_TEST_ONLY
-    test_jobs_slot_wait
-    DOCS_LINT_BASE="$merge_base" test_jobs_suite_start bash "$dir/$suite" >"$tmp/$suite"
   else
     unset ORCH_TEST_ONLY
     [ "$suite" = orch_test.sh ] || test_jobs_slot_wait

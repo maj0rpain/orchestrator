@@ -1,5 +1,8 @@
 # CI is the only full run where a repo names a branch verification
 
+Superseded in part by ADR-0068: the suite budget its trade-off names is
+removed; the rest of this ADR stands.
+
 ADR-0058 kept one local full run per branch, at the combined-branch check. In
 the autopilot container on 2026-11-12 to 2026-11-14 a flow still started the
 whole suite about 3.4 times - step f's run and its reruns, full runs by
