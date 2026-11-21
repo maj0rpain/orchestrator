@@ -239,8 +239,9 @@ percent of them (a positive integer, above 100 too), and all of them under `CI`,
 which ignores the setting; usable CPUs are the online cores, lowered to a
 cgroup v2 `cpu.max` quota;
 `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every section must
-pass on its own. all.sh runs at most that many shellcheck processes at once, and
-both runners lower their own niceness to 10 outside `CI`.
+pass on its own. all.sh and affected.sh each run at most that many shellcheck
+processes at once, one file per process, and orch_test.sh and all.sh lower their
+own niceness to 10 outside `CI`.
 Each section of a parallel run has a deadline, `ORCH_TEST_SECTION_TIMEOUT` whole
 seconds (default 600), counted from the section's own start; past it the runner
 stops the section's process tree and reports `section '<title>' timed out`. A

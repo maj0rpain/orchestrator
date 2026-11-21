@@ -5073,8 +5073,25 @@ done
 exit "$found"
 STUB
 chmod +x "$af_sc/shellcheck"
-af_out="$(cd "$af" && env -u ORCH_TEST_JOBS PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
+# The first run's shellcheck counts its starts (#3955): it logs each start's
+# arguments, then runs the stub. Two shell files changed, both selecting
+# hooks_test.sh.
+af_cnt="$af.sc-count"
+mkdir -p "$af_cnt"
+cat >"$af_cnt/shellcheck" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"$af_cnt/shellcheck.log"
+exec "$af_sc/shellcheck" "\$@"
+STUB
+chmod +x "$af_cnt/shellcheck"
+tr_put "$af" scripts/bash-walk.sh 'echo walk'
+af_out="$(cd "$af" && env -u ORCH_TEST_JOBS PATH="$af_cnt:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"; st=$?
 assert_status "a passing run exits 0" "$st" 0
+assert_eq "shellcheck starts once per selected file, each given exactly one file" \
+  "$(LC_ALL=C sort "$af_cnt/shellcheck.log")" \
+  "-S warning -f gcc scripts/bash-walk.sh
+-S warning -f gcc scripts/hook-guard.sh"
+rm -rf "$af_cnt"
 assert_eq "printing each part's summary in order, the pytest suite's first, shellcheck last" "$af_out" \
   "$PYTEST_SUITE: 7 passed, 0 failed
 orch_test.sh: 7 passed, 0 failed
