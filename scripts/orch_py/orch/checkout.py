@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import os
 
-from orch.common import die
+from orch.common import die, plain_number
 
 # The directory every checkout keeps the orchestrator's own files in.
 ORCH_DIR_NAME = ".orchestrator"
@@ -28,7 +28,6 @@ def ticket_path(path: str, checkout: str) -> bool:
     parent, name = os.path.split(path)
     number = name[1:]
     return (
-        name.startswith("t") and number[:1] in "123456789" and number != ""
-        and number.isdigit() and number.isascii()
+        name.startswith("t") and number[:1] in "123456789" and plain_number(number)
         and parent == os.path.join(checkout, ORCH_DIR_NAME, "worktrees")
     )

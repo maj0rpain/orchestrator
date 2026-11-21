@@ -142,11 +142,19 @@ ENDED = "the run ended without a status - run the same command again"
 
 # The runner's start: orch.sh's orch_python bootstrap, running this module as
 # __main__ in place of the package. It drops the empty entry -c puts first on
-# sys.path, so nothing in the runner's directory shadows the package.
+# sys.path, so nothing in the runner's directory shadows the package. Its
+# first argument is the call's PYTHONPATH after an `=`, or empty when the call
+# had none, put back in the environment once sys.path is built, so the
+# command sees the call's own PYTHONPATH (given_pythonpath).
 RUNNER_BOOTSTRAP = '''
-import sys
+import os, sys
 if sys.path and sys.path[0] == "":
     del sys.path[0]
+given = sys.argv.pop(1)
+if given:
+    os.environ["PYTHONPATH"] = given[1:]
+else:
+    os.environ.pop("PYTHONPATH", None)
 import runpy
 runpy.run_module("orch.verification", run_name="__main__", alter_sys=True)
 '''
@@ -159,6 +167,12 @@ def package_dir() -> str:
     """The directory holding the orch package this module was imported from,
     first on the runner's PYTHONPATH."""
     return os.path.dirname(os.path.dirname(os.path.abspath(orch.__file__)))
+
+
+def given_pythonpath(env: Mapping[str, str]) -> str:
+    """The bootstrap argument naming <env>'s PYTHONPATH: the value after an
+    `=`, or empty when <env> has none."""
+    return "=" + env["PYTHONPATH"] if "PYTHONPATH" in env else ""
 
 
 def reap_runners() -> None:
@@ -430,8 +444,8 @@ class Verification:
         env["PYTHONPATH"] = package_dir() + (os.pathsep + inherited if inherited else "")
         try:
             runner = Popen(
-                [sys.executable, "-c", RUNNER_BOOTSTRAP, d, command, ceiling, self.grace_text,
-                 self.watch_text],
+                [sys.executable, "-c", RUNNER_BOOTSTRAP, given_pythonpath(self.env), d,
+                 command, ceiling, self.grace_text, self.watch_text],
                 stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL, start_new_session=True,
                 env=env, cwd="/",
             )
@@ -551,20 +565,6 @@ def exit_status(code: int) -> int:
     return 128 - code if code < 0 else code
 
 
-def command_env() -> Dict[str, str]:
-    """The runner's environment without the PYTHONPATH entry its call put
-    first, so the command sees the environment the call was given."""
-    env = dict(os.environ)
-    parts = env.get("PYTHONPATH", "").split(os.pathsep)
-    if parts[0] == package_dir():
-        del parts[0]
-    if parts:
-        env["PYTHONPATH"] = os.pathsep.join(parts)
-    else:
-        env.pop("PYTHONPATH", None)
-    return env
-
-
 def token_path(root: str) -> str:
     """The path of the identity token of the checkout root <root>."""
     return os.path.join(root, ORCH_DIR_NAME, "verification", "id")
@@ -590,7 +590,7 @@ def runner_main(argv: List[str]) -> int:
         with open(os.path.join(d, "out"), "wb") as out, \
                 open(os.path.join(d, "err"), "wb") as err:
             child = Popen(["bash", "-c", command], cwd=root, stdin=DEVNULL, stdout=out,
-                          stderr=err, env=command_env())
+                          stderr=err)
     except OSError:
         record_remove(d)
         return 1

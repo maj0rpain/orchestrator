@@ -51,7 +51,9 @@ ahead of `PYTHONPATH` and the standard library, so a `json.py` or `orch.py`
 there would shadow the package or its imports, and Python 3.9 has no `-P`. The
 bootstrap drops that directory from `sys.path` before importing anything, then
 runs `orch/__main__.py` through `runpy`, the package directory first on
-`PYTHONPATH`. The entry point, `orch/__main__.py`, is in syntax every python3
+`PYTHONPATH`; once `sys.path` is built it puts the caller's own `PYTHONPATH`
+back in the environment, so no command the noun starts sees the package
+directory on it. The entry point, `orch/__main__.py`, is in syntax every python3
 compiles (no annotations, f-strings or `from __future__` imports) and imports
 the rest of the package only after its version check. With no `python3` on
 `PATH`, `orch_python` dies before doing anything, exit 1, naming `orch.sh
@@ -503,7 +505,11 @@ The fixtures to reach for first:
 
 The pytest suite has fakes of its own, never the bash harness's fixtures:
 each test uses `tmp_path` and `monkeypatch`, and an in-process test hands a
-noun's `run` its fakes (`issue.run(argv, gh=..., git=..., env=...)`).
+noun's `run` its fakes (`issue.run(argv, gh=..., git=..., env=...)`). ADR-0067
+excepts code a fake would only restate: Lines fate is tested against real
+repositories, and the verification noun's `run` is handed the real `Git`
+adapter on real repositories and starts real processes, since process lifetime
+is the behaviour under test.
 
 - `orch.gh_fake.FakeGh`, the gh adapter's fake, and `FakeStore`, which seeds
   and reads the shared fake store: the file store
@@ -610,7 +616,7 @@ skills/orch-audit-code/      audits a repo's source code for latent bugs, ineffi
 scripts/orch.sh               the entry point for every deterministic operation (mechanism): path resolution, shared constants, the module list, main, whose one case naming the converted nouns hands each to the orch package through orch_python
 scripts/orch/<noun>.sh        one module per orch.sh noun still in bash (branch.sh, ticket.sh, ...), sourced by orch.sh, named as its test file
 scripts/orch_py/orch/         the orch Python package (ADR-0067), one module per converted noun (issue.py, finding_triage.py, verification.py, each named as its noun with each - as _) beside the helpers it rebuilt, among them lines_fate.py (the Lines fate module, a concept module with no noun: what became of a range of a file's lines at a ref since a commit filed them, read by finding triage's scan), base.py (the base concept's default-branch lookup alone), and checkout.py, liveness.py and wait.py (the main checkout and the ticket-worktree path, the `<pid> <start-time>` record, and the re-callable block, as far as verification.py needs them); verification.py the verification noun (a re-callable command, its runner started through its own copy of the bootstrap, at the module's `__main__` entry point): standard library only, Python 3.9+; __main__.py the entry point (the version check, in syntax every python3 compiles), cli.py the noun table, gh.py and git.py the only places gh and git run, gh_fake.py the gh adapter's fake on the shared fake store, root.py the ROOT block
-scripts/orch_py/tests/        the pytest suite: in-process tests of each noun against the fakes, the gh adapter's contract tests against a fixture gh, the git adapter's tests against a real repository and its fake, and the end-to-end checks of orch.sh's dispatch (test_dispatch.py); conftest.py the clean environment and the real-gh guard
+scripts/orch_py/tests/        the pytest suite: in-process tests of each noun against the fakes (the verification noun's against real repositories and real processes, ADR-0067's exception for what a fake would only restate), the gh adapter's contract tests against a fixture gh, the git adapter's tests against a real repository and its fake, and the end-to-end checks of orch.sh's dispatch (test_dispatch.py); conftest.py the clean environment and the real-gh guard
 scripts/orch_py/requirements-dev.txt the pinned dev dependencies: pytest, pytest-xdist, pytest-timeout (the package itself needs none)
 scripts/orch_py/pytest.ini    the pytest settings: the tests folder, the package on the module path, the per-test timeout, no cache directory
 scripts/orch/checkout.sh      the Checkout module, a concept module with no noun: checkouts, the one walk over every checkout

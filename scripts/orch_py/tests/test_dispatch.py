@@ -40,12 +40,14 @@ def repo(tmp_path):
     return root
 
 
-def orch_sh(tmp_path, cwd, seed, *args, path=None, knobs=None):
+def orch_sh(tmp_path, cwd, seed, *args, path=None, knobs=None, unset=()):
     """`orch.sh <args>` run by bash in <cwd> on <seed>'s store, PATH <path>
-    (the test's own when None), with the variables <knobs> set: its stdout,
-    stderr and exit code."""
+    (the test's own when None), with the variables <knobs> set and those
+    named in <unset> unset: its stdout, stderr and exit code."""
     env = dict(os.environ, HOME=str(tmp_path), ORCH_GH_FAKE_STORE=seed.store,
                PYTHONDONTWRITEBYTECODE="1", **(knobs or {}))
+    for name in unset:
+        env.pop(name, None)
     if path is not None:
         env["PATH"] = path
     run = subprocess.run(
@@ -213,6 +215,22 @@ def test_verification_run_delivers_a_run_through_the_dispatch(tmp_path, repo, se
 
     assert answer == ("out\n", "err\n", 3)
     assert verification_records(repo) == []
+
+
+@pytest.mark.parametrize("given", [None, "", "/the/caller/s/path"],
+                         ids=["unset", "empty", "set"])
+def test_verification_run_hands_the_command_the_pythonpath_orch_sh_was_given(
+        tmp_path, repo, seed, given):
+    committed(repo, {"README.md": "readme\n"}, "first")
+    knobs = dict(VERIFICATION_KNOBS)
+    if given is not None:
+        knobs["PYTHONPATH"] = given
+
+    answer = orch_sh(tmp_path, repo, seed, "verification", "run",
+                     'echo "${PYTHONPATH-unset}"', knobs=knobs,
+                     unset=["PYTHONPATH"] if given is None else [])
+
+    assert answer == ("%s\n" % ("unset" if given is None else given), "", 0)
 
 
 def test_verification_stop_stops_a_live_run_through_the_dispatch(tmp_path, repo, seed):

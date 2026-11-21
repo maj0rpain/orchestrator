@@ -14,6 +14,8 @@ import os
 import subprocess
 from typing import Mapping, Optional
 
+from orch.common import plain_number
+
 
 def proc_start(pid: int, env: Mapping[str, str]) -> Optional[str]:
     """The process's start time as one whitespace-free token; None when it
@@ -51,7 +53,7 @@ def record_of(pid: int, env: Mapping[str, str]) -> Optional[str]:
 def record_pid(record: str) -> Optional[int]:
     """The pid a record names; None when its first word is no plain pid."""
     words = record.split()
-    if not words or not (words[0].isdigit() and words[0].isascii()):
+    if not words or not plain_number(words[0]):
         return None
     return int(words[0])
 

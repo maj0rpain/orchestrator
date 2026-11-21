@@ -71,14 +71,16 @@ class Git:
         self._top_level: Optional[str] = None
 
     def _run(
-        self, args: List[str], cwd: Optional[str] = None
+        self, args: List[str], cwd: Optional[str] = None, data: Optional[bytes] = None
     ) -> "subprocess.CompletedProcess[bytes]":
+        """A `git` run, reading <data> on stdin, or nothing when None."""
+        source = {"stdin": subprocess.DEVNULL} if data is None else {"input": data}
         return subprocess.run(
             ["git", *args],
             cwd=self.cwd if cwd is None else cwd,
-            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            **source,
         )
 
     def _output(self, args: List[str]) -> Optional[str]:
@@ -113,15 +115,6 @@ class Git:
         when it fails or prints nothing."""
         text = self._text_at_top(args)
         return (text.strip() or None) if text is not None else None
-
-    def _run_input(
-        self, args: List[str], data: bytes, cwd: Optional[str] = None
-    ) -> "subprocess.CompletedProcess[bytes]":
-        """A `git` run, as _run, reading <data> on stdin."""
-        return subprocess.run(
-            ["git", *args], cwd=self.cwd if cwd is None else cwd, input=data,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        )
 
     def _file_log(self, flags: List[str], ref: str, since: str, path: str) -> Optional[List[str]]:
         """The full SHAs a `log <flags>` of the commits of <ref> since
@@ -324,7 +317,7 @@ class Git:
         return self._hash(text)
 
     def _hash(self, data: bytes) -> Optional[str]:
-        run = self._run_input(["hash-object", "--stdin"], data, cwd=self._top())
+        run = self._run(["hash-object", "--stdin"], cwd=self._top(), data=data)
         if run.returncode != 0:
             return None
         return run.stdout.decode("utf-8", "surrogateescape").strip() or None

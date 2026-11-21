@@ -178,20 +178,29 @@ source "$ORCH_SCRIPTS/planning-allowlist.sh"
 # Python 3.9 has no -P to stop it. A -c bootstrap instead drops the empty
 # entry -c puts first on sys.path, the caller's directory, before importing
 # anything, then runs the package's __main__ through runpy; the package
-# directory is first on PYTHONPATH. With no python3 on PATH it dies before
-# doing anything, exit 1 even for a verb that reserves 1 for a "no" (the
-# carve-out in coding-standards rule 2); the package's entry point checks the
-# version itself.
+# directory is first on PYTHONPATH. The bootstrap's first argument, given, is
+# the caller's PYTHONPATH after an `=`, or empty when it was unset: once
+# sys.path is built the bootstrap puts that back in the environment, so the
+# noun and every command it starts see the PYTHONPATH orch.sh was given. With
+# no python3 on PATH it dies before doing anything, exit 1 even for a verb that
+# reserves 1 for a "no" (the carve-out in coding-standards rule 2); the
+# package's entry point checks the version itself.
 orch_python() {
   command -v python3 >/dev/null 2>&1 \
     || die "orch.sh $1 needs python3 3.9 or newer (found none) - run orch.sh doctor"
+  local given="${PYTHONPATH+=$PYTHONPATH}"
   PYTHONPATH="$ORCH_PLUGIN/scripts/orch_py${PYTHONPATH:+:$PYTHONPATH}" exec python3 -c '
-import sys
+import os, sys
 if sys.path and sys.path[0] == "":
     del sys.path[0]
+given = sys.argv.pop(1)
+if given:
+    os.environ["PYTHONPATH"] = given[1:]
+else:
+    os.environ.pop("PYTHONPATH", None)
 import runpy
 runpy.run_module("orch", run_name="__main__", alter_sys=True)
-' "$@"
+' "$given" "$@"
 }
 
 main() {
