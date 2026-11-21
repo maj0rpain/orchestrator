@@ -66,10 +66,16 @@ the call is delivered whole, with its status - a command's own 75 as 1 - and
 its record removed once printed; one still going leaves stdout empty, says so
 on stderr and exits 75, and the same line run again attaches to it. A live
 run or a finished result whose state no longer matches is stale: the result
-is discarded, the live run stopped and a fresh one started. A matching record
-with no pid is a run still starting, waited on as a live one; one whose
-runner died leaving no status is removed, and a call waiting on it dies. A run
-of another command is left alone.
+is discarded, the live run stopped and a fresh one started. A record with no
+pid and no status, made under a minute ago, is a run still starting: a
+matching one is waited on as a live one; a stale one is waited on for its pid,
+within the block, then stopped as any stale live run, so its runner is never
+left going once its record is removed - a call whose block is spent first
+exits 75. One whose runner died leaving no status is removed, and a call
+waiting on it dies. A run of another command is left alone. A call that
+starts a runner but cannot record its pid sends KILL to its group, as a start
+that failed rather than a stop, so no grace; then it removes its record and
+dies naming the failure: no record is left without a pid under a live runner.
 
 Every stop - TERM, a grace, KILL to the survivors, a grace - finishes inside
 the call that began it, in batches: a `run` stops in at most two (the orphan
@@ -80,7 +86,8 @@ every runner this process starts is kept in RUNNERS and polled before any
 liveness or group check: one that ended is never counted alive as a zombie.
 
 `verification stop <checkout>` stops every live run whose checkout root is
-<checkout> or one of its ticket worktrees and removes its record; a finished
+<checkout> or one of its ticket worktrees and removes its record, waiting
+first, within the block, for the pid of each run still starting; a finished
 run's record and another checkout's runs are left, and a group surviving the
 KILL keeps its record and makes the call exit 1 after the other runs.
 """
@@ -310,6 +317,31 @@ class Verification:
             and (record_has(d, "termed") or self.alive(d))
         )
 
+    def starting(self, d: str) -> bool:
+        """Whether the record <d> is a run still starting: no pid and no
+        status yet, made under LEFTOVER_AGE seconds ago (an older one is a
+        leftover of a call that died partway, the orphan sweep's)."""
+        return (
+            os.path.isdir(d) and not record_has(d, "pid") and not record_has(d, "status")
+            and not record_old(d, time.time())
+        )
+
+    def still_starting(self, records: Sequence[str]) -> bool:
+        """Waits, within the block, for every record of <records> still
+        starting to have its pid, so its runner is stopped by its group, never
+        left going once its record is removed: whether one is still starting
+        when the block is spent."""
+        while any(self.starting(d) for d in records):
+            left = self.left()
+            if left <= 0:
+                return True
+            time.sleep(min(self.interval, left))
+        return False
+
+    def left(self) -> float:
+        """The seconds left of the call's block."""
+        return float(self.block_text) - (time.monotonic() - self.started)
+
     def ceiling(self) -> str:
         value = self.git.config_value(CEILING_KEY) or CEILING_DEFAULT
         if not is_positive_number(value):
@@ -385,13 +417,17 @@ class Verification:
         """Whether the call attaches to the record <d>: a live run, or one
         still starting, on <state>. A stale record, or one whose runner died
         leaving no status, is removed - a stale live run stopped first, the
-        call dying when its group survives the KILL - and False answered, as
-        for no record."""
+        call dying when its group survives the KILL, and a stale run still
+        starting waited on for its pid first, the call exiting 75 when its
+        block is spent before it comes - and False answered, as for no
+        record."""
         if not os.path.isdir(d):
             return False
         if record_read(d, "state") == state:
             if not self.died(d):
                 return True
+        elif self.still_starting([d]):
+            sys.exit(still_running(self.block_text))
         elif self.stoppable(d):
             group = record_group(d)
             if stop_batch([group], self.grace):
@@ -429,7 +465,11 @@ class Verification:
 
     def start(self, d: str, command: str, ceiling: str) -> None:
         """Starts the record <d>'s runner and records its pid; when it cannot
-        start, removes the record and dies naming the failure."""
+        start, removes the record and dies naming the failure. A runner whose
+        pid cannot be recorded is sent KILL by its group first, as no call
+        could stop it later; when its record is already gone (its runner
+        removed it, its checkout gone), the call goes on to wait, and so dies
+        saying the run ended."""
         env = dict(self.env)
         inherited = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = package_dir() + (os.pathsep + inherited if inherited else "")
@@ -445,8 +485,12 @@ class Verification:
             die("could not start the run in %s: %s" % (self.root, failed))
         RUNNERS.append(runner)
         record = record_of(runner.pid, self.env)
-        if record is not None:
-            record_write(d, "pid", record)
+        if record is None or not record_write(d, "pid", record):
+            signal_groups([runner.pid], signal.SIGKILL)
+            if os.path.isdir(d):
+                record_remove(d)
+                die("could not start the run in %s: its runner's pid could not be recorded"
+                    % self.root)
 
     def wait(self, d: str) -> int:
         """Waits for the run in <d> to end, until the block is spent: its
@@ -460,7 +504,7 @@ class Verification:
             if self.died(d):
                 record_remove(d)
                 die(ENDED)
-            left = float(self.block_text) - (time.monotonic() - self.started)
+            left = self.left()
             if left <= 0:
                 return still_running(self.block_text)
             time.sleep(min(self.interval, left))
@@ -521,6 +565,7 @@ class Verification:
                 continue
             if root == checkout or ticket_path(root, checkout):
                 named[d] = root
+        self.still_starting(list(named))
         groups = {d: record_group(d) for d in named if self.stoppable(d)}
         survivors = stop_batch(list(groups.values()), self.grace)
         code = 0

@@ -581,6 +581,61 @@ def test_a_bash_left_live_record_is_attached_to_then_stopped_once_stale(
     assert until(lambda: starts(tmp_path) == 1)
 
 
+def pid_written_late(record, pid):
+    """Writes <pid> as the pid of <record> 0.2 s on, as a call starting the
+    record's runner does once Popen returns, unless by then the record has
+    gone or holds another state than its planted stale one: the timer."""
+    def write():
+        try:
+            if (record / "state").read_text() != "stale\n":
+                return
+            (record / ".pid").write_text(pid)
+            os.rename(str(record / ".pid"), str(record / "pid"))
+        except OSError:
+            pass
+
+    timer = threading.Timer(0.2, write)
+    timer.start()
+    return timer
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc/self"), reason="the pid is a /proc start time")
+@pytest.mark.parametrize("verb", ["run", "stop"])
+def test_a_stale_record_still_starting_has_its_runner_stopped_once_its_pid_is_there(
+        repo, capsys, planted, verb):
+    leader = planted("exec sleep 30")
+    record = bash_record(repo, "true", state="stale\n")
+    timer = pid_written_late(record, proc_record(leader))
+
+    code = verify(repo, verb, "true" if verb == "run" else str(repo))
+    timer.join()
+
+    assert (code, gone(leader), records(repo)) == (0, True, [])
+
+
+def test_a_runner_whose_pid_cannot_be_recorded_is_stopped_and_its_record_removed(
+        repo, tmp_path, capsys, monkeypatch):
+    # A proc directory holding this process alone: no runner's start time
+    # can be read from it.
+    (tmp_path / "proc" / str(os.getpid())).mkdir(parents=True)
+    runners = []
+    real = verification.Popen
+
+    def recorded(*args, **kwargs):
+        runner = real(*args, **kwargs)
+        runners.append(runner.pid)
+        return runner
+
+    monkeypatch.setattr(verification, "Popen", recorded)
+
+    code = verify(repo, "run", gated(tmp_path), ORCH_PROC_DIR=str(tmp_path / "proc"))
+
+    assert (code, capsys.readouterr().err, records(repo)) == (
+        1, "orch: could not start the run in %s: its runner's pid could not be recorded\n"
+        % repo, [])
+    assert until(lambda: gone(runners[0]))
+
+
 def test_a_bash_left_finished_matching_record_is_delivered(repo, capsys):
     bash_record(repo, "true", pid="99999999 x\n", out="bash out\n", err="bash err\n",
                 status="4\n", termed="1700000000\n", killed="1700000000\n")
