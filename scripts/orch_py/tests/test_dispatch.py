@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import comments_of, git_repo, labels_of, read
+from conftest import comments_of, committed, git_repo, labels_of, read, run_git
 
 SCRIPTS = Path(__file__).resolve().parents[2]
 
@@ -183,22 +183,12 @@ def test_finding_triage_scan_reads_a_real_history_fetched_from_a_bare_origin(tmp
                    stdin=subprocess.DEVNULL)
     git_repo(repo, str(origin))
 
-    def git(*args):
-        return subprocess.run(
-            ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t",
-             "-c", "commit.gpgsign=false", *args],
-            check=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-        ).stdout.decode().strip()
-
     def commit(text, message):
-        (repo / "src").mkdir(exist_ok=True)
-        (repo / "src" / "app.sh").write_text(text)
-        git("add", "-A")
-        git("commit", "-qm", message)
-        git("push", "-q", "origin", "HEAD:refs/heads/main")
-        return git("rev-parse", "HEAD")
+        sha = committed(repo, {"src/app.sh": text}, message)
+        run_git(repo, "push", "-q", "origin", "HEAD:refs/heads/main")
+        return sha
 
-    git("checkout", "-q", "-B", "main")
+    run_git(repo, "checkout", "-q", "-B", "main")
     filed = commit("one\ntwo\nthree\nfour\n", "reviewed")
     fix = commit("one\ntwo, fixed\nthree\nfour\n", "fix line 2")
     for n, line in ((3, 2), (4, 4)):

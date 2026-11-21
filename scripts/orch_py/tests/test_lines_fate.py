@@ -5,13 +5,11 @@ history shape is built once, by the module-scoped fixture below, and every
 case asks lines_fate of it through the real git adapter."""
 from __future__ import annotations
 
-import subprocess
-
 import pytest
 
 from orch.git import COULD_NOT, Git
 from orch.lines_fate import lines_fate
-from conftest import git_repo
+from conftest import committed, git_repo, run_git
 
 REF = "main"
 
@@ -30,29 +28,16 @@ class Author:
         self.git("checkout", "-q", "-B", "main")
 
     def git(self, *args):
-        return subprocess.run(
-            ["git", "-C", str(self.root), "-c", "user.name=t", "-c", "user.email=t@t",
-             "-c", "commit.gpgsign=false", *args],
-            check=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-        ).stdout.decode().strip()
+        return run_git(self.root, *args)
 
     def read(self, path):
         return (self.root / path).read_text().splitlines()
 
-    def put(self, files):
-        """Writes each file of <files>, a path mapped to its lines, and stages
-        it."""
-        for path, text in files.items():
-            target = self.root / path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text("".join(line + "\n" for line in text))
-        self.git("add", "-A")
-
     def commit(self, files, message):
-        """Commits <files> written; the new commit's SHA."""
-        self.put(files)
-        self.git("commit", "-qm", message)
-        return self.git("rev-parse", "HEAD")
+        """Commits <files>, each a path mapped to its lines, written; the new
+        commit's SHA."""
+        return committed(self.root, {path: "".join(line + "\n" for line in text)
+                                     for path, text in files.items()}, message)
 
     def edit(self, path, change, message):
         """Commits <path>'s lines as <change>, a function of its old lines,

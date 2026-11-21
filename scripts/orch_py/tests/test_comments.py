@@ -8,7 +8,7 @@ import pytest
 from orch import comments
 from orch.gh_fake import FakeGh
 
-from conftest import GH_502
+from conftest import GH_502, died_of
 
 WHAT = "read issue #66's comments"
 TRUSTED = {"author": "ann", "createdAt": "2026-02-01T00:00:00Z", "body": "Bundled into #63",
@@ -25,29 +25,24 @@ def seeded(seed):
     seed.comment(66, "eve", "2026-02-02T00:00:00Z", "Bundled into #99", "NONE")
 
 
-def died(capsys, run):
-    with pytest.raises(SystemExit) as death:
-        run()
-    return death.value.code, capsys.readouterr().err
-
 
 def test_a_failed_read_dies_with_the_hint_after_gh_s_reason(seed, capsys):
     seeded(seed)
     seed.fail("adapter_issue_comments", GH_502)
 
-    assert died(capsys, lambda: comments.trusted(fake(seed), WHAT, "66",
-                                                 hint="no member was touched")) == (
-        1, "orch: gh could not read issue #66's comments: HTTP 502: Bad Gateway"
-           " - no member was touched\n")
+    assert died_of(capsys, lambda: comments.trusted(fake(seed), WHAT, "66",
+                                                    hint="no member was touched")) == (
+        1, "", "orch: gh could not read issue #66's comments: HTTP 502: Bad Gateway"
+               " - no member was touched\n")
 
 
 def test_an_answer_that_does_not_parse_dies_without_the_hint(seed, capsys):
     seeded(seed)
     seed.lag("adapter_issue_comments", 1, '{"comments": [1]}')
 
-    assert died(capsys, lambda: comments.trusted(fake(seed), WHAT, "66",
-                                                 hint="no member was touched")) == (
-        1, "orch: could not read issue #66's comments: its comments did not parse\n")
+    assert died_of(capsys, lambda: comments.trusted(fake(seed), WHAT, "66",
+                                                    hint="no member was touched")) == (
+        1, "", "orch: could not read issue #66's comments: its comments did not parse\n")
 
 
 def test_the_non_dying_read_answers_the_trusted_comments(seed, capsys):

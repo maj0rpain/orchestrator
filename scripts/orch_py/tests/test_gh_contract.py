@@ -12,6 +12,8 @@ from orch.gh import Gh, GhFailed, IssueRow, LabelledBody, Unparsed, gh_die, gh_o
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY, RepoPin
 
+from conftest import died_of
+
 FORK = "https://github.com/fork/widgets.git"
 BODY = ["issue", "view", "5", "--json", "body", "--jq", ".body"]
 RATE_LIMIT = [
@@ -607,13 +609,6 @@ def test_a_failure_that_is_no_limit_passes_through_untouched(fixture_gh):
 
 
 # --- the gh could not death --------------------------------------------------
-
-
-def died_of(capsys, run):
-    with pytest.raises(SystemExit) as died:
-        run()
-    out, err = capsys.readouterr()
-    return died.value.code, out, err
 
 
 def test_a_failed_call_dies_naming_the_action_gh_s_first_line_and_the_hint(fixture_gh, capsys):

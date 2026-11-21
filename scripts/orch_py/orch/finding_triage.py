@@ -24,14 +24,14 @@ import tempfile
 from typing import Callable, Dict, List, Mapping, Optional, Tuple
 
 from orch.base import default_branch
-from orch.common import die, plain_number
+from orch.common import die, plain_number, temp_text_file
 from orch import comments
 from orch.filed_finding import (
     FILED_SEVERITIES,
     category_label_ensure,
     category_other,
+    filed_severity_label_or_die,
     finding_body_parse,
-    has_filed_severity_label,
 )
 from orch.gh import (
     GhFailed,
@@ -114,39 +114,38 @@ class FindingTriage:
         every, issue, pr_filter = scan_args(args)
         triage = self.triage_labels.label("needs-triage")
         # A listed finding is read by its listing, labels and body together;
-        # an explicit one by its single read, where it is checked.
-        found: Dict[int, Tuple[List[str], str]] = {}
+        # an explicit one by its single read, where it is checked. Each is
+        # keyed by its number as it prints: an explicit one as given, leading
+        # zeros kept, as the bash noun printed it.
+        found: Dict[str, Tuple[List[str], str]] = {}
         if issue:
             labels, body = open_issue_read(
                 self.gh, issue,
                 "issue #%s is not open - finding triage takes open filed findings only" % issue,
                 body=True)
-            if not has_filed_severity_label(labels):
-                die("issue #%s is not a filed finding - it carries no review:<severity> label"
-                    " for a filed severity (%s)"
-                    % (issue, " or ".join("review:" + sev for sev in FILED_SEVERITIES)))
+            filed_severity_label_or_die(issue, labels)
             if not every and not label_listed(labels, triage):
                 die("issue #%s is not in triage - it carries no '%s' label" % (issue, triage))
-            found[int(issue)] = (labels, body)
+            found[issue] = (labels, body)
         else:
             others = [] if every else [triage]
             for sev in FILED_SEVERITIES:
                 listed = gh_or_die("list the review:%s findings" % sev,
                                    self.gh.issues_labelled_bodies, "review:" + sev, *others)
                 for row in listed:
-                    found[row.number] = (row.labels, row.body)
+                    found[str(row.number)] = (row.labels, row.body)
         branch = default_branch(self.gh, self.git, self.pin).name
         if not self.git.fetch_default_branch(branch):
             die("could not fetch origin/" + branch)
         ref = "refs/remotes/origin/" + branch
-        for n in sorted(found):
+        for n in sorted(found, key=int):
             labels, body = found[n]
             line = self.scan_one(n, body, ref, self.triage_state(labels), pr_filter)
             if line is not None:
                 print(line)
         return 0
 
-    def scan_one(self, n: int, body: str, ref: str, roles: str,
+    def scan_one(self, n: str, body: str, ref: str, roles: str,
                  pr_filter: str) -> Optional[str]:
         """The scan's line for one finding; None when <pr_filter> is given
         and the body names another PR."""
@@ -178,7 +177,7 @@ class FindingTriage:
                     result = "unknown"
                     detail = ("no commit on the default branch since %s touched %s:%s - the"
                               " difference is commits that never reached it" % (sha, path, lines))
-        return "\t".join([str(n), pr or "-", location, result, detail or "-", roles])
+        return "\t".join([n, pr or "-", location, result, detail or "-", roles])
 
 
     # --- apply ---
@@ -307,10 +306,7 @@ class FindingTriage:
         one of the repo's ready-for-agent and ready-for-human labels and none
         of its needs-triage, needs-info and wontfix - naming the issue and
         why."""
-        if not has_filed_severity_label(labels):
-            die("issue #%s is not a filed finding - it carries no review:<severity> label"
-                " for a filed severity (%s)"
-                % (m, " or ".join("review:" + sev for sev in FILED_SEVERITIES)))
+        filed_severity_label_or_die(m, labels)
         for role in ("needs-triage", "needs-info", "wontfix"):
             label = self.triage_labels.label(role)
             if label_listed(labels, label):
@@ -348,13 +344,9 @@ class FindingTriage:
         command that resumes."""
         if not members:
             return  # every member was already closed into B
-        try:
-            fd, comment_file = self.mkstemp()
-        except OSError:
-            die("could not create a temp file for the bundle comments")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write("Bundled into #%s\n" % b)
+        with temp_text_file("Bundled into #%s\n" % b,
+                            "could not create a temp file for the bundle comments",
+                            mkstemp=self.mkstemp) as comment_file:
             marker = bundled_marker(b)
             for i, m in enumerate(members):
                 why, held = self.bundle_member_close(b, m, comment_file, marker)
@@ -363,8 +355,6 @@ class FindingTriage:
                     die("bundle #%s: %s - members %s: %s; resume with: orch.sh finding-triage"
                         " bundle --into %s %s"
                         % (b, why, held, " ".join("#" + n for n in left), b, " ".join(left)))
-        finally:
-            os.remove(comment_file)
 
     def bundle_member_close(self, b: str, m: str, comment_file: str,
                             marker) -> Tuple[str, str]:
@@ -406,23 +396,18 @@ class FindingTriage:
         GhFailed. Dies, posting nothing, when the temporary file cannot be
         made, or when the comment cannot be built from <path> into it - an
         unreadable file would otherwise post the disclaimer alone (#1335)."""
+        unwritten = ("could not write the triage comment from %s - nothing was posted on"
+                     " issue #%s" % (path, issue))
         try:
-            fd, tmp = self.mkstemp()
+            with open(path, "rb") as source:
+                text = source.read().decode("utf-8", "surrogateescape")
         except OSError:
-            die("could not create a temp file for the triage comment on issue #%s"
-                " - nothing was posted" % issue)
-        try:
-            try:
-                with os.fdopen(fd, "wb") as f:
-                    f.write((TRIAGE_COMMENT_DISCLAIMER + "\n\n").encode("utf-8"))
-                    with open(path, "rb") as source:
-                        f.write(source.read())
-            except OSError:
-                die("could not write the triage comment from %s - nothing was posted on"
-                    " issue #%s" % (path, issue))
+            die(unwritten)
+        with temp_text_file(TRIAGE_COMMENT_DISCLAIMER + "\n\n" + text,
+                            "could not create a temp file for the triage comment on issue #%s"
+                            " - nothing was posted" % issue,
+                            unwritten, mkstemp=self.mkstemp) as tmp:
             self.gh.issue_comment(int(issue), tmp)
-        finally:
-            os.remove(tmp)
 
     def triage_comment_posted(self, issue: str, path: str) -> bool:
         """Whether one of the issue's trusted comments already equals what

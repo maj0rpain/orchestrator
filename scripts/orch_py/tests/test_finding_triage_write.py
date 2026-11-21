@@ -158,8 +158,7 @@ def test_a_category_label_create_that_fails_is_forgiven_leaving_the_repos_own(
     orch, seed, store, comment, failing
 ):
     triaged(seed, 2, "review:major", "needs-triage", "bug")
-    with open(os.path.join(str(store), "labels"), "w") as f:
-        f.write("bug\t123456\tThe repo's own bug\n")
+    labels_file(store, ("bug", "123456", "The repo's own bug"))
     if failing:
         seed.fail("adapter_label_create", GH_502)
 

@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from conftest import git_repo
+from conftest import committed, git_repo, run_git, write_staged
 from orch.git import FakeGit, Git
 
 ORIGIN = "https://github.com/fork/widgets.git"
@@ -78,34 +78,6 @@ def test_a_directory_in_no_repository_has_no_toplevel_at(tmp_path, name):
 
 
 # --- the drift line's operations ---------------------------------------------
-
-
-def run_git(root, *args):
-    return subprocess.run(
-        ["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@t", *args],
-        check=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-    ).stdout.decode().strip()
-
-
-def write(root, files):
-    """Writes the files named, removes those mapped to None, and stages
-    every change."""
-    for name, text in files.items():
-        path = root / name
-        if text is None:
-            path.unlink()
-            continue
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
-    run_git(root, "add", "-A")
-
-
-def committed(root, files, message):
-    """Writes the files named, removes those mapped to None, commits; the
-    new commit's SHA."""
-    write(root, files)
-    run_git(root, "commit", "-qm", message)
-    return run_git(root, "rev-parse", "HEAD")
 
 
 @pytest.fixture
@@ -210,25 +182,25 @@ def history(tmp_path_factory):
     subprocess.run(["git", "init", "-q", "-b", "main", str(author)], check=True,
                    stdin=subprocess.DEVNULL)
     sha = {}
-    write(author, {"f.txt": "1\n2\n3\n4\n5\n", "old.txt": "x\n", "sub/keep.txt": "k\n"})
+    write_staged(author, {"f.txt": "1\n2\n3\n4\n5\n", "old.txt": "x\n", "sub/keep.txt": "k\n"})
     sha["c1"] = dated(author, 1, "commit", "-qm", "c1")
-    write(author, {"f.txt": "1\n20\n3\n4\n5\n"})
+    write_staged(author, {"f.txt": "1\n20\n3\n4\n5\n"})
     sha["c2"] = dated(author, 2, "commit", "-qm", "c2")
     run_git(author, "checkout", "-qb", "side")
-    write(author, {"f.txt": "1\n20\n3\n4\n50\n"})
+    write_staged(author, {"f.txt": "1\n20\n3\n4\n50\n"})
     sha["s1"] = dated(author, 3, "commit", "-qm", "s1")
     run_git(author, "checkout", "-q", "main")
-    write(author, {"f.txt": "1\n20\n3\n5\n", "old.txt": None})
+    write_staged(author, {"f.txt": "1\n20\n3\n5\n", "old.txt": None})
     sha["c3"] = dated(author, 4, "commit", "-qm", "c3")
     run_git(author, "checkout", "-qb", "topic")
-    write(author, {"f.txt": "10\n20\n3\n5\n"})
+    write_staged(author, {"f.txt": "10\n20\n3\n5\n"})
     sha["t1"] = dated(author, 5, "commit", "-qm", "t1")
     run_git(author, "checkout", "-q", "main")
-    write(author, {"sub/keep.txt": "kk\n"})
+    write_staged(author, {"sub/keep.txt": "kk\n"})
     sha["c4"] = dated(author, 6, "commit", "-qm", "c4")
     sha["m"] = dated(author, 7, "merge", "-q", "--no-ff", "topic", "-m", "m")
     run_git(author, "checkout", "-q", "--detach", sha["c1"])
-    write(author, {"f.txt": "1\n2\n3\n4\n5 pr\n"})
+    write_staged(author, {"f.txt": "1\n2\n3\n4\n5 pr\n"})
     sha["p1"] = dated(author, 8, "commit", "-qm", "p1")
     run_git(author, "push", "-q", str(origin), "main", "side", "topic",
             "%s:refs/pull/7/head" % sha["p1"])

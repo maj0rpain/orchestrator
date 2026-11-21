@@ -258,6 +258,13 @@ def test_an_explicit_finding_is_scanned_alone(seed, capsys):
     assert capsys.readouterr().out == "2\t7\tsrc/app.sh:3\tunchanged\t-\tneeds-triage\n"
 
 
+def test_an_explicit_finding_is_printed_as_given_leading_zeros_kept(seed, capsys):
+    finding(seed, 5, ["review:nit", "needs-triage"], "`src/other.sh:2` at " + HEAD)
+
+    assert scan(seed, "05") == 0
+    assert capsys.readouterr().out == "05\t7\tsrc/other.sh:2\tunchanged\t-\tneeds-triage\n"
+
+
 @pytest.mark.parametrize("argv", [["--all", "8"], ["8", "--all"]])
 def test_all_takes_an_explicit_finding_already_triaged(seed, capsys, argv):
     finding(seed, 8, ["review:nit", "ready-for-agent"], "`src/other.sh:2` at " + HEAD)

@@ -64,11 +64,12 @@ def map_line(rows: Sequence[Hunk], line: int) -> int:
     """Where <line> of the old side of the hunks <rows> sits on the new side.
     A line inside a changed hunk maps to that hunk's start."""
     offset = 0
-    for a, b, c, d in rows:
-        if b > 0 and a <= line <= a + b - 1:
-            return c if c > 0 else 1
-        if (b > 0 and a + b - 1 < line) or (b == 0 and a < line):
-            offset += d - b
+    for old_start, old_count, new_start, new_count in rows:
+        if old_count > 0 and old_start <= line <= old_start + old_count - 1:
+            return new_start if new_start > 0 else 1
+        if ((old_count > 0 and old_start + old_count - 1 < line)
+                or (old_count == 0 and old_start < line)):
+            offset += new_count - old_count
         else:
             break
     return line + offset
@@ -79,9 +80,9 @@ def deleted_in(rows: Sequence[Hunk], start: int, end: int) -> List[Range]:
     inside a hunk whose new count is 0. A line a hunk replaces is not deleted
     by this rule."""
     parts = []
-    for a, b, _, d in rows:
-        if a <= end and b > 0 and d == 0:
-            lo, hi = max(start, a), min(a + b - 1, end)
+    for old_start, old_count, _, new_count in rows:
+        if old_start <= end and old_count > 0 and new_count == 0:
+            lo, hi = max(start, old_start), min(old_start + old_count - 1, end)
             if lo <= hi:
                 parts.append((lo, hi))
     return parts
@@ -93,8 +94,10 @@ def lines_differ(rows: Sequence[Hunk], start: int, end: int) -> bool:
     inserted before the first line or after the last do not make the range
     differ."""
     return any(
-        a <= end and ((b > 0 and a + b - 1 >= start) or (b == 0 and start <= a < end))
-        for a, b, _, _ in rows
+        old_start <= end
+        and ((old_count > 0 and old_start + old_count - 1 >= start)
+             or (old_count == 0 and start <= old_start < end))
+        for old_start, old_count, _, _ in rows
     )
 
 

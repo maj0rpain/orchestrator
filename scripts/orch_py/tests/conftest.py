@@ -127,6 +127,45 @@ def git_repo(path, origin=None):
     return Git(cwd=str(path))
 
 
+def run_git(root, *args):
+    """git <args> in the repository at <root>, as a test author t with
+    signing off: its stdout, stripped. A failure raises."""
+    return subprocess.run(
+        ["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@t",
+         "-c", "commit.gpgsign=false", *args],
+        check=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+    ).stdout.decode().strip()
+
+
+def write_staged(root, files):
+    """Writes the files named, removes those mapped to None, and stages
+    every change."""
+    for name, text in files.items():
+        path = root / name
+        if text is None:
+            path.unlink()
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    run_git(root, "add", "-A")
+
+
+def committed(root, files, message):
+    """Writes the files named, removes those mapped to None, commits; the
+    new commit's SHA."""
+    write_staged(root, files)
+    run_git(root, "commit", "-qm", message)
+    return run_git(root, "rev-parse", "HEAD")
+
+
+def died_of(capsys, run):
+    """(exit code, stdout, stderr) of <run>, which must die."""
+    with pytest.raises(SystemExit) as died:
+        run()
+    out, err = capsys.readouterr()
+    return died.value.code, out, err
+
+
 def orch_issue(seed, *argv, gh=None, git=None, env=None, pin=None):
     """`orch.sh issue <argv>` in-process: its exit code, a SystemExit's
     included. <gh> is the gh fake on <seed>'s store when None, <pin> its repo

@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from typing import List, NamedTuple, Optional, Sequence
 
+from orch.common import die
 from orch.gh import GhFailed, label_listed
 from orch.triage_labels import TriageLabels
 
@@ -81,6 +82,16 @@ def has_filed_severity_label(labels: Sequence[str]) -> bool:
     """Whether some review label carries a filed severity, in any casing."""
     return any(label.lower()[len("review:"):] in FILED_SEVERITIES
                for label in review_labels(labels))
+
+
+def filed_severity_label_or_die(n: str, labels: Sequence[str]) -> None:
+    """Dies, naming issue #<n>, unless its <labels> carry a filed
+    severity's review label: the check finding triage's scan and bundle
+    make of an issue they take as a filed finding."""
+    if not has_filed_severity_label(labels):
+        die("issue #%s is not a filed finding - it carries no review:<severity> label"
+            " for a filed severity (%s)"
+            % (n, " or ".join("review:" + sev for sev in FILED_SEVERITIES)))
 
 
 def category_other(category: str) -> Optional[str]:
