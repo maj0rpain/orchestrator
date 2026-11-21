@@ -2,14 +2,19 @@
 which makes an audit run's working directory (ADR-0064), its report verb,
 which renders a run directory's ranked file and area files into one HTML
 page, byte for byte as the bash renderer does, its file verb, which files one
-audit finding as a GitHub issue, and an audit-filed body's drift line, which
-the issue noun reads. orch.sh still runs the noun's verbs from the bash
-module; run() is the Python noun they move to.
+audit finding as a GitHub issue, or with --run a run's picked findings from
+its ranked file, linking the overlapping ones by a **Related:** line, and an
+audit-filed body's drift line, which the issue noun reads. orch.sh still
+runs the noun's verbs from the bash module; run() is the Python noun they
+move to.
 
 begin's checks all come before the run directory is made, and a write
 failing after it is made removes it again; the git exclude lines already
 written stay, as in bash. report's checks of the ranked file all come before
-anything is written, and file's checks before any write or GitHub call.
+anything is written, and file's checks before any write or GitHub call, as
+--run's are; --run prints and flushes each finding's line as it gets its
+issue number, so a run that fails partway shows the findings already filed,
+and a rerun finds them open by title rather than filing them again.
 
 An audit-filed body is the finding's text, a blank line, one **Location:**
 line per location and the **Audited at:** line naming the commit audited,
@@ -282,6 +287,8 @@ _FIELD = re.compile(r"([A-Z][A-Za-z /]*):[ \t\n\v\f\r]*(.*)", re.S)
 _AREA_BLOCK = re.compile(r"@@[ \t\n\v\f\r]+finding[ \t\n\v\f\r]+([0-9]+)[ \t\n\v\f\r]*")
 _SOURCE = re.compile(r"(area-[0-9]+):([0-9]+)")
 _DIGITS = re.compile(r"[0-9]+")
+RELATED = "**Related:**"
+_RELATED_TAIL = re.compile(r"#[0-9]+( #[0-9]+)*")
 _RECORD_LINE = re.compile(r"([^ \t]*)[ \t]*(.*)", re.S)
 _REFERENCE = re.compile(
     r"(^|[^a-z0-9_])((findings?|candidates?)[ \t\n\v\f\r]+#?[0-9]+|this[ \t\n\v\f\r]+report)"
@@ -879,6 +886,151 @@ def audit_report(argv: List[str], git, root: str, clock: Callable[[], float]) ->
     return 0
 
 
+def audit_batch_body(finding: Finding, commit: str) -> str:
+    """The issue body of resolved finding <finding>: each field other than
+    the steering four and Location as a paragraph with its label in bold, then
+    audit_body_tail of its locations and <commit>, the commit audit begin
+    recorded."""
+    paragraphs = ["**%s:** %s\n\n" % (label, value) for label, value in finding.fields
+                  if label not in STEERING and label != "Location"]
+    return "".join(paragraphs) + audit_body_tail(commit, finding.locations.split("\n"))
+
+
+def audit_body_norm(text: str) -> str:
+    """<text> with its carriage returns and trailing newlines dropped."""
+    return text.replace("\r", "").rstrip("\n")
+
+
+def _body_write(path: str, body: str) -> None:
+    """Rewrites the body temp file <path> to hold <body>."""
+    try:
+        with open(path, "wb") as f:
+            f.write(body.encode("utf-8", "surrogateescape"))
+    except OSError:
+        die("could not write the issue body to its temp file")
+
+
+def audit_file_batch(argv: List[str], gh, git) -> int:
+    """`audit file --run <dir> <numbers>`: files the ranked findings
+    <numbers> (comma separated) of the audit run <dir> as issues, in number
+    order. Every check - the ranked file's reader, the numbers, the bodies'
+    round trip - comes before any GitHub read or write. Prints, per finding,
+    its number, its issue number and filed or open, tab-separated, flushed as
+    its finding gets its issue number, so a failure partway leaves the lines
+    of the findings already filed."""
+    if len(argv) != 2:
+        die(audit_usage())
+    run = ranked_read(argv[0])
+    want = list_lines(argv[1])
+    if not want:
+        die(audit_usage())
+    seen: List[int] = []
+    for item in want:
+        if not _DIGITS.fullmatch(item):
+            die("'%s' is not a finding number" % item)
+        n = int(item)
+        if not 1 <= n <= len(run.findings):
+            die("the ranked file has no finding %d" % n)
+        if n in seen:
+            die("finding %d is given twice" % n)
+        seen.append(n)
+    picked = sorted(seen)
+
+    base: Dict[int, str] = {}
+    for n in picked:
+        finding = run.findings[n - 1]
+        base[n] = audit_body_norm(audit_batch_body(finding, run.commit))
+        got_locations, got_shas = body_parse(base[n])
+        if got_locations != finding.locations.split("\n"):
+            die("the rendered body does not parse back: locations of finding %d" % n)
+        if got_shas != [run.commit]:
+            die("the rendered body does not parse back: audited at of finding %d" % n)
+
+    with finding_body_file_new("") as body_file:
+        existing = list(gh_or_die("list the open issues", gh.issues_open_titles))
+        issue: Dict[int, int] = {}
+        state: Dict[int, str] = {}
+        triage: Optional[str] = None
+        ensured: List[str] = []
+        for n in picked:
+            finding = run.findings[n - 1]
+            found = audit_open_find(existing, finding.title)
+            if found is not None:
+                issue[n], state[n] = found, "open"
+                print("%d\t%d\topen" % (n, found), flush=True)
+                continue
+            if triage is None:
+                triage = needs_triage_label_ready(gh, TriageLabels(git.toplevel))
+            if finding.category not in ensured:
+                category_label_ensure(gh, finding.category)
+                ensured.append(finding.category)
+            _body_write(body_file, base[n] + "\n\n")
+            made = gh_or_die("create the issue", gh.issue_create, finding.title, body_file,
+                             [triage, finding.category])
+            issue[n], state[n] = made, "filed"
+            existing.append((made, finding.title))
+            print("%d\t%d\tfiled" % (n, made), flush=True)
+        _related_write_all(run, picked, base, issue, state, body_file, gh)
+    return 0
+
+
+def _nums_union(a: Sequence[int], b: Sequence[int]) -> List[int]:
+    """The numbers of <a> and <b>, each once, ascending."""
+    return sorted(set(a) | set(b))
+
+
+def _related_write_all(run: Run, picked: List[int], base: Dict[int, str],
+                       issue: Dict[int, int], state: Dict[int, str], body_file: str,
+                       gh) -> None:
+    """Writes each picked finding's issue's **Related:** paragraph: the
+    issues of the picks it overlaps, but its own. The picks sharing an issue
+    pool their links, and the issue is written once, from the rendering of
+    the pick it still matches - with or without a Related line, whose numbers
+    are kept. An open issue matching none was edited since it was filed: it
+    is left alone, with a warning. An issue already naming every number is
+    not written."""
+    first_pick: Dict[int, int] = {}
+    pooled: Dict[int, List[int]] = {}
+    for n in picked:
+        first_pick.setdefault(issue[n], n)
+        links = [issue[j] for j in picked
+                 if j in run.findings[n - 1].links and issue[j] != issue[n]]
+        if links:
+            pooled[issue[n]] = _nums_union(pooled.get(issue[n], []), links)
+    for n in picked:
+        number = issue[n]
+        if first_pick[number] != n or number not in pooled:
+            continue
+        had: List[int] = []
+        match: Optional[int] = n
+        if state[n] == "open":
+            now = audit_body_norm(gh_or_die("read issue #%d" % number, gh.issue_body, number))
+            match = None
+            for j in picked:
+                if issue[j] != number:
+                    continue
+                if now == base[j]:
+                    match = j
+                    break
+                prefix = base[j] + "\n\n" + RELATED + " "
+                tail = now[len(prefix):] if now.startswith(prefix) else ""
+                if _RELATED_TAIL.fullmatch(tail):
+                    had = _nums_union([int(w) for w in tail.replace("#", "").split()], [])
+                    match = j
+                    break
+            if match is None:
+                warn("#%d was edited since it was filed; its Related line is not written"
+                     % number)
+                continue
+        unioned = _nums_union(had, pooled[number])
+        if unioned == had:
+            continue
+        _body_write(body_file, "%s\n\n%s %s\n\n" % (
+            base[match], RELATED, " ".join("#%d" % k for k in unioned)))
+        gh_or_die("write issue #%d's Related line" % number, gh.issue_body_edit, number,
+                  body_file)
+
+
 VERBS = {"begin": audit_begin, "report": audit_report}
 
 
@@ -896,8 +1048,11 @@ def run(
     git = Git() if git is None else git
     root = checkout_root(git, env)
     op = argv[0] if argv else ""
-    if op not in OPS.split("|") or argv[1:2] == ["--run"]:
+    if op not in OPS.split("|"):
         die(audit_usage())
     if op == "file":
-        return audit_file(argv[1:], adapter(env) if gh is None else gh, git)
+        gh = adapter(env) if gh is None else gh
+        if argv[1:2] == ["--run"]:
+            return audit_file_batch(argv[2:], gh, git)
+        return audit_file(argv[1:], gh, git)
     return VERBS[op](argv[1:], git, root, clock)

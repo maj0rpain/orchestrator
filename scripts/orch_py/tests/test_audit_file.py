@@ -1,10 +1,12 @@
-"""`audit file <title> --category <c> --finding-file <f> --location <loc>...`,
-in-process against the gh fake's store: the issue it files - its title, body
-and labels - the number it prints, and its refusals, each made before any
-write or GitHub call. Every case checks that no body temp file is left
-behind."""
+"""`audit file <title> --category <c> --finding-file <f> --location <loc>...`
+and `audit file --run <dir> <numbers>`, in-process against the gh fake's
+store: the issues they file - title, body and labels, a run's **Related:**
+lines - what they print, and their refusals, each made before any write or
+GitHub call. Every case checks that no body temp file is left behind."""
 from __future__ import annotations
 
+import io
+import sys
 import tempfile
 
 import pytest
@@ -13,7 +15,7 @@ from orch import audit
 from orch.filed_finding import FILED_CATEGORIES
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit
-from conftest import GH_502, labels_doc, labels_of, read, snapshot, write_labels_doc
+from conftest import GH_502, fake, labels_doc, labels_of, read, snapshot, write_labels_doc
 
 SHA = "0123456789abcdef0123456789abcdef01234567"
 FINDING = "A doc says --force is required.\n\nThe code takes no such flag.\n\n\n"
@@ -366,3 +368,382 @@ def test_no_op_is_refused_with_the_whole_usage_text(seed, root, capsys):
         "   or: orch.sh audit report <dir> <out.html>\n"
         "   or: orch.sh audit file --run <dir> <numbers>\n"
         "   or: " + USAGE[len("orch: usage: "):])))
+
+
+# --- a run's picked findings: file --run ---------------------------------------
+
+# The commit the run's record names: not HEAD, which has moved on since.
+RECORDED = "abcdef0123456789abcdef0123456789abcdef01"
+AREA_1 = """@@ finding 1
+Kind: latent bug
+Location: a.sh:1, b.sh:2-3
+Evidence: it <breaks> when `x & y` runs
+```mermaid
+graph TD; A-->B
+```
+Confidence: certain
+@@ finding 2
+Kind: inefficiency
+Location: b.sh:2-3, c.sh:9
+Evidence: slow
+"""
+AREA_2 = """@@ finding 1
+Kind: architecture deepening
+Location: d.sh:5
+Evidence: friction
+```
+Note: kept in a fence
+```
+"""
+RANKED = """@@ scope the audit's scope
+@@ areas 2
+@@ top 1
+Start here, because `a.sh` is hot.
+@@ finding 1
+From: area-1:1, area-1:2
+Title: Latent bug in a.sh
+Category: bug
+Overlaps: 3
+Evidence: restated <b>evidence</b>
+@@ finding 2
+From: area-2:1
+Title: Deepen d.sh
+Category: enhancement
+@@ finding 3
+Title: Whole finding with no source
+Category: enhancement
+Location: z.sh:4
+Kind: inefficiency
+Evidence: a `tick` and a fence:
+```
+Evidence: not a field
+```
+"""
+# Finding 1's issue body once finding 3's issue is #41.
+BODY_1 = (
+    "**Kind:** latent bug\n\n**Evidence:** restated <b>evidence</b>\n\n"
+    "**Confidence:** certain\n\n**Location:** `a.sh:1`\n\n**Location:** `b.sh:2-3`\n\n"
+    "**Location:** `c.sh:9`\n\n**Audited at:** %s\n\n**Related:** #41\n\n" % RECORDED)
+
+
+@pytest.fixture
+def batch(tmp_path, seed, store):
+    """An audit run's directory, its record naming RECORDED, holding two
+    area files and a ranked file of three findings, 1 overlapping 3; the
+    store holds the repo's own needs-triage label and numbers the next issue
+    #40."""
+    path = tmp_path / "run"
+    path.mkdir()
+    for name, text in (("record", "kind code\ncommit %s\n" % RECORDED), ("area-1.md", AREA_1),
+                       ("area-2.md", AREA_2), ("ranked.md", RANKED)):
+        (path / name).write_text(text)
+    (store / "labels").write_text("needs-triage\t000000\tThe repo's own\n")
+    seed.next_issue(40)
+    return path
+
+
+def edit_ranked(batch, old, new):
+    """The run's ranked file with <old> replaced by <new>, which it must hold."""
+    ranked = batch / "ranked.md"
+    text = ranked.read_text()
+    assert old in text
+    ranked.write_text(text.replace(old, new))
+
+
+def file_run(seed, root, batch, numbers, gh=None):
+    """`audit file --run <batch> <numbers>`: its exit code."""
+    return orch_audit(seed, root, "file", "--run", str(batch), numbers, gh=gh)
+
+
+def test_a_pick_is_filed_one_line_per_finding_in_number_order(seed, root, batch, capsys):
+    code = file_run(seed, root, batch, "3,1")
+
+    assert (code, capsys.readouterr()) == (0, ("1\t40\tfiled\n3\t41\tfiled\n", ""))
+
+
+def test_each_line_is_flushed_before_the_next_finding_s_issue_is_created(
+        seed, root, batch, monkeypatch):
+    # stdout's text reaches <written> only when flushed.
+    written = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(written, encoding="utf-8"))
+    gh = fake(seed)
+    create, seen = gh.issue_create, []
+
+    def watched(*args):
+        seen.append(written.getvalue().decode())
+        return create(*args)
+
+    monkeypatch.setattr(gh, "issue_create", watched)
+
+    file_run(seed, root, batch, "1,2,3", gh=gh)
+
+    assert seen == ["", "1\t40\tfiled\n", "1\t40\tfiled\n2\t41\tfiled\n"]
+
+
+def test_the_body_is_the_resolved_fields_each_location_the_recorded_commit_and_related(
+        seed, store, root, batch):
+    file_run(seed, root, batch, "3,1")
+
+    assert read(store, "issues", 40, "body") == BODY_1
+
+
+def test_the_other_side_of_a_one_sided_overlap_takes_the_related_line_too(
+        seed, store, root, batch):
+    file_run(seed, root, batch, "1,3")
+
+    assert read(store, "issues", 41, "body").endswith("\n\n**Related:** #40\n\n")
+
+
+def test_a_filed_issue_carries_its_title_needs_triage_and_its_category(seed, store, root, batch):
+    file_run(seed, root, batch, "1,2")
+
+    assert read(store, "issues", 40, "title") == "Latent bug in a.sh\n"
+    assert (labels_of(store, 40), labels_of(store, 41)) == (
+        ["needs-triage", "bug"], ["needs-triage", "enhancement"])
+
+
+def test_a_rerun_reports_each_finding_open_and_writes_nothing(seed, store, root, batch, capsys):
+    file_run(seed, root, batch, "3,1")
+    capsys.readouterr()
+    for write in ("adapter_issue_create", "adapter_issue_body_edit", "adapter_label_create"):
+        seed.fail(write)
+    before = snapshot(store)
+
+    code = file_run(seed, root, batch, "1,3")
+
+    assert (code, capsys.readouterr()) == (0, ("1\t40\topen\n3\t41\topen\n", ""))
+    assert snapshot(store) == before
+
+
+def test_an_already_open_title_is_reported_open_and_not_filed_again(
+        seed, store, root, batch, capsys):
+    seed.issue(50, "open")
+    seed.title(50, "Deepen d.sh")
+    seed.body(50, "mine")
+
+    code = file_run(seed, root, batch, "2")
+
+    assert (code, capsys.readouterr().out) == (0, "2\t50\topen\n")
+    assert read(store, "issues", 40, "title") is None
+
+
+def test_a_finding_whose_category_is_in_the_hunter_s_block_is_labelled_with_it(
+        seed, store, root, batch):
+    with open(batch / "area-2.md", "a") as area:
+        area.write("Category: bug\n")
+    edit_ranked(batch, "Title: Deepen d.sh\nCategory: enhancement\n", "Title: Deepen d.sh\n")
+
+    assert file_run(seed, root, batch, "2") == 0
+    assert labels_of(store, 40) == ["needs-triage", "bug"]
+    assert "**Related:**" not in read(store, "issues", 40, "body")
+
+
+# Finding 2 overlaps 3 too: 1 and 3 are linked, 2 and 3 are, 1 and 2 are not.
+TWO_OVERLAPS_THREE = ("From: area-2:1\n", "From: area-2:1\nOverlaps: 3\n")
+
+
+def test_an_overlap_outside_the_batch_writes_no_related_line(seed, store, root, batch):
+    edit_ranked(batch, *TWO_OVERLAPS_THREE)
+
+    file_run(seed, root, batch, "3")
+
+    assert "**Related:**" not in read(store, "issues", 40, "body")
+
+
+def test_an_open_issue_differing_in_crlf_and_trailing_newlines_takes_the_related_line(
+        seed, store, root, batch, capsys):
+    edit_ranked(batch, *TWO_OVERLAPS_THREE)
+    file_run(seed, root, batch, "3")
+    body = read(store, "issues", 40, "body")
+    seed.body(40, body.replace("\n", "\r\n") + "\r\n\r\n\n")
+    capsys.readouterr()
+
+    code = file_run(seed, root, batch, "1,3")
+
+    assert (code, capsys.readouterr()) == (0, ("1\t41\tfiled\n3\t40\topen\n", ""))
+    assert read(store, "issues", 40, "body") == body.rstrip("\n") + "\n\n**Related:** #41\n\n"
+
+
+def test_a_second_batch_keeps_the_first_batch_s_numbers_and_never_chains(
+        seed, store, root, batch):
+    edit_ranked(batch, *TWO_OVERLAPS_THREE)
+    file_run(seed, root, batch, "3")
+    file_run(seed, root, batch, "1,3")
+
+    assert file_run(seed, root, batch, "2,3") == 0
+    assert read(store, "issues", 40, "body").endswith("\n\n**Related:** #41 #42\n\n")
+    assert read(store, "issues", 41, "body").endswith("\n\n**Related:** #40\n\n")
+    assert read(store, "issues", 42, "body").endswith("\n\n**Related:** #40\n\n")
+
+
+def test_an_issue_edited_since_it_was_filed_gets_no_related_line_and_a_warning(
+        seed, store, root, batch, capsys):
+    file_run(seed, root, batch, "3")
+    seed.body(40, "my own text")
+    capsys.readouterr()
+
+    code = file_run(seed, root, batch, "1,3")
+
+    assert (code, capsys.readouterr()) == (0, (
+        "1\t41\tfiled\n3\t40\topen\n",
+        "orch: #40 was edited since it was filed; its Related line is not written\n"))
+    assert read(store, "issues", 40, "body") == "my own text"
+    assert read(store, "issues", 41, "body").endswith("\n\n**Related:** #40\n\n")
+
+
+# Finding 3 takes finding 1's title.
+SAME_TITLE = ("Title: Whole finding with no source", "Title: Latent bug in a.sh")
+
+
+def test_two_picks_with_one_title_file_one_issue(seed, store, root, batch, capsys):
+    edit_ranked(batch, *SAME_TITLE)
+
+    code = file_run(seed, root, batch, "1,3")
+
+    assert (code, capsys.readouterr().out) == (0, "1\t40\tfiled\n3\t40\topen\n")
+    assert read(store, "issues", 41, "title") is None
+
+
+def test_a_shared_issue_and_a_third_pick_overlapping_it_name_each_other(
+        seed, store, root, batch, capsys):
+    edit_ranked(batch, *SAME_TITLE)
+    edit_ranked(batch, *TWO_OVERLAPS_THREE)
+
+    code = file_run(seed, root, batch, "1,2,3")
+
+    assert (code, capsys.readouterr().err) == (0, "")
+    assert read(store, "issues", 41, "body").endswith("\n\n**Related:** #40\n\n")
+    assert read(store, "issues", 40, "body").endswith("\n\n**Related:** #41\n\n")
+
+
+def test_a_shared_issue_filed_earlier_from_the_later_pick_still_takes_its_related_line(
+        seed, store, root, batch, capsys):
+    edit_ranked(batch, *SAME_TITLE)
+    edit_ranked(batch, *TWO_OVERLAPS_THREE)
+    file_run(seed, root, batch, "3")
+    capsys.readouterr()
+
+    code = file_run(seed, root, batch, "1,2,3")
+
+    assert (code, capsys.readouterr().err) == (0, "")
+    assert read(store, "issues", 40, "body").endswith("\n\n**Related:** #41\n\n")
+
+
+def test_a_shared_issue_rerun_after_its_related_write_failed_takes_the_line(
+        seed, store, root, batch, capsys):
+    edit_ranked(batch, *SAME_TITLE)
+    edit_ranked(batch, *TWO_OVERLAPS_THREE)
+    seed.fail("adapter_issue_body_edit")
+    file_run(seed, root, batch, "1,2,3")
+    seed.unfail()
+
+    assert file_run(seed, root, batch, "1,2,3") == 0
+    assert read(store, "issues", 40, "body").endswith("\n\n**Related:** #41\n\n")
+
+
+# --- file --run: refusals and gh failures --------------------------------------
+
+
+USAGE_RUN = ("orch: usage: orch.sh audit begin <code|docs|tests>\n"
+             "   or: orch.sh audit report <dir> <out.html>\n"
+             "   or: orch.sh audit file --run <dir> <numbers>\n"
+             "   or: " + USAGE[len("orch: usage: "):])
+
+
+@pytest.mark.parametrize("numbers, message", [
+    ("1,1", "finding 1 is given twice"),
+    ("9", "the ranked file has no finding 9"),
+    ("0", "the ranked file has no finding 0"),
+    ("x", "'x' is not a finding number"),
+    ("1,,x", "'x' is not a finding number"),
+    (" , ", USAGE_RUN[len("orch: "):-1]),
+    ("", USAGE_RUN[len("orch: "):-1]),
+])
+def test_bad_numbers_are_refused_before_any_github_call(
+        seed, store, root, batch, numbers, message, capsys):
+    assert refused(seed, root, capsys, "--run", str(batch), numbers) == (1, "orch: %s\n" % message)
+    assert snapshot(store) == {"labels": b"needs-triage\t000000\tThe repo's own\n",
+                               "next_issue": b"40\n"}
+
+
+def test_no_numbers_is_refused_with_the_usage_naming_every_form(seed, root, batch, capsys):
+    assert refused(seed, root, capsys, "--run", str(batch)) == (1, USAGE_RUN)
+
+
+def test_a_field_naming_another_finding_is_refused_before_any_github_call(
+        seed, root, batch, capsys):
+    edit_ranked(batch, "Evidence: a `tick`", "Evidence: see finding 2 and a `tick`")
+
+    code, err = refused(seed, root, capsys, "--run", str(batch), "3")
+
+    assert (code, "says 'finding 2'" in err) == (1, True)
+
+
+def test_a_run_with_no_ranked_file_is_refused_before_any_github_call(seed, root, batch, capsys):
+    (batch / "ranked.md").unlink()
+
+    assert refused(seed, root, capsys, "--run", str(batch), "1") == (
+        1, "orch: %s holds no ranked.md\n" % batch)
+
+
+@pytest.mark.parametrize("operation, message", [
+    ("adapter_issues_open_titles", "list the open issues"),
+    ("adapter_issue_create", "create the issue"),
+])
+def test_a_failed_listing_or_first_create_dies_naming_the_step_and_files_nothing(
+        seed, store, root, batch, operation, message, capsys):
+    seed.fail(operation, GH_502)
+
+    code = file_run(seed, root, batch, "1,3")
+
+    assert (code, capsys.readouterr()) == (
+        1, ("", "orch: gh could not %s: HTTP 502: Bad Gateway\n" % message))
+    assert read(store, "issues", 40, "title") is None
+
+
+def test_a_failed_create_partway_keeps_the_lines_filed_and_a_rerun_files_each_once(
+        seed, store, root, batch, capsys):
+    seed.fail_after("adapter_issue_create", 1, GH_502)
+
+    assert file_run(seed, root, batch, "1,3") == 1
+    assert capsys.readouterr() == (
+        "1\t40\tfiled\n", "orch: gh could not create the issue: HTTP 502: Bad Gateway\n")
+    assert read(store, "issues", 41, "title") is None
+    seed.unfail()
+
+    assert file_run(seed, root, batch, "1,3") == 0
+    assert capsys.readouterr().out == "1\t40\topen\n3\t41\tfiled\n"
+    assert read(store, "issues", 40, "body") == BODY_1
+
+
+def test_a_failed_related_write_dies_and_a_rerun_writes_it_then_nothing_more(
+        seed, store, root, batch, capsys):
+    seed.fail("adapter_issue_body_edit", GH_502)
+
+    assert file_run(seed, root, batch, "1,3") == 1
+    assert capsys.readouterr() == ("1\t40\tfiled\n3\t41\tfiled\n", (
+        "orch: gh could not write issue #40's Related line: HTTP 502: Bad Gateway\n"))
+    seed.unfail()
+
+    assert file_run(seed, root, batch, "1,3") == 0
+    assert read(store, "issues", 41, "body").endswith("\n\n**Related:** #40\n\n")
+    before = snapshot(store)
+    file_run(seed, root, batch, "1,3")
+    assert snapshot(store) == before
+
+
+def test_a_failed_read_of_an_open_issue_dies_naming_it(seed, root, batch, capsys):
+    file_run(seed, root, batch, "3")
+    seed.fail("adapter_issue_body", GH_502)
+    capsys.readouterr()
+
+    assert file_run(seed, root, batch, "1,3") == 1
+    assert capsys.readouterr() == (
+        "1\t41\tfiled\n3\t40\topen\n", "orch: gh could not read issue #40: HTTP 502: Bad Gateway\n")
+
+
+def test_a_failed_label_create_is_ignored_by_a_run(seed, store, root, batch, capsys):
+    seed.fail("adapter_label_create", GH_502)
+
+    assert file_run(seed, root, batch, "2") == 0
+    assert labels_of(store, 40) == ["needs-triage", "enhancement"]
