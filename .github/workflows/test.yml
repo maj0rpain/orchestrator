@@ -194,7 +194,9 @@ jobs:
               || { echo "no step failure line for '$cmd'" >&2; echo "$out" >&2; exit 1; }
           done
       # CHANGELOG_BASE stays unset: fragment.yml enforces the changelog
-      # fragment rule. ORCH_SH is already set by the image.
+      # fragment rule. ORCH_SH is already set by the image. CI passes in, as
+      # on the runner, so a tool the suite skips without - the image's
+      # /opt/orch-dev venv, shellcheck - fails the group instead.
       - name: Verify in the container
         env:
           ORCH_TEST_SHARD: ${{ matrix.shard }}/4
@@ -206,6 +208,7 @@ jobs:
             -v "$PWD:/work" -w /work \
             -v "$tmp_home:/tmp/home" \
             -e HOME=/tmp/home \
+            -e CI \
             -e ORCH_AUTOPILOT=1 \
             -e ORCH_MODEL=opus \
             -e ORCH_MODEL_IMPLEMENTER=sonnet \

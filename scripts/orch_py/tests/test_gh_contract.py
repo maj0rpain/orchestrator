@@ -121,10 +121,12 @@ def test_issue_body_keeps_carriage_returns_and_drops_only_gh_s_newline(fixture_g
     assert real_gh(fixture_gh).issue_body(5) == "one\r\ntwo\n\n"
 
 
+ISSUE_JSON = ["issue", "view", "5", "--json", "number,title,body,labels",
+              "--jq", "{number, title, body, labels: [.labels[].name]}"]
+
+
 def test_issue_json_is_the_trimmed_issue_object(fixture_gh):
-    argv = ["issue", "view", "5", "--json", "number,title,body,labels",
-            "--jq", "{number, title, body, labels: [.labels[].name]}"]
-    fixture_gh.reply(argv, '{"number":5,"title":"T","body":"B","labels":["bug"]}\n')
+    fixture_gh.reply(ISSUE_JSON, '{"number":5,"title":"T","body":"B","labels":["bug"]}\n')
 
     assert real_gh(fixture_gh).issue_json(5) == {
         "number": 5, "title": "T", "body": "B", "labels": ["bug"]
@@ -133,49 +135,53 @@ def test_issue_json_is_the_trimmed_issue_object(fixture_gh):
 
 @pytest.mark.parametrize("answer", ["not json\n", "[1, 2]\n"])
 def test_issue_json_that_is_not_an_issue_object_is_unparsed(fixture_gh, answer):
-    argv = ["issue", "view", "5", "--json", "number,title,body,labels",
-            "--jq", "{number, title, body, labels: [.labels[].name]}"]
-    fixture_gh.reply(argv, answer)
+    fixture_gh.reply(ISSUE_JSON, answer)
 
     with pytest.raises(Unparsed):
         real_gh(fixture_gh).issue_json(5)
 
 
+COMMENTS = ["issue", "view", "5", "--json", "comments"]
+
+
 def test_issue_comments_are_gh_s_raw_comment_objects(fixture_gh):
     comment = {"author": {"login": "ann"}, "authorAssociation": "OWNER",
                "createdAt": "2026-01-01T00:00:00Z", "body": "Hi", "url": "u"}
-    fixture_gh.reply(["issue", "view", "5", "--json", "comments"],
-                     '{"comments": [%s]}\n' % json.dumps(comment))
+    fixture_gh.reply(COMMENTS, '{"comments": [%s]}\n' % json.dumps(comment))
 
     assert real_gh(fixture_gh).issue_comments(5) == [comment]
 
 
 @pytest.mark.parametrize("answer", ["nope\n", '{"comments": 3}\n', "[]\n"])
 def test_issue_comments_that_are_no_comment_list_are_unparsed(fixture_gh, answer):
-    fixture_gh.reply(["issue", "view", "5", "--json", "comments"], answer)
+    fixture_gh.reply(COMMENTS, answer)
 
     with pytest.raises(Unparsed):
         real_gh(fixture_gh).issue_comments(5)
 
 
-def test_issue_state_labels_reads_the_state_then_the_labels(fixture_gh):
-    argv = ["issue", "view", "5", "--json", "state,labels",
+def state_labels_argv(number):
+    return ["issue", "view", str(number), "--json", "state,labels",
             "--jq", ".state, (.labels[].name)"]
-    fixture_gh.reply(argv, "OPEN\nbug\nready-for-agent\n")
-    fixture_gh.reply(["issue", "view", "6", "--json", "state,labels",
-                      "--jq", ".state, (.labels[].name)"], "CLOSED\n")
+
+
+def test_issue_state_labels_reads_the_state_then_the_labels(fixture_gh):
+    fixture_gh.reply(state_labels_argv(5), "OPEN\nbug\nready-for-agent\n")
+    fixture_gh.reply(state_labels_argv(6), "CLOSED\n")
     gh = real_gh(fixture_gh)
 
     assert gh.issue_state_labels(5) == ("OPEN", ["bug", "ready-for-agent"])
     assert gh.issue_state_labels(6) == ("CLOSED", [])
 
 
+def state_labels_body_argv(number):
+    return ["issue", "view", str(number), "--json", "state,labels,body",
+            "--jq", ".state, (.labels | length), (.labels[].name), .body"]
+
+
 def test_issue_state_labels_body_splits_on_the_label_count(fixture_gh):
-    jq = ".state, (.labels | length), (.labels[].name), .body"
-    fixture_gh.reply(["issue", "view", "5", "--json", "state,labels,body", "--jq", jq],
-                     "OPEN\n2\nbug\nwip\nline one\nline two\n\n")
-    fixture_gh.reply(["issue", "view", "6", "--json", "state,labels,body", "--jq", jq],
-                     "OPEN\nmany\n")
+    fixture_gh.reply(state_labels_body_argv(5), "OPEN\n2\nbug\nwip\nline one\nline two\n\n")
+    fixture_gh.reply(state_labels_body_argv(6), "OPEN\nmany\n")
     gh = real_gh(fixture_gh)
 
     assert gh.issue_state_labels_body(5) == ("OPEN", ["bug", "wip"], "line one\nline two")
@@ -240,13 +246,13 @@ def test_the_issue_list_limit_stops_at_github_s_search_cap(fixture_gh, capsys):
     assert capsys.readouterr().err == ""
 
 
-PARENT = ["api", "repos/{owner}/{repo}/issues/5", "--jq", ".parent_issue_url // empty"]
+def parent_argv(number):
+    return ["api", "repos/{owner}/{repo}/issues/%d" % number, "--jq", ".parent_issue_url // empty"]
 
 
 def test_issue_parent_is_the_number_in_the_parent_url_or_none(fixture_gh):
-    fixture_gh.reply(PARENT, "https://api.github.com/repos/o/r/issues/12\n")
-    fixture_gh.reply(["api", "repos/{owner}/{repo}/issues/6", "--jq",
-                      ".parent_issue_url // empty"], "")
+    fixture_gh.reply(parent_argv(5), "https://api.github.com/repos/o/r/issues/12\n")
+    fixture_gh.reply(parent_argv(6), "")
     gh = real_gh(fixture_gh)
 
     assert gh.issue_parent(5) == 12
@@ -254,7 +260,7 @@ def test_issue_parent_is_the_number_in_the_parent_url_or_none(fixture_gh):
 
 
 def test_a_parent_url_with_no_issue_number_fails(fixture_gh):
-    fixture_gh.reply(PARENT, "https://api.github.com/repos/o/r/issues/\n")
+    fixture_gh.reply(parent_argv(5), "https://api.github.com/repos/o/r/issues/\n")
 
     with pytest.raises(GhFailed) as failed:
         real_gh(fixture_gh).issue_parent(5)
@@ -264,10 +270,14 @@ def test_a_parent_url_with_no_issue_number_fails(fixture_gh):
     )
 
 
+def open_blockers_argv(number):
+    return ["api", "repos/{owner}/{repo}/issues/%d" % number,
+            "--jq", '.issue_dependencies_summary.blocked_by // ""']
+
+
 def test_issue_open_blockers_is_the_summary_count_or_none(fixture_gh):
-    jq = '.issue_dependencies_summary.blocked_by // ""'
-    fixture_gh.reply(["api", "repos/{owner}/{repo}/issues/5", "--jq", jq], "2\n")
-    fixture_gh.reply(["api", "repos/{owner}/{repo}/issues/6", "--jq", jq], "\n")
+    fixture_gh.reply(open_blockers_argv(5), "2\n")
+    fixture_gh.reply(open_blockers_argv(6), "\n")
     gh = real_gh(fixture_gh)
 
     assert gh.issue_open_blockers(5) == 2
@@ -323,15 +333,18 @@ def test_an_issue_create_that_prints_no_issue_url_fails(fixture_gh):
     assert failed.value.stderr == "gh issue create printed no issue URL: done"
 
 
+BODY_EDIT = ["issue", "edit", "5", "--body-file", "b.md"]
+COMMENT = ["issue", "comment", "5", "--body-file", "c.md"]
+
+
 def test_issue_body_edit_and_comment_pass_the_file(fixture_gh):
-    fixture_gh.reply(["issue", "edit", "5", "--body-file", "b.md"], "url\n")
-    fixture_gh.reply(["issue", "comment", "5", "--body-file", "c.md"], "url\n")
+    fixture_gh.reply(BODY_EDIT, "url\n")
+    fixture_gh.reply(COMMENT, "url\n")
     gh = real_gh(fixture_gh)
 
     assert gh.issue_body_edit(5, "b.md") is None
     assert gh.issue_comment(5, "c.md") is None
-    assert fixture_gh.argvs() == [["issue", "edit", "5", "--body-file", "b.md"],
-                                  ["issue", "comment", "5", "--body-file", "c.md"]]
+    assert fixture_gh.argvs() == [BODY_EDIT, COMMENT]
 
 
 def test_issue_relabel_is_one_edit_and_none_with_nothing_named(fixture_gh):
@@ -346,22 +359,23 @@ def test_issue_relabel_is_one_edit_and_none_with_nothing_named(fixture_gh):
     assert fixture_gh.argvs() == [argv]
 
 
+CLOSE_DUPLICATE = ["issue", "close", "5", "--comment", "Dup.", "--duplicate-of", "4"]
+
+
 def test_issue_close_as_completed_or_as_a_duplicate(fixture_gh):
     completed = ["issue", "close", "5", "--reason", "completed", "--comment", "Done."]
-    duplicate = ["issue", "close", "5", "--comment", "Dup.", "--duplicate-of", "4"]
     fixture_gh.reply(completed)
-    fixture_gh.reply(duplicate)
+    fixture_gh.reply(CLOSE_DUPLICATE)
     gh = real_gh(fixture_gh)
 
     gh.issue_close(5, reason="completed", comment="Done.")
     gh.issue_close(5, comment="Dup.", duplicate_of=4)
 
-    assert fixture_gh.argvs() == [completed, duplicate]
+    assert fixture_gh.argvs() == [completed, CLOSE_DUPLICATE]
 
 
 def test_a_failed_write_passes_gh_s_stderr_through(fixture_gh):
-    fixture_gh.reply(["issue", "comment", "5", "--body-file", "c.md"],
-                     stderr="HTTP 502: Bad Gateway\nsecond line\n", exit=1)
+    fixture_gh.reply(COMMENT, stderr="HTTP 502: Bad Gateway\nsecond line\n", exit=1)
 
     with pytest.raises(GhFailed) as failed:
         real_gh(fixture_gh).issue_comment(5, "c.md")
@@ -494,8 +508,8 @@ def died_of(capsys, run):
 
 
 def test_a_failed_call_dies_naming_the_action_gh_s_first_line_and_the_hint(fixture_gh, capsys):
-    argv = ["issue", "close", "5", "--comment", "Dup.", "--duplicate-of", "4"]
-    fixture_gh.reply(argv, stderr="unknown flag: --duplicate-of\nUsage: gh issue close\n", exit=1)
+    fixture_gh.reply(CLOSE_DUPLICATE, stderr="unknown flag: --duplicate-of\nUsage: gh issue close\n",
+                     exit=1)
     gh = real_gh(fixture_gh)
 
     code, out, err = died_of(capsys, lambda: gh_or_die(
