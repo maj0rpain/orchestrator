@@ -16,10 +16,8 @@ import pytest
 
 from orch import audit, common
 from orch.git import FakeGit
-from conftest import AUDIT_USAGE
+from conftest import AUDIT_FIXTURES, AUDIT_USAGE, edit
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-FIXTURES = os.path.join(HERE, "audit_report")
 CHECKOUT = "/nonexistent/checkout"
 
 def report(*args):
@@ -29,14 +27,14 @@ def report(*args):
 
 
 def golden(name):
-    with open(os.path.join(FIXTURES, name + ".html"), "rb") as f:
+    with open(os.path.join(AUDIT_FIXTURES, name + ".html"), "rb") as f:
         return f.read()
 
 
 @pytest.mark.parametrize("name", ["full", "none"])
 def test_report_writes_the_golden_page_byte_for_byte(tmp_path, capsys, name):
     out = tmp_path / "report.html"
-    assert report(os.path.join(FIXTURES, name), out) == 0
+    assert report(os.path.join(AUDIT_FIXTURES, name), out) == 0
     assert out.read_bytes() == golden(name)
     assert capsys.readouterr() == (str(out) + "\n", "")
 
@@ -45,15 +43,8 @@ def test_report_writes_the_golden_page_byte_for_byte(tmp_path, capsys, name):
 def run_dir(tmp_path):
     """A copy of the full/ run directory, at tmp_path/run."""
     path = tmp_path / "run"
-    shutil.copytree(os.path.join(FIXTURES, "full"), str(path))
+    shutil.copytree(os.path.join(AUDIT_FIXTURES, "full"), str(path))
     return path
-
-
-def edit(path, old, new):
-    """<path> with its one <old> replaced by <new>."""
-    text = path.read_text(encoding="utf-8")
-    assert text.count(old) == 1
-    path.write_text(text.replace(old, new), encoding="utf-8")
 
 
 def listing(tmp_path):
@@ -174,7 +165,7 @@ MALFORMED_NONE = [
 @pytest.mark.parametrize("tail, message", MALFORMED_NONE, ids=[m for _, m in MALFORMED_NONE])
 def test_report_refuses_a_malformed_nothing_found_run(tmp_path, capsys, tail, message):
     run = tmp_path / "run"
-    shutil.copytree(os.path.join(FIXTURES, "none"), str(run))
+    shutil.copytree(os.path.join(AUDIT_FIXTURES, "none"), str(run))
     with open(str(run / "ranked.md"), "a") as f:
         f.write(tail)
     refused(tmp_path, capsys, run, tmp_path / "report.html", message)
@@ -227,12 +218,12 @@ def test_report_takes_a_reference_split_spanned_or_fenced(tmp_path, capsys, run_
 
 def test_report_refuses_an_out_html_whose_directory_is_missing(tmp_path, capsys):
     out = tmp_path / "nodir" / "r.html"
-    refused(tmp_path, capsys, os.path.join(FIXTURES, "full"), out,
+    refused(tmp_path, capsys, os.path.join(AUDIT_FIXTURES, "full"), out,
             "the directory for the report does not exist: %s" % out.parent)
 
 
 def test_report_refuses_an_out_html_that_is_a_directory(tmp_path, capsys):
-    refused(tmp_path, capsys, os.path.join(FIXTURES, "full"), tmp_path,
+    refused(tmp_path, capsys, os.path.join(AUDIT_FIXTURES, "full"), tmp_path,
             "the report path is a directory: %s" % tmp_path)
 
 
@@ -243,7 +234,7 @@ def test_a_failed_page_write_leaves_no_page_and_no_temporary_file(tmp_path, caps
 
     monkeypatch.setattr(common.os, "replace", fail)
     out = tmp_path / "report.html"
-    refused(tmp_path, capsys, os.path.join(FIXTURES, "full"), out,
+    refused(tmp_path, capsys, os.path.join(AUDIT_FIXTURES, "full"), out,
             "cannot write the report beside %s" % out)
 
 
@@ -254,7 +245,7 @@ def test_an_out_html_in_a_read_only_directory_keeps_the_earlier_report(tmp_path,
     out.write_text("earlier\n")
     out.parent.chmod(0o555)
     try:
-        refused(tmp_path, capsys, os.path.join(FIXTURES, "full"), out,
+        refused(tmp_path, capsys, os.path.join(AUDIT_FIXTURES, "full"), out,
                 "cannot write the report beside %s" % out)
     finally:
         out.parent.chmod(0o755)

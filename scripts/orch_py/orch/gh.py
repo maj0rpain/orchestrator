@@ -280,26 +280,15 @@ def parse_state_labels_body(text: str) -> Tuple[str, List[str], str]:
     return state, labels, rest
 
 
-def parse_blocker_states(text: str) -> List[Tuple[int, str]]:
-    """<number><TAB><state> lines; GhFailed on a line that is not."""
-    states = []
-    for line in _captured_lines(text):
-        number, _, state = line.partition("\t")
-        if not plain_number(number):
-            raise GhFailed("gh answered a blocker that does not parse: " + line)
-        states.append((int(number), state))
-    return states
-
-
-def parse_numbered_titles(text: str) -> List[Tuple[int, str]]:
-    """<number><TAB><title> lines; GhFailed "gh answered a listing that does
-    not parse" on a line whose number is not one."""
+def parse_numbered_lines(text: str, unparsed: Callable[[str], str]) -> List[Tuple[int, str]]:
+    """<number><TAB><value> lines, as each number and the rest; GhFailed
+    with unparsed(<line>) on a line whose number is not one."""
     rows = []
     for line in _captured_lines(text):
-        number, _, title = line.partition("\t")
+        number, _, value = line.partition("\t")
         if not plain_number(number):
-            raise GhFailed(LISTING_UNPARSED)
-        rows.append((int(number), title))
+            raise GhFailed(unparsed(line))
+        rows.append((int(number), value))
     return rows
 
 
@@ -592,10 +581,10 @@ class Gh:
         """Every open issue, pull requests left out, as its number and title,
         newest first as GitHub lists them - every page, never cut at the
         issue-list limit."""
-        return parse_numbered_titles(self._gh(
+        return parse_numbered_lines(self._gh(
             ["api", "--paginate", "repos/{owner}/{repo}/issues?state=open&per_page=100",
              "--jq", '.[] | select(has("pull_request") | not) | "\\(.number)\\t\\(.title)"']
-        ))
+        ), lambda line: LISTING_UNPARSED)
 
     def issues_labelled_bodies(self, *labels: str) -> List[LabelledBody]:
         """The open issues carrying every label named, oldest first and cut
@@ -727,7 +716,8 @@ class Gh:
              "repos/{owner}/{repo}/issues/%d/dependencies/blocked_by" % n,
              "--jq", '.[] | "\\(.number)\\t\\(.state | ascii_upcase)"']
         )
-        return parse_blocker_states(answer)
+        return parse_numbered_lines(
+            answer, lambda line: "gh answered a blocker that does not parse: " + line)
 
 
 def open_issue_read(

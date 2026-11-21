@@ -17,7 +17,7 @@ from orch import audit
 from orch.filed_finding import FILED_CATEGORY_NAMES
 from orch.git import FakeGit
 from conftest import (
-    AUDIT_USAGE, GH_502, fake, labels_doc, labels_of, orch_audit, read, snapshot,
+    AUDIT_USAGE, GH_502, edit, fake, labels_doc, labels_of, orch_audit, read, snapshot,
     write_labels_doc,
 )
 
@@ -335,7 +335,10 @@ def test_a_finding_holding_a_labelled_line_does_not_parse_back(
     ("Line one, see finding\n3 here.\n", 1, "finding 3"),
     ("First paragraph.\n\nSee candidates #12, then\nthis  report.\n", 3, "candidates #12"),
     ("```\nfinding 1\n```\n\nIn this\nreport here.\n", 5, "this\nreport"),
-], ids=["a-line", "wrapped", "after-a-blank", "after-a-fence"])
+    # bash took the place from the matched text's first appearance, here
+    # inside "finding 12a", so the phrase and line are that earlier text's.
+    ("See finding 12a.\nAnd Finding 1\n", 1, "finding 1"),
+], ids=["a-line", "wrapped", "after-a-blank", "after-a-fence", "text-seen-earlier"])
 def test_a_finding_naming_a_report_s_numbering_is_refused_at_its_line(
         seed, root, finding, parts, text, line, phrase, capsys):
     finding.write_text(text)
@@ -407,14 +410,6 @@ def batch(tmp_path, seed, store):
     (store / "labels").write_text("needs-triage\t000000\tThe repo's own\n")
     seed.next_issue(40)
     return path
-
-
-def edit_ranked(batch, old, new):
-    """The run's ranked file with <old> replaced by <new>, which it must hold."""
-    ranked = batch / "ranked.md"
-    text = ranked.read_text()
-    assert old in text
-    ranked.write_text(text.replace(old, new))
 
 
 def file_run(seed, root, batch, numbers, gh=None):
@@ -500,7 +495,7 @@ def test_a_finding_whose_category_is_in_the_hunter_s_block_is_labelled_with_it(
         seed, store, root, batch):
     with open(batch / "area-2.md", "a") as area:
         area.write("Category: bug\n")
-    edit_ranked(batch, "Title: Deepen d.sh\nCategory: enhancement\n", "Title: Deepen d.sh\n")
+    edit(batch / "ranked.md", "Title: Deepen d.sh\nCategory: enhancement\n", "Title: Deepen d.sh\n")
 
     assert file_run(seed, root, batch, "2") == 0
     assert labels_of(store, 40) == ["needs-triage", "bug"]
@@ -512,7 +507,7 @@ TWO_OVERLAPS_THREE = ("From: area-2:1\n", "From: area-2:1\nOverlaps: 3\n")
 
 
 def test_an_overlap_outside_the_batch_writes_no_related_line(seed, store, root, batch):
-    edit_ranked(batch, *TWO_OVERLAPS_THREE)
+    edit(batch / "ranked.md", *TWO_OVERLAPS_THREE)
 
     file_run(seed, root, batch, "3")
 
@@ -521,7 +516,7 @@ def test_an_overlap_outside_the_batch_writes_no_related_line(seed, store, root, 
 
 def test_an_open_issue_differing_in_crlf_and_trailing_newlines_takes_the_related_line(
         seed, store, root, batch, capsys):
-    edit_ranked(batch, *TWO_OVERLAPS_THREE)
+    edit(batch / "ranked.md", *TWO_OVERLAPS_THREE)
     file_run(seed, root, batch, "3")
     body = read(store, "issues", 40, "body")
     seed.body(40, body.replace("\n", "\r\n") + "\r\n\r\n\n")
@@ -535,7 +530,7 @@ def test_an_open_issue_differing_in_crlf_and_trailing_newlines_takes_the_related
 
 def test_a_second_batch_keeps_the_first_batch_s_numbers_and_never_chains(
         seed, store, root, batch):
-    edit_ranked(batch, *TWO_OVERLAPS_THREE)
+    edit(batch / "ranked.md", *TWO_OVERLAPS_THREE)
     file_run(seed, root, batch, "3")
     file_run(seed, root, batch, "1,3")
 
@@ -565,7 +560,7 @@ SAME_TITLE = ("Title: Whole finding with no source", "Title: Latent bug in a.sh"
 
 
 def test_two_picks_with_one_title_file_one_issue(seed, store, root, batch, capsys):
-    edit_ranked(batch, *SAME_TITLE)
+    edit(batch / "ranked.md", *SAME_TITLE)
 
     code = file_run(seed, root, batch, "1,3")
 
@@ -575,8 +570,8 @@ def test_two_picks_with_one_title_file_one_issue(seed, store, root, batch, capsy
 
 def test_a_shared_issue_and_a_third_pick_overlapping_it_name_each_other(
         seed, store, root, batch, capsys):
-    edit_ranked(batch, *SAME_TITLE)
-    edit_ranked(batch, *TWO_OVERLAPS_THREE)
+    edit(batch / "ranked.md", *SAME_TITLE)
+    edit(batch / "ranked.md", *TWO_OVERLAPS_THREE)
 
     code = file_run(seed, root, batch, "1,2,3")
 
@@ -587,8 +582,8 @@ def test_a_shared_issue_and_a_third_pick_overlapping_it_name_each_other(
 
 def test_a_shared_issue_filed_earlier_from_the_later_pick_still_takes_its_related_line(
         seed, store, root, batch, capsys):
-    edit_ranked(batch, *SAME_TITLE)
-    edit_ranked(batch, *TWO_OVERLAPS_THREE)
+    edit(batch / "ranked.md", *SAME_TITLE)
+    edit(batch / "ranked.md", *TWO_OVERLAPS_THREE)
     file_run(seed, root, batch, "3")
     capsys.readouterr()
 
@@ -600,8 +595,8 @@ def test_a_shared_issue_filed_earlier_from_the_later_pick_still_takes_its_relate
 
 def test_a_shared_issue_rerun_after_its_related_write_failed_takes_the_line(
         seed, store, root, batch, capsys):
-    edit_ranked(batch, *SAME_TITLE)
-    edit_ranked(batch, *TWO_OVERLAPS_THREE)
+    edit(batch / "ranked.md", *SAME_TITLE)
+    edit(batch / "ranked.md", *TWO_OVERLAPS_THREE)
     seed.fail("adapter_issue_body_edit")
     file_run(seed, root, batch, "1,2,3")
     seed.unfail()
@@ -635,7 +630,7 @@ def test_no_numbers_is_refused_with_the_usage_naming_every_form(seed, root, batc
 
 def test_a_field_naming_another_finding_is_refused_before_any_github_call(
         seed, root, batch, capsys):
-    edit_ranked(batch, "Evidence: a `tick`", "Evidence: see finding 2 and a `tick`")
+    edit(batch / "ranked.md", "Evidence: a `tick`", "Evidence: see finding 2 and a `tick`")
 
     code, err = refused(seed, root, capsys, "--run", str(batch), "3")
 

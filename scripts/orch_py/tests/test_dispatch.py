@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from conftest import (
+    AUDIT_FIXTURES,
     VERIFICATION_KNOBS,
     comments_of,
     committed,
@@ -275,8 +276,6 @@ def test_help_lists_both_verification_verbs_and_no_runner_entry_point(tmp_path, 
 
 # --- audit -------------------------------------------------------------------
 
-# The audit report golden files and the run directories they render.
-AUDIT_FIXTURES = Path(__file__).resolve().parent / "audit_report"
 
 
 def test_audit_begin_makes_the_run_directory_recording_head_through_the_dispatch(

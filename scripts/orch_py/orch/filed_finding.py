@@ -15,7 +15,7 @@ import re
 from contextlib import contextmanager
 from typing import Iterator, List, NamedTuple, Optional, Sequence, Tuple
 
-from orch.common import die, temp_text_file
+from orch.common import die, temp_text_file, text_file_write
 from orch.gh import GhFailed, label_listed
 from orch.triage_labels import TriageLabels
 
@@ -195,14 +195,24 @@ def finding_location_check(location: str) -> None:
         die("not a location: %s (want <file>:<line> or <file>:<start>-<end>)" % location)
 
 
+# The refusal when a finding's body temp file cannot be written.
+_BODY_UNWRITTEN = "could not write the issue body to its temp file"
+
+
 @contextmanager
 def finding_body_file_new(body: str) -> Iterator[str]:
     """Yields the path of the temp file holding a finding's issue body
     <body>, removed on exit, so a refusal or a gh failure that dies leaves
     none behind."""
     with temp_text_file(body, "could not create a temp file for the issue body",
-                        "could not write the issue body to its temp file") as path:
+                        _BODY_UNWRITTEN) as path:
         yield path
+
+
+def finding_body_file_rewrite(path: str, body: str) -> None:
+    """Rewrites the body temp file <path>, made by finding_body_file_new, to
+    hold <body>."""
+    text_file_write(path, body, _BODY_UNWRITTEN)
 
 
 def _labelled(line: str, label: str) -> Optional[str]:

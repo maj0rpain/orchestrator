@@ -21,7 +21,7 @@ import sys
 import tempfile
 import time
 from contextlib import contextmanager
-from typing import Callable, Iterable, Iterator, List, NoReturn, Optional, Sequence, Tuple
+from typing import Callable, Iterable, Iterator, List, NoReturn, Optional, Sequence, Tuple, Union
 
 # The directory every checkout keeps the orchestrator's own files in.
 ORCH_DIR_NAME = ".orchestrator"
@@ -119,6 +119,17 @@ def read_text(path: str) -> Optional[str]:
         return None
 
 
+def text_file_write(file: Union[str, int], text: str, unwritten: str) -> None:
+    """Writes <text> to <file> - a path, or an open descriptor it closes -
+    as UTF-8, surrogateescape, so bytes read that way go back as they were.
+    Dies with <unwritten> when it cannot be written."""
+    try:
+        with open(file, "wb") as f:
+            f.write(text.encode("utf-8", "surrogateescape"))
+    except OSError:
+        die(unwritten)
+
+
 @contextmanager
 def temp_text_file(
     text: str,
@@ -136,11 +147,7 @@ def temp_text_file(
     except OSError:
         die(unmade)
     try:
-        try:
-            with os.fdopen(fd, "wb") as f:
-                f.write(text.encode("utf-8", "surrogateescape"))
-        except OSError:
-            die(unwritten)
+        text_file_write(fd, text, unwritten)
         yield path
     finally:
         os.remove(path)

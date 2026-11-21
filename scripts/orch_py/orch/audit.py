@@ -41,6 +41,7 @@ from orch.common import (
     dir_stamp,
     exclude_orch_dirs,
     file_write_atomic,
+    plain_number,
     read_text,
     warn,
 )
@@ -50,6 +51,7 @@ from orch.filed_finding import (
     SPACE_CLASS,
     category_label_ensure,
     finding_body_file_new,
+    finding_body_file_rewrite,
     finding_flags_parse,
     finding_input_check,
     finding_location_check,
@@ -290,7 +292,6 @@ _FIELD = re.compile(r"([A-Z][A-Za-z /]*):" + SPACE_CLASS + r"*(.*)", re.S)
 _AREA_BLOCK = re.compile(
     r"@@" + SPACE_CLASS + r"+finding" + SPACE_CLASS + r"+([0-9]+)" + SPACE_CLASS + r"*")
 _SOURCE = re.compile(r"(area-[0-9]+):([0-9]+)")
-_DIGITS = re.compile(r"[0-9]+")
 RELATED = "**Related:**"
 _RELATED_TAIL = re.compile(r"#[0-9]+( #[0-9]+)*")
 _RECORD_LINE = re.compile(r"([^ \t]*)[ \t]*(.*)", re.S)
@@ -470,7 +471,9 @@ def _para_reference(para: str, starts: List[int], lines: List[int]) -> Optional[
     match = _REFERENCE.search(low)
     if not match:
         return None
-    pos = match.start() + len(match.group(1))
+    # The place is where the matched text first appears, as bash's
+    # ${low%%"${BASH_REMATCH[0]}"*} takes it, which may be before the match.
+    pos = low.find(match.group(0)) + len(match.group(1))
     at = 0
     for start, number in zip(starts, lines):
         if start > pos:
@@ -649,7 +652,7 @@ def _finding_check(n: int, finding: Finding, line: int, count: int,
         return
     overlaps_at = finding.at("Overlaps", line)
     for other in list_lines(overlaps):
-        if not (_DIGITS.fullmatch(other) and 1 <= int(other) <= count and int(other) != n):
+        if not (plain_number(other) and 1 <= int(other) <= count and int(other) != n):
             die("%s: finding %d overlaps '%s', which is not another finding of the file"
                 % (overlaps_at, n, other))
         links.setdefault(n, []).append(int(other))
@@ -678,7 +681,7 @@ def ranked_read(directory: str) -> Run:
                 die("ranked.md line %d: @@ scope names no scope" % line)
             audit_run.scope = arg
         elif kind == "areas":
-            if not _DIGITS.fullmatch(arg):
+            if not plain_number(arg):
                 die("ranked.md line %d: @@ areas takes a count, not '%s'" % (line, arg))
             audit_run.areas = arg
         elif kind == "note":
@@ -686,14 +689,14 @@ def ranked_read(directory: str) -> Run:
                 die("ranked.md line %d: @@ note names no heading" % line)
             audit_run.notes.append((arg, body))
         elif kind == "top":
-            if not _DIGITS.fullmatch(arg):
+            if not plain_number(arg):
                 die("ranked.md line %d: @@ top takes a finding number, not '%s'" % (line, arg))
             audit_run.top, audit_run.top_written, audit_run.top_text, top_line = int(arg), arg, body, line
         elif kind == "none":
             audit_run.none = True
         else:
             expect = len(blocks) + 1
-            if not (_DIGITS.fullmatch(arg) and int(arg) == expect):
+            if not (plain_number(arg) and int(arg) == expect):
                 die("ranked.md line %d: expected @@ finding %d, found '%s': findings are"
                     " numbered from 1 in order" % (line, expect, arg))
             blocks.append((text, line + 1))
@@ -905,15 +908,6 @@ def audit_body_norm(text: str) -> str:
     return text.replace("\r", "").rstrip("\n")
 
 
-def _body_write(path: str, body: str) -> None:
-    """Rewrites the body temp file <path> to hold <body>."""
-    try:
-        with open(path, "wb") as f:
-            f.write(body.encode("utf-8", "surrogateescape"))
-    except OSError:
-        die("could not write the issue body to its temp file")
-
-
 def audit_file_batch(argv: List[str], gh, git) -> int:
     """`audit file --run <dir> <numbers>`: files the ranked findings
     <numbers> (comma separated) of the audit run <dir> as issues, in number
@@ -930,7 +924,7 @@ def audit_file_batch(argv: List[str], gh, git) -> int:
         die(audit_usage())
     seen: List[int] = []
     for item in want:
-        if not _DIGITS.fullmatch(item):
+        if not plain_number(item):
             die("'%s' is not a finding number" % item)
         n = int(item)
         if not 1 <= n <= len(audit_run.findings):
@@ -968,7 +962,7 @@ def audit_file_batch(argv: List[str], gh, git) -> int:
             if finding.category not in ensured:
                 category_label_ensure(gh, finding.category)
                 ensured.append(finding.category)
-            _body_write(body_file, base[n] + "\n\n")
+            finding_body_file_rewrite(body_file, base[n] + "\n\n")
             made = gh_or_die("create the issue", gh.issue_create, finding.title, body_file,
                              [triage, finding.category])
             issue[n], state[n] = made, "filed"
@@ -1029,7 +1023,7 @@ def _related_write_all(audit_run: Run, picked: List[int], base: Dict[int, str],
         unioned = _nums_union(had, pooled[number])
         if unioned == had:
             continue
-        _body_write(body_file, "%s\n\n%s %s\n\n" % (
+        finding_body_file_rewrite(body_file, "%s\n\n%s %s\n\n" % (
             base[match], RELATED, " ".join("#%d" % k for k in unioned)))
         gh_or_die("write issue #%d's Related line" % number, gh.issue_body_edit, number,
                   body_file)
