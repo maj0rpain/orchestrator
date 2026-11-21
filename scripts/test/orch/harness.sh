@@ -410,7 +410,7 @@ helper_copies() {
 
 # The multi-field gh ops gh_op_placement looks for outside the gh module,
 # space-separated, and the trust read it also lets the Trust module name.
-GH_MULTI_FIELD_OPS="adapter_issue_state_labels adapter_issue_state_labels_body adapter_issue_title_labels adapter_issues_labelled_bodies adapter_pr_state_draft adapter_pr_refs adapter_pr_url_head"
+GH_MULTI_FIELD_OPS="adapter_issue_state_labels adapter_issue_state_labels_body adapter_issue_title_labels adapter_pr_state_draft adapter_pr_refs adapter_pr_url_head"
 GH_TRUST_READ_OPS="adapter_issue_authorship"
 
 # The gh op placement rule, as gh_op_placement's message states it.
@@ -632,6 +632,23 @@ orch_load_reads() {
   ' "${mods[@]}")" || return 2
   [ -z "$out" ] && return 0
   printf '%s\n' "$out" | LC_ALL=C sort -u
+  return 1
+}
+
+# dictionary_locale: prints the first of en_US.UTF-8 and en_US.utf8 whose sort
+# collates as a dictionary does - punctuation ignored (a before _p) and case
+# folded (bug before Review) - listed by locale -a or not, and returns 1,
+# printing nothing, when neither does. A check that sets LC_ALL to a locale the
+# machine lacks makes bash warn on stderr, so such a check runs only under what
+# this prints and skips otherwise.
+dictionary_locale() {
+  local try
+  for try in en_US.UTF-8 en_US.utf8; do
+    if [ "$(printf '_p\na\n' | LC_ALL="$try" sort 2>/dev/null | awk -v n=1 'NR<=n')" = a ] \
+      && [ "$(printf 'Review\nbug\n' | LC_ALL="$try" sort 2>/dev/null | awk -v n=1 'NR<=n')" = bug ]; then
+      printf '%s\n' "$try"; return 0
+    fi
+  done
   return 1
 }
 
@@ -4727,7 +4744,7 @@ tr_init "$af"
 tr_put "$af" scripts/test/orch/branch.sh 'x=1' '# --- branch create ---' '# --- branch (x.y) retire ---'
 tr_put "$af" scripts/test/orch/state.sh '# --- state ---'
 tr_put "$af" scripts/test/orch/common.sh '# --- common one ---'
-for af_f in doctor init side-checkout spec-review spec ticket finding-triage; do
+for af_f in doctor init side-checkout spec-review spec ticket; do
   tr_put "$af" "scripts/test/orch/$af_f.sh" "# --- $af_f s ---"
 done
 for af_f in scripts/orch.sh scripts/orch/common.sh scripts/orch/branch.sh \
@@ -4842,7 +4859,7 @@ af_row "a markdown lens-bench fixture selects the lens bench suite" scripts/dev/
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
 af_row "a markdown lens-bench test fixture selects the lens bench suite" scripts/test/lens-bench/run-1/map.md \
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
-af_py_s="finding-triage s,spec-review s,spec s,ticket s"
+af_py_s="spec-review s,spec s,ticket s"
 af_row "a Python package module selects the sections of the nouns that run an issue verb, not the full suite" \
   scripts/orch_py/orch/cli.py "$TR_GATE,$af_py_s,docs_lint.sh"
 af_row "the pytest suite's wrapper selects the harness sections, and shellchecks itself" \

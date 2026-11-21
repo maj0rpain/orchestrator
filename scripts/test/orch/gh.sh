@@ -30,6 +30,10 @@ contract() { env -u ORCH_GH_ADAPTER bash -c 'source "$1"; shift; "$@"' _ "$ORCH"
 # default. fake_online lifts it.
 fake_ratelimit() { printf '%s\n' "${1-API rate limit exceeded for user ID 1.}" >"$ORCH_GH_FAKE_STORE/ratelimit"; }
 
+# fake_duplicate_of <n>: the issue a duplicate close of issue #n named, as the
+# store holds it.
+fake_duplicate_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/duplicate_of" 2>/dev/null; }
+
 # exists_gh: a gh on PATH for issue 5, a collapsed breakdown - no sub-issue,
 # and a body under the ## Ticket heading - for ticket exists 5; it sources the
 # fixture's log.sh to log its calls.
@@ -770,18 +774,13 @@ assert_status "an operation with no store fails" "$st" 1
 assert_contains "saying to call fake_github" "$err" "the gh fake has no store - call fake_github"
 # The second group answers from the store in bash too (#2862): each bare PATH
 # holds only what the function may keep - nothing for a plain read, jq for the
-# comments' JSON, sort and awk for a listing (and grep, which the unconverted
-# fake_issue_labels_counted runs), cat and date for the quota.
-mkdir "$bare_dir/jq" "$bare_dir/catdate" "$bare_dir/sortawkcat"
+# comments' JSON, cat and date for the quota.
+mkdir "$bare_dir/jq" "$bare_dir/catdate"
 ln -s "$(command -v jq)" "$bare_dir/jq/jq"
 for c in cat date; do ln -s "$(command -v $c)" "$bare_dir/catdate/$c"; done
-for c in sort awk tr grep; do ln -s "$(command -v $c)" "$bare_dir/sortawkcat/$c"; done
 fake_issue 40 open Lbl
-printf 'the body\nsecond\n' >"$S/issues/40/body"
 assert_eq "adapter_issue_state_labels gives the state then the labels on an empty PATH" \
   "$(barely empty adapter_issue_state_labels 40 | tr '\n' ' ')" "OPEN Lbl "
-assert_eq "adapter_issues_labelled_bodies gives the count-marked record with sort, awk and the unconverted helper's grep" \
-  "$(barely sortawkcat adapter_issues_labelled_bodies Lbl | tr '\n' '|')" "40|1|Lbl|3|the body|second||"
 printf 'someone\n' >"$S/issues/40/author"; printf 'MEMBER\n' >"$S/issues/40/association"
 printf 'ed\n' >"$S/issues/40/editor"
 assert_eq "adapter_issue_authorship gives author, association, editor and an empty renamer on an empty PATH" \
@@ -1020,13 +1019,6 @@ gh_reply 1 '' 'HTTP 502: Bad Gateway' \
 out="$(contract adapter_issues_titled_rows review:nit 2>&1)"; st=$?
 assert_status "issues titled rows: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
-
-gh_reply 0 $'3\n1\nreview:nit\n2\nline one\nline two\n' '' \
-  issue list --state open --label review:nit --label "triage me" --search "sort:created-asc" --limit 1000 --json number,labels,body \
-  --jq '.[] | .number, (.labels | length), (.labels[].name), ((.body | indices("\n") | length) + 1), .body'
-out="$(contract adapter_issues_labelled_bodies review:nit "triage me" 2>&1)"; st=$?
-assert_status "issues labelled with bodies: lists the open issues carrying every label" "$st" 0
-assert_eq "one count-marked record per issue" "$out" "$(writeln 3 1 review:nit 2 'line one' 'line two')"
 
 # The warning helper's effective limit is the lesser of ISSUE_LIST_LIMIT and
 # GitHub's 1000-row search cap, so a raised override cannot silence a cut.

@@ -731,30 +731,6 @@ fake_search_cut() {
   awk -v n="$ISSUE_LIST_LIMIT" -v cap="$ISSUE_SEARCH_CAP" 'BEGIN{if(n>cap)n=cap} NR<=n'
 }
 
-# adapter_issues_labelled_bodies <label>...: the open issues in the store
-# carrying every label named, oldest first and cut as
-# adapter_issues_labelled_rows is, each as the count-marked
-# record the gh adapter prints: number, label count, labels, the body's line
-# count (its newlines plus one), then the body byte for byte and a newline. The
-# body is read once in bash from the store's path, its newlines counted there.
-adapter_issues_labelled_bodies() {
-  local n nums body nl
-  ! fake_failing adapter_issues_labelled_bodies || return 1
-  fake_need_store || return 1
-  nums="$(fake_labelled_numbers all "$@")" || return 1
-  for n in $nums; do
-    body=""
-    if [ -r "$ORCH_GH_FAKE_STORE/issues/$n/body" ]; then
-      IFS= read -r -d '' body <"$ORCH_GH_FAKE_STORE/issues/$n/body" || true
-    fi
-    nl="${body//[!$'\n']/}"
-    printf '%s\n' "$n"
-    fake_issue_labels_counted "$n"
-    printf '%s\n' "$(( ${#nl} + 1 ))"
-    printf '%s\n' "$body"
-  done
-}
-
 # adapter_issues_open_titles: every open issue in the store, one per line as
 # <number><TAB><title>, newest first, as gh lists them - not cut at
 # ISSUE_LIST_LIMIT.

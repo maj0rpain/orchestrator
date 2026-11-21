@@ -327,9 +327,6 @@ exit $2
 SSH
   chmod +x "$ssh_stub_dir/ssh"
 }
-# seq_lines <prefix> <count>: prints <count> numbered lines, "<prefix> line
-# <i>".
-seq_lines() { local i; for ((i = 1; i <= $2; i++)); do echo "$1 line $i"; done; }
 # fails_bin lives in the failing-command fixture, scripts/test/fails.sh.
 
 # git_fails_bin <pattern>: a fails_bin for git.
@@ -576,23 +573,6 @@ layer_upcalls() {
     defs+=("$f")
   done
   layer_calls "${defs[@]}" -- "$dir/orch/$file"
-}
-
-# dictionary_locale: prints the first of en_US.UTF-8 and en_US.utf8 whose sort
-# collates as a dictionary does - punctuation ignored (a before _p) and case
-# folded (bug before Review) - listed by locale -a or not, and returns 1,
-# printing nothing, when neither does. A check that sets LC_ALL to a locale the
-# machine lacks makes bash warn on stderr, so such a check runs only under what
-# this prints and skips otherwise.
-dictionary_locale() {
-  local try
-  for try in en_US.UTF-8 en_US.utf8; do
-    if [ "$(printf '_p\na\n' | LC_ALL="$try" sort 2>/dev/null | awk -v n=1 'NR<=n')" = a ] \
-      && [ "$(printf 'Review\nbug\n' | LC_ALL="$try" sort 2>/dev/null | awk -v n=1 'NR<=n')" = bug ]; then
-      printf '%s\n' "$try"; return 0
-    fi
-  done
-  return 1
 }
 
 # --- doctor harness ---------------------------------------------------------
@@ -894,12 +874,10 @@ handoff_doctor_missing_msg() {
 fake_next_issue() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_issue"; }
 
 # Issue #n read back from the store: its state (OPEN or CLOSED), closing
-# reason, the issue a duplicate close named, title, body, labels (sorted,
-# space-separated, one trailing space) and the bodies of its comments, in
-# order, one blank line between.
+# reason, title, body, labels (sorted, space-separated, one trailing space) and
+# the bodies of its comments, in order, one blank line between.
 fake_state_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/state" 2>/dev/null; }
 fake_reason_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/reason" 2>/dev/null; }
-fake_duplicate_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/duplicate_of" 2>/dev/null; }
 fake_title_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/title" 2>/dev/null; }
 fake_body_of()   { cat "$ORCH_GH_FAKE_STORE/issues/$1/body" 2>/dev/null; }
 fake_labels_of() { LC_ALL=C sort "$ORCH_GH_FAKE_STORE/issues/$1/labels" 2>/dev/null | tr '\n' ' '; }

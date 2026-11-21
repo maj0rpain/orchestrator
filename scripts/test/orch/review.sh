@@ -105,6 +105,10 @@ fake_pr_url() {
   printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/prs/$1/url"
 }
 
+# seq_lines <prefix> <count>: prints <count> numbered lines, "<prefix> line
+# <i>".
+seq_lines() { local i; for ((i = 1; i <= $2; i++)); do echo "$1 line $i"; done; }
+
 # parts_with <flag> [<value>]: sets args to review file's parts - its --flag
 # value pairs - with <flag>'s value replaced by <value>, in place, or, given no
 # value, with <flag> and its value dropped. An empty <value> still replaces.

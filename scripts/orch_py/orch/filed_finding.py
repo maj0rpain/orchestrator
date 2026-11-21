@@ -1,8 +1,10 @@
 """The Filed finding module, as the bash side's filed-finding.sh holds it: an
 issue a review loop filed carries a review:<severity> label until finding
-triage gives it one of its own labels (ADR-0031). Issue triage and finding
-triage read it: its filed severities and their label test, its categories
-with each one's label, and its issue body parsed back into its fields.
+triage gives it one of its own labels (ADR-0031). The issue and
+finding-triage nouns read it - issue triage and finding triage: its filed
+severities and their label test, its categories with each one's label, and
+its issue body parsed back into its fields. The bash side's copy serves
+review file, audit file and audit report.
 """
 from __future__ import annotations
 

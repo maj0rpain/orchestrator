@@ -1,43 +1,43 @@
-2	3	isolation	dcc098dfb82b3932dbfb65578f882c8507576326
-20	15	isolation under a git hook (#1905)	f861e1294bb97c5ffa889240cd4030342a213e6d
-18	20	the section filter (ORCH_TEST_ONLY, #612)	4c6fb445a7b822a5b50df37d5acc1394d0f9f64f
-10	12	quiet mode (ORCH_TEST_QUIET, #614)	a8d911499ff8ab4256e0564fe0e6cd3d86966fc9
-21	59	the parallel runner (ORCH_TEST_JOBS, #780)	d9556eaf93e6dc8d3d26460a7dc718f781316406
-16	27	the parallel runner's start order (#2857)	3a57d51a150ddc8c901173cf75273d001757a4c4
-119	111	the shard setting (#2859)	da627707f5498ab5b0d932f7b1c4c31d8c64c137
-13	19	the seeded start (stub cache)	29b37ccf518292e83eed0cf14563b9ca68a2f7ea
-279	197	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	36d5ea6127e4c39b6396a8a302c3533f0c57d506
-3	5	assertions in a subshell (#1904)	d75377326d28823acab6b689eea1454f5f3e15f6
-2	3	the standalone suites' tally (#1904)	021735ae41e6ac9c19772a20246c8ac89ab75a85
-14	20	the section files (#932)	a6f80baf696d85717f8d2b8aecab1220e505e801
-429	39	the suite's temp root (#807)	796cc2fa2b4656c15cdd45af99213fd32ab78e13
-2	3	the real-gh guard (#779)	0cb306263b2070766feeadff7eb1c9c8cee0fbc2
-46	39	all.sh, the single entry point (#615)	671d50f2c5c3abe3b689524bde84fd83d1bd0116
-1	2	all.sh's suite list holds every runner (#1941)	d01106366b8454727b3949f0fe532ea1ebec8dd6
-49	129	the job pool (#2022)	da54503d48e1154dc2e95b8a388a679a2acf0bf3
-1	1	the slot fd contract (#2300)	4071ba4136f28ce338a8621cc350f191b372b765
-68	27	the test runners' CPU load (#1586)	b1d37af3b4777ae4779b00824ec60c12a33fdd09
-2	2	shell code (#1411)	96bcb32bdd7fc32c90d1fb6e303c63495fb5e23d
-129	130	test-helper placement (#1006)	a61b890c374365c866d1513f50fc7a9080070d96
-67	68	helper body copies (#3170)	ce40eb56c68f8264291506aba330c79b94129329
-10	115	gh op placement (#1037)	89118e905d1e542aed0f3351353c539e14bc7ba3
-10	11	marked comment prelude placement (#1853)	5e657fc19c9ed3c51c1cc2983fc9bf109d83a8ab
-37	38	comment reader placement (#3085)	354ee09cbe904998045076bfc897bff04271e046
-31	32	orch_load before cross-module reads (#2868)	a7aaf74e4273ff5d67797cd3651d215f9b88da9c
-5	6	on-demand sourcing variable (#2820)	1309380504a647817dcaf29e6256b8f568c17c01
-1	2	declaration substitutions (#1327)	adc0a82a872466503f08c3d5f8909361dc008e77
-1	27	the helper index (#1144)	e16d52af83bdb7cff2cf60a377e179db3702bdb5
-1	1	stand-in adapter (#2465)	7d6783cff3417fa24df5d56ae3f86d142ee2d1bb
-1	2	git env clear (#1905)	42f04661b72dcbad39c30539b3bc232102ae6be1
-4	5	runner git isolation (#1905)	8a9fdfa474a45f0cec209eae61f2a39017a72878
-1	1	the background child start (#3025)	354c49d28c4e3a750db2908e06024e2d6d5bc65f
-2	2	the suite start (#3582)	bfaaeecc9758c77d4bc24ba781558792eeb10bec
-8	8	the pytest suite (#3912)	0d1f56e811a57b7b853c2ce132f071b271092d44
-2	3	the counting fixture's stdin counter (#3434)	a145120e7c438785387cdcf0178edcf7e2f9dcaa
-83	90	affected.sh, the ticket verification (#2023)	6d2f0e3497f26635e6206d83fa1cab160d418e08
-3	4	the row rule (#3549)	01fe024c61ad3fd46f0efb0820a8ee0ff79809d9
-6	8	the shared test support, function by function (#3550)	0f4c5f1f63e2388d954769b98fd20c3cec532574
-5	6	the gh fake, operation by operation (#3551)	e4020e43a1578edf25e0543fc3e0d9e57a5494a2
+2	3	isolation	14331555320424757450e0722b9493e11423ed2d
+19	15	isolation under a git hook (#1905)	45f5a71748ca8fa46027f48cc10bf5f00213e426
+17	20	the section filter (ORCH_TEST_ONLY, #612)	144641f047ab1a18da85c2969f42d7b9a490a1e9
+11	12	quiet mode (ORCH_TEST_QUIET, #614)	b022221d40cb0a733f6027f9ef30013f40ce4c56
+219	58	the parallel runner (ORCH_TEST_JOBS, #780)	dab35062da31cadb2ac0cc39a1d41be10b41d0a2
+17	27	the parallel runner's start order (#2857)	fb64c0951bb97cbe156fa9dfad4271ac98d4cc24
+125	117	the shard setting (#2859)	177ec313b944b342a7676b8297a66ef3861ae7d0
+17	22	the seeded start (stub cache)	339301504cb6509e07c0e87d4447583030e53c57
+287	210	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	b268453dd2916a498271b371ee34084defbe0d18
+4	6	assertions in a subshell (#1904)	c48a8c08e47c72bd83f55e2e09e93efdbc3e8335
+2	3	the standalone suites' tally (#1904)	1c04a6f6d92f00b8e1a96fba61d07435ebafd5df
+15	20	the section files (#932)	b10810929c8d6cc8ae4b510d76990ecb9faad9bd
+338	37	the suite's temp root (#807)	6918ae473032f98b472888a991d4b5306547fc4c
+2	3	the real-gh guard (#779)	10e03aede7f7c496662cbd872164f4b7f4df1ef5
+48	42	all.sh, the single entry point (#615)	fc05f940ebe87d3359f1d154a5a13a85369bb7f7
+1	2	all.sh's suite list holds every runner (#1941)	cb146add0354344dcd0d7851d1ac5cd659422120
+499	139	the job pool (#2022)	e913454fbc47a72f2df3b88a6937a871b21320ef
+1	1	the slot fd contract (#2300)	96a4fd2caea07eacfe4d178bccb96495b735236d
+68	28	the test runners' CPU load (#1586)	b5498eab21c84238139d84c3615adcb049ea4830
+2	3	shell code (#1411)	c39391f5d705bc90e3eb363ff6162b3cbe1d2d51
+12	134	test-helper placement (#1006)	8ccdfba38261d2240e943d9a914a9a2cabf7f712
+69	70	helper body copies (#3170)	0b4feeecb1ea4c20117283e40ce681439708c80d
+88	89	gh op placement (#1037)	9da904cdee9189914799cf8786f67fbb63b4cbce
+9	10	marked comment prelude placement (#1853)	334bd4b96b210a43aa9f96f7d7a14a0c1be3a584
+35	36	comment reader placement (#3085)	74a278b2ddb9897cff5d9031fd650030fcda8108
+2	29	orch_load before cross-module reads (#2868)	93caf138a7cca764f179e09a6e17d365c852f52f
+6	7	on-demand sourcing variable (#2820)	6bfa9fb24eb5878500a2e5fe1f761bcc3b0ae8ea
+1	2	declaration substitutions (#1327)	5ed795d88b81bee9c3844c0a7559793f297b3738
+15	22	the helper index (#1144)	78dbd86db3997910a6775adde70690c023f4a0b2
+1	2	stand-in adapter (#2465)	63660be9b221b2cebcbf854df60e89475ec8053e
+1	2	git env clear (#1905)	1dae119a454948821a2472e71514a5903626cbd5
+5	5	runner git isolation (#1905)	fafca2bb28ffae39e442e15b4b07141bfd7c8b4e
+1	1	the background child start (#3025)	53110640c5a9e6d2621e348ac3f8e1e59b282e08
+2	2	the suite start (#3582)	c66c289d7db165a78a047d8b9f879546eabc8c5b
+8	8	the pytest suite (#3912)	7892a2fa4020e2262d79a63762560b8eff4f6d41
+2	3	the counting fixture's stdin counter (#3434)	41cef4f4dd4b9d93cfbb3d353ab5594a83a33e75
+85	93	affected.sh, the ticket verification (#2023)	f3fc2369e2756be8e555360d4a1ea668d082c98d
+3	4	the row rule (#3549)	5b08c061d4560e9dd1ca801e255ac60dabf74a41
+7	9	the shared test support, function by function (#3550)	3a43a0d9602885bf83598757a295834b139c9bb7
+5	7	the gh fake, operation by operation (#3551)	4bc6b669decb24b47a536d79316ba276beb04741
 64	70	agent	0d79b59e4f3295e93a9ede1bda22fbbc139f7e19
 20	22	agent sync	b39ad35449afd2ba48dfe47fd1a68a53a2d8c22b
 3	4	agent copy marker and Junie field: no command per call	7261e94ea71b44582780d728312d592266f2e005
@@ -165,20 +165,17 @@
 2	3	category table	936a5e8b2f00a434df3adb306e2542dd71c175f9
 1	2	axis table	e40740a4628929a0916a63a510c2590c3efae4a6
 9	10	finding body	5696eec5199d748658645aa3edd3f64bf40a7c35
-58	41	finding-triage scan	342c6006bbdf721f2803384daa7755f93eb916bd
-91	105	finding-triage apply	8ef1b718be7569dccc002d3db335be58da2354c1
-114	134	finding-triage bundle	01854aee6fc7a32daed655eb528f22d32c6a6bce
-12	14	every gh call pinned to the repo (#520)	59564d2c99032d83ca27346fcd0c101f9d0d5df4
-2	3	gh_reason and capture_err (#846)	93555e4d3f94e680e1cdee1f8505793c14ea0ac2
-1	2	label_listed	c21130ded304e6541f7c849ac1d37e41c6ebab70
-22	23	gh failure verb and readers (#1022)	2097a36ddbe780c406bd69a9fff4ebc6ccac848e
-4	5	verify_twice (#2658)	cb89c18b4c5350fa648b0ef2f3128c7fd7902bbc
-13	15	gh fake (#280)	c4d442b59311e8208794a4d13b1206e627e79a46
-103	111	gh adapter contract (#280)	3874d2d9455ab34c0c94d4e8892251f60b2830bb
-19	21	claim adapter operations (#1454)	f2762a6f9136344048ab09002de712436c579cc0
-3	4	label casing (#1943)	65812079d897c661bef1906c9f01c794bf909c20
-45	33	gh rate limits (#2577)	bb6755fdcd0f1974dfc3712d37c1bb96bffe359c
-12	13	gh rate limits: the GitHub pause and the hit file (#2577)	a820a2df76e497fb4b0d0349a519ff431d9337b3
+18	20	every gh call pinned to the repo (#520)	dc4b457722320e58c8666c05404851c65334dbfc
+2	3	gh_reason and capture_err (#846)	095a11c195140d34a159babf35edf478a88ae658
+2	2	label_listed	a8ee5ba113a5b8ad46d21d87f9f5a69bec86286e
+25	26	gh failure verb and readers (#1022)	0cd9543f9c4e6ebdb9fc4a21ee840be35b7f47ba
+5	6	verify_twice (#2658)	aa521269c4c6af09438f04e9d4b0f6ed45b716c6
+15	17	gh fake (#280)	72ead2fb3f5d0b424ac4e6d1cb04c18540099040
+16	184	gh adapter contract (#280)	c2b6071719c5dbf3f339fa2b070ef48caa2c871a
+22	24	claim adapter operations (#1454)	00d248bcaf92e509ae82a735118d19ee3eaae9f4
+4	5	label casing (#1943)	7e3b89c80227bd15583b493104e3fd6e36ff9f1c
+61	46	gh rate limits (#2577)	9ff503560d53d5f90fc4290850ee8e77ae779f07
+14	15	gh rate limits: the GitHub pause and the hit file (#2577)	81ab2bc578eeeaacb0cab9ae3ddf537247cf6e64
 0	1	slug	0e5d14cb85802ac178af168a4ee7e009fa0b927b
 9	11	archive	ab01c77d6d8c6c3784c7e3244adedb382528bdd9
 6	7	status	5d72b4243f86d69884e2350f8a6bb4269b4ac54d
@@ -213,7 +210,6 @@
 5	6	init --issue trust warning	e3f8a66b3ae93ca44a635cd3eae2decbe1c33c24
 185	223	issue-timeline module	c60c74521e712ce2d67cc0b5fceb0a3a9673363e
 3	4	known-items module	822bb4b7d6bc24d8ddf679e4aa02e11d5f0562a4
-37	24	lines_fate	57058870d6d783311a61b5e56f26d005da2e4f80
 8	9	Liveness module	a3eb853321244ddc291751d37b820bf4e3a80df7
 12	14	orch_load	78936724de415f7d72a2cb1732f2ec537485646c
 9	11	on-demand loading	6f5f8fdb61e60028685965dbdd5c3eb5ae8397b7
@@ -253,29 +249,29 @@
 7	8	default-branch	0177d6e5817d4d0befacac87fc2b2a0f621ad11b
 9	10	review-pass begin (#342)	c9a9274e4ded397a8c551e3b82717cd167110d2b
 52	64	review-pass known-items	1fef82c7211e3ec0461af015f37fbe44425ea8b8
-14	15	review ready's pointer to /orchestrator:finish (#727)	67b87c1a3e5d6a1be771ad269ac5911449b717af
-13	14	review begin	47fcbc727fc01c1d430ee0277d2ff47fa0e78bbb
-4	5	review path	b592ca2006a75b140123da9e0f8ddb30729a8a0a
-5	6	the multi-loop machinery is gone	6e8329be15e5f8d38ea6e8f08e4474cef89b06d8
-43	47	review file	7b1d4ce05800b8733c8c9e1ac7f5e5e08e1f8203
-13	15	review ready	72485745ada64338e42a649ec5e7c7166a63bfbb
-134	76	review ci	e0eabf65a00a7c84d616625f329887b7c1c150a2
-14	13	the grace counts from the push (issue #475)	eed4ba4e16610b43781cdbd91b6acbb614cf36b7
-15	16	review ci --no-wait	0bc15a61db0215884737caff9f6c6d30fce5b06a
-53	45	the grace is skipped on no evidence of CI (issue #476)	29dfbba237b9733786033a072f8ad7898a77481c
-9	10	review rerun	9b49427fc69cbaed3110c1d17f70a17c8eb1996e
-5	6	review ci-log	1a084582882afcd2fa9b50ceb555009a027aed78
-22	24	review terminal	fe93b1fe6ad70a880cc2c076ff418e2c5640e553
-32	33	review resume	f8ace5091e41995ff91d55dbf66935d984cb3354
-5	6	review retire	26b64e236dcc7d43f25a71127add340bd99df4b7
-11	12	review known-items	d91a134cfdf0aedec86c357449640db764801ab7
-11	12	review ready in an autopilot flow (#1457)	0daca9a84f2e287952a590d542b4bfbcec453098
-11	12	review known-items in an autopilot flow (#1457)	bce3da223e398f11580dda310f270c3275a1daca
-12	15	review standards (#1532)	bf761e5fbbec85dff1751ef9676923badfe24d90
-9	10	review ready with a failed phase write (#1931)	1fd5359c063a3ebff8961a61aa54cf13c17e846a
-10	11	review reads its Flow state once	3d0c1461bce97881d5b707c264dc0c3cc3b42255
-5	6	review_terminal_record fallback reads once	6938f4cff5b2f33fd0bed0cddc9cab096ed5f0f9
-6	7	review ci <pr>	93c09969f98de8377631b62c8e1cec9ca3d81350
+9	10	review ready's pointer to /orchestrator:finish (#727)	a9893c51acef3ce895b43d0f178599536435af94
+9	9	review begin	2ba9abde67db964730094c5a058de13e5ce061f2
+4	4	review path	7a16101d8b9b2159fca6d4f36f49cd0498205b47
+4	5	the multi-loop machinery is gone	4dc68ec08cdec3b566ae5db0cad490f806bb3f6c
+4	53	review file	ab82ec37844764bf50066b4a4c84f5d6c03383df
+12	13	review ready	853aca9f0b07301bf30cd70bb93cc1a9b4d8b763
+151	98	review ci	d69f950f561222ae0fa1d085e1ec31dd56673459
+16	15	the grace counts from the push (issue #475)	8557eb987d19d3da66520ea670fd868e2897accb
+17	18	review ci --no-wait	9dd6035438b4f4904bab68b6f88c4e6b7eda540f
+63	56	the grace is skipped on no evidence of CI (issue #476)	5b7f7e1d1df70ef1e2047b1afc7dc7473b8156d7
+13	15	review rerun	b425acf9a911d38030568a91d8a82655f0f6652f
+8	9	review ci-log	73944cda2851026f6a0b6b12969a0e07a97b7a74
+18	19	review terminal	72ab8a9090f9c2b0c797054eb2a98c97f0ea12f7
+22	24	review resume	a2c39bca6d2c13a816bfacef80785192a2f36d55
+4	5	review retire	d9b613e77e4967b95de352aa3336850e2a96ef96
+11	13	review known-items	b76ae4a4ac837766ed3a8185ae1d97a8246659ad
+9	9	review ready in an autopilot flow (#1457)	33a90ecc750788eb8dbb43f5c6ff343f0ea2164d
+8	9	review known-items in an autopilot flow (#1457)	4aa6dc9c2ece07068e0b2d9934e6d702883635b5
+20	24	review standards (#1532)	00508b8ab92107103a0a56b72e3864877919a3de
+8	9	review ready with a failed phase write (#1931)	db1a69dab77042aca601138bdc6e6d2db8719efd
+8	9	review reads its Flow state once	5afa7960282b47a0db2fbad77169c9e9899851d4
+4	4	review_terminal_record fallback reads once	bbbb15692b368d4d89e9ec30cf7e508f29cae285
+13	10	review ci <pr>	77afb3ecce576d16039afd6e0a737d20b4327d17
 2	3	route show	e41cb9679b1f09b9a73382b655216a8aff604ccd
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
 38	40	side-checkout (#722)	753522fea8c0be1dec4dc2f8633b7a5d78439049

@@ -7,8 +7,9 @@ the other way round. orch.gh.adapter() picks it whenever ORCH_GH_FAKE_STORE
 is set.
 
 Each operation honours the store's failure files under the bash adapter's
-operation name - adapter_<the method's name> - read before the operation
-touches the store: fail/<operation>, with its fail/<operation>.after and
+operation name - adapter_<the method's name>, kept by an operation whose bash
+counterpart is gone, as adapter_issues_labelled_bodies is - read before the
+operation touches the store: fail/<operation>, with its fail/<operation>.after and
 fail/<operation>.times countdowns, offline, ratelimit and noauth. A failure
 goes through the real adapter's rate-limit handling (orch.gh.Limits), the
 rate_limit read answering from the store's quota. The reads the bash fake

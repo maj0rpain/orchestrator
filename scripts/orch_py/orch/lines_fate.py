@@ -1,7 +1,6 @@
-"""The Lines fate module, as the bash side's lines-fate.sh holds it: a concept
-module with no noun of its own, holding what became of a range of a file's
-lines at a ref since a commit filed them. Only finding triage's scan reads it,
-through lines_fate.
+"""The Lines fate module: a concept module with no noun of its own, holding
+what became of a range of a file's lines at a ref since a commit filed them.
+Only finding triage's scan reads it, through lines_fate.
 
 The hunk-header parse, the line mapping, the deleted ranges, the range
 segments and the "lines differ" test are plain functions over parsed hunk

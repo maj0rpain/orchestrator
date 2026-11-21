@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from orch.gh import Gh, GhFailed, IssueRow, LabelledBody, adapter, parse_labelled_bodies
+from orch.gh import Gh, GhFailed, IssueRow, LabelledBody, adapter
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit
 from orch.repo import RepoPin
@@ -25,11 +25,11 @@ BASH_HELPERS = {
         "fake_comment_seed", "fake_comment", "fake_comment_bodies", "fake_label",
         "fake_next_issue", "fake_fail", "fake_fail_after", "fake_fail_times",
         "fake_unfail", "fake_offline", "fake_online", "fake_quota", "fake_lag",
-        "fake_state_of", "fake_reason_of", "fake_duplicate_of",
+        "fake_state_of", "fake_reason_of",
         "fake_title_of", "fake_body_of", "fake_labels_of", "fake_comments_of",
         "fake_pr", "fake_labels", "fake_default_branch",
     ],
-    SCRIPTS / "test" / "orch" / "gh.sh": ["fake_ratelimit"],
+    SCRIPTS / "test" / "orch" / "gh.sh": ["fake_ratelimit", "fake_duplicate_of"],
     SCRIPTS / "test" / "orch" / "ticket.sh": ["fake_lag_after"],
 }
 SECONDARY = "You have exceeded a secondary rate limit."
@@ -204,19 +204,19 @@ adapter_issue_authorship 12
 # --- the operations finding triage adds ---------------------------------------
 
 
-def test_the_bodies_listing_answers_as_the_bash_fake_s_parsed_by_the_real_adapter(store, capsys):
-    bash_answer = bash(store, r"""
+def test_the_bodies_listing_reads_the_open_issues_carrying_every_label_from_a_bash_seeded_store(
+        store, capsys):
+    bash(store, r"""
 fake_issue 7 open review:nit Needs-Triage; fake_issue_body 7 $'Seventh\r\nbody\n\n'
 fake_issue 3 open REVIEW:NIT needs-triage wip
 fake_issue 4 closed review:nit needs-triage
 fake_issue 5 open review:nit
 fake_issue 9 open review:nit needs-triage; : >"$ORCH_GH_FAKE_STORE/issues/9/pull"
-ISSUE_LIST_LIMIT=1000 ISSUE_SEARCH_CAP=1000 adapter_issues_labelled_bodies review:nit needs-triage
 """)
 
     answer = fake(store).issues_labelled_bodies("review:nit", "needs-triage")
 
-    assert answer == parse_labelled_bodies(bash_answer) == [
+    assert answer == [
         LabelledBody(3, ["REVIEW:NIT", "needs-triage", "wip"], ""),
         LabelledBody(7, ["review:nit", "Needs-Triage"], "Seventh\r\nbody"),
     ]

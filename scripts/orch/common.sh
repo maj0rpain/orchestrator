@@ -453,12 +453,6 @@ flow_cmd() {
   plugin_cmd "$1" "orch-flow's $section section"
 }
 
-# Names finding triage, its fallback the skill the command runs, since finding
-# triage is no orch-flow section.
-finding_triage_cmd() {
-  plugin_cmd finding-triage "the orch-finding-triage skill"
-}
-
 # Ignore every directory in EXCLUDED_DIRS - the flow directory and .scratch/ -
 # without touching a tracked .gitignore, so running the orchestrator in an
 # unfamiliar repo never dirties its working tree. A line already present is
