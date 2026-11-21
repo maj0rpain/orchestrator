@@ -72,6 +72,15 @@ class IssueRow(NamedTuple):
     labels: List[str]
 
 
+class LabelledBody(NamedTuple):
+    """One issue of a listing with bodies: its number, its labels, and its
+    body, carriage returns kept and trailing newlines dropped."""
+
+    number: int
+    labels: List[str]
+    body: str
+
+
 # --- the failure contract ----------------------------------------------------
 
 
@@ -171,15 +180,16 @@ def issue_list_limit(env: Mapping[str, str]) -> int:
     return int(env.get("ORCH_ISSUE_LIST_LIMIT", "") or 1000)
 
 
-def labelled_limit_warn(env: Mapping[str, str], count: int, label: str) -> None:
-    """Warns when a listing of the open issues labelled <label> returned
-    <count> rows, reaching its effective limit - the lesser of the issue-list
-    limit and GitHub's search cap - naming that limit."""
+def labelled_limit_warn(env: Mapping[str, str], count: int, *labels: str) -> None:
+    """Warns when a listing of the open issues carrying every one of
+    <labels> returned <count> rows, reaching its effective limit - the lesser
+    of the issue-list limit and GitHub's search cap - naming that limit and
+    the labels, joined by " and "."""
     limit = min(issue_list_limit(env), ISSUE_SEARCH_CAP)
     if count >= limit:
         warn(
             "the open issues labelled %s reached the issue-list limit of %d"
-            " - the newest past it are missing from this list" % (label, limit)
+            " - the newest past it are missing from this list" % (" and ".join(labels), limit)
         )
 
 
@@ -220,6 +230,36 @@ def parse_titled_rows(text: str) -> List[IssueRow]:
         i += int(count)
         state, _, title = field.partition("\t")
         rows.append(IssueRow(int(number), state, title, labels))
+    return rows
+
+
+def parse_labelled_bodies(text: str) -> List[LabelledBody]:
+    """The count-marked records of a listing with bodies: number, label
+    count, one label per line, the body's line count, then the body's lines.
+    The answer's trailing newlines are dropped first, so the last record's
+    body lines missing at its end are empty lines. Raises GhFailed "gh
+    answered a listing that does not parse" on a record that is not."""
+    lines = _captured_lines(text)
+    rows = []
+    i = 0
+    while i < len(lines):
+        number = lines[i]
+        count = lines[i + 1] if i + 1 < len(lines) else ""
+        if not (plain_number(number) and plain_number(count)):
+            raise GhFailed(LISTING_UNPARSED)
+        i += 2
+        labels = lines[i:i + int(count)]
+        if len(labels) < int(count):
+            raise GhFailed(LISTING_UNPARSED)
+        i += int(count)
+        if i >= len(lines) or not plain_number(lines[i]):
+            raise GhFailed(LISTING_UNPARSED)
+        body_lines = int(lines[i])
+        i += 1
+        body = lines[i:i + body_lines]
+        body += [""] * (body_lines - len(body))
+        i += body_lines
+        rows.append(LabelledBody(int(number), labels, "\n".join(body).rstrip("\n")))
     return rows
 
 
@@ -491,6 +531,14 @@ class Gh:
         lines += [""] * (4 - len(lines))
         return lines[0], lines[1], lines[2], lines[3]
 
+    def issue_state(self, n: int) -> str:
+        """OPEN or CLOSED - or PULL where <n> is a pull request's number,
+        which gh issue view answers for too."""
+        return self._gh(
+            ["issue", "view", str(n), "--json", "state,url",
+             "--jq", 'if (.url | test("/pull/")) then "PULL" else .state end']
+        ).rstrip("\n")
+
     def issue_state_labels(self, n: int) -> Tuple[str, List[str]]:
         """OPEN or CLOSED, and the labels."""
         return first_and_rest(self._gh(
@@ -524,6 +572,24 @@ class Gh:
              "--jq", '.[] | .number, (.state + "\\t" + .title), (.labels | length), (.labels[].name)']
         ))
         labelled_limit_warn(self.env, len(rows), label)
+        return rows
+
+    def issues_labelled_bodies(self, *labels: str) -> List[LabelledBody]:
+        """The open issues carrying every label named, oldest first and cut
+        at the issue-list limit (the newest dropped), each with its labels and
+        body, warning when the cut is reached. The body's line count is its
+        newlines plus one, counted with `indices`, never `split`, whose answer
+        on an empty string differs between jq implementations."""
+        args = ["issue", "list", "--state", "open"]
+        for label in labels:
+            args += ["--label", label]
+        rows = parse_labelled_bodies(self._gh(
+            args + ["--search", "sort:created-asc", "--limit", str(issue_list_limit(self.env)),
+                    "--json", "number,labels,body",
+                    "--jq", '.[] | .number, (.labels | length), (.labels[].name),'
+                    ' ((.body | indices("\\n") | length) + 1), .body']
+        ))
+        labelled_limit_warn(self.env, len(rows), *labels)
         return rows
 
     def issue_create(self, title: str, body_file: str, labels: Sequence[str]) -> int:
@@ -582,6 +648,24 @@ class Gh:
         # leave the comment, and a rerun would post it twice.
         self._gh(args, compound=bool(comment))
 
+    # --- label operations ---
+
+    def label_create(self, name: str, colour: str, description: str) -> None:
+        """Creates the label where the repo has none of that name; fails
+        where it has one, leaving it as it is."""
+        self._gh(["label", "create", name, "--color", colour, "--description", description])
+
+    # --- repo operations ---
+
+    def repo_default_branch(self, repo: str) -> str:
+        """The default branch of <repo>, named [HOST/]OWNER/REPO, as gh
+        answers it less its trailing newlines: a caller validates it. The
+        repo goes in gh's argv because `gh repo view` ignores GH_REPO and
+        would otherwise read gh's own default repo."""
+        return self._gh(
+            ["repo", "view", repo, "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"]
+        ).rstrip("\n")
+
     # --- sub-issue and dependency operations ---
 
     def issue_parent(self, n: int) -> Optional[int]:
@@ -621,6 +705,25 @@ class Gh:
              "--jq", '.[] | "\\(.number)\\t\\(.state | ascii_upcase)"']
         )
         return parse_blocker_states(answer)
+
+
+def open_issue_read(
+    gh, n: str, not_open: str, body: bool = False, hint: str = ""
+) -> Tuple[List[str], str]:
+    """Issue <n>'s labels and - only when <body> is asked for, else "" - its
+    body, from one state read, <n> a plain number as given. A failed read
+    dies through gh_die "read issue #<n>" with the hint; an issue that is not
+    OPEN dies with <not_open>, verbatim, since the callers' messages are not
+    one shape. It checks no label: each caller keeps its own label test."""
+    what = "read issue #" + n
+    if body:
+        state, labels, text = gh_or_die(what, gh.issue_state_labels_body, int(n), hint=hint)
+    else:
+        state, labels = gh_or_die(what, gh.issue_state_labels, int(n), hint=hint)
+        text = ""
+    if state != "OPEN":
+        die(not_open)
+    return labels, text
 
 
 def adapter(env: Optional[Mapping[str, str]] = None, cwd: Optional[str] = None):

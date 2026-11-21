@@ -1,6 +1,7 @@
 """The Comments module (scripts/orch/comments.sh), kept to what the issue
-noun uses: the one reader of an issue's trusted comments and the rendered
-shape every comments read writes.
+and finding-triage nouns use: the one reader of an issue's trusted comments,
+in a dying form and one that hands its failure back, and the rendered shape
+every comments read writes.
 
 The adapter answers gh's raw comment objects; here they are normalised to
 {author, createdAt, body, url}, the author its login, and the untrusted ones
@@ -9,11 +10,11 @@ dropped (orch.trust) before anything else reads them.
 from __future__ import annotations
 
 import json
-from typing import List
+from typing import List, Optional, Tuple
 
 from orch import trust
 from orch.common import die
-from orch.gh import Unparsed, gh_or_die
+from orch.gh import GhFailed, Unparsed, gh_die, gh_reason
 
 FIELDS = ("createdAt", "body", "url")
 
@@ -37,18 +38,33 @@ def normalised(comments: List[object]) -> List[dict]:
     return out
 
 
-def trusted(gh, what: str, n: str) -> List[dict]:
+def trusted_read(gh, n: str) -> Tuple[Optional[List[dict]], str]:
     """Issue <n>'s trusted comments, each {author, createdAt, body, url}, <n>
-    a plain number as given. A gh failure dies as "gh could not <what>"; an
-    answer that is no comment list as "could not <what>: its comments did not
-    parse"."""
+    a plain number as given, and "" - never dying: on a gh failure None and
+    gh's reason; on an answer that is no comment list None and ""."""
     try:
-        comments = normalised(gh_or_die(what, gh.issue_comments, int(n)))
+        raw = gh.issue_comments(int(n))
+        comments = normalised(raw)
+    except GhFailed as failed:
+        return None, gh_reason(failed.stderr)
     except Unparsed:
-        die("could not %s: its comments did not parse" % what)
+        return None, ""
     kept = trust.filter_comments(n, comments)
     for comment in kept:
         del comment["authorAssociation"]
+    return kept, ""
+
+
+def trusted(gh, what: str, n: str, hint: str = "") -> List[dict]:
+    """trusted_read's comments, dying where it fails: a gh failure as "gh
+    could not <what>", then " - <hint>" when a hint is given; an answer that
+    is no comment list as "could not <what>: its comments did not parse",
+    never hinted."""
+    kept, reason = trusted_read(gh, n)
+    if kept is None:
+        if reason:
+            gh_die(what, reason, hint)
+        die("could not %s: its comments did not parse" % what)
     return kept
 
 

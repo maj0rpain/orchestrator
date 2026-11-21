@@ -28,7 +28,7 @@ from typing import Callable, List, Mapping, Optional, Sequence, Tuple
 
 from orch import gh as real
 from orch.common import plain_number
-from orch.gh import GhFailed, IssueRow, Limits
+from orch.gh import GhFailed, IssueRow, LabelledBody, Limits
 
 # The author and timestamp of every comment the fake's own operations write.
 COMMENT_AUTHOR = "fake-gh"
@@ -297,6 +297,17 @@ class FakeGh:
         return (stored("author", COMMENT_AUTHOR), stored("association", "OWNER"),
                 stored("editor", ""), stored("renamer", ""))
 
+    def issue_state(self, n: int) -> str:
+        """PULL for a PR the store holds or an issue number marked pull, the
+        stored state otherwise."""
+        self._failing("adapter_issue_state")
+        if os.path.isdir(_store_path(self.store, "prs", n)):
+            return "PULL"
+        self._known(n)
+        if os.path.exists(_issue_path(self.store, n, "pull")):
+            return "PULL"
+        return _slurp(_issue_path(self.store, n, "state")) or ""
+
     def issue_state_labels(self, n: int) -> Tuple[str, List[str]]:
         self._failing("adapter_issue_state_labels")
         stale = self._lagging("adapter_issue_state_labels")
@@ -334,6 +345,19 @@ class FakeGh:
                 for n in labelled[:limit]
             ]
         real.labelled_limit_warn(self.env, len(rows), label)
+        return rows
+
+    def issues_labelled_bodies(self, *labels: str) -> List[LabelledBody]:
+        self._failing("adapter_issues_labelled_bodies")
+        limit = min(real.issue_list_limit(self.env), real.ISSUE_SEARCH_CAP)
+        labelled = [n for n in self._open_numbers()
+                    if all(real.label_listed(self._labels(n), label) for label in labels)]
+        rows = [
+            LabelledBody(n, self._labels(n),
+                         (_read(_issue_path(self.store, n, "body")) or "").rstrip("\n"))
+            for n in labelled[:limit]
+        ]
+        real.labelled_limit_warn(self.env, len(rows), *labels)
         return rows
 
     def issue_create(self, title: str, body_file: str, labels: Sequence[str]) -> int:
@@ -394,6 +418,34 @@ class FakeGh:
             _write(_issue_path(self.store, n, "duplicate_of"), "%d\n" % duplicate_of)
         else:
             _write(_issue_path(self.store, n, "reason"), (reason or "completed") + "\n")
+
+    # --- label operations ---
+
+    def label_create(self, name: str, colour: str, description: str) -> None:
+        """The label added to the store where it has none of that name in
+        any casing; one it has fails the call, as gh does, left as it is."""
+        self._failing("adapter_label_create")
+        labels = _store_path(self.store, "labels")
+        if any(real.label_listed([line.split("\t", 1)[0]], name) for line in _lines(labels)):
+            raise GhFailed(
+                'label with name "%s" already exists; use `--force` to update its color'
+                " and description\n" % name
+            )
+        _write(labels, "%s\t%s\t%s\n" % (name, colour, description), "ab")
+
+    # --- repo operations ---
+
+    def repo_default_branch(self, repo: str) -> str:
+        """The stored default_branch answer less its trailing newlines; a
+        store with none fails it, as gh does for a repo it cannot resolve."""
+        self._failing("adapter_repo_default_branch")
+        answer = _slurp(_store_path(self.store, "default_branch"))
+        if answer is None:
+            raise GhFailed(
+                "GraphQL: Could not resolve to a Repository with the name '%s'."
+                " (repository)\n" % repo
+            )
+        return answer
 
     # --- sub-issue and dependency operations ---
 

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from orch.gh import Gh, GhFailed, IssueRow, adapter
+from orch.gh import Gh, GhFailed, IssueRow, LabelledBody, adapter, parse_labelled_bodies
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit
 from orch.repo import RepoPin
@@ -27,6 +27,7 @@ BASH_HELPERS = {
         "fake_unfail", "fake_offline", "fake_online", "fake_quota", "fake_lag",
         "fake_state_of", "fake_reason_of", "fake_duplicate_of",
         "fake_title_of", "fake_body_of", "fake_labels_of", "fake_comments_of",
+        "fake_pr", "fake_labels", "fake_default_branch",
     ],
     SCRIPTS / "test" / "orch" / "gh.sh": ["fake_ratelimit"],
     SCRIPTS / "test" / "orch" / "ticket.sh": ["fake_lag_after"],
@@ -198,6 +199,102 @@ adapter_issue_open_blockers 11
 adapter_blockers_states 12
 adapter_issue_authorship 12
 """) == "10\n1\n13\tOPEN\nann\nNONE\n\ncid\n"
+
+
+# --- the operations finding triage adds ---------------------------------------
+
+
+def test_the_bodies_listing_answers_as_the_bash_fake_s_parsed_by_the_real_adapter(store, capsys):
+    bash_answer = bash(store, r"""
+fake_issue 7 open review:nit Needs-Triage; fake_issue_body 7 $'Seventh\r\nbody\n\n'
+fake_issue 3 open REVIEW:NIT needs-triage wip
+fake_issue 4 closed review:nit needs-triage
+fake_issue 5 open review:nit
+fake_issue 9 open review:nit needs-triage; : >"$ORCH_GH_FAKE_STORE/issues/9/pull"
+ISSUE_LIST_LIMIT=1000 ISSUE_SEARCH_CAP=1000 adapter_issues_labelled_bodies review:nit needs-triage
+""")
+
+    answer = fake(store).issues_labelled_bodies("review:nit", "needs-triage")
+
+    assert answer == parse_labelled_bodies(bash_answer) == [
+        LabelledBody(3, ["REVIEW:NIT", "needs-triage", "wip"], ""),
+        LabelledBody(7, ["review:nit", "Needs-Triage"], "Seventh\r\nbody"),
+    ]
+    assert capsys.readouterr().err == ""
+
+
+def test_the_bodies_listing_is_cut_at_the_limit_warning_with_every_label(store, capsys):
+    bash(store, "for n in 1 2 3; do fake_issue $n open review:major needs-triage; done")
+
+    rows = fake(store, ORCH_ISSUE_LIST_LIMIT="2").issues_labelled_bodies(
+        "review:major", "needs-triage")
+
+    assert [row.number for row in rows] == [1, 2]
+    assert capsys.readouterr().err == (
+        "orch: the open issues labelled review:major and needs-triage reached the"
+        " issue-list limit of 2 - the newest past it are missing from this list\n"
+    )
+
+
+def test_issue_state_answers_as_the_bash_fake_pull_for_a_pull_request(store):
+    bash_answer = bash(store, r"""
+fake_issue 5 open; fake_issue 6 closed
+fake_issue 7 open; : >"$ORCH_GH_FAKE_STORE/issues/7/pull"
+fake_pr 8 open
+for n in 5 6 7 8; do adapter_issue_state $n; done
+""")
+    gh = fake(store)
+
+    assert [gh.issue_state(n) for n in (5, 6, 7, 8)] == bash_answer.split() == [
+        "OPEN", "CLOSED", "PULL", "PULL"]
+    with pytest.raises(GhFailed) as failed:
+        gh.issue_state(9)
+    assert "Could not resolve to an issue or pull request with the number of 9" in failed.value.stderr
+
+
+def test_label_create_adds_a_missing_label_and_fails_on_one_in_any_casing(store):
+    bash(store, "fake_label Bug d73a4a 'Something is wrong'")
+    gh = fake(store)
+
+    gh.label_create("finding-bundle", "c5def5", "Several filed findings worked as one")
+    with pytest.raises(GhFailed) as failed:
+        gh.label_create("BUG", "000000", "x")
+
+    assert failed.value.stderr == (
+        'label with name "BUG" already exists; use `--force` to update its color'
+        " and description\n"
+    )
+    assert bash(store, "fake_labels") == (
+        "Bug\td73a4a\tSomething is wrong\n"
+        "finding-bundle\tc5def5\tSeveral filed findings worked as one\n"
+    )
+
+
+def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
+    gh = fake(store)
+    with pytest.raises(GhFailed) as failed:
+        gh.repo_default_branch("acme/gone")
+    bash(store, "fake_default_branch $'trunk\\n'")
+
+    assert failed.value.stderr == (
+        "GraphQL: Could not resolve to a Repository with the name 'acme/gone'. (repository)\n")
+    assert gh.repo_default_branch("acme/widgets") == "trunk"
+
+
+@pytest.mark.parametrize("operation, call", [
+    ("adapter_issues_labelled_bodies", lambda gh: gh.issues_labelled_bodies("review:nit")),
+    ("adapter_issue_state", lambda gh: gh.issue_state(5)),
+    ("adapter_label_create", lambda gh: gh.label_create("bug", "d73a4a", "d")),
+    ("adapter_repo_default_branch", lambda gh: gh.repo_default_branch("acme/widgets")),
+])
+def test_the_added_operations_fail_under_the_bash_operation_names(store, operation, call):
+    bash(store, "fake_issue 5 open review:nit; fake_default_branch trunk; "
+                "fake_fail %s 'HTTP 502: Bad Gateway'" % operation)
+
+    with pytest.raises(GhFailed) as failed:
+        call(fake(store))
+
+    assert failed.value.stderr == "HTTP 502: Bad Gateway\n"
 
 
 # --- writes the bash helpers read back ---------------------------------------
