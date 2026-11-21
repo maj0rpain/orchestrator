@@ -1642,7 +1642,7 @@ rm -f "$dur_test/stub_cpu.sh" "$dur_test/stub_cpu.sh.times"
 sed -i 's/^suites=(.*)$/suites=(orch_test.sh stub_a.sh stub_b.sh)/' "$dur_test/all.sh"
 
 # The fingerprint column (#3467), read from the full refresh below; the edit
-# cases live in docs_lint.sh's suite budget section.
+# cases live in docs_lint.sh's durations file section.
 # fp_of <title> [<file>]: the title's fourth column in <file> or the ledger.
 fp_of() { awk -F'\t' -v t="$1" '$3 == t { print $4 }' "${2:-$dur_file}"; }
 # The --stale mode (#3468): the same planted tree, a recorded base file, and a
@@ -1687,7 +1687,7 @@ stale_reset() {
   cp "$dur_dir/planted.keep" "$dur_orch/zz-planted.sh"
   cp "$dur_dir/stub_a.keep" "$dur_test/stub_a.sh"
   cp "$dur_dir/stub_b.keep" "$dur_test/stub_b.sh"
-  rm -f "$dur_orch/aa-new.sh" "$dur_orch/zzz-failing.sh" "$dur_orch/zzz-many.sh" "$dur_test/suite-budget"
+  rm -f "$dur_orch/aa-new.sh" "$dur_orch/zzz-failing.sh" "$dur_orch/zzz-many.sh"
   cp "$dur_dir/base.tsv" "$dur_file"
 }
 out="$(bash "$dur_dev_script" --bogus 2>&1)"; st=$?
@@ -1698,11 +1698,8 @@ out="$(dur_stale)"; st=$?
 assert_status "--stale on a fresh ledger exits 0" "$st" 0
 assert_contains "saying nothing is out of date" "$out" "nothing out of date"
 assert_eq "and leaves the file unchanged" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
-assert_contains "and ends on the total, the budget named as missing" "$(stale_last "$out")" "budget missing"
-printf '1100\n' >"$dur_test/suite-budget"
-out="$(dur_stale)"
-assert_eq "with a budget file it ends on the total and the budget" \
-  "$(stale_last "$out" | sed 's/total [0-9.]* /total N /')" "section-durations.sh: total N CPU seconds, budget 1100 CPU seconds"
+assert_eq "and ends on the total" \
+  "$(stale_last "$out" | sed 's/total [0-9.]* /total N /')" "section-durations.sh: total N CPU seconds"
 assert_eq "the total is the CPU column's sum" \
   "$(( 10#$(stale_last "$out" | sed "s/.*total \([0-9]*\)\.\([0-9]\) .*/\1\2/") ))" \
   "$(awk -F'\t' '{ s += $2 } END { print s }' "$dur_file")"
@@ -1745,7 +1742,7 @@ out="$(dur_stale)"; st=$?
 assert_status "--stale on two shellcheck lines exits 0" "$st" 0
 assert_eq "they end as the first, the rest removed, shellcheck not measured" "$(<"$dur_file")" "$(<"$dur_dir/base.tsv")"
 stale_reset
-# A missing section, in walk order, and the budget file missing.
+# A missing section, in walk order.
 dur_plant_new
 out="$(dur_stale)"; st=$?
 assert_status "--stale on a missing section exits 0" "$st" 0
@@ -1753,16 +1750,13 @@ assert_eq "its new line sits in walk order" "$(cut -f3 "$dur_file" | tr '\n' ','
   "isolation,dur new,dur a,dur b,dur cal,stub_a.sh,stub_b.sh,shellcheck,"
 assert_eq "with a fingerprint" "$(awk -F'\t' '$3 == "dur new" { print NF }' "$dur_file")" "4"
 assert_eq "and every other line as it was" "$(stale_except 'dur new')" "$(<"$dur_dir/base.tsv")"
-assert_contains "the budget file missing still records, and the last line says so" "$(stale_last "$out")" "budget missing"
 stale_reset
 # A stale other suite is measured and its line rewritten. The edit plants a
 # guard, so the one run also proves a suite is measured with
 # DOCS_LINT_RECORDING=1 (docs_lint.sh skips the ledger-fresh rule under it).
 printf '#!/usr/bin/env bash\necho\n[ "${DOCS_LINT_RECORDING:-}" = 1 ] || exit 1\necho "1 passed, 0 failed"\n' >"$dur_test/stub_a.sh"
-printf 'abc\n' >"$dur_test/suite-budget"
 out="$(dur_stale)"; st=$?
 assert_status "--stale on an edited other suite exits 0" "$st" 0
-assert_contains "a malformed budget file still records, and the last line names it as missing" "$(stale_last "$out")" "budget missing"
 assert_ne "its fingerprint changed" "$(fp_of stub_a.sh)" "$(fp_of stub_a.sh "$dur_dir/base.tsv")"
 assert_eq "and every other line is as it was" "$(stale_except stub_a.sh)" "$(stale_except stub_a.sh "$dur_dir/base.tsv")"
 stale_reset
@@ -4809,8 +4803,7 @@ af_reset
 assert_eq "a change to a doc selects only the always-run checks" \
   "$(tr_plan "$af" origin/rel)" "$TR_GATE,docs_lint.sh"
 tr_put "$af" scripts/test/section-durations.tsv 'x	1.0	1.0	t	f'
-tr_put "$af" scripts/test/suite-budget 100
-assert_eq "a changed durations file and a changed budget file select only the always-run checks" \
+assert_eq "a changed durations file selects only the always-run checks" \
   "$(tr_plan "$af" origin/rel)" "$TR_GATE,docs_lint.sh"
 af_reset
 assert_eq "a module selects its section file's sections, and shellchecks itself" \
@@ -5086,24 +5079,6 @@ assert_contains "orch_test.sh got the placement sections as its filter" \
   "$(cat "$af.log")" "orch_test.sh only=^(test-helper placement \\(#1006\\)|"
 assert_eq "no other suite ran" "$(log_count "$af.log")" "4"
 
-# The base it works out is handed to docs_lint.sh in DOCS_LINT_BASE, on the
-# narrow selection and on the full-suite fallback alike. Stand-ins print what
-# they receive.
-af_reset
-af_base="$(tr_git "$af" rev-parse HEAD)"
-tr_put "$af" scripts/test/docs_lint.sh "echo \"lint base=\${DOCS_LINT_BASE-unset}\" >\"$af.log\"" 'echo; echo "1 passed, 0 failed"'
-: >"$af.log"
-af_out="$(cd "$af" && DOCS_LINT_BASE=stale PATH="$af_sc:$PATH" bash scripts/test/affected.sh HEAD 2>&1)"
-assert_contains "the narrow selection hands docs_lint.sh the base it works out" "$(cat "$af.log")" "lint base=$af_base"
-tr_put "$af" Makefile changed
-tr_put "$af" scripts/test/all.sh 'echo "all base=${DOCS_LINT_BASE-unset}"'
-af_out="$(cd "$af" && DOCS_LINT_BASE=stale bash scripts/test/affected.sh HEAD 2>&1)"
-assert_eq "the full-suite fallback hands all.sh the base it works out" "$af_out" "all base=$af_base"
-tr_git "$af" symbolic-ref --delete refs/remotes/origin/HEAD
-af_out="$(cd "$af" && DOCS_LINT_BASE=stale bash scripts/test/affected.sh 2>&1)"
-assert_eq "with no base the fallback hands on none, whatever it inherited" "$af_out" "all base=unset"
-af_reset
-
 # A ticket branch's base is its parent branch as the local repository has it,
 # never origin's copy (#3547). origin/lag is the initial commit, the local
 # parent is main plus the branch module change, and the ticket adds a doc.
@@ -5128,18 +5103,6 @@ assert_eq "no recorded parent falls back to the recorded base" "$(tr_plan "$af")
 tr_git "$af" branch -q orphan-par "$(tr_git "$af" commit-tree "$af_tree" -m orphan)"
 tr_git "$af" config branch.feat--t1.orchestrator-ticket-parent orphan-par
 assert_eq "a parent with no merge-base falls back to the recorded base" "$(tr_plan "$af")" "$af_from_main"
-# The docs lint gets the base the selection used, narrow and fallback alike.
-tr_git "$af" config branch.feat--t1.orchestrator-ticket-parent par
-af_own="$(tr_git "$af" merge-base HEAD par)"
-tr_put "$af" scripts/test/docs_lint.sh "echo \"lint base=\${DOCS_LINT_BASE-unset}\" >\"$af.log\"" 'echo; echo "1 passed, 0 failed"'
-: >"$af.log"
-af_out="$(cd "$af" && DOCS_LINT_BASE=stale PATH="$af_sc:$PATH" bash scripts/test/affected.sh 2>&1)"
-assert_contains "on a ticket branch the narrow selection hands docs_lint.sh the parent's base" \
-  "$(cat "$af.log")" "lint base=$af_own"
-tr_put "$af" Makefile changed
-tr_put "$af" scripts/test/all.sh 'echo "all base=${DOCS_LINT_BASE-unset}"'
-af_out="$(cd "$af" && DOCS_LINT_BASE=stale bash scripts/test/affected.sh 2>&1)"
-assert_eq "on a ticket branch the fallback hands all.sh the parent's base" "$af_out" "all base=$af_own"
 tr_git "$af" checkout -q -f feat
 tr_git "$af" branch -q -D feat--t1 par orphan-par
 af_reset

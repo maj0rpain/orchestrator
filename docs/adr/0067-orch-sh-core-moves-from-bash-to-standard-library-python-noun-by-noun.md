@@ -1,5 +1,8 @@
 # orch.sh's core moves from bash to standard-library Python, noun by noun
 
+Superseded in part by ADR-0068: the suite budget is removed now, not when the
+last bash section goes; the rest of this ADR stands.
+
 **Context.** The bash suite costs about 1,110 CPU-seconds a full run - 375
 sections, about 200 `git init`/`mktemp -d` fixtures, shellcheck at 138 s - with
 every assertion spawning processes. On a 3 GiB, 8-CPU autopilot container two
