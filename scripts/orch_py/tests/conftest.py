@@ -8,6 +8,7 @@ teardown fails the test naming each logged call.
 """
 from __future__ import annotations
 
+import calendar
 import json
 import os
 import stat
@@ -17,7 +18,7 @@ import time
 
 import pytest
 
-from orch import issue, verification
+from orch import audit, issue, verification
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit, Git
 from orch.triage_labels import LABELS_DOC
@@ -245,6 +246,29 @@ def orch_issue(seed, *argv, gh=None, git=None, env=None, pin=None):
         gh = FakeGh(seed.store, env, pin=pin, sleep=lambda _: None)
     try:
         return issue.run(list(argv), gh=gh, git=git or FakeGit(toplevel=CHECKOUT), env=env)
+    except SystemExit as died:
+        return died.code
+
+
+# The audit noun's usage text, naming every form, as a refused audit prints it.
+AUDIT_USAGE = (
+    "orch: usage: orch.sh audit begin <code|docs|tests>\n"
+    "   or: orch.sh audit report <dir> <out.html>\n"
+    "   or: orch.sh audit file --run <dir> <numbers>\n"
+    "   or: orch.sh audit file <title> --category <bug|enhancement|documentation>"
+    " --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]\n"
+)
+# The clock an in-process audit reads, pinned so a run directory's name is
+# known.
+AUDIT_CLOCK = float(calendar.timegm((2030, 1, 2, 3, 4, 5)))
+
+
+def orch_audit(git, *argv, gh=None):
+    """`orch.sh audit <argv>` in-process, in the checkout of the git adapter
+    <git>, with the gh adapter <gh>, at AUDIT_CLOCK: its exit code, a
+    SystemExit's included."""
+    try:
+        return audit.run(list(argv), gh=gh, git=git, env={}, clock=lambda: AUDIT_CLOCK)
     except SystemExit as died:
         return died.code
 

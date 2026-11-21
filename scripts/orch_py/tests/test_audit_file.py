@@ -12,15 +12,17 @@ import tempfile
 import pytest
 
 from orch import audit
-from orch.filed_finding import FILED_CATEGORIES
-from orch.gh_fake import FakeGh
+from orch.filed_finding import FILED_CATEGORY_NAMES
 from orch.git import FakeGit
-from conftest import GH_502, fake, labels_doc, labels_of, read, snapshot, write_labels_doc
+from conftest import (
+    AUDIT_USAGE, GH_502, fake, labels_doc, labels_of, orch_audit, read, snapshot,
+    write_labels_doc,
+)
 
 SHA = "0123456789abcdef0123456789abcdef01234567"
 FINDING = "A doc says --force is required.\n\nThe code takes no such flag.\n\n\n"
-USAGE = ("orch: usage: orch.sh audit file <title> --category <bug|enhancement|documentation>"
-         " --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]\n")
+# The one-finding form's usage line: the last form of the audit usage.
+USAGE = "orch: usage: " + AUDIT_USAGE.rpartition("   or: ")[2]
 
 
 @pytest.fixture(autouse=True)
@@ -67,16 +69,6 @@ def head_at(root, sha=SHA):
     return git
 
 
-def orch_audit(seed, root, *argv, gh=None, git=None):
-    """`orch.sh audit <argv>` in-process, in the checkout at <root>: its exit
-    code, a SystemExit's included."""
-    gh = FakeGh(seed.store, {}, sleep=lambda _: None) if gh is None else gh
-    try:
-        return audit.run(list(argv), gh=gh, git=head_at(root) if git is None else git, env={})
-    except SystemExit as died:
-        return died.code
-
-
 def repo_labels(store):
     """The repo's labels in the store, one (name, colour, description) each."""
     text = read(store, "labels") or ""
@@ -86,14 +78,14 @@ def repo_labels(store):
 def test_a_finding_is_filed_and_its_number_alone_printed(seed, store, root, parts, capsys):
     seed.next_issue(31)
 
-    code = orch_audit(seed, root, "file", "Docs name a flag that is gone", *parts)
+    code = orch_audit(head_at(root), "file", "Docs name a flag that is gone", *parts, gh=fake(seed))
 
     assert (code, capsys.readouterr()) == (0, ("31\n", ""))
     assert read(store, "issues", 31, "title") == "Docs name a flag that is gone\n"
 
 
 def test_the_body_holds_the_finding_each_location_in_order_and_head(seed, store, root, parts):
-    orch_audit(seed, root, "file", "T", *parts)
+    orch_audit(head_at(root), "file", "T", *parts, gh=fake(seed))
 
     assert read(store, "issues", 1, "body") == (
         "A doc says --force is required.\n\nThe code takes no such flag.\n\n"
@@ -105,15 +97,15 @@ def test_the_body_holds_the_finding_each_location_in_order_and_head(seed, store,
 
 
 def test_the_issue_carries_needs_triage_and_its_category(seed, store, root, parts):
-    orch_audit(seed, root, "file", "T", *parts)
+    orch_audit(head_at(root), "file", "T", *parts, gh=fake(seed))
 
     assert labels_of(store, 1) == ["needs-triage", "documentation"]
 
 
 @pytest.mark.parametrize("category", ["bug", "enhancement"])
 def test_the_category_given_is_the_category_label(seed, store, root, finding, category):
-    orch_audit(seed, root, "file", "T", "--category", category,
-               "--finding-file", str(finding), "--location", "a.md:1")
+    orch_audit(head_at(root), "file", "T", "--category", category,
+               "--finding-file", str(finding), "--location", "a.md:1", gh=fake(seed))
 
     assert labels_of(store, 1) == ["needs-triage", category]
 
@@ -122,7 +114,7 @@ def test_missing_labels_are_created_and_the_repo_s_own_left_as_they_are(
         seed, store, root, parts):
     (store / "labels").write_text("needs-triage\t000000\tThe repo's own\n")
 
-    orch_audit(seed, root, "file", "T", *parts)
+    orch_audit(head_at(root), "file", "T", *parts, gh=fake(seed))
 
     assert repo_labels(store) == [
         ("needs-triage", "000000", "The repo's own"),
@@ -133,7 +125,7 @@ def test_missing_labels_are_created_and_the_repo_s_own_left_as_they_are(
 def test_a_missing_needs_triage_label_is_created_as_bash_creates_it(seed, store, root, parts):
     (store / "labels").write_text("documentation\tffffff\tThe repo's own\n")
 
-    orch_audit(seed, root, "file", "T", *parts)
+    orch_audit(head_at(root), "file", "T", *parts, gh=fake(seed))
 
     assert repo_labels(store) == [
         ("documentation", "ffffff", "The repo's own"),
@@ -144,7 +136,7 @@ def test_a_missing_needs_triage_label_is_created_as_bash_creates_it(seed, store,
 def test_a_failed_label_create_is_ignored(seed, store, root, parts, capsys):
     seed.fail("adapter_label_create", GH_502)
 
-    code = orch_audit(seed, root, "file", "T", *parts)
+    code = orch_audit(head_at(root), "file", "T", *parts, gh=fake(seed))
 
     assert (code, capsys.readouterr().out) == (0, "1\n")
     assert labels_of(store, 1) == ["needs-triage", "documentation"]
@@ -153,7 +145,7 @@ def test_a_failed_label_create_is_ignored(seed, store, root, parts, capsys):
 def test_the_triage_label_is_the_repo_s_name_for_needs_triage(seed, store, root, parts):
     write_labels_doc(root, labels_doc(("needs-triage", "triage me")))
 
-    orch_audit(seed, root, "file", "T", *parts)
+    orch_audit(head_at(root), "file", "T", *parts, gh=fake(seed))
 
     assert labels_of(store, 1) == ["triage me", "documentation"]
     assert [name for name, _, _ in repo_labels(store)] == ["triage me", "documentation"]
@@ -175,7 +167,7 @@ def test_an_open_issue_with_the_title_files_nothing_and_prints_its_number(
         seed, store, root, parts, twins, capsys):
     before = snapshot(store)
 
-    code = orch_audit(seed, root, "file", "Docs name a flag that is gone", *parts)
+    code = orch_audit(head_at(root), "file", "Docs name a flag that is gone", *parts, gh=fake(seed))
 
     assert (code, capsys.readouterr()) == (
         0, ("5\n", "orch: #5 is already open with this title; nothing filed\n"))
@@ -185,7 +177,7 @@ def test_an_open_issue_with_the_title_files_nothing_and_prints_its_number(
 @pytest.mark.parametrize("title", ["docs name a flag that is gone", "Closed twin"])
 def test_a_title_differing_in_case_or_closed_is_filed_anew(
         seed, store, root, parts, twins, title, capsys):
-    code = orch_audit(seed, root, "file", title, *parts)
+    code = orch_audit(head_at(root), "file", title, *parts, gh=fake(seed))
 
     assert (code, capsys.readouterr().out) == (0, "7\n")
 
@@ -201,7 +193,7 @@ def test_a_failed_gh_call_dies_naming_the_step_and_files_nothing(
         seed, store, root, parts, operation, message, capsys):
     seed.fail(operation, GH_502)
 
-    code = orch_audit(seed, root, "file", "T", *parts)
+    code = orch_audit(head_at(root), "file", "T", *parts, gh=fake(seed))
 
     assert (code, capsys.readouterr()) == (
         1, ("", "orch: gh could not %s: HTTP 502: Bad Gateway\n" % message))
@@ -211,7 +203,7 @@ def test_a_failed_gh_call_dies_naming_the_step_and_files_nothing(
 def test_a_failed_open_issue_listing_writes_no_label(seed, store, root, parts):
     seed.fail("adapter_issues_open_titles", GH_502)
 
-    orch_audit(seed, root, "file", "T", *parts)
+    orch_audit(head_at(root), "file", "T", *parts, gh=fake(seed))
 
     assert read(store, "labels") is None
 
@@ -230,14 +222,14 @@ class NoGh:
 def refused(seed, root, capsys, *argv, git=None):
     """The exit code and stderr of `audit file <argv>`, which must refuse
     before any GitHub call, printing nothing on stdout."""
-    code = orch_audit(seed, root, "file", *argv, gh=NoGh(), git=git)
+    code = orch_audit(head_at(root) if git is None else git, "file", *argv, gh=NoGh())
     out, err = capsys.readouterr()
     assert out == ""
     return code, err
 
 
 def test_the_usage_line_s_categories_are_the_filed_finding_list_s_in_order():
-    names = "|".join(name for name, _, _ in FILED_CATEGORIES)
+    names = "|".join(FILED_CATEGORY_NAMES)
 
     assert "--category <%s>" % names in audit.audit_file_usage()
     assert audit.audit_usage().endswith("\n   or: " + audit.audit_file_usage()[len("usage: "):])
@@ -356,18 +348,8 @@ def test_a_finding_naming_a_report_s_numbering_is_refused_at_its_line(
 def test_the_report_a_span_and_a_fence_are_no_reference(seed, store, root, finding, parts):
     finding.write_text("The report says `finding 4`.\n```\nthis report\n```\n")
 
-    assert orch_audit(seed, root, "file", "T", *parts) == 0
+    assert orch_audit(head_at(root), "file", "T", *parts, gh=fake(seed)) == 0
     assert read(store, "issues", 1, "title") == "T\n"
-
-
-def test_no_op_is_refused_with_the_whole_usage_text(seed, root, capsys):
-    code = orch_audit(seed, root, gh=NoGh())
-
-    assert (code, capsys.readouterr()) == (1, ("", (
-        "orch: usage: orch.sh audit begin <code|docs|tests>\n"
-        "   or: orch.sh audit report <dir> <out.html>\n"
-        "   or: orch.sh audit file --run <dir> <numbers>\n"
-        "   or: " + USAGE[len("orch: usage: "):])))
 
 
 # --- a run's picked findings: file --run ---------------------------------------
@@ -451,8 +433,10 @@ def edit_ranked(batch, old, new):
 
 
 def file_run(seed, root, batch, numbers, gh=None):
-    """`audit file --run <batch> <numbers>`: its exit code."""
-    return orch_audit(seed, root, "file", "--run", str(batch), numbers, gh=gh)
+    """`audit file --run <batch> <numbers>`, with the gh fake on <seed>'s
+    store unless <gh> is given: its exit code."""
+    return orch_audit(head_at(root), "file", "--run", str(batch), numbers,
+                      gh=fake(seed) if gh is None else gh)
 
 
 def test_a_pick_is_filed_one_line_per_finding_in_number_order(seed, root, batch, capsys):
@@ -644,20 +628,14 @@ def test_a_shared_issue_rerun_after_its_related_write_failed_takes_the_line(
 # --- file --run: refusals and gh failures --------------------------------------
 
 
-USAGE_RUN = ("orch: usage: orch.sh audit begin <code|docs|tests>\n"
-             "   or: orch.sh audit report <dir> <out.html>\n"
-             "   or: orch.sh audit file --run <dir> <numbers>\n"
-             "   or: " + USAGE[len("orch: usage: "):])
-
-
 @pytest.mark.parametrize("numbers, message", [
     ("1,1", "finding 1 is given twice"),
     ("9", "the ranked file has no finding 9"),
     ("0", "the ranked file has no finding 0"),
     ("x", "'x' is not a finding number"),
     ("1,,x", "'x' is not a finding number"),
-    (" , ", USAGE_RUN[len("orch: "):-1]),
-    ("", USAGE_RUN[len("orch: "):-1]),
+    (" , ", AUDIT_USAGE[len("orch: "):-1]),
+    ("", AUDIT_USAGE[len("orch: "):-1]),
 ])
 def test_bad_numbers_are_refused_before_any_github_call(
         seed, store, root, batch, numbers, message, capsys):
@@ -667,7 +645,7 @@ def test_bad_numbers_are_refused_before_any_github_call(
 
 
 def test_no_numbers_is_refused_with_the_usage_naming_every_form(seed, root, batch, capsys):
-    assert refused(seed, root, capsys, "--run", str(batch)) == (1, USAGE_RUN)
+    assert refused(seed, root, capsys, "--run", str(batch)) == (1, AUDIT_USAGE)
 
 
 def test_a_field_naming_another_finding_is_refused_before_any_github_call(

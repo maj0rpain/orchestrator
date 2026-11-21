@@ -45,7 +45,8 @@ from orch.common import (
     warn,
 )
 from orch.filed_finding import (
-    FILED_CATEGORIES,
+    FILED_CATEGORY_NAMES,
+    SPACE,
     category_label_ensure,
     finding_body_file_new,
     finding_flags_parse,
@@ -59,9 +60,8 @@ from orch.git import Git
 from orch.root import checkout_root
 from orch.triage_labels import TriageLabels
 
-# The verbs, each a function of VERBS but file, which takes the gh adapter
-# too. docs_lint.sh reads a converted noun's verbs from this line, so it stays
-# one `OPS = "<verb>|..."` line.
+# The verbs, each of which run() calls by name. docs_lint.sh reads a converted
+# noun's verbs from this line, so it stays one `OPS = "<verb>|..."` line.
 OPS = "begin|report|file"
 
 # The kinds of audit `audit begin` takes, one per audit skill.
@@ -71,7 +71,6 @@ MARKER = "**Audited at:**"
 LOCATION = "**Location:**"
 _LOCATION_LINE = re.compile(r"\*\*Location:\*\* `([^`]*)`")
 _HEX = re.compile(r"[0-9a-fA-F]+")
-_SPACE = " \t\n\r\f\v"
 
 
 def audit_body_tail(sha: str, locations: Sequence[str]) -> str:
@@ -124,17 +123,18 @@ def audit_file(args: List[str], gh, git) -> int:
             finding = value
     if not (finding and category and locations):
         die(usage)
-    if category not in (name for name, _, _ in FILED_CATEGORIES):
+    if category not in FILED_CATEGORY_NAMES:
         die(usage)
 
     finding_input_check(title, finding)
-    reference = ref_find(title)
-    if reference:
-        die("the title says '%s': %s" % (reference[0], ALONE))
+    title_reference = ref_find(title)
+    if title_reference:
+        die("the title says '%s': %s" % (title_reference[0], ALONE))
     text = read_text(finding) or ""
-    reference = ref_find(text)
-    if reference:
-        die("%s line %d says '%s': %s" % (finding, reference[1], reference[0], ALONE))
+    text_reference = ref_find(text)
+    if text_reference:
+        die("%s line %d says '%s': %s"
+            % (finding, text_reference[1], text_reference[0], ALONE))
     for location in locations:
         finding_location_check(location)
     sha = git.resolve_commit("HEAD")
@@ -173,7 +173,7 @@ def audit_file_usage() -> str:
     return (
         "usage: orch.sh audit file <title> --category <%s> --finding-file <f>"
         " --location <<file>:<line>|<file>:<start>-<end>> [--location ...]"
-        % "|".join(name for name, _, _ in FILED_CATEGORIES)
+        % "|".join(FILED_CATEGORY_NAMES)
     )
 
 
@@ -234,7 +234,7 @@ def body_parse(body: str) -> Tuple[List[str], List[str]]:
             match = _LOCATION_LINE.fullmatch(line)
             locations.append(match.group(1) if match else "")
         elif line.startswith(MARKER):
-            shas.append(line[len(MARKER):].strip(_SPACE))
+            shas.append(line[len(MARKER):].strip(SPACE))
     return locations, shas
 
 
@@ -347,7 +347,7 @@ class Run:
 
 
 def _trim(text: str) -> str:
-    return text.strip(_SPACE)
+    return text.strip(SPACE)
 
 
 def _blank(line: str) -> bool:
@@ -476,13 +476,13 @@ def _para_reference(para: str, starts: List[int], lines: List[int]) -> Optional[
     return para[pos:pos + len(match.group(2))], at
 
 
-def _record_read(run: Run) -> None:
+def _record_read(audit_run: Run) -> None:
     """The run's kind and commit, read from its record as bash's `read -r
     key val` loop reads them: each newline-ended line's first word and the
     rest, trimmed; the last of each wins."""
-    path = run.directory + "/record"
+    path = audit_run.directory + "/record"
     if not os.path.isfile(path):
-        die("%s holds no audit run record: make a run with orch.sh audit begin" % run.directory)
+        die("%s holds no audit run record: make a run with orch.sh audit begin" % audit_run.directory)
     try:
         with open(path, "rb") as f:
             text = f.read().decode("utf-8", "surrogateescape")
@@ -491,11 +491,11 @@ def _record_read(run: Run) -> None:
     for line in text.split("\n")[:-1]:
         key, value = _RECORD_LINE.fullmatch(line.strip(" \t")).groups()
         if key == "kind":
-            run.kind = value
+            audit_run.kind = value
         elif key == "commit":
-            run.commit = value
-    if not run.kind or not run.commit:
-        die("%s/record names no kind or no commit" % run.directory)
+            audit_run.commit = value
+    if not audit_run.kind or not audit_run.commit:
+        die("%s/record names no kind or no commit" % audit_run.directory)
 
 
 def _ranked_sections(path: str) -> List[Tuple[str, str, str, int]]:
@@ -575,14 +575,14 @@ def _finding_resolve(n: int, body: str, first: int, directory: str,
                 continue
             for location in list_lines(value):
                 finding.where.setdefault(("loc", location), "%s.md line %d" % (area, at))
-    for label, value, at in restated:
+    for label, value, where in restated:
         if label in labels:
             k = labels.index(label)
-            values[k], wheres[k] = value, at
+            values[k], wheres[k] = value, where
         else:
             labels.append(label)
             values.append(value)
-            wheres.append(at)
+            wheres.append(where)
     if not restates_location and locations:
         merged: List[str] = []
         for location in list_lines(locations):
@@ -595,8 +595,8 @@ def _finding_resolve(n: int, body: str, first: int, directory: str,
             values.append(", ".join(merged))
             wheres.append("ranked.md line %d" % source_line)
     finding.fields = list(zip(labels, values))
-    for label, at in zip(labels, wheres):
-        finding.where[label] = at
+    for label, where in zip(labels, wheres):
+        finding.where[label] = where
     return finding
 
 
@@ -615,21 +615,20 @@ def _finding_check(n: int, finding: Finding, line: int, count: int,
     category = finding.field("Category")
     if category is None:
         die("ranked.md line %d: finding %d has no Category:" % (line, n))
-    names = [name for name, _, _ in FILED_CATEGORIES]
-    if category not in names:
+    if category not in FILED_CATEGORY_NAMES:
         die("%s: finding %d's Category: '%s' is not one of %s"
-            % (finding.at("Category", line), n, category, " ".join(names)))
+            % (finding.at("Category", line), n, category, " ".join(FILED_CATEGORY_NAMES)))
     location_field = finding.field("Location")
     if location_field is None:
         die("ranked.md line %d: finding %d has no Location:" % (line, n))
-    at = finding.at("Location", line)
+    location_at = finding.at("Location", line)
     entries = list_split(location_field)
     if not entries:
-        die("%s: finding %d has no location" % (at, n))
+        die("%s: finding %d has no location" % (location_at, n))
     for location in list_lines(location_field):
         if not finding_location_ok(location):
             die("%s: finding %d's location '%s' is not <file>:<line> or <file>:<start>-<end>"
-                % (finding.where.get(("loc", location)) or at, n, location))
+                % (finding.where.get(("loc", location)) or location_at, n, location))
     for label, value in finding.fields:
         # Narrower than STEERING on purpose: Title and Category are read here
         # too, so one naming another finding is still refused.
@@ -645,11 +644,11 @@ def _finding_check(n: int, finding: Finding, line: int, count: int,
     overlaps = finding.field("Overlaps")
     if overlaps is None:
         return
-    at = finding.at("Overlaps", line)
+    overlaps_at = finding.at("Overlaps", line)
     for other in list_lines(overlaps):
         if not (_DIGITS.fullmatch(other) and 1 <= int(other) <= count and int(other) != n):
             die("%s: finding %d overlaps '%s', which is not another finding of the file"
-                % (at, n, other))
+                % (overlaps_at, n, other))
         links.setdefault(n, []).append(int(other))
         links.setdefault(int(other), []).append(n)
 
@@ -658,12 +657,12 @@ def ranked_read(directory: str) -> Run:
     """Reads and checks the run directory <directory>: its record, its
     ranked file, and every area file a From: names. Dies on the first thing
     that does not hold."""
-    run = Run(directory)
-    _record_read(run)
+    audit_run = Run(directory)
+    _record_read(audit_run)
     if not os.path.isfile(directory + "/ranked.md"):
         die("%s holds no ranked.md" % directory)
     counts = dict.fromkeys(("scope", "areas", "top", "none"), 0)
-    bodies: List[Tuple[str, int]] = []
+    blocks: List[Tuple[str, int]] = []
     top_line = 0
     for kind, arg, text, line in _ranked_sections(directory + "/ranked.md"):
         body = _trim(text)
@@ -674,27 +673,27 @@ def ranked_read(directory: str) -> Run:
         if kind == "scope":
             if not arg:
                 die("ranked.md line %d: @@ scope names no scope" % line)
-            run.scope = arg
+            audit_run.scope = arg
         elif kind == "areas":
             if not _DIGITS.fullmatch(arg):
                 die("ranked.md line %d: @@ areas takes a count, not '%s'" % (line, arg))
-            run.areas = arg
+            audit_run.areas = arg
         elif kind == "note":
             if not arg:
                 die("ranked.md line %d: @@ note names no heading" % line)
-            run.notes.append((arg, body))
+            audit_run.notes.append((arg, body))
         elif kind == "top":
             if not _DIGITS.fullmatch(arg):
                 die("ranked.md line %d: @@ top takes a finding number, not '%s'" % (line, arg))
-            run.top, run.top_written, run.top_text, top_line = int(arg), arg, body, line
+            audit_run.top, audit_run.top_written, audit_run.top_text, top_line = int(arg), arg, body, line
         elif kind == "none":
-            run.none = True
+            audit_run.none = True
         else:
-            expect = len(bodies) + 1
+            expect = len(blocks) + 1
             if not (_DIGITS.fullmatch(arg) and int(arg) == expect):
                 die("ranked.md line %d: expected @@ finding %d, found '%s': findings are"
                     " numbered from 1 in order" % (line, expect, arg))
-            bodies.append((text, line + 1))
+            blocks.append((text, line + 1))
         if kind in ("scope", "areas", "none") and body:
             die("ranked.md line %d: text after @@ %s" % (line, kind))
     if not counts["scope"]:
@@ -703,25 +702,25 @@ def ranked_read(directory: str) -> Run:
         die("ranked.md has no @@ areas line")
     if counts["top"] + counts["none"] != 1:
         die("ranked.md needs exactly one of @@ top and @@ none")
-    count = len(bodies)
-    if run.none:
+    count = len(blocks)
+    if audit_run.none:
         if count:
             die("ranked.md has @@ none and findings")
-        return run
+        return audit_run
     if not count:
         die("ranked.md has @@ top and no findings")
-    if not 1 <= run.top <= count:
+    if not 1 <= audit_run.top <= count:
         die("ranked.md line %d: @@ top names finding %s, which the file lacks"
-            % (top_line, run.top_written))
+            % (top_line, audit_run.top_written))
     areas: Dict[str, Optional[Dict[str, Tuple[str, int]]]] = {}
     links: Dict[int, List[int]] = {}
-    for n, (body, first) in enumerate(bodies, 1):
-        finding = _finding_resolve(n, body, first, directory, areas)
+    for n, (block, first) in enumerate(blocks, 1):
+        finding = _finding_resolve(n, block, first, directory, areas)
         _finding_check(n, finding, first - 1, count, links)
-        run.findings.append(finding)
-    for n, finding in enumerate(run.findings, 1):
+        audit_run.findings.append(finding)
+    for n, finding in enumerate(audit_run.findings, 1):
         finding.links = sorted(set(links.get(n, [])))
-    return run
+    return audit_run
 
 
 # --- the report page ----------------------------------------------------------
@@ -801,10 +800,10 @@ def md_render(text: str) -> str:
     return "".join(out)
 
 
-def page_render(run: Run) -> str:
-    """The report page for <run>. It holds no clock time and nothing
+def page_render(audit_run: Run) -> str:
+    """The report page for <audit_run>. It holds no clock time and nothing
     random."""
-    kind = esc(run.kind)
+    kind = esc(audit_run.kind)
     out = [
         '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n',
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n',
@@ -815,27 +814,27 @@ def page_render(run: Run) -> str:
         '</head>\n<body class="bg-white text-gray-900 max-w-4xl mx-auto p-6">\n',
         '<header class="mb-6">\n<h1 class="text-2xl font-bold">Audit report: %s</h1>\n' % kind,
         '<dl class="mt-3 grid grid-cols-4 gap-2">\n<dt class="font-semibold">Scope</dt>'
-        '<dd class="col-span-3">%s</dd>\n' % inline(run.scope),
-        '<dt class="font-semibold">Areas</dt><dd class="col-span-3">%s</dd>\n' % run.areas,
+        '<dd class="col-span-3">%s</dd>\n' % inline(audit_run.scope),
+        '<dt class="font-semibold">Areas</dt><dd class="col-span-3">%s</dd>\n' % audit_run.areas,
         '<dt class="font-semibold">Commit</dt><dd class="col-span-3"><code>%s</code></dd>\n'
-        "</dl>\n" % esc(run.commit),
+        "</dl>\n" % esc(audit_run.commit),
     ]
-    for heading, text in run.notes:
+    for heading, text in audit_run.notes:
         out.append('<section class="mt-4">\n<h2 class="text-lg font-semibold">%s</h2>\n'
                    % inline(heading))
         out.append(md_render(text))
         out.append("</section>\n")
     out.append("</header>\n<main>\n")
-    if run.none:
+    if audit_run.none:
         out.append('<p class="text-lg">The audit found nothing: no findings were kept.</p>\n')
     else:
         out.append('<section id="top" class="mb-8 p-4 border-l-4 border-blue-500 bg-blue-50">\n'
                    '<h2 class="text-lg font-semibold">Top recommendation</h2>\n')
         out.append('<p class="my-2">%s</p>\n'
-                   % _finding_link(run.top_written, inline(run.findings[run.top - 1].title)))
-        out.append(md_render(run.top_text))
+                   % _finding_link(audit_run.top_written, inline(audit_run.findings[audit_run.top - 1].title)))
+        out.append(md_render(audit_run.top_text))
         out.append("</section>\n")
-        for n, finding in enumerate(run.findings, 1):
+        for n, finding in enumerate(audit_run.findings, 1):
             out.append('<article id="finding-%d" class="mb-8">\n' % n)
             out.append('<h2 class="text-xl font-semibold">%d. %s</h2>\n'
                        % (n, inline(finding.title)))
@@ -857,7 +856,7 @@ def page_render(run: Run) -> str:
                 out.append(LIST_OPEN)
                 for j in finding.links:
                     out.append("<li>%s</li>\n"
-                               % _finding_link(str(j), inline(run.findings[j - 1].title)))
+                               % _finding_link(str(j), inline(audit_run.findings[j - 1].title)))
                 out.append("</ul>\n")
             out.append("</article>\n")
     out.append("</main>\n</body>\n</html>\n")
@@ -867,7 +866,7 @@ def page_render(run: Run) -> str:
 # --- the verbs ----------------------------------------------------------------
 
 
-def audit_report(argv: List[str], git, root: str, clock: Callable[[], float]) -> int:
+def audit_report(argv: List[str]) -> int:
     """`audit report <dir> <out.html>`: renders the audit run <dir> into
     <out.html> and prints its path. Every check of the ranked file comes
     before anything is written; the page goes to a temporary file beside
@@ -876,13 +875,13 @@ def audit_report(argv: List[str], git, root: str, clock: Callable[[], float]) ->
     if len(argv) != 2:
         die(audit_usage())
     directory, out = argv
-    run = ranked_read(directory)
+    audit_run = ranked_read(directory)
     outdir = out.rpartition("/")[0] if "/" in out else "."
     if not os.path.isdir(outdir):
         die("the directory for the report does not exist: %s" % outdir)
     if os.path.isdir(out):
         die("the report path is a directory: %s" % out)
-    if not file_write_atomic(out, page_render(run)):
+    if not file_write_atomic(out, page_render(audit_run)):
         die("cannot write the report beside %s" % out)
     print(out)
     return 0
@@ -922,7 +921,7 @@ def audit_file_batch(argv: List[str], gh, git) -> int:
     of the findings already filed."""
     if len(argv) != 2:
         die(audit_usage())
-    run = ranked_read(argv[0])
+    audit_run = ranked_read(argv[0])
     want = list_lines(argv[1])
     if not want:
         die(audit_usage())
@@ -931,7 +930,7 @@ def audit_file_batch(argv: List[str], gh, git) -> int:
         if not _DIGITS.fullmatch(item):
             die("'%s' is not a finding number" % item)
         n = int(item)
-        if not 1 <= n <= len(run.findings):
+        if not 1 <= n <= len(audit_run.findings):
             die("the ranked file has no finding %d" % n)
         if n in seen:
             die("finding %d is given twice" % n)
@@ -940,12 +939,12 @@ def audit_file_batch(argv: List[str], gh, git) -> int:
 
     base: Dict[int, str] = {}
     for n in picked:
-        finding = run.findings[n - 1]
-        base[n] = audit_body_norm(audit_batch_body(finding, run.commit))
+        finding = audit_run.findings[n - 1]
+        base[n] = audit_body_norm(audit_batch_body(finding, audit_run.commit))
         got_locations, got_shas = body_parse(base[n])
         if got_locations != finding.locations.split("\n"):
             die("the rendered body does not parse back: locations of finding %d" % n)
-        if got_shas != [run.commit]:
+        if got_shas != [audit_run.commit]:
             die("the rendered body does not parse back: audited at of finding %d" % n)
 
     with finding_body_file_new("") as body_file:
@@ -955,7 +954,7 @@ def audit_file_batch(argv: List[str], gh, git) -> int:
         triage: Optional[str] = None
         ensured: List[str] = []
         for n in picked:
-            finding = run.findings[n - 1]
+            finding = audit_run.findings[n - 1]
             found = audit_open_find(existing, finding.title)
             if found is not None:
                 issue[n], state[n] = found, "open"
@@ -972,7 +971,7 @@ def audit_file_batch(argv: List[str], gh, git) -> int:
             issue[n], state[n] = made, "filed"
             existing.append((made, finding.title))
             print("%d\t%d\tfiled" % (n, made), flush=True)
-        _related_write_all(run, picked, base, issue, state, body_file, gh)
+        _related_write_all(audit_run, picked, base, issue, state, body_file, gh)
     return 0
 
 
@@ -981,7 +980,7 @@ def _nums_union(a: Sequence[int], b: Sequence[int]) -> List[int]:
     return sorted(set(a) | set(b))
 
 
-def _related_write_all(run: Run, picked: List[int], base: Dict[int, str],
+def _related_write_all(audit_run: Run, picked: List[int], base: Dict[int, str],
                        issue: Dict[int, int], state: Dict[int, str], body_file: str,
                        gh) -> None:
     """Writes each picked finding's issue's **Related:** paragraph: the
@@ -996,7 +995,7 @@ def _related_write_all(run: Run, picked: List[int], base: Dict[int, str],
     for n in picked:
         first_pick.setdefault(issue[n], n)
         links = [issue[j] for j in picked
-                 if j in run.findings[n - 1].links and issue[j] != issue[n]]
+                 if j in audit_run.findings[n - 1].links and issue[j] != issue[n]]
         if links:
             pooled[issue[n]] = _nums_union(pooled.get(issue[n], []), links)
     for n in picked:
@@ -1033,9 +1032,6 @@ def _related_write_all(run: Run, picked: List[int], base: Dict[int, str],
                   body_file)
 
 
-VERBS = {"begin": audit_begin, "report": audit_report}
-
-
 def run(
     argv: List[str],
     gh=None,
@@ -1057,4 +1053,6 @@ def run(
         if argv[1:2] == ["--run"]:
             return audit_file_batch(argv[2:], gh, git)
         return audit_file(argv[1:], gh, git)
-    return VERBS[op](argv[1:], git, root, clock)
+    if op == "report":
+        return audit_report(argv[1:])
+    return audit_begin(argv[1:], git, root, clock)

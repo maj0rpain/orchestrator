@@ -4,28 +4,17 @@ checked by its stdout, its exit code, its `orch:` message and the files it
 leaves."""
 from __future__ import annotations
 
-import calendar
 import os
 from pathlib import Path
 
 import pytest
 
-from orch import audit
 from orch.git import FakeGit
+from conftest import AUDIT_USAGE, orch_audit
 
 HEAD = "0123456789abcdef0123456789abcdef01234567"
-# The clock every run reads, pinned so a run directory's name is known.
-PINNED = float(calendar.timegm((2030, 1, 2, 3, 4, 5)))
+# The run directory's stamp: AUDIT_CLOCK's UTC time.
 STAMP = "20300102-030405"
-
-USAGE = (
-    "orch: usage: orch.sh audit begin <code|docs|tests>\n"
-    "   or: orch.sh audit report <dir> <out.html>\n"
-    "   or: orch.sh audit file --run <dir> <numbers>\n"
-    "   or: orch.sh audit file <title> --category <bug|enhancement|documentation>"
-    " --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]\n"
-)
-
 
 @pytest.fixture
 def root(tmp_path):
@@ -43,15 +32,6 @@ def checkout_git(root, git_class=FakeGit):
     git.seed("resolve_commit", "HEAD", answer=HEAD)
     git.seed("git_common_dir", answer=str(root / ".git"))
     return git
-
-
-def orch_audit(git, *argv):
-    """`orch.sh audit <argv>` in-process at the pinned clock: its exit code,
-    a SystemExit's included."""
-    try:
-        return audit.run(list(argv), git=git, env={}, clock=lambda: PINNED)
-    except SystemExit as died:
-        return died.code
 
 
 def run_dir(root, kind):
@@ -110,7 +90,7 @@ def test_a_line_already_in_the_exclude_file_is_not_added_again(root, capsys, bef
 def test_a_refused_begin_prints_the_usage_naming_every_form_and_makes_nothing(root, capsys, argv):
     assert orch_audit(checkout_git(root), *argv) == 1
 
-    assert capsys.readouterr() == ("", USAGE)
+    assert capsys.readouterr() == ("", AUDIT_USAGE)
     assert not (root / ".orchestrator").exists()
     assert not exclude_of(root).exists()
 

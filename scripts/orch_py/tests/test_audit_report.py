@@ -16,19 +16,11 @@ import pytest
 
 from orch import audit, common
 from orch.git import FakeGit
+from conftest import AUDIT_USAGE
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURES = os.path.join(HERE, "audit_report")
 CHECKOUT = "/nonexistent/checkout"
-
-USAGE = (
-    "orch: usage: orch.sh audit begin <code|docs|tests>\n"
-    "   or: orch.sh audit report <dir> <out.html>\n"
-    "   or: orch.sh audit file --run <dir> <numbers>\n"
-    "   or: orch.sh audit file <title> --category <bug|enhancement|documentation>"
-    " --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]\n"
-)
-
 
 def report(*args):
     """`audit report <args>` in a checkout; its exit code."""
@@ -273,7 +265,7 @@ def test_report_refuses_any_count_of_arguments_but_two_with_the_usage(capsys, ar
     with pytest.raises(SystemExit) as death:
         report(*args)
     assert death.value.code == 1
-    assert capsys.readouterr() == ("", USAGE)
+    assert capsys.readouterr() == ("", AUDIT_USAGE)
 
 
 def test_audit_outside_a_checkout_dies_before_reading_the_run(tmp_path, capsys):

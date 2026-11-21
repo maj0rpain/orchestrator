@@ -38,6 +38,9 @@ FILED_CATEGORIES = (
     ("documentation", "0075ca", "Improvements or additions to documentation"),
 )
 
+# The category table's names alone, in its order.
+FILED_CATEGORY_NAMES = tuple(name for name, _, _ in FILED_CATEGORIES)
+
 # The opposite category, the one a finding loses when triage settles on the
 # other: bug and enhancement alone have one.
 CATEGORY_OTHER = {"bug": "enhancement", "enhancement": "bug"}

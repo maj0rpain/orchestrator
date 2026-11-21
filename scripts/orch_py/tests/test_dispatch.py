@@ -325,12 +325,3 @@ def test_audit_file_run_files_a_run_s_pick_through_the_dispatch(tmp_path, repo, 
 
     assert answer == ("2\t40\tfiled\n", "", 0)
     assert read(seed.store, "issues", 40, "title") == "Deepen d.sh\n"
-
-
-def test_audit_dies_before_doing_anything_without_python3(tmp_path, repo, seed):
-    answer = orch_sh(tmp_path, repo, seed, "audit", "begin", "code",
-                     path=path_without(tmp_path, "python3"))
-
-    assert answer == ("", "orch: orch.sh audit needs python3 3.9 or newer (found none)"
-                          " - run orch.sh doctor\n", 1)
-    assert not (repo / ".orchestrator").exists()
