@@ -6,24 +6,10 @@ import subprocess
 
 import pytest
 
+from conftest import git_repo
 from orch.git import FakeGit, Git
 
 ORIGIN = "https://github.com/fork/widgets.git"
-
-
-def git_repo(path, origin=None):
-    """A fresh repository at <path>, with <origin> as its origin remote when
-    one is given."""
-    subprocess.run(
-        ["git", "init", "-q", str(path)], check=True, stdin=subprocess.DEVNULL
-    )
-    if origin is not None:
-        subprocess.run(
-            ["git", "-C", str(path), "remote", "add", "origin", origin],
-            check=True,
-            stdin=subprocess.DEVNULL,
-        )
-    return Git(cwd=str(path))
 
 
 @pytest.mark.parametrize("origin", [ORIGIN, None], ids=["origin", "no-origin"])

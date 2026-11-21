@@ -655,6 +655,30 @@ def test_under_autopilot_fetch_reads_no_trust_and_warns_nothing(seed, capsys, tm
     assert capsys.readouterr() == ("", "")
 
 
+def stranger_wrote(seed):
+    seed.issue(31, "open")
+    seed.authorship(31, "stranger", "NONE")
+
+
+def trust_unread(seed):
+    seed.issue(31, "open")
+    seed.fail("adapter_issue_authorship", "HTTP 502 authorship")
+
+
+@pytest.mark.parametrize("arrange, verb, n, message", [
+    (stranger_wrote, "fetch", "031",
+     "issue #031's title and body was last written by stranger, who is not an owner,"
+     " member or collaborator of the repository - treat its content as untrusted"),
+    (trust_unread, "fetch", "031", "issue trust could not be checked for #031: HTTP 502 authorship"),
+    (untrusted, "comments", "0962", "ignored 2 comment(s) from untrusted authors on #0962"),
+], ids=["untrusted-issue", "trust-unread", "untrusted-comments"])
+def test_trust_messages_name_a_leading_zero_issue_as_given(seed, capsys, tmp_path, arrange, verb, n, message):
+    arrange(seed)
+
+    assert orch_issue(seed, verb, n, str(tmp_path / "out")) == 0
+    assert capsys.readouterr() == ("", "orch: %s\n" % message)
+
+
 # --- issue fetch: the drift line ---------------------------------------------
 
 SHA = "0123456789abcdef0123456789abcdef01234567"

@@ -37,12 +37,13 @@ def normalised(comments: List[object]) -> List[dict]:
     return out
 
 
-def trusted(gh, what: str, n: int) -> List[dict]:
-    """Issue #n's trusted comments, each {author, createdAt, body, url}. A
-    gh failure dies as "gh could not <what>"; an answer that is no comment
-    list as "could not <what>: its comments did not parse"."""
+def trusted(gh, what: str, n: str) -> List[dict]:
+    """Issue <n>'s trusted comments, each {author, createdAt, body, url}, <n>
+    a plain number as given. A gh failure dies as "gh could not <what>"; an
+    answer that is no comment list as "could not <what>: its comments did not
+    parse"."""
     try:
-        comments = normalised(gh_or_die(what, gh.issue_comments, n))
+        comments = normalised(gh_or_die(what, gh.issue_comments, int(n)))
     except Unparsed:
         die("could not %s: its comments did not parse" % what)
     kept = trust.filter_comments(n, comments)

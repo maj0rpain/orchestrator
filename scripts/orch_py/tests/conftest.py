@@ -11,13 +11,14 @@ from __future__ import annotations
 import json
 import os
 import stat
+import subprocess
 import sys
 
 import pytest
 
 from orch import issue
 from orch.gh_fake import FakeGh, FakeStore
-from orch.git import FakeGit
+from orch.git import FakeGit, Git
 from orch.triage_labels import LABELS_DOC
 
 # A gh failure's stderr: its first line is the reason a message names.
@@ -47,6 +48,21 @@ def write_labels_doc(root, text):
     path = root / LABELS_DOC
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
+
+
+def git_repo(path, origin=None):
+    """A fresh repository at <path>, with <origin> as its origin remote when
+    one is given: its Git adapter."""
+    subprocess.run(
+        ["git", "init", "-q", str(path)], check=True, stdin=subprocess.DEVNULL
+    )
+    if origin is not None:
+        subprocess.run(
+            ["git", "-C", str(path), "remote", "add", "origin", origin],
+            check=True,
+            stdin=subprocess.DEVNULL,
+        )
+    return Git(cwd=str(path))
 
 
 def orch_issue(seed, *argv, gh=None, git=None, env=None, pin=None):

@@ -68,9 +68,10 @@ into a venv at `/opt/orch-dev`. Locally: `python3 -m venv .venv &&
 `scripts/orch_py/`, `python3 -m pytest` runs the whole suite, `-k <name>` the
 tests whose names match, `-n <workers>` (or `-n auto`) spreads them over xdist
 workers.
-`scripts/test/orch_py_test.sh` is the wrapper all.sh and affected.sh run, on
-every call: it reports pytest's result as a suite's FAIL lines and summary, and
-prints `not installed - skipped` without pytest, which fails only under CI. The
+`scripts/test/orch_py_test.sh` is the wrapper affected.sh runs on every call
+and all.sh on every call but a shard group other than the first: it reports
+pytest's result as a suite's FAIL lines and summary, and prints
+`not installed - skipped` without pytest, which fails only under CI. The
 pytest suite sits outside the suite budget: it is in neither all.sh's suites
 list nor the durations file, has no durations file of its own, and its growth
 is guarded by review alone. In affected.sh a change under `scripts/orch_py/`
@@ -95,7 +96,8 @@ for `scripts/orch/checkout.sh`, `comments.sh` for `scripts/orch/comments.sh`,
 `scripts/orch/standing.sh`, `trust.sh` for `scripts/orch/trust.sh`,
 `wait.sh` for `scripts/orch/wait.sh`. A
 ticket's tests go in the file for the noun it touches; a new
-noun gets a new file, which the runner picks up with no edit. A noun file holds
+noun is Python, its tests pytest in `scripts/orch_py/tests/`, and a new section
+file is picked up by the runner with no edit. A noun file holds
 only `# ---` sections, optionally preceded by a preamble: the text before its
 first `# ---` line, run before that file's sections whenever one of them runs.
 
@@ -128,10 +130,10 @@ seconds of the other suites and shellcheck, and a section the file does not
 list weighs the median CPU of the listed sections the deal deals, all but the
 isolation section (the lower middle on an even count; 1 second when none is
 listed). The isolation section runs in
-every group. `all.sh` runs the other suites and shellcheck in group 1 only. A
-malformed value, or any value with `ORCH_TEST_ONLY`, is refused; an empty value
-counts as unset; `affected.sh` unsets it, and no runner a section starts
-inherits it.
+every group. `all.sh` runs the other suites, the pytest suite and shellcheck in
+group 1 only. A malformed value, or any value with `ORCH_TEST_ONLY`, is
+refused; an empty value counts as unset; `affected.sh` unsets it, and no runner
+a section starts inherits it.
 
 `scripts/dev/section-durations.sh` with no argument makes a full refresh of that
 file: it runs `orch_test.sh`

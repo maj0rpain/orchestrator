@@ -249,12 +249,12 @@ def parse_blocker_states(text: str) -> List[Tuple[int, str]]:
     return states
 
 
-def urlnumber_of(kind: str, out: str) -> Optional[int]:
-    """The number in the last issue (<kind> "issues") or PR ("pull") URL of
-    what gh create printed - the URL alone on its line - or None."""
+def urlnumber_of(out: str) -> Optional[int]:
+    """The number in the last issue URL of what gh issue create printed - the
+    URL alone on its line - or None."""
     found = None
     for line in out.split("\n"):
-        match = re.match(r"^https?://.*/%s/([0-9]+)$" % kind, line)
+        match = re.match(r"^https?://.*/issues/([0-9]+)$", line)
         if match:
             found = int(match.group(1))
     return found
@@ -533,7 +533,7 @@ class Gh:
         for label in labels:
             args += ["--label", label]
         out = self._gh(args).rstrip("\n")
-        number = urlnumber_of("issues", out)
+        number = urlnumber_of(out)
         if number is None:
             raise GhFailed("gh issue create printed no issue URL: " + out)
         return number

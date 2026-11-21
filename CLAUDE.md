@@ -66,11 +66,11 @@ Branch verification: scripts/test/affected.sh
 Full verification: scripts/test/all.sh
 orch_test.sh is only the runner: its `# ---` sections live in
 `scripts/test/orch/<noun>.sh`, and a ticket's tests go in the file for the noun
-it touches (a new noun gets a new file; a concept module with no noun gets a
-section file named as it is). Sections run in parallel, so every section must
-pass on its own. The runners share one job pool, its slots sized to 75% of the
-usable CPUs unless `ORCH_TEST_POOL_PERCENT` sets another share (see
-CONTRIBUTING.md).
+it touches (a new noun is Python, its tests pytest in `scripts/orch_py/tests/`;
+a concept module with no noun gets a section file named as it is). Sections
+run in parallel, so every section must pass on its own. The runners share one
+job pool, its slots sized to 75% of the usable CPUs unless
+`ORCH_TEST_POOL_PERCENT` sets another share (see CONTRIBUTING.md).
 Test-helper placement is checked by `scripts/test/orch/harness.sh`'s
 test-helper placement section; its failure message states the rule. A test that
 writes out the whole body of a shared or preamble test helper it could call is

@@ -42,7 +42,9 @@ venv="${ORCH_TEST_PYTEST_VENV:-/opt/orch-dev}"
 python=python3
 [ -x "$venv/bin/python" ] && python="$venv/bin/python"
 
-if ! "$python" -c 'import pytest, xdist, pytest_timeout' </dev/null >/dev/null 2>&1; then
+# The check runs from the package, as pytest does, so no module in the
+# caller's directory satisfies or breaks its imports.
+if ! (cd "$pkg" && "$python" -c 'import pytest, xdist, pytest_timeout') </dev/null >/dev/null 2>&1; then
   echo "not installed - skipped"
   [ -n "${CI:-}" ] && exit 1
   exit 0

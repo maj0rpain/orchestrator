@@ -12,18 +12,16 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[2]
+from conftest import git_repo
+
+SCRIPTS =Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture
 def repo(tmp_path):
     """A repository at tmp_path/repo pinned to a GitHub origin."""
     repo = tmp_path / "repo"
-    repo.mkdir()
-    for args in (("init", "-q"),
-                 ("remote", "add", "origin", "https://github.com/acme/widgets.git")):
-        subprocess.run(["git", "-C", str(repo), *args], check=True,
-                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    git_repo(repo, "https://github.com/acme/widgets.git")
     return repo
 
 

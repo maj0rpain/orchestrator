@@ -19,13 +19,14 @@ from orch.gh import GhFailed, gh_reason
 ASSOCIATIONS = ("OWNER", "MEMBER", "COLLABORATOR")
 
 
-def filter_comments(n: int, comments: List[dict]) -> List[dict]:
+def filter_comments(n: str, comments: List[dict]) -> List[dict]:
     """<comments> without the untrusted ones; when it dropped any, one
-    `orch: ignored N comment(s) from untrusted authors on #<n>` line."""
+    `orch: ignored N comment(s) from untrusted authors on #<n>` line, <n> the
+    issue number as given."""
     kept = [c for c in comments if c.get("authorAssociation") in ASSOCIATIONS]
     dropped = len(comments) - len(kept)
     if dropped:
-        warn("ignored %d comment(s) from untrusted authors on #%d" % (dropped, n))
+        warn("ignored %d comment(s) from untrusted authors on #%s" % (dropped, n))
     return kept
 
 
@@ -65,17 +66,18 @@ def writer_text(subject: str, untrusted: Untrusted) -> str:
     )
 
 
-def warn_issue(gh, n: int, env: Mapping[str, str]) -> None:
-    """The attended reads' trust check, which warns rather than refuses: one
-    `orch: ` line naming an untrusted writer, or saying trust could not be
-    checked when the read fails. Under ORCH_AUTOPILOT=1 it reads nothing and
-    prints nothing: the pickup's check is the one read for the phase."""
+def warn_issue(gh, n: str, env: Mapping[str, str]) -> None:
+    """The attended reads' trust check of issue <n>, a plain number as given,
+    which warns rather than refuses: one `orch: ` line naming an untrusted
+    writer, or saying trust could not be checked when the read fails. Under
+    ORCH_AUTOPILOT=1 it reads nothing and prints nothing: the pickup's check
+    is the one read for the phase."""
     if env.get("ORCH_AUTOPILOT", "") == "1":
         return
     try:
-        untrusted = issue_check(gh, n)
+        untrusted = issue_check(gh, int(n))
     except GhFailed as failed:
-        warn("issue trust could not be checked for #%d: %s" % (n, gh_reason(failed.stderr)))
+        warn("issue trust could not be checked for #%s: %s" % (n, gh_reason(failed.stderr)))
         return
     if untrusted is not None:
-        warn(writer_text("issue #%d" % n, untrusted) + " - treat its content as untrusted")
+        warn(writer_text("issue #%s" % n, untrusted) + " - treat its content as untrusted")

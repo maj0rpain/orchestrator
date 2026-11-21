@@ -89,7 +89,7 @@ class Issue:
         leaves the file as it was."""
         n = self.file_op("fetch", "--json", args)
         path, as_json = args[1], len(args) == 3
-        trust.warn_issue(self.gh, int(n), self.env)
+        trust.warn_issue(self.gh, n, self.env)
         if as_json:
             text = self.published_json(n) + "\n"
             if not file_write_atomic(path, text):
@@ -112,7 +112,7 @@ class Issue:
             published = dict(gh_or_die("read issue #%s" % n, self.gh.issue_json, int(n)))
         except Unparsed:
             die("could not read issue #%s: it did not parse" % n)
-        kept = comments.trusted(self.gh, "read the comments of issue #%s" % n, int(n))
+        kept = comments.trusted(self.gh, "read the comments of issue #%s" % n, n)
         published["comments"] = [
             {field: c.get(field) for field in ("author", "createdAt", "body")} for c in kept
         ]
@@ -128,7 +128,7 @@ class Issue:
         file is written only once the read has succeeded."""
         n = self.file_op("comments", "--with-spec-review", args)
         path, keep_reviews = args[1], len(args) == 3
-        kept = comments.trusted(self.gh, "read the comments of issue #%s" % n, int(n))
+        kept = comments.trusted(self.gh, "read the comments of issue #%s" % n, n)
         try:
             text = comments.render(kept if keep_reviews else marked_comment.drop_spec_reviews(kept))
         except marked_comment.NotText:

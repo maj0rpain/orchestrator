@@ -102,6 +102,12 @@ def _issue_path(store: str, n: int, *parts: str) -> str:
     return _store_path(store, "issues", n, *parts)
 
 
+def _labels_write(store: str, n: int, labels: Sequence[str]) -> None:
+    """Issue #n's labels in the store at <store>: exactly <labels>, one a
+    line, in order."""
+    _write(_issue_path(store, n, "labels"), "".join(label + "\n" for label in labels))
+
+
 def _comment_write(directory: str, author: str, created: str, association: str,
                    body: str) -> None:
     """A comment after any <directory> holds: the next number's directory,
@@ -209,9 +215,6 @@ class FakeGh:
             if real.label_listed([known], name):
                 return known
         return name
-
-    def _labels_write(self, n: int, labels: Sequence[str]) -> None:
-        _write(_issue_path(self.store, n, "labels"), "".join(label + "\n" for label in labels))
 
     def _comment_append(self, directory: str, body: str) -> None:
         _comment_write(directory, COMMENT_AUTHOR, COMMENT_CREATED, "OWNER", body)
@@ -343,7 +346,7 @@ class FakeGh:
         for label in labels:
             if not real.label_listed(kept, label):
                 kept.append(self._label_canon(label))
-        self._labels_write(n, kept)
+        _labels_write(self.store, n, kept)
         return n
 
     def issue_body_edit(self, n: int, body_file: str) -> None:
@@ -368,7 +371,7 @@ class FakeGh:
         for label in add:
             if not real.label_listed(labels, label):
                 labels.append(self._label_canon(label))
-        self._labels_write(n, labels)
+        _labels_write(self.store, n, labels)
 
     def issue_close(
         self,
@@ -437,7 +440,7 @@ class FakeStore:
         self.labels(n, *labels)
 
     def labels(self, n: int, *labels: str) -> None:
-        _write(_issue_path(self.store, n,"labels"), "".join(label + "\n" for label in labels))
+        _labels_write(self.store, n, labels)
 
     def title(self, n: int, title: str) -> None:
         _write(_issue_path(self.store, n,"title"), title + "\n")
