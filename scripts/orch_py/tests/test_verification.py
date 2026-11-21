@@ -267,18 +267,6 @@ def test_a_stale_live_run_ignoring_term_is_killed_inside_the_call(repo, tmp_path
     assert (code, gone(old)) == (75, True)
 
 
-def test_a_stale_finished_result_is_discarded_and_the_run_made_again(repo, tmp_path, capsys):
-    command = gated(tmp_path, "echo done $(cat README.md)")
-    record = started(capsys, repo, tmp_path, command)
-    (tmp_path / "gate").write_text("")
-    assert until(lambda: (record / "status").exists())
-    (repo / "README.md").write_text("edited\n")
-
-    code = verify(repo, "run", command)
-
-    assert (code, capsys.readouterr().out, starts(tmp_path)) == (0, "done edited\n", 2)
-
-
 def test_a_run_of_another_command_is_left_alone(repo, tmp_path, capsys):
     command = gated(tmp_path)
     group = group_of(started(capsys, repo, tmp_path, command))
@@ -603,13 +591,15 @@ def test_a_bash_left_finished_matching_record_is_delivered(repo, capsys):
         4, ("bash out\n", "bash err\n"), [])
 
 
-def test_a_bash_left_stale_finished_record_is_discarded(repo, capsys):
-    bash_record(repo, "echo fresh", state="stale\n", pid="99999999 x\n", out="bash out\n",
-                err="", status="0\n")
+def test_a_stale_finished_result_is_discarded_and_the_run_made_again(repo, tmp_path, capsys):
+    command = 'echo start >>"%s"; echo done $(cat README.md)' % (tmp_path / "starts")
+    bash_record(repo, command, pid="99999999 x\n", out="bash out\n", err="", status="0\n")
+    (repo / "README.md").write_text("edited\n")
 
-    code = verify(repo, "run", "echo fresh")
+    code = verify(repo, "run", command)
 
-    assert (code, capsys.readouterr().out, records(repo)) == (0, "fresh\n", [])
+    assert (code, capsys.readouterr().out, starts(tmp_path), records(repo)) == (
+        0, "done edited\n", 1, [])
 
 
 def test_a_bash_left_termed_record_is_stopped_by_its_group_though_its_leader_died(
