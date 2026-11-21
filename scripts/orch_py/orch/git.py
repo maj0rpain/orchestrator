@@ -4,9 +4,10 @@ Each operation is named for what its callers need, as the gh adapter's are
 (ADR-0033): the origin URL the repo pin reads, the checkout's toplevel
 the issue noun finds the triage-labels doc under, the toplevel of another
 directory's checkout the outside-a-checkout remedy names, the comparisons
-an audit body's drift line reads, and the commit resolution, fetches, file
-and line histories finding triage's scan, Lines fate and the default-branch
-lookup read. There is no generic run: each later noun adds the operations it
+an audit body's drift line reads, the commit resolution, fetches, file and
+line histories finding triage's scan, Lines fate and the default-branch
+lookup read, and the working-tree state, object names, config value and main
+checkout the verification noun reads. There is no generic run: each later noun adds the operations it
 needs, each with a test run against a real repository and against FakeGit,
 asserting the same answers. The scan's, Lines fate's and the lookup's
 operations run at the checkout's top level, and answer their "could not"
@@ -45,6 +46,10 @@ COULD_NOT: Dict[str, Any] = {
     "blame_last_seen": None,
     "origin_head_branch": None,
     "is_branch_name": False,
+    "tree_state": None,
+    "text_hash": None,
+    "config_value": None,
+    "main_checkout": None,
 }
 
 # A commit's full SHA-1 name, the only one the bash scan's line-range log
@@ -106,6 +111,15 @@ class Git:
         when it fails or prints nothing."""
         text = self._text_at_top(args)
         return (text.strip() or None) if text is not None else None
+
+    def _run_input(
+        self, args: List[str], data: bytes, cwd: Optional[str] = None
+    ) -> "subprocess.CompletedProcess[bytes]":
+        """A `git` run, as _run, reading <data> on stdin."""
+        return subprocess.run(
+            ["git", *args], cwd=self.cwd if cwd is None else cwd, input=data,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
 
     def _file_log(self, flags: List[str], ref: str, since: str, path: str) -> Optional[List[str]]:
         """The full SHAs a `log <flags>` of the commits of <ref> since
@@ -272,6 +286,64 @@ class Git:
         --branch` takes it: False for an empty one."""
         return self._run_at_top(["check-ref-format", "--branch", name]).returncode == 0
 
+    # The verification noun's operations, each run at the top level, each None
+    # on a git failure.
+
+    def tree_state(self) -> Optional[str]:
+        """The working-tree state, as the bash verification noun hashes it: the
+        object name of a text holding what `rev-parse HEAD` prints, `none`
+        after it when it fails (an unborn branch, where it prints HEAD), the
+        tracked files' changes against HEAD, staged or not, as a binary diff,
+        and a line per untracked file git does not ignore, by its object name,
+        .orchestrator left out. Ignored files never count. None outside a
+        checkout."""
+        top = self._top()
+        if top is None:
+            return None
+        named_head = self._run_at_top(["rev-parse", "HEAD"])
+        head = named_head.stdout + (b"" if named_head.returncode == 0 else b"none\n")
+        text = b"head " + head.rstrip(b"\n") + b"\n"
+        diff = self._run_at_top(["diff", "HEAD", "--binary"])
+        if diff.returncode != 0:
+            diff = self._run_at_top(["diff", "--binary"])
+        if diff.returncode == 0:
+            text += diff.stdout
+        listed = self._run_at_top(
+            ["ls-files", "--others", "--exclude-standard", "-z", "--", ":!.orchestrator"]
+        )
+        if listed.returncode == 0:
+            for name in listed.stdout.split(b"\0"):
+                if name:
+                    named = self._run_at_top(
+                        ["hash-object", "--", name.decode("utf-8", "surrogateescape")]
+                    )
+                    sha = named.stdout.strip() if named.returncode == 0 else b""
+                    text += b"untracked " + name + b" " + sha + b"\n"
+        return self._hash(text)
+
+    def _hash(self, data: bytes) -> Optional[str]:
+        run = self._run_input(["hash-object", "--stdin"], data, cwd=self._top())
+        if run.returncode != 0:
+            return None
+        return run.stdout.decode("utf-8", "surrogateescape").strip() or None
+
+    def text_hash(self, text: str) -> Optional[str]:
+        """The object name `git hash-object --stdin` gives <text>, as UTF-8."""
+        return self._hash(text.encode("utf-8", "surrogateescape"))
+
+    def config_value(self, key: str) -> Optional[str]:
+        """The value git config holds for <key>; None when it holds none."""
+        return self._line_at_top(["config", "--get", key])
+
+    def main_checkout(self) -> Optional[str]:
+        """The main checkout's root: the first entry `git worktree list`
+        prints. None when the list fails or is empty."""
+        text = self._text_at_top(["worktree", "list", "--porcelain"])
+        for line in (text or "").splitlines():
+            if line.startswith("worktree "):
+                return line[len("worktree "):]
+        return None
+
 
 class FakeGit:
     """The in-process fake: a repository held in memory. <remotes> maps each
@@ -383,6 +455,18 @@ class FakeGit:
 
     def is_branch_name(self, name: str) -> bool:
         return self._answer("is_branch_name", name)
+
+    def tree_state(self) -> Optional[str]:
+        return self._answer("tree_state")
+
+    def text_hash(self, text: str) -> Optional[str]:
+        return self._answer("text_hash", text)
+
+    def config_value(self, key: str) -> Optional[str]:
+        return self._answer("config_value", key)
+
+    def main_checkout(self) -> Optional[str]:
+        return self._answer("main_checkout")
 
 
 def _call_key(name: str, args: Sequence[Any]) -> Tuple[Any, ...]:
