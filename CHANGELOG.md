@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.11.2
+
+`orch.sh verification` now runs as Python, the third noun moved out of bash, and a verification runner can no longer outlive its run. The runner waits on its command instead of polling its record, so removing the record no longer leaves it spinning to the hour-long ceiling. It also watches its own checkout and stops its command once the checkout is gone or its identity token changes. `ORCH_VERIFICATION_WATCH` sets how often it looks (default 2 s). `run` and `stop` keep their arguments, output and exit codes. `affected.sh` now shellchecks one file per process from the job pool, as `all.sh` does, so a ticket touching many bash files can no longer exhaust the host's memory. ADR-0067 points at #3951 for what goes with the last bash section.
+
 ## 6.11.1
 
 `orch.sh finding-triage` now runs as Python, the second noun moved out of bash: `scan`, `apply` and `bundle` keep their arguments, output and exit codes, and the bash `finding-triage` and Lines fate modules are gone. The Python package's `git` and `gh` adapters gain the operations it needs, each with an in-process fake, and Lines fate is tested against real repositories (ADR-0067).
