@@ -520,7 +520,9 @@ noun's `run` its fakes (`issue.run(argv, gh=..., git=..., env=...)`).
   Python: a case that needs one for a converted verb is a pytest test.
 - `orch.git.FakeGit`, the git adapter's in-memory fake. Each git operation is
   tested against a real repository in `tmp_path` and against the fake,
-  asserting the same answers.
+  asserting the same answers. The operations `orch.git.COULD_NOT` names answer
+  what `seed(<operation>, <args>..., answer=...)` set for their arguments, and
+  their "could not" value for a call nothing was seeded for.
 - In `conftest.py`: `clean_env`, autouse, clears the variables that would
   change what a test resolves and puts the real-gh guard first on `PATH`,
   failing a test that reaches gh; `fixture_gh` is a fixture gh answering by
