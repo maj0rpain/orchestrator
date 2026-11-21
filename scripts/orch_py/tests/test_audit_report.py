@@ -170,6 +170,31 @@ def test_report_refuses_a_malformed_run_writing_nothing(tmp_path, capsys, run_di
     refused(tmp_path, capsys, run_dir, out, message)
 
 
+# Each malformed nothing-found run: what follows its ranked file's @@ none
+# line, and the bash renderer's refusal of it.
+MALFORMED_NONE = [
+    ("trailing\n", "ranked.md line 5: text after @@ none"),
+    ("@@ none\n", "ranked.md line 6: a second @@ none"),
+    ("@@ finding 1\nTitle: T\n", "ranked.md has @@ none and findings"),
+]
+
+
+@pytest.mark.parametrize("tail, message", MALFORMED_NONE, ids=[m for _, m in MALFORMED_NONE])
+def test_report_refuses_a_malformed_nothing_found_run(tmp_path, capsys, tail, message):
+    run = tmp_path / "run"
+    shutil.copytree(os.path.join(FIXTURES, "none"), str(run))
+    with open(str(run / "ranked.md"), "a") as f:
+        f.write(tail)
+    refused(tmp_path, capsys, run, tmp_path / "report.html", message)
+
+
+def test_report_refuses_a_top_with_no_findings(tmp_path, capsys, run_dir):
+    ranked = run_dir / "ranked.md"
+    ranked.write_text(ranked.read_text().split("@@ finding 1\n")[0])
+    refused(tmp_path, capsys, run_dir, tmp_path / "report.html",
+            "ranked.md has @@ top and no findings")
+
+
 def test_report_names_the_area_file_line_of_a_hunters_category(tmp_path, capsys, run_dir):
     edit(run_dir / "area-2.md", "Evidence: friction\n", "Category: cheese\nEvidence: friction\n")
     edit(run_dir / "ranked.md", "Category: enhancement\nFix/Workaround", "Fix/Workaround")
