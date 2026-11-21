@@ -3443,8 +3443,9 @@ check "each audit skill's Hunt step runs audit begin and names area-<k>.md" \
 # state its category in the literal form Category: <c>, for each category the
 # skill files under. The Category: check is structural under ADR-0027:
 # Category: is a field of the ranked-findings body format that orch.sh's audit
-# filing parses (audit.sh dies on a finding without it), the same token reading
-# the linter gives flag names and the closer's labels.
+# filing parses (the audit noun, orch/audit.py, dies on a finding without
+# it), the same token reading the linter gives flag names and the closer's
+# labels.
 scan_audit_rank_report() {
   local r="$1" skill cats cat report rank
   files_present "$r" "${AUDIT_SKILLS[@]}"

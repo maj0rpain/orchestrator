@@ -24,7 +24,7 @@ import tempfile
 from typing import Callable, Dict, List, Mapping, Optional, Tuple
 
 from orch.base import default_branch
-from orch.common import die, plain_number, temp_text_file
+from orch.common import die, plain_number, read_raw, temp_text_file
 from orch import comments
 from orch.filed_finding import (
     FILED_SEVERITIES,
@@ -392,10 +392,8 @@ class FindingTriage:
         unreadable file would otherwise post the disclaimer alone (#1335)."""
         unwritten = ("could not write the triage comment from %s - nothing was posted on"
                      " issue #%s" % (path, issue))
-        try:
-            with open(path, "rb") as source:
-                text = source.read().decode("utf-8", "surrogateescape")
-        except OSError:
+        text = read_raw(path)
+        if text is None:
             die(unwritten)
         with temp_text_file(TRIAGE_COMMENT_DISCLAIMER + "\n\n" + text,
                             "could not create a temp file for the triage comment on issue #%s"
@@ -410,10 +408,8 @@ class FindingTriage:
         comments read dies, before any write. False when <path> cannot be
         read: triage_comment_post then dies naming it."""
         kept = comments.trusted(self.gh, "read issue #%s's comments" % issue, issue)
-        try:
-            with open(path, "rb") as f:
-                text = f.read().decode("utf-8", "surrogateescape")
-        except OSError:
+        text = read_raw(path)
+        if text is None:
             return False
         want = (TRIAGE_COMMENT_DISCLAIMER + "\n\n" + text).rstrip("\n")
         return any(isinstance(c.get("body"), str) and c["body"].rstrip("\n") == want

@@ -6,10 +6,7 @@ from __future__ import annotations
 
 import os
 
-from orch.common import die, plain_number
-
-# The directory every checkout keeps the orchestrator's own files in.
-ORCH_DIR_NAME = ".orchestrator"
+from orch.common import ORCH_DIR_NAME, die, plain_number
 
 
 def main_checkout_or_die(git) -> str:

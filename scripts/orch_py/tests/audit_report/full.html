@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audit report: code</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true });</script>
+</head>
+<body class="bg-white text-gray-900 max-w-4xl mx-auto p-6">
+<header class="mb-6">
+<h1 class="text-2xl font-bold">Audit report: code</h1>
+<dl class="mt-3 grid grid-cols-4 gap-2">
+<dt class="font-semibold">Scope</dt><dd class="col-span-3">the audit&#39;s <code>s.sh</code> scope &amp; &quot;more&quot;</dd>
+<dt class="font-semibold">Areas</dt><dd class="col-span-3">2</dd>
+<dt class="font-semibold">Commit</dt><dd class="col-span-3"><code>0123456789abcdef0123456789abcdef01234567</code></dd>
+</dl>
+<section class="mt-4">
+<h2 class="text-lg font-semibold">Timing <code>mode</code></h2>
+<p class="my-2">Mode: fast.
+Still fast &lt;really&gt;.</p>
+<p class="my-2">Trend: flat.</p>
+</section>
+<section class="mt-4">
+<h2 class="text-lg font-semibold">Second note</h2>
+<pre class="overflow-x-auto bg-gray-100 p-3 rounded text-sm"><code>plain fenced in a note</code></pre>
+</section>
+</header>
+<main>
+<section id="top" class="mb-8 p-4 border-l-4 border-blue-500 bg-blue-50">
+<h2 class="text-lg font-semibold">Top recommendation</h2>
+<p class="my-2"><a class="text-blue-700 underline" href="#finding-1">Finding 1: Latent bug in <code>a.sh</code> &amp; &lt;b.sh&gt;</a></p>
+<p class="my-2">Start here, because <code>a.sh</code> is hot.</p>
+</section>
+<article id="finding-1" class="mb-8">
+<h2 class="text-xl font-semibold">1. Latent bug in <code>a.sh</code> &amp; &lt;b.sh&gt;</h2>
+<p class="my-1"><span class="inline-block px-2 py-0.5 rounded bg-gray-200 text-sm">bug</span></p>
+<h3 class="mt-3 font-semibold">Kind</h3>
+<p class="my-2">latent bug</p>
+<h3 class="mt-3 font-semibold">Location</h3>
+<ul class="list-disc ml-6">
+<li><code>a.sh:1</code></li>
+<li><code>b.sh:2-3</code></li>
+<li><code>c.sh:9</code></li>
+</ul>
+<h3 class="mt-3 font-semibold">Evidence</h3>
+<p class="my-2">it &lt;breaks&gt; when <code>x &amp; y</code> runs</p>
+<pre class="mermaid">graph TD; A--&gt;B</pre>
+<h3 class="mt-3 font-semibold">Confidence</h3>
+<p class="my-2">sure, restated</p>
+<h3 class="mt-3 font-semibold">Overlaps</h3>
+<ul class="list-disc ml-6">
+<li><a class="text-blue-700 underline" href="#finding-3">Finding 3: Whole finding with no source</a></li>
+</ul>
+</article>
+<article id="finding-2" class="mb-8">
+<h2 class="text-xl font-semibold">2. Deepen d.sh</h2>
+<p class="my-1"><span class="inline-block px-2 py-0.5 rounded bg-gray-200 text-sm">enhancement</span></p>
+<h3 class="mt-3 font-semibold">Kind</h3>
+<p class="my-2">architecture deepening</p>
+<h3 class="mt-3 font-semibold">Location</h3>
+<ul class="list-disc ml-6">
+<li><code>d.sh:5</code></li>
+</ul>
+<h3 class="mt-3 font-semibold">Evidence</h3>
+<p class="my-2">friction</p>
+<pre class="overflow-x-auto bg-gray-100 p-3 rounded text-sm"><code>Note: kept in a fence</code></pre>
+<h3 class="mt-3 font-semibold">Fix/Workaround</h3>
+<p class="my-2">none <code>yet</code></p>
+</article>
+<article id="finding-3" class="mb-8">
+<h2 class="text-xl font-semibold">3. Whole finding with no source</h2>
+<p class="my-1"><span class="inline-block px-2 py-0.5 rounded bg-gray-200 text-sm">enhancement</span></p>
+<h3 class="mt-3 font-semibold">Location</h3>
+<ul class="list-disc ml-6">
+<li><code>z.sh:4</code></li>
+</ul>
+<h3 class="mt-3 font-semibold">Kind</h3>
+<p class="my-2">inefficiency</p>
+<h3 class="mt-3 font-semibold">Evidence</h3>
+<p class="my-2">a <code>tick</code> and a fence:</p>
+<pre class="overflow-x-auto bg-gray-100 p-3 rounded text-sm"><code>Evidence: not a field</code></pre>
+<h3 class="mt-3 font-semibold">Fix</h3>
+<p class="my-2">do this</p>
+<pre class="overflow-x-auto bg-gray-100 p-3 rounded text-sm"><code>run it
+
+after a blank</code></pre>
+<h3 class="mt-3 font-semibold">Overlaps</h3>
+<ul class="list-disc ml-6">
+<li><a class="text-blue-700 underline" href="#finding-1">Finding 1: Latent bug in <code>a.sh</code> &amp; &lt;b.sh&gt;</a></li>
+</ul>
+</article>
+</main>
+</body>
+</html>

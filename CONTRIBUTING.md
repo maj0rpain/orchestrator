@@ -42,7 +42,11 @@ it falls back to the full suite.
 
 **The Python package.** A noun converted to Python (ADR-0067) lives in the
 `orch` package, `scripts/orch_py/orch/`, and its tests are pytest, in
-`scripts/orch_py/tests/` (still no top-level `tests/`). `orch.sh` stays the one
+`scripts/orch_py/tests/` (still no top-level `tests/`). The converted nouns so
+far are `issue`, `finding-triage`, `verification` and `audit`; a helper a
+converted noun needs is copied into the package module of the concept it
+serves, under its bash name, and its bash copy stays while a bash caller
+remains. `orch.sh` stays the one
 entry point: main's one case naming the converted nouns calls `orch_python`,
 which runs the package as `python3 -m orch <noun> <arg>...` would, in place of
 orch.sh, so stdin, stdout, stderr and the exit code are the noun's own. It runs
@@ -260,12 +264,16 @@ test-helper placement section; its failure message states the rule. Copying a
 helper's whole body is checked too: see Test helpers below.
 
 orch.sh's own code is laid out the same way: `scripts/orch/<noun>.sh` holds one
-noun's code, named as that noun's test file is, and a helper lives in the
-module of the concept it serves, whichever modules call it.
+bash noun's code, named as that noun's test file is, and a helper lives in the
+module of the concept it serves, whichever modules call it. A converted noun
+has no bash module: its code is in the Python package (see The Python package
+in Layout).
 `scripts/orch/common.sh` holds only the primitives no concept owns (die, warn,
 note, capture and the like) and calls nothing a noun module defines; its test
-section checks this. The gh adapter layer stays whole in `gh.sh`, whoever
-calls it. A command that reaches GitHub - a GitHub operation, or a function or
+section checks this. For bash callers the gh adapter layer stays whole in
+`gh.sh`, whichever bash module calls it; a converted noun reaches GitHub
+through the Python gh adapter, `scripts/orch_py/orch/gh.py`, instead. A bash
+command that reaches GitHub - a GitHub operation, or a function or
 whole command that makes one - is captured through the gh module's pair
 `gh_capture` and `gh_capture_err`, never through bare `capture` or
 `capture_err`: the pair resolves the Repo in the caller's shell first, so that
@@ -277,8 +285,8 @@ issue's or a PR's trusted comments once, the wrappers that die on a failed read,
 the rendered shape, the render step and the split into one file per comment),
 `filed-finding.sh` (the Filed finding module:
 a filed finding's severities and labels, rendering and parsing its issue body,
-the finding categories, and the input checks `review file`, `audit file` and
-`audit report` share), `issue-timeline.sh` (the Issue timeline module: one
+the finding categories, and `review file`'s input checks),
+`issue-timeline.sh` (the Issue timeline module: one
 issue's comment history, read once and asked in domain terms),
 `known-items.sh` (the Known items module: splitting a record's text
 into entries, appending them as tagged bullets, and writing a known-items
@@ -592,13 +600,13 @@ skills/orch-audit-docs/      audits a repo's documentation against its code read
 skills/orch-audit-code/      audits a repo's source code for latent bugs, inefficiencies and architecture deepenings read-only: scope, partition into areas, hunt in read-only orch-code-auditor subagents, rank, HTML report, hand off to orch-interview and `orch.sh audit file`
 scripts/orch.sh               the entry point for every deterministic operation (mechanism): path resolution, shared constants, the module list, main, whose one case naming the converted nouns hands each to the orch package through orch_python
 scripts/orch/<noun>.sh        one module per orch.sh noun still in bash (branch.sh, ticket.sh, ...), sourced by orch.sh, named as its test file
-scripts/orch_py/orch/         the orch Python package (ADR-0067), one module per converted noun (issue.py, finding_triage.py, verification.py, each named as its noun with each - as _) beside the helpers it rebuilt, among them lines_fate.py (the Lines fate module, a concept module with no noun: what became of a range of a file's lines at a ref since a commit filed them, read by finding triage's scan), base.py (the base concept's default-branch lookup alone), and checkout.py, liveness.py and wait.py (the main checkout and the ticket-worktree path, the `<pid> <start-time>` record, and the re-callable block, as far as verification.py needs them); verification.py the verification noun (a re-callable command, its runner started through its own copy of the bootstrap, at the module's `__main__` entry point): standard library only, Python 3.9+; __main__.py the entry point (the version check, in syntax every python3 compiles), cli.py the noun table, gh.py and git.py the only places gh and git run, gh_fake.py the gh adapter's fake on the shared fake store, root.py the ROOT block
+scripts/orch_py/orch/         the orch Python package (ADR-0067), one module per converted noun (issue.py, finding_triage.py, verification.py, audit.py, each named as its noun with each - as _) beside the helpers it rebuilt, among them filed_finding.py (the Filed finding module's categories, labels and body parse, and the filing checks audit file makes: the flag parse, the input and location checks, the needs-triage label and the body temp file), common.py (the primitives no concept owns, among them dir_stamp and the git exclude writer audit begin uses), lines_fate.py (the Lines fate module, a concept module with no noun: what became of a range of a file's lines at a ref since a commit filed them, read by finding triage's scan), base.py (the base concept's default-branch lookup alone), and checkout.py, liveness.py and wait.py (the main checkout and the ticket-worktree path, the `<pid> <start-time>` record, and the re-callable block, as far as verification.py needs them); audit.py the audit noun (begin, report, file and file --run, and the drift line of an audit-filed body that the issue noun reads); verification.py the verification noun (a re-callable command, its runner started through its own copy of the bootstrap, at the module's `__main__` entry point): standard library only, Python 3.9+; __main__.py the entry point (the version check, in syntax every python3 compiles), cli.py the noun table, gh.py and git.py the only places gh and git run, gh_fake.py the gh adapter's fake on the shared fake store, root.py the ROOT block
 scripts/orch_py/tests/        the pytest suite: in-process tests of each noun against the fakes (the verification noun's against real repositories and real processes, ADR-0067's exception for what a fake would only restate), the gh adapter's contract tests against a fixture gh, the git adapter's tests against a real repository and its fake, and the end-to-end checks of orch.sh's dispatch (test_dispatch.py); conftest.py the clean environment and the real-gh guard
 scripts/orch_py/requirements-dev.txt the pinned dev dependencies: pytest, pytest-xdist, pytest-timeout (the package itself needs none)
 scripts/orch_py/pytest.ini    the pytest settings: the tests folder, the package on the module path, the per-test timeout, no cache directory
 scripts/orch/checkout.sh      the Checkout module, a concept module with no noun: checkouts, the one walk over every checkout
 scripts/orch/comments.sh      the Comments module, a concept module with no noun: reading an issue's or a PR's trusted comments once, the dying wrappers over that read, the rendered shape, the render step and the split into one file per comment
-scripts/orch/filed-finding.sh the Filed finding module, a concept module with no noun: a filed finding's severities and labels, rendering and parsing its issue body, the finding categories, and the input checks `review file`, `audit file` and `audit report` share
+scripts/orch/filed-finding.sh the Filed finding module, a concept module with no noun: a filed finding's severities and labels, rendering and parsing its issue body, the finding categories, and `review file`'s input checks
 scripts/orch/issue-timeline.sh the Issue timeline module, a concept module with no noun: an issue's comment history, read once and asked for its newest question, latest stop, limit stops, re-entry comments and live handoffs
 scripts/orch/known-items.sh   the Known items module, a concept module with no noun: a known-items file's entries, tagged bullets and writing
 scripts/orch/liveness.sh      the Liveness module, a concept module with no noun: whether the process behind a record (a claim, a watch) is alive - the run records, the start-time reader, the record-alive rule, the watch pidfile, the session log names, deleted after 14 days

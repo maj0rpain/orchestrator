@@ -356,6 +356,24 @@ def test_blockers_states_lists_each_blocker_and_its_state(fixture_gh):
     assert real_gh(fixture_gh).blockers_states(5) == [(3, "OPEN"), (4, "CLOSED")]
 
 
+OPEN_TITLES = ["api", "--paginate", "repos/{owner}/{repo}/issues?state=open&per_page=100",
+               "--jq", '.[] | select(has("pull_request") | not) | "\\(.number)\\t\\(.title)"']
+
+
+def test_issues_open_titles_lists_each_open_issue_s_number_and_title(fixture_gh):
+    fixture_gh.reply(OPEN_TITLES, "9\tNewest\t tab\n3\tOldest\n")
+
+    assert real_gh(fixture_gh).issues_open_titles() == [(9, "Newest\t tab"), (3, "Oldest")]
+
+
+def test_an_open_titles_listing_that_does_not_parse_fails(fixture_gh):
+    fixture_gh.reply(OPEN_TITLES, "9\tNewest\nx\tOdd\n")
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).issues_open_titles()
+    assert failed.value.stderr == "gh answered a listing that does not parse"
+
+
 AUTHORSHIP = [
     "api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-F", "number=5",
     "-f", "query=query($owner: String!, $name: String!, $number: Int!) { repository("

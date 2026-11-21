@@ -3,10 +3,9 @@
 # noun of its own, holding what a filed finding is - its severities, each
 # severity's label colour and description, its label rules, and its issue
 # body, rendered from its parts and parsed back - with the finding categories
-# and the input checks review file, audit file and audit report share. Review
-# file, audit file and audit report read it; `issue` and `finding-triage`,
-# converted nouns, keep their own copy of what issue triage and finding triage
-# need (orch/filed_finding.py).
+# and review file's input checks. Review file reads it; `issue`,
+# `finding-triage` and `audit`, converted nouns, keep their own copy of what
+# issue triage, finding triage and audit filing need (orch/filed_finding.py).
 # Its tests: scripts/test/orch/filed-finding.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -48,11 +47,6 @@ readonly FILED_AXES
 # description there.
 readonly FILED_CATEGORY_TABLE="bug:d73a4a enhancement:a2eeef documentation:0075ca"
 
-# The category names alone, in the table's order, for usage lines, messages and
-# loops over them.
-FILED_CATEGORIES="$(filed_table_keys "$FILED_CATEGORY_TABLE")"
-readonly FILED_CATEGORIES
-
 # filed_category_description <category>: the category label's description,
 # GitHub's own default for it. Prints nothing and fails for a category with no
 # entry.
@@ -63,12 +57,6 @@ filed_category_description() {
     documentation) printf '%s\n' "Improvements or additions to documentation" ;;
     *) return 1 ;;
   esac
-}
-
-# Whether <category> is in the category table: the one membership check, over
-# FILED_CATEGORIES.
-is_filed_category() {
-  word_listed "$FILED_CATEGORIES" "$1"
 }
 
 # filed_severity_label <sev> <colour_var> <desc_var>: writes the review:<sev>

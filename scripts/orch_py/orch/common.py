@@ -1,9 +1,10 @@
 """The primitives no concept owns: the `orch: ` message lines, the
 plain-number test every verb checks its issue numbers with, the decimal-number
 tests and the poll-knob check a waiting verb reads its knobs with, the atomic
-file write, the file read as bash's $(<file) gives it, the temporary file a
-comment is handed to gh from, and the words a list and a state read as in a
-line.
+file write, the file read as bash's $(<file) gives it, the lines of a text
+and of a file, the temporary file a comment is handed to gh from, the words a
+list and a state read as in a line, the orchestrator's directory name, the
+UTC stamp a run directory is named with, and the git exclude writer.
 
 Every `orch: ` message goes through die or warn, as in the bash side's
 common.sh: die(message, 2) is the bash die2, for a command that reserves exit
@@ -18,8 +19,15 @@ import os
 import re
 import sys
 import tempfile
+import time
 from contextlib import contextmanager
-from typing import Callable, Iterable, Iterator, NoReturn, Optional, Sequence, Tuple
+from typing import Callable, Iterable, Iterator, List, NoReturn, Optional, Sequence, Tuple, Union
+
+# The directory every checkout keeps the orchestrator's own files in.
+ORCH_DIR_NAME = ".orchestrator"
+# The directories the plugin writes to and keeps out of git status: its own,
+# and .scratch/, where planning drafts land.
+EXCLUDED_DIRS = (ORCH_DIR_NAME + "/", ".scratch/")
 
 
 def die(message: str, code: int = 1) -> NoReturn:
@@ -101,14 +109,49 @@ def file_write_atomic(path: str, text: str, make_directory: bool = True) -> bool
     return True
 
 
+def read_raw(path: str) -> Optional[str]:
+    """The file's whole text, decoded as UTF-8 with surrogateescape so bytes
+    that are not UTF-8 survive; None when it cannot be read."""
+    try:
+        with open(path, "rb") as f:
+            return f.read().decode("utf-8", "surrogateescape")
+    except OSError:
+        return None
+
+
+def lines_of(text: str) -> List[str]:
+    """<text>'s lines, a final newline ending the last rather than starting
+    an empty one; none for empty text. Splits on newlines alone."""
+    if not text:
+        return []
+    lines = text.split("\n")
+    if lines[-1] == "":
+        lines.pop()
+    return lines
+
+
+def file_lines(path: str) -> List[str]:
+    """The lines of the file at <path> as bash's `read -r` loop reads them,
+    a last line with no newline included; none when it cannot be read."""
+    return lines_of(read_raw(path) or "")
+
+
 def read_text(path: str) -> Optional[str]:
     """The file's text, its trailing newlines dropped as bash's $(<file)
     drops them; None when it cannot be read."""
+    text = read_raw(path)
+    return None if text is None else text.rstrip("\n")
+
+
+def text_file_write(file: Union[str, int], text: str, unwritten: str) -> None:
+    """Writes <text> to <file> - a path, or an open descriptor it closes -
+    as UTF-8, surrogateescape, so bytes read that way go back as they were.
+    Dies with <unwritten> when it cannot be written."""
     try:
-        with open(path, "rb") as f:
-            return f.read().decode("utf-8", "surrogateescape").rstrip("\n")
+        with open(file, "wb") as f:
+            f.write(text.encode("utf-8", "surrogateescape"))
     except OSError:
-        return None
+        die(unwritten)
 
 
 @contextmanager
@@ -128,11 +171,7 @@ def temp_text_file(
     except OSError:
         die(unmade)
     try:
-        try:
-            with os.fdopen(fd, "wb") as f:
-                f.write(text.encode("utf-8", "surrogateescape"))
-        except OSError:
-            die(unwritten)
+        text_file_write(fd, text, unwritten)
         yield path
     finally:
         os.remove(path)
@@ -150,3 +189,57 @@ def state_word(state: str) -> str:
     """GitHub's uppercase issue or PR state as the lowercase word a message
     prints; any other value unchanged."""
     return STATE_WORDS.get(state, state)
+
+
+def dir_stamp(clock: Callable[[], float] = time.time) -> str:
+    """The time <clock> reads, in UTC, as a directory name's stamp:
+    %Y%m%d-%H%M%S."""
+    return time.strftime("%Y%m%d-%H%M%S", time.gmtime(clock()))
+
+
+def _exclude_file(git) -> str:
+    """The clone's shared info/exclude, under the common directory the git
+    adapter <git> reads - the only one git reads, so a linked worktree writes
+    it too. Under "" when the read fails, as the bash writer's is."""
+    return (git.git_common_dir() or "") + "/info/exclude"
+
+
+def exclude_orch_dirs(git) -> None:
+    """Keeps every EXCLUDED_DIRS entry out of git status through the clone's
+    shared info/exclude, never a tracked .gitignore, read through the git
+    adapter <git>; dies as exclude_line does."""
+    exclude_line(EXCLUDED_DIRS, git)
+
+
+def exclude_line(lines: Sequence[str], git) -> None:
+    """Makes each of <lines> a line of the clone's shared info/exclude,
+    through the git adapter <git>: appends those exclude_missing finds absent,
+    making the file's directory first and ending an unterminated last line
+    first, so the first line added is never glued onto the user's pattern.
+    Does nothing when none is missing; dies naming the missing lines and the
+    file when the write fails."""
+    missing = exclude_missing(lines, git)
+    if not missing:
+        return
+    path = _exclude_file(git)
+    added = "".join(line + "\n" for line in missing).encode("utf-8", "surrogateescape")
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a+b") as f:
+            end = f.seek(0, os.SEEK_END)
+            if end:
+                f.seek(end - 1)
+                if f.read(1) != b"\n":
+                    added = b"\n" + added
+            f.write(added)
+    except OSError:
+        die("cannot add %s to the git exclude file %s" % (list_join(missing), path))
+
+
+def exclude_missing(lines: Sequence[str], git) -> List[str]:
+    """Each of the non-empty <lines> the clone's shared info/exclude, read
+    through the git adapter <git>, lacks as a whole line, in order: every one
+    when the file cannot be read."""
+    text = read_raw(_exclude_file(git))
+    present = set() if text is None else set(text.split("\n"))
+    return [line for line in lines if line and line not in present]

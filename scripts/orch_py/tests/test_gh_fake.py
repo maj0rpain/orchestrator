@@ -286,6 +286,7 @@ def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
     ("adapter_issue_state", lambda gh: gh.issue_state(5)),
     ("adapter_label_create", lambda gh: gh.label_create("bug", "d73a4a", "d")),
     ("adapter_repo_default_branch", lambda gh: gh.repo_default_branch("acme/widgets")),
+    ("adapter_issues_open_titles", lambda gh: gh.issues_open_titles()),
 ])
 def test_the_added_operations_fail_under_the_bash_operation_names(store, operation, call):
     bash(store, "fake_issue 5 open review:nit; fake_default_branch trunk; "
@@ -295,6 +296,23 @@ def test_the_added_operations_fail_under_the_bash_operation_names(store, operati
         call(fake(store))
 
     assert failed.value.stderr == "HTTP 502: Bad Gateway\n"
+
+
+# --- the operation audit adds --------------------------------------------------
+
+
+def test_the_open_titles_of_a_bash_seeded_store_read_as_the_bash_fake_lists_them(store):
+    bash_answer = bash(store, r"""
+fake_issue 3 open; fake_issue_title 3 'Oldest'
+fake_issue 12 open bug; fake_issue_title 12 $'Newest\t tab'
+fake_issue 7 closed; fake_issue_title 7 'Closed'
+fake_issue 9 open; fake_issue_title 9 'A pull'; : >"$ORCH_GH_FAKE_STORE/issues/9/pull"
+fake_issue 5 open
+adapter_issues_open_titles
+""")
+
+    assert fake(store).issues_open_titles() == [(12, "Newest\t tab"), (5, ""), (3, "Oldest")]
+    assert bash_answer == "12\tNewest\t tab\n5\t\n3\tOldest\n"
 
 
 # --- writes the bash helpers read back ---------------------------------------

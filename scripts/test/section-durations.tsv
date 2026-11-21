@@ -41,13 +41,6 @@
 64	70	agent	0d79b59e4f3295e93a9ede1bda22fbbc139f7e19
 20	22	agent sync	b39ad35449afd2ba48dfe47fd1a68a53a2d8c22b
 3	4	agent copy marker and Junie field: no command per call	7261e94ea71b44582780d728312d592266f2e005
-8	6	audit file	6bbf361e504ccaa9a3f0d45038632b66b03acc8a
-3	3	audit file duplicates	e5be439ac2451322b83945ad891f56ab378d67ca
-9	9	audit file refusals	b1a0484287eb30f5231deffb1dc76702c14536e3
-2	3	audit file failures	38189780fbe7595a2d3ce0122efa77904e26306c
-9	9	audit begin	eda1af9627a75a5db715c16d299179de30b2060e
-29	23	audit report	ae10a47e1f0db257b716316a4f7800b193c68623
-38	30	audit file batch	a1786986c75fd179a95f4411e35e32ab075dc8f0
 17	14	autopilot	8bbc695acc905fd728a0df90ca62f731d151c603
 23	20	autopilot rounds, budget and start	caf04385b557073d7f29edf5186b0114e5a0aa25
 31	27	autopilot ask and answer	893f3e7fffec4cc1cca429a022e66c605cec9b39
@@ -162,7 +155,7 @@
 51	36	doctor --env: verification commands (#3346)	743a90c9a46a5ef85c7ea302c35fd60401839eb4
 0	1	is_filed_severity	41fb54217cc90b7a75a37b3ee336945167710410
 1	2	severity table	cbcec87893fb4d691f66b67cb960e1bc2f27d3d3
-2	3	category table	936a5e8b2f00a434df3adb306e2542dd71c175f9
+3	3	category table	4ddf897afb91fdb5736b0ac6486b6b06637af785
 1	2	axis table	e40740a4628929a0916a63a510c2590c3efae4a6
 9	10	finding body	5696eec5199d748658645aa3edd3f64bf40a7c35
 18	20	every gh call pinned to the repo (#520)	dc4b457722320e58c8666c05404851c65334dbfc
@@ -310,7 +303,7 @@
 3	3	spec fetch on a truncated state.json (#1929)	60f3d67efe5d3d495d1adc47c8b0aea7008f5965
 7	8	spec ops read the flow's state once (#3063)	1ac4cb1881c14fda5d71d28175a34c212f051d4d
 8	6	spec round directory owner (#3078)	75c3bde4d8fee32cbe658342f7c86589a811dfba
-4	5	spec fetch drift line (#3458)	c71d2f327c2168a6b7f8593078ff7fe1849a0a52
+6	6	spec fetch drift line (#3458)	58d8dca777f8cf8f7b2d34df3ab34ac366362033
 30	26	Standing module	7360efe83df71e2983783f4ce7fefa500261a7d4
 124	117	Standing transitions	545e34fbb2e91632de6484af07eb526577b4f311
 2	3	standing_ask reads the issue in one jq	323242a91458cfdc0852ce80bf275f3a21daf5f0
@@ -350,7 +343,7 @@
 20	22	trust module	dfb000c56ba19484f278d67a5e9d3d661b2728a7
 82	14	wait: a call's block is wall time	12313962ae192f692a6bf9948173a94ce462aa53
 882	983	hooks_test.sh	8dec8318df78d1487d2d11c16c6ac962831bc14c
-295	203	docs_lint.sh	6d1887e6488b1d2ac7a5bf8eb56a972ff9a1ada4
+308	214	docs_lint.sh	8291da5fa50794e3d56e50fa81d282db284a6253
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 17	17	autopilot_up_test.sh	e83bb3b5d6213ab54507233be7cc6e624358622c

@@ -1,12 +1,14 @@
 """orch.sh's handoff of a converted noun to the orch package, run as
 `python3 -m orch` would be, through a `-c` bootstrap (ADR-0067), end to end:
-each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>` or
-`orch.sh verification <verb>` as a command, in a checkout under tmp_path, against a fake store seeded in the
+each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>`,
+`orch.sh verification <verb>` or `orch.sh audit <verb>` as a command, in a
+checkout under tmp_path, against a fake store seeded in the
 layout the bash suite's fake_* helpers write, with ORCH_GH_FAKE_STORE set as
 fake_github sets it."""
 from __future__ import annotations
 
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -15,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from conftest import (
+    AUDIT_FIXTURES,
     VERIFICATION_KNOBS,
     comments_of,
     committed,
@@ -269,3 +272,55 @@ def test_help_lists_both_verification_verbs_and_no_runner_entry_point(tmp_path, 
     assert "ORCH_WAIT_BLOCK" in out
     for name in ("orch.verification", "runner_main", "__main__", "RUNNER_BOOTSTRAP"):
         assert name not in out
+
+
+# --- audit -------------------------------------------------------------------
+
+
+
+def test_audit_begin_makes_the_run_directory_recording_head_through_the_dispatch(
+        tmp_path, repo, seed):
+    head = committed(repo, {"README.md": "readme\n"}, "first")
+
+    out, err, code = orch_sh(tmp_path, repo, seed, "audit", "begin", "docs")
+
+    run = Path(out.rstrip("\n"))
+    assert (err, code) == ("", 0)
+    assert run.parent == repo / ".orchestrator" / "audit" and run.name.startswith("docs-")
+    assert (run / "record").read_text() == "kind docs\ncommit %s\n" % head
+
+
+def test_audit_report_writes_the_golden_page_through_the_dispatch(tmp_path, repo, seed):
+    page = tmp_path / "report.html"
+
+    answer = orch_sh(tmp_path, repo, seed, "audit", "report",
+                     str(AUDIT_FIXTURES / "none"), str(page))
+
+    assert answer == ("%s\n" % page, "", 0)
+    assert page.read_bytes() == (AUDIT_FIXTURES / "none.html").read_bytes()
+
+
+def test_audit_file_files_one_finding_through_the_dispatch(tmp_path, repo, seed):
+    committed(repo, {"README.md": "readme\n"}, "first")
+    seed.next_issue(31)
+    finding = tmp_path / "finding.md"
+    finding.write_text("The README names a flag that is gone.\n")
+
+    answer = orch_sh(tmp_path, repo, seed, "audit", "file", "README names a gone flag",
+                     "--category", "documentation", "--finding-file", str(finding),
+                     "--location", "README.md:1")
+
+    assert answer == ("31\n", "", 0)
+    assert read(seed.store, "issues", 31, "title") == "README names a gone flag\n"
+    assert sorted(labels_of(seed.store, 31)) == ["documentation", "needs-triage"]
+
+
+def test_audit_file_run_files_a_run_s_pick_through_the_dispatch(tmp_path, repo, seed):
+    run = tmp_path / "run"
+    shutil.copytree(str(AUDIT_FIXTURES / "full"), str(run))
+    seed.next_issue(40)
+
+    answer = orch_sh(tmp_path, repo, seed, "audit", "file", "--run", str(run), "2")
+
+    assert answer == ("2\t40\tfiled\n", "", 0)
+    assert read(seed.store, "issues", 40, "title") == "Deepen d.sh\n"

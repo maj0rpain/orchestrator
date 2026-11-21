@@ -8,16 +8,18 @@ teardown fails the test naming each logged call.
 """
 from __future__ import annotations
 
+import calendar
 import json
 import os
 import stat
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
-from orch import issue, verification
+from orch import audit, issue, verification
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit, Git
 from orch.triage_labels import LABELS_DOC
@@ -247,6 +249,38 @@ def orch_issue(seed, *argv, gh=None, git=None, env=None, pin=None):
         return issue.run(list(argv), gh=gh, git=git or FakeGit(toplevel=CHECKOUT), env=env)
     except SystemExit as died:
         return died.code
+
+
+# The audit noun's usage text, naming every form, as a refused audit prints it.
+AUDIT_USAGE = (
+    "orch: usage: orch.sh audit begin <code|docs|tests>\n"
+    "   or: orch.sh audit report <dir> <out.html>\n"
+    "   or: orch.sh audit file --run <dir> <numbers>\n"
+    "   or: orch.sh audit file <title> --category <bug|enhancement|documentation>"
+    " --finding-file <f> --location <<file>:<line>|<file>:<start>-<end>> [--location ...]\n"
+)
+# The audit report golden files and the run directories they render.
+AUDIT_FIXTURES = Path(__file__).resolve().parent / "audit_report"
+# The clock an in-process audit reads, pinned so a run directory's name is
+# known.
+AUDIT_CLOCK = float(calendar.timegm((2030, 1, 2, 3, 4, 5)))
+
+
+def orch_audit(git, *argv, gh=None):
+    """`orch.sh audit <argv>` in-process, in the checkout of the git adapter
+    <git>, with the gh adapter <gh>, at AUDIT_CLOCK: its exit code, a
+    SystemExit's included."""
+    try:
+        return audit.run(list(argv), gh=gh, git=git, env={}, clock=lambda: AUDIT_CLOCK)
+    except SystemExit as died:
+        return died.code
+
+
+def edit(path, old, new):
+    """The file at <path>, a Path, with its one <old> replaced by <new>."""
+    text = path.read_text(encoding="utf-8")
+    assert text.count(old) == 1
+    path.write_text(text.replace(old, new), encoding="utf-8")
 
 
 # The fixture gh's program: it holds no logic and parses no flags. It logs

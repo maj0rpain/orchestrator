@@ -695,9 +695,11 @@ fake_github
 "$ORCH" state set issue 14
 fake_issue 14 open
 sd_dir="$(mktemp -d)"
-printf 'A finding.\n' >"$sd_dir/finding"
 sd_sha="$(git rev-parse HEAD)"
-fake_issue_body 14 "$(sourced_orch audit_body_render "$sd_dir/finding" "$sd_sha" README.md:1)"
+# An audit-filed body, written as its documented format: the finding, then one
+# **Location:** line and the **Audited at:** line, each after a blank line.
+fake_issue_body 14 "$(printf 'A finding.\n\n**Location:** %s\n\n**Audited at:** %s\n\n' \
+  "\`README.md:1\`" "$sd_sha")"
 out="$("$ORCH" spec fetch "$sd_dir/spec.md" 2>&1)"; st=$?
 assert_status "spec fetch of an adopted audit-filed issue succeeds" "$st" 0
 assert_eq "printing the same drift line" "$out" "cited files changed since $sd_sha: none"

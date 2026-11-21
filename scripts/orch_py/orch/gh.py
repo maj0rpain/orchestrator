@@ -36,7 +36,7 @@ from typing import (
     TypeVar,
 )
 
-from orch.common import die, message_line, plain_number, warn
+from orch.common import die, lines_of, message_line, plain_number, warn
 from orch.git import Git
 from orch.repo import REPO_REMEDY, RepoPin
 
@@ -193,17 +193,6 @@ def labelled_limit_warn(env: Mapping[str, str], count: int, *labels: str) -> Non
         )
 
 
-def lines_of(text: str) -> List[str]:
-    """<text>'s lines, a final newline ending the last rather than starting
-    an empty one; none for empty text. Splits on newlines alone."""
-    if not text:
-        return []
-    lines = text.split("\n")
-    if lines[-1] == "":
-        lines.pop()
-    return lines
-
-
 def _captured_lines(text: str) -> List[str]:
     """The lines of an answer read as the bash readers capture it: every
     trailing newline dropped first."""
@@ -280,15 +269,16 @@ def parse_state_labels_body(text: str) -> Tuple[str, List[str], str]:
     return state, labels, rest
 
 
-def parse_blocker_states(text: str) -> List[Tuple[int, str]]:
-    """<number><TAB><state> lines; GhFailed on a line that is not."""
-    states = []
+def parse_numbered_lines(text: str, unparsed: Callable[[str], str]) -> List[Tuple[int, str]]:
+    """<number><TAB><value> lines, as each number and the rest; GhFailed
+    with unparsed(<line>) on a line whose number is not one."""
+    rows = []
     for line in _captured_lines(text):
-        number, _, state = line.partition("\t")
+        number, _, value = line.partition("\t")
         if not plain_number(number):
-            raise GhFailed("gh answered a blocker that does not parse: " + line)
-        states.append((int(number), state))
-    return states
+            raise GhFailed(unparsed(line))
+        rows.append((int(number), value))
+    return rows
 
 
 def urlnumber_of(out: str) -> Optional[int]:
@@ -576,6 +566,15 @@ class Gh:
         labelled_limit_warn(self.env, len(rows), label)
         return rows
 
+    def issues_open_titles(self) -> List[Tuple[int, str]]:
+        """Every open issue, pull requests left out, as its number and title,
+        newest first as GitHub lists them - every page, never cut at the
+        issue-list limit."""
+        return parse_numbered_lines(self._gh(
+            ["api", "--paginate", "repos/{owner}/{repo}/issues?state=open&per_page=100",
+             "--jq", '.[] | select(has("pull_request") | not) | "\\(.number)\\t\\(.title)"']
+        ), lambda line: LISTING_UNPARSED)
+
     def issues_labelled_bodies(self, *labels: str) -> List[LabelledBody]:
         """The open issues carrying every label named, oldest first and cut
         at the issue-list limit (the newest dropped), each with its labels and
@@ -706,7 +705,8 @@ class Gh:
              "repos/{owner}/{repo}/issues/%d/dependencies/blocked_by" % n,
              "--jq", '.[] | "\\(.number)\\t\\(.state | ascii_upcase)"']
         )
-        return parse_blocker_states(answer)
+        return parse_numbered_lines(
+            answer, lambda line: "gh answered a blocker that does not parse: " + line)
 
 
 def open_issue_read(
