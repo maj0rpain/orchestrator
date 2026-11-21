@@ -44,6 +44,7 @@ from orch.common import (
     plain_number,
     read_raw,
     read_text,
+    text_file_write,
     warn,
 )
 from orch.filed_finding import (
@@ -59,7 +60,7 @@ from orch.filed_finding import (
     finding_location_ok,
     needs_triage_label_ready,
 )
-from orch.gh import adapter, gh_or_die
+from orch.gh import adapter, gh_or_die, lines_of
 from orch.git import Git
 from orch.root import checkout_root
 from orch.triage_labels import TriageLabels
@@ -216,11 +217,11 @@ def audit_begin(argv: List[str], git, root: str, clock: Callable[[], float]) -> 
     made = False
     try:
         exclude_orch_dirs(git)
-        try:
-            with open(os.path.join(run_dir, "record"), "w", encoding="utf-8") as f:
-                f.write("kind %s\ncommit %s\n" % (kind, sha))
-        except OSError:
-            die("cannot write the audit run record in %s" % run_dir)
+        text_file_write(
+            os.path.join(run_dir, "record"),
+            "kind %s\ncommit %s\n" % (kind, sha),
+            "cannot write the audit run record in %s" % run_dir,
+        )
         made = True
     finally:
         if not made:
@@ -363,13 +364,7 @@ def _file_lines(path: str) -> Optional[List[str]]:
     """The lines of the file at <path> as bash's `read -r` loop reads them,
     a last line with no newline included; None when it cannot be read."""
     text = read_raw(path)
-    if text is None:
-        return None
-    lines = text.split("\n")
-    lines.pop()
-    if text and not text.endswith("\n"):
-        lines.append(text.rsplit("\n", 1)[-1])
-    return lines
+    return None if text is None else lines_of(text)
 
 
 def list_split(text: str) -> List[str]:
