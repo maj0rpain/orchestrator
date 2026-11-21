@@ -1177,7 +1177,7 @@ fake_quota() { printf '%s\t%s\t%s\t%s\n' "$@" >>"$ORCH_GH_FAKE_STORE/quota"; }
 # $GH_FIXTURE/repo_vars.log: the repo memo is never exported, so it stays empty.
 # Those two log lines are written once, by $GH_FIXTURE/log.sh, which the
 # fixture gh sources; any other gh a section puts on PATH to stand in for the
-# fixture gh, logging its calls to env.log as triage_gh's does, sources it too.
+# fixture gh, logging its calls to env.log as exists_gh's does, sources it too.
 # A gh that keeps its own call log instead, such as limit_once_gh's, does not.
 # A section that calls it ends with restore_suite_env GH_FIXTURE.
 gh_fixture() {

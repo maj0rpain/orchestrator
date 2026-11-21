@@ -204,8 +204,11 @@ file, the change that introduces the budget file excepted. What a session does:
 
 CI (`.github/workflows/test.yml`): a PR runs the whole suite once, in the
 autopilot container, as 4 jobs, each `all.sh` with its `ORCH_TEST_SHARD=<i>/4`
-(the image's `EXTRA_BUILD_COMMAND` checks in group 1 only), plus a final job
-that passes only when all four did. Each group restores the image's base-tools
+(the image's `EXTRA_BUILD_COMMAND` checks in group 1 only), a `pytest` job
+that runs the pytest suite alone on Python 3.9, the minimum, on
+`ubuntu-24.04`, and a final `suite` job that needs both the container groups
+and the `pytest` job and passes only when all four groups and the `pytest` job
+did. Each group restores the image's base-tools
 layer (apt packages, `gh`, Claude Code) from the repo's GitHub Actions cache
 and still builds the image from the PR's commit; group 4 also writes the cache,
 and a cold or unreadable cache costs time only. A push to `main` runs `all.sh`

@@ -450,8 +450,9 @@ adapter_rate_limit() {
 # The trimmed issue object the whole-issue adapter prints (#528): the issue's
 # number, title and body and its label names - every other field gh answers
 # with is dropped, so the shape does not change with gh's version. It carries
-# no comments: they are read by adapter_issue_comments, and `issue fetch --json`
-# joins the two.
+# no comments: they are read by adapter_issue_comments. No bash caller is left:
+# `issue fetch --json` is Python now, with its own ISSUE_JSON_JQ in
+# orch/gh.py, and the adapter stays as a recorded deviation (#3916).
 ISSUE_JSON_JQ='{number, title, body, labels: [.labels[].name]}'
 
 # adapter_issue_body <n>: the issue's body as GitHub holds it, then a newline.
@@ -468,8 +469,8 @@ adapter_issue_comments() {
 }
 
 # adapter_issue_json <n>: the issue as ISSUE_JSON_JQ's one JSON object, with no
-# comments - an operation that prints JSON rather than plain text, because
-# `issue fetch --json` joins it with the comments.
+# comments - an operation that prints JSON rather than plain text. It has no
+# bash caller left: the Python issue noun joins its own copy with the comments.
 adapter_issue_json() {
   gh issue view "$1" --json number,title,body,labels --jq "$ISSUE_JSON_JQ"
 }

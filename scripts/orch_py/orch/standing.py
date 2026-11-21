@@ -2,9 +2,9 @@
 noun uses: the Phase label test.
 
 A phase label, `orch:<phase>`, records an autopilot flow's phase on its
-issue. PHASES is the flow's phases in order, the first column of the bash
-side's phase table (scripts/orch/handoff.sh's PHASE_TABLE), which stays the
-one statement of the table while both languages read it.
+issue. PHASES is the flow's phases in order: a copy of the first column of
+the bash side's phase table (scripts/orch/handoff.sh's PHASE_TABLE), which
+Python does not read, pinned to it by tests/test_standing.py's drift test.
 """
 from __future__ import annotations
 

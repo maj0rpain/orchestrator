@@ -43,6 +43,13 @@ from orch.triage_labels import TRIAGE_ROLES, TriageLabels
 OPS = "fetch|update|comment|comments|publish|triage|ready|next|labels|close"
 
 
+def issue_number(n: str, usage: str, code: int = 1) -> None:
+    """Dies, exit <code>, naming <usage>, unless <n> is a plain issue
+    number."""
+    if not plain_number(n):
+        die("issue must be a plain issue number, got: %s (%s)" % (n, usage), code)
+
+
 class Issue:
     """The verbs, on the gh adapter <gh>, in the checkout <git> reads, with
     <env> naming the host and the knobs."""
@@ -60,8 +67,7 @@ class Issue:
         usage = "usage: orch.sh issue %s <n> <file>%s" % (op, " [%s]" % flag if flag else "")
         if not (len(args) == 2 or (flag and len(args) == 3 and args[2] == flag)):
             die(usage)
-        if not plain_number(args[0]):
-            die("issue must be a plain issue number, got: %s (%s)" % (args[0], usage))
+        issue_number(args[0], usage)
         return args[0]
 
     # --- the reads ---
@@ -136,8 +142,7 @@ class Issue:
         if not args:
             die(usage)
         for n in args:
-            if not plain_number(n):
-                die("issue must be a plain issue number, got: %s (%s)" % (n, usage))
+            issue_number(n, usage)
         for n in args:
             state, labels = gh_or_die("read issue #%s" % n, self.gh.issue_state_labels, int(n))
             joined = list_join(labels)
@@ -154,8 +159,7 @@ class Issue:
         if len(args) != 1:
             die(usage, 2)
         n = args[0]
-        if not plain_number(n):
-            die("issue must be a plain issue number, got: %s (%s)" % (n, usage), 2)
+        issue_number(n, usage, 2)
         if not self.gh.pin():
             die(REPO_REMEDY, 2)
         ready = self.triage_labels.label("ready-for-agent")
@@ -383,8 +387,7 @@ class Issue:
             i += 1
         if not n:
             die(usage)
-        if not plain_number(n):
-            die("issue must be a plain issue number, got: %s (%s)" % (n, usage))
+        issue_number(n, usage)
         if completed and dup is not None:
             die("give one of --completed or --duplicate-of, not both (%s)" % usage)
         if not completed and dup is None:

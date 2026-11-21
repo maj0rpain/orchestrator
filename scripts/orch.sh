@@ -179,7 +179,9 @@ source "$ORCH_SCRIPTS/planning-allowlist.sh"
 # entry -c puts first on sys.path, the caller's directory, before importing
 # anything, then runs the package's __main__ through runpy; the package
 # directory is first on PYTHONPATH. With no python3 on PATH it dies before
-# doing anything; the package's entry point checks the version itself.
+# doing anything, exit 1 even for a verb that reserves 1 for a "no" (the
+# carve-out in coding-standards rule 2); the package's entry point checks the
+# version itself.
 orch_python() {
   command -v python3 >/dev/null 2>&1 \
     || die "orch.sh $1 needs python3 3.9 or newer (found none) - run orch.sh doctor"

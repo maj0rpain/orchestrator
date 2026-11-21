@@ -3,8 +3,8 @@ the issue noun uses: recognising the spec review's changelogs, comments whose
 first line is the `## Spec review` heading, to drop them.
 
 The other kinds - the hidden `<!-- orch:<kind> <arg> -->` markers and the
-`Spec ruling:` line - come with the nouns that read them. None of them can
-open with the heading, so recognising it alone gives the bash drop's answer.
+`Spec ruling:` line - come with the nouns that read them. No other marked
+kind can open with the heading, so recognising the heading alone is enough.
 """
 from __future__ import annotations
 

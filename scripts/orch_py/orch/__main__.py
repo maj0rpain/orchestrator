@@ -16,7 +16,9 @@ MIN_PYTHON = (3, 9)
 
 
 def require_python(noun):
-    """Dies, exit 1, when the running Python is older than MIN_PYTHON."""
+    """Dies, exit 1, when the running Python is older than MIN_PYTHON - exit
+    1 even for a verb that reserves 1 for a "no", the carve-out in
+    coding-standards rule 2."""
     if tuple(sys.version_info[:2]) >= MIN_PYTHON:
         return
     found = ".".join(str(part) for part in sys.version_info[:3])

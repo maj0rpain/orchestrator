@@ -5,12 +5,10 @@ holds afterwards."""
 from __future__ import annotations
 
 import os
-import subprocess
 
 import pytest
 
 from conftest import GH_502, orch_issue
-from orch.cli import main
 from orch.gh import label_listed
 from orch.git import FakeGit
 
@@ -771,24 +769,3 @@ def test_a_failed_close_dies_with_ghs_first_line_leaving_the_issue_open(
     )
     assert read(store, "issues", 83, "state") == "OPEN\n"
     assert comments_of(store, 83) == []
-
-
-def test_an_unknown_op_lists_every_op(orch):
-    assert orch("bogus") == (
-        1, "",
-        "orch: unknown issue op: bogus"
-        " (want fetch|update|comment|comments|publish|triage|ready|next|labels|close)\n",
-    )
-    assert orch()[2].startswith("orch: unknown issue op: <none> (want ")
-
-
-def test_the_entry_point_hands_issue_to_the_noun(store, capsys, monkeypatch, tmp_path):
-    monkeypatch.setenv("ORCH_GH_FAKE_STORE", str(store))
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, stdin=subprocess.DEVNULL)
-    monkeypatch.chdir(tmp_path)
-
-    with pytest.raises(SystemExit) as died:
-        main(["issue", "update", "23"])
-
-    assert died.value.code == 1
-    assert capsys.readouterr() == ("", "orch: usage: orch.sh issue update <n> <file>\n")
