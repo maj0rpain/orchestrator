@@ -290,13 +290,13 @@ class Git:
     # on a git failure.
 
     def tree_state(self) -> Optional[str]:
-        """The working-tree state, as the bash verification noun hashes it: the
-        object name of a text holding what `rev-parse HEAD` prints, `none`
-        after it when it fails (an unborn branch, where it prints HEAD), the
-        tracked files' changes against HEAD, staged or not, as a binary diff,
-        and a line per untracked file git does not ignore, by its object name,
-        .orchestrator left out. Ignored files never count. None outside a
-        checkout."""
+        """The working-tree state, as the bash verification noun hashed it, so
+        a record a bash runner left still matches: the object name of a text
+        holding what `rev-parse HEAD` prints, `none` after it when it fails (an
+        unborn branch, where it prints HEAD), the tracked files' changes
+        against HEAD, staged or not, as a binary diff, and a line per untracked
+        file git does not ignore, by its object name, .orchestrator left out.
+        Ignored files never count. None outside a checkout."""
         top = self._top()
         if top is None:
             return None

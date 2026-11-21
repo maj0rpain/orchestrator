@@ -388,9 +388,10 @@ def test_the_fake_refuses_to_seed_an_operation_it_does_not_have():
 
 # --- the verification noun's operations --------------------------------------
 
-# The bash verification noun's working-tree state, verbatim but for ROOT and
-# ORCH_DIR_NAME: the source of truth the adapter's tree_state answers as, so a
-# record a bash runner left matches when its tree does.
+# The working-tree state the bash verification noun hashed before its
+# conversion, verbatim but for ROOT and ORCH_DIR_NAME: the source of truth the
+# adapter's tree_state answers as, so a record a bash runner left matches when
+# its tree does.
 BASH_TREE_STATE = r'''
 ROOT="$1" ORCH_DIR_NAME=.orchestrator
 {
