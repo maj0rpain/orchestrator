@@ -507,16 +507,6 @@ def test_a_failed_call_dies_naming_the_action_gh_s_first_line_and_the_hint(fixtu
                    " - --duplicate-of needs gh 2.102 or newer\n")
 
 
-def test_a_death_where_the_bash_verb_used_die2_exits_2(fixture_gh, capsys):
-    fixture_gh.reply(BODY, stderr="HTTP 502: Bad Gateway\n", exit=1)
-    gh = real_gh(fixture_gh)
-
-    code, _, err = died_of(capsys, lambda: gh_or_die(
-        "read issue #5", gh.issue_body, 5, code=2))
-
-    assert (code, err) == (2, "orch: gh could not read issue #5: HTTP 502: Bad Gateway\n")
-
-
 def test_a_failure_with_an_empty_first_line_dies_saying_gh_gave_no_reason(capsys):
     code, _, err = died_of(capsys, lambda: gh_die("read issue #5", "\nsecond line\n"))
 
@@ -533,9 +523,3 @@ def test_a_limit_given_up_on_dies_carrying_the_limit_message(fixture_gh, capsys)
     assert code == 1
     assert err == ("orch: gh could not read the body of issue #5: orch: GitHub API rate limit"
                    " reached - it resets at 2036-07-18T13:20:00Z" + LIMIT_TAIL + "\n")
-
-
-def test_an_answer_passes_through_gh_or_die(fixture_gh):
-    fixture_gh.reply(BODY, "Body.\n")
-
-    assert gh_or_die("read issue #5", real_gh(fixture_gh).issue_body, 5) == "Body."

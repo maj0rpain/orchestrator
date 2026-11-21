@@ -1,8 +1,8 @@
-"""orch.sh's handoff of a converted noun to `python3 -m orch` (ADR-0067),
-end to end: each check runs `orch.sh issue <verb>` as a command, in a
-checkout under tmp_path, against a fake store seeded in the layout the bash
-suite's fake_* helpers write, with ORCH_GH_FAKE_STORE set as fake_github sets
-it."""
+"""orch.sh's handoff of a converted noun to the orch package, run as
+`python3 -m orch` would be, through a `-c` bootstrap (ADR-0067), end to end:
+each check runs `orch.sh issue <verb>` as a command, in a checkout under
+tmp_path, against a fake store seeded in the layout the bash suite's fake_*
+helpers write, with ORCH_GH_FAKE_STORE set as fake_github sets it."""
 from __future__ import annotations
 
 import os

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import CHECKOUT, GH_502, orch_issue, write_labels_doc
+from conftest import CHECKOUT, GH_502, checkout, labels_doc, orch_issue
 from orch.gh import Unparsed
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit
@@ -72,22 +72,7 @@ def test_a_failed_labels_read_dies_after_the_lines_already_printed(seed, capsys)
 
 # --- issue ready -------------------------------------------------------------
 
-MAPPED_DOC = (
-    "# Triage Labels\n\n"
-    "| Label in mattpocock/skills | Label in our tracker | Meaning     |\n"
-    "| -------------------------- | -------------------- | ----------- |\n"
-    "| `ready-for-agent`          | `agent go`           | AFK-ready   |\n"
-)
-
-
-def checkout(tmp_path, labels_doc=None):
-    """A checkout's git adapter, rooted at tmp_path/repo, holding <labels_doc>
-    as its triage-labels doc when one is given."""
-    root = tmp_path / "repo"
-    root.mkdir()
-    if labels_doc is not None:
-        write_labels_doc(root, labels_doc)
-    return FakeGit(toplevel=str(root))
+MAPPED_DOC = labels_doc(("ready-for-agent", "agent go"))
 
 
 @pytest.mark.parametrize("label", ["ready-for-agent", "Ready-For-Agent"])

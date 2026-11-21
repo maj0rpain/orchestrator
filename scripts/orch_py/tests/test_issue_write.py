@@ -5,49 +5,39 @@ holds afterwards."""
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
-from conftest import GH_502, orch_issue, write_labels_doc
+from conftest import GH_502, checkout, labels_doc, orch_issue, write_labels_doc
 from orch.gh import label_listed
-from orch.git import FakeGit
 
 
 class Noun:
-    """`orch.sh issue ...` in-process: the fake gh on <seed>'s store, a fake
-    checkout at <root> - its triage-labels doc written by labels_doc() - and
+    """`orch.sh issue ...` in-process: the fake gh on <seed>'s store, the fake
+    checkout <git> - its triage-labels doc written by labels_doc() - and
     <env> for the host the messages name."""
 
-    def __init__(self, seed, root, capsys):
+    def __init__(self, seed, git, capsys):
         self.seed = seed
-        self.root = root
+        self.git = git
         self.capsys = capsys
         self.env = {}
 
     def labels_doc(self, *rows):
         """The repo's triage-labels doc, mapping each (role, label) row."""
-        lines = [
-            "# Triage Labels",
-            "",
-            "| Label in mattpocock/skills | Label in our tracker | Meaning |",
-            "| -------------------------- | -------------------- | ------- |",
-        ]
-        lines += ["| `%s` | `%s` | Meant |" % row for row in rows]
-        write_labels_doc(self.root, "\n".join(lines) + "\n")
+        write_labels_doc(Path(self.git.root), labels_doc(*rows))
 
     def __call__(self, *argv):
         """(exit code, stdout, stderr) of `orch.sh issue <argv>`."""
-        code = orch_issue(self.seed, *argv, git=FakeGit(toplevel=str(self.root)),
-                          env=self.env)
+        code = orch_issue(self.seed, *argv, git=self.git, env=self.env)
         out, err = self.capsys.readouterr()
         return code, out, err
 
 
 @pytest.fixture
 def orch(seed, tmp_path, capsys):
-    root = tmp_path / "repo"
-    root.mkdir()
-    return Noun(seed, root, capsys)
+    return Noun(seed, checkout(tmp_path), capsys)
 
 
 def read(store, *parts):

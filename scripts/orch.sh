@@ -9,8 +9,8 @@
 #
 # This file is the one entry point, and a thin one: path resolution, the
 # constants more than one module reads, the top-level statements whose order
-# matters, the module load and main's dispatch. Each noun's code lives in its
-# own module, scripts/orch/<noun>.sh, named as its tests in
+# matters, the module load and main's dispatch. Each bash noun's code lives in
+# its own module, scripts/orch/<noun>.sh, named as its tests in
 # scripts/test/orch/<noun>.sh are; each helper lives in the module of the
 # concept it serves, and scripts/orch/common.sh holds only the primitives no
 # concept owns. scripts/orch/loader.sh, loaded beside common.sh, sources the

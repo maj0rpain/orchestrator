@@ -50,6 +50,31 @@ def write_labels_doc(root, text):
     path.write_text(text)
 
 
+# The triage-labels doc's role table header: its column names, then its
+# separator row.
+LABELS_TABLE = (
+    "| Label in mattpocock/skills | Label in our tracker | Meaning |\n"
+    "| --- | --- | --- |\n"
+)
+
+
+def labels_doc(*rows):
+    """A triage-labels doc's text, its role table mapping each (role, label)
+    row."""
+    lines = ["| `%s` | `%s` | Meant |\n" % row for row in rows]
+    return "# Triage Labels\n\n" + LABELS_TABLE + "".join(lines)
+
+
+def checkout(tmp_path, doc=None):
+    """A checkout rooted at tmp_path/repo, holding <doc> as its triage-labels
+    doc when one is given: its git adapter, a FakeGit."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    if doc is not None:
+        write_labels_doc(root, doc)
+    return FakeGit(toplevel=str(root))
+
+
 def git_repo(path, origin=None):
     """A fresh repository at <path>, with <origin> as its origin remote when
     one is given: its Git adapter."""

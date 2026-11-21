@@ -8,14 +8,15 @@ Standards: `CONTRIBUTING.md#Develop`, `docs/agents/cli-conventions.md`,
 
 ## Layout
 
-`scripts/orch.sh` is a thin entry point: each noun's code lives in
+`scripts/orch.sh` is a thin entry point: each bash noun's code lives in
 `scripts/orch/<noun>.sh`, each helper in the module of the concept it serves,
 and only the primitives no concept owns in `scripts/orch/common.sh`;
 `common.sh` and the module loader `loader.sh` are the two files every start
 loads. A noun converted to Python (ADR-0067; `issue` so far) has no bash
 module: `orch.sh`'s one case naming the converted nouns runs it as `python3 -m
-orch <noun> ...` from the standard-library package in `scripts/orch_py/orch/`,
-its pytest tests beside it in `scripts/orch_py/tests/`. See CONTRIBUTING.md's
+orch <noun> ...` would, through a `-c` bootstrap, from the standard-library
+package in `scripts/orch_py/orch/`, its pytest tests beside it in
+`scripts/orch_py/tests/`. See CONTRIBUTING.md's
 Layout for the full map. There is no top-level `tests/`, and `hooks/` holds
 only `hooks.json`.
 
