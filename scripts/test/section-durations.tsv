@@ -34,7 +34,7 @@
 2	2	the suite start (#3582)	7661d78242588461a38289fb228211e159d899f8
 7	8	the pytest suite (#3912)	21deea025158b43b9892524639c0a4fbc5b9bf3c
 2	3	the counting fixture's stdin counter (#3434)	b19a94c28ffbd5db955a5f10a39d0b15791cbc4f
-128	105	affected.sh, the ticket verification (#2023)	1df5545036a0d4ab8b19ff7a9d866cd2e5ad851c
+132	105	affected.sh, the ticket verification (#2023)	659d8efa8629b41ef104ba19b25d3487510dfc53
 4	5	the row rule (#3549)	9fdb50e7e723c26a4127289109f27a68989c4579
 7	9	the shared test support, function by function (#3550)	de45838253c482219d70d5af6fd3b26e2079c3f8
 5	7	the gh fake, operation by operation (#3551)	987935a277e021eabb9c02e391ba40e84607a315
@@ -280,7 +280,7 @@
 61	64	side-checkout prune (#726)	2bda70fa48dd4b380007de96e4897b5b0aea9095
 68	72	side-checkout prune: edge cases (#726)	be2f05022f06b567f8644f200d31cb3fcfb831ee
 18	19	archive keeps flow-less directories (#1247)	1cf41fafd151a6478b41bf1fd7aff5efd9847669
-21	23	side-checkout prune: a covered branch tip (#1906)	b13be4c577395b49197e461cad6954d626b4081f
+44	32	side-checkout prune: a covered branch tip (#1906)	f84b823864eb50201507ad14b4ae01c045bcb80c
 5	7	side-checkout prune: fork PRs are not proof (#1979)	004dd30e3e0deb54b95c8c79110e26cd2ffc4014
 49	52	side-checkout prune: the merged-PR close backstop (#2477)	69f285288eabcace9d74fa67194548b6bf7ab512
 2	3	side_checkout_marker reads the worktree's git pointer	7605e77ff7fdca5853e0a9cc368065fe764cb65e

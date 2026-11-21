@@ -19,6 +19,8 @@ import re
 import subprocess
 from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Set, Tuple
 
+from orch.checkout import ORCH_DIR_NAME
+
 
 class FileDiff(NamedTuple):
     """One file's zero-context diff between two revisions: whether the file
@@ -309,7 +311,7 @@ class Git:
         if diff.returncode == 0:
             text += diff.stdout
         listed = self._run_at_top(
-            ["ls-files", "--others", "--exclude-standard", "-z", "--", ":!.orchestrator"]
+            ["ls-files", "--others", "--exclude-standard", "-z", "--", ":!" + ORCH_DIR_NAME]
         )
         if listed.returncode == 0:
             for name in listed.stdout.split(b"\0"):

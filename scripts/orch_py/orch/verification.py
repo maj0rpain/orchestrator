@@ -315,14 +315,14 @@ class Verification:
     def identity(self) -> str:
         """This checkout's identity token, made the first time it is asked
         for."""
-        orch_dir = os.path.join(self.root, ORCH_DIR_NAME)
-        path = os.path.join(orch_dir, "verification", "id")
+        path = token_path(self.root)
         token = read_text(path)
         if not token:
             if file_write_atomic(path, secrets.token_hex(20) + "\n"):
                 token = read_text(path)
             if not token:
-                die("could not record this checkout's identity in %s" % orch_dir)
+                die("could not record this checkout's identity in %s"
+                    % os.path.join(self.root, ORCH_DIR_NAME))
         return token
 
     def clear_orphans(self) -> None:
@@ -341,8 +341,7 @@ class Verification:
                 if record_old(d, now):
                     record_remove(d)
                 continue
-            current = read_text(os.path.join(root, ORCH_DIR_NAME, "verification", "id"))
-            if current != token:
+            if not checkout_holds(root, token):
                 orphans[d] = root
             elif not (record_has(d, "pid") or record_has(d, "status")) and record_old(d, now):
                 record_remove(d)
@@ -566,11 +565,16 @@ def command_env() -> Dict[str, str]:
     return env
 
 
+def token_path(root: str) -> str:
+    """The path of the identity token of the checkout root <root>."""
+    return os.path.join(root, ORCH_DIR_NAME, "verification", "id")
+
+
 def checkout_holds(root: str, token: Optional[str]) -> bool:
-    """The checkout watch's check: whether the checkout root <root> still
-    exists and its identity token still holds <token>."""
-    return os.path.isdir(root) and read_text(
-        os.path.join(root, ORCH_DIR_NAME, "verification", "id")) == token
+    """The checkout watch's and the orphan sweep's check: whether the
+    checkout root <root> still exists and its identity token still holds
+    <token>."""
+    return os.path.isdir(root) and read_text(token_path(root)) == token
 
 
 def runner_main(argv: List[str]) -> int:

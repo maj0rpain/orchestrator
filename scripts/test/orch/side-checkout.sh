@@ -1258,9 +1258,10 @@ assert_eq "and the new one exists" "$(on_disk "$top/.orchestrator/checkouts/fres
 restore_suite_env
 
 # fl_classify <scripts-dir>: every top-level .orchestrator/<name> the code in
-# <scripts-dir> (orch.sh, flow-state.sh and orch/*.sh) builds - as $ORCH/<name>,
-# $ORCH_DIR_NAME/<name>, $home/<name>, or a printf format '%s/<name>' or
-# '%s/%s/<name>' on a line naming $ORCH or $ORCH_DIR_NAME - against
+# <scripts-dir> (orch.sh, flow-state.sh, orch/*.sh and the Python package's
+# orch_py/orch/*.py) builds - as $ORCH/<name>, $ORCH_DIR_NAME/<name>,
+# $home/<name>, a printf format '%s/<name>' or '%s/%s/<name>' on a line naming
+# $ORCH or $ORCH_DIR_NAME, or a Python join's ORCH_DIR_NAME, "<name>" - against
 # FLOW_LESS_ENTRIES plus the flow's own entries. Prints one line per name on
 # neither list and per listed name never found, stating the rule; returns 1
 # when it printed any.
@@ -1269,7 +1270,8 @@ fl_classify() {
   local dir="$1" found listed out
   found="$( { grep -hoE '\$\{?(ORCH|ORCH_DIR_NAME|home)\}?/[a-z][a-z.-]*' "$dir/orch.sh" "$dir/flow-state.sh" "$dir"/orch/*.sh | sed -E 's|.*/||'
     grep -hE "printf '%s/(%s/)?[a-z]" "$dir/orch.sh" "$dir/flow-state.sh" "$dir"/orch/*.sh | grep -E '\$\{?ORCH(_DIR_NAME)?([^A-Za-z_]|$)' |
-      grep -oE "'%s/(%s/)?[a-z][a-z.-]*" | sed -E "s|.*/||"; } | sort -u)"
+      grep -oE "'%s/(%s/)?[a-z][a-z.-]*" | sed -E "s|.*/||"
+    grep -hoE 'ORCH_DIR_NAME, *"[a-z][a-z.-]*"' "$dir"/orch_py/orch/*.py | sed -E 's|.*"([^"]*)"|\1|'; } | sort -u)"
   listed="$( { sourced_orch_script 'printf "%s\n" "${FLOW_LESS_ENTRIES[@]}"'; tr ' ' '\n' <<<"$FL_FLOW_OWN"; } | sort -u)"
   out="$(comm -23 <(printf '%s\n' "$found") <(printf '%s\n' "$listed") | sed 's|.*|.orchestrator/& is built by orch.sh but is on neither FLOW_LESS_ENTRIES nor the flow'"'"'s own entries|'
     comm -13 <(printf '%s\n' "$found") <(printf '%s\n' "$listed") | sed 's|.*|listed entry & was never found in the scan|')"
@@ -1283,13 +1285,16 @@ assert_status "every top-level .orchestrator entry orch.sh builds is classified"
 assert_eq "the classification scan reports nothing" "$out" ""
 
 fl_fix="$(mktemp -d)"
-mkdir -p "$fl_fix/orch"
+mkdir -p "$fl_fix/orch" "$fl_fix/orch_py/orch"
 cp "$PLUGIN_ROOT/scripts/orch.sh" "$PLUGIN_ROOT/scripts/flow-state.sh" "$fl_fix/"
 cp "$PLUGIN_ROOT/scripts/orch/"*.sh "$fl_fix/orch/"
+cp "$PLUGIN_ROOT/scripts/orch_py/orch/"*.py "$fl_fix/orch_py/orch/"
 echo 'newthing_dir() { printf "%s\n" "$ORCH/brandnew"; }' >>"$fl_fix/orch/ticket.sh"
+echo 'PY_NEW = os.path.join("/", ORCH_DIR_NAME, "pynew")' >>"$fl_fix/orch_py/orch/checkout.py"
 out="$(fl_classify "$fl_fix")"; st=$?
 assert_status "an unclassified entry fails the classification" "$st" 1
 assert_contains "the failure names the entry" "$out" ".orchestrator/brandnew"
+assert_contains "and one the Python package builds" "$out" ".orchestrator/pynew"
 assert_contains "the failure states the rule" "$out" "The rule: an entry a command creates"
 rm -rf "$fl_fix"
 

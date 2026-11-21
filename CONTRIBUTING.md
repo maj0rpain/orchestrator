@@ -75,8 +75,10 @@ pytest's result as a suite's FAIL lines and summary, and prints
 pytest suite sits outside the suite budget: it is in neither all.sh's suites
 list nor the durations file, has no durations file of its own, and its growth
 is guarded by review alone. In affected.sh a change under `scripts/orch_py/`
-selects the spec, spec-review and ticket sections, the bash nouns whose
-sections run an `issue` verb through the dispatch.
+selects the spec, spec-review, ticket and autopilot sections, the bash nouns
+whose sections run a converted noun's verb through the dispatch, and the
+side-checkout sections, whose `.orchestrator` entry classification scans the
+package.
 
 orch_test.sh is the suite's runner and holds no test. Its `# ---` sections live
 under `scripts/test/orch/`: `<noun>.sh` holds the sections for one orch.sh noun
@@ -240,8 +242,8 @@ which ignores the setting; usable CPUs are the online cores, lowered to a
 cgroup v2 `cpu.max` quota;
 `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every section must
 pass on its own. all.sh and affected.sh each run at most that many shellcheck
-processes at once, one file per process, and orch_test.sh and all.sh lower their
-own niceness to 10 outside `CI`.
+processes at once, one file per process, and orch_test.sh, all.sh, affected.sh
+and orch_py_test.sh each lower their own niceness to 10 outside `CI`.
 Each section of a parallel run has a deadline, `ORCH_TEST_SECTION_TIMEOUT` whole
 seconds (default 600), counted from the section's own start; past it the runner
 stops the section's process tree and reports `section '<title>' timed out`. A
@@ -607,7 +609,7 @@ skills/orch-audit-docs/      audits a repo's documentation against its code read
 skills/orch-audit-code/      audits a repo's source code for latent bugs, inefficiencies and architecture deepenings read-only: scope, partition into areas, hunt in read-only orch-code-auditor subagents, rank, HTML report, hand off to orch-interview and `orch.sh audit file`
 scripts/orch.sh               the entry point for every deterministic operation (mechanism): path resolution, shared constants, the module list, main, whose one case naming the converted nouns hands each to the orch package through orch_python
 scripts/orch/<noun>.sh        one module per orch.sh noun still in bash (branch.sh, ticket.sh, ...), sourced by orch.sh, named as its test file
-scripts/orch_py/orch/         the orch Python package (ADR-0067), one module per converted noun (issue.py, finding_triage.py, verification.py, each named as its noun with each - as _) beside the helpers it rebuilt, among them lines_fate.py (the Lines fate module, a concept module with no noun: what became of a range of a file's lines at a ref since a commit filed them, read by finding triage's scan) base.py (the base concept's default-branch lookup alone), and checkout.py, liveness.py and wait.py (the main checkout and the ticket-worktree path, the `<pid> <start-time>` record, and the re-callable block, as far as verification.py needs them); verification.py the verification noun (a re-callable command, its runner started through its own copy of the bootstrap, at the module's `__main__` entry point): standard library only, Python 3.9+; __main__.py the entry point (the version check, in syntax every python3 compiles), cli.py the noun table, gh.py and git.py the only places gh and git run, gh_fake.py the gh adapter's fake on the shared fake store, root.py the ROOT block
+scripts/orch_py/orch/         the orch Python package (ADR-0067), one module per converted noun (issue.py, finding_triage.py, verification.py, each named as its noun with each - as _) beside the helpers it rebuilt, among them lines_fate.py (the Lines fate module, a concept module with no noun: what became of a range of a file's lines at a ref since a commit filed them, read by finding triage's scan), base.py (the base concept's default-branch lookup alone), and checkout.py, liveness.py and wait.py (the main checkout and the ticket-worktree path, the `<pid> <start-time>` record, and the re-callable block, as far as verification.py needs them); verification.py the verification noun (a re-callable command, its runner started through its own copy of the bootstrap, at the module's `__main__` entry point): standard library only, Python 3.9+; __main__.py the entry point (the version check, in syntax every python3 compiles), cli.py the noun table, gh.py and git.py the only places gh and git run, gh_fake.py the gh adapter's fake on the shared fake store, root.py the ROOT block
 scripts/orch_py/tests/        the pytest suite: in-process tests of each noun against the fakes, the gh adapter's contract tests against a fixture gh, the git adapter's tests against a real repository and its fake, and the end-to-end checks of orch.sh's dispatch (test_dispatch.py); conftest.py the clean environment and the real-gh guard
 scripts/orch_py/requirements-dev.txt the pinned dev dependencies: pytest, pytest-xdist, pytest-timeout (the package itself needs none)
 scripts/orch_py/pytest.ini    the pytest settings: the tests folder, the package on the module path, the per-test timeout, no cache directory

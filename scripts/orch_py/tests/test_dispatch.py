@@ -10,12 +10,24 @@ import os
 import signal
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
 
-from conftest import comments_of, committed, git_repo, labels_of, path_without, read, run_git
+from conftest import (
+    VERIFICATION_KNOBS,
+    comments_of,
+    committed,
+    git_repo,
+    gone,
+    labels_of,
+    path_without,
+    read,
+    run_git,
+    until,
+    verification_records,
+    verification_store,
+)
 
 SCRIPTS = Path(__file__).resolve().parents[2]
 
@@ -193,31 +205,6 @@ def test_finding_triage_scan_reads_a_real_history_fetched_from_a_bare_origin(tmp
 
 # --- verification ------------------------------------------------------------
 
-# A short grace and a fast poll, so a stop and a delivery take a fraction of a
-# second.
-VERIFICATION_KNOBS = {"ORCH_VERIFICATION_GRACE": "0.3", "ORCH_VERIFICATION_INTERVAL": "0.02"}
-
-
-def verification_records(root):
-    """The records in the verification store of the main checkout <root>."""
-    store = root / ".orchestrator" / "verification"
-    return sorted(p for p in store.iterdir() if p.is_dir() and not p.name.startswith(".")) \
-        if store.is_dir() else []
-
-
-def group_gone(group, bound=5.0):
-    """Whether the process group <group> is gone within <bound> seconds."""
-    deadline = time.monotonic() + bound
-    while True:
-        try:
-            os.killpg(group, 0)
-        except ProcessLookupError:
-            return True
-        if time.monotonic() > deadline:
-            return False
-        time.sleep(0.02)
-
-
 def test_verification_run_delivers_a_run_through_the_dispatch(tmp_path, repo, seed):
     committed(repo, {"README.md": "readme\n"}, "first")
 
@@ -233,32 +220,20 @@ def test_verification_stop_stops_a_live_run_through_the_dispatch(tmp_path, repo,
     going = orch_sh(tmp_path, repo, seed, "verification", "run", "sleep 30",
                     knobs=dict(VERIFICATION_KNOBS, ORCH_WAIT_BLOCK="0.3"))
     record, = verification_records(repo)
-    group = int((record / "pid").read_text().split()[0])
+    group = int((verification_store(repo) / record / "pid").read_text().split()[0])
     try:
         answer = orch_sh(tmp_path, repo, seed, "verification", "stop", str(repo),
                          knobs=VERIFICATION_KNOBS)
 
         assert going == ("", "orch: still running after 0.3s - run the same command again\n", 75)
         assert answer == ("", "", 0)
-        assert group_gone(group)
+        assert until(lambda: gone(group))
         assert verification_records(repo) == []
     finally:
         try:
             os.killpg(group, signal.SIGKILL)
         except ProcessLookupError:
             pass
-
-
-def test_verification_dies_before_doing_anything_without_python3(tmp_path, repo, seed):
-    committed(repo, {"README.md": "readme\n"}, "first")
-
-    answer = orch_sh(tmp_path, repo, seed, "verification", "run", "touch ran",
-                     path=path_without(tmp_path, "python3"), knobs=VERIFICATION_KNOBS)
-
-    assert answer == ("", "orch: orch.sh verification needs python3 3.9 or newer (found none)"
-                          " - run orch.sh doctor\n", 1)
-    assert not (repo / "ran").exists()
-    assert not (repo / ".orchestrator" / "verification").exists()
 
 
 def test_verification_usage_names_its_two_verbs_and_no_runner_entry_point(tmp_path, repo, seed):

@@ -17,17 +17,23 @@ import time
 
 import pytest
 
-from conftest import committed, git_repo, path_without, run_git as git
+from conftest import (
+    VERIFICATION_KNOBS,
+    committed,
+    git_repo,
+    gone,
+    path_without,
+    run_git as git,
+    until,
+    verification_records as records,
+    verification_store as store,
+)
 from orch import verification
 from orch.git import Git
 
 # The knobs every call runs under unless a test sets its own: a block long
-# enough to deliver a quick run, a short grace, a fast poll.
-KNOBS = {
-    "ORCH_WAIT_BLOCK": "10",
-    "ORCH_VERIFICATION_GRACE": "0.3",
-    "ORCH_VERIFICATION_INTERVAL": "0.02",
-}
+# enough to deliver a quick run, over the shared short grace and fast poll.
+KNOBS = dict(VERIFICATION_KNOBS, ORCH_WAIT_BLOCK="10")
 
 
 @pytest.fixture
@@ -72,20 +78,6 @@ def verify(root, *argv, **knobs):
         return died.code
 
 
-def store(root):
-    return root / ".orchestrator" / "verification"
-
-
-def records(root):
-    """The names of the records in the store of the main checkout <root>,
-    its temporary directories (and the main checkout's own identity token)
-    left out."""
-    if not store(root).is_dir():
-        return []
-    return sorted(path.name for path in store(root).iterdir()
-                  if path.is_dir() and not path.name.startswith("."))
-
-
 def the_record(root):
     """The one record in the store of <root>."""
     names = records(root)
@@ -103,27 +95,6 @@ def gated(tmp_path, tail="echo done", gate="gate"):
 def starts(tmp_path):
     path = tmp_path / "starts"
     return len(path.read_text().splitlines()) if path.exists() else 0
-
-
-def until(check, bound=5.0):
-    """Waits up to <bound> seconds for <check>() to hold: whether it did."""
-    deadline = time.monotonic() + bound
-    while not check():
-        if time.monotonic() > deadline:
-            return False
-        time.sleep(0.02)
-    return True
-
-
-def gone(group):
-    """Whether the process group <group> is gone, the module's runners
-    reaped first, so an ended one is never counted as a zombie."""
-    verification.reap_runners()
-    try:
-        os.killpg(group, 0)
-    except ProcessLookupError:
-        return True
-    return False
 
 
 def group_of(record):
@@ -254,7 +225,7 @@ def test_a_stale_live_run_is_stopped_inside_the_call_and_a_fresh_one_started(
     old = group_of(started(capsys, repo, tmp_path, trapped))
     (repo / "README.md").write_text("edited\n")
 
-    code = verify(repo, "run", trapped, ORCH_WAIT_BLOCK="1")
+    code = verify(repo, "run", trapped, ORCH_WAIT_BLOCK="0.05")
 
     assert (code, gone(old), (tmp_path / "log").read_text()) == (75, True, "TERM\n")
     assert until(lambda: starts(tmp_path) == 2)
@@ -265,7 +236,7 @@ def test_a_stale_live_run_ignoring_term_is_killed_inside_the_call(repo, tmp_path
     old = group_of(started(capsys, repo, tmp_path, command))
     (repo / "new.txt").write_text("untracked\n")
 
-    code = verify(repo, "run", command, ORCH_WAIT_BLOCK="2")
+    code = verify(repo, "run", command, ORCH_WAIT_BLOCK="0.05")
 
     assert (code, gone(old)) == (75, True)
 
@@ -322,6 +293,15 @@ def side(repo, tmp_path):
     ticket = path / ".orchestrator" / "worktrees" / "t5"
     git(repo, "worktree", "add", "-q", str(ticket), "-b", "t5")
     return path, ticket
+
+
+@pytest.fixture
+def wt(repo, tmp_path):
+    """A worktree of <repo> at tmp_path/wt, on its own branch wt: its root,
+    resolved as git names it."""
+    path = (tmp_path / "wt").resolve()
+    git(repo, "worktree", "add", "-q", str(path), "-b", "wt")
+    return path
 
 
 def test_stop_stops_the_live_runs_of_a_checkout_and_its_ticket_worktrees(
@@ -395,9 +375,7 @@ SWEPT_FIRST = {"ORCH_VERIFICATION_WATCH": "600"}
 
 
 def test_the_orphan_sweep_stops_a_live_run_in_a_removed_checkout_and_drops_its_record(
-        repo, tmp_path, capsys):
-    wt = (tmp_path / "wt").resolve()
-    git(repo, "worktree", "add", "-q", str(wt), "-b", "wt")
+        repo, wt, tmp_path, capsys):
     group = group_of(started(capsys, wt, tmp_path, gated(tmp_path), at=repo, **SWEPT_FIRST))
     git(repo, "worktree", "remove", "--force", str(wt))
 
@@ -407,9 +385,7 @@ def test_the_orphan_sweep_stops_a_live_run_in_a_removed_checkout_and_drops_its_r
 
 
 def test_the_orphan_sweep_drops_a_record_whose_group_survives_the_kill_warning_of_it(
-        repo, tmp_path, capsys, monkeypatch):
-    wt = (tmp_path / "wt").resolve()
-    git(repo, "worktree", "add", "-q", str(wt), "-b", "wt")
+        repo, wt, tmp_path, capsys, monkeypatch):
     group = group_of(started(capsys, wt, tmp_path, gated(tmp_path), at=repo, **SWEPT_FIRST))
     git(repo, "worktree", "remove", "--force", str(wt))
     signalling_nothing_to(monkeypatch, group)
@@ -422,9 +398,7 @@ def test_the_orphan_sweep_drops_a_record_whose_group_survives_the_kill_warning_o
 
 
 def test_a_checkout_made_again_at_its_path_is_never_handed_the_old_result(
-        repo, tmp_path, capsys):
-    wt = (tmp_path / "wt").resolve()
-    git(repo, "worktree", "add", "-q", str(wt), "-b", "wt")
+        repo, wt, tmp_path, capsys):
     command = gated(tmp_path, "echo done $(cat %s)" % (tmp_path / "round"))
     (tmp_path / "round").write_text("old\n")
     record = started(capsys, wt, tmp_path, command, at=repo)
@@ -445,7 +419,7 @@ def bash_record(root, command, main=None, **files):
     root, its checkout's identity token (made, as bash makes one, when the
     checkout has none), the checkout's state now, and <files>, each file name
     mapped to its text, or to None for a file left out. Its directory."""
-    token_file = root / ".orchestrator" / "verification" / "id"
+    token_file = store(root) / "id"
     if not token_file.exists():
         token_file.parent.mkdir(parents=True, exist_ok=True)
         token_file.write_text("a-bash-token\n")
@@ -695,9 +669,7 @@ def watch_stop(tmp_path, record, group):
 
 
 def test_a_runner_whose_checkout_root_is_removed_stops_its_command_and_its_record(
-        repo, tmp_path, capsys):
-    wt = (tmp_path / "wt").resolve()
-    git(repo, "worktree", "add", "-q", str(wt), "-b", "wt")
+        repo, wt, tmp_path, capsys):
     record = started(capsys, wt, tmp_path, trapping(tmp_path), at=repo,
                      ORCH_VERIFICATION_WATCH=FAST_WATCH)
     group = group_of(record)
