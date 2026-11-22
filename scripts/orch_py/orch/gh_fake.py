@@ -516,7 +516,7 @@ class FakeGh:
         self._known(n)
         self._known(blocker)
         path = _store_path(self.store, "blocked_by", n)
-        if str(blocker) not in real.lines_of(read_raw(path) or ""):
+        if str(blocker) not in _lines(path):
             _write(path, "%d\n" % blocker, "ab")
 
     def blocker_remove(self, n: int, blocker: int) -> None:

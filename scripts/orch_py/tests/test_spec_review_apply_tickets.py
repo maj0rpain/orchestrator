@@ -12,7 +12,7 @@ import os
 
 import pytest
 
-from conftest import comments_of, flow_state, read, snapshot
+from conftest import comments_of, edit, flow_state, read, snapshot
 from test_spec_review_apply import (AUTOPILOT, BODY, CLEAN, apply, batch_edit, on_disk,
                                     refused, resume, round_dir)
 
@@ -87,12 +87,6 @@ def fetch(d):
     fetches them after the pause."""
     (d / "ticket-20.md").write_text(T20)
     (d / "ticket-21.md").write_text(T21)
-
-
-def tickets_edit(d, old, new):
-    text = (d / "tickets.md").read_text()
-    assert text.count(old) == 1, old
-    (d / "tickets.md").write_text(text.replace(old, new))
 
 
 def body(store, n):
@@ -272,7 +266,7 @@ def test_a_retire_runs_after_the_publish_editing_no_ticket(root, seed, store, ho
     d = tickets_dir(root, seed)
     fetch(d)
     if how == "recommended":
-        tickets_edit(d, "@@ recommend apply", "@@ recommend retire")
+        edit(d / "tickets.md", "@@ recommend apply", "@@ recommend retire")
 
     assert apply(root, seed, d, "recommended", "--tickets", how) == 0
     assert read(store, "subs", 14) == ""
@@ -448,7 +442,7 @@ def test_a_ticket_item_with_no_ticket_file_takes_no_fetched_copy(root, seed, sto
         "orch: tickets.md line 2: ticket item 1: ticket-20.md not found in %s - fetch each"
         " ticket a ticket item names into it - nothing written\n" % d)
     fetch(d)
-    tickets_edit(d, "Build alpha.\n@@ replace", "Nowhere.\n@@ replace")
+    edit(d / "tickets.md", "Build alpha.\n@@ replace", "Nowhere.\n@@ replace")
     ticket_refused(capsys, root, seed, store, d, "recommended", "--tickets", "recommended")
     assert read(d, "ticket-20.fetched.md") == T20
 
@@ -501,7 +495,7 @@ def test_every_ticket_step_error_names_its_line_and_writes_nothing(
     fetch(d)
     seed.issue(99, "open")
     seed.body(99, "Unrelated issue: nightly backup job.")
-    tickets_edit(d, old, new)
+    edit(d / "tickets.md", old, new)
     before = ticket_files(d)
     store_before = snapshot(store)
 
@@ -515,8 +509,8 @@ def test_every_ticket_step_error_names_its_line_and_writes_nothing(
 def test_the_first_ticket_step_failure_is_an_item_before_a_closed_line(root, seed, capsys):
     d = tickets_dir(root, seed)
     fetch(d)
-    tickets_edit(d, "@@ item 1 ticket 20 apply", "@@ item 1 ticket 99 apply")
-    tickets_edit(d, "@@ closed 22 ", "@@ closed 99 ")
+    edit(d / "tickets.md", "@@ item 1 ticket 20 apply", "@@ item 1 ticket 99 apply")
+    edit(d / "tickets.md", "@@ closed 22 ", "@@ closed 99 ")
 
     assert apply(root, seed, d, "recommended", "--tickets", "recommended") == 1
     assert capsys.readouterr().err == (
@@ -536,8 +530,8 @@ def test_the_first_ticket_step_failure_is_an_item_before_a_closed_line(root, see
 def test_a_collapsed_breakdown_s_ticket_step_errors(root, seed, store, capsys, old, new,
                                                     message):
     d = collapsed_dir(root, seed)
-    tickets_edit(d, "Build the spec.\n@@ replace", "Nowhere.\n@@ replace")
-    tickets_edit(d, old, new)
+    edit(d / "tickets.md", "Build the spec.\n@@ replace", "Nowhere.\n@@ replace")
+    edit(d / "tickets.md", old, new)
 
     err = refused(capsys, root, seed, store, d, "", "recommended", "--tickets", "recommended")
     assert err == "orch: %s - nothing written\n" % message
@@ -546,7 +540,7 @@ def test_a_collapsed_breakdown_s_ticket_step_errors(root, seed, store, capsys, o
 def test_a_collapsed_ticket_anchor_on_text_the_batch_replaced_is_refused(root, seed, store,
                                                                         capsys):
     d = collapsed_dir(root, seed)
-    tickets_edit(d, "Build the spec.\n@@ replace", "Alpha line.\n@@ replace")
+    edit(d / "tickets.md", "Build the spec.\n@@ replace", "Alpha line.\n@@ replace")
 
     assert "ticket item 1 (## Ticket): its anchor matches no text" in refused(
         capsys, root, seed, store, d, "", "recommended", "--tickets", "recommended")
@@ -555,7 +549,7 @@ def test_a_collapsed_ticket_anchor_on_text_the_batch_replaced_is_refused(root, s
 def test_an_edge_whose_blocker_is_closed_is_added(root, seed, store):
     d = tickets_dir(root, seed)
     fetch(d)
-    tickets_edit(d, "@@ item 3 block 20 by 21 apply", "@@ item 3 block 20 by 22 apply")
+    edit(d / "tickets.md", "@@ item 3 block 20 by 21 apply", "@@ item 3 block 20 by 22 apply")
 
     assert apply(root, seed, d, "recommended", "--tickets", "recommended") == 0
     assert "22" in read(store, "blocked_by", 20).split()

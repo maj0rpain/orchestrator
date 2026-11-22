@@ -199,6 +199,26 @@ def text_file_write(file: Union[str, int], text: str, unwritten: str) -> None:
         die(unwritten)
 
 
+def text_file_append(path: str, text: str, unappended: str) -> None:
+    """Appends <text> and a newline to the file at <path>, made where it is
+    missing, as UTF-8, surrogateescape, as text_file_write writes. Dies with
+    <unappended> when it cannot be appended."""
+    try:
+        with open(path, "ab") as f:
+            f.write((text + "\n").encode("utf-8", "surrogateescape"))
+    except OSError:
+        die(unappended)
+
+
+def copy_or_die(source: str, target: str, uncopied: str) -> None:
+    """cp <source> <target>: the file's bytes copied over whatever <target>
+    held. Dies with <uncopied> when it cannot be copied."""
+    try:
+        shutil.copyfile(source, target)
+    except OSError:
+        die(uncopied)
+
+
 def rm_f(path: str) -> None:
     """rm -f <path>, its failure ignored."""
     try:

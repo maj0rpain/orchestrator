@@ -26,11 +26,10 @@ from __future__ import annotations
 import glob
 import os
 import shlex
-import shutil
 from typing import List, Sequence, Tuple
 
-from orch.common import (ORCH_DIR_NAME, die, plain_positive_number, read_raw, rm_f_or_die,
-                         rm_rf_or_die, text_file_write)
+from orch.common import (ORCH_DIR_NAME, copy_or_die, die, plain_positive_number, read_raw,
+                         rm_f_or_die, rm_rf_or_die, text_file_append, text_file_write)
 
 # The empty file spec_round_complete writes in a round's directory, as its
 # last local step but the answer's clearing: a round counts as complete only
@@ -98,10 +97,8 @@ def spec_round_answer_save(
         if file_option:
             copy = "%s/apply-%s.copy" % (directory, file_option[2:] if file_option.startswith("--")
                                          else file_option)
-            try:
-                shutil.copyfile(arg, copy)
-            except OSError:
-                die("could not copy %s to %s - nothing written to GitHub" % (arg, copy))
+            copy_or_die(arg, copy,
+                        "could not copy %s to %s - nothing written to GitHub" % (arg, copy))
             saved.append(copy)
             file_option = ""
             continue
@@ -215,12 +212,8 @@ def spec_round_complete(directory: str, log: str, landed: str) -> None:
     cleared. <landed> names the GitHub writes, for the messages."""
     settled = "%s/%s" % (directory, ROUND_SETTLED)
     if not os.path.isfile(settled) or not _ends_with(settled, log):
-        try:
-            with open(settled, "ab") as f:
-                f.write((log + "\n").encode("utf-8", "surrogateescape"))
-        except OSError:
-            die("could not append the changelog to %s - every GitHub write landed: %s"
-                % (settled, landed))
+        text_file_append(settled, log, "could not append the changelog to %s - every GitHub"
+                         " write landed: %s" % (settled, landed))
     appended = "every GitHub write landed and settled.md is appended: " + landed
     fundamental = "%s/%s" % (directory, ROUND_FUNDAMENTAL)
     rm_f_or_die(fundamental, "could not remove %s - %s" % (fundamental, appended))

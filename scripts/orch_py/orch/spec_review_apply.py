@@ -36,12 +36,12 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 from typing import Callable, Dict, List, Mapping, Tuple
 
 from orch import spec, ticket
 from orch.autopilot import autopilot_active
-from orch.common import capture, die, err_line, file_lines, lines_of, read_raw, text_file_write
+from orch.common import (capture, copy_or_die, die, err_line, file_lines, lines_of, read_raw,
+                         text_file_append, text_file_write)
 from orch.flow_state import flow_state_file, require_issue
 from orch.issue import Issue
 from orch.marked_comment import marked_comment_write
@@ -97,11 +97,8 @@ def write(directory: str, what: str, call: Callable[[], object]) -> None:
     if code != 0:
         die("could not write %s: %s - already landed: %s; %s/changelog.md is kept, and the"
             " review stops here" % (what, err_line(err), landed(directory), directory))
-    try:
-        with open(_log(directory), "ab") as f:
-            f.write((what + "\n").encode("utf-8", "surrogateescape"))
-    except OSError:
-        die("%s landed, but %s/applied.log could not record it" % (what, directory))
+    text_file_append(_log(directory), what,
+                     "%s landed, but %s/applied.log could not record it" % (what, directory))
 
 
 def local_write(path: str, text: str) -> None:
@@ -119,13 +116,6 @@ def ticket_numbers(directory: str) -> List[str]:
         if match:
             numbers.append(match.group(1))
     return numbers
-
-
-def _copy(source: str, target: str, unmade: str) -> None:
-    try:
-        shutil.copyfile(source, target)
-    except OSError:
-        die(unmade)
 
 
 def item_sections(item) -> List[str]:
@@ -292,16 +282,17 @@ def apply_answer(options, resume: bool, gh_of: Callable[[], object], git,
     if not os.path.isfile(directory + "/batch.md"):
         die("batch.md not found in " + directory)
     if not os.path.exists(directory + "/spec.fetched.md"):
-        _copy(directory + "/spec.md", directory + "/spec.fetched.md",
-              "could not copy spec.md to %s/spec.fetched.md - nothing written" % directory)
+        copy_or_die(directory + "/spec.md", directory + "/spec.fetched.md",
+                    "could not copy spec.md to %s/spec.fetched.md - nothing written" % directory)
     # Each ticket file's fetched copy, taken by the first run that finds the
     # file - the --tickets rerun, as the session fetches tickets after the
     # pause.
     for t in ticket_numbers(directory):
         if not os.path.exists("%s/ticket-%s.fetched.md" % (directory, t)):
-            _copy("%s/ticket-%s.md" % (directory, t), "%s/ticket-%s.fetched.md" % (directory, t),
-                  "could not copy ticket-%s.md to %s/ticket-%s.fetched.md - nothing written"
-                  % (t, directory, t))
+            copy_or_die("%s/ticket-%s.md" % (directory, t),
+                        "%s/ticket-%s.fetched.md" % (directory, t),
+                        "could not copy ticket-%s.md to %s/ticket-%s.fetched.md - nothing written"
+                        % (t, directory, t))
 
     # Every anchor checked against the fetched copy, and every accepted one
     # applied to it; the first problem refuses the batch.
