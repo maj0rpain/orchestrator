@@ -2698,6 +2698,25 @@ assert_contains "the remedy gives the example entry line" "$out" '"**Doctor**: t
 assert_contains "the remedy names the setup doc" "$out" "docs/repo-setup.md"
 restore_suite_env
 
+# --- doctor --env: glossary check without python3 ----------------------------
+# The glossary check runs the converted glossary noun as a child orch.sh, so
+# with no python3 on PATH - the no-jq run's PATH has none - it FAILs carrying
+# the noun's own message beside check_python3's.
+echo
+echo "doctor: glossary check without python3"
+if on_windows_bash; then
+  skip_no_jq "no python3: the glossary check fails with the noun's message"
+else
+  healthy_repo
+  doctor_github
+  writeln '**Alpha**: one.' >GLOSSARY.md
+  out="$(PATH="$nojq_path" "$ORCH" doctor --env 2>&1)"; st=$?
+  assert_status "no python3: doctor --env fails" "$st" 1
+  assert_contains "no python3: the glossary check fails with the noun's message" "$out" \
+    "FAIL  orch.sh glossary needs python3 3.9 or newer (found none)"
+  restore_suite_env
+fi
+
 # --- doctor --env: ADR directory check (#3358) --------------------------------
 echo
 echo "doctor: ADR directory check"
