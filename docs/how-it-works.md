@@ -586,18 +586,21 @@ The rest (`active`, `rounds`, `budget`, `run`, `ask`, `answer`, `sync-finish`,
 
 ## Hosts
 
-The plugin runs on Claude Code and on the Junie CLI; Junie's setup is in
-[docs/junie/README.md](junie/README.md), and
+The plugin runs on Claude Code, the Junie CLI, and the Antigravity CLI;
+Junie's setup is in [docs/junie/README.md](junie/README.md), Antigravity's
+setup is in [docs/antigravity/README.md](antigravity/README.md), and
 [docs/host-capabilities.md](host-capabilities.md) maps each capability to
 each host.
 
 Doctor reports the host it detects and the capabilities that host lacks
 (from [docs/host-capabilities.md](host-capabilities.md)). It reads Claude
-Code from `CLAUDECODE` or `CLAUDE_PLUGIN_ROOT` and Junie from
-`JUNIE_SHIM_PATH` (set in Junie CLI's agent shell) or `JUNIE_EXTENSION_ROOT`
-(set for extension hooks); set `ORCHESTRATOR_HOST=claude` or `junie` where
-neither reaches the shell. Install the whole plugin, not just its skills:
-every skill runs `scripts/orch.sh`.
+Code from `CLAUDECODE` or `CLAUDE_PLUGIN_ROOT`, Junie from `JUNIE_SHIM_PATH`
+(set in Junie CLI's agent shell) or `JUNIE_EXTENSION_ROOT` (set for extension
+hooks), and Antigravity from `ANTIGRAVITY_AGENT` or
+`ANTIGRAVITY_CONVERSATION_ID` (set in `run_command` shells); set
+`ORCHESTRATOR_HOST=claude`, `junie`, or `antigravity` where none reaches the
+shell. Install the whole plugin, not just its skills: every skill runs
+`scripts/orch.sh`.
 
 ## Activation
 

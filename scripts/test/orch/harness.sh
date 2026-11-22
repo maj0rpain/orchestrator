@@ -4925,6 +4925,8 @@ af_row ".dockerignore selects the container and up suites" .dockerignore \
   "$TR_GATE,docs_lint.sh,autopilot_container_test.sh,autopilot_up_test.sh"
 af_row "a plugin manifest file selects the version bump and up suites" .claude-plugin/plugin.json \
   "$TR_GATE,docs_lint.sh,version_bump_test.sh,autopilot_up_test.sh"
+af_row "an Antigravity plugin manifest selects the version bump suite" .antigravity-plugin/plugin.json \
+  "$TR_GATE,docs_lint.sh,version_bump_test.sh"
 for af_f in .github/workflows/test.yml .gitignore .gitattributes .ignore LICENSE .claude/settings.json; do
   af_row "$af_f selects nothing more" "$af_f" "$TR_GATE,docs_lint.sh"
 done

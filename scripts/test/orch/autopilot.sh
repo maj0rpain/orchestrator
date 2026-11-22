@@ -846,6 +846,12 @@ git config orchestrator.autopilot.permission-mode plan
 out="$(ORCHESTRATOR_HOST=junie "$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "tick refuses on Junie" "$st" 1
 assert_contains "saying so" "$out" "autopilot is Claude Code only"
+out="$(ORCHESTRATOR_HOST=antigravity "$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "tick refuses on Antigravity (ORCHESTRATOR_HOST)" "$st" 1
+assert_contains "saying so on Antigravity" "$out" "autopilot is Claude Code only"
+out="$(ANTIGRAVITY_AGENT=1 "$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "tick refuses on Antigravity (ANTIGRAVITY_AGENT)" "$st" 1
+assert_contains "saying so under ANTIGRAVITY_AGENT" "$out" "autopilot is Claude Code only"
 for name in model effort; do
   git config "orchestrator.autopilot.$name" gpt
   out="$("$ORCH" autopilot tick 2>&1)"; st=$?

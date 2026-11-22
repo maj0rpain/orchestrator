@@ -675,6 +675,7 @@ docs/adr/                     the architecture decision records
 docs/agents/                  this repo's agent-skill configuration: issue tracker, triage labels, domain docs, CLI conventions, coding standards
 docs/junie/README.md          Junie CLI setup: the AGENTS.md snippet and the per-prompt fallback
 docs/junie/AGENTS.md          Junie snippet: standing planning and finding-the-plugin sections (where orch.sh is, what to do when an orch-* skill or agent is hidden), and each skill's custom agents (JUNIE-5493 workaround)
+docs/antigravity/README.md    Antigravity CLI setup: native plugin install, direct skill invocation, doctor, and current fallbacks
 hooks/hooks.json              hook wiring
 ```
 
@@ -688,44 +689,47 @@ cannot drift between sessions.
 
 Only Claude Code expands `CLAUDE_PLUGIN_ROOT` in skills. Other hosts expand it
 only inside `hooks/hooks.json` (which keeps `${CLAUDE_PLUGIN_ROOT}` as is).
-Junie CLI's agent shell has no `JUNIE_EXTENSION_ROOT` either, and Junie does not
-tell the model a skill's own directory. So every skill that runs `orch.sh`,
-other than a Claude-Code-only one (see below), states the path one way, in this
-order: the `ORCH=` line, then the Junie CLI install, then the relative
-fallback:
+Antigravity CLI gives the model each skill's own directory, so the relative
+path works directly without a shell probe. Junie CLI's agent shell has no
+`JUNIE_EXTENSION_ROOT` either, and Junie does not tell the model a skill's own
+directory. So every skill that runs `orch.sh`, other than a Claude-Code-only
+one (see below), states the path one way, in this order: the `ORCH=` line, then
+the relative path when the host gave the skill's directory, then the Junie CLI
+install lookup:
 
 ````
 ```
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`
-(the Junie CLI install). If it prints one path, `ORCH` is that path.
-If it prints more than one, stop and show the human the paths.
-If it prints nothing, `ORCH` is `scripts/orch.sh`
-two directories above this skill's own directory (the plugin root).
+If `CLAUDE_PLUGIN_ROOT` is unset and the host gave this skill's directory,
+`ORCH` is `scripts/orch.sh` two directories above this skill's own directory
+(the plugin root). Otherwise run `ls
+"$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` (the Junie CLI
+install). If it prints one path, `ORCH` is that path. If it prints more than
+one, stop and show the human the paths.
 ````
 
 The Junie step is prose carrying a literal `ls`, not a bash line that sets
 `ORCH`, because hosts may not keep shell variables between calls. The glob uses
 `$HOME/.junie`, the one install path confirmed so far, and its one-level
 `extensions/*/orchestrator` matches the installed extension but not the
-marketplace clone under `extensions/marketplaces/`. Keep the first line of the
-Junie sentence and the three "If it prints" sentences intact, in that order,
-then call `bash "$ORCH" <subcommand>` everywhere else. Do not copy the scripts
-into a skill. Commands never run `orch.sh`: each is a thin route into a skill,
-usually an `orch-flow` section (see [Naming host
+marketplace clone under `extensions/marketplaces/`. Keep the relative-path
+sentence, the Junie `ls` sentence and the two "If it prints" sentences intact,
+in that order, then call `bash "$ORCH" <subcommand>` everywhere else. Do not
+copy the scripts into a skill. Commands never run `orch.sh`: each is a thin
+route into a skill, usually an `orch-flow` section (see [Naming host
 capabilities](#naming-host-capabilities)).
 
 A skill that reads another file under the plugin root names it as
 `"${CLAUDE_PLUGIN_ROOT}/<path>"`, and the same file carries a sentence starting
 ``If `CLAUDE_PLUGIN_ROOT` is unset, the plugin root is``, naming the same
-steps the `ORCH` fallback does: two directories above the `orch.sh` that `ls`
-printed, else two directories above the skill's own directory. `docs_lint.sh`
-fails when a skill or command mentions `CLAUDE_PLUGIN_ROOT`
-any other way, runs `orch.sh` without these steps in order or without `bash`,
-names the plugin root without the Junie step in that same sentence, or names a
-path through a `<plugin root>/` placeholder.
+steps the `ORCH` fallback does: two directories above this skill's own
+directory when the host gave it, else two directories above the `orch.sh` that
+`ls` printed. `docs_lint.sh` fails when a skill or command mentions
+`CLAUDE_PLUGIN_ROOT` any other way, runs `orch.sh` without these steps in order
+or without `bash`, names the plugin root without both steps in order in that
+same sentence, or names a path through a `<plugin root>/` placeholder.
 
 A skill that is Claude Code only, like the quick autopilot, takes a second form
 instead. It is marked by its frontmatter `description:` ending in "Claude Code
@@ -746,16 +750,17 @@ two directories above `ORCH`, since it has no fallback sentence to define it.
 ## Naming host capabilities
 
 Skills and the agent briefs under `agents/` describe capabilities ("invoke a
-skill", "start a fresh subagent", "ask a multiple-choice question"), may name
-the Claude Code tool inline as an example, alongside the Junie tool for the
-same capability; `docs_lint.sh` fails when a skill or agent names
-`AskUserQuestion` in a sentence that does not also name `ask_user`. They point
-at [docs/host-capabilities.md](docs/host-capabilities.md), which maps each
-capability to each host and documents the fallback where a host lacks one. A
-phase records every fallback it took in its handoff's **Host fallbacks**
-section, which `handoff validate` requires for flows started on 1.0.0 or later
-(a flow already in progress at upgrade is exempt); an agent records its own
-where its brief says. Commands are Claude Code shortcuts only: each one routes
+skill", "start a fresh subagent", "ask a multiple-choice question") in
+host-neutral prose and point at
+[docs/host-capabilities.md](docs/host-capabilities.md),
+which maps each capability to each host and documents the fallback where a host
+lacks one. Never hardcode a host's ask-tool name (`AskUserQuestion`, `ask_user`,
+`ask_question`) in `skills/` or `agents/`; `docs_lint.sh` fails on any
+occurrence. A phase records every fallback it took in its handoff's **Host
+fallbacks** section, which `handoff validate` requires for flows started on
+1.0.0 or later (a flow already in progress at upgrade is exempt); an agent
+records its own where its brief says. Commands are Claude Code shortcuts only:
+each one routes
 to a skill, or to one section of it (usually an `orch-flow` section), and holds
 no behaviour of its own, so invoking the skill on another host is complete.
 `docs_lint.sh` fails when a skill, or an agent that invokes a skill, never

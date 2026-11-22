@@ -183,6 +183,9 @@ state_fixture phase review
 out="$(ORCHESTRATOR_HOST=junie "$ORCH" phase boundary 2>&1)"
 assert_eq "on Junie names the Junie Next line" "$out" \
   "$(printf 'Phase implement complete. Handoff written to %s.\n\n  Next: /new, then ask for the next phase with /orch-flow' "$hi2")"
+out="$(ORCHESTRATOR_HOST=antigravity "$ORCH" phase boundary 2>&1)"
+assert_eq "on Antigravity names the Antigravity Next line" "$out" \
+  "$(printf 'Phase implement complete. Handoff written to %s.\n\n  Next: /clear, then ask for the next phase with /orch-flow' "$hi2")"
 out="$(ORCHESTRATOR_HOST=other "$ORCH" phase boundary 2>&1)"
 assert_eq "on an unknown host names the fresh-session Next line" "$out" \
   "$(printf 'Phase implement complete. Handoff written to %s.\n\n  Next: a fresh session, then /orchestrator:next (or orch-flow'"'"'s Next phase section)' "$hi2")"

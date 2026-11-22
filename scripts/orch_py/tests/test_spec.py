@@ -321,8 +321,9 @@ def paused_marker(root):
 @pytest.mark.parametrize("env, next_line", [
     ({"CLAUDECODE": "1"}, "/clear, then /orchestrator:next"),
     ({"ORCHESTRATOR_HOST": "junie"}, "/new, then ask for the next phase with /orch-flow"),
+    ({"ANTIGRAVITY_AGENT": "1"}, "/clear, then ask for the next phase with /orch-flow"),
     ({}, "a fresh session, then /orchestrator:next (or orch-flow's Next phase section)"),
-], ids=["claude", "junie", "other"])
+], ids=["claude", "junie", "antigravity", "other"])
 def test_pause_writes_the_marker_then_prints_the_block_with_the_host_s_next_line(
         root, seed, capsys, env, next_line):
     flow_state(root, "spec", 21)
@@ -777,8 +778,9 @@ PAUSE_USAGE = "orch: usage: orch.sh spec pause [--round <k>/<n>]\n"
 @pytest.mark.parametrize("k, n, env, next_line", [
     (1, 3, {"CLAUDECODE": "1"}, CLAUDE_NEXT),
     (2, 3, {"ORCHESTRATOR_HOST": "junie"}, "/new, then ask for the next phase with /orch-flow"),
+    (3, 5, {"ANTIGRAVITY_AGENT": "1"}, "/clear, then ask for the next phase with /orch-flow"),
     (4, 12, {}, "a fresh session, then /orchestrator:next (or orch-flow's Next phase section)"),
-], ids=["claude", "junie", "other"])
+], ids=["claude", "junie", "antigravity", "other"])
 def test_pause_round_writes_the_marker_naming_the_next_round_then_prints_the_block(
         root, seed, capsys, k, n, env, next_line):
     state = flow_state(root, "spec", 21)

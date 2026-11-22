@@ -76,8 +76,8 @@ sed -n '/^## The record$/,$p' "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"
 ```
 
 If `CLAUDE_PLUGIN_ROOT` is unset, the plugin root is found as for `ORCH`:
-two directories above the `orch.sh` that `ls` printed, else two directories
-above this skill's own directory.
+two directories above this skill's own directory when the host gave it, else
+two directories above the `orch.sh` that `ls` printed.
 
 `Verification` reads `not run - nothing changed`, **Fixed this
 iteration**, **Evidence** and **Open blocking** read `None`, and **Merge

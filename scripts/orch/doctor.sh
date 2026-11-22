@@ -361,8 +361,9 @@ HOST_REF="docs/host-capabilities.md"
 # The host's column header in the capabilities reference.
 host_name() {
   case "$1" in
-    claude) printf 'Claude Code\n' ;;
-    junie)  printf 'Junie CLI\n' ;;
+    claude)      printf 'Claude Code\n' ;;
+    junie)       printf 'Junie CLI\n' ;;
+    antigravity) printf 'Antigravity CLI\n' ;;
   esac
 }
 
@@ -384,13 +385,13 @@ check_host() {
   D_HOST="$(host_detect)"
   if [ -z "$D_HOST" ]; then
     d_warn "host not detected - which capabilities are missing is unknown."
-    d_remedy "export ORCHESTRATOR_HOST=claude    # or junie"
+    d_remedy "export ORCHESTRATOR_HOST=claude    # or junie, antigravity"
     return 0
   fi
   name="$(host_name "$D_HOST")"
   if [ -z "$name" ]; then
     d_warn "ORCHESTRATOR_HOST=$D_HOST names no supported host."
-    d_remedy "export ORCHESTRATOR_HOST=claude    # or junie"
+    d_remedy "export ORCHESTRATOR_HOST=claude    # or junie, antigravity"
     D_HOST=""
     return 0
   fi
@@ -414,9 +415,10 @@ check_plugin_root() {
   # No remedy on any host, because nothing is broken: every skill falls back to
   # the orch.sh two directories above its own.
   case "$D_HOST" in
-    junie)  d_ok "CLAUDE_PLUGIN_ROOT unset - Junie expands it only in hooks; skills use the relative path." ;;
-    claude) d_warn "CLAUDE_PLUGIN_ROOT is not set under Claude Code - orch.sh was run by hand, not through a plugin command." ;;
-    *)      d_ok "CLAUDE_PLUGIN_ROOT unset - only Claude Code sets it; skills use the relative path." ;;
+    junie)       d_ok "CLAUDE_PLUGIN_ROOT unset - Junie expands it only in hooks; skills use the relative path." ;;
+    antigravity) d_ok "CLAUDE_PLUGIN_ROOT unset - Antigravity sets PLUGIN_ROOT only in hooks; skills use the relative path." ;;
+    claude)      d_warn "CLAUDE_PLUGIN_ROOT is not set under Claude Code - orch.sh was run by hand, not through a plugin command." ;;
+    *)           d_ok "CLAUDE_PLUGIN_ROOT unset - only Claude Code sets it; skills use the relative path." ;;
   esac
 }
 
@@ -424,13 +426,13 @@ check_plugin_root() {
 # directories above a skill is not there and every step that runs it fails.
 # doctor itself runs from an orch.sh, so it can only see such a copy sitting in
 # a user-level skill store beside the full install; the skills themselves
-# report the case where no full install exists at all. Two user-level stores
-# are scanned whatever the host: the one the skills CLI installs into, and
-# Claude Code's own. Junie's own skill store is not yet verified, so it is not
-# scanned.
+# report the case where no full install exists at all. Three user-level stores
+# are scanned whatever the host: the one the skills CLI installs into, Claude
+# Code's own, and Antigravity CLI's own. Junie's own skill store is not yet
+# verified, so it is not scanned.
 check_orch_sh() {
   local store d real names found="" seen=""
-  for store in "$HOME/.agents/skills" "$HOME/.claude/skills"; do
+  for store in "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.gemini/config/skills"; do
     names=""
     for d in "$store"/orch-*/; do
       [ -f "$d/SKILL.md" ] || continue
@@ -455,18 +457,20 @@ check_orch_sh() {
   d_orch_remedy
 }
 
-# Names only the detected host's install method - a Junie user told to run a
-# Claude /plugin command is no better off. With no host detected, every
-# method is listed.
+# Names only the detected host's install method - a Junie or Antigravity user
+# told to run a Claude /plugin command is no better off. With no host detected,
+# every method is listed.
 d_orch_remedy() {
   local c1="Claude Code: /plugin marketplace add maj0rpain/orchestrator"
   local c2="             /plugin install orchestrator@orchestrator"
   local junie="Junie:       install maj0rpain/orchestrator as a Junie extension (unverified)"
+  local agy="Antigravity: agy plugin install <path-to-orchestrator-clone>"
   local after="then remove the skills-only copy named above."
   case "${D_HOST:-}" in
-    claude) d_remedy "$c1" "$c2" "$after" ;;
-    junie)  d_remedy "$junie" "$after" ;;
-    *)      d_remedy "$c1" "$c2" "$junie" "$after" ;;
+    claude)      d_remedy "$c1" "$c2" "$after" ;;
+    junie)       d_remedy "$junie" "$after" ;;
+    antigravity) d_remedy "$agy" "$after" ;;
+    *)           d_remedy "$c1" "$c2" "$junie" "$agy" "$after" ;;
   esac
 }
 

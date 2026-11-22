@@ -4,14 +4,16 @@
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 # Names how to start the next phase in a fresh session, in the host's own
-# words: the boundary block's Next line. Junie's fresh-session wording is its
-# own, not a flow_cmd name (docs/host-capabilities.md, "Start a fresh
-# session"); every other host gets flow_cmd's.
+# words: the boundary block's Next line. Junie's and Antigravity's
+# fresh-session wordings are their own, not a flow_cmd name
+# (docs/host-capabilities.md, "Start a fresh session"); every other host gets
+# flow_cmd's.
 next_phase_cmd() {
   case "$(host_detect)" in
-    claude) printf '/clear, then %s' "$(flow_cmd next)" ;;
-    junie)  printf '/new, then ask for the next phase with /orch-flow' ;;
-    *)      printf 'a fresh session, then %s' "$(flow_cmd next)" ;;
+    claude)      printf '/clear, then %s' "$(flow_cmd next)" ;;
+    junie)       printf '/new, then ask for the next phase with /orch-flow' ;;
+    antigravity) printf '/clear, then ask for the next phase with /orch-flow' ;;
+    *)           printf 'a fresh session, then %s' "$(flow_cmd next)" ;;
   esac
 }
 

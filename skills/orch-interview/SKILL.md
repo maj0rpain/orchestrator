@@ -20,17 +20,18 @@ quick autopilot's planner.
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, run `ls
+If `CLAUDE_PLUGIN_ROOT` is unset and the host gave this skill's directory,
+`ORCH` is `scripts/orch.sh` two directories above this skill's own directory
+(the plugin root). Otherwise run `ls
 "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` (the Junie CLI
 install). If it prints one path, `ORCH` is that path. If it prints more than
-one, stop and show the human the paths. If it prints nothing, `ORCH` is
-`scripts/orch.sh` two directories above this skill's own directory (the plugin
-root).
+one, stop and show the human the paths.
 
 If `orch.sh` is at none of these paths, this is a skills-only install: stop, and
 tell the human `orch.sh` is missing and to install the full orchestrator
-plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
-`maj0rpain/orchestrator` as a Junie extension, which is unverified).
+plugin (`/plugin install orchestrator@orchestrator` on Claude Code,
+`agy plugin install <clone-dir>` on Antigravity, or `maj0rpain/orchestrator` as
+a Junie extension, which is unverified).
 
 Steps here name capabilities (ask the user a question, start a fresh
 subagent). `docs/host-capabilities.md` under the plugin root maps each one to
@@ -202,11 +203,12 @@ message supplies what depends on the session: this repo's triage label strings
 for the roles named below (`ready-for-agent`, `wontfix`, `ready-for-human`), and
 whether a flow is active beside this session. Use those label strings wherever
 a step names a role. Every question below is asked as one blocking question to
-the user. On Junie: the ask tool is `ask_user`, and a skill is run by reading
-`"${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md"` and following it verbatim,
-since Junie has no Skill tool. If `CLAUDE_PLUGIN_ROOT` is unset, the plugin
-root is found as for `ORCH`: two directories above the `orch.sh` that `ls`
-printed, else two directories above this skill's own directory.
+the user with the host's ask tool (see `docs/host-capabilities.md`). On a host
+with no Skill tool, a skill is run by reading
+`"${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md"` and following it verbatim. If
+`CLAUDE_PLUGIN_ROOT` is unset, the plugin root is found as for `ORCH`: two
+directories above this skill's own directory when the host gave it, else two
+directories above the `orch.sh` that `ls` printed.
 
 ### Beside an active flow
 

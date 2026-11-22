@@ -34,7 +34,7 @@
 2	2	the suite start (#3582)	7661d78242588461a38289fb228211e159d899f8
 7	8	the pytest suite (#3912)	21deea025158b43b9892524639c0a4fbc5b9bf3c
 2	3	the counting fixture's stdin counter (#3434)	b19a94c28ffbd5db955a5f10a39d0b15791cbc4f
-128	109	affected.sh, the ticket verification (#2023)	ccf2f86d042cf17caf0d095bbc762aa65cdcffef
+117	106	affected.sh, the ticket verification (#2023)	3193faa11ddf07364e9eed907580474d4cf1ba96
 4	5	the row rule (#3549)	9fdb50e7e723c26a4127289109f27a68989c4579
 7	9	the shared test support, function by function (#3550)	de45838253c482219d70d5af6fd3b26e2079c3f8
 5	7	the gh fake, operation by operation (#3551)	987935a277e021eabb9c02e391ba40e84607a315
@@ -49,7 +49,7 @@
 16	13	autopilot tick: started by a relative path (#3055)	5dbf8b4bfcf95499e5acb0c7e014539cd8b4454c
 32	25	autopilot tick: the flow-issue read at the issue-list limit	8e0186476182ffe71e40b3bda333677da341c323
 44	41	autopilot tick: the direct read before each claim	627ef418ad78d8594b33048a5fb3654439d23cbd
-193	174	autopilot tick: the cap, lost claims and the order	d8e315568d7323255049e1c9316a42218d1bad28
+180	147	autopilot tick: the cap, lost claims and the order	6144072d4c167dcf836e993813f5afbb146b8c11
 145	134	autopilot tick: side checkouts, refusals and failed steps	87eabc128db0f567a95c5d80518b0b1331d26f19
 26	10	autopilot watch	8c1c3968588dcf6484eca097fb2aed0b991673d5
 42	37	autopilot tick: the usage limit	1ce2fa84715216efbde0e73c75065ea2d5b006fa
@@ -116,11 +116,11 @@
 1	2	capture_err and capture without a temp file (#1780)	fc19f584557286e04c9abe1748bf4408b90215bf
 7	9	capture, capture_err and file_read	15f31dc392fbcce33a8210b2b13e103e6a539901
 0	1	die_hinted and die_opt_check	a31d5ea9ef99f315cf022f51ad5894482feffb9e
-0	1	host detection (host.sh, #281)	9d7272356d7fbf0f5fdca9c46ffa86f8c5c036cd
+2	2	host detection (host.sh, #281)	f332c77f9050cba151721f65f100fb9d3f2cd40e
 5	6	doctor.sh is a one-way dependency (#281)	b86ca6ac46faa586b4d718a1aa26e9018e2539ea
 201	219	doctor	9d2d2d59740f1be906e1c255723925b28a5134f8
 7	10	doctor: python3 check (#3912)	94a9d42f7c56e2c5c7e10b58becce6663ae6e07e
-36	40	doctor: host (#128)	0ff10dbdae9d20ee078396950c793cb2ec3a2d69
+90	74	doctor: host (#128)	3f0d36e88648e75883d2bd20d37ada9a71537ee5
 94	102	doctor --flow	8d28021dd7fd5c64f62d12573dc1792e590cfa6d
 40	44	doctor --env: finished side checkouts (#727)	8d56eb5df3a1cea24b7c1e0173d431eb1a742f7b
 12	14	doctor at the review phase	f758faa73c220475b21e8e6f7ce147e4217392d6
@@ -205,7 +205,7 @@
 14	15	stub table cache	4f0f12dcbedfdea3bf7690542ff5bf5d5a0e4a4e
 29	25	marked-comment module	f6f5c1a7f89a0d4a6d8a53403309d4f68d4fe0c2
 1	2	parallel show	29ed0447ad25daddc7f71a506dad5df2ad3d3cba
-55	58	phase advance / phase boundary	db56fe480597de86f8a487c134e1e6b488336fee
+48	41	phase advance / phase boundary	53643e8f5205e719060ccafbba68352b2f848db6
 0	1	phase advance help names handoffs by role (#1066)	fb4e9c6b059ec9f7d1aed9b47f5b974a48096e04
 31	35	phase advance in an autopilot flow (#1457)	3f11f48e53c11f24a0c5683139056f0b493b1fe0
 7	8	phase advance with a failed phase write (#1931)	c82e166171de5000ca89ef4f8614cc5c24820382
@@ -313,8 +313,8 @@
 43	35	trust module	dd0183ac4380b097c6b51f9e75c4a3038ab514c5
 89	19	wait: a call's block is wall time	90d20fdb4b55a5964e512640526d36f24c6b6f96
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594
-367	141	docs_lint.sh	460e1b7224a5eab3d26e8b7609a881e3ad479f8c
-6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
+280	197	docs_lint.sh	1d8bc47bba3d186dae9c4c4d7a987094e6a7d3d7
+28	22	version_bump_test.sh	75bf7c04233b6b7b06e99a48fba4ea5661e6215b
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 17	17	autopilot_up_test.sh	e83bb3b5d6213ab54507233be7cc6e624358622c
 51	51	lens_bench_test.sh	ffb52c95b18f2076683217dffc8d27f1d03a136d

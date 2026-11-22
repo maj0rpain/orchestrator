@@ -83,7 +83,8 @@ HOST_SH="$(dirname "$ORCH")/host.sh"
 # that unset every host signal. env unsets before it applies VAR=value
 # assignments, so a case's own assignment still reaches the shell.
 host_clean_env=(-u ORCHESTRATOR_HOST -u CLAUDECODE -u JUNIE_EXTENSION_ROOT
-  -u JUNIE_SHIM_PATH -u CLAUDE_PLUGIN_ROOT)
+  -u JUNIE_SHIM_PATH -u CLAUDE_PLUGIN_ROOT -u ANTIGRAVITY_AGENT
+  -u ANTIGRAVITY_CONVERSATION_ID)
 host_on() {
   env "${host_clean_env[@]}" "$@" \
     bash -c 'source "$1" && host_detect' host_on "$HOST_SH"
@@ -100,6 +101,14 @@ assert_eq "host_from_project_path ignores ORCHESTRATOR_HOST=junie" \
 assert_eq "host_detect: no signal prints nothing" "$(host_on)" ""
 assert_eq "host_detect: ORCHESTRATOR_HOST names the host" \
   "$(host_on ORCHESTRATOR_HOST=junie)" "junie"
+assert_eq "host_detect: ORCHESTRATOR_HOST outranks ANTIGRAVITY_AGENT" \
+  "$(host_on ORCHESTRATOR_HOST=claude ANTIGRAVITY_AGENT=1)" "claude"
+assert_eq "host_detect: ANTIGRAVITY_AGENT is antigravity" \
+  "$(host_on ANTIGRAVITY_AGENT=1)" "antigravity"
+assert_eq "host_detect: ANTIGRAVITY_CONVERSATION_ID is antigravity" \
+  "$(host_on ANTIGRAVITY_CONVERSATION_ID=abc)" "antigravity"
+assert_eq "host_detect: ANTIGRAVITY_AGENT outranks JUNIE_SHIM_PATH and CLAUDECODE=1" \
+  "$(host_on ANTIGRAVITY_AGENT=1 JUNIE_SHIM_PATH=/x CLAUDECODE=1)" "antigravity"
 assert_eq "host_detect: JUNIE_SHIM_PATH is junie" \
   "$(host_on JUNIE_SHIM_PATH=/x)" "junie"
 assert_eq "host_detect: CLAUDECODE=1 is claude" "$(host_on CLAUDECODE=1)" "claude"
@@ -1049,8 +1058,39 @@ assert_contains "JUNIE_SHIM_PATH outranks CLAUDECODE" "$out" "host: Junie CLI"
 
 out="$(ORCHESTRATOR_HOST=junie "$ORCH" doctor --env 2>&1)"
 assert_contains "ORCHESTRATOR_HOST outranks the Claude signals" "$out" "host: Junie"
+out="$(env -u CLAUDE_PLUGIN_ROOT ANTIGRAVITY_AGENT=1 "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "Antigravity's missing capabilities warn, never fail" "$st" 0
+assert_contains "detects Antigravity CLI from ANTIGRAVITY_AGENT" "$out" "host: Antigravity CLI"
+assert_contains "names mid-step skill invocation as lacking on Antigravity" \
+  "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*')" "Invoke a skill from a step"
+assert_contains "names fresh subagent as lacking on Antigravity until #4056" \
+  "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*')" "Start a fresh subagent"
+assert_contains "names headless session as lacking on Antigravity" \
+  "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*')" "Start a headless session"
+assert_contains "names plugin commands as lacking on Antigravity" \
+  "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*')" "Run a plugin command"
+assert_contains "names fresh session as unverified on Antigravity" \
+  "$(printf '%s\n' "$out" | grep -o 'unverified: .*')" "Start a fresh session"
+assert_contains "names opening report as unverified on Antigravity" \
+  "$(printf '%s\n' "$out" | grep -o 'unverified: .*')" "Open a report in the browser"
+assert_eq "does not list what Antigravity supports (ask tool)" \
+  "$(printf '%s\n' "$out" | grep -c 'Ask a multiple-choice question')" "0"
+assert_eq "does not list what Antigravity supports (background subagent)" \
+  "$(printf '%s\n' "$out" | grep -c 'Start a background subagent')" "0"
+assert_eq "does not list what Antigravity supports (subagent pool)" \
+  "$(printf '%s\n' "$out" | grep -c 'Run a subagent pool')" "0"
+assert_eq "does not list what Antigravity supports (search and read code)" \
+  "$(printf '%s\n' "$out" | grep -c 'Search and read code')" "0"
+assert_eq "does not list what Antigravity supports (long command)" \
+  "$(printf '%s\n' "$out" | grep -c 'Run a long command')" "0"
+assert_contains "an unset plugin root is ok on Antigravity" \
+  "$out" "ok    CLAUDE_PLUGIN_ROOT unset - Antigravity sets PLUGIN_ROOT only in hooks; skills use the relative path."
+out="$(env -u CLAUDE_PLUGIN_ROOT ANTIGRAVITY_CONVERSATION_ID=abc CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"
+assert_contains "ANTIGRAVITY_CONVERSATION_ID detects Antigravity CLI over CLAUDECODE" \
+  "$out" "host: Antigravity CLI"
 out="$(ORCHESTRATOR_HOST=vim "$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "names an ORCHESTRATOR_HOST it does not know" "$out" "ORCHESTRATOR_HOST=vim"
+assert_contains "and lists antigravity in the ORCHESTRATOR_HOST remedy" "$out" "antigravity"
 
 out="$(env -u CLAUDE_PLUGIN_ROOT "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "no detectable host is not a broken install" "$st" 0
@@ -1074,16 +1114,33 @@ assert_contains "names the skills CLI copy" "$out" "~/.agents/skills: orch-flow"
 assert_contains "names the full-plugin install for Claude Code" "$out" "/plugin install orchestrator@orchestrator"
 assert_eq "and not Junie's, under Claude Code" \
   "$(printf '%s\n' "$out" | grep -c 'as a Junie extension')" "0"
+assert_eq "and not Antigravity's, under Claude Code" \
+  "$(printf '%s\n' "$out" | grep -c 'agy plugin install')" "0"
 out="$(env -u CLAUDE_PLUGIN_ROOT JUNIE_EXTENSION_ROOT="$PWD" "$ORCH" doctor --env 2>&1)"
 assert_contains "names the full-plugin install for Junie" "$out" "maj0rpain/orchestrator as a Junie extension"
 assert_contains "and marks it unverified" "$out" "as a Junie extension (unverified)"
 assert_eq "and not Claude Code's, under Junie" \
   "$(printf '%s\n' "$out" | grep -c '/plugin install orchestrator@orchestrator')" "0"
+assert_eq "and not Antigravity's, under Junie" \
+  "$(printf '%s\n' "$out" | grep -c 'agy plugin install')" "0"
+out="$(env -u CLAUDE_PLUGIN_ROOT ANTIGRAVITY_AGENT=1 "$ORCH" doctor --env 2>&1)"
+assert_contains "names the full-plugin install for Antigravity" "$out" "agy plugin install <path-to-orchestrator-clone>"
+assert_eq "and not Claude Code's, under Antigravity" \
+  "$(printf '%s\n' "$out" | grep -c '/plugin install orchestrator@orchestrator')" "0"
+assert_eq "and not Junie's, under Antigravity" \
+  "$(printf '%s\n' "$out" | grep -c 'as a Junie extension')" "0"
 out="$(env -u CLAUDE_PLUGIN_ROOT "$ORCH" doctor --env 2>&1)"
 assert_contains "names every host's install when none is detected" "$out" "/plugin install orchestrator@orchestrator"
 assert_contains "including Junie's" "$out" "maj0rpain/orchestrator as a Junie extension"
+assert_contains "including Antigravity's" "$out" "agy plugin install <path-to-orchestrator-clone>"
 # ~/.junie/skills is not a verified Junie location (#121: verified facts only).
 rm -rf "$h/.agents/skills/orch-flow"
+mkdir -p "$h/.gemini/config/skills/orch-flow"
+touch "$h/.gemini/config/skills/orch-flow/SKILL.md"
+out="$("$ORCH" doctor --env 2>&1)"
+# shellcheck disable=SC2088 # the literal ~ path doctor prints, not a path to expand
+assert_contains "names a stray copy in Antigravity's user skill store" "$out" "~/.gemini/config/skills: orch-flow"
+rm -rf "$h/.gemini/config/skills/orch-flow"
 mkdir -p "$h/.junie/skills/orch-review"
 touch "$h/.junie/skills/orch-review/SKILL.md"
 out="$("$ORCH" doctor --env 2>&1)"

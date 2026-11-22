@@ -23,12 +23,14 @@ FLOW_SECTIONS = {
 
 
 def host_detect(env: Mapping[str, str]) -> str:
-    """"claude", "junie", or "" when no signal is present (orch.sh run by hand
-    in a terminal). ORCHESTRATOR_HOST names the host outright; Junie is
-    checked before Claude, since a Junie started from a Claude Code terminal
-    inherits CLAUDECODE."""
+    """"claude", "junie", "antigravity", or "" when no signal is present
+    (orch.sh run by hand in a terminal). ORCHESTRATOR_HOST names the host
+    outright; Antigravity and Junie are checked before Claude, since a
+    session started from a Claude Code terminal inherits CLAUDECODE."""
     if env.get("ORCHESTRATOR_HOST", ""):
         return env["ORCHESTRATOR_HOST"]
+    if env.get("ANTIGRAVITY_AGENT", "") or env.get("ANTIGRAVITY_CONVERSATION_ID", ""):
+        return "antigravity"
     if env.get("JUNIE_EXTENSION_ROOT", "") or env.get("JUNIE_SHIM_PATH", ""):
         return "junie"
     if env.get("CLAUDECODE", "") == "1" or env.get("CLAUDE_PLUGIN_ROOT", ""):
@@ -61,8 +63,8 @@ def finding_triage_cmd(env: Mapping[str, str]) -> str:
 
 def next_phase_cmd(env: Mapping[str, str]) -> str:
     """How to start the next phase in a fresh session, in the host's own
-    words: the Next line of a block that ends a session. Junie's
-    fresh-session wording is its own, not a flow_cmd name
+    words: the Next line of a block that ends a session. Junie's and
+    Antigravity's fresh-session wordings are their own, not a flow_cmd name
     (docs/host-capabilities.md, "Start a fresh session"); every other host
     gets flow_cmd's."""
     host = host_detect(env)
@@ -70,6 +72,8 @@ def next_phase_cmd(env: Mapping[str, str]) -> str:
         return "/clear, then " + flow_cmd(env, "next")
     if host == "junie":
         return "/new, then ask for the next phase with /orch-flow"
+    if host == "antigravity":
+        return "/clear, then ask for the next phase with /orch-flow"
     return "a fresh session, then " + flow_cmd(env, "next")
 
 

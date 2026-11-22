@@ -8,8 +8,9 @@
 # >>> shared setup
 
 # The host signals doctor reads: the shell running the tests is often itself
-# a Claude Code or Junie session. Each test names its host.
-unset ORCHESTRATOR_HOST CLAUDECODE JUNIE_EXTENSION_ROOT JUNIE_SHIM_PATH
+# a Claude Code, Junie or Antigravity session. Each test names its host.
+unset ORCHESTRATOR_HOST CLAUDECODE JUNIE_EXTENSION_ROOT JUNIE_SHIM_PATH \
+  ANTIGRAVITY_AGENT ANTIGRAVITY_CONVERSATION_ID
 
 # The caller's ORCH_* knobs: a suite started from an autopilot session exports
 # ORCH_AUTOPILOT, ORCH_SH, ORCH_MODEL*, ORCH_EFFORT* and more. Every exported
