@@ -204,7 +204,6 @@
 21	21	on-demand loading	7957c71ca0967785d56a21072a507db8cfeb69b3
 14	15	stub table cache	4f0f12dcbedfdea3bf7690542ff5bf5d5a0e4a4e
 29	25	marked-comment module	f6f5c1a7f89a0d4a6d8a53403309d4f68d4fe0c2
-1	2	parallel show	29ed0447ad25daddc7f71a506dad5df2ad3d3cba
 55	58	phase advance / phase boundary	db56fe480597de86f8a487c134e1e6b488336fee
 0	1	phase advance help names handoffs by role (#1066)	fb4e9c6b059ec9f7d1aed9b47f5b974a48096e04
 31	35	phase advance in an autopilot flow (#1457)	3f11f48e53c11f24a0c5683139056f0b493b1fe0
@@ -259,7 +258,6 @@
 9	8	review reads its Flow state once	d709c7a35864a331ee508151b4b6e62951770ee1
 5	5	review_terminal_record fallback reads once	950150136ed31e16ef857ccc8dc7da695501183d
 19	11	review ci <pr>	de3b4d1f2441533e0c12f016b42632d94e98a763
-2	3	route show	e41cb9679b1f09b9a73382b655216a8aff604ccd
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
 38	40	side-checkout (#722)	753522fea8c0be1dec4dc2f8633b7a5d78439049
 20	21	status lists every checkout (#725)	0e2829f44c533a36ede63218f75dc3b6b9f517bf

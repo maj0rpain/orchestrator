@@ -2,8 +2,8 @@
 `python3 -m orch` would be, through a `-c` bootstrap (ADR-0067), end to end:
 each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>`,
 `orch.sh verification <verb>`, `orch.sh audit <verb>`, `orch.sh review-pass
-<verb>`, `orch.sh spec-review <verb>`, `orch.sh breakdown <verb>` or `orch.sh
-spec <verb>` as a command, in a checkout under tmp_path, against a fake store
+<verb>`, `orch.sh spec-review <verb>`, `orch.sh breakdown <verb>`, `orch.sh
+spec <verb>`, `orch.sh parallel show` or `orch.sh route show` as a command, in a checkout under tmp_path, against a fake store
 seeded in the layout the bash suite's fake_* helpers write, with
 ORCH_GH_FAKE_STORE set as fake_github sets it."""
 from __future__ import annotations
@@ -652,3 +652,66 @@ def test_help_lists_every_spec_verb(tmp_path, repo, seed):
     assert (err, code) == ("", 0)
     assert [line.split()[1] for line in out.splitlines() if line.startswith("  spec ")] == [
         "fetch", "update", "comment", "comments", "pause", "pause", "round-dir", "round"]
+
+
+# --- parallel and route ------------------------------------------------------
+
+# The variables naming a git config file other than $HOME's, unset so a test's
+# HOME under tmp_path holds the only global config git reads.
+GLOBAL_CONFIG = ("GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME")
+
+
+def git_config(tmp_path, repo, *args):
+    """`git config <args>` in <repo>, HOME tmp_path, as orch_sh runs."""
+    env = dict(os.environ, HOME=str(tmp_path))
+    for name in GLOBAL_CONFIG:
+        env.pop(name, None)
+    run_git(repo, "config", *args, env=env)
+
+
+def test_parallel_show_prints_the_default_cap_through_the_python_noun(tmp_path, repo, seed):
+    answer = orch_sh(tmp_path, repo, seed, "parallel", "show", path=python3_shim(tmp_path),
+                     unset=GLOBAL_CONFIG)
+
+    assert answer == ("3\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_parallel_show_prints_a_padded_cap_trimmed_through_the_python_noun(
+        tmp_path, repo, seed):
+    git_config(tmp_path, repo, "orchestrator.parallel", " 5")
+
+    assert orch_sh(tmp_path, repo, seed, "parallel", "show", unset=GLOBAL_CONFIG) == (
+        "5\n", "", 0)
+
+
+def test_route_show_reads_the_global_route_and_the_local_one_over_it(tmp_path, repo, seed):
+    git_config(tmp_path, repo, "--global", "orchestrator.route", "quick")
+    global_only = orch_sh(tmp_path, repo, seed, "route", "show", path=python3_shim(tmp_path),
+                          unset=GLOBAL_CONFIG)
+    git_config(tmp_path, repo, "orchestrator.route", "blueprint")
+
+    assert global_only == ("quick\n", "", 0)
+    assert orch_sh(tmp_path, repo, seed, "route", "show", unset=GLOBAL_CONFIG) == (
+        "blueprint\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_route_show_prints_a_padded_route_trimmed_through_the_python_noun(
+        tmp_path, repo, seed):
+    git_config(tmp_path, repo, "orchestrator.route", "flow ")
+
+    assert orch_sh(tmp_path, repo, seed, "route", "show", unset=GLOBAL_CONFIG) == (
+        "flow\n", "", 0)
+
+
+def test_help_lists_parallel_show_beside_base_and_route_show(tmp_path, repo, seed):
+    out, err, code = orch_sh(tmp_path, repo, seed, "help")
+    lines = out.splitlines()
+    after_base_clear = next(i for i, line in enumerate(lines) if line.startswith("  base clear"))
+
+    assert (err, code) == ("", 0)
+    assert any(line.startswith("  parallel show ") for line in lines[after_base_clear:][:4])
+    assert any(line.startswith("  route show ") for line in lines)
+    assert "### Default route" in (SCRIPTS.parent / "docs" / "how-it-works.md").read_text(
+        ).splitlines()
