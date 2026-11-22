@@ -1,15 +1,15 @@
-"""The primitives no concept owns: the `orch: ` message lines, the
-plain-number tests every verb checks its issue numbers with - any plain
-number, and one with no leading zero - the decimal-number tests and the
-poll-knob check a waiting verb reads its knobs with, the trim bash's trim
-makes, the atomic file write, the plain file write and append, the file read
-as bash's $(<file) gives it, the lines of a text and of a file, the markdown
-code-fence rule, the temporary file a comment is handed to gh from, the words
-a list and a state read as in a line, the orchestrator's directory name, the
-UTC stamp a run directory is named with, the git exclude writer, the copy
-bash's cp makes, the directory bash's mkdir -p makes, the removals bash's
-rm -f and rm -rf make, and the capture of a call's stderr and death that
-bash's capture and err_line make.
+"""The primitives no concept owns: the `orch: ` message lines, the hint an
+unescaped @@ line's refusal adds, the plain-number tests every verb checks its
+issue numbers with - any plain number, and one with no leading zero - the
+decimal-number tests and the poll-knob check a waiting verb reads its knobs
+with, the trim bash's trim makes, the atomic file write, the plain file write
+and append, the file read as bash's $(<file) gives it, the lines of a text and
+of a file, the markdown code-fence rule, the temporary file a comment is
+handed to gh from, the words a list and a state read as in a line, the
+orchestrator's directory name, the UTC stamp a run directory is named with,
+the git exclude writer, the copy bash's cp makes, the directory bash's
+mkdir -p makes, the removals bash's rm -f and rm -rf make, and the capture of
+a call's stderr and death that bash's capture and err_line make.
 
 Every `orch: ` message goes through die or warn, as in the bash side's
 common.sh: die(message, 2) is the bash die2, for a command that reserves exit
@@ -36,6 +36,11 @@ ORCH_DIR_NAME = ".orchestrator"
 # The directories the plugin writes to and keeps out of git status: its own,
 # and .scratch/, where planning drafts land.
 EXCLUDED_DIRS = (ORCH_DIR_NAME + "/", ".scratch/")
+
+# What the refusal of an unescaped @@ line inside a block adds: how a body
+# line starting with @@ is written. The breakdown draft grammar's parser and
+# the spec review grammars' block reader both append it.
+AT_LINE_ESCAPE_HINT = " - a body line starting with @@ is written \\@@"
 
 
 def die(message: str, code: int = 1) -> NoReturn:

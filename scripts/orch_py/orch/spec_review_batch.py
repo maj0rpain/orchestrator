@@ -34,7 +34,8 @@ import re
 from typing import Dict, List, NoReturn, Optional, Tuple
 
 from orch.autopilot import autopilot_active
-from orch.common import die, lines_of, plain_number, plain_positive_number, read_raw, trim, warn
+from orch.common import (AT_LINE_ESCAPE_HINT, die, lines_of, plain_number, plain_positive_number,
+                         read_raw, trim, warn)
 
 # The lenses, in the lens table's order - the changelog's section order.
 SPEC_REVIEW_LENSES = ("fidelity", "consistency", "testability", "implementability")
@@ -48,10 +49,6 @@ TITLES = {"consolidation": "Consolidation", "fidelity": "Fidelity",
 # The most words a @@ summary may hold (#1352), so each line of the compact
 # view stays short.
 SUMMARY_WORDS = 30
-
-# What a block-reader refusal of an @@ line adds: how a body line starting
-# with @@ is written.
-AT_LINE_ESCAPE_HINT = " - a body line starting with @@ is written \\@@"
 
 # bash's default IFS, the characters `read` splits words on.
 _IFS = " \t\n"
