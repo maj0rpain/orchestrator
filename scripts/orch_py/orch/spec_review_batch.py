@@ -34,8 +34,9 @@ import re
 from typing import Dict, List, NoReturn, Optional, Tuple
 
 from orch.autopilot import autopilot_active
-from orch.common import (AT_LINE_ESCAPE_HINT, IFS, die, lines_of, plain_number,
-                         plain_positive_number, read_raw, read_words, trim, warn)
+from orch.common import (AT_LINE_ESCAPE_HINT, IFS, die, is_at_line, lines_of, plain_number,
+                         plain_positive_number, read_raw, read_words, trim, warn,
+                         without_cr)
 
 # The lenses, in the lens table's order - the changelog's section order.
 SPEC_REVIEW_LENSES = ("fidelity", "consistency", "testability", "implementability")
@@ -82,15 +83,6 @@ def at_line(line: str) -> Tuple[str, str]:
         rest = rest[1:]
     keyword, space, args = rest.partition(" ")
     return keyword, args if space else ""
-
-
-def is_at_line(line: str) -> bool:
-    """Whether <line> is an @@ line: `@@`, or `@@ ` and more."""
-    return line == "@@" or line.startswith("@@ ")
-
-
-def without_cr(line: str) -> str:
-    return line[:-1] if line.endswith("\r") else line
 
 
 def capital_letter(text: str) -> bool:

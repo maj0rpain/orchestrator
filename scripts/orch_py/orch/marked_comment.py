@@ -15,6 +15,8 @@ from __future__ import annotations
 import re
 from typing import List, NamedTuple, Optional
 
+from orch.common import without_cr
+
 SPEC_REVIEW_OPENING = "## Spec review"
 SPEC_RULING_OPENING = "Spec ruling:"
 _SPEC_REVIEW_LINE = re.compile(re.escape(SPEC_REVIEW_OPENING) + r"[ \t]*")
@@ -67,9 +69,7 @@ def is_spec_review(comment: dict) -> bool:
         body = ""
     if not isinstance(body, str):
         raise NotText("a comment body is no text")
-    first = body.split("\n", 1)[0]
-    if first.endswith("\r"):
-        first = first[:-1]
+    first = without_cr(body.split("\n", 1)[0])
     return _SPEC_REVIEW_LINE.fullmatch(first) is not None
 
 
@@ -110,9 +110,7 @@ def marked_comment_info(comment: dict) -> MarkedInfo:
     limited comment, else the spec review's heading, else a spec ruling's
     opening, else a legacy stop's opening. NotText for a body that is no
     text."""
-    line = _body_text(comment).split("\n", 1)[0]
-    if line.endswith("\r"):
-        line = line[:-1]
+    line = without_cr(_body_text(comment).split("\n", 1)[0])
     marker = _MARKER.fullmatch(line)
     if marker is not None:
         kind, cause = marker.group("kind"), marker.group("cause") or ""

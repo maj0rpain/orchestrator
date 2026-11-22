@@ -1,5 +1,6 @@
 """The primitives no concept owns: the `orch: ` message lines, the hint an
-unescaped @@ line's refusal adds, the plain-number tests every verb checks its
+unescaped @@ line's refusal adds, the @@-line test and the trailing-CR drop the
+@@ grammars read each line with, the plain-number tests every verb checks its
 issue numbers with - any plain number, and one with no leading zero - the
 decimal-number tests and the poll-knob check a waiting verb reads its knobs
 with, the trim bash's trim makes, the word split bash's read -r makes, the
@@ -42,6 +43,16 @@ EXCLUDED_DIRS = (ORCH_DIR_NAME + "/", ".scratch/")
 # line starting with @@ is written. The breakdown draft grammar's parser and
 # the spec review grammars' block reader both append it.
 AT_LINE_ESCAPE_HINT = " - a body line starting with @@ is written \\@@"
+
+
+def is_at_line(line: str) -> bool:
+    """Whether <line> is an @@ line: `@@`, or `@@ ` and more."""
+    return line == "@@" or line.startswith("@@ ")
+
+
+def without_cr(line: str) -> str:
+    """<line> with one trailing CR dropped, if it has one."""
+    return line[:-1] if line.endswith("\r") else line
 
 
 def die(message: str, code: int = 1) -> NoReturn:

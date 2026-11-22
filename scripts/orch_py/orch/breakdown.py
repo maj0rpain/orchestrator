@@ -29,8 +29,9 @@ import re
 from typing import Callable, Dict, List, Mapping, NamedTuple, NoReturn, Optional, Tuple, TypeVar
 
 from orch.common import (AT_LINE_ESCAPE_HINT, ORCH_DIR_NAME, die, file_lines,
-                         file_write_atomic, lines_of, mkdir_p_or_die, plain_number, read_raw,
-                         read_words, temp_text_file, text_file_append, text_file_write)
+                         file_write_atomic, is_at_line, lines_of, mkdir_p_or_die, plain_number,
+                         read_raw, read_words, temp_text_file, text_file_append,
+                         text_file_write, without_cr)
 from orch.gh import adapter_of
 from orch.git import Git
 from orch.repo import REPO_REMEDY, RepoPin
@@ -81,8 +82,7 @@ def breakdown_parse(text: str) -> List[DraftTicket]:
     k = title = blocked = ""
     body: List[str] = []
     for number, line in enumerate(lines_of(text), 1):
-        if line.endswith("\r"):
-            line = line[:-1]
+        line = without_cr(line)
         if in_block and re.match(r"\\+@@", line):
             body.append(line[1:])
             first = False
@@ -108,7 +108,7 @@ def breakdown_parse(text: str) -> List[DraftTicket]:
         elif in_block and re.fullmatch(r"@@ end[ \t]*", line):
             tickets.append(DraftTicket(k, title, blocked, "".join(b + "\n" for b in body)))
             in_block = False
-        elif in_block and (line == "@@" or line.startswith("@@ ")):
+        elif in_block and is_at_line(line):
             _malformed(number, "stray grammar line inside ticket %s: %s%s"
                        % (k, line, AT_LINE_ESCAPE_HINT))
         elif in_block:

@@ -30,7 +30,7 @@ from typing import Callable, Iterable, List, Optional, Sequence
 
 from orch import comments
 from orch.common import (ORCH_DIR_NAME, die, fenced, lines_of, plain_number, rm_f_or_die,
-                         rm_rf_or_die, temp_text_file)
+                         rm_rf_or_die, temp_text_file, without_cr)
 from orch.gh import GhFailed, SubIssue, gh_die, gh_or_die, verify_twice
 from orch.repo import REPO_REMEDY
 from orch.triage_labels import TriageLabels
@@ -71,7 +71,7 @@ def ticket_listing_state(listing: Sequence[SubIssue], n: str) -> str:
 def _read(body: str):
     """<body>'s lines with their trailing CR dropped, and the fence state of
     each."""
-    lines = [line[:-1] if line.endswith("\r") else line for line in lines_of(body)]
+    lines = [without_cr(line) for line in lines_of(body)]
     return lines, fenced(lines)
 
 
