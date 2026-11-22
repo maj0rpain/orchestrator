@@ -503,6 +503,15 @@ class FakeGh:
         self._known(n)
         return self._blockers(n)
 
+    def sub_issue_link(self, parent: int, child: int) -> None:
+        """The child appended to the parent's stored sub-issues, once."""
+        self._failing("adapter_sub_issue_link")
+        self._known(parent)
+        self._known(child)
+        path = _store_path(self.store, "subs", parent)
+        if str(child) not in _lines(path):
+            _write(path, "%d\n" % child, "ab")
+
     def sub_issue_unlink(self, parent: int, child: int) -> None:
         """The child dropped from the parent's stored sub-issues."""
         self._failing("adapter_sub_issue_unlink")

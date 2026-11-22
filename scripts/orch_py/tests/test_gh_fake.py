@@ -356,6 +356,7 @@ def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
     ("adapter_pr_comments", lambda gh: gh.pr_comments(6)),
     ("adapter_sub_issues", lambda gh: gh.sub_issues(5)),
     ("adapter_blockers", lambda gh: gh.blockers(5)),
+    ("adapter_sub_issue_link", lambda gh: gh.sub_issue_link(5, 7)),
     ("adapter_sub_issue_unlink", lambda gh: gh.sub_issue_unlink(5, 7)),
     ("adapter_blocker_add", lambda gh: gh.blocker_add(5, 7)),
     ("adapter_blocker_remove", lambda gh: gh.blocker_remove(5, 7)),
@@ -552,11 +553,27 @@ adapter_blocker_add 12 13
                        "adapter_blockers 11") == "12\tOPEN\t1\n--\n14\n--\n"
 
 
+def test_python_sub_issue_links_list_once_in_link_order_and_read_back_through_the_bash_fake(
+        store):
+    py = FakeStore(str(store))
+    for n in (10, 11, 12):
+        py.issue(n, "open")
+    gh = fake(store)
+
+    gh.sub_issue_link(10, 12)
+    gh.sub_issue_link(10, 11)
+    gh.sub_issue_link(10, 12)
+
+    assert gh.sub_issues(10) == [SubIssue(12, "OPEN", 0), SubIssue(11, "OPEN", 0)]
+    assert bash(store, "adapter_sub_issues 10") == "12\tOPEN\t0\n11\tOPEN\t0\n"
+
+
 @pytest.mark.parametrize("call", [
+    lambda gh: gh.sub_issue_link(10, 99), lambda gh: gh.sub_issue_link(99, 10),
     lambda gh: gh.sub_issue_unlink(10, 99), lambda gh: gh.sub_issue_unlink(99, 10),
     lambda gh: gh.blocker_add(10, 99), lambda gh: gh.blocker_remove(99, 10),
 ])
-def test_an_unlink_or_edge_write_naming_an_issue_the_store_lacks_fails(store, call):
+def test_a_link_unlink_or_edge_write_naming_an_issue_the_store_lacks_fails(store, call):
     FakeStore(str(store)).issue(10, "open")
 
     with pytest.raises(GhFailed) as failed:
