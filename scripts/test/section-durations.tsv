@@ -100,10 +100,6 @@
 0	1	branch: unknown op	09ccbeff10e543f91244486e12686159f5541c9f
 2	3	branch retire beside a same-named tag (#2337)	4b6ee64b25b98b5c750805fad89df265fe42adb9
 14	7	branch create and branch off beside a same-named tag (#2337)	1128e41953f74cffde4492d138e78958e82ed68c
-47	33	breakdown publish	06e062e1f136bd148b926cae1ce00aa44fc8dfa3
-23	16	breakdown publish rewrites ## Blocked by	eca2fdd84bd9ad7527f6c1b3c8159b25d4c7067d
-2	3	breakdown state	3e39b6801eb24af84b286c35b744133ff1735fa8
-1	1	breakdown state: no repo (#3050)	2f1b42960d147fd5c2e2fb6b77cbd1bbe709b6fd
 12	13	checkout (#1078)	85b65822bd5ebac5cdac093e84c0a28d92c25cc0
 3	4	checkout current branch (#1079)	8ed29994be0d37ea761c6fba66a7f1594d5332d1
 19	14	checkout busy, redo-retired branch (#1981)	d6d2a1101edb4c54066c3be0085daad6d002bc7b
@@ -240,29 +236,29 @@
 10	11	redo reads its Flow state once, before its first write	c7e066d3d2068aae6549bf1324679159fbde39fd
 9	10	repo show	03b579d082d6e4e5353a860b91cb90f1006013d0
 7	8	default-branch	0177d6e5817d4d0befacac87fc2b2a0f621ad11b
-14	12	review ready's pointer to /orchestrator:finish (#727)	01c77172316dd622467b9a479e60b8cef1904b77
-12	10	review begin	902b0736fa9d53f8649cc15981b103abb12e7352
-5	4	review path	c485ca66da4899ec9e74f9d1493517b4169e5520
-5	4	the multi-loop machinery is gone	1bef43094a7f6670e7ab6cbd9e8fdfd0d0d9a38f
-60	47	review file	0149ed4f1bd1c9fdda1201c619b24680cc03e5a2
-15	13	review ready	26e86f137971d0366cc61028dfec7a0e375da26f
-193	79	review ci	dc0957247bb0fa927b28d09b29b3281baabd73cc
-23	16	the grace counts from the push (issue #475)	cbf6b82ccdfc81e5ad2a255004249c2b63cb234a
-29	23	review ci --no-wait	5eef04340a8bf2f3c445181b9953788be1c13fee
-8	55	the grace is skipped on no evidence of CI (issue #476)	e88f7df5bf558e85492adab7fa5eb2216bbd67dd
-19	16	review rerun	151409ccf4b1c882115f99867c517f39666a3152
-11	10	review ci-log	836f698cab0ffbe5a3bf2e74d20d710ede040af7
-26	22	review terminal	48c1f706a2c1410e25f63d4310e8a48e7846a934
-31	27	review resume	63097b94426401069a76187b1a371de05cc1991d
-5	5	review retire	5b1190ac663d18708d42433f3358db302ac688ec
-15	13	review known-items	88cc3ad84175577bc51064351911f03dda0fea40
-12	10	review ready in an autopilot flow (#1457)	57b1493b1c3652aec3a5959ecf5c078b504d2dfc
-0	9	review known-items in an autopilot flow (#1457)	d8c5f2fa370ef25a027fd205c434c371b97fff80
-27	27	review standards (#1532)	d293fbbdd6496580187e488c6f3260e2c8f9f097
-10	9	review ready with a failed phase write (#1931)	418a6ec1eb247c9a2e62b95ad1ec256c191bde23
-0	10	review reads its Flow state once	29fa392a9282bbd56010e784520f1cced2bd4ac6
-5	4	review_terminal_record fallback reads once	fd2530b9caa907e04cfb1b054f72e8a81be39e7d
-18	12	review ci <pr>	bfce9ca90b46e8d5394334e62d78635b9cff5721
+14	11	review ready's pointer to /orchestrator:finish (#727)	dc0acdcd10c097e7fb1b03532c91fa00016c66c5
+11	10	review begin	87f08c5600a369c7e25812734973486d5b593d65
+5	4	review path	e415762987ce8a269ca20f76dedef8c2ab43826a
+5	5	the multi-loop machinery is gone	c5f60f7d925b54a37ecd386490b31272687954e1
+68	60	review file	8240c057a3826c5a13ef689e5926bd7bd7ecc9a5
+15	13	review ready	1c2a9174cdbe5132bb309811211df054639ce107
+204	83	review ci	66998bdfb30187545a9f42a2553579221451e83d
+23	16	the grace counts from the push (issue #475)	21995c8615b26cdc1f81b46b99bae7644c24bf53
+25	20	review ci --no-wait	064f13c0bb929b5b6b8cb82a25bef9277c853329
+77	40	the grace is skipped on no evidence of CI (issue #476)	cabd501cf7051051bd547b79d509aaab6363b1bb
+19	16	review rerun	168a0f66a09a67884d13534f0a5c95395cfbcb50
+11	10	review ci-log	d62beda64130eb8a0495258e08d93e6df66cab61
+1	21	review terminal	878e95c1b34efc80268547e3b64180c231d9eb06
+30	26	review resume	5696cf8cbd2852c5e2db40579983b86e54626696
+5	5	review retire	46d9938568ae85dab071ceb7bda0463f765f2baf
+15	14	review known-items	c705feca93ce7670d1ac3c0191c9859882c0840c
+11	10	review ready in an autopilot flow (#1457)	cf13a7ba847c684e30316d2e93a2144edd1fb892
+9	6	review known-items in an autopilot flow (#1457)	5c0f60c2622ad710c31e94a33720a28e2edaeeab
+26	26	review standards (#1532)	a5ff1272160985f5e634c02722e4ad5b53c3cf45
+10	9	review ready with a failed phase write (#1931)	ae1191e0aae0c5538b53b866775053caa634e05e
+9	8	review reads its Flow state once	d709c7a35864a331ee508151b4b6e62951770ee1
+5	5	review_terminal_record fallback reads once	950150136ed31e16ef857ccc8dc7da695501183d
+19	11	review ci <pr>	de3b4d1f2441533e0c12f016b42632d94e98a763
 2	3	route show	e41cb9679b1f09b9a73382b655216a8aff604ccd
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
 38	40	side-checkout (#722)	753522fea8c0be1dec4dc2f8633b7a5d78439049
@@ -295,25 +291,25 @@
 46	49	ticket-worktree (#619)	c52aa57c33965d3db61a8322267ddf19f3b096a0
 1	1	a ticket branch has no upstream (#1152)	bbc5298d4013eb4f017ecb7f6c59509725053f88
 2	3	the merged check beside a same-named tag (#2337)	b3482156347488560231482575e046eb972a8f39
-21	22	ticket publish	27124e0e40d5ee271e55e560c8f980307cdc3391
-25	27	ticket publish verify-then-die	9c76928a7c93fdb96af49324b2ba9bf2b2ebb4e6
-9	10	ticket publish rewrites ## Blocked by	e85dee99ae72c16a2151bff6d4274e7e6b785060
-11	11	ticket next	a41babd7428ba3beb6dfea6096fd3f5c56d8081a
-8	9	ticket list	56f1e152c1e0861d378966b4ac4f6564009df9e3
-21	23	ticket close	00354e4d101b8e9e8efacacce62cc9f42dd92fdd
-12	13	ticket reset	46cee5f59b559b8225486281267270a017f54110
-17	19	ticket report	0f5f998d2b6db5cc9827abedc05da85588ea6468
-6	7	ticket parent	3242d7b2b85a0d9478b67540ade8fee25ea56d7c
-21	23	ticket exists	40ba8a6dd3da79a62d64da3a4398b3e6b6f87b22
-78	87	ticket block	823005b58907b088899720a16feeeb59f39925e1
-56	61	ticket unblock	0fdd4ad1ca93a0da9dde25dfa98e63868dc892f2
-4	5	ticket retire: breakdown save point	be0834564c05cf818ca57e44842b1117aba47b60
-6	7	ticket retire: untrusted comments	6b18797154016eb5ec2d7c780462fefe98b05275
-1	2	ticket: unknown op	981b89935ad87c2281cc51c292fda63de8267f29
-21	23	ticket merge (#621)	650432da9926350e99eb0d6680885e2b5878b8c4
-5	6	ticket merge beside a same-named tag (#2337)	3858a2ca9bc1227bed78d1eca0300eba2827ff86
-104	110	ticket reclaim (ADR-0054)	7ec366d96e6a84ae723df4b5833904e10b5a6bb9
-2	3	ticket exists: no repo (#3050)	062de093bbfb2338a6a4265e1d0a90e8cf621544
+24	21	ticket publish	a6ef6ad0815552e6112549db8499427c23511447
+31	25	ticket publish verify-then-die	d11d712ed8386a0fe98885dae6b88f7567165d54
+11	10	ticket publish rewrites ## Blocked by	083c11bc38199309a54c3cb022f8136d760d90f2
+0	10	ticket next	950cbf6a3d69b58b083ad102ce5ec22143af5477
+10	9	ticket list	bdf4da1b1d2bfed721713ec4e17eb64109950916
+1	20	ticket close	54757c69bb9d977f9f8bfe63c11bc5c2d450bae2
+15	13	ticket reset	04c6c4c8045fb3973736084b911c5f039b678ef8
+20	16	ticket report	99453e9740c3ee49b809b5cb2e85055292c66a82
+6	6	ticket parent	ada73c81388fee6ef59835fd65d4b04aa7ae5adf
+24	20	ticket exists	b5cd96b65199e7b8e5fafe0e363125d23ea84d96
+126	112	ticket block	56d4698c86dc9f2d6150b0e19150f92af69a17e2
+84	74	ticket unblock	31c1065cd20116361626586463f49edf746bb2ef
+4	4	ticket retire: breakdown save point	b7cb5fcce4b1772f1760ef7695f0e47d6a3741dd
+8	6	ticket retire: untrusted comments	6b3ba54858e20e5e035843f26bee1b56b0a2074e
+1	1	ticket: unknown op	986ed5a7ba81483f83482181d44dc02c10b80bcc
+25	20	ticket merge (#621)	f55129abb3f73061addcd663114698f8c322dbff
+6	5	ticket merge beside a same-named tag (#2337)	e653dee766ed2f30dfc20c3f9940b16cec3d61a5
+166	123	ticket reclaim (ADR-0054)	67668c46bdabcbfba42657c71d529d7c1f0787d1
+3	3	ticket exists: no repo (#3050)	857e20ecf1c3935af3a951ca0ea893db8e5435a3
 43	35	trust module	dd0183ac4380b097c6b51f9e75c4a3038ab514c5
 89	19	wait: a call's block is wall time	90d20fdb4b55a5964e512640526d36f24c6b6f96
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594

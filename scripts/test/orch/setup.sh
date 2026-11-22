@@ -930,9 +930,6 @@ LAUNCHER
   PATH="$tickbin:$PATH"
 }
 
-# fake_issues: every issue number the store holds, in order, space-separated.
-fake_issues() { ls "$ORCH_GH_FAKE_STORE/issues" 2>/dev/null | sort -n | tr '\n' ' '; }
-
 # dir_snapshot <dir>: every file under <dir>, by its path from <dir>, with its
 # checksum, in a fixed order - for a byte-identical comparison with another
 # snapshot of the same directory.
@@ -1056,10 +1053,6 @@ fake_unfail() { rm -rf "$ORCH_GH_FAKE_STORE/fail"; }
 # fake_sub_issues_of <parent>: the parent's sub-issues read back from the
 # store, in link order, space-separated - nothing for none.
 fake_sub_issues_of() { paste -sd ' ' "$ORCH_GH_FAKE_STORE/subs/$1" 2>/dev/null || true; }
-
-# fake_blockers_of <n>: #n's blockers read back from the store, sorted by
-# number, space-separated - nothing for none.
-fake_blockers_of() { sort -n "$ORCH_GH_FAKE_STORE/blocked_by/$1" 2>/dev/null | paste -sd ' ' -; }
 
 # fake_lag <operation> <n> [stale]: the next n calls of the named operation
 # answer stale, as GitHub does for a moment after a write; the call after them

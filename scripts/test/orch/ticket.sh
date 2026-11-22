@@ -57,11 +57,15 @@ fake_fail_times_after() {
 }
 
 
+# fake_blockers_of <n>: #n's blockers read back from the store, sorted by
+# number, space-separated - nothing for none.
+fake_blockers_of() { sort -n "$ORCH_GH_FAKE_STORE/blocked_by/$1" 2>/dev/null | paste -sd ' ' -; }
+
 # --- ticket publish -----------------------------------------------------
 # The standalone command that files one ticket and writes its sub-issue link
-# and blocked-by edges (ticket_create then ticket_link, which breakdown publish
-# also calls), so no skill prose ever calls `gh api` on these endpoints
-# directly. Stateless like issue publish/pr publish: the
+# and blocked-by edges (ticket_create then ticket_link, whose Python copies
+# breakdown publish calls), so no skill prose ever calls `gh api` on these
+# endpoints directly. Stateless like issue publish/pr publish: the
 # store-backed fake is the GitHub it writes to, not orch.sh state.
 echo
 echo "ticket publish"

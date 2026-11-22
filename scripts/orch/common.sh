@@ -527,14 +527,6 @@ require_clean_tree() {
   [ -z "$status" ] || die "$2"
 }
 
-# AT_LINE_ESCAPE_HINT: appended to the death of an unescaped @@ line inside a
-# block, in the breakdown draft grammar and, through the Python copy in
-# scripts/orch_py/orch/spec_review_batch.py, the spec review grammars (#1945,
-# #2357). Breakdown's awk reads it through ENVIRON, as -v would turn \@@ into
-# @@.
-# shellcheck disable=SC2034 # used by the breakdown module
-AT_LINE_ESCAPE_HINT=' - a body line starting with @@ is written \@@'
-
 # FENCE_AWK: the one markdown code-fence rule, an awk function fragment each
 # scanner prepends to its own program. A fence opens on a line whose first
 # non-space character, after at most three spaces of indent, starts a run of

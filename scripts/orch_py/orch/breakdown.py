@@ -6,7 +6,7 @@ ticket module's retire reaches too.
 The save point is .orchestrator/breakdown/<parent>/: draft.md, the approved
 draft; numbers, one `<k> <number> created|linked` line per ticket, the last
 line for <k> winning; and published, the marker written last - the layout
-bash's breakdown module writes, so either reads what the other left. The
+the bash noun wrote, so a save point it left mid-publish is finished here. The
 draft has one block per ticket, in draft order:
 
     @@ ticket <k> <title>
@@ -18,7 +18,7 @@ It is parsed in memory by the rules of bash's awk parser, with its messages
 and line numbers. Positions are text everywhere, never integers, so 01 and 1
 are two positions, as in bash.
 
-Every verb keeps the bash module's arguments, usage lines, stdout, exit codes
+Every verb keeps the bash noun's arguments, usage lines, stdout, exit codes
 and `orch:` messages: publish dies with 1, state with 2, an unknown op with
 1.
 """
