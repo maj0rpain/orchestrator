@@ -1,31 +1,35 @@
-"""The spec concept's module (scripts/orch/spec.sh): the spec noun, moving
-here verb by verb while bash still serves `orch.sh spec` (ADR-0067), and the
-round directory the spec-review noun works in - the files saying where a spec
-review round stands, the working-directory reset, what a round hands the
-next, and the round count's parse.
+"""The spec concept's module: the spec noun (ADR-0067; the bash spec module
+went at its cutover), and the round directory the spec-review noun works in -
+the files saying where a spec review round stands, the working-directory
+reset, what a round hands the next, and the round count's parse.
 
 The noun is the spec review's one hand on GitHub. The body is the truth the
 implement phase reads, so the four ways it is read and written - fetch,
 update, comment and comments - go through here, where they are tested,
 rather than through a `gh issue edit` in skill prose: each resolves the
 number from the flow's state and runs the issue noun's op on it in-process.
-pause touches no issue: it writes the spec-paused marker, the stop of the
-spec phase's session once the spec is written. pause --round writes the
-round marker, the stop after a spec review round, and in an autopilot flow
-releases the claim through the Standing module's chain. Every verb keeps the
-bash module's arguments, usage lines, stdout, exit codes, `orch:` messages
-and check order, and refuses before any write. round-dir prepares a flow's
-round directory and writes the round marker last; round reads the marker
-back for a resumed spec phase.
+A done flow's issue is finished work: state.json lingers after the flow
+ends, so a spec op there would quietly touch an issue nobody is reviewing any
+more - it refuses and points at the stateless issue ops. pause touches no
+issue: it writes the spec-paused marker, the stop of the spec phase's session
+once the spec is written. pause --round writes the round marker, the stop
+after a spec review round, and in an autopilot flow releases the claim
+through the Standing module's chain. Every verb keeps the bash module's
+arguments, usage lines, stdout, exit codes, `orch:` messages and check order,
+and refuses before any write. round-dir prepares a flow's round directory and
+writes the round marker last; round reads the marker back for a resumed spec
+phase.
 
-The bash spec module stays the round directory's owner while bash `spec`
-reads it (`spec round`, `spec round-dir`): these are copies of its
-spec_round_* functions under their bash names, each keeping bash's messages
-and the order of its local steps. The golden round directories of
-tests/spec_round/ pin the two copies of spec_round_state to each other
-(ADR-0067). The saved answer's writers and its loader left bash with the
-spec-review noun, and bash spec_round_state only checks that apply-answer
-exists, so the golden line bash wrote before its writer went,
+The two markers sit in the handoff folder, and neither is a handoff - no
+phase table entry names it, so handoff validate and doctor never look at it -
+nor a state.json field (ADR-0005). Bash redo spec moves both aside with the
+stale handoffs, under the names its own module keeps beside these.
+
+This module owns the round directory: its spec_round_* functions keep the
+bash names they had and bash's messages and the order of its local steps.
+The golden round directories of tests/spec_round/ hold each state's files,
+read by pytest alone since no bash reader of the round directory is left. The
+golden line bash wrote before its saved-answer writer went,
 tests/spec_round/answer/bash-written, is the bash side of the saved-answer
 format, which a round that died under bash still resumes by.
 
@@ -90,8 +94,6 @@ ROUND_SETTLED = "settled.md"
 # What a round hands the next: the Implementability lens's code map and the
 # settled file, kept by spec_round_dir_reset's carry.
 ROUND_CARRIED = ("map-implementability.md", ROUND_SETTLED)
-# Where a flow's spec review rounds work, under the orchestrator directory.
-ROUNDS_DIR_NAME = "spec-rounds"
 # The file round 1 of a flow's spec review writes its `agent get lens` read
 # to, in its round directory: every later round, in a session of its own,
 # starts its lenses on these values rather than reading the setting again, so
@@ -102,8 +104,13 @@ ROUND_LENS_SETTING = "agent-lens"
 
 
 def spec_rounds_dir(root: str) -> str:
-    """The flow's rounds directory of the checkout at <root>."""
-    return "%s/%s/%s" % (root, ORCH_DIR_NAME, ROUNDS_DIR_NAME)
+    """The flow's rounds directory of the checkout at <root>: where a flow's
+    spec review rounds work, one directory per round number, under the
+    orchestrator directory. Not under spec-review/, the flow-less entry
+    archive keeps: these belong to the flow and are archived with it. Built
+    as one "%s/%s/<name>" format naming ORCH_DIR_NAME, the form the
+    side-checkout entry classification scans for."""
+    return "%s/%s/spec-rounds" % (root, ORCH_DIR_NAME)
 
 
 def spec_round_state(directory: str) -> str:
@@ -278,8 +285,8 @@ def spec_round_in_flow(directory: str, rounds: str) -> bool:
 
 
 def spec_round_dir_reset(directory: str, carry: bool = False) -> None:
-    """A round's working directory made ready to run in, for a standalone
-    review's begin - a copy of the reset a flow's `spec round-dir` runs, bash
+    """A round's working directory made ready to run in: the reset a flow's
+    `spec round-dir` and a standalone review's begin run, the copy of bash
     spec_round_dir_reset. With <carry>, every entry of an existing
     <directory> but the code map and the settled file is deleted in place,
     keeping what a round hands the next; without it <directory> is removed

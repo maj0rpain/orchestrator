@@ -4738,7 +4738,7 @@ tr_init "$af"
 tr_put "$af" scripts/test/orch/branch.sh 'x=1' '# --- branch create ---' '# --- branch (x.y) retire ---'
 tr_put "$af" scripts/test/orch/state.sh '# --- state ---'
 tr_put "$af" scripts/test/orch/common.sh '# --- common one ---'
-for af_f in autopilot doctor init side-checkout spec ticket; do
+for af_f in autopilot doctor init redo side-checkout ticket; do
   tr_put "$af" "scripts/test/orch/$af_f.sh" "# --- $af_f s ---"
 done
 for af_f in scripts/orch.sh scripts/orch/common.sh scripts/orch/branch.sh \
@@ -4852,7 +4852,7 @@ af_row "a markdown lens-bench fixture selects the lens bench suite" scripts/dev/
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
 af_row "a markdown lens-bench test fixture selects the lens bench suite" scripts/test/lens-bench/run-1/map.md \
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
-af_py_s="autopilot s,side-checkout s,spec s,ticket s"
+af_py_s="autopilot s,redo s,side-checkout s,ticket s"
 af_row "a Python package module selects the sections of the nouns that run a converted noun's verb, the hooks suite and the side-checkout ones, not the full suite" \
   scripts/orch_py/orch/cli.py "$TR_GATE,$af_py_s,hooks_test.sh,docs_lint.sh"
 af_row "the pytest suite's wrapper selects the harness sections, and shellchecks itself" \

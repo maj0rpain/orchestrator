@@ -54,9 +54,8 @@ def _spec_review(argv: List[str]) -> int:
     return run(argv)
 
 
-# The converted nouns, and spec, whose verbs move here while bash still serves
-# `orch.sh spec`: each takes the arguments after the noun and returns its exit
-# code.
+# The converted nouns: each takes the arguments after the noun and returns its
+# exit code.
 NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "issue": _issue,
     "finding-triage": _finding_triage,

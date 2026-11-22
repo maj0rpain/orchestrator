@@ -2,8 +2,8 @@
 `python3 -m orch` would be, through a `-c` bootstrap (ADR-0067), end to end:
 each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>`,
 `orch.sh verification <verb>`, `orch.sh audit <verb>`, `orch.sh review-pass
-<verb>` or `orch.sh spec-review <verb>` as a command, in a checkout under
-tmp_path, against a fake store seeded in the layout the bash suite's fake_*
+<verb>`, `orch.sh spec-review <verb>` or `orch.sh spec <verb>` as a command, in
+a checkout under tmp_path, against a fake store seeded in the layout the bash suite's fake_*
 helpers write, with ORCH_GH_FAKE_STORE set as fake_github sets it."""
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from conftest import (
     VERIFICATION_KNOBS,
     comments_of,
     committed,
+    flow_state,
     git_repo,
     gone,
     labels_of,
@@ -501,3 +502,139 @@ def test_help_lists_all_five_spec_review_verbs(tmp_path, repo, seed):
     assert [line.split()[1] for line in out.splitlines()
             if line.startswith("  spec-review ")] == [
         "begin", "check", "wait", "prompt", "apply", "apply"]
+
+
+# --- spec --------------------------------------------------------------------
+
+CLAUDE = {"ORCHESTRATOR_HOST": "claude"}
+
+
+@pytest.fixture
+def spec_flow(repo, seed):
+    """The repository, a flow at the spec phase on issue #14, its issue open
+    with a body: the repository's resolved path."""
+    flow_state(repo, "spec", 14)
+    seed.issue(14, "open")
+    seed.body(14, "The spec.")
+    return repo.resolve()
+
+
+def test_spec_fetch_writes_the_flow_issue_s_body_through_the_python_noun(
+        tmp_path, spec_flow, seed):
+    out = tmp_path / "spec.md"
+
+    answer = orch_sh(tmp_path, spec_flow, seed, "spec", "fetch", str(out),
+                     path=python3_shim(tmp_path))
+
+    assert answer == ("", "", 0)
+    assert out.read_text() == "The spec.\n"
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_spec_update_replaces_the_flow_issue_s_body_through_the_python_noun(
+        tmp_path, spec_flow, seed):
+    body = tmp_path / "spec.md"
+    body.write_text("The new spec.\n")
+
+    answer = orch_sh(tmp_path, spec_flow, seed, "spec", "update", str(body),
+                     path=python3_shim(tmp_path))
+
+    assert answer == ("", "", 0)
+    assert read(seed.store, "issues", 14, "body") == "The new spec.\n"
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_spec_comment_posts_on_the_flow_issue_through_the_python_noun(
+        tmp_path, spec_flow, seed):
+    note = tmp_path / "note.md"
+    note.write_text("A note.\n")
+
+    answer = orch_sh(tmp_path, spec_flow, seed, "spec", "comment", str(note),
+                     path=python3_shim(tmp_path))
+
+    assert answer == ("", "", 0)
+    assert comments_of(seed.store, 14) == ["A note.\n"]
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_spec_comments_writes_the_flow_issue_s_comments_through_the_python_noun(
+        tmp_path, spec_flow, seed):
+    seed.comment(14, "pat", "2026-09-02T11:30:00Z", "A follow-up.")
+    out = tmp_path / "comments.md"
+
+    answer = orch_sh(tmp_path, spec_flow, seed, "spec", "comments", str(out),
+                     path=python3_shim(tmp_path))
+
+    assert answer == ("", "", 0)
+    assert out.read_text() == "<!-- comment @pat 2026-09-02T11:30:00Z -->\nA follow-up.\n"
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_spec_pause_writes_the_marker_and_the_block_through_the_python_noun(
+        tmp_path, spec_flow, seed):
+    answer = orch_sh(tmp_path, spec_flow, seed, "spec", "pause", knobs=CLAUDE,
+                     path=python3_shim(tmp_path))
+
+    assert answer == ("Spec #14 written. The spec review runs in a fresh session.\n\n"
+                      "  Next: /clear, then /orchestrator:next\n", "", 0)
+    assert (spec_flow / ".orchestrator" / "handoff" / "spec-paused").read_text() == "14\n"
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_spec_round_dir_makes_the_round_ready_through_the_python_noun(
+        tmp_path, spec_flow, seed):
+    answer = orch_sh(tmp_path, spec_flow, seed, "spec", "round-dir", "1/2",
+                     path=python3_shim(tmp_path))
+
+    rounds = spec_flow / ".orchestrator" / "spec-rounds"
+    assert answer == ("%s/1/\n" % rounds, "", 0)
+    assert list((rounds / "1").iterdir()) == []
+    assert (spec_flow / ".orchestrator" / "handoff" / "spec-round").read_text() == "14 1 2\n"
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_spec_round_reads_the_round_marker_through_the_python_noun(tmp_path, spec_flow, seed):
+    handoff = spec_flow / ".orchestrator" / "handoff"
+    handoff.mkdir()
+    (handoff / "spec-round").write_text("14 2 3\n")
+
+    answer = orch_sh(tmp_path, spec_flow, seed, "spec", "round", path=python3_shim(tmp_path))
+
+    assert answer == ("2 3\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_spec_pause_round_in_an_autopilot_flow_frees_the_claim_through_the_python_noun(
+        tmp_path, spec_flow, seed):
+    seed.issue(14, "open", "orch:spec", "orch:running")
+    seed.claim(14)
+
+    answer = orch_sh(tmp_path, spec_flow, seed, "spec", "pause", "--round", "1/2",
+                     knobs=dict(CLAUDE, ORCH_AUTOPILOT="1"), path=python3_shim(tmp_path))
+
+    assert answer == ("Spec review round 1 of 2 applied. Round 2 runs in a fresh session.\n\n"
+                      "  Next: /clear, then /orchestrator:next\n", "", 0)
+    assert (spec_flow / ".orchestrator" / "handoff" / "spec-round").read_text() == "14 2 2\n"
+    assert labels_of(seed.store, 14) == ["orch:spec"]
+    assert seed.claim_held(14) is False
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+@pytest.mark.parametrize("argv, named", [(("wipe",), "wipe"), ((), "<none>")],
+                         ids=["unknown", "bare"])
+def test_a_spec_op_the_noun_does_not_have_is_refused_through_the_python_noun(
+        tmp_path, spec_flow, seed, argv, named):
+    answer = orch_sh(tmp_path, spec_flow, seed, "spec", *argv, path=python3_shim(tmp_path))
+
+    assert answer == ("", "orch: unknown spec op: %s"
+                          " (want fetch|update|comment|comments|pause|round|round-dir)\n"
+                          % named, 1)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_help_lists_every_spec_verb(tmp_path, repo, seed):
+    out, err, code = orch_sh(tmp_path, repo, seed, "help")
+
+    assert (err, code) == ("", 0)
+    assert [line.split()[1] for line in out.splitlines() if line.startswith("  spec ")] == [
+        "fetch", "update", "comment", "comments", "pause", "pause", "round-dir", "round"]

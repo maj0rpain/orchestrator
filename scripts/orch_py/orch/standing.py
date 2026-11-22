@@ -1,6 +1,9 @@
 """The Standing module (scripts/orch/standing.sh), kept to what the Python
 nouns use: the Phase label test, and the claim release a spec review round's
-pause makes in an autopilot flow.
+pause makes in an autopilot flow. standing_pause has no bash copy left: its
+one bash caller was the spec module, gone at the spec noun's cutover, while
+standing_release and standing_chain_start stay in bash for the other
+transitions.
 
 A phase label, `orch:<phase>`, records an autopilot flow's phase on its
 issue. PHASES is the flow's phases in order: the first column of the handoff

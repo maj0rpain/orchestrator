@@ -224,24 +224,16 @@ assert_contains "finish failing on the label read names the seed alone" "$out" "
 fake_unfail
 
 # a failing transition names only its own landed writes
-tr_seed 54 orch:spec orch:running
-fake_fail adapter_claim_delete "HTTP 500"
-out="$(sourced_rc 'standing_pause 54 "wrote the round marker"; true')"
-assert_contains "pause failing on its release names its reason and the removal" "$out" "writes that landed: wrote the round marker, removed orch:running; the claim stays held"
-assert_eq "and the claim stays held" "$(fake_claim_held 54)" held
-fake_unfail
-out="$(sourced_rc 'standing_pause 54 "wrote the round marker"')"
-assert_eq "pause releases the claim and leaves the phase label" "$(tr_standing 54)|$(fake_claim_held 54)" "spec|0|0|0|free"
 tr_seed 55 orch:spec orch:running
 tr_seed 54 orch:spec orch:running
 fake_fail_after adapter_claim_delete 1 "HTTP 500"
-out="$(sourced_rc 'standing_pause 54 "wrote the round marker"; standing_stop 55 failure spec boom')"
-assert_contains "a stop failing in the same shell as an earlier succeeding pause names only its own writes" "$out" "writes that landed: added needs-human, removed orch:limited, posted the failure comment, removed orch:running; the claim stays held"
+out="$(sourced_rc 'standing_finish 54 implement "wrote the spec"; standing_stop 55 failure spec boom')"
+assert_contains "a stop failing in the same shell as an earlier succeeding finish names only its own writes" "$out" "writes that landed: added needs-human, removed orch:limited, posted the failure comment, removed orch:running; the claim stays held"
 fake_unfail
 tr_seed 94 orch:spec orch:running
 tr_seed 95 orch:spec orch:running
-sourced_rc 'standing_stop 95 refusal spec "no plan"; standing_pause 94 "wrote the round marker"' >/dev/null
-assert_eq "a pause run after a stop in the same shell removes its own orch:running and releases" "$(fake_labels_of 94)|$(fake_claim_held 94)" "orch:spec |free"
+sourced_rc 'standing_stop 95 refusal spec "no plan"; standing_finish 94 implement "wrote the spec"' >/dev/null
+assert_eq "a finish run after a stop in the same shell moves its own label, removes its own orch:running and releases" "$(fake_labels_of 94)|$(fake_claim_held 94)" "orch:implement |free"
 out="$(sourced_rc 'STANDING_STATE_FILE="$(mktemp)"; printf "landed\tearlier write\n" >"$STANDING_STATE_FILE"
 standing_chain_start "the seed"; echo "landed=$STANDING_LANDED"; echo "lines=$(wc -l <"$STANDING_STATE_FILE")"; standing_landed_has "the seed" && echo skip-seed')"
 assert_contains "a seeded start puts the seed first and takes up earlier landed writes" "$out" "landed=the seed, earlier write"
@@ -287,12 +279,6 @@ out="$(sourced_rc 'standing_finish 90 implement ""')"
 assert_contains "finish failing on the label move names the reason and none landed" "$out" "could not move the phase label to orch:implement on issue #90: HTTP 500 - writes that landed: none; the claim stays held"
 assert_eq "the phase stays unrecorded" "$("$ORCH" state get phase)" spec
 assert_eq "and the claim stays held" "$(fake_claim_held 90)" held
-fake_unfail
-tr_seed 91 orch:spec orch:running
-fake_fail adapter_issue_relabel "HTTP 500"
-out="$(sourced_rc 'standing_pause 91 "wrote the round marker"')"
-assert_contains "pause failing on the running removal names the seed alone" "$out" "could not remove orch:running on issue #91: HTTP 500 - writes that landed: wrote the round marker; the claim stays held"
-assert_eq "and the claim stays held" "$(fake_claim_held 91)" held
 fake_unfail
 tr_seed 92 orch:spec orch:running
 fake_fail_after adapter_issue_relabel 1 "HTTP 500"

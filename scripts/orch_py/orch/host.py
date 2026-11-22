@@ -1,8 +1,10 @@
-"""The host orch.sh runs under, as the bash side's host.sh detects it, the
-plugin commands a message names for it (common.sh's plugin_cmd), a flow
-command's among them (common.sh's flow_cmd), and the block that ends a
-session naming the fresh one to start in the host's own words (phase.sh's
-next_phase_cmd and print_next_block).
+"""The host orch.sh runs under, as the bash side's host.sh detects it, kept
+to what the Python nouns use: the plugin commands a message names for it
+(common.sh's plugin_cmd), a flow command's among them (common.sh's
+flow_cmd), and the block that ends a session naming the fresh one to start
+in the host's own words (phase.sh's next_phase_cmd and print_next_block),
+which the spec noun's pause and pause --round print. The bash copies stay,
+for phase.sh's own stops.
 """
 from __future__ import annotations
 

@@ -532,14 +532,6 @@ standing_finish() {
   standing_release "$1"
 }
 
-# standing_pause <issue> <reason>: ends a session's turn with the phase
-# unchanged - the claim released, nothing else. <reason> seeds the writes that
-# landed.
-standing_pause() {
-  standing_chain_start "${2:-}"
-  standing_release "$1"
-}
-
 # standing_ask <phase> <text>: reads the issue from flow state, posts <text> as
 # <phase>'s question comment - the hidden marker line, the configured handle
 # @mentioned, <text>, then the reply instructions - adds needs-human, then
