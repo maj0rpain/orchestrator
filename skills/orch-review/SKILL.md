@@ -184,8 +184,8 @@ alternatives` amendment, and autopilot budget sizing before steps 1-4 and
 2. **Base sync.** Bring the PR's branch up to date with its base before
    anyone looks at it, so the final clean iteration reviewed the code that
    will merge. Follow **A driver's base sync** in `agents/orch-resolver.md`
-   under the plugin root (found as step 5 says), with the spec issue as the
-   resolver's issue. Then read
+   under the plugin root (found as **Clean-iteration record** in `triage.md`
+   says), with the spec issue as the resolver's issue. Then read
    this iteration's **base SHA**: `bash "$ORCH" state get base_sha`, after the
    sync, for this iteration's reviewers and fixer.
    Keep the sync's **Merge resolutions**, per **Merge resolutions** in the
@@ -240,7 +240,7 @@ alternatives` amendment, and autopilot budget sizing before steps 1-4 and
    `bash "$ORCH" review ci --no-wait` (one pass of the probe, never a wait,
    writing no state, wait file or guard). Only `failing` matters: read
    `bash "$ORCH" review ci-log <pr>` and judge the failure by the rule
-   **CI failure judgement** in `autopilot.md` applies in an autopilot flow,
+   **CI failure judgement** in `termination.md` applies in an autopilot flow,
    here in every flow. A failure the change can fix is a blocking finding of
    this iteration, marked CI-found in the fixable list with the log excerpt. A
    failure that looks flaky rather than caused by the change, or that needs a

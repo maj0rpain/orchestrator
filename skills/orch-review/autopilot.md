@@ -38,8 +38,8 @@ step 3 reads the amended entry. A ruling that reverses no
 entry amends and re-posts nothing. A failed fetch or post stops the loop with
 its `orch:` reason before `review begin`, as a failed reply fetch does.
 
-Then carry on with the steps below, whose step 5 sizes the budget from the
-plan or from what the previous loop left instead of asking.
+Then carry on with steps 1-4 and 6-7 of **Before the first iteration** in
+`SKILL.md`, using **Autopilot budget** below for step 5.
 
 ### Autopilot budget
 
@@ -78,45 +78,33 @@ and interactive re-entries carry no such line. It is for a human reading
 the record: nothing parses it.
 
 Then, on a re-entry, `bash "$ORCH" state set budget <that number>`. Go to
-step 6.
-
-## CI failure judgement
-
-- **failing**, at **Termination** in an autopilot flow: judge it before it
-  is called a reason. Read `bash "$ORCH" review ci-log <pr>`. The failure needs
-  a decision, a human reason, when any of these holds: it would fail on the
-  base tip too (judged from the log and the diff: it lies in code or config the
-  change does not touch); its cause is infrastructure (secrets, permissions,
-  runners, quota); a failing check is not an Actions run (the output says so);
-  the fix needs a choice the spec leaves open; or you cannot tell which case it
-  is, a job whose log could not be read among them. Otherwise it is a failure
-  the change can fix, an automatic reason.
+step 6 of **Before the first iteration** in `SKILL.md`.
 
 ## Termination
 
 **In an autopilot flow** the terminal action differs. Ready ends with
-`bash "$ORCH" review ready` as above, which also moves the label to `orch:done`
-and releases the claim; nothing more runs. A bounded stop - the PR staying in
-draft - never ends by telling the human in the session. Write the stop reason,
-the closer's filed issue numbers (and, for a spec question, each question with
-its recommendation, numbered, as the interview formats them) to
-`.orchestrator/review/question.md` in the side
+`bash "$ORCH" review ready`, as **Termination** in `termination.md` says, which
+also moves the label to `orch:done` and releases the claim; nothing more runs.
+A bounded stop - the PR staying in draft - never ends by telling the human in
+the session. Write the stop reason, the closer's filed issue numbers (and, for
+a spec question, each question with its recommendation, numbered, as the
+interview formats them) to `.orchestrator/review/question.md` in the side
 checkout - the save point, which a fresh session re-posts when the human removes
 `needs-human` without replying. Then classify each reason of the stop:
 
 - **Automatic** - the final iteration was not clean, an open blocking finding
   remains, a look is missing, or CI is `failing` for a cause the change can fix
-  (the **CI** judgement).
+  (per **CI failure judgement** in `termination.md`).
 - **Human** - a spec question, CI `unreachable`, a failed base sync, known
-  items that could not be built, or a CI failure that needs a decision (the
-  **CI** judgement).
+  items that could not be built, or a CI failure that needs a decision (per
+  **CI failure judgement** in `termination.md`).
 
 A stop with any human reason runs
 `bash "$ORCH" autopilot ask review .orchestrator/review/question.md`, which
 posts it as a question comment, labels the issue `needs-human` and releases the
 claim; then stop. Removing `needs-human` starts another loop, with a budget the
-driver sizes from what this one left, which reads the reply first, per the
-top of **Before the first iteration**.
+driver sizes from what this one left, which reads the reply first, per **Before
+the first iteration** at the top of this file.
 
 A stop whose every reason is automatic is an **automatic re-entry**: run
 `bash "$ORCH" autopilot reenter review .orchestrator/review/question.md` with

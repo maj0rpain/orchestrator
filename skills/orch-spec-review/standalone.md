@@ -49,11 +49,11 @@ The standalone entry never calls `spec fetch`, `spec comments`, `spec update`,
 `spec comment`, or `handoff path`, never reads under `.orchestrator/handoff/`,
 and never calls `gh issue` directly.
 
-Then run **Consolidation**, **The lenses**, **Disposition**, and **Applying
-the answer** below, with these differences:
+Then run **Consolidation**, **The lenses**, and **Disposition** in `SKILL.md`,
+and **Applying the answer** in `applying.md`, with these differences:
 
-- **Lenses**: start the three in the table: Consistency, Testability, and
-  Implementability. Fidelity, which needs a plan, is never started.
+- **Lenses**: start the three in `SKILL.md`'s table: Consistency, Testability,
+  and Implementability. Fidelity, which needs a plan, is never started.
   `batch.md` records it as `@@ lens fidelity standalone`, and the batch and
   the changelog show Fidelity's not-run line. That is not a failure, so the
   retry rule does not apply to it.

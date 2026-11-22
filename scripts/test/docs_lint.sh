@@ -962,9 +962,15 @@ cc_orch_resolution() {
   fi
 }
 # scan_orch_resolution <plugin root>: print one line per offending file.
+# SKILL.md and commands/*.md must carry the full ORCH= resolution when using
+# orch.sh; sibling skill reference files are spared that block, while every
+# skill file and command is held to the CLAUDE_PLUGIN_ROOT and plugin-root
+# fallback rules.
 scan_orch_resolution() {
   local r="$1" f flat rest root_sentence
-  for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md; do
+  local -a files
+  mapfile -t files < <(skill_md_files "$r")
+  for f in "${files[@]}" "$r"/commands/*.md; do
     [ -f "$f" ] || continue
     # Checked on the flat text: a sentence wrapped at 80 columns still counts.
     flat="$(flat_text "$f")"
@@ -989,7 +995,8 @@ scan_orch_resolution() {
       [[ "$root_sentence" == *"$root_junie"* ]] ||
         echo "${f#"$r"/}: names the plugin root without the Junie step"
     fi
-    if grep -qE 'orch\.sh|\$ORCH' "$f"; then
+    if [[ "$f" == */SKILL.md || "$f" == "$r"/commands/*.md ]] &&
+      grep -qE 'orch\.sh|\$ORCH' "$f"; then
       grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
       [[ "$flat" == *"$orch_junie"* ]] || echo "${f#"$r"/}: uses orch.sh without the Junie step"
       [[ "$flat" == *"$orch_junie_one"* ]] || echo "${f#"$r"/}: uses orch.sh without the one-install step"
@@ -1058,6 +1065,12 @@ flags "the scan flags a plugin-root fallback with no Junie step" \
 } >"$fixture/commands/orch.md"
 flags "the scan flags a Junie step outside the plugin-root sentence" \
   "$(scan_orch_resolution "$fixture")" "commands/orch.md: names the plugin root without the Junie step"
+{ plugin_root_fence
+  printf '%s\n' "$root_fallback two directories above this skill's own directory."
+} >"$fixture2/skills/orch-x/root-ref.md"
+flags "a reference file naming the plugin root without the Junie step is flagged" \
+  "$(scan_orch_resolution "$fixture2")" \
+  "skills/orch-x/root-ref.md: names the plugin root without the Junie step"
 { documented_orch_form
   plugin_root_fence
   printf '%s\n' "$root_fallback found as for \`ORCH\`:" \
@@ -1628,20 +1641,40 @@ echo "start sites read the agent setting (#1359)"
 # implementer, **A driver's base sync** and **A driver's ticket resolution**
 # the resolver. A skill's scoped name, such as `orchestrator:orch-flow`, is
 # not a start, and a **Start a fresh subagent** pointer is not a read.
-# agent_start_files <plugin root>: every skill file, agent file and docs/
-# file a start site can live in, one path per line.
-agent_start_files() {
-  skill_md_files "$1"
-  find "$1/agents" "$1/docs" -name '*.md' -type f 2>/dev/null | sort
-  return 0
+# check_agent_settings_text <label> <text> <pattern>: check one start site
+# (a skill directory's combined .md files, or a single agent/doc file).
+check_agent_settings_text() {
+  local label="$1" text="$2" pattern="$3" roles="" name role
+  if grep -qE '`orchestrator:` plugin scope|subagent_type|orchestrator:<agent>' <<<"$text" ||
+    grep -qE "orchestrator:$pattern" <<<"$text"; then
+    # An agent's file path, such as agents/orch-fixer.md, names a file to
+    # read, not an agent to start.
+    while IFS= read -r name; do
+      case "$name" in /* | *.md | '') continue ;; esac
+      role="$(agent_role_of "$name")"
+      [ -n "$role" ] && roles+=" $role"
+    done < <(grep -oE "/?\\b$pattern\\b(\\.md)?" <<<"$text")
+  fi
+  grep -qF '**Dispatching a subagent**' <<<"$text" && roles+=" implementer"
+  grep -qE "\*\*A driver's (base sync|ticket resolution)\*\*" <<<"$text" && roles+=" resolver"
+  [ -n "$roles" ] || return 0
+  if ! grep -qE '\*\*Agent settings\*\*|#agent-settings\)' <<<"$text"; then
+    echo "$label: starts a plugin agent but does not point at **Agent settings**"
+  fi
+  for role in $(tr ' ' '\n' <<<"$roles" | sort -u); do
+    grep -qF "agent get $role" <<<"$text" ||
+      echo "$label: starts an agent of the $role role but does not name agent get $role"
+  done
 }
 # scan_agent_settings <plugin root>: one line per role a start site starts
-# without reading its setting. The agent name shapes come from orch.sh's agent
-# module, read from the real plugin root (a scanned fixture carries no agent
-# module) and sourced once.
+# without reading its setting. Each skill directory is scanned as one unit
+# across SKILL.md and its sibling reference files so an agent started from a
+# sibling file still requires an agent get <role> read in that skill. The agent
+# name shapes come from orch.sh's agent module, read from the real plugin root
+# (a scanned fixture carries no agent module) and sourced once.
 scan_agent_settings() {
-  local r="$1" f text name roles role pattern shape
-  local -a files
+  local r="$1" d f text pattern shape
+  local -a files md_files
   # shellcheck source=/dev/null
   if ! source "$PLUGIN_ROOT/scripts/orch/agent.sh" 2>/dev/null || [ -z "${AGENT_NAME_SHAPES:-}" ]; then
     echo "scripts/orch/agent.sh: no AGENT_NAME_SHAPES read"
@@ -1652,30 +1685,16 @@ scan_agent_settings() {
     pattern+="${pattern:+|}$(agent_shape_ere "${shape#*:}")"
   done < <(agent_name_shapes)
   pattern="($pattern)"
-  mapfile -t files < <(agent_start_files "$r")
+  for d in "$r"/skills/*/; do
+    [ -d "$d" ] || continue
+    md_files=("$d"*.md)
+    [ -f "${md_files[0]}" ] || continue
+    text="$(cat "${md_files[@]}" | flat_text)"
+    check_agent_settings_text "${d#"$r"/}SKILL.md" "$text" "$pattern"
+  done
+  mapfile -t files < <(find "$r/agents" "$r/docs" -name '*.md' -type f 2>/dev/null | sort)
   for f in "${files[@]}"; do
-    text="$(flat_text "$f")"
-    roles=""
-    if grep -qE '`orchestrator:` plugin scope|subagent_type|orchestrator:<agent>' <<<"$text" ||
-      grep -qE "orchestrator:$pattern" <<<"$text"; then
-      # An agent's file path, such as agents/orch-fixer.md, names a file to
-      # read, not an agent to start.
-      while IFS= read -r name; do
-        case "$name" in /* | *.md | '') continue ;; esac
-        role="$(agent_role_of "$name")"
-        [ -n "$role" ] && roles+=" $role"
-      done < <(grep -oE "/?\\b$pattern\\b(\\.md)?" <<<"$text")
-    fi
-    grep -qF '**Dispatching a subagent**' <<<"$text" && roles+=" implementer"
-    grep -qE "\*\*A driver's (base sync|ticket resolution)\*\*" <<<"$text" && roles+=" resolver"
-    [ -n "$roles" ] || continue
-    if ! grep -qE '\*\*Agent settings\*\*|#agent-settings\)' <<<"$text"; then
-      echo "${f#"$r"/}: starts a plugin agent but does not point at **Agent settings**"
-    fi
-    for role in $(tr ' ' '\n' <<<"$roles" | sort -u); do
-      grep -qF "agent get $role" <<<"$text" ||
-        echo "${f#"$r"/}: starts an agent of the $role role but does not name agent get $role"
-    done
+    check_agent_settings_text "${f#"$r"/}" "$(flat_text "$f")" "$pattern"
   done
   return 0
 }
@@ -1729,6 +1748,14 @@ flags "a start of orch-code-auditor with no pointer is flagged" \
   "$out" "skills/a/SKILL.md: starts a plugin agent but does not point at **Agent settings**"
 flags "a start of orch-code-auditor is read under the auditor role" \
   "$out" "skills/a/SKILL.md: starts an agent of the auditor role but does not name agent get auditor"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/sib"
+printf 'Start agents with `subagent_type`. Read `agent get fixer` per **Agent settings**.\n' \
+  >"$fixture/skills/sib/SKILL.md"
+printf 'Start `orch-closer` at termination.\n' >"$fixture/skills/sib/termination.md"
+flags "an agent started in a sibling reference file still requires agent get for its role" \
+  "$(scan_agent_settings "$fixture")" \
+  "skills/sib/SKILL.md: starts an agent of the closer role but does not name agent get closer"
 # A start site generated from AGENT_NAME_SHAPES, one name per shape with each *
 # as x, so a role or shape added there is covered with no edit here.
 mapfile -t shapes_read < <(source "$PLUGIN_ROOT/scripts/orch/agent.sh" && agent_name_shapes)
@@ -1882,10 +1909,12 @@ skills/orch-quick-implement/SKILL.md|## 3. Publish the ticket breakdown
 skills/orch-quick-implement/SKILL.md|## 6. Review
 skills/orch-quick-implement/SKILL.md|## 7. Open the PR
 skills/orch-review/autopilot.md|# Autopilot review loop
-skills/orch-review/autopilot.md|## CI failure judgement
+skills/orch-review/autopilot.md|## Before the first iteration
+skills/orch-review/autopilot.md|### Autopilot budget
 skills/orch-review/autopilot.md|## Termination
 skills/orch-review/termination.md|# CI, Termination, and the closer
 skills/orch-review/termination.md|## CI
+skills/orch-review/termination.md|### CI failure judgement
 skills/orch-review/termination.md|## Termination
 skills/orch-review/termination.md|## The closer
 skills/orch-review/triage.md|# Triage, severity, and clean-iteration records
@@ -3747,36 +3776,71 @@ check "every skill description fits the Agent Skills 1024-character limit" \
 # --- skill bodies fit Antigravity's 24 KB load cap (#4054) --------------------
 # scan_skill_body_size <plugin root>: one line per SKILL.md whose body (after
 # YAML frontmatter) is over 24000 bytes, Antigravity CLI's load cap. Sibling
-# reference files are loaded on demand and are not capped.
+# reference files are loaded on demand and are not capped. Runs in one LC_ALL=C
+# awk pass over every SKILL.md, handling CRLF frontmatter fences and treating
+# unclosed frontmatter as body bytes so a broken fence cannot bypass the cap.
 scan_skill_body_size() {
-  local r="$1" f bytes
-  for f in "$r"/skills/*/SKILL.md; do
-    [ -f "$f" ] || continue
-    bytes="$(skill_part "$f" body | wc -c)"
-    bytes="${bytes//[[:space:]]/}"
-    [ "$bytes" -gt 24000 ] \
-      && echo "${f#"$r"/}: body is $bytes bytes, over 24000"
-  done
-  return 0
+  local r="$1"
+  local -a files=("$r"/skills/*/SKILL.md)
+  [ -f "${files[0]}" ] || return 0
+  LC_ALL=C awk -v r="$r/" '
+    function finish(path,    n) {
+      n = (fm ? total : body)
+      if (n > 24000) {
+        if (substr(path, 1, rlen) == r) path = substr(path, rlen + 1)
+        print path ": body is " n " bytes, over 24000"
+      }
+    }
+    BEGIN { rlen = length(r) }
+    FNR == 1 {
+      if (NR > 1) finish(prev)
+      prev = FILENAME
+      fm = 0; body = 0; total = 0
+    }
+    {
+      len = length($0) + 1
+      total += len
+      line = $0
+      sub(/\r$/, "", line)
+      if (FNR == 1 && line == "---") { fm = 1; next }
+      if (fm && line == "---") { fm = 0; next }
+      if (!fm) body += len
+    }
+    END { if (NR > 0) finish(prev) }
+  ' "${files[@]}"
 }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/exact" "$fixture/skills/over" \
-  "$fixture/skills/fm" "$fixture/skills/ref"
-b24000="$(printf 'a%.0s' $(seq 1 23999))"
-printf -- '---\nname: exact\n---\n%s\n' "$b24000" \
+  "$fixture/skills/utf8" "$fixture/skills/fm" "$fixture/skills/crlf" \
+  "$fixture/skills/unclosed" "$fixture/skills/ref"
+b8000="$a1000$a1000$a1000$a1000$a1000$a1000$a1000$a1000"
+b24000="$b8000$b8000$b8000"
+printf -- '---\nname: exact\n---\n%s\n' "${b24000:0:23999}" \
   >"$fixture/skills/exact/SKILL.md"
-printf -- '---\nname: over\n---\n%sa\n' "$b24000" \
+printf -- '---\nname: over\n---\n%s\n' "$b24000" \
   >"$fixture/skills/over/SKILL.md"
-printf -- '---\nname: fm\ndescription: %s\n---\n%s\n' "$a1000" "$b24000" \
-  >"$fixture/skills/fm/SKILL.md"
+# 23998 ASCII bytes + 3-byte em dash + newline = 24000 chars, 24002 bytes.
+printf -- '---\nname: utf8\n---\n%s—\n' "${b24000:0:23998}" \
+  >"$fixture/skills/utf8/SKILL.md"
+printf -- '---\nname: fm\ndescription: %s\n---\n%s\n' \
+  "$a1000" "${b24000:0:23999}" >"$fixture/skills/fm/SKILL.md"
+printf -- '---\r\nname: crlf\r\n---\r\n%s\n' "${b24000:0:23999}" \
+  >"$fixture/skills/crlf/SKILL.md"
+printf -- '---\nname: unclosed\n%s\n' "$b24000" \
+  >"$fixture/skills/unclosed/SKILL.md"
 printf -- '---\nname: ref\n---\nShort.\n' >"$fixture/skills/ref/SKILL.md"
-printf '%saa\n' "$b24000" >"$fixture/skills/ref/reference.md"
+printf '%s\n' "$b24000" >"$fixture/skills/ref/reference.md"
 out="$(scan_skill_body_size "$fixture")"
 flags "a SKILL.md body over 24000 bytes is flagged with its byte count" \
   "$out" "skills/over/SKILL.md: body is 24001 bytes, over 24000"
+flags "a multi-byte UTF-8 body under 24000 chars but over 24000 bytes is flagged" \
+  "$out" "skills/utf8/SKILL.md: body is 24002 bytes, over 24000"
+flags "unclosed frontmatter cannot bypass the 24000-byte cap" \
+  "$out" "skills/unclosed/SKILL.md: body is "
 spares "a SKILL.md body of exactly 24000 bytes is spared" "$out" 'skills/exact/'
 spares "frontmatter does not count toward the 24000-byte body cap" \
   "$out" 'skills/fm/'
+spares "CRLF frontmatter fences are recognized" "$out" 'skills/crlf/'
 spares "a sibling reference file over 24000 bytes is spared" "$out" 'skills/ref/'
 check "every SKILL.md body fits Antigravity's 24000-byte load cap" \
   "$(scan_skill_body_size "$PLUGIN_ROOT")"

@@ -105,8 +105,8 @@ batch is asked: a turn-final reply, per **Turn-final reply** in
 stdout word for word, composing no view of your own, then the ticket question
 with its answer words spelled out. On Claude Code an ask-tool call is
 refused until the view is pasted, as the spec batch's is. Its options are
-the spec batch's, under the skill's **Disposition**, each offered once and
-with the same rules, except:
+the spec batch's, under **Batch view and interactive answers** in `applying.md`,
+each offered once and with the same rules, except:
 
 - **Retire and break down again** is added: no ticket is edited; the
   breakdown is retired after the body is published, and the issue broken

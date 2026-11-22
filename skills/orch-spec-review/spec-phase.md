@@ -11,10 +11,11 @@ only the round count: the human's control is at each round's batch
 decision, where they may decline every edit. `orch-flow`'s spec phase asks
 the round count before round 1.
 
-Everything in the skill's main file holds - **Rounds**, **Consolidation**,
-**The lenses**, **Disposition**, **The batch file**, **Applying the answer**
-and **The changelog** - with the additions below. **Standalone spec review**
-does not apply: run **Inputs** below in its place.
+Everything in the skill's main file (`SKILL.md`: **Rounds**, **Consolidation**,
+**The lenses**, **Disposition**) and its shared reference files
+(`batch-file.md`, `applying.md`) holds, with the additions below. **Standalone
+spec review** (`standalone.md`) does not apply: run **Inputs** below in its
+place.
 
 ## In an autopilot flow
 
@@ -87,16 +88,15 @@ phase exactly as a failed body fetch does.
    same directory. It reads the issue number from state, and writes an empty
    file when the issue has no comments. A failure stops the phase exactly as
    a failed body fetch does: the lenses would otherwise review half the spec.
-3. The glossary, as the main file's **Standalone spec review** step 4
-   writes it. A failed `glossary match` stops the phase exactly as a failed
-   body fetch does. The plan handoff is not resolved here: the Fidelity
-   prompt's `spec-review prompt` runs `handoff path spec` itself, and dies,
-   naming the plan handoff, when it is missing - which stops the phase
-   exactly as a failed body fetch does.
+3. The glossary, as `standalone.md` step 4 writes it. A failed `glossary match`
+   stops the phase exactly as a failed body fetch does. The plan handoff is not
+   resolved here: the Fidelity prompt's `spec-review prompt` runs `handoff path
+   spec` itself, and dies, naming the plan handoff, when it is missing - which
+   stops the phase exactly as a failed body fetch does.
 
-The main file's rule that nothing from this session's conversation reaches a
-lens holds here too: not the plan as you remember it, not `orch-to-spec`'s
-reasoning, not the seams as agreed in chat.
+The rule in `standalone.md` that nothing from this session's conversation
+reaches a lens holds here too: not the plan as you remember it, not
+`orch-to-spec`'s reasoning, not the seams as agreed in chat.
 
 ## The Fidelity lens
 

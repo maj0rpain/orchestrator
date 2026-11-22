@@ -52,14 +52,25 @@ exiting non-zero on the last two:
   first, because a rerun restarts the checks - so this one path, once per loop,
   can wait longer than the cap. A second ask that times out is **unreachable**
   like the first.
-- **failing**, at **Termination** in an autopilot flow: see **CI failure
-  judgement** in `autopilot.md` in this skill's directory.
 - **unreachable** - GitHub would not answer, or the checks were still pending at
   the cap. A **bounded stop**: marking a PR ready over a result nothing ever
   produced claims a verification that never happened.
 
 A `review ci` the host stops at its timeout is run again, as one that exited
 75 is: the total is kept.
+
+### CI failure judgement
+
+- **failing**, at **Termination** in an autopilot flow (and in step 4 of **The
+  iteration** in every flow): judge it before it is called a reason. Read
+  `bash "$ORCH" review ci-log <pr>`. The failure needs a decision, a human
+  reason, when any of these holds: it would fail on the base tip too (judged
+  from the log and the diff: it lies in code or config the change does not
+  touch); its cause is infrastructure (secrets, permissions, runners, quota); a
+  failing check is not an Actions run (the output says so); the fix needs a
+  choice the spec leaves open; or you cannot tell which case it is, a job whose
+  log could not be read among them. Otherwise it is a failure the change can
+  fix, an automatic reason.
 
 ## Termination
 
@@ -128,14 +139,14 @@ from one whose driving session simply died mid-budget.
 
 ## The closer
 
-**`orch-closer`**, under the same `agents/`, started fresh (see **Starting an
-agent**) once per loop, at **Termination**, after the terminal state is
-decided. It files every unfixed major and nit across this loop's records -
-those numbered above the **loop boundary**, less any a later iteration of
-this loop fixed - through `orch.sh review file`, posts the loop's one PR
-comment, writes the **Filed** list into the final record, and returns the
-issue numbers; its brief carries the Filing and PR-comment rules. Its prompt
-carries:
+**`orch-closer`**, under the plugin root's `agents/`, started fresh (see
+**Starting an agent** in `SKILL.md`) once per loop, at **Termination**, after
+the terminal state is decided. It files every unfixed major and nit across this
+loop's records - those numbered above the **loop boundary**, less any a later
+iteration of this loop fixed - through `orch.sh review file`, posts the loop's
+one PR comment, writes the **Filed** list into the final record, and returns
+the issue numbers; its brief carries the Filing and PR-comment rules. Its
+prompt carries:
 
 ```
 PR: #<pr>

@@ -125,12 +125,12 @@ may fix without asking anyone:
   needs a choice between alternatives the plan, spec, and deviations did not
   settle. Those are filed, the options in the body. A fix that changes
   behaviour the spec settles makes the finding blocking; one whose behaviour
-  the spec leaves unsettled makes it a **spec question** (step 4 of **The
-  iteration**). A PR is marked ready with filed majors open against it - the
-  issue carries the reasoning, and triage decides against the whole codebase
-  whether it is worth fixing at all - unless one is a spec question this loop
-  filed: that holds the PR out of **Ready** until a human rules on it. A
-  finding that the change contradicts an ADR is one: it takes the `spec
+  the spec leaves unsettled makes it a **spec question** (**Dispositions and
+  triage rules** above). A PR is marked ready with filed majors open against it
+  - the issue carries the reasoning, and triage decides against the whole
+  codebase whether it is worth fixing at all - unless one is a spec question
+  this loop filed: that holds the PR out of **Ready** until a human rules on
+  it. A finding that the change contradicts an ADR is one: it takes the `spec
   question` rule, and the ADR is never edited. See
   `docs/adr/0042-a-spec-question-the-review-loop-files-holds-the-pr-in-draft.md`.
 - **nit** - taste and judgement. Fixed only when **mechanical**: exactly one
@@ -139,10 +139,9 @@ may fix without asking anyone:
   function, a broken link. Rewording prose is never mechanical, however small.
   Filed otherwise.
 
-A major or nit on **loop-authored lines** or found in
-the **final iteration** is filed, never fixed - see step 4 of **The
-iteration** - though a spec question found there still holds the PR out of
-**Ready**.
+A major or nit on **loop-authored lines** or found in the **final iteration**
+is filed, never fixed - see **Dispositions and triage rules** above - though a
+spec question found there still holds the PR out of **Ready**.
 
 Major and nit are triage priorities on a filed finding, which is why they live
 in the issue's label rather than its title: the label can change.
