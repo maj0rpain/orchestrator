@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.11.8
+
+Split `orch-flow`, `orch-review`, and `orch-spec-review` into sibling reference files so every `SKILL.md` body sits under Antigravity CLI's 24,000-byte load cap, with no behaviour change on Claude Code or Junie CLI. `orch-flow` moves its spec and implement phases into `phase-spec.md` and `phase-implement.md`; `orch-review` moves autopilot-only rules, CI/termination/closer, and triage/severity/authority/clean-record rules into `autopilot.md`, `termination.md`, and `triage.md`; `orch-spec-review` moves its standalone entry, batch-file grammar, and view/answers/applying/changelog rules into `standalone.md`, `batch-file.md`, and `applying.md`. `docs_lint.sh` now enforces the 24,000-byte `SKILL.md` body cap (`scan_skill_body_size`), checks plugin-root resolution and agent settings across sibling reference files, and tracks moved sections in their new sibling files.
+
 ## 6.11.7
 
 `orch.sh breakdown` now runs as Python, the eighth noun moved out of bash. Its verbs, `publish <parent> <draft-file>` and `state <parent>`, keep their arguments, output, exit codes and messages. The draft is parsed in memory, with the same malformed-draft messages and line numbers as before, and the save point under `.orchestrator/breakdown/<parent>/` keeps its layout, so a publish that died under the bash version resumes under the Python one. The `@@`-escape hint now lives once, in the Python common module, which closes #4028. The bash breakdown module and its tests are gone.
