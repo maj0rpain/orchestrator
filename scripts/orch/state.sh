@@ -274,24 +274,21 @@ flow_base_fallback_into() {
   if [ -n "$2" ]; then printf -v "$1" '%s' "$2"; else default_branch_into "$1"; fi
 }
 
-# flow_holding_phase <branch> [issue]: prints the phase of the active flow
-# (phase not done) when it holds the branch, or the issue where one is given,
-# and returns 0. Returns 1 printing nothing when no active flow holds them,
-# and 2 when state.json cannot be read - so the guard fails closed. A branch
-# or issue an active flow holds belongs to it (ADR-0029), so pr draft/ready
-# refuse it, with its own message, and refuse status 2 too (the Python
-# review-pass begin has its own copy, orch/flow_state.py). Reads state.json
+# flow_holding_phase <branch>: prints the phase of the active flow (phase not
+# done) when it holds the branch, and returns 0. Returns 1 printing nothing
+# when no active flow holds it, and 2 when state.json cannot be read - so the
+# guard fails closed. A branch an active flow holds belongs to it (ADR-0029),
+# so pr draft/ready refuse it, with its own message, and refuse status 2 too
+# (the Python review-pass begin has its own copy, which also matches the
+# issue, orch/flow_state.py). Reads state.json
 # only when one exists, in one read. Every read is checked here: callers run
 # it in `$(...) ||`, where errexit is off.
 flow_holding_phase() {
-  local branch="$1" issue="${2:-}" phase held_branch held_issue
+  local branch="$1" phase held_branch
   [ -f "$STATE" ] || return 1
-  state_get_many_in "$STATE" phase=phase held_branch=branch held_issue=issue || return 2
+  state_get_many_in "$STATE" phase=phase held_branch=branch || return 2
   [ "$phase" != "done" ] || return 1
-  if [ "$held_branch" != "$branch" ]; then
-    [ -n "$issue" ] || return 1
-    [ "$held_issue" = "$issue" ] || return 1
-  fi
+  [ "$held_branch" = "$branch" ] || return 1
   printf '%s\n' "$phase"
 }
 

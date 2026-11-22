@@ -100,7 +100,7 @@ def render(comments: List[dict]) -> str:
     )
 
 
-def rendered(gh, what: str, n: str, kind: str = "issue") -> str:
+def rendered(gh, what: str, n: str, kind: str) -> str:
     """trusted's comments rendered, as bash's comments_rendered assigns them:
     the trailing newlines dropped, as a `$(...)` capture drops them. Its
     failures are trusted's."""

@@ -106,7 +106,7 @@ class StateUnreadable(Exception):
     closed."""
 
 
-def flow_holding_phase(state_file: str, branch: str, issue: str = "") -> Optional[Hold]:
+def flow_holding_phase(state_file: str, branch: str, issue: str) -> Optional[Hold]:
     """The Hold of the active flow (phase not done) recorded in <state_file>
     when it holds <branch>, or <issue> where one is given; None when there is
     no state file or no active flow holds them. Raises StateUnreadable when

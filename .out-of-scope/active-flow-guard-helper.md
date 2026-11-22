@@ -2,9 +2,13 @@
 
 This project does not extract a shared helper, such as
 `active_flow_holding <issue> [branch]`, for the guard that `cmd_spec_review`
-and `cmd_review_pass` in `scripts/orch.sh` each run before they begin. The two
-guards look alike, but they ask different questions and give different
-answers.
+(`scripts/orch/spec-review.sh`) and `review-pass begin` each run before they
+begin. The two guards look alike, but they ask different questions and give
+different answers. Since `review-pass` became a converted noun (#4002), its
+guard is no longer bash beside `cmd_spec_review`: it is `begin` in
+`scripts/orch_py/orch/review_pass.py`, through the Python
+`orch.flow_state.flow_holding_phase`, so the two guards no longer share a
+language either.
 
 ## Why this is out of scope
 
@@ -22,9 +26,14 @@ Both guards read `phase` and `issue` from state when `$STATE` exists, skip a
 
 ```sh
 # cmd_spec_review: held means the same issue
-if [ "$phase" != done ] && [ "$held" = "$issue" ]; then ...
-# cmd_review_pass: held means the same issue or the same branch
-if [ "$phase" != done ] && { [ "$held" = "$issue" ] || [ "$held_branch" = "$branch" ]; }; then ...
+if [ "$phase" != "done" ] && [ "$held" = "$issue" ]; then ...
+```
+
+```python
+# review-pass begin, through flow_state.flow_holding_phase: held means the
+# same branch or the same issue
+if state["branch"] != branch and (not issue or state["issue"] != issue):
+    return None
 ```
 
 Only the `*)` fallback for a phase that is not a flow phase is word for word

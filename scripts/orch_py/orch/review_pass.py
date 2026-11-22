@@ -49,7 +49,7 @@ from orch.git import Git
 from orch.handoff import section_count
 from orch.host import flow_cmd
 from orch.known_items import known_items_write, section_entries_append, text_entries_append
-from orch.marked_comment import SPEC_RULING, NotText, marked_comment_texts
+from orch.marked_comment import NotText, marked_comment_texts
 from orch.pr import current_open_pr
 from orch.repo import RepoPin
 from orch.root import checkout_root
@@ -174,7 +174,7 @@ def known_items(argv: List[str], gh, git) -> int:
         deviations += text_entries_append((read_raw(devfile) or "").replace("\r", ""))
     issue_comments = comments.trusted(gh, "read the comments of issue #" + issue, issue)
     try:
-        texts = marked_comment_texts(SPEC_RULING, issue_comments)
+        texts = marked_comment_texts(issue_comments)
     except NotText:
         die("could not read the comments of issue #%s" % issue)
     rulings += text_entries_append("".join(

@@ -68,7 +68,7 @@ def section_entries(text: str, heading: str) -> List[str]:
     return text_entries(section_body(text, heading))
 
 
-def entries_append_from(entries: Iterable[str], tag: str = "") -> str:
+def entries_append_from(entries: Iterable[str], tag: str) -> str:
     """The appenders' one loop: one `- ` bullet line per entry, each ending
     ` - <tag>` when <tag> is non-empty."""
     suffix = " - " + tag if tag else ""

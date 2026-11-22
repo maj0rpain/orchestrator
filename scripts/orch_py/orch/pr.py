@@ -12,10 +12,10 @@ from orch.repo import REPO_REMEDY
 from orch.trust import trust_filter_prs
 
 
-def current_open_pr(gh, git, code: int = 2) -> Optional[int]:
+def current_open_pr(gh, git, code: int) -> Optional[int]:
     """The current branch's open PR number, the newest the Trust module
     trusts, or None when the branch has none - bash's exit 1. Every other
-    failure dies with <code>, 2 unless given, bash's die2: a detached HEAD;
+    failure dies with <code>, where bash dies 2: a detached HEAD;
     no repo (checked here, after the detached-HEAD check, so nothing reaches
     gh unpinned); a GitHub that cannot be read; a listing that does not
     parse."""

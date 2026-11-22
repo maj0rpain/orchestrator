@@ -15,7 +15,6 @@ from typing import List
 
 SPEC_REVIEW_OPENING = "## Spec review"
 SPEC_RULING_OPENING = "Spec ruling:"
-SPEC_RULING = "spec-ruling"
 _SPEC_REVIEW_LINE = re.compile(re.escape(SPEC_REVIEW_OPENING) + r"[ \t]*")
 
 
@@ -55,14 +54,11 @@ def _body_text(comment: dict) -> str:
     return body
 
 
-def marked_comment_texts(kind: str, comments: List[dict]) -> List[str]:
-    """For every comment of <kind> among <comments>, in order, its body with
-    its opening removed and every CR removed - for a spec ruling, the
-    `Spec ruling:` prefix alone. Only spec-ruling is read so far: any other
-    <kind> is a programming error, a ValueError. NotText for a body that is
-    no text."""
-    if kind != SPEC_RULING:
-        raise ValueError("marked_comment_texts: unread kind: " + kind)
+def marked_comment_texts(comments: List[dict]) -> List[str]:
+    """For every spec ruling among <comments>, in order, its body with the
+    `Spec ruling:` prefix alone removed and every CR removed - bash's
+    `marked_comment_texts spec-ruling`, the one kind read so far. NotText for
+    a body that is no text."""
     texts = []
     for comment in comments:
         body = _body_text(comment)
