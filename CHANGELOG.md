@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.11.4
+
+`orch.sh review-pass` now runs as Python, the fifth noun moved out of bash. `review-pass begin` and `review-pass known-items` keep their arguments, output, exit codes and messages, and `known-items` writes the same file byte for byte, pinned by a golden pair. A new read-only Python reader of the flow state (`.orchestrator/state.json`) follows the bash reader's rules for every key, pinned to it by golden `state.json` files, ready for the nouns converted next. The helpers the noun needs now live in the Python modules of the concepts they serve, and the bash review-pass module, its tests and the bash helpers only it called are gone.
+
 ## 6.11.3
 
 `orch.sh audit` now runs as Python, the fourth noun moved out of bash. `audit begin`, `audit report`, `audit file` and `audit file --run` keep their arguments, output, exit codes and messages, and `audit report` writes the same page byte for byte, pinned by two golden pages. The filing checks, `dir_stamp`, the git-exclude writer and the open-titles read it shares now live in the Python modules of the concepts they serve, the bash audit module and its tests are gone, and CONTRIBUTING's layout paragraph now describes bash and converted nouns as they are (#3927).
