@@ -74,41 +74,10 @@ settle: stop and show its
 message. Only `stop`, and `none` on a first loop, take the paths below;
 `ready`, `malformed` and `unreadable` keep their usual handling.
 
-**In an autopilot flow** (`bash "$ORCH" autopilot active` exits 0) the loop
-runs headless and asks the human nothing directly. First, when
-`iteration` is not 0 - the previous loop ended in a bounded stop of any kind -
-read the human's reply before anything else:
-`bash "$ORCH" autopilot answer review <file>` (a `mktemp` file). It exits 1
-when no reply follows the question, and after an automatic re-entry (a
-re-entry comment is never a reply). After a stop for a spec question, re-post
-the same question then with
-`bash "$ORCH" autopilot ask review .orchestrator/review/question.md` (the
-save point the asking site wrote) and stop - never assume
-the recommendations. After any other stop (an open blocking, an unclean final
-iteration, a missing look, CI), exit 1 means "carry on": the driver picks the
-budget in step 5. Any other exit stops the loop, as a failed fetch does.
-
-A reply, after any stop, is split. A budget it plainly names (step 5) is never
-written to the spec body. Any ruling on what the change does is applied to the
-spec issue's body: `bash "$ORCH" spec fetch <file>`, edit the body to carry the
-ruling, then `bash "$ORCH" spec update <file>`. The reply **changes behaviour**
-exactly when applying it edits the spec body; step 5's floor reads that.
-
-When a ruling on a spec question brings back, in whole or in part, an entry in
-the plan handoff's **Rejected alternatives**, amend that entry too, per the
-handoff skill's **Amending Rejected alternatives** section. Check the ruling
-against the plan comment's entries yourself; nothing before step 1 has fetched
-the handoffs, so that section's fetch-where-nothing-fetched case applies. Take
-the citation for the note from the previous loop's final iteration record,
-whose `## Terminal state` names each spec question of the stop (`#<n>:
-<file>:<line> <title>`, or `<file>:<line> <title> (not filed)`), tying each
-ruling to the question it answers. Re-post the amendment before step 1, so
-step 3 reads the amended entry. A ruling that reverses no
-entry amends and re-posts nothing. A failed fetch or post stops the loop with
-its `orch:` reason before `review begin`, as a failed reply fetch does.
-
-Then carry on with the steps below, whose step 5 sizes the budget from the
-plan or from what the previous loop left instead of asking.
+**In an autopilot flow** (`bash "$ORCH" autopilot active` exits 0), read
+`autopilot.md` in this skill's directory for reply handling, `Rejected
+alternatives` amendment, and autopilot budget sizing before steps 1-4 and
+6-7 below.
 
 1. Find the handoff: `bash "$ORCH" handoff path review`. It is always
    `03-implement.md`, on every loop of the flow. Read it one section at a
@@ -151,42 +120,8 @@ plan or from what the previous loop left instead of asking.
    finding in the last of them still stands: it goes into this loop's first
    triage. A record with no `## Evidence` section is read per **Evidence**
    in `agents/orch-fixer.md` (under the plugin root).
-5. **In an autopilot flow** (`bash "$ORCH" autopilot active` exits 0) the
-   budget is never asked. On a first loop
-   (`iteration` is 0) `autopilot run` has already recorded the plan's budget:
-   read it with `bash "$ORCH" state get budget`, set nothing, ask nothing. On
-   a re-entry (`iteration` not 0, after any bounded stop) pick the number of
-   further iterations `n` yourself, by the **re-entry sizing rule**: judge it
-   from what the previous loop's records (step 4) left - any open blocking
-   still standing, and how much its final iterations still found - never from
-   the change's size.
-   - 2: a single stuck blocker (2, not 1: only a clean final iteration can
-     go Ready).
-   - 3: steady remaining churn.
-   - 5: the final iterations were still finding new blocking findings.
-
-   Then `budget` is `iteration + n`, bounded thus:
-   - Floor: `n` is at least 2 when anything must be fixed - an open blocking
-     finding carried in (a failing `## CI` among them), or a reply or ruling
-     that changes behaviour - because only a clean final iteration can go
-     Ready; otherwise at least 1.
-   - Ceiling: `n` is never more than the plan's budget (`autopilot budget`),
-     except that the floor wins when the two conflict (a plan budget of 1 with
-     something to fix runs 2), because a budget that cannot end clean only
-     buys another stop.
-   - Override: a budget the human's reply plainly names ("run 2 more")
-     replaces your pick, floored at 1; the ceiling does not apply to it.
-
-   Record the choice: the loop's first iteration record carries one header
-   line, `Re-entry budget: <n> - <one-clause reason>` (or `- from the reply`),
-   after `Spec issue:`. When that iteration starts a fixer, pass the line in
-   its prompt as `Re-entry budget:` and the fixer copies it; when the
-   iteration is clean, write it in the record you write yourself. First loops
-   and interactive re-entries carry no such line. It is for a human reading
-   the record: nothing parses it.
-
-   Then, on a re-entry, `bash "$ORCH" state set budget <that number>`. Go to
-   step 6.
+5. **In an autopilot flow**, read **Autopilot budget** in `autopilot.md` in
+   this skill's directory, set `budget` on a re-entry, and go to step 6.
 
 5i. **Interactive only.** Never reached in an autopilot flow. Ask the budget.
    **The question blocks** - ask it as a question
@@ -211,8 +146,11 @@ plan or from what the previous loop left instead of asking.
      - 8: large - many modules, 4+ tickets, or the loop or state machinery
        itself.
    - Re-entry: "How many more?" Options 2, 3 and 5, plus Other for any
-     integer ≥ 1 (so 1 stays reachable). Suggest one by step 5's re-entry
-     sizing rule.
+     integer ≥ 1 (so 1 stays reachable). Suggest one by the **re-entry sizing
+     rule** (judge from what step 4's records left, never change size):
+     2 for a single stuck blocker (only a clean final iteration can go
+     Ready), 3 for steady remaining churn, 5 when the final iterations
+     were still finding new blocking findings.
 
      The new loop continues the iteration numbering, so set `budget` to
      `iteration + n`.
@@ -246,8 +184,8 @@ plan or from what the previous loop left instead of asking.
 2. **Base sync.** Bring the PR's branch up to date with its base before
    anyone looks at it, so the final clean iteration reviewed the code that
    will merge. Follow **A driver's base sync** in `agents/orch-resolver.md`
-   under the plugin root (found as step 5 says), with the spec issue as the
-   resolver's issue. Then read
+   under the plugin root (two directories above `ORCH`), with the spec issue as
+   the resolver's issue. Then read
    this iteration's **base SHA**: `bash "$ORCH" state get base_sha`, after the
    sync, for this iteration's reviewers and fixer.
    Keep the sync's **Merge resolutions**, per **Merge resolutions** in the
@@ -301,116 +239,24 @@ plan or from what the previous loop left instead of asking.
    Every iteration's triage also looks at CI once, without waiting: run
    `bash "$ORCH" review ci --no-wait` (one pass of the probe, never a wait,
    writing no state, wait file or guard). Only `failing` matters: read
-   `bash "$ORCH" review ci-log <pr>` and judge the failure by the rule
-   **Termination** applies in an
-   autopilot flow (**CI**), here in every flow. A failure the change can fix is
-   a blocking finding of this iteration, marked CI-found in the fixable list
-   with the log excerpt. A failure that looks flaky rather than caused by the
-   change, or that needs a decision by that rule, raises nothing and is left to
-   **Termination**, which alone may spend the flake rerun. On a re-entry's
-   first iteration, a failure the previous record's `## CI` section brought in
-   and the look shows again is one finding, not two. `green`, `none`, `pending`
-   and `unreachable` raise nothing, and an iteration whose look printed
-   `pending` can still be clean. **Termination** is unchanged. Apply the two
-   demotions under **Authority** first, then the **Severity** rubric, then
-   give each finding one disposition:
-   - **Fix** - every blocking finding, every major that needs no decision,
-     and every mechanical nit, except where a rule below keeps it out.
-   - **File** - every other major and nit, with the rule that kept it out:
-     - **Spec question.** A major whose fix needs a decision about *what the
-       change does* - its behaviour - that the spec, plan and deviations
-       leave unsettled: silent, ambiguous, or self-contradictory on it. It is
-       filed with the rule `spec question`, and holds the PR out of **Ready**
-       (see **Termination**). A finding that the change contradicts what the
-       spec clearly asks for is blocking, not a spec question; a decision
-       about structure only - which of two refactorings, which name - is an
-       ordinary major that needs a decision, filed without blocking. Only a
-       major can be one: a nit questioning behaviour was mis-ranked, and is a
-       major. Classify by the finding's content, never by when or where it
-       was found: one in the final iteration or on loop-authored lines still
-       takes the rule `spec question`, and still blocks.
-     - **Loop-authored lines.** A major or nit on lines this loop's own fix
-       commits wrote is filed, never fixed - fixes drawing findings drawing
-       fixes is what never converges. Tell them apart with `git blame` on the
-       flagged lines against the fix SHAs in *this* loop's iteration records -
-       those numbered above the **loop boundary**, the `iteration` read in
-       **Before the first iteration**, step 4; a previous loop's fixes are
-       not loop-authored. A
-       blocking finding there is still fixed.
-     - **The final iteration** - the one whose number equals `budget` - fixes
-       only what is blocking and files its majors and nits, since nothing
-       reviews what it writes.
-   - **Demoted**, with its authority - see **Authority**.
-   - **Met again** - a finding a previous loop's **Filed** list already
-     carries - the same file and line making the same claim, as the
-     closer's deduplication matches, never the title alone - is
-     neither fixed nor filed again; it keeps its issue number. This is the one
-     owner of the already-filed rule: the closer files whatever this loop's
-     records leave waiting and only reports what triage marked met again. A
-     **Filed** entry with no file and line predates that format; match it on
-     its title against the finding's claim.
+   `bash "$ORCH" review ci-log <pr>` and judge the failure by **CI failure
+   judgement** in `termination.md`, here in every flow. A failure the change
+   can fix is a blocking finding of this iteration, marked CI-found in the
+   fixable list with the log excerpt. A failure that looks flaky rather than
+   caused by the change, or that needs a decision by that rule, raises nothing
+   and is left to **Termination**, which alone may spend the flake rerun. On a
+   re-entry's first iteration, a failure the previous record's `## CI` section
+   brought in and the look shows again is one finding, not two. `green`, `none`,
+   `pending` and `unreachable` raise nothing, and an iteration whose look
+   printed `pending` can still be clean. **Termination** is unchanged.
 
-   A **pattern finding** - one whose report bullet carries a `Sites:` list,
-   every site with the first included - is one finding, triaged once, never
-   one per site. **Loop-authored lines**, **the final iteration** and
-   **Met again** judge it by its first site, its leading `file:line`, the
-   finding's location for every consumer; the fixer applies loop-authored
-   lines and the final iteration to each of its other sites, and defers
-   those they keep out.
-
-   A reviewer holds back what its known items already carry, so most of
-   what earlier iterations dealt with never reaches you; these filters stay
-   the backstop for what it lets through. A finding marked `` re-raised
-   (<source>): <what changed> `` is a known item whose location or cause
-   changed: triage it as any other finding. An unmarked finding that matches
-   a known item is triaged as before - demoted, or met again. The Spec
-   report's `## Set aside` lines are not findings: each becomes a recorded
-   note under **Covered deviations** (see **Authority**), not fixed, not
-   filed, and given no disposition.
-
-   Done when every finding in both reports has exactly one disposition.
+   Read `triage.md` in this skill's directory and apply **Authority**,
+   **Severity**, and **Dispositions and triage rules** until every finding
+   in both reports has exactly one disposition.
 5. Nothing to fix means no fixer - a **clean iteration**. An iteration
    that starts a fixer is never clean, even if the fixer fixes nothing.
-   Write the record to `bash "$ORCH" review path` yourself, in the shape the
-   fixer's brief gives, reading just that section - the brief's last, whose
-   template holds `##` headings of its own, so read to the end of the file:
-
-   ```
-   sed -n '/^## The record$/,$p' "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"
-   ```
-
-   If `CLAUDE_PLUGIN_ROOT` is unset, the plugin root is found as for `ORCH`:
-   two directories above the `orch.sh` that `ls` printed, else two directories
-   above this skill's own directory.
-
-   `Verification` reads `not run - nothing changed`, **Fixed this
-   iteration**, **Evidence** and **Open blocking** read `None`, and **Merge
-   resolutions** holds step 2's. **Waiting to be filed** lists each major or nit
-   left unfixed in the template's location-bearing bullet,
-   ``- <Axis>/<severity>: `<file>:<line>` <claim> - <rule>``, a pattern
-   finding's deferred sites in one such bullet led by the first, with
-   ``Sites: `<file>:<line>`, `<file>:<line>`.`` after the claim (none for
-   a single deferred site), with `-` in
-   place of `<file>:<line>` when the finding gave `-`, or reads `None`.
-   **PR body** depends on that base sync:
-   - **Merge resolutions** is not `None` - step 2 resolved a conflict, so
-     the diff from the base SHA changed while the PR was open: before
-     writing the record, run **Checking the PR body** yourself, against
-     this iteration's base SHA, reading just that section:
-
-     ```
-     sed -n '/^## Checking the PR body$/,/^## /p' "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"
-     ```
-
-     (its last line is the next section's heading). **PR body** holds the
-     check's outcome value, a `Not updated - <reason>` with its unlanded
-     corrections included. A `Not updated` is never a finding and does not
-     hold the PR out of **Ready**, exactly as a fixer's does not: the record
-     shows it.
-   - **Merge resolutions** is `None`: **PR body** reads `Not checked - no
-     commit`.
-
-   Then go to step 1.
+   Write the record to `bash "$ORCH" review path` yourself per
+   **Clean-iteration record** in `triage.md`, then go to step 1.
 6. Otherwise start the **fixer** - see **The fixer** - and wait for it. Of the
    five or so lines it returns, keep two things for the rest of the loop:
    its commit SHA, for later iterations' loop-authored-lines check, and any
@@ -509,29 +355,6 @@ entry carries its site list after its `file:line`, as `` Sites: `<file>:<line>`,
 `<file>:<line>` ``, every site exactly as the report wrote it, so triage never
 drops a site; a finding with one site has no `sites` part.
 
-## The closer
-
-**`orch-closer`**, under the same `agents/`, started fresh (see **Starting an
-agent**) once per loop, at **Termination**, after the terminal state is
-decided. It files every unfixed major and nit across this loop's records -
-those numbered above the **loop boundary**, less any a later iteration of
-this loop fixed - through `orch.sh review file`, posts the loop's one PR
-comment, writes the **Filed** list into the final record, and returns the
-issue numbers; its brief carries the Filing and PR-comment rules. Its prompt
-carries:
-
-```
-PR: #<pr>
-Records directory: .orchestrator/review/
-Final record: <bash "$ORCH" review path>
-Loop boundary: <the iteration read in Before the first iteration, step 4>
-CI result: <the final record's ## CI section>
-Host fallbacks: <every fallback the loop took, per docs/host-capabilities.md, or None (<host>).>
-Terminal state: <ready, or stop and its reason; spec questions as stop - spec question: <file>:<line> <title>, one per question>
-What happens next: <the PR marked ready and the flow done, or the flow left at review for a human to re-enter>
-orch.sh: <the path ORCH holds>
-```
-
 ## Starting an agent
 
 The reviewers, the fixer, and the closer are all started the same way: as a
@@ -543,227 +366,11 @@ first iteration** step 6, per **Agent settings** in
 
 **Host fallback.** A host that cannot start one of them natively takes
 `docs/host-capabilities.md`'s **Start a fresh subagent** fallback, with the
-prompt given for that agent here. The review phase writes no handoff, so
-record the fallback in the iteration's record and pass it to the closer for
-the PR comment.
-
-## Severity
-
-The reviewers report findings unranked, one report per axis, and never rank
-across the two. The ranking is yours, and it decides which findings the loop
-may fix without asking anyone:
-
-- **blocking** - the change is wrong: incorrect behaviour, a spec requirement
-  missing or misimplemented, a security problem, a broken or missing test, or a
-  failing verification command. Always handed to the fixer, in every
-  iteration; one the fixer could not fix stays **open blocking**, is never
-  filed, and holds the loop out of **Ready**.
-- **major** - the change works but carries real cost: a documented standard
-  breached, a smell with teeth, scope nobody asked for, a doc the change left
-  disagreeing with the code. Fixed, unless the fix
-  needs a choice between alternatives the plan, spec, and deviations did not
-  settle. Those are filed, the options in the body. A fix that changes
-  behaviour the spec settles makes the finding blocking; one whose behaviour
-  the spec leaves unsettled makes it a **spec question** (step 4 of **The
-  iteration**). A PR is marked ready with filed majors open against it - the
-  issue carries the reasoning, and triage decides against the whole codebase
-  whether it is worth fixing at all - unless one is a spec question this loop
-  filed: that holds the PR out of **Ready** until a human rules on it. A
-  finding that the change contradicts an ADR is one: it takes the `spec
-  question` rule, and the ADR is never edited. See
-  `docs/adr/0042-a-spec-question-the-review-loop-files-holds-the-pr-in-draft.md`.
-- **nit** - taste and judgement. Fixed only when **mechanical**: exactly one
-  correct fix, confined to the lines it names, no behaviour change, no wording
-  or taste to choose - a typo, an unused import, a comment naming the wrong
-  function, a broken link. Rewording prose is never mechanical, however small.
-  Filed otherwise.
-
-A major or nit on **loop-authored lines** or found in
-the **final iteration** is filed, never fixed - see step 4 of **The
-iteration** - though a spec question found there still holds the PR out of
-**Ready**.
-
-Major and nit are triage priorities on a filed finding, which is why they live
-in the issue's label rather than its title: the label can change.
-
-## Authority: what the loop refuses to act on
-
-Applied before the rubric. Both would overturn a decision a human already made
-with more context than you have:
-
-- **Covered deviations.** A Spec-axis finding covered by `03-implement.md`'s
-  **Deviations** section becomes a recorded note: not fixed, not filed. Each
-  line under the Spec report's `## Set aside` heading - a requirement a
-  listed deviation sets aside - becomes one such note too, so the PR comment
-  still repeats every covered deviation. See
-  `docs/adr/0002-recorded-deviations-outrank-the-spec-axis.md`. Anything the
-  section does *not* cover gets the normal rubric, so scope creep is still
-  caught.
-- **Rejected alternatives.** A finding proposing something `01-plan.md`'s
-  **Rejected alternatives** ruled out becomes a recorded note with the reason it
-  lost: not fixed, not filed. Demote on the reviewers' **reports**, and leave
-  their briefs alone: filtering the reports also catches a rejected design
-  arrived at by a different route.
-
-Demoted findings go in the record and the PR comment, and are never filed: an
-issue whose only correct triage is "close" is noise, but a deliberate omission
-nobody merging can see is indistinguishable from a defect.
-
-## CI
-
-Waited on **once per loop**, at **Termination**, and never inside an
-iteration: that would block a single session for most of an hour, and the fix
-commits are pushed as they land anyway. Each iteration's triage only looks at
-it, once, with `review ci --no-wait`, which never waits and writes no state,
-wait file or guard, so
-the flake rerun and the stored wait total are as they were (see **The
-iteration**, step 4).
-
-`review ci` is a **re-callable command**. Run `bash "$ORCH" review ci` in the
-foreground and wait for it (host capability *Run a long command*), and run the
-same command again each time it exits 75, which means still running, never a
-word below; the fifteen-minute total is kept across calls. Never background it
-and sleep, poll or kill it.
-
-`bash "$ORCH" review ci` polls the PR's checks and prints one of four words,
-exiting non-zero on the last two:
-
-- **green** - carry on.
-- **none** - the repo has no checks. Carry on: requiring CI in a repo that has
-  none would make this plugin unusable in its own repo. It arrives without
-  waiting the grace when the repo shows no evidence of CI - no workflow files
-  in the head, no required checks on the base branch, and no check or status
-  on an earlier PR commit or the base tip - and its detail line says which.
-- **failing** - a required check failed, and the detail lines name which.
-  Required means required by the branch protection of the PR's base branch. If
-  it looks flaky rather than caused by the change, the loop has **one** flake
-  rerun: `bash "$ORCH" state get flake_rerun_used` reads `true` once it is spent
-  and `false` while it is not. Spend it with `bash "$ORCH" review rerun <pr>`,
-  which reruns the failed jobs of every GitHub Actions run behind the failing
-  checks `review ci` counted (the required ones, else all), once each:
-
-  - **exit 0** - every rerun started. Only this spends the flake rerun.
-  - **exit 1** - a failing check is not an Actions run, so no rerun could
-    make CI green and none was started: a **bounded
-    stop** on the spot, spending nothing.
-  - **exit 2** - anything else (GitHub unreadable, the rerun refused): a
-    **bounded stop**.
-
-  On exit 0, record `bash "$ORCH" state set flake_rerun_used true` and ask
-  `review ci` again, run the same way: re-called while it exits 75 (host
-  capability *Run a long command*). A
-  second failure is a **bounded stop**. That second ask
-  restarts the fifteen-minute wait rather than inheriting what is left of the
-  first, because a rerun restarts the checks - so this one path, once per loop,
-  can wait longer than the cap. A second ask that times out is **unreachable**
-  like the first.
-- **failing**, at **Termination** in an autopilot flow: judge it before it
-  is called a reason. Read `bash "$ORCH" review ci-log <pr>`. The failure needs
-  a decision, a human reason, when any of these holds: it would fail on the
-  base tip too (judged from the log and the diff: it lies in code or config the
-  change does not touch); its cause is infrastructure (secrets, permissions,
-  runners, quota); a failing check is not an Actions run (the output says so);
-  the fix needs a choice the spec leaves open; or you cannot tell which case it
-  is, a job whose log could not be read among them. Otherwise it is a failure
-  the change can fix, an automatic reason.
-- **unreachable** - GitHub would not answer, or the checks were still pending at
-  the cap. A **bounded stop**: marking a PR ready over a result nothing ever
-  produced claims a verification that never happened.
-
-A `review ci` the host stops at its timeout is run again, as one that exited
-75 is: the total is kept.
+prompt given for that agent (here, or in `termination.md` for the closer). The
+review phase writes no handoff, so record the fallback in the iteration's
+record and pass it to the closer for the PR comment.
 
 ## Termination
 
-Reached when `review begin` refuses, from a failed base sync (step 2 of
-**The iteration**), or from known items that could not be built (step 3).
-The same close-out runs whichever terminal state follows, in this order:
-
-1. **CI.** Wait on it, spending the flake rerun if it applies - see **CI**.
-   Append a `## CI` section to the final iteration's record (`bash "$ORCH"
-   review path` still names it, because the refusal spent nothing), in the
-   shape `agents/orch-fixer.md`'s **The record** shows: first line the word
-   `review ci` printed, then its detail lines, then a line saying so if the
-   flake rerun was spent.
-2. **Decide the terminal state** - **Ready** or **Bounded stop**, below.
-3. **Start the closer** with that decision - see **The closer** - and wait
-   for its issue numbers. A stop for spec questions has no issue numbers
-   yet: its `Terminal state:` input names each question as `stop - spec
-   question: <file>:<line> <title>`, one per question. The closer's return
-   carries a `Spec questions:` line naming each with the number it got.
-4. **Write `## Terminal state`** into the final iteration's record: first
-   line `ready`, or `stop` with its reason either on the same line after a
-   separator (`-`, `–`, `—`, `:`) or on the lines below. Blank lines under
-   the heading are skipped. Any other first line reads as `malformed`, and
-   redo refuses it. A stop for spec questions names each from the closer's
-   `Spec questions:` line, with its number:
-   `stop - spec question #<n>: <file>:<line> <title>`; one the closer could
-   not file reads `stop - spec question: <file>:<line> <title> (not filed)`,
-   and still blocks.
-5. **Run the terminal action.**
-
-**Ready** - all five hold: the final iteration was clean, its record lists no
-**open blocking** finding and no **missing look**, CI said `green` or
-`none`, and no record of this loop - numbered above the **loop boundary** -
-lists a spec question waiting to be filed. A spec question a previous loop
-filed and triage marks **met again** does not count: the human re-entering
-review after that stop is the ruling, so only spec questions this loop newly
-files block. The terminal action is `bash "$ORCH" review ready`, which marks the
-PR ready and records the flow `done` as one operation. No question is asked
-first: a loop that ends well ends without parking on a prompt.
-
-**Bounded stop** - anything else, and the recorded reason says which, naming
-the finding where there is one. The final iteration was not clean: it started
-a fixer, whether for a blocking finding this review made or for open blocking
-carried in. Nothing has reviewed what it wrote, and marking a PR ready over
-that claims a verification that never happened. An open blocking finding or a
-missing look remains in the final record. Or this loop filed a spec question, a
-behaviour decision the spec left open: the reason names each, so a human
-rules on it before the PR goes ready. Or a base sync that failed, the reason
-naming the unresolved merge or the refusal. Or known items that could not be
-built, the reason reading `stop - known items could not be built.` Or CI:
-`failing` with the flake rerun spent or the failure not looking flaky, or
-`unreachable`. The terminal action is to stop: **leave `phase` at `review` and
-the PR in draft**, and tell the human the reason and the closer's issue numbers.
-`done` means "this succeeded", never "this stopped". A human may re-enter the
-review phase from here; that is a fresh loop with its own budget, and **Before
-the first iteration** describes it.
-
-**In an autopilot flow** the terminal action differs. Ready ends with
-`bash "$ORCH" review ready` as above, which also moves the label to `orch:done`
-and releases the claim; nothing more runs. A bounded stop - the PR staying in
-draft - never ends by telling the human in the session. Write the stop reason,
-the closer's filed issue numbers (and, for a spec question, each question with
-its recommendation, numbered, as the interview formats them) to
-`.orchestrator/review/question.md` in the side
-checkout - the save point, which a fresh session re-posts when the human removes
-`needs-human` without replying. Then classify each reason of the stop:
-
-- **Automatic** - the final iteration was not clean, an open blocking finding
-  remains, a look is missing, or CI is `failing` for a cause the change can fix
-  (the **CI** judgement).
-- **Human** - a spec question, CI `unreachable`, a failed base sync, known
-  items that could not be built, or a CI failure that needs a decision (the
-  **CI** judgement).
-
-A stop with any human reason runs
-`bash "$ORCH" autopilot ask review .orchestrator/review/question.md`, which
-posts it as a question comment, labels the issue `needs-human` and releases the
-claim; then stop. Removing `needs-human` starts another loop, with a budget the
-driver sizes from what this one left, which reads the reply first, per the
-top of **Before the first iteration**.
-
-A stop whose every reason is automatic is an **automatic re-entry**: run
-`bash "$ORCH" autopilot reenter review .orchestrator/review/question.md` with
-the same file, holding the stop reason and the closer's filed issue numbers. It
-posts a re-entry comment with no @mention, adds no label, leaves the phase at
-`orch:review` and releases the claim; then stop. The watcher starts another
-loop, which sizes its budget by step 5's re-entry sizing rule. The third bounded
-stop in a row asks the human instead; `autopilot reenter` takes that path
-itself.
-
-`## Terminal state` is written exactly once, here, only once a terminal state
-has actually been decided - never guessed or backfilled. It is what
-`bash "$ORCH" redo review` and `doctor --flow` both read, through the same
-`review_terminal_state` classifier, to tell a loop that genuinely finished
-from one whose driving session simply died mid-budget.
+Read `termination.md` in this skill's directory for **CI**, **Termination**,
+and **The closer** (and `autopilot.md` for autopilot terminal actions).

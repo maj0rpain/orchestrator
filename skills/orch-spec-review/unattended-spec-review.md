@@ -27,8 +27,8 @@ differences only:
   on to `apply` in the same turn, the batch applied at once as **Apply as
   recommended** - every proposed edit applied, every **recommend decline**
   item skipped, and every decision item takes its recommended option.
-- **Applying**: the standalone call in **Applying the answer**, with the
-  answer `recommended` and `--unattended` added:
+- **Applying**: the standalone call in **Applying the answer** (`applying.md`),
+  with the answer `recommended` and `--unattended` added:
 
   ```
   bash "$ORCH" spec-review apply <dir> recommended --round 1/1 --issue <issue> --unattended

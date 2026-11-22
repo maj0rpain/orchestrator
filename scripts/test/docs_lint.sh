@@ -33,10 +33,11 @@
 #     CONTEXT-MAP.md
 #   scan_skill_names  each skill directory has the orch- prefix and its SKILL.md
 #     declares its name
-#   scan_orch_resolution  each SKILL.md and command resolves orch.sh and the
-#     plugin root the one documented way; a SKILL.md whose frontmatter
-#     description ends in "Claude Code only." takes the Claude-Code-only form
-#     (the ORCH= line, no Junie lookup) instead
+#   scan_orch_resolution  each SKILL.md and command resolves orch.sh the one
+#     documented way (sibling reference files spared the ORCH= block), and
+#     every skill file and command obeys the CLAUDE_PLUGIN_ROOT and plugin-root
+#     fallback rules; a skill whose frontmatter description ends in
+#     "Claude Code only." takes the Claude-Code-only form instead
 #   scan_orch_bash  each skill file, command and listed doc runs orch.sh through
 #     bash
 #   scan_plugin_root_placeholder  no skill file or command carries a
@@ -60,8 +61,9 @@
 #     section of one, that exists
 #   scan_dispatch_copies  no skill file restates the implementer's report lines
 #     or the general-purpose-agent tier
-#   scan_agent_settings  each file that starts a plugin agent points at Agent
-#     settings and names agent get <role> for each role it starts
+#   scan_agent_settings  each file that starts a plugin agent (sibling skill
+#     reference files paired with their SKILL.md) points at Agent settings and
+#     names agent get <role> for each role it starts
 #   scan_agent_settings_section  docs/host-capabilities.md has Agent settings
 #     before Fallbacks, linked from its Start a fresh subagent row
 #   scan_lens_briefs  each lens agent owns a non-empty brief, Write and a
@@ -149,6 +151,7 @@
 #     section and starts its own reviewers
 #   scan_skill_description_length  no skill's frontmatter description is over
 #     1024 characters
+#   scan_skill_body_size  no skill's SKILL.md body is over 24000 bytes
 #   scan_review_pass_callers  each caller of the review pass names
 #     orch-review-pass and the section it follows
 #   scan_review_loop_sheds_pass  orch-review keeps no copy of the review pass
@@ -907,21 +910,22 @@ claude_code_only_skill() {
 
 # --- orch.sh resolution (#123) ------------------------------------------------
 # Only Claude Code expands CLAUDE_PLUGIN_ROOT, and only in hooks/hooks.json on
-# other hosts, so skill and command text must pair it with the
-# relative fallback. The documented form (CONTRIBUTING.md, "Resolving
-# orch.sh") is the ORCH= line, the Junie step, and the fallback sentence, or,
-# for a skill marked "Claude Code only.", the ORCH= line and one stop. A
-# cross-host file (a skill or command not marked "Claude Code only.") that uses
-# orch.sh is held to every step: the ORCH= line, as a line of its own, and the
-# Junie step, the one-install step, the several-installs stop and the relative
-# fallback, these four in the documented order. In any cross-host file
-# CLAUDE_PLUGIN_ROOT is allowed only on the ORCH= line, in the Junie
-# sentence, and in the plugin-root fallback sentence and its plugin-root
-# paths; a file that names the plugin root carries the Junie step in that
-# sentence. A marked skill that uses orch.sh or `$ORCH` is held to the ORCH=
-# line; any marked skill has CLAUDE_PLUGIN_ROOT nowhere else and no Junie
-# lookup. Any other mention of the variable, any missing step, or a file that
-# runs orch.sh without the ORCH= line, is a regression. hooks/hooks.json is
+# other hosts, so skill and command text must pair it with the relative
+# fallback. The documented form (CONTRIBUTING.md, "Resolving orch.sh") is the
+# ORCH= line, the Junie step, and the fallback sentence, or, for a skill marked
+# "Claude Code only.", the ORCH= line and one stop. A cross-host command that
+# uses orch.sh, or SKILL.md whose skill uses it in any of its files, not marked
+# "Claude Code only.", is held to every step: the ORCH= line, as a line of its
+# own, and the Junie step, the one-install step, the several-installs stop and
+# the relative fallback, these four in the documented order; sibling skill
+# reference files are spared that block. In any cross-host skill file or command
+# CLAUDE_PLUGIN_ROOT is allowed only on the ORCH= line, in the Junie sentence,
+# and in the plugin-root fallback sentence and its plugin-root paths; a file
+# that names the plugin root carries the Junie step in that sentence. A marked
+# skill's SKILL.md, when the skill uses orch.sh or `$ORCH`, is held to the ORCH=
+# line; any file of a marked skill has CLAUDE_PLUGIN_ROOT nowhere else and no
+# Junie lookup. Any other mention of the variable, any missing step, or a file
+# that runs orch.sh without the ORCH= line, is a regression. hooks/hooks.json is
 # deliberately out of scope: both hosts expand it there.
 echo
 echo "orch.sh resolution (#123)"
@@ -945,10 +949,16 @@ root_junie='two directories above the `orch.sh` that `ls` printed'
 # this much of it too (#416).
 orch_lookup="$orch_junie (the Junie CLI install). $orch_junie_one $orch_junie_many"
 orch_steps="$orch_lookup $orch_fallback"
+# skill_uses_orch <file>: succeeds when the file is a SKILL.md and any .md file
+# in its skill directory, itself or a sibling reference file, uses orch.sh or
+# `$ORCH`.
+skill_uses_orch() {
+  [[ "$1" == */SKILL.md ]] && grep -qE 'orch\.sh|\$ORCH' "${1%/*}"/*.md
+}
 # cc_orch_resolution <plugin root> <file> <flat text>: the Claude-Code-only
 # form's checks (#2718), one line per offence. The form names CLAUDE_PLUGIN_ROOT
-# on its ORCH= line alone, carries no Junie lookup, and needs the ORCH= line
-# whenever it uses orch.sh.
+# on its ORCH= line alone, carries no Junie lookup, and its SKILL.md needs the
+# ORCH= line whenever the skill uses orch.sh.
 cc_orch_resolution() {
   local r="$1" f="$2" flat="$3" rest
   rest="${flat//"$orch_line"/}"
@@ -956,18 +966,25 @@ cc_orch_resolution() {
     echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line"
   [[ "$flat" != *"$orch_junie"* ]] ||
     echo "${f#"$r"/}: Claude Code only skill carries the Junie lookup"
-  if [[ "$flat" == *orch.sh* || "$flat" == *'$ORCH'* ]]; then
+  if skill_uses_orch "$f"; then
     grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
   fi
 }
 # scan_orch_resolution <plugin root>: print one line per offending file.
+# SKILL.md and commands/*.md must carry the full ORCH= resolution when using
+# orch.sh (for a skill, whenever SKILL.md or any sibling reference file uses
+# it); sibling skill reference files are spared that block, while every skill
+# file and command is held to the CLAUDE_PLUGIN_ROOT and plugin-root fallback
+# rules.
 scan_orch_resolution() {
   local r="$1" f flat rest root_sentence
-  for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md; do
+  local -a files
+  mapfile -t files < <(skill_md_files "$r")
+  for f in "${files[@]}" "$r"/commands/*.md; do
     [ -f "$f" ] || continue
     # Checked on the flat text: a sentence wrapped at 80 columns still counts.
     flat="$(flat_text "$f")"
-    if claude_code_only_skill "$f"; then
+    if [[ "$f" == "$r"/skills/*/*.md ]] && claude_code_only_skill "${f%/*}/SKILL.md"; then
       cc_orch_resolution "$r" "$f" "$flat"
       continue
     fi
@@ -988,7 +1005,8 @@ scan_orch_resolution() {
       [[ "$root_sentence" == *"$root_junie"* ]] ||
         echo "${f#"$r"/}: names the plugin root without the Junie step"
     fi
-    if grep -qE 'orch\.sh|\$ORCH' "$f"; then
+    if skill_uses_orch "$f" ||
+      { [[ "$f" == "$r"/commands/*.md ]] && grep -qE 'orch\.sh|\$ORCH' "$f"; }; then
       grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
       [[ "$flat" == *"$orch_junie"* ]] || echo "${f#"$r"/}: uses orch.sh without the Junie step"
       [[ "$flat" == *"$orch_junie_one"* ]] || echo "${f#"$r"/}: uses orch.sh without the one-install step"
@@ -1057,6 +1075,18 @@ flags "the scan flags a plugin-root fallback with no Junie step" \
 } >"$fixture/commands/orch.md"
 flags "the scan flags a Junie step outside the plugin-root sentence" \
   "$(scan_orch_resolution "$fixture")" "commands/orch.md: names the plugin root without the Junie step"
+{ plugin_root_fence
+  printf '%s\n' "$root_fallback two directories above this skill's own directory."
+} >"$fixture2/skills/orch-x/root-ref.md"
+flags "a reference file naming the plugin root without the Junie step is flagged" \
+  "$(scan_orch_resolution "$fixture2")" \
+  "skills/orch-x/root-ref.md: names the plugin root without the Junie step"
+mkdir -p "$fixture2/skills/orch-sib"
+printf '# Sib\n\nRead ref.md.\n' >"$fixture2/skills/orch-sib/SKILL.md"
+printf 'Run `bash "$ORCH" status`.\n' >"$fixture2/skills/orch-sib/ref.md"
+flags "a SKILL.md whose sibling reference file uses \$ORCH must still carry the ORCH= line" \
+  "$(scan_orch_resolution "$fixture2")" \
+  "skills/orch-sib/SKILL.md: uses orch.sh without the ORCH= line"
 { documented_orch_form
   plugin_root_fence
   printf '%s\n' "$root_fallback found as for \`ORCH\`:" \
@@ -1077,8 +1107,14 @@ cc_desc='Does a thing. Claude Code only.'
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-cc" "$fixture/commands"
 cc_skill "$cc_desc" '```' "$orch_line" '```' "$cc_stop" 'Run `bash "$ORCH" status`.'
-assert_empty "a marked skill with the ORCH= line and the one stop passes the resolution scan" \
+printf 'Run `bash "$ORCH" status`.\n' >"$fixture/skills/orch-cc/ref.md"
+assert_empty "a marked skill and its sibling reference file pass the resolution scan" \
   "$(scan_orch_resolution "$fixture")"
+printf '%s\n' "$orch_junie (the Junie CLI install)." >"$fixture/skills/orch-cc/ref.md"
+flags "a marked skill's sibling reference file carrying the Junie lookup is flagged" \
+  "$(scan_orch_resolution "$fixture")" \
+  "skills/orch-cc/ref.md: Claude Code only skill carries the Junie lookup"
+rm -f "$fixture/skills/orch-cc/ref.md"
 cc_skill "$cc_desc" "$orch_junie (the Junie CLI install)." 'Run `bash "$ORCH" status`.'
 assert_eq "a marked skill carrying the Junie lookup is flagged" "$(scan_orch_resolution "$fixture")" \
   "skills/orch-cc/SKILL.md: CLAUDE_PLUGIN_ROOT outside the ORCH= line
@@ -1618,15 +1654,19 @@ echo "start sites read the agent setting (#1359)"
 # Every start of one of the plugin's agents runs on its role's agent setting,
 # and the rule for that lives once, in docs/host-capabilities.md's **Agent
 # settings** section. So every file that starts a plugin agent points at that
-# section and names `agent get <role>` for each role it starts. A file starts
-# an agent when, read flattened, it starts one under the `orchestrator:`
-# plugin scope (the scope named, `subagent_type`, or `orchestrator:<agent>`) -
-# its roles then come from the orch- agent names it gives, never from an
-# agent's file path - or when it points
-# at a shared section that starts one: **Dispatching a subagent** starts the
-# implementer, **A driver's base sync** and **A driver's ticket resolution**
-# the resolver. A skill's scoped name, such as `orchestrator:orch-flow`, is
-# not a start, and a **Start a fresh subagent** pointer is not a read.
+# section and names `agent get <role>` for each role it starts; a sibling skill
+# reference file is paired with its own `SKILL.md` (the entrypoint always loaded
+# ahead of it, never unrelated sibling files), so a role started from a sibling
+# file can read its setting once in `SKILL.md` and still stay guarded. A file
+# starts an agent when, read flattened (with its `SKILL.md` for a sibling file),
+# it starts one under the `orchestrator:` plugin scope (the scope named,
+# `subagent_type`, or `orchestrator:<agent>`) - its roles then come from the
+# orch- agent names the file itself gives, never from an agent's file path - or
+# when the file points at a shared section that starts one: **Dispatching a
+# subagent** starts the implementer, **A driver's base sync** and **A driver's
+# ticket resolution** the resolver. A skill's scoped name, such as
+# `orchestrator:orch-flow`, is not a start, and a **Start a fresh subagent**
+# pointer is not a read.
 # agent_start_files <plugin root>: every skill file, agent file and docs/
 # file a start site can live in, one path per line.
 agent_start_files() {
@@ -1639,7 +1679,7 @@ agent_start_files() {
 # module, read from the real plugin root (a scanned fixture carries no agent
 # module) and sourced once.
 scan_agent_settings() {
-  local r="$1" f text name roles role pattern shape
+  local r="$1" f text ctx name roles role pattern shape
   local -a files
   # shellcheck source=/dev/null
   if ! source "$PLUGIN_ROOT/scripts/orch/agent.sh" 2>/dev/null || [ -z "${AGENT_NAME_SHAPES:-}" ]; then
@@ -1654,9 +1694,14 @@ scan_agent_settings() {
   mapfile -t files < <(agent_start_files "$r")
   for f in "${files[@]}"; do
     text="$(flat_text "$f")"
+    if [[ "$f" == "$r"/skills/*/*.md && "$f" != */SKILL.md && -f "${f%/*}/SKILL.md" ]]; then
+      ctx="$(awk '1' "${f%/*}/SKILL.md" "$f" | flat_text)"
+    else
+      ctx="$text"
+    fi
     roles=""
-    if grep -qE '`orchestrator:` plugin scope|subagent_type|orchestrator:<agent>' <<<"$text" ||
-      grep -qE "orchestrator:$pattern" <<<"$text"; then
+    if grep -qE '`orchestrator:` plugin scope|subagent_type|orchestrator:<agent>' <<<"$ctx" ||
+      grep -qE "orchestrator:$pattern" <<<"$ctx"; then
       # An agent's file path, such as agents/orch-fixer.md, names a file to
       # read, not an agent to start.
       while IFS= read -r name; do
@@ -1668,11 +1713,11 @@ scan_agent_settings() {
     grep -qF '**Dispatching a subagent**' <<<"$text" && roles+=" implementer"
     grep -qE "\*\*A driver's (base sync|ticket resolution)\*\*" <<<"$text" && roles+=" resolver"
     [ -n "$roles" ] || continue
-    if ! grep -qE '\*\*Agent settings\*\*|#agent-settings\)' <<<"$text"; then
+    if ! grep -qE '\*\*Agent settings\*\*|#agent-settings\)' <<<"$ctx"; then
       echo "${f#"$r"/}: starts a plugin agent but does not point at **Agent settings**"
     fi
     for role in $(tr ' ' '\n' <<<"$roles" | sort -u); do
-      grep -qF "agent get $role" <<<"$text" ||
+      grep -qF "agent get $role" <<<"$ctx" ||
         echo "${f#"$r"/}: starts an agent of the $role role but does not name agent get $role"
     done
   done
@@ -1728,6 +1773,29 @@ flags "a start of orch-code-auditor with no pointer is flagged" \
   "$out" "skills/a/SKILL.md: starts a plugin agent but does not point at **Agent settings**"
 flags "a start of orch-code-auditor is read under the auditor role" \
   "$out" "skills/a/SKILL.md: starts an agent of the auditor role but does not name agent get auditor"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/sib" "$fixture/skills/sib-ok" "$fixture/skills/sib-iso"
+printf 'Start agents with `subagent_type`. Read `agent get fixer` per **Agent settings**.\n' \
+  >"$fixture/skills/sib/SKILL.md"
+printf 'Start `orch-closer` at termination.\n' \
+  >"$fixture/skills/sib/termination.md"
+printf 'Start agents with `subagent_type`. Read `agent get closer` per **Agent settings**.\n' \
+  >"$fixture/skills/sib-ok/SKILL.md"
+printf 'Start `orch-closer` at termination.\n' \
+  >"$fixture/skills/sib-ok/termination.md"
+printf '# Iso\n\nRead the phase file.\n' >"$fixture/skills/sib-iso/SKILL.md"
+printf 'Follow **Dispatching a subagent**.\n' >"$fixture/skills/sib-iso/phase-implement.md"
+printf 'Read `agent get implementer` per **Agent settings**.\n' \
+  >"$fixture/skills/sib-iso/other.md"
+out="$(scan_agent_settings "$fixture")"
+flags "an agent started in a sibling reference file requires agent get in it or SKILL.md" \
+  "$out" \
+  "skills/sib/termination.md: starts an agent of the closer role but does not name agent get closer"
+spares "a sibling reference file can satisfy agent get from its own SKILL.md" \
+  "$out" '^skills/sib-ok/'
+flags "an unrelated sibling reference file cannot satisfy agent get for another sibling" \
+  "$out" \
+  "skills/sib-iso/phase-implement.md: starts an agent of the implementer role but does not name agent get implementer"
 # A start site generated from AGENT_NAME_SHAPES, one name per shape with each *
 # as x, so a role or shape added there is covered with no edit here.
 mapfile -t shapes_read < <(source "$PLUGIN_ROOT/scripts/orch/agent.sh" && agent_name_shapes)
@@ -1862,6 +1930,9 @@ agents/orch-fixer.md|## The record
 agents/orch-implementer.md|## Root-cause fixes
 agents/orch-reviewer-standards.md|## Root-cause check
 agents/orch-reviewer-standards.md|## Doc-agreement check
+skills/orch-flow/phase-spec.md|# Phase: spec
+skills/orch-flow/phase-spec.md|## In an autopilot flow
+skills/orch-flow/phase-implement.md|# Phase: implement
 skills/orch-handoff/SKILL.md|## In an autopilot flow
 skills/orch-handoff/SKILL.md|## Amending Rejected alternatives
 skills/orch-handoff/SKILL.md|## What belongs in one
@@ -1877,15 +1948,33 @@ skills/orch-quick-implement/SKILL.md|## 2. Run an unattended spec review
 skills/orch-quick-implement/SKILL.md|## 3. Publish the ticket breakdown
 skills/orch-quick-implement/SKILL.md|## 6. Review
 skills/orch-quick-implement/SKILL.md|## 7. Open the PR
+skills/orch-review/autopilot.md|# Autopilot review loop
+skills/orch-review/autopilot.md|## Before the first iteration
+skills/orch-review/autopilot.md|### Autopilot budget
+skills/orch-review/autopilot.md|## Termination
+skills/orch-review/termination.md|# CI, Termination, and the closer
+skills/orch-review/termination.md|## CI
+skills/orch-review/termination.md|### CI failure judgement
+skills/orch-review/termination.md|## Termination
+skills/orch-review/termination.md|## The closer
+skills/orch-review/triage.md|# Triage, severity, and clean-iteration records
+skills/orch-review/triage.md|## Dispositions and triage rules
+skills/orch-review/triage.md|## Clean-iteration record
+skills/orch-review/triage.md|## Severity
+skills/orch-review/triage.md|## Authority: what the loop refuses to act on
 skills/orch-review-pass/SKILL.md|## Review pass
 skills/orch-review-pass/SKILL.md|## Standalone review pass
 skills/orch-spec-review/SKILL.md|## Standalone spec review
 skills/orch-spec-review/SKILL.md|## Consolidation
 skills/orch-spec-review/SKILL.md|## Disposition
-skills/orch-spec-review/SKILL.md|## Applying the answer
-skills/orch-spec-review/SKILL.md|## The changelog
+skills/orch-spec-review/applying.md|# Batch view, answers, and applying
+skills/orch-spec-review/applying.md|## Batch view and interactive answers
+skills/orch-spec-review/applying.md|## Applying the answer
+skills/orch-spec-review/applying.md|## The changelog
+skills/orch-spec-review/batch-file.md|# The batch file
 skills/orch-spec-review/spec-phase.md|# Spec phase
 skills/orch-spec-review/spec-phase.md|## Inputs
+skills/orch-spec-review/standalone.md|# Standalone spec review
 skills/orch-spec-review/tickets-follow-the-spec.md|# Tickets follow the spec
 skills/orch-spec-review/unattended-spec-review.md|# Unattended spec review
 skills/orch-to-spec/SKILL.md|## Rewrite the issue
@@ -2519,7 +2608,7 @@ agents/orch-fixer.md
 agents/orch-resolver.md
 skills/orch-review-pass/SKILL.md
 docs/driver-loop.md
-skills/orch-review/SKILL.md
+skills/orch-review/termination.md
 skills/orch-audit-tests/SKILL.md
 skills/orch-spec-review/SKILL.md
 skills/orch-quick-implement/SKILL.md'
@@ -2873,12 +2962,12 @@ check "quick implementation's steps 1, 2 and 3 run the unattended modes" \
 # --- skill reference files (#1147, #1145) -------------------------------------
 echo
 echo "skill reference files (#1147, #1145)"
-# A skill's SKILL.md holds what every path needs; what only one path needs sits
-# in a reference file beside it, read only on that path. A reference file is a
-# .md file directly in skills/<name>/ other than SKILL.md, and its SKILL.md
-# names it, so no reference file is orphaned. The files are worked out from
-# each skill's directory, never listed here, so adding one needs no edit to
-# this linter.
+# A skill's SKILL.md is the entrypoint (capped at 24000 body bytes); path-only
+# or shared detail sections sit in reference files beside it, read on demand. A
+# reference file is a .md file directly in skills/<name>/ other than SKILL.md,
+# and its SKILL.md names it, so no reference file is orphaned. The files are
+# worked out from each skill's directory, never listed here, so adding one needs
+# no edit to this linter.
 # scan_skill_refs <plugin root>: one line per reference file its skill's
 # SKILL.md does not name.
 scan_skill_refs() {
@@ -2917,35 +3006,35 @@ check "every skill's SKILL.md names each of its reference files" \
 # wording (ADR-0027).
 # scan_spec_review_refs <plugin root>: one line per site that lost its name.
 scan_spec_review_refs() {
-  local r="$1" flow="skills/orch-flow/SKILL.md" step
-  step="$(md_section "$r/$flow" "### Phase: spec" 2>/dev/null \
+  local r="$1" flow="skills/orch-flow/phase-spec.md" step
+  step="$(md_section "$r/$flow" "# Phase: spec" 2>/dev/null \
     | awk '/^[0-9]+\. / { inb = ($0 ~ /^4\. /) } inb' | flat_text)"
   grep -qF 'spec-phase.md' <<<"$step" \
     || echo "$flow: spec phase step 4 does not name orch-spec-review's spec-phase.md"
-  scan_names_phrase "$r" 'skills/orch-spec-review/SKILL.md|## Applying the answer' 'spec-review apply'
+  scan_names_phrase "$r" 'skills/orch-spec-review/applying.md|## Applying the answer' 'spec-review apply'
   return 0
 }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-flow"
-printf '# F\n\n### Phase: spec\n\n4. Invoke `orch-spec-review`.\n5. Then read spec-phase.md.\n' \
-  >"$fixture/skills/orch-flow/SKILL.md"
+printf '# Phase: spec\n\n4. Invoke `orch-spec-review`.\n5. Then read spec-phase.md.\n' \
+  >"$fixture/skills/orch-flow/phase-spec.md"
 flags "a spec phase step 4 that does not name spec-phase.md is flagged" \
-  "$(scan_spec_review_refs "$fixture")" "skills/orch-flow/SKILL.md: spec phase step 4 does not name orch-spec-review's spec-phase.md"
-printf '# F\n\n### Phase: spec\n\n4. Invoke `orch-spec-review`, reading spec-phase.md.\n' \
-  >"$fixture/skills/orch-flow/SKILL.md"
+  "$(scan_spec_review_refs "$fixture")" "skills/orch-flow/phase-spec.md: spec phase step 4 does not name orch-spec-review's spec-phase.md"
+printf '# Phase: spec\n\n4. Invoke `orch-spec-review`, reading spec-phase.md.\n' \
+  >"$fixture/skills/orch-flow/phase-spec.md"
 mkdir -p "$fixture/skills/orch-spec-review"
 printf '# S\n\n## Applying the answer\n\nApply it.\n\n## The changelog\n\nRun `spec-review apply`.\n' \
-  >"$fixture/skills/orch-spec-review/SKILL.md"
+  >"$fixture/skills/orch-spec-review/applying.md"
 out="$(scan_spec_review_refs "$fixture")"
 flags "an Applying the answer section that does not name spec-review apply is flagged" \
-  "$out" "skills/orch-spec-review/SKILL.md: ## Applying the answer does not name spec-review apply"
-printf '# S\n\n## Other\n' >"$fixture/skills/orch-spec-review/SKILL.md"
+  "$out" "skills/orch-spec-review/applying.md: ## Applying the answer does not name spec-review apply"
+printf '# S\n\n## Other\n' >"$fixture/skills/orch-spec-review/applying.md"
 flags "a missing Applying the answer section is flagged" \
-  "$(scan_spec_review_refs "$fixture")" "skills/orch-spec-review/SKILL.md: no ## Applying the answer section"
-printf '# F\n\n### Phase: spec\n\n4. Ask the round count.\n\n   Then invoke `orch-spec-review`, reading its\n   spec-phase.md.\n5. Break it down.\n' \
-  >"$fixture/skills/orch-flow/SKILL.md"
+  "$(scan_spec_review_refs "$fixture")" "skills/orch-spec-review/applying.md: no ## Applying the answer section"
+printf '# Phase: spec\n\n4. Ask the round count.\n\n   Then invoke `orch-spec-review`, reading its\n   spec-phase.md.\n5. Break it down.\n' \
+  >"$fixture/skills/orch-flow/phase-spec.md"
 printf '# S\n\n## Applying the answer\n\nHand the reply to `orch.sh spec-review\napply` once.\n' \
-  >"$fixture/skills/orch-spec-review/SKILL.md"
+  >"$fixture/skills/orch-spec-review/applying.md"
 assert_empty "a spec review whose sites name their files and command, however worded, is not flagged" \
   "$(scan_spec_review_refs "$fixture")"
 check "the spec review's references name spec-phase.md and spec-review apply" \
@@ -3723,6 +3812,92 @@ spares "a 1024-character description holding an em dash is spared" "$out" 'skill
 spares "a description line in the body is not flagged" "$out" 'skills/body/'
 check "every skill description fits the Agent Skills 1024-character limit" \
   "$(scan_skill_description_length "$PLUGIN_ROOT")"
+
+# --- skill bodies fit Antigravity's 24 KB load cap (#4054) --------------------
+# scan_skill_body_size <plugin root>: one line per SKILL.md whose body (after
+# YAML frontmatter) is over 24000 bytes, Antigravity CLI's load cap. Sibling
+# reference files are loaded on demand and are not capped. Uses wc -c for exact
+# file byte sizes and one LC_ALL=C awk pass to subtract valid frontmatter bytes
+# (handling CRLF fences, missing trailing newlines, and treating unclosed
+# frontmatter as body bytes so a broken fence cannot bypass the cap).
+scan_skill_body_size() {
+  local r="$1"
+  local -a files=("$r"/skills/*/SKILL.md)
+  [ -f "${files[0]}" ] || return 0
+  LC_ALL=C awk -v r="$r/" '
+    function finish(path,    n) {
+      n = sizes[path] - (closed ? fm_bytes : 0)
+      if (n < 0) n = 0
+      if (n > 24000) {
+        if (substr(path, 1, rlen) == r) path = substr(path, rlen + 1)
+        print path ": body is " n " bytes, over 24000"
+      }
+    }
+    BEGIN { rlen = length(r); prev = "" }
+    NR == FNR {
+      if ($0 ~ /\/SKILL\.md$/) {
+        sz = $1 + 0
+        p = $0
+        sub(/^[[:space:]]*[0-9]+[[:space:]]+/, "", p)
+        sizes[p] = sz
+      }
+      next
+    }
+    FNR == 1 {
+      if (prev != "") finish(prev)
+      prev = FILENAME
+      fm = 0; closed = 0; fm_bytes = 0
+    }
+    {
+      line = $0
+      sub(/\r$/, "", line)
+      if (FNR == 1 && line == "---") { fm = 1; fm_bytes += length($0) + 1; next }
+      if (fm) {
+        fm_bytes += length($0) + 1
+        if (line == "---") { fm = 0; closed = 1 }
+      }
+    }
+    END { if (prev != "") finish(prev) }
+  ' <(wc -c "${files[@]}") "${files[@]}"
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/exact" "$fixture/skills/nonl" "$fixture/skills/over" \
+  "$fixture/skills/utf8" "$fixture/skills/fm" "$fixture/skills/crlf" \
+  "$fixture/skills/unclosed" "$fixture/skills/ref"
+b8000="$a1000$a1000$a1000$a1000$a1000$a1000$a1000$a1000"
+b24000="$b8000$b8000$b8000"
+printf -- '---\nname: exact\n---\n%s\n' "${b24000:0:23999}" \
+  >"$fixture/skills/exact/SKILL.md"
+printf -- '---\nname: nonl\n---\n%s' "$b24000" \
+  >"$fixture/skills/nonl/SKILL.md"
+printf -- '---\nname: over\n---\n%s\n' "$b24000" \
+  >"$fixture/skills/over/SKILL.md"
+# 23998 ASCII bytes + 3-byte em dash + newline = 24000 chars, 24002 bytes.
+printf -- '---\nname: utf8\n---\n%s—\n' "${b24000:0:23998}" \
+  >"$fixture/skills/utf8/SKILL.md"
+printf -- '---\nname: fm\ndescription: %s\n---\n%s\n' \
+  "$a1000" "${b24000:0:23999}" >"$fixture/skills/fm/SKILL.md"
+printf -- '---\r\nname: crlf\r\n---\r\n%s\n' "${b24000:0:23999}" \
+  >"$fixture/skills/crlf/SKILL.md"
+printf -- '---\nname: unclosed\n%s\n' "$b24000" \
+  >"$fixture/skills/unclosed/SKILL.md"
+printf -- '---\nname: ref\n---\nShort.\n' >"$fixture/skills/ref/SKILL.md"
+printf '%s\n' "$b24000" >"$fixture/skills/ref/reference.md"
+out="$(scan_skill_body_size "$fixture")"
+flags "a SKILL.md body over 24000 bytes is flagged with its byte count" \
+  "$out" "skills/over/SKILL.md: body is 24001 bytes, over 24000"
+flags "a multi-byte UTF-8 body under 24000 chars but over 24000 bytes is flagged" \
+  "$out" "skills/utf8/SKILL.md: body is 24002 bytes, over 24000"
+flags "unclosed frontmatter cannot bypass the 24000-byte cap" \
+  "$out" "skills/unclosed/SKILL.md: body is "
+spares "a SKILL.md body of exactly 24000 bytes is spared" "$out" 'skills/exact/'
+spares "a 24000-byte body with no trailing newline is spared" "$out" 'skills/nonl/'
+spares "frontmatter does not count toward the 24000-byte body cap" \
+  "$out" 'skills/fm/'
+spares "CRLF frontmatter fences are recognized" "$out" 'skills/crlf/'
+spares "a sibling reference file over 24000 bytes is spared" "$out" 'skills/ref/'
+check "every SKILL.md body fits Antigravity's 24000-byte load cap" \
+  "$(scan_skill_body_size "$PLUGIN_ROOT")"
 
 # follows_standalone_pass <text> <prefix>: one line, after <prefix> and a
 # space, when the text does not name orch-review-pass's **Standalone review
@@ -4502,7 +4677,7 @@ echo "the PR-writing standard (#1389)"
 # Every PR body and PR comment the plugin writes follows docs/pr-writing.md,
 # so each PR-writing site names it: the three body sites, the three comment
 # sites, and the fixer's PR-body check.
-pr_writing_sites='skills/orch-flow/SKILL.md|### Phase: implement
+pr_writing_sites='skills/orch-flow/phase-implement.md
 skills/orch-quick-implement/SKILL.md|## 7. Open the PR
 skills/orch-release/SKILL.md
 agents/orch-closer.md|## The PR comment
@@ -4512,7 +4687,9 @@ agents/orch-fixer.md|## Checking the PR body'
 fixture="$(new_fixture)"
 mkdir -p "$fixture/agents" "$fixture/skills/orch-flow" "$fixture/skills/orch-quick-implement" \
   "$fixture/skills/orch-release" "$fixture/skills/orch-review-pass" "$fixture/skills/orch-sync"
-printf '# F\n\n### Phase: implement\n\nOpen the PR.\n\n### Phase: review\n\nSee `docs/pr-writing.md`.\n' \
+printf '# Phase: implement\n\nOpen the PR.\n' \
+  >"$fixture/skills/orch-flow/phase-implement.md"
+printf '# F\n\n### Phase: review\n\nSee `docs/pr-writing.md`.\n' \
   >"$fixture/skills/orch-flow/SKILL.md"
 printf '# Q\n\n## 7. Open the PR\n\nWrite it per\n`docs/pr-writing.md`.\n' >"$fixture/skills/orch-quick-implement/SKILL.md"
 printf '# R\n\nWrite the summary.\n' >"$fixture/skills/orch-release/SKILL.md"
@@ -4524,7 +4701,7 @@ printf '# X\n\n## Checking the PR body\n\nCheck the human layer per `docs/pr-wri
   >"$fixture/agents/orch-fixer.md"
 out="$(scan_names_phrase "$fixture" "$pr_writing_sites" 'docs/pr-writing.md')"
 flags "a flow implement phase that names the doc only in another phase is flagged" \
-  "$out" "skills/orch-flow/SKILL.md: ### Phase: implement does not name docs/pr-writing.md"
+  "$out" "skills/orch-flow/phase-implement.md: does not name docs/pr-writing.md"
 flags "a release skill that never names the doc is flagged" \
   "$out" "skills/orch-release/SKILL.md: does not name docs/pr-writing.md"
 flags "a closer with no PR comment section is flagged" \
@@ -4546,11 +4723,12 @@ skills/orch-to-tickets/SKILL.md|### 4. Quiz the user
 skills/orch-to-tickets/SKILL.md|## Unattended breakdown
 skills/orch-audit-tests/SKILL.md|## 7. Hand off
 skills/orch-spec-review/SKILL.md|## Disposition
+skills/orch-spec-review/applying.md|## Batch view and interactive answers
 skills/orch-spec-review/tickets-follow-the-spec.md|## The ticket question
 docs/host-capabilities.md|### Guard the batch question
 skills/orch-spec-review/unattended-spec-review.md
 skills/orch-to-spec/SKILL.md|## Unattended rewrite
-skills/orch-flow/SKILL.md|### Phase: spec'
+skills/orch-flow/phase-spec.md'
 check "each turn-final reply site names docs/turn-final-reply.md" \
   "$(scan_names_phrase "$PLUGIN_ROOT" "$turn_final_sites" 'docs/turn-final-reply.md')"
 check "the glossary defines Turn-final reply" \
