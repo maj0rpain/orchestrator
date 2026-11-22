@@ -60,6 +60,12 @@ def _breakdown(argv: List[str]) -> int:
     return run(argv)
 
 
+def _glossary(argv: List[str]) -> int:
+    from orch.glossary import run
+
+    return run(argv)
+
+
 def _parallel(argv: List[str]) -> int:
     from orch.parallel import run
 
@@ -83,6 +89,7 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "spec-review": _spec_review,
     "spec": _spec,
     "breakdown": _breakdown,
+    "glossary": _glossary,
     "parallel": _parallel,
     "route": _route,
 }
