@@ -14,8 +14,7 @@ import subprocess
 
 import pytest
 
-from conftest import (AT_HINT, comments_of, flow_state, orch_spec_review, read, rewrite_lines,
-                      snapshot)
+from conftest import comments_of, flow_state, orch_spec_review, read, rewrite_lines, snapshot
 
 BODY = """# Spec
 
@@ -456,8 +455,8 @@ def test_a_round_directory_missing_its_spec_or_batch_is_refused(root, seed, caps
     (lambda d: batch_drop(d, 48, 53),
      "batch.md line 45: item 4 has no @@ anchor/@@ replace/@@ end block"),
     (lambda d: batch_drop(d, 14, 14),
-     "batch.md line 15: expected @@ replace to end the anchor begun on line 12, got '@@ end'"
-     + AT_HINT),
+     "batch.md line 15: expected @@ replace to end the anchor begun on line 12, got '@@ end' -"
+     " a body line starting with @@ is written \\@@"),
     (lambda d: batch_drop(d, 40, 44),
      "batch.md line 38: item 3 option B has no @@ anchor/@@ replace/@@ end block - an option"
      " not recommended still carries the edit it would make"),

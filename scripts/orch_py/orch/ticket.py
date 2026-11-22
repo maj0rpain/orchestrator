@@ -41,6 +41,9 @@ TICKET_HEADING = "## Ticket"
 # The heading of a ticket body's section listing its blockers.
 BLOCKED_BY_HEADING = "## Blocked by"
 
+# The refusal of a parent that is no plain issue number, the parent appended.
+PARENT_NOT_PLAIN = "parent must be a plain issue number, got: "
+
 # A line that is a `#` or `##` heading: what ends a section.
 _SECTION_END = re.compile(r"##?([ \t]|$)")
 
@@ -52,7 +55,7 @@ def ticket_sub_issues(gh, parent: str, code: int = 1) -> List[SubIssue]:
     that cannot list them dies in the gh failure contract's grammar, exit
     <code>."""
     if not plain_number(parent):
-        die("parent must be a plain issue number, got: " + parent)
+        die(PARENT_NOT_PLAIN + parent)
     return gh_or_die("list sub-issues of #" + parent, gh.sub_issues, int(parent), code=code)
 
 
@@ -277,7 +280,7 @@ def ticket_exists(gh, parent: str) -> Optional[str]:
     cannot read, a repo it cannot pin, or a parent that is no plain number
     dies with 2, never 1."""
     if not plain_number(parent):
-        die("parent must be a plain issue number, got: " + parent, 2)
+        die(PARENT_NOT_PLAIN + parent, 2)
     if not gh.pin():
         die(REPO_REMEDY, 2)
     if ticket_sub_issues(gh, parent, code=2):

@@ -27,9 +27,6 @@ from orch.triage_labels import LABELS_DOC
 
 # A gh failure's stderr: its first line is the reason a message names.
 GH_502 = "HTTP 502: Bad Gateway\nsecond line"
-# The hint a refused @@ line's message ends with, written out here rather than
-# read from orch.common, so a changed hint fails the tests.
-AT_HINT = " - a body line starting with @@ is written \\@@"
 # The root of the checkout a test runs in when it needs no file there: no
 # triage-labels doc, so every role is its own label.
 CHECKOUT = "/nonexistent/checkout"

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import (AT_HINT, GH_502, blockers_of, died_of, labels_doc, labels_of, read, snapshot,
+from conftest import (GH_502, blockers_of, died_of, labels_doc, labels_of, read, snapshot,
                       write_labels_doc)
 from orch import breakdown, cli
 from orch.gh_fake import FakeGh
@@ -273,6 +273,11 @@ def test_tickets_publish_blockers_first_and_otherwise_in_draft_order(
     assert blockers_of(spec.store, 103) == ["101"]
 
 
+# Repeats test_spec_review_check_tickets.py's HINT on purpose: the spec keeps
+# the spec review tests unchanged.
+HINT = " - a body line starting with @@ is written \\@@"
+
+
 @pytest.mark.parametrize("text, message", [
     ("@@ ticket x A\nb\n@@ end\n", "line 1: ticket position is not a plain number: x"),
     ("@@ ticket  5 A\nb\n@@ end\n", "line 1: ticket position is not a plain number: "),
@@ -283,22 +288,22 @@ def test_tickets_publish_blockers_first_and_otherwise_in_draft_order(
     ("intro\n@@ ticket 1 A\n@@ end\n", "line 1: text outside a ticket block"),
     ("@@ ticket 1 A\n@@ end\n@@ end\n", "line 3: text outside a ticket block"),
     ("@@ ticket 1 A\nok\n@@ end\n@@ ticket 2 B\n@@ note hi\n@@ end\n",
-     "line 5: stray grammar line inside ticket 2: @@ note hi" + AT_HINT),
-    ("@@ ticket 1 A\n@@\n@@ end\n", "line 2: stray grammar line inside ticket 1: @@" + AT_HINT),
+     "line 5: stray grammar line inside ticket 2: @@ note hi" + HINT),
+    ("@@ ticket 1 A\n@@\n@@ end\n", "line 2: stray grammar line inside ticket 1: @@" + HINT),
     ("@@ ticket 1 A\n@@ ticket\n@@ end\n",
-     "line 2: stray grammar line inside ticket 1: @@ ticket" + AT_HINT),
+     "line 2: stray grammar line inside ticket 1: @@ ticket" + HINT),
     ("@@ ticket 1 A\n@@ blocked-by\n@@ end\n",
-     "line 2: stray grammar line inside ticket 1: @@ blocked-by" + AT_HINT),
+     "line 2: stray grammar line inside ticket 1: @@ blocked-by" + HINT),
     ("@@ ticket 1 A\n\n@@ blocked-by 2\n@@ end\n",
-     "line 3: stray grammar line inside ticket 1: @@ blocked-by 2" + AT_HINT),
+     "line 3: stray grammar line inside ticket 1: @@ blocked-by 2" + HINT),
     ("@@ ticket 1 A\n@@ blocked-by 2\n@@ blocked-by 3\n@@ end\n",
-     "line 3: stray grammar line inside ticket 1: @@ blocked-by 3" + AT_HINT),
+     "line 3: stray grammar line inside ticket 1: @@ blocked-by 3" + HINT),
     ("@@ ticket 1 A\nx\n@@ end\r\r\n",
-     "line 3: stray grammar line inside ticket 1: @@ end\r" + AT_HINT),
+     "line 3: stray grammar line inside ticket 1: @@ end\r" + HINT),
     ("@@ ticket 1 A\r\nok\r\n@@ foo\r\n@@ end\r\n",
-     "line 3: stray grammar line inside ticket 1: @@ foo" + AT_HINT),
+     "line 3: stray grammar line inside ticket 1: @@ foo" + HINT),
     ("@@ ticket 1 A\nok\n@@ end\n@@ ticket 2 B\n@@ ticket 3 C\n@@ end\n",
-     "line 5: @@ ticket inside an unfinished block" + AT_HINT),
+     "line 5: @@ ticket inside an unfinished block" + HINT),
     ("@@ ticket 1 A\n@@ end\n@@ ticket 2 B\nbody\n", "ticket 2 has no @@ end"),
     ("", "no ticket blocks"),
     ("\n \t\n\n", "no ticket blocks"),

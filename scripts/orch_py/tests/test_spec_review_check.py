@@ -11,7 +11,7 @@ import re
 
 import pytest
 
-from conftest import (AT_HINT, UNATTENDED_TAIL, assert_check_passes as assert_passes,
+from conftest import (UNATTENDED_TAIL, assert_check_passes as assert_passes,
                       assert_check_refused as assert_refused, nudge, orch_issue,
                       orch_spec_review, refused_lines as refused, rewrite_lines, state_json)
 from orch import spec_review
@@ -1043,10 +1043,10 @@ def test_a_quote_running_to_end_of_file_passes(root, capsys):
 @pytest.mark.parametrize("items, err", [
     (SRE_ITEM + "\n@@ anchor\n@@ note <text>\n@@ replace\nNew.\n@@ end",
      "batch.md line 10: expected @@ replace to end the anchor begun on line 9, got '@@ note"
-     " <text>'" + AT_HINT),
+     " <text>' - a body line starting with @@ is written \\@@"),
     (SRE_ITEM + "\n@@ anchor\nAlpha line.\n@@ replace\n@@ note <text>\n@@ end",
      "batch.md line 12: expected @@ end to end the replacement begun on line 11, got '@@ note"
-     " <text>'" + AT_HINT),
+     " <text>' - a body line starting with @@ is written \\@@"),
     (SRE_ITEM + "\n@@ anchor\nAlpha line.", "batch.md line 9: the @@ anchor block is never ended"),
     (SRE_ITEM + "\n@@ anchor\nAlpha line.\n@@ replace\nNew.",
      "batch.md line 11: the @@ replace block is never ended"),

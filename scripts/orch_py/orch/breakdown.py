@@ -14,9 +14,9 @@ draft has one block per ticket, in draft order:
     <body>
     @@ end
 
-It is parsed in memory by the rules of bash's awk parser, with its messages
-and line numbers. Positions are text everywhere, never integers, so 01 and 1
-are two positions, as in bash.
+It is parsed in memory by a copy of the awk parser the bash noun had, gone
+since the noun's cutover, with its messages and line numbers. Positions are
+text everywhere, never integers, so 01 and 1 are two positions, as in bash.
 
 Every verb keeps the bash noun's arguments, usage lines, stdout, exit codes
 and `orch:` messages: publish dies with 1, state with 2, an unknown op with
@@ -35,15 +35,13 @@ from orch.gh import adapter_of
 from orch.git import Git
 from orch.repo import REPO_REMEDY, RepoPin
 from orch.root import checkout_root
-from orch.ticket import (blockers_set, issue_number_list, ticket_create, ticket_exists,
-                         ticket_link)
+from orch.ticket import (PARENT_NOT_PLAIN, blockers_set, issue_number_list, ticket_create,
+                         ticket_exists, ticket_link)
 from orch.triage_labels import TriageLabels
 
 # The verbs, in the unknown-op message's order. docs_lint.sh reads this line
 # as the verbs the noun dispatches, so it stays one `OPS = "<verb>|..."` line.
 OPS = "publish|state"
-
-PARENT_NOT_PLAIN = "parent must be a plain issue number, got: "
 
 MALFORMED = "the breakdown draft is malformed: "
 
@@ -75,7 +73,8 @@ def breakdown_parse(text: str) -> List[DraftTicket]:
     block's first line after its `@@ ticket`; `@@ end`, trailing blanks
     allowed, closes it; any other `@@ ` or bare `@@` line is a stray grammar
     line. Outside a block only blank lines may stand. Dies on a malformed
-    draft, naming the line as bash's awk parser does."""
+    draft, naming the line as the bash noun's awk parser did before the
+    cutover."""
     tickets: List[DraftTicket] = []
     seen = set()
     in_block = first = False
