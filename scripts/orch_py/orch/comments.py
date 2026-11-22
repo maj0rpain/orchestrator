@@ -1,8 +1,8 @@
 """The Comments module (scripts/orch/comments.sh), kept to what the issue,
-finding-triage and review-pass nouns use: the one reader of an issue's or a
-PR's trusted comments, in a dying form and one that hands its failure back,
-the rendered shape every comments read writes, the rendered read, and the
-split of a rendered text into its comments.
+finding-triage and review-pass nouns and the issue timeline use: the one
+reader of an issue's or a PR's trusted comments, in a dying form and one that
+hands its failure back, the rendered shape every comments read writes, the
+rendered read, and the split of a rendered text into its comments.
 
 The adapter answers gh's raw comment objects; here they are normalised to
 {author, createdAt, body, url}, the author its login, and the untrusted ones

@@ -300,7 +300,7 @@
 5	6	spec pause --round in an autopilot flow (#1457)	538a0f0c05ff3eae5986077aea943807f8278613
 3	3	spec fetch on a truncated state.json (#1929)	60f3d67efe5d3d495d1adc47c8b0aea7008f5965
 7	8	spec ops read the flow's state once (#3063)	1ac4cb1881c14fda5d71d28175a34c212f051d4d
-8	6	spec round directory owner (#3078)	75c3bde4d8fee32cbe658342f7c86589a811dfba
+14	13	spec round directory owner (#3078)	0ad1662d64cea902d995a0af6d94815806218b26
 6	6	spec fetch drift line (#3458)	58d8dca777f8cf8f7b2d34df3ab34ac366362033
 30	26	Standing module	7360efe83df71e2983783f4ce7fefa500261a7d4
 124	117	Standing transitions	545e34fbb2e91632de6484af07eb526577b4f311
@@ -339,7 +339,7 @@
 104	110	ticket reclaim (ADR-0054)	7ec366d96e6a84ae723df4b5833904e10b5a6bb9
 2	3	ticket exists: no repo (#3050)	062de093bbfb2338a6a4265e1d0a90e8cf621544
 43	35	trust module	dd0183ac4380b097c6b51f9e75c4a3038ab514c5
-82	14	wait: a call's block is wall time	12313962ae192f692a6bf9948173a94ce462aa53
+109	14	wait: a call's block is wall time	a104bdc0e8c371dfa7ceb0d1b486e98995db5fcc
 882	983	hooks_test.sh	8dec8318df78d1487d2d11c16c6ac962831bc14c
 308	214	docs_lint.sh	8291da5fa50794e3d56e50fa81d282db284a6253
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65

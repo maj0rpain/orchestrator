@@ -122,3 +122,21 @@ wt_run; st=$?
 assert_status "a second call on the same key exits 75 again" "$st" 75
 assert_eq "and stores more seconds slept than the first" \
   "$(awk -v a="$wt_first" -v b="$(sed -n 2p "$wt_file")" 'BEGIN { print (b > a) }')" "1"
+
+# The golden stored-total files the Python wait module's tests read and advance
+# too, with the same expected values (ADR-0067): stored-total, 1.2 s slept, its
+# first call far in the future so the slept total alone counts, reads as 1.200,
+# and one call of 1-second ticks under a 5-second block, its sleep stood in for
+# so the wall clock never catches up, stores stored-total.advanced and exits 75.
+wt_golden="${ORCH%/*}/orch_py/tests/wait"
+wt_key='spec-review wait /golden/round fidelity testability'
+wt_file="$ORCH_DIR_NAME/wait/$(printf '%s' "$wt_key" | git hash-object --stdin)"
+mkdir -p "$ORCH_DIR_NAME/wait"
+cp "$wt_golden/stored-total" "$wt_file"
+# shellcheck disable=SC2016 # expanded by the sourced script's bash
+out="$(ORCH_WAIT_BLOCK=5 sourced_orch_script 'sleep() { :; }; wait_open "$1"; wait_taken; while :; do wait_tick 1; done' "$wt_key" 2>/dev/null)"; st=$?
+assert_eq "wait_open reads the golden stored total's seconds slept" "$out" "1.200"
+assert_status "and the call's ticks end it as still running" "$st" 75
+assert_eq "storing the golden advanced total" \
+  "$(cmp -s "$wt_file" "$wt_golden/stored-total.advanced" && echo same || cat "$wt_file")" same
+rm -rf "${ORCH_DIR_NAME:?}/wait"

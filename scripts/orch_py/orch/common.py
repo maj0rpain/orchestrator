@@ -4,7 +4,8 @@ tests and the poll-knob check a waiting verb reads its knobs with, the atomic
 file write, the file read as bash's $(<file) gives it, the lines of a text
 and of a file, the markdown code-fence rule, the temporary file a comment is handed to gh from, the words a
 list and a state read as in a line, the orchestrator's directory name, the
-UTC stamp a run directory is named with, and the git exclude writer.
+UTC stamp a run directory is named with, the git exclude writer, and the
+capture of a call's stderr and death that bash's capture and err_line make.
 
 Every `orch: ` message goes through die or warn, as in the bash side's
 common.sh: die(message, 2) is the bash die2, for a command that reserves exit
@@ -15,13 +16,15 @@ the gh adapter's rate-limit failure - uses alone.
 """
 from __future__ import annotations
 
+import io
 import os
 import re
 import sys
 import tempfile
 import time
-from contextlib import contextmanager
-from typing import Callable, Iterable, Iterator, List, NoReturn, Optional, Sequence, Tuple, Union
+from contextlib import contextmanager, redirect_stderr
+from typing import (Any, Callable, Iterable, Iterator, List, NoReturn, Optional, Sequence, Tuple,
+                    Union)
 
 # The directory every checkout keeps the orchestrator's own files in.
 ORCH_DIR_NAME = ".orchestrator"
@@ -280,3 +283,25 @@ def exclude_missing(lines: Sequence[str], git) -> List[str]:
     text = read_raw(_exclude_file(git))
     present = set() if text is None else set(text.split("\n"))
     return [line for line in lines if line and line not in present]
+
+
+def capture(call: Callable[[], Any]) -> Tuple[Any, str, int]:
+    """bash's capture: runs <call> with its stderr taken, a death included -
+    (its answer, or None when it died; its stderr, byte for byte; 0, or the
+    exit it died with). For a caller that words a callee's failure as its
+    own, its message quoted through err_line."""
+    err = io.StringIO()
+    try:
+        with redirect_stderr(err):
+            answer = call()
+    except SystemExit as died:
+        code = died.code if isinstance(died.code, int) else 1
+        return None, err.getvalue(), code
+    return answer, err.getvalue(), 0
+
+
+def err_line(err: str) -> str:
+    """A captured error's first line, everything through its first `orch: `
+    dropped, for quoting inside a message of our own."""
+    head, found, rest = err.partition("orch: ")
+    return (rest if found else head).split("\n", 1)[0]

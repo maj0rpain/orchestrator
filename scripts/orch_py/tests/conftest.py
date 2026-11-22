@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from orch import audit, issue, review_pass, verification
+from orch import audit, issue, review_pass, spec_review, verification
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit, Git
 from orch.repo import RepoPin
@@ -288,6 +288,47 @@ def orch_review_pass(seed, git, *argv, gh=None, env=None):
         gh = FakeGh(seed.store, env, pin=pin, sleep=lambda _: None)
     try:
         return review_pass.run(list(argv), gh=gh, git=git, env=env, pin=pin)
+    except SystemExit as died:
+        return died.code
+
+
+# The epoch second a FakeClock starts at unless a test gives another.
+NOW = 1_800_000_000.0
+
+
+class FakeClock:
+    """A clock, called for the time, that its sleep advances: the clock and
+    the sleep a wait is handed, every sleep recorded in <slept>. <on_sleep>,
+    when given, is called after each sleep with the number of sleeps so
+    far."""
+
+    def __init__(self, now=NOW, on_sleep=None):
+        self.now = now
+        self.slept = []
+        self.on_sleep = on_sleep
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.slept.append(seconds)
+        self.now += seconds
+        if self.on_sleep is not None:
+            self.on_sleep(len(self.slept))
+
+
+def orch_spec_review(root, *argv, seed=None, env=None, clock=None, sleep=None):
+    """`orch.sh spec-review <argv>` in-process, in the checkout at <root>
+    (a FakeGit's toplevel), under <env> (empty when None), with the gh fake on
+    <seed>'s store when one is given, and the clock and sleep a wait reads
+    when given: its exit code, a SystemExit's included."""
+    env = {} if env is None else env
+    gh = None if seed is None else FakeGh(seed.store, env, sleep=lambda _: None)
+    timing = {name: value for name, value in (("clock", clock), ("sleep", sleep))
+              if value is not None}
+    try:
+        return spec_review.run(list(argv), gh=gh, git=FakeGit(toplevel=str(root)), env=env,
+                               **timing)
     except SystemExit as died:
         return died.code
 
