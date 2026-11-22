@@ -900,6 +900,16 @@ def test_pause_round_in_autopilot_releases_the_claim_then_prints_the_block(
     assert seed.claim_held(21) is False
 
 
+def test_pause_round_in_autopilot_counts_a_claim_already_gone_as_freed(
+        root, seed, store, capsys, autopilot_flow):
+    FakeGh(seed.store, {}).claim_delete(21)
+
+    assert orch_spec(root, seed, "pause", "--round", "1/2", env=AUTOPILOT) == 0
+    assert capsys.readouterr() == (ROUND_BLOCK % (1, 2, 2, CLAUDE_NEXT), "")
+    assert labels_of(store, 21) == ["ready-for-agent", "orch:spec"]
+    assert seed.claim_held(21) is False
+
+
 def test_a_failed_relabel_dies_with_the_marker_landed_trying_no_claim_delete(
         root, seed, store, capsys, autopilot_flow):
     seed.fail("adapter_issue_relabel", GH_502)

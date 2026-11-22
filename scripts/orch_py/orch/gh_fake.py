@@ -667,12 +667,11 @@ class FakeStore:
     def next_issue(self, n: int) -> None:
         _write(_store_path(self.store, "next_issue"), "%d\n" % n)
 
-    def claim(self, n: int, host: Optional[str] = None, pid: int = 1,
-              started: str = "2026-01-01T00:00:00Z", phase: str = "spec") -> None:
+    def claim(self, n: int) -> None:
         """A claim on issue #n, held by this host with pid 1, a start long
-        past and the spec phase unless given, as fake_claim_seed seeds it."""
-        _write(_store_path(self.store, "claims", n), "%d\t%s\t%d\t%s\t%s\n" % (
-            n, socket.gethostname() if host is None else host, pid, phase, started))
+        past and the spec phase, as fake_claim_seed seeds it."""
+        _write(_store_path(self.store, "claims", n),
+               "%d\t%s\t1\tspec\t2026-01-01T00:00:00Z\n" % (n, socket.gethostname()))
 
     def claim_held(self, n: int) -> bool:
         """Whether the store holds a claim on issue #n, as fake_claim_held

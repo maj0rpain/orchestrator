@@ -56,6 +56,7 @@ from orch.git import Git
 from orch.handoff import handoff_dir
 from orch.host import print_next_block
 from orch.root import checkout_root
+from orch.spec_review_batch import read_words
 
 # The verbs, in the unknown-op message's order. docs_lint.sh reads this line
 # as the verbs the noun dispatches, so it stays one `OPS = "<verb>|..."` line.
@@ -483,12 +484,9 @@ def spec_round_marker_parse(marker: str) -> Tuple[str, int, int]:
     if not text:
         die("malformed round marker %s: it is empty - %s" % (marker, rerun), 2)
     line = text.split("\n", 1)[0]
-    words = line.replace("\t", " ").split(" ")
-    words = [word for word in words if word]
-    words += [""] * (3 - len(words))
-    issue, k, n = words[:3]
+    issue, k, n, extra = read_words(line, 4)
     if not plain_number(issue) or not plain_positive_number(k) \
-            or not plain_positive_number(n) or len(words) > 3 or int(k) > int(n):
+            or not plain_positive_number(n) or extra or int(k) > int(n):
         die("malformed round marker %s: '%s' - %s" % (marker, line, rerun), 2)
     return issue, int(k), int(n)
 

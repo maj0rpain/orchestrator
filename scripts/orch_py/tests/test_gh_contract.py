@@ -1,7 +1,9 @@
-"""Contract tests of the real gh adapter (ADR-0033): each operation run
+"""Contract tests of the real gh adapter (ADR-0033): each gh operation run
 against a fixture gh on PATH that answers by exact argv, proving the argv it
 hands gh, how it reads the answer, the repo pin and its remedy, the rate-limit
-handling and the `gh could not <action>` death."""
+handling and the `gh could not <action>` death. The claim delete, the one
+git-backed operation, runs instead against a real bare origin under tmp_path
+and a seeded FakeGit."""
 from __future__ import annotations
 
 import json
