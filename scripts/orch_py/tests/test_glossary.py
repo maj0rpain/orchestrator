@@ -102,6 +102,16 @@ def test_terms_lists_every_term_name_in_glossary_order(root, capsys):
     assert capsys.readouterr() == ("Flow\nRound\nSide checkout\nBudget\n", "")
 
 
+def test_terms_reads_the_root_glossary_wherever_it_runs(root, capsys, monkeypatch):
+    write_glossary(root, FIXTURE)
+    (root / "sub").mkdir()
+    (root / "sub" / "GLOSSARY.md").write_text("**Elsewhere**:\nNot the root's.\n")
+    monkeypatch.chdir(root / "sub")
+
+    assert orch_glossary(root, "terms") == 0
+    assert capsys.readouterr() == ("Flow\nRound\nSide checkout\nBudget\n", "")
+
+
 def test_terms_over_bulleted_entries_leaves_numbered_and_unbolded_lines_out(root, capsys):
     write_glossary(root, SHAPES)
 
