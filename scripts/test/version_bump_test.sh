@@ -3,12 +3,13 @@
 # Tests for scripts/version-bump.sh, the script the version-bump Action runs
 # on every push to main.
 #
-# Each case runs the script from the root of a temporary checkout holding a
-# .claude-plugin/plugin.json, a CHANGELOG.md and, under changelog.d/, the
-# fragments, and asserts only what the run leaves: the files, its output and
-# its exit status. The failure modes worth catching: a fragment lost or bumped
-# twice, a bump at the wrong level, prose out of issue-number order, a byte of
-# either file changed beyond the bump, and a refusal that writes anything.
+# Each case runs the script from the root of a temporary checkout holding
+# .claude-plugin/plugin.json, .antigravity-plugin/plugin.json, CHANGELOG.md
+# and, under changelog.d/, the fragments, and asserts only what the run
+# leaves: the files, its output and its exit status. The failure modes worth
+# catching: a fragment lost or bumped twice, a bump at the wrong level, prose
+# out of issue-number order, version drift between the manifests, a byte of
+# any file changed beyond the bump, and a refusal that writes anything.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=git_env.sh

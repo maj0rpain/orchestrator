@@ -921,16 +921,17 @@ claude_code_only_skill() {
 # Only Claude Code expands CLAUDE_PLUGIN_ROOT, and only in hooks/hooks.json on
 # other hosts, so skill and command text must pair it with the relative
 # fallback. The documented form (CONTRIBUTING.md, "Resolving orch.sh") is the
-# ORCH= line, the Junie step, and the fallback sentence, or, for a skill marked
+# ORCH= line, the relative step, and the Junie step, or, for a skill marked
 # "Claude Code only.", the ORCH= line and one stop. A cross-host command that
 # uses orch.sh, or SKILL.md whose skill uses it in any of its files, not marked
 # "Claude Code only.", is held to every step: the ORCH= line, as a line of its
-# own, and the Junie step, the one-install step, the several-installs stop and
-# the relative fallback, these four in the documented order; sibling skill
+# own, and the relative step, the Junie step, the one-install step and the
+# several-installs stop, these four in the documented order; sibling skill
 # reference files are spared that block. In any cross-host skill file or command
-# CLAUDE_PLUGIN_ROOT is allowed only on the ORCH= line, in the Junie sentence,
-# and in the plugin-root fallback sentence and its plugin-root paths; a file
-# that names the plugin root carries the Junie step in that sentence. A marked
+# CLAUDE_PLUGIN_ROOT is allowed only on the ORCH= line, in the relative
+# sentence, and in the plugin-root fallback sentence and its plugin-root paths;
+# a file that names the plugin root carries the relative step before the Junie
+# step in that sentence. A marked
 # skill's SKILL.md, when the skill uses orch.sh or `$ORCH`, is held to the ORCH=
 # line; any file of a marked skill has CLAUDE_PLUGIN_ROOT nowhere else and no
 # Junie lookup. Any other mention of the variable, any missing step, or a file
@@ -1456,9 +1457,6 @@ spares "the scan accepts a bare skill name and the generic scoped form" "$out" '
 check "no skill or agent names a skill by its Claude-scoped name" \
   "$(scan_claude_scoped_names "$PLUGIN_ROOT")"
 
-# scan_ask_tool_names <plugin root>: one line per sentence of a skill or agent
-# that names Claude Code's ask tool without Junie's. A sentence that copies one
-# host's tool from docs/host-capabilities.md's "Ask a multiple-choice question"
 # scan_ask_tool_names <plugin root>: flag any hardcoded host ask-tool name
 # (AskUserQuestion, ask_user, ask_question) in skills/ or agents/. Skills and
 # agents describe the capability and point at docs/host-capabilities.md.

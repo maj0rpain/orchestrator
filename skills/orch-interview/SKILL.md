@@ -284,15 +284,16 @@ these route options:
    through spec, implement and review unattended and asks the human only by
    comment on the issue.
 
-On Junie: ask exactly three options, 1 to 3; there is no Autopilot flow.
+Off Claude Code (Junie, Antigravity): ask exactly three options, 1 to 3; there
+is no Autopilot flow.
 
 Keep the route options in the order above unless you recommend one. The
 default route: `route show` prints a route word (`flow`, `quick`, `blueprint`
 or `autopilot`) or `none`. A word naming a route this host offers is that
 route: list it first, append " (Recommended)" to its label, give in one clause
 that it is the user's default route, and make no scope-based recommendation
-beside it. With `none`, or a route the host does not offer (`autopilot` on
-Junie), recommend from the scope of the work (Quick implementation for a
+beside it. With `none`, or a route the host does not offer (`autopilot` off
+Claude Code), recommend from the scope of the work (Quick implementation for a
 one-site fix, say): list it first, append " (Recommended)" to its label, and
 give that scope-based reason in one clause in its description, or in the
 question text where options have no description. If the command fails, report
@@ -370,13 +371,14 @@ An Other that is not a whole number from 0 up is asked again, naming the range;
 ask every time, never assume.
 
 On a count of 1 or more, run the standalone orch-spec-review for that many
-rounds (on Claude Code, args `<n> --rounds <count>`; on Junie, follow
-orch-spec-review for issue #<n> with `--rounds <count>`). Then publish its
-ticket breakdown (orch-to-tickets) against that issue, unless rewrite mode
-reported the breakdown `kept`: then skip that step. Rewrite mode reports the
-breakdown; run no breakdown check of your own. If orch-to-tickets fails after
-rewrite mode retired a breakdown, the report also says that #<n> carries its
-new body and no ticket breakdown, and needs `/orchestrator:to-tickets <n>`.
+rounds (on Claude Code, args `<n> --rounds <count>`; on a host with no Skill
+tool, follow orch-spec-review for issue #<n> with `--rounds <count>`). Then
+publish its ticket breakdown (orch-to-tickets) against that issue, unless
+rewrite mode reported the breakdown `kept`: then skip that step. Rewrite mode
+reports the breakdown; run no breakdown check of your own. If orch-to-tickets
+fails after rewrite mode retired a breakdown, the report also says that #<n>
+carries its new body and no ticket breakdown, and needs
+`/orchestrator:to-tickets <n>`.
 Then stop: do not implement or edit source. Report the issue number and how to
 pick it up later: `/orchestrator:start --issue <n>`, or a quick implementation
 that names the issue.

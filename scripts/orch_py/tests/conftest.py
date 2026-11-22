@@ -574,6 +574,7 @@ def real_gh_guard(tmp_path_factory):
 def clean_env(monkeypatch, real_gh_guard):
     for name in CLEARED:
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("GIT_TERMINAL_PROMPT", "0")
     monkeypatch.setenv(
         "PATH", "%s%s%s" % (real_gh_guard / "bin", os.pathsep, os.environ["PATH"])
     )

@@ -107,6 +107,8 @@ assert_eq "host_detect: ANTIGRAVITY_AGENT is antigravity" \
   "$(host_on ANTIGRAVITY_AGENT=1)" "antigravity"
 assert_eq "host_detect: ANTIGRAVITY_CONVERSATION_ID is antigravity" \
   "$(host_on ANTIGRAVITY_CONVERSATION_ID=abc)" "antigravity"
+assert_eq "host_detect: ANTIGRAVITY_CONVERSATION_ID outranks CLAUDECODE=1" \
+  "$(host_on ANTIGRAVITY_CONVERSATION_ID=abc CLAUDECODE=1)" "antigravity"
 assert_eq "host_detect: ANTIGRAVITY_AGENT outranks JUNIE_SHIM_PATH and CLAUDECODE=1" \
   "$(host_on ANTIGRAVITY_AGENT=1 JUNIE_SHIM_PATH=/x CLAUDECODE=1)" "antigravity"
 assert_eq "host_detect: JUNIE_SHIM_PATH is junie" \
@@ -1085,9 +1087,6 @@ assert_eq "does not list what Antigravity supports (long command)" \
   "$(printf '%s\n' "$out" | grep -c 'Run a long command')" "0"
 assert_contains "an unset plugin root is ok on Antigravity" \
   "$out" "ok    CLAUDE_PLUGIN_ROOT unset - Antigravity sets PLUGIN_ROOT only in hooks; skills use the relative path."
-out="$(env -u CLAUDE_PLUGIN_ROOT ANTIGRAVITY_CONVERSATION_ID=abc CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"
-assert_contains "ANTIGRAVITY_CONVERSATION_ID detects Antigravity CLI over CLAUDECODE" \
-  "$out" "host: Antigravity CLI"
 out="$(ORCHESTRATOR_HOST=vim "$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "names an ORCHESTRATOR_HOST it does not know" "$out" "ORCHESTRATOR_HOST=vim"
 assert_contains "and lists antigravity in the ORCHESTRATOR_HOST remedy" "$out" "antigravity"
