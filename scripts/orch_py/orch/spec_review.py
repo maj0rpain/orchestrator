@@ -24,23 +24,32 @@ lens never probes a round file that is not there. Fidelity runs only in a
 flow's round directory, its plan handoff the path `handoff path spec` gives
 (orch/handoff.py), under autopilot read from the issue's comment.
 
-check and apply are still served by the bash spec-review module.
+check validates a round's batch before the batch question, as apply would
+take the all answer (orch/spec_review_batch.py), with nothing written but
+<dir>/view.md: every violation it can stand behind in one run, one `orch:`
+line each, exit 1 and any earlier view.md left as it was; on a pass the view
+on stdout, saved to view.md, and one pass line on stderr ending in the nudge -
+the paste guards arm on its "; it is saved in <path>/view.md" tail - or,
+with --unattended, in a tail of its own they never arm on. check --tickets
+and apply are still served by the bash spec-review module.
 """
 from __future__ import annotations
 
 import os
+import sys
 import time
 from typing import Callable, List, Mapping, Optional
 
 from orch import spec
 from orch.common import (ORCH_DIR_NAME, capture, die, err_line, file_lines, plain_number,
-                         require_poll_knobs)
+                         require_poll_knobs, text_file_write, warn)
 from orch.flow_state import STATE_UNREADABLE_MSG, flow_state_file, flow_state_get_many
 from orch.gh import adapter
 from orch.git import Git
 from orch.handoff import handoff_path
 from orch.host import flow_cmd
-from orch.root import checkout_root
+from orch.root import checkout_root, working_directory
+from orch.spec_review_batch import SPEC_REVIEW_LENSES, Violations, lens_known, validate
 from orch.wait import StoredTotal, still_running, wait_block
 
 # The verbs. docs_lint.sh reads a converted noun's verbs from this line, so it
@@ -49,18 +58,10 @@ OPS = "begin|check|apply|wait|prompt"
 
 BEGIN_USAGE = "usage: orch.sh spec-review begin <n> [--carry]"
 
-# The lenses, in the lens table's order - the changelog's section order.
-SPEC_REVIEW_LENSES = ("fidelity", "consistency", "testability", "implementability")
-
 # The wait's knobs and their defaults: how long it lasts, and how often it
 # looks.
 WAIT_TIMEOUT = ("ORCH_SPEC_REVIEW_WAIT_TIMEOUT", "900")
 WAIT_INTERVAL = ("ORCH_SPEC_REVIEW_WAIT_INTERVAL", "5")
-
-
-def lens_known(name: str) -> bool:
-    """Whether <name> is one of the four lenses, matched whole."""
-    return name in SPEC_REVIEW_LENSES
 
 
 def require_lens(name: str) -> None:
@@ -221,6 +222,232 @@ def prompt(argv: List[str], gh, env: Mapping[str, str], root: str) -> int:
     return 0
 
 
+CHECK_USAGE = "usage: orch.sh spec-review check <dir> [--tickets | --full <n>...]"
+
+# What a check pass line that saved a view ends with: the instruction to end
+# the turn on one plain-text reply holding the view word for word and the
+# question, with no tool call (ADR-0051), and the view.md it was saved to, by
+# absolute path. bash spec_review_nudge's words, unchanged: the paste guards
+# (scripts/paste-guard.sh) arm on a pass line ending "; it is saved in
+# <path>/view.md", their PASTE_GUARD_NEEDLE.
+NUDGE = (" - end your turn on one plain-text reply, no tool call: the view above word for word,"
+         " then the question with its answer words spelled out; it is saved in %s")
+
+# What an --unattended pass line ends with in place of the nudge. It carries
+# no "; it is saved in" tail, so the paste guards never arm on it.
+UNATTENDED_TAIL = " - unattended: not a turn-final reply; go straight on to apply"
+
+# The changelog's and the views' heading for a section: Consolidation or a
+# lens.
+TITLES = {"consolidation": "Consolidation", "fidelity": "Fidelity",
+          "consistency": "Consistency", "testability": "Testability",
+          "implementability": "Implementability"}
+
+
+def view_path(directory: str, env: Mapping[str, str]) -> str:
+    """<directory>/view.md's absolute path - <directory> taken from the
+    working directory, as bash's $PWD names it, when relative; symlinks left
+    as named."""
+    if directory.startswith("/"):
+        return directory + "/view.md"
+    return "%s/%s/view.md" % (working_directory(env), directory)
+
+
+def nudge(directory: str, env: Mapping[str, str]) -> str:
+    return NUDGE % view_path(directory, env)
+
+
+def group_title(item) -> str:
+    """The title an item's header gives its group: Contradicts the plan, else
+    its section's heading."""
+    if item.group == "contradicts-the-plan":
+        return "Contradicts the plan"
+    return TITLES[item.group]
+
+
+def lens_state_line(lens) -> str:
+    """How a lens line reads in the view and the changelog."""
+    if lens.state == "ran":
+        return "ran"
+    if lens.state == "not-run":
+        return "not run - " + lens.reason
+    return "not run - standalone review, no plan to check against"
+
+
+def option_line(item, option) -> str:
+    """A decision item's option as both views name it - `Option <L> -
+    <label>`, then ` (recommended)` when it is the recommended one."""
+    recommended = " (recommended)" if option.letter == item.arg else ""
+    return "Option %s - %s%s" % (option.letter, option.label, recommended)
+
+
+def quoted(text: str) -> str:
+    """<text> as a markdown blockquote, line for line."""
+    return "".join("> %s\n" % line if line else ">\n" for line in text.split("\n"))
+
+
+def code_fenced(text: str) -> str:
+    """<text> in a code block whose fence of backticks is longer than any run
+    of backticks in it, so a fence in the text stays text."""
+    fence = "```"
+    while fence in text:
+        fence += "`"
+    return "%s\n%s\n%s" % (fence, text, fence)
+
+
+def edit_view(edit) -> str:
+    """An edit's Current and Proposed, both in full."""
+    return "\n**Current**\n\n%s\n\n**Proposed**\n\n%s\n" % (
+        code_fenced(edit.anchor), code_fenced(edit.replace))
+
+
+def item_view(batch, item) -> str:
+    """An item in full - its group, its recommendation (a resolved item's
+    resolving item), the text of each finding it cites and of each comment it
+    folds in, and its edit, or each option's, in full."""
+    recommendation = {
+        "apply": "apply",
+        "decline": "recommend decline - " + item.arg,
+        "decision": "decision - option %s recommended" % item.arg,
+        "resolved": "resolved by item %s" % item.resolved,
+    }[item.rec]
+    out = "\n### Item %s - %s\n\n**Recommendation:** %s\n" % (
+        item.n, group_title(item), recommendation)
+    for finding in item.findings:
+        out += "\n**Finding** (%s %s):\n\n" % (TITLES[finding.lens], finding.k)
+        out += quoted(batch.finding_text(finding.lens, finding.k).rstrip("\n"))
+    for comment in item.comments:
+        out += "\n**Comment** by %s, %s:\n\n" % (comment.login, comment.created)
+        out += quoted(comment.quote)
+    if item.rec in ("apply", "decline"):
+        out += edit_view(item.edit)
+    elif item.rec == "decision":
+        for option in item.options:
+            out += "\n#### %s\n" % option_line(item, option) + edit_view(option.edit)
+    return out
+
+
+def minor_line(item) -> str:
+    """A minor or resolved item on one line - `- **<n>** - <Group>:
+    <summary>`, a recommend-decline's reason after it, or a resolved item's
+    resolving item in place of a summary. The number is literal, never a
+    Markdown ordered-list number a renderer would recount."""
+    head = "- **%s** - %s: " % (item.n, group_title(item))
+    if item.rec == "resolved":
+        return head + "resolved by item %s\n" % item.resolved
+    if item.rec == "decline":
+        return head + "%s - recommend decline: %s\n" % (item.summary, item.arg)
+    return head + item.summary + "\n"
+
+
+def material_entry(item) -> str:
+    """A material item as one entry of the compact view's list, under its
+    literal batch.md number: one line, its summary and its reason; a decision
+    item's header, then one sub-bullet per option, indented a fixed 2 spaces,
+    so none is ever a 4-space code block. No citation and no diff: --full
+    shows those."""
+    head = "- **%s** - **%s**" % (item.n, group_title(item))
+    if item.rec == "apply":
+        return "%s - %s (apply) - %s\n" % (head, item.summary, item.why)
+    if item.rec == "decline":
+        return "%s - %s (recommend decline: %s) - %s\n" % (head, item.summary, item.arg, item.why)
+    out = "%s (decision, option %s recommended) - %s\n" % (head, item.arg, item.why)
+    for option in item.options:
+        out += "  - %s: %s\n" % (option_line(item, option), option.summary)
+    return out
+
+
+def batch_view(batch) -> str:
+    """The parsed batch as the human reads it before the batch question: the
+    lens lines, worded as the changelog words them, then the material items as
+    one list in batch order, then, under a Minor edits heading left out when
+    there are none, every minor and resolved item on one line, in batch
+    order."""
+    out = "## The batch\n\n### Lenses\n\n"
+    for lens in batch.lenses:
+        out += "- %s: %s\n" % (TITLES[lens.name], lens_state_line(lens))
+    material = [item for item in batch.items if item.mark == "material"]
+    minor = [item for item in batch.items if item.mark != "material"]
+    if material:
+        out += "\n" + "".join(material_entry(item) for item in material)
+    if minor:
+        out += "\n### Minor edits\n\n" + "".join(minor_line(item) for item in minor)
+    return out
+
+
+def check(argv: List[str], env: Mapping[str, str]) -> int:
+    """`spec-review check <dir> [--full <n>... | --unattended]`: the round's
+    batch validated as apply would take the all answer, against
+    <dir>/spec.fetched.md when it exists, else <dir>/spec.md. Every violation
+    it can stand behind is reported in one run - content violations,
+    citation errors, then anchor problems - and exits 1, writing nothing; a
+    clean batch prints its view, saved to <dir>/view.md, and the pass line on
+    stderr. With --full, the named items alone, each in full, in the order
+    named."""
+    directory = ""
+    tickets = full = unattended = False
+    wanted: List[str] = []
+    for arg in argv:
+        if arg == "--tickets":
+            tickets = True
+        elif arg == "--full":
+            full = True
+        elif arg == "--unattended":
+            unattended = True
+        elif arg.startswith("-"):
+            die("unknown option: %s (%s)" % (arg, CHECK_USAGE))
+        elif full:
+            wanted.append(arg)
+        else:
+            if directory:
+                die(CHECK_USAGE)
+            directory = arg
+    if not directory:
+        die(CHECK_USAGE)
+    if full and tickets:
+        die("--full and --tickets do not combine (%s)" % CHECK_USAGE)
+    if full and not wanted:
+        die("--full needs at least one item number (%s)" % CHECK_USAGE)
+    if full and unattended:
+        die("--full and --unattended do not combine (%s)" % CHECK_USAGE)
+    if directory.endswith("/"):
+        directory = directory[:-1]
+    if not os.path.isdir(directory):
+        die("no such directory: " + directory)
+    if tickets:
+        raise NotImplementedError("spec-review check --tickets is still served by bash")
+    if not os.path.isfile(directory + "/batch.md"):
+        die("batch.md not found in " + directory)
+    body = "spec.fetched.md"
+    if not os.path.lexists("%s/%s" % (directory, body)):
+        body = "spec.md"
+    if not os.path.isfile("%s/%s" % (directory, body)):
+        die("spec.md not found in " + directory)
+    violations = Violations(collect=True)
+    result = validate(directory, "%s/%s" % (directory, body), violations, env)
+    if violations.recorded or result.problems:
+        violations.flush()
+        for problem in result.problems:
+            warn(problem)
+        return 1
+    batch = result.batch
+    if full:
+        for n in wanted:
+            if batch.item(n) is None:
+                die("--full %s: batch.md has no item %s" % (n, n))
+        view = "".join(item_view(batch, batch.item(n)) for n in wanted)
+    else:
+        view = batch_view(batch)
+    text_file_write(directory + "/view.md", view, "could not write " + view_path(directory, env))
+    sys.stdout.write(view)
+    sys.stdout.flush()
+    tail = UNATTENDED_TAIL if unattended else nudge(directory, env)
+    sys.stderr.write("batch.md passes: %d items, %d anchors, each matching once in %s, and the"
+                     " all answer applies cleanly%s\n"
+                     % (len(batch.items), result.anchors, body, tail))
+    return 0
+
+
 def run(
     argv: List[str],
     gh=None,
@@ -239,8 +466,10 @@ def run(
     op = argv[0] if argv else ""
     if op not in OPS.split("|"):
         die("unknown spec-review op: %s (want %s)" % (op or "<none>", OPS))
-    if op in ("check", "apply"):
-        raise NotImplementedError("spec-review %s is still served by bash" % op)
+    if op == "apply":
+        raise NotImplementedError("spec-review apply is still served by bash")
+    if op == "check":
+        return check(argv[1:], env)
     if op == "wait":
         return wait(argv[1:], env, root, clock, sleep)
     if op == "prompt":
