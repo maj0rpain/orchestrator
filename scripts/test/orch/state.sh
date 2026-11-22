@@ -643,13 +643,17 @@ done
 rm -rf "$rs_gi_dir"
 out="$(sourced_orch flow_holding_phase nobranch 2>&1)"; st=$?
 assert_status "flow_holding_phase of a branch the flow does not hold returns 1" "$st" 1
+: >"$rs_jq/jq.log"
+out="$(PATH="$rs_jq:$PATH" sourced_orch flow_holding_phase nobranch 7 2>&1)"; st=$?
+assert_eq "flow_holding_phase of a held issue prints the phase" "$out" "spec"
+assert_eq "flow_holding_phase starts exactly one jq" "$(counting_starts "$rs_jq" jq)" "1"
 state_fixture branch orch/held-branch
 : >"$rs_jq/jq.log"
 out="$(PATH="$rs_jq:$PATH" sourced_orch flow_holding_phase orch/held-branch 2>&1)"; st=$?
 assert_eq "flow_holding_phase of the held branch prints the phase" "$out" "spec"
-assert_eq "flow_holding_phase starts exactly one jq" "$(counting_starts "$rs_jq" jq)" "1"
+assert_eq "with one jq" "$(counting_starts "$rs_jq" jq)" "1"
 state_fixture phase "done"
-out="$(sourced_orch flow_holding_phase orch/held-branch 2>&1)"; st=$?
+out="$(sourced_orch flow_holding_phase nobranch 7 2>&1)"; st=$?
 assert_status "flow_holding_phase of a done flow returns 1" "$st" 1
 rm -f "$rs_file"
 out="$(sourced_orch require_state_read a=phase 2>&1)"; st=$?

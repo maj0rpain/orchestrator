@@ -10,8 +10,8 @@ column, and with no bullet open an entry of its own: it never ends an entry
 or opens one. An entry reading None, None. or None declined. is a source
 saying it has nothing, and is dropped.
 
-The appenders answer the bullet lines a bash caller appends to its variable;
-the caller joins them.
+The appenders return the bullet lines bash's appenders append to a variable;
+the Python caller concatenates them.
 """
 from __future__ import annotations
 
