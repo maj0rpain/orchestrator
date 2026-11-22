@@ -61,8 +61,9 @@
 #     section of one, that exists
 #   scan_dispatch_copies  no skill file restates the implementer's report lines
 #     or the general-purpose-agent tier
-#   scan_agent_settings  each file that starts a plugin agent points at Agent
-#     settings and names agent get <role> for each role it starts
+#   scan_agent_settings  each file that starts a plugin agent (sibling skill
+#     reference files paired with their SKILL.md) points at Agent settings and
+#     names agent get <role> for each role it starts
 #   scan_agent_settings_section  docs/host-capabilities.md has Agent settings
 #     before Fallbacks, linked from its Start a fresh subagent row
 #   scan_lens_briefs  each lens agent owns a non-empty brief, Write and a
@@ -1652,17 +1653,20 @@ echo
 echo "start sites read the agent setting (#1359)"
 # Every start of one of the plugin's agents runs on its role's agent setting,
 # and the rule for that lives once, in docs/host-capabilities.md's **Agent
-# settings** section. So every start site (each skill directory across SKILL.md
-# and its sibling reference files, and each agent or doc file) points at that
-# section and names `agent get <role>` for each role it starts. A site starts
-# an agent when, read flattened, it starts one under the `orchestrator:`
-# plugin scope (the scope named, `subagent_type`, or `orchestrator:<agent>`) -
-# its roles then come from the orch- agent names it gives, never from an
-# agent's file path - or when it points
-# at a shared section that starts one: **Dispatching a subagent** starts the
-# implementer, **A driver's base sync** and **A driver's ticket resolution**
-# the resolver. A skill's scoped name, such as `orchestrator:orch-flow`, is
-# not a start, and a **Start a fresh subagent** pointer is not a read.
+# settings** section. So every file that starts a plugin agent points at that
+# section and names `agent get <role>` for each role it starts; a sibling skill
+# reference file is paired with its own `SKILL.md` (the entrypoint always loaded
+# ahead of it, never unrelated sibling files), so a role started from a sibling
+# file can read its setting once in `SKILL.md` and still stay guarded. A file
+# starts an agent when, read flattened (with its `SKILL.md` for a sibling file),
+# it starts one under the `orchestrator:` plugin scope (the scope named,
+# `subagent_type`, or `orchestrator:<agent>`) - its roles then come from the
+# orch- agent names the file itself gives, never from an agent's file path - or
+# when the file points at a shared section that starts one: **Dispatching a
+# subagent** starts the implementer, **A driver's base sync** and **A driver's
+# ticket resolution** the resolver. A skill's scoped name, such as
+# `orchestrator:orch-flow`, is not a start, and a **Start a fresh subagent**
+# pointer is not a read.
 # agent_start_files <plugin root>: every skill file, agent file and docs/
 # file a start site can live in, one path per line.
 agent_start_files() {
@@ -1675,7 +1679,7 @@ agent_start_files() {
 # module, read from the real plugin root (a scanned fixture carries no agent
 # module) and sourced once.
 scan_agent_settings() {
-  local r="$1" f text name roles role pattern shape
+  local r="$1" f text ctx name roles role pattern shape
   local -a files
   # shellcheck source=/dev/null
   if ! source "$PLUGIN_ROOT/scripts/orch/agent.sh" 2>/dev/null || [ -z "${AGENT_NAME_SHAPES:-}" ]; then
@@ -1690,9 +1694,14 @@ scan_agent_settings() {
   mapfile -t files < <(agent_start_files "$r")
   for f in "${files[@]}"; do
     text="$(flat_text "$f")"
+    if [[ "$f" == "$r"/skills/*/*.md && "$f" != */SKILL.md && -f "${f%/*}/SKILL.md" ]]; then
+      ctx="$(awk '1' "${f%/*}/SKILL.md" "$f" | flat_text)"
+    else
+      ctx="$text"
+    fi
     roles=""
-    if grep -qE '`orchestrator:` plugin scope|subagent_type|orchestrator:<agent>' <<<"$text" ||
-      grep -qE "orchestrator:$pattern" <<<"$text"; then
+    if grep -qE '`orchestrator:` plugin scope|subagent_type|orchestrator:<agent>' <<<"$ctx" ||
+      grep -qE "orchestrator:$pattern" <<<"$ctx"; then
       # An agent's file path, such as agents/orch-fixer.md, names a file to
       # read, not an agent to start.
       while IFS= read -r name; do
@@ -1704,11 +1713,11 @@ scan_agent_settings() {
     grep -qF '**Dispatching a subagent**' <<<"$text" && roles+=" implementer"
     grep -qE "\*\*A driver's (base sync|ticket resolution)\*\*" <<<"$text" && roles+=" resolver"
     [ -n "$roles" ] || continue
-    if ! grep -qE '\*\*Agent settings\*\*|#agent-settings\)' <<<"$text"; then
+    if ! grep -qE '\*\*Agent settings\*\*|#agent-settings\)' <<<"$ctx"; then
       echo "${f#"$r"/}: starts a plugin agent but does not point at **Agent settings**"
     fi
     for role in $(tr ' ' '\n' <<<"$roles" | sort -u); do
-      grep -qF "agent get $role" <<<"$text" ||
+      grep -qF "agent get $role" <<<"$ctx" ||
         echo "${f#"$r"/}: starts an agent of the $role role but does not name agent get $role"
     done
   done
@@ -1765,14 +1774,28 @@ flags "a start of orch-code-auditor with no pointer is flagged" \
 flags "a start of orch-code-auditor is read under the auditor role" \
   "$out" "skills/a/SKILL.md: starts an agent of the auditor role but does not name agent get auditor"
 fixture="$(new_fixture)"
-mkdir -p "$fixture/skills/sib"
+mkdir -p "$fixture/skills/sib" "$fixture/skills/sib-ok" "$fixture/skills/sib-iso"
 printf 'Start agents with `subagent_type`. Read `agent get fixer` per **Agent settings**.\n' \
   >"$fixture/skills/sib/SKILL.md"
-printf 'Start `orch-closer` with `subagent_type` at termination.\n' \
+printf 'Start `orch-closer` at termination.\n' \
   >"$fixture/skills/sib/termination.md"
-flags "an agent started in a sibling reference file needs agent get in that file" \
-  "$(scan_agent_settings "$fixture")" \
+printf 'Start agents with `subagent_type`. Read `agent get closer` per **Agent settings**.\n' \
+  >"$fixture/skills/sib-ok/SKILL.md"
+printf 'Start `orch-closer` at termination.\n' \
+  >"$fixture/skills/sib-ok/termination.md"
+printf '# Iso\n\nRead the phase file.\n' >"$fixture/skills/sib-iso/SKILL.md"
+printf 'Follow **Dispatching a subagent**.\n' >"$fixture/skills/sib-iso/phase-implement.md"
+printf 'Read `agent get implementer` per **Agent settings**.\n' \
+  >"$fixture/skills/sib-iso/other.md"
+out="$(scan_agent_settings "$fixture")"
+flags "an agent started in a sibling reference file requires agent get in it or SKILL.md" \
+  "$out" \
   "skills/sib/termination.md: starts an agent of the closer role but does not name agent get closer"
+spares "a sibling reference file can satisfy agent get from its own SKILL.md" \
+  "$out" '^skills/sib-ok/'
+flags "an unrelated sibling reference file cannot satisfy agent get for another sibling" \
+  "$out" \
+  "skills/sib-iso/phase-implement.md: starts an agent of the implementer role but does not name agent get implementer"
 # A start site generated from AGENT_NAME_SHAPES, one name per shape with each *
 # as x, so a role or shape added there is covered with no edit here.
 mapfile -t shapes_read < <(source "$PLUGIN_ROOT/scripts/orch/agent.sh" && agent_name_shapes)
