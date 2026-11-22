@@ -514,7 +514,8 @@ is the behaviour under test.
   what `seed(<operation>, <args>..., answer=...)` set for their arguments, and
   their "could not" value for a call nothing was seeded for.
 - In `conftest.py`: `clean_env`, autouse, clears the variables that would
-  change what a test resolves and puts the real-gh guard first on `PATH`,
+  change what a test resolves, sets `GIT_TERMINAL_PROMPT=0` so git never
+  blocks prompting on a PTY, and puts the real-gh guard first on `PATH`,
   failing a test that reaches gh; `fixture_gh` is a fixture gh answering by
   exact argv, for the real gh adapter's contract tests (ADR-0033).
 

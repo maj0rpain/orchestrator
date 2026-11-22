@@ -174,8 +174,9 @@
 #   scan_driver_loop  the loop step labels live in docs/driver-loop.md only
 #   scan_layout_map  CONTRIBUTING's Layout map lists every docs/ file and
 #     directory
-#   scan_changelog  the CHANGELOG's top heading is the plugin version, with one
-#     non-empty section
+#   scan_changelog  .antigravity-plugin/plugin.json's version matches
+#     .claude-plugin/plugin.json's, and the CHANGELOG's top heading is that
+#     version, with one non-empty section
 #   scan_line_width  no covered Markdown or shell comment line is past 80
 #     columns, outside the exempt lines
 #   scan_interview_closing  orch-interview's SKILL.md's Closing section has
@@ -370,7 +371,7 @@ version_field() {
 # own. The one fragment's issue must not be a sub-issue: a fragment is named
 # for the PR's issue, never a ticket (CLAUDE.md Versioning).
 scan_changelog_fragments() {
-  local r="$1" base="$2" no_bump="${3:-}" mb status path added=() old new ag_old ag_new heading frag issue parent
+  local r="$1" base="$2" no_bump="${3:-}" mb status path added=() old new ag_old ag_new heading frag issue parent m
   if ! mb="$(git -C "$r" merge-base "$base" HEAD 2>/dev/null)"; then
     echo "CHANGELOG_BASE: no merge-base with HEAD for '$base'"; return 0
   fi
@@ -403,8 +404,9 @@ scan_changelog_fragments() {
       # run on a scratch checkout holding only this fragment.
       frag="$(new_fixture)"
       mkdir -p "$frag/.claude-plugin" "$frag/.antigravity-plugin" "$frag/changelog.d"
-      printf '{\n  "version": "0.0.0"\n}\n' >"$frag/.claude-plugin/plugin.json"
-      printf '{\n  "version": "0.0.0"\n}\n' >"$frag/.antigravity-plugin/plugin.json"
+      for m in .claude-plugin .antigravity-plugin; do
+        printf '{\n  "version": "0.0.0"\n}\n' >"$frag/$m/plugin.json"
+      done
       printf '%s\n' '## 0.0.0' '' 'Scratch.' >"$frag/CHANGELOG.md"
       git -C "$r" show "HEAD:${added[0]}" >"$frag/${added[0]}"
       (cd "$frag" && bash "$PLUGIN_ROOT/scripts/version-bump.sh" 2>&1 >/dev/null) |
@@ -4802,16 +4804,16 @@ scan_changelog() {
 # plugin manifests carry <version> (none when empty) and whose CHANGELOG.md is
 # the given lines.
 changelog_fixture() {
-  local f v="$1"; shift
+  local f m v="$1"; shift
   f="$(new_fixture)"
   mkdir -p "$f/.claude-plugin" "$f/.antigravity-plugin"
-  if [ -n "$v" ]; then
-    printf '{\n  "name": "x",\n  "version": "%s"\n}\n' "$v" >"$f/.claude-plugin/plugin.json"
-    printf '{\n  "name": "x",\n  "version": "%s"\n}\n' "$v" >"$f/.antigravity-plugin/plugin.json"
-  else
-    printf '{\n  "name": "x"\n}\n' >"$f/.claude-plugin/plugin.json"
-    printf '{\n  "name": "x"\n}\n' >"$f/.antigravity-plugin/plugin.json"
-  fi
+  for m in .claude-plugin .antigravity-plugin; do
+    if [ -n "$v" ]; then
+      printf '{\n  "name": "x",\n  "version": "%s"\n}\n' "$v" >"$f/$m/plugin.json"
+    else
+      printf '{\n  "name": "x"\n}\n' >"$f/$m/plugin.json"
+    fi
+  done
   printf '%s\n' "$@" >"$f/CHANGELOG.md"
   echo "$f"
 }
@@ -4840,7 +4842,8 @@ flags "a drifted .antigravity-plugin/plugin.json version is flagged" \
   "$(scan_changelog "$fixture")" ".antigravity-plugin/plugin.json: version is '3.1.0', not '3.2.0'"
 spares "a CHANGELOG topped by a non-empty entry for the version is not flagged" \
   "$(scan_changelog "$(changelog_fixture 3.2.0 '# Changelog' '' '## 3.2.0' '' 'New.' '' '## 3.1.0' '' 'Old.')")" '.'
-check "CHANGELOG.md's top entry is the plugin.json version" "$(scan_changelog "$PLUGIN_ROOT")"
+check "both plugin.json manifests carry CHANGELOG.md's top entry version" \
+  "$(scan_changelog "$PLUGIN_ROOT")"
 
 # fragment_fixture: a fixture git repo whose main branch holds plugin.json at
 # 4.5.6, a CHANGELOG topped by ## 4.5.6, and one fragment not yet bumped,

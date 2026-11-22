@@ -60,7 +60,8 @@ config.
   so skills start a fresh general-purpose subagent briefed with the agent's
   file under `agents/` (using `invoke_subagent` in standalone `agy`, or
   `delegate_task` when running through T3 Code so subagents inherit runtime
-  permissions instead of timing out on tool approvals).
+  permissions: #4055's review passes saw `invoke_subagent` subagents there
+  time out on tool approvals it never surfaced).
 - **Lifecycle hooks (#4057)**: planning-context injection, the planning edit
   guard, the batch paste guard, and the Bash stdin/pgrep guard hooks are not
   wired yet; skills follow their documented fallbacks and `orch.sh init` checks

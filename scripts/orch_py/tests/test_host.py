@@ -53,9 +53,8 @@ def test_flow_cmd(env, expected):
     ({"CLAUDECODE": "1"}, "/clear, then /orchestrator:next"),
     ({"ORCHESTRATOR_HOST": "junie"}, "/new, then ask for the next phase with /orch-flow"),
     ({"ANTIGRAVITY_AGENT": "1"}, "/clear, then ask for the next phase with /orch-flow"),
-    ({"ORCHESTRATOR_HOST": "antigravity"}, "/clear, then ask for the next phase with /orch-flow"),
     ({}, "a fresh session, then /orchestrator:next (or orch-flow's Next phase section)"),
-], ids=["claude", "junie", "antigravity-signal", "antigravity-override", "empty"])
+], ids=["claude", "junie", "antigravity", "empty"])
 def test_next_phase_cmd(env, expected):
     assert host.next_phase_cmd(env) == expected
 

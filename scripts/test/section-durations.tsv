@@ -305,8 +305,8 @@
 43	35	trust module	dd0183ac4380b097c6b51f9e75c4a3038ab514c5
 89	19	wait: a call's block is wall time	90d20fdb4b55a5964e512640526d36f24c6b6f96
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594
-331	222	docs_lint.sh	29ba99ff8108ac10b7557070e0c66e61096c9ce9
-34	27	version_bump_test.sh	fc90c903e886fe33912160becd8856b4ef108cf4
+373	248	docs_lint.sh	83592c17136c05d3d895a32cb6fd9e9a74c598eb
+40	30	version_bump_test.sh	13c6acda626586d9df9be1d51a465dd889fdc723
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 17	17	autopilot_up_test.sh	e83bb3b5d6213ab54507233be7cc6e624358622c
 51	51	lens_bench_test.sh	ffb52c95b18f2076683217dffc8d27f1d03a136d

@@ -51,13 +51,13 @@ tally_init
 # on their one "version" line, among other lines, and whose CHANGELOG.md is a
 # preamble and two older entries. Prints its path.
 checkout() {
-  local c
+  local c m
   c="$(mktemp -d "$bump_root/checkout.XXXXXX")"
   mkdir "$c/.claude-plugin" "$c/.antigravity-plugin"
-  printf '{\n  "name": "orchestrator",\n  "version": "%s",\n  "keywords": [\n    "handoff"\n  ]\n}\n' \
-    "$1" >"$c/.claude-plugin/plugin.json"
-  printf '{\n  "name": "orchestrator",\n  "version": "%s",\n  "keywords": [\n    "handoff"\n  ]\n}\n' \
-    "$1" >"$c/.antigravity-plugin/plugin.json"
+  for m in .claude-plugin .antigravity-plugin; do
+    printf '{\n  "name": "orchestrator",\n  "version": "%s",\n  "keywords": [\n    "handoff"\n  ]\n}\n' \
+      "$1" >"$c/$m/plugin.json"
+  done
   printf '%s\n' '# Changelog' '' 'All notable changes.' '' "## $1" '' 'The latest change.' '' \
     '## 0.0.1' '' 'The first change.' >"$c/CHANGELOG.md"
   printf '%s\n' "$c"
