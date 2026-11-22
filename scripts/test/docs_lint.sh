@@ -149,6 +149,7 @@
 #     section and starts its own reviewers
 #   scan_skill_description_length  no skill's frontmatter description is over
 #     1024 characters
+#   scan_skill_body_size  no skill's SKILL.md body is over 24000 bytes
 #   scan_review_pass_callers  each caller of the review pass names
 #     orch-review-pass and the section it follows
 #   scan_review_loop_sheds_pass  orch-review keeps no copy of the review pass
@@ -1862,6 +1863,9 @@ agents/orch-fixer.md|## The record
 agents/orch-implementer.md|## Root-cause fixes
 agents/orch-reviewer-standards.md|## Root-cause check
 agents/orch-reviewer-standards.md|## Doc-agreement check
+skills/orch-flow/phase-spec.md|# Phase: spec
+skills/orch-flow/phase-spec.md|## In an autopilot flow
+skills/orch-flow/phase-implement.md|# Phase: implement
 skills/orch-handoff/SKILL.md|## In an autopilot flow
 skills/orch-handoff/SKILL.md|## Amending Rejected alternatives
 skills/orch-handoff/SKILL.md|## What belongs in one
@@ -1877,15 +1881,31 @@ skills/orch-quick-implement/SKILL.md|## 2. Run an unattended spec review
 skills/orch-quick-implement/SKILL.md|## 3. Publish the ticket breakdown
 skills/orch-quick-implement/SKILL.md|## 6. Review
 skills/orch-quick-implement/SKILL.md|## 7. Open the PR
+skills/orch-review/autopilot.md|# Autopilot review loop
+skills/orch-review/autopilot.md|## CI failure judgement
+skills/orch-review/autopilot.md|## Termination
+skills/orch-review/termination.md|# CI, Termination, and the closer
+skills/orch-review/termination.md|## CI
+skills/orch-review/termination.md|## Termination
+skills/orch-review/termination.md|## The closer
+skills/orch-review/triage.md|# Triage, severity, and clean-iteration records
+skills/orch-review/triage.md|## Dispositions and triage rules
+skills/orch-review/triage.md|## Clean-iteration record
+skills/orch-review/triage.md|## Severity
+skills/orch-review/triage.md|## Authority: what the loop refuses to act on
 skills/orch-review-pass/SKILL.md|## Review pass
 skills/orch-review-pass/SKILL.md|## Standalone review pass
 skills/orch-spec-review/SKILL.md|## Standalone spec review
 skills/orch-spec-review/SKILL.md|## Consolidation
 skills/orch-spec-review/SKILL.md|## Disposition
-skills/orch-spec-review/SKILL.md|## Applying the answer
-skills/orch-spec-review/SKILL.md|## The changelog
+skills/orch-spec-review/applying.md|# Batch view, answers, and applying
+skills/orch-spec-review/applying.md|## Batch view and interactive answers
+skills/orch-spec-review/applying.md|## Applying the answer
+skills/orch-spec-review/applying.md|## The changelog
+skills/orch-spec-review/batch-file.md|# The batch file
 skills/orch-spec-review/spec-phase.md|# Spec phase
 skills/orch-spec-review/spec-phase.md|## Inputs
+skills/orch-spec-review/standalone.md|# Standalone spec review
 skills/orch-spec-review/tickets-follow-the-spec.md|# Tickets follow the spec
 skills/orch-spec-review/unattended-spec-review.md|# Unattended spec review
 skills/orch-to-spec/SKILL.md|## Rewrite the issue
@@ -2519,7 +2539,7 @@ agents/orch-fixer.md
 agents/orch-resolver.md
 skills/orch-review-pass/SKILL.md
 docs/driver-loop.md
-skills/orch-review/SKILL.md
+skills/orch-review/termination.md
 skills/orch-audit-tests/SKILL.md
 skills/orch-spec-review/SKILL.md
 skills/orch-quick-implement/SKILL.md'
@@ -2917,35 +2937,35 @@ check "every skill's SKILL.md names each of its reference files" \
 # wording (ADR-0027).
 # scan_spec_review_refs <plugin root>: one line per site that lost its name.
 scan_spec_review_refs() {
-  local r="$1" flow="skills/orch-flow/SKILL.md" step
-  step="$(md_section "$r/$flow" "### Phase: spec" 2>/dev/null \
+  local r="$1" flow="skills/orch-flow/phase-spec.md" step
+  step="$(md_section "$r/$flow" "# Phase: spec" 2>/dev/null \
     | awk '/^[0-9]+\. / { inb = ($0 ~ /^4\. /) } inb' | flat_text)"
   grep -qF 'spec-phase.md' <<<"$step" \
     || echo "$flow: spec phase step 4 does not name orch-spec-review's spec-phase.md"
-  scan_names_phrase "$r" 'skills/orch-spec-review/SKILL.md|## Applying the answer' 'spec-review apply'
+  scan_names_phrase "$r" 'skills/orch-spec-review/applying.md|## Applying the answer' 'spec-review apply'
   return 0
 }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-flow"
-printf '# F\n\n### Phase: spec\n\n4. Invoke `orch-spec-review`.\n5. Then read spec-phase.md.\n' \
-  >"$fixture/skills/orch-flow/SKILL.md"
+printf '# Phase: spec\n\n4. Invoke `orch-spec-review`.\n5. Then read spec-phase.md.\n' \
+  >"$fixture/skills/orch-flow/phase-spec.md"
 flags "a spec phase step 4 that does not name spec-phase.md is flagged" \
-  "$(scan_spec_review_refs "$fixture")" "skills/orch-flow/SKILL.md: spec phase step 4 does not name orch-spec-review's spec-phase.md"
-printf '# F\n\n### Phase: spec\n\n4. Invoke `orch-spec-review`, reading spec-phase.md.\n' \
-  >"$fixture/skills/orch-flow/SKILL.md"
+  "$(scan_spec_review_refs "$fixture")" "skills/orch-flow/phase-spec.md: spec phase step 4 does not name orch-spec-review's spec-phase.md"
+printf '# Phase: spec\n\n4. Invoke `orch-spec-review`, reading spec-phase.md.\n' \
+  >"$fixture/skills/orch-flow/phase-spec.md"
 mkdir -p "$fixture/skills/orch-spec-review"
 printf '# S\n\n## Applying the answer\n\nApply it.\n\n## The changelog\n\nRun `spec-review apply`.\n' \
-  >"$fixture/skills/orch-spec-review/SKILL.md"
+  >"$fixture/skills/orch-spec-review/applying.md"
 out="$(scan_spec_review_refs "$fixture")"
 flags "an Applying the answer section that does not name spec-review apply is flagged" \
-  "$out" "skills/orch-spec-review/SKILL.md: ## Applying the answer does not name spec-review apply"
-printf '# S\n\n## Other\n' >"$fixture/skills/orch-spec-review/SKILL.md"
+  "$out" "skills/orch-spec-review/applying.md: ## Applying the answer does not name spec-review apply"
+printf '# S\n\n## Other\n' >"$fixture/skills/orch-spec-review/applying.md"
 flags "a missing Applying the answer section is flagged" \
-  "$(scan_spec_review_refs "$fixture")" "skills/orch-spec-review/SKILL.md: no ## Applying the answer section"
-printf '# F\n\n### Phase: spec\n\n4. Ask the round count.\n\n   Then invoke `orch-spec-review`, reading its\n   spec-phase.md.\n5. Break it down.\n' \
-  >"$fixture/skills/orch-flow/SKILL.md"
+  "$(scan_spec_review_refs "$fixture")" "skills/orch-spec-review/applying.md: no ## Applying the answer section"
+printf '# Phase: spec\n\n4. Ask the round count.\n\n   Then invoke `orch-spec-review`, reading its\n   spec-phase.md.\n5. Break it down.\n' \
+  >"$fixture/skills/orch-flow/phase-spec.md"
 printf '# S\n\n## Applying the answer\n\nHand the reply to `orch.sh spec-review\napply` once.\n' \
-  >"$fixture/skills/orch-spec-review/SKILL.md"
+  >"$fixture/skills/orch-spec-review/applying.md"
 assert_empty "a spec review whose sites name their files and command, however worded, is not flagged" \
   "$(scan_spec_review_refs "$fixture")"
 check "the spec review's references name spec-phase.md and spec-review apply" \
@@ -3723,6 +3743,43 @@ spares "a 1024-character description holding an em dash is spared" "$out" 'skill
 spares "a description line in the body is not flagged" "$out" 'skills/body/'
 check "every skill description fits the Agent Skills 1024-character limit" \
   "$(scan_skill_description_length "$PLUGIN_ROOT")"
+
+# --- skill bodies fit Antigravity's 24 KB load cap (#4054) --------------------
+# scan_skill_body_size <plugin root>: one line per SKILL.md whose body (after
+# YAML frontmatter) is over 24000 bytes, Antigravity CLI's load cap. Sibling
+# reference files are loaded on demand and are not capped.
+scan_skill_body_size() {
+  local r="$1" f bytes
+  for f in "$r"/skills/*/SKILL.md; do
+    [ -f "$f" ] || continue
+    bytes="$(skill_part "$f" body | wc -c)"
+    bytes="${bytes//[[:space:]]/}"
+    [ "$bytes" -gt 24000 ] \
+      && echo "${f#"$r"/}: body is $bytes bytes, over 24000"
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/exact" "$fixture/skills/over" \
+  "$fixture/skills/fm" "$fixture/skills/ref"
+b24000="$(printf 'a%.0s' $(seq 1 23999))"
+printf -- '---\nname: exact\n---\n%s\n' "$b24000" \
+  >"$fixture/skills/exact/SKILL.md"
+printf -- '---\nname: over\n---\n%sa\n' "$b24000" \
+  >"$fixture/skills/over/SKILL.md"
+printf -- '---\nname: fm\ndescription: %s\n---\n%s\n' "$a1000" "$b24000" \
+  >"$fixture/skills/fm/SKILL.md"
+printf -- '---\nname: ref\n---\nShort.\n' >"$fixture/skills/ref/SKILL.md"
+printf '%saa\n' "$b24000" >"$fixture/skills/ref/reference.md"
+out="$(scan_skill_body_size "$fixture")"
+flags "a SKILL.md body over 24000 bytes is flagged with its byte count" \
+  "$out" "skills/over/SKILL.md: body is 24001 bytes, over 24000"
+spares "a SKILL.md body of exactly 24000 bytes is spared" "$out" 'skills/exact/'
+spares "frontmatter does not count toward the 24000-byte body cap" \
+  "$out" 'skills/fm/'
+spares "a sibling reference file over 24000 bytes is spared" "$out" 'skills/ref/'
+check "every SKILL.md body fits Antigravity's 24000-byte load cap" \
+  "$(scan_skill_body_size "$PLUGIN_ROOT")"
 
 # follows_standalone_pass <text> <prefix>: one line, after <prefix> and a
 # space, when the text does not name orch-review-pass's **Standalone review
@@ -4502,7 +4559,7 @@ echo "the PR-writing standard (#1389)"
 # Every PR body and PR comment the plugin writes follows docs/pr-writing.md,
 # so each PR-writing site names it: the three body sites, the three comment
 # sites, and the fixer's PR-body check.
-pr_writing_sites='skills/orch-flow/SKILL.md|### Phase: implement
+pr_writing_sites='skills/orch-flow/phase-implement.md
 skills/orch-quick-implement/SKILL.md|## 7. Open the PR
 skills/orch-release/SKILL.md
 agents/orch-closer.md|## The PR comment
@@ -4512,7 +4569,9 @@ agents/orch-fixer.md|## Checking the PR body'
 fixture="$(new_fixture)"
 mkdir -p "$fixture/agents" "$fixture/skills/orch-flow" "$fixture/skills/orch-quick-implement" \
   "$fixture/skills/orch-release" "$fixture/skills/orch-review-pass" "$fixture/skills/orch-sync"
-printf '# F\n\n### Phase: implement\n\nOpen the PR.\n\n### Phase: review\n\nSee `docs/pr-writing.md`.\n' \
+printf '# Phase: implement\n\nOpen the PR.\n' \
+  >"$fixture/skills/orch-flow/phase-implement.md"
+printf '# F\n\n### Phase: review\n\nSee `docs/pr-writing.md`.\n' \
   >"$fixture/skills/orch-flow/SKILL.md"
 printf '# Q\n\n## 7. Open the PR\n\nWrite it per\n`docs/pr-writing.md`.\n' >"$fixture/skills/orch-quick-implement/SKILL.md"
 printf '# R\n\nWrite the summary.\n' >"$fixture/skills/orch-release/SKILL.md"
@@ -4524,7 +4583,7 @@ printf '# X\n\n## Checking the PR body\n\nCheck the human layer per `docs/pr-wri
   >"$fixture/agents/orch-fixer.md"
 out="$(scan_names_phrase "$fixture" "$pr_writing_sites" 'docs/pr-writing.md')"
 flags "a flow implement phase that names the doc only in another phase is flagged" \
-  "$out" "skills/orch-flow/SKILL.md: ### Phase: implement does not name docs/pr-writing.md"
+  "$out" "skills/orch-flow/phase-implement.md: does not name docs/pr-writing.md"
 flags "a release skill that never names the doc is flagged" \
   "$out" "skills/orch-release/SKILL.md: does not name docs/pr-writing.md"
 flags "a closer with no PR comment section is flagged" \
@@ -4546,11 +4605,12 @@ skills/orch-to-tickets/SKILL.md|### 4. Quiz the user
 skills/orch-to-tickets/SKILL.md|## Unattended breakdown
 skills/orch-audit-tests/SKILL.md|## 7. Hand off
 skills/orch-spec-review/SKILL.md|## Disposition
+skills/orch-spec-review/applying.md|## Batch view and interactive answers
 skills/orch-spec-review/tickets-follow-the-spec.md|## The ticket question
 docs/host-capabilities.md|### Guard the batch question
 skills/orch-spec-review/unattended-spec-review.md
 skills/orch-to-spec/SKILL.md|## Unattended rewrite
-skills/orch-flow/SKILL.md|### Phase: spec'
+skills/orch-flow/phase-spec.md'
 check "each turn-final reply site names docs/turn-final-reply.md" \
   "$(scan_names_phrase "$PLUGIN_ROOT" "$turn_final_sites" 'docs/turn-final-reply.md')"
 check "the glossary defines Turn-final reply" \
