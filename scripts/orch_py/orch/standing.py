@@ -27,7 +27,7 @@ from orch.handoff import PHASE_TABLE
 
 PHASES = tuple(row[0] for row in PHASE_TABLE)
 # The label an autopilot flow's issue carries while a session holds its claim.
-RUNNING_LABEL = "orch:running"
+STANDING_RUNNING_LABEL = "orch:running"
 
 
 def phase_label(phase: str) -> str:
@@ -63,8 +63,9 @@ def standing_release(gh, issue: str, landed: List[str]) -> None:
     """Removes orch:running from issue #<issue>, then deletes its claim ref,
     last, each a step of the chain whose writes <landed> holds."""
     n = int(issue)
-    standing_chain_step(landed, "removed " + RUNNING_LABEL, "remove " + RUNNING_LABEL, issue,
-                        lambda: gh.issue_relabel(n, remove=[RUNNING_LABEL]))
+    standing_chain_step(landed, "removed " + STANDING_RUNNING_LABEL,
+                        "remove " + STANDING_RUNNING_LABEL, issue,
+                        lambda: gh.issue_relabel(n, remove=[STANDING_RUNNING_LABEL]))
     standing_chain_step(landed, "deleted the claim ref", "delete the claim ref", issue,
                         lambda: gh.claim_delete(n))
 
