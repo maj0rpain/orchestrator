@@ -1,8 +1,8 @@
 """orch.sh's handoff of a converted noun to the orch package, run as
 `python3 -m orch` would be, through a `-c` bootstrap (ADR-0067), end to end:
 each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>`,
-`orch.sh verification <verb>` or `orch.sh audit <verb>` as a command, in a
-checkout under tmp_path, against a fake store seeded in the
+`orch.sh verification <verb>`, `orch.sh audit <verb>` or `orch.sh review-pass
+<verb>` as a command, in a checkout under tmp_path, against a fake store seeded in the
 layout the bash suite's fake_* helpers write, with ORCH_GH_FAKE_STORE set as
 fake_github sets it."""
 from __future__ import annotations
@@ -113,16 +113,22 @@ def test_a_converted_verb_dies_before_doing_anything_without_python3(tmp_path, r
     assert not (Path(seed.store) / "issues" / "12" / "comments").exists()
 
 
-def test_a_converted_verb_runs_with_site_packages_disabled(tmp_path, repo, seed):
+def python3_shim(tmp_path):
+    """A python3 first on PATH that logs `ran` to tmp_path/shim.log and runs
+    this interpreter with site-packages disabled: that PATH."""
     shim = tmp_path / "python3-S" / "python3"
     shim.parent.mkdir()
     shim.write_text('#!/bin/sh\necho ran >>"%s"\nexec "%s" -S "$@"\n'
                     % (tmp_path / "shim.log", sys.executable))
     shim.chmod(0o755)
+    return "%s%s%s" % (shim.parent, os.pathsep, os.environ["PATH"])
+
+
+def test_a_converted_verb_runs_with_site_packages_disabled(tmp_path, repo, seed):
+    path = python3_shim(tmp_path)
     seed.issue(12, "open", "ready-for-agent")
 
-    answer = orch_sh(tmp_path, repo, seed, "issue", "ready", "12",
-                     path="%s%s%s" % (shim.parent, os.pathsep, os.environ["PATH"]))
+    answer = orch_sh(tmp_path, repo, seed, "issue", "ready", "12", path=path)
 
     assert answer == ("", "", 0)
     assert (tmp_path / "shim.log").read_text() == "ran\n"
@@ -324,3 +330,59 @@ def test_audit_file_run_files_a_run_s_pick_through_the_dispatch(tmp_path, repo, 
 
     assert answer == ("2\t40\tfiled\n", "", 0)
     assert read(seed.store, "issues", 40, "title") == "Deepen d.sh\n"
+
+
+# --- review-pass -------------------------------------------------------------
+
+
+@pytest.fixture
+def review_branch(repo, seed):
+    """The repository, committed, on quick/12-foo, its default branch main."""
+    committed(repo, {"README.md": "readme\n"}, "first")
+    run_git(repo, "checkout", "-q", "-b", "quick/12-foo")
+    seed.default_branch("main")
+    return repo
+
+
+def test_review_pass_begin_prints_the_first_prefix_through_the_python_noun(
+        tmp_path, review_branch, seed):
+    answer = orch_sh(tmp_path, review_branch, seed, "review-pass", "begin", "12",
+                     path=python3_shim(tmp_path))
+
+    assert answer == ("%s/iteration-01\n" % (
+        review_branch / ".orchestrator" / "review-pass" / "quick" / "12-foo"), "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_review_pass_known_items_writes_the_file_through_the_python_noun(
+        tmp_path, review_branch, seed):
+    seed.issue(12, "open")
+    seed.comment(12, "pat", "2026-10-01T09:00:00Z", "Spec ruling: Retry once.")
+    seed.pr(57, "open", "quick/12-foo", "main")
+    seed.pr_body(57, "Closes #12\n\n## Deviations\n\n- Kept the old cache\n")
+    known = tmp_path / "known.md"
+
+    answer = orch_sh(tmp_path, review_branch, seed, "review-pass", "known-items", "12",
+                     str(known), path=python3_shim(tmp_path))
+
+    assert answer == ("", "", 0)
+    assert known.read_text() == ("## Deviations\n- Kept the old cache\n"
+                                 "## Known items\n- Retry once. - spec ruling\n")
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_an_unknown_review_pass_op_is_refused_through_the_python_noun(tmp_path, repo, seed):
+    answer = orch_sh(tmp_path, repo, seed, "review-pass", "wipe", "12",
+                     path=python3_shim(tmp_path))
+
+    assert answer == ("", "orch: unknown review-pass op: wipe (want begin|known-items)\n", 1)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_help_lists_both_review_pass_verbs(tmp_path, repo, seed):
+    out, err, code = orch_sh(tmp_path, repo, seed, "help")
+
+    assert (err, code) == ("", 0)
+    assert [line.split()[:3] for line in out.splitlines()
+            if line.startswith("  review-pass ")] == [
+        ["review-pass", "begin", "<issue>"], ["review-pass", "known-items", "<issue>"]]

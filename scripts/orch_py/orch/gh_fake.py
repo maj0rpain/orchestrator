@@ -87,6 +87,11 @@ def _issue_path(store: str, n: int, *parts: str) -> str:
     return _store_path(store, "issues", n, *parts)
 
 
+def _pr_path(store: str, n: int, *parts: str) -> str:
+    """The path of <parts> under PR #n's directory in the store."""
+    return _store_path(store, "prs", n, *parts)
+
+
 def _labels_write(store: str, n: int, labels: Sequence[str]) -> None:
     """Issue #n's labels in the store at <store>: exactly <labels>, one a
     line, in order."""
@@ -204,8 +209,18 @@ class FakeGh:
     def _comment_append(self, directory: str, body: str) -> None:
         _comment_write(directory, COMMENT_AUTHOR, COMMENT_CREATED, "OWNER", body)
 
-    def _comments(self, n: int) -> List[dict]:
-        directory = _issue_path(self.store, n, "comments")
+    def _pr_known(self, n: int) -> None:
+        """Fails as `gh pr view` does where the store holds no PR #n."""
+        if not os.path.isdir(_pr_path(self.store, n)):
+            raise GhFailed(
+                "GraphQL: Could not resolve to a PullRequest with the number of %d."
+                " (repository.pullRequest)\n" % n
+            )
+
+    def _comments(self, n: int, directory: str) -> List[dict]:
+        """The comments under <directory>, numerically ordered, as gh's raw
+        objects; each url names issue #n, as the bash fake's do for an issue
+        and a PR alike."""
         comments = []
         for k in _numbered(directory):
             comment = os.path.join(directory, k)
@@ -274,7 +289,7 @@ class FakeGh:
         if stale is not None:
             return real.parse_comments(stale)
         self._known(n)
-        return self._comments(n)
+        return self._comments(n, _issue_path(self.store, n, "comments"))
 
     def issue_authorship(self, n: int) -> Tuple[str, str, str, str]:
         """The stored authorship; absent, fake-gh as OWNER, the body never
@@ -467,6 +482,38 @@ class FakeGh:
         return [(b, _first_line(_issue_path(self.store, b, "state"))) for b in self._blockers(n)]
 
 
+    # --- PR operations ---
+
+    def prs_open(self, head: str, base: str = "") -> List[str]:
+        """The open PRs from <head>, into <base> where one is named, newest
+        first, each `<number><TAB><flag>`, the flag the stored
+        cross_repository file as stored, false where unset."""
+        self._failing("adapter_prs_open")
+        rows = []
+        for name in reversed(_numbered(_store_path(self.store, "prs"))):
+            if not os.path.isdir(_pr_path(self.store, name)):
+                continue
+            if read_text(_pr_path(self.store, name, "state")) != "OPEN":
+                continue
+            if read_text(_pr_path(self.store, name, "head")) != head:
+                continue
+            if base and read_text(_pr_path(self.store, name, "base")) != base:
+                continue
+            cross = read_text(_pr_path(self.store, name, "cross_repository"))
+            rows.append("%s\t%s" % (name, "false" if cross is None else cross))
+        return rows
+
+    def pr_body(self, n: int) -> str:
+        self._failing("adapter_pr_body")
+        self._pr_known(n)
+        return read_raw(_pr_path(self.store, n, "body")) or ""
+
+    def pr_comments(self, n: int) -> List[dict]:
+        self._failing("adapter_pr_comments")
+        self._pr_known(n)
+        return self._comments(n, _pr_path(self.store, n, "comments"))
+
+
 class FakeStore:
     """Seeds the store at <store> and reads it back, as the bash suite's
     fake_* helpers do, in their layout."""
@@ -519,6 +566,30 @@ class FakeStore:
         """GitHub leaves #n's dependency summary off, so only its blocked-by
         listing answers."""
         _write(_store_path(self.store, "no_dependency_summary"), "%d\n" % n, "ab")
+
+    def pr(self, n: int, state: str, head: str, base: str) -> None:
+        """PR #n afresh, open, closed or merged, from <head> into <base> - no
+        body or comments, same-repo."""
+        directory = _pr_path(self.store, n)
+        shutil.rmtree(directory, ignore_errors=True)
+        _write(os.path.join(directory, "state"), state.upper() + "\n")
+        _write(os.path.join(directory, "head"), head + "\n")
+        _write(os.path.join(directory, "base"), base + "\n")
+
+    def pr_body(self, n: int, body: str) -> None:
+        _write(_pr_path(self.store, n, "body"), body)
+
+    def pr_comment(self, n: int, author: str, created: str, body: str,
+                   association: str = "") -> None:
+        """A comment after any PR #n has; its association OWNER unless
+        given."""
+        _comment_write(_pr_path(self.store, n, "comments"), author, created,
+                       association or "OWNER", body)
+
+    def pr_cross(self, n: int, flag: str = "true") -> None:
+        """PR #n's cross-repository flag, a fork PR's by default, stored as
+        given."""
+        _write(_pr_path(self.store, n, "cross_repository"), flag + "\n")
 
     def default_branch(self, answer: str) -> None:
         """The repo's default branch as GitHub answers it, byte for byte, as

@@ -9,6 +9,9 @@
 # answer for too.
 fake_pull() { fake_issue "$1" open; : >"$ORCH_GH_FAKE_STORE/issues/$1/pull"; }
 
+# fake_pr_body <n> <text>: seeds PR #n's body, byte for byte.
+fake_pr_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/prs/$1/body"; }
+
 # fake_prs: every PR number the store holds, in order, space-separated.
 fake_prs() { ls "$ORCH_GH_FAKE_STORE/prs" 2>/dev/null | sort -n | tr '\n' ' '; }
 

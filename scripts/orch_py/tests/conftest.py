@@ -19,9 +19,10 @@ from pathlib import Path
 
 import pytest
 
-from orch import audit, issue, verification
+from orch import audit, issue, review_pass, verification
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit, Git
+from orch.repo import RepoPin
 from orch.triage_labels import LABELS_DOC
 
 # A gh failure's stderr: its first line is the reason a message names.
@@ -272,6 +273,21 @@ def orch_audit(git, *argv, gh=None):
     SystemExit's included."""
     try:
         return audit.run(list(argv), gh=gh, git=git, env={}, clock=lambda: AUDIT_CLOCK)
+    except SystemExit as died:
+        return died.code
+
+
+def orch_review_pass(seed, git, *argv, gh=None, env=None):
+    """`orch.sh review-pass <argv>` in-process, in the checkout of the git
+    adapter <git>, under <env> (empty when None), with the gh adapter <gh> -
+    the gh fake on <seed>'s store pinned to <git>'s origin when None: its
+    exit code, a SystemExit's included."""
+    env = {} if env is None else env
+    pin = RepoPin(env, git)
+    if gh is None:
+        gh = FakeGh(seed.store, env, pin=pin, sleep=lambda _: None)
+    try:
+        return review_pass.run(list(argv), gh=gh, git=git, env=env, pin=pin)
     except SystemExit as died:
         return died.code
 

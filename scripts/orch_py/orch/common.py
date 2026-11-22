@@ -2,7 +2,7 @@
 plain-number test every verb checks its issue numbers with, the decimal-number
 tests and the poll-knob check a waiting verb reads its knobs with, the atomic
 file write, the file read as bash's $(<file) gives it, the lines of a text
-and of a file, the temporary file a comment is handed to gh from, the words a
+and of a file, the markdown code-fence rule, the temporary file a comment is handed to gh from, the words a
 list and a state read as in a line, the orchestrator's directory name, the
 UTC stamp a run directory is named with, and the git exclude writer.
 
@@ -128,6 +128,43 @@ def lines_of(text: str) -> List[str]:
     if lines[-1] == "":
         lines.pop()
     return lines
+
+
+def _run_of(text: str, char: str) -> int:
+    """How many times <char> repeats at the start of <text>."""
+    return len(text) - len(text.lstrip(char)) if char else 0
+
+
+def fenced(lines: Iterable[str]) -> List[int]:
+    """The one markdown code-fence rule, common.sh's FENCE_AWK, over <lines>
+    in order: for each, 2 for a fence delimiter line (opening or closing), 1
+    for a line inside a fence and 0 otherwise. A fence opens on a line whose
+    first non-space character, after at most three spaces of indent, starts a
+    run of at least three backticks or tildes; it closes only on a line that,
+    with the same indent allowance, is a bare run of the same character at
+    least as long. Each line's CR and trailing blanks are ignored."""
+    states = []
+    fence_char = ""
+    fence_len = 0
+    for line in lines:
+        text = line.rstrip(" \t\r")
+        indent = _run_of(text, " ")
+        if indent <= 3:
+            text = text[indent:]
+        char = text[:1]
+        run = _run_of(text, char)
+        if fence_char:
+            if char == fence_char and run >= fence_len and run == len(text):
+                fence_char = ""
+                states.append(2)
+            else:
+                states.append(1)
+        elif char in ("`", "~") and run >= 3:
+            fence_char, fence_len = char, run
+            states.append(2)
+        else:
+            states.append(0)
+    return states
 
 
 def file_lines(path: str) -> List[str]:

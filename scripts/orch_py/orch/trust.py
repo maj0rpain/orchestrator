@@ -1,6 +1,6 @@
-"""The Trust module (scripts/orch/trust.sh), kept to what the issue noun
-uses: the Trusted comment filter and the attended reads' trusted-issue
-warning.
+"""The Trust module (scripts/orch/trust.sh), kept to what the issue and
+review-pass nouns use: the Trusted comment filter, the fork-PR filter and the
+attended reads' trusted-issue warning.
 
 A trusted comment is one whose authorAssociation is OWNER, MEMBER or
 COLLABORATOR (ADR-0057); every other comment is dropped, once per read, before
@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from typing import List, Mapping, NamedTuple, Optional
 
-from orch.common import warn
-from orch.gh import GhFailed, gh_reason
+from orch.common import plain_number, warn
+from orch.gh import GhFailed, Unparsed, gh_reason
 
 ASSOCIATIONS = ("OWNER", "MEMBER", "COLLABORATOR")
 
@@ -27,6 +27,24 @@ def filter_comments(n: str, comments: List[dict]) -> List[dict]:
     dropped = len(comments) - len(kept)
     if dropped:
         warn("ignored %d comment(s) from untrusted authors on #%s" % (dropped, n))
+    return kept
+
+
+def trust_filter_prs(subject: str, lines: List[str]) -> List[str]:
+    """An adapter's PR lines, each `<number>[<TAB><field>...]<TAB><flag>`,
+    as the same lines without the flag and without the fork PRs (flag
+    `true`), in order; empty lines are skipped. <subject> is the branch or
+    `#<issue>` the PRs were looked up for: when it dropped any, one `orch:
+    ignored N PR(s) from forks for <subject>` line. Unparsed, saying nothing,
+    when a line's first field is no PR number or its last is neither `true`
+    nor `false`."""
+    rows = [line.split("\t") for line in lines if line]
+    for fields in rows:
+        if not plain_number(fields[0]) or len(fields) < 2 or fields[-1] not in ("true", "false"):
+            raise Unparsed("a PR line that does not parse")
+    kept = ["\t".join(fields[:-1]) for fields in rows if fields[-1] == "false"]
+    if len(kept) < len(rows):
+        warn("ignored %d PR(s) from forks for %s" % (len(rows) - len(kept), subject))
     return kept
 
 

@@ -18,11 +18,11 @@
 # opening), spec-review (the first line `## Spec review`) and spec-ruling (a
 # first line beginning `Spec ruling:`).
 #
-# The reader: marked_comment_texts (the opening-stripped texts of a kind), over
-# the prelude's marked_comment_list, _info, _entries and _of.
+# The readers: the prelude's marked_comment_list, _info, _entries and _of,
+# which a caller expands into its own jq program (marked_comment_jq).
 #
-# Every reader takes the bare comment array on stdin (the Comments module's
-# trusted read) and, on any other input, exits non-zero and prints nothing.
+# Every reader takes the bare comment array on its input (the Comments module's
+# trusted read) and, on any other input, errors and prints nothing.
 
 # The legacy openings of a refusal and a failure stop comment, frozen: they
 # only recognise comments posted before those kinds had a marker.
@@ -110,21 +110,4 @@ marked_comment_write() {
          *) die "marked comment: unknown tag: $tag" ;;
        esac ;;
   esac
-}
-
-# marked_comment_texts <kind> [<arg>]: a JSON array of, for every comment of
-# <kind> (and of <arg>, when given) on stdin in order, its body with its opening
-# removed - the whole first line, newline included, for every kind but
-# spec-ruling, whose `Spec ruling:` prefix alone goes - and every CR removed.
-# A comment of only its opening gives "". Prints [] when none is of that kind,
-# and exits 2, printing nothing, when the input is not a comment array.
-marked_comment_texts() {
-  local out
-  out="$(jq -c --arg k "$1" --arg a "${2-}" --arg ruling "$MARKED_COMMENT_SPEC_RULING_OPENING" "$(marked_comment_jq)"'
-    marked_comment_of($k; $a)
-    | map((.c.body // "") as $b
-      | (if $k == "spec-ruling" then $b | ltrimstr($ruling)
-         else ($b | index("\n")) as $n | if $n == null then "" else $b[$n + 1:] end end)
-      | gsub("\r"; ""))')" || return 2
-  printf '%s\n' "$out"
 }

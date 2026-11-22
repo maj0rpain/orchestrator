@@ -7,9 +7,10 @@
 
 # --- known-items module -----------------------------------------------------
 # The Known items module's helpers, called through a sourced orch.sh: sourcing
-# defines its functions without running main. `review known-items` and
-# `review-pass known-items` test the files the commands build; these pin the
-# helpers they build them from.
+# defines its functions without running main. `review known-items` tests the
+# file it builds; these pin the helpers it builds it from. The Python
+# review-pass noun's known-items file is pinned by its pytest tests, and to
+# these helpers by the golden known-items pair below.
 
 echo
 echo "known-items module"
@@ -36,19 +37,6 @@ assert_eq "section_entries_append appends the heading's entries, each tagged" \
 assert_eq "section_entries_append with no tag appends bare bullets" \
   "$(sourced_orch_script 'section_entries_append v "$1" "## Deviations"; printf "%s" "$v"' "$record")" \
   "- picked a seam for a reason"
-# shellcheck disable=SC2016 # expanded by the inner bash
-assert_eq "text_entries_append appends every entry of the file, each tagged" \
-  "$(sourced_orch_script 'text_entries_append v "$1" "spec ruling"; printf "%s" "$v"' "$entries")" \
-  "- first bullet continued here and here - spec ruling
-- a margin line - spec ruling
-- second bullet - spec ruling"
-# shellcheck disable=SC2016 # expanded by the inner bash
-assert_eq "text_entries_append with no tag appends bare bullets" \
-  "$(sourced_orch_script 'v=$'"'"'- kept\n'"'"'; text_entries_append v "$1"; printf "%s" "$v"' "$entries")" \
-  "- kept
-- first bullet continued here and here
-- a margin line
-- second bullet"
 
 out_dir="$(mktemp -d)"
 sourced_orch known_items_write "$out_dir/known.md" "" $'- one\n'
@@ -74,18 +62,28 @@ if [ "$(id -u)" -ne 0 ]; then
     "$(cat "$out_dir/known.md")" "$before"
 fi
 
+# The golden known-items pair the Python Known items helpers' tests build too:
+# the source's Deviations entries and its Review entries, tagged declined,
+# written as a known-items file byte for byte as the expected file holds it.
+ki_golden="${ORCH%/*}/orch_py/tests/known_items"
+# shellcheck disable=SC2016 # expanded by the inner bash
+sourced_orch_script 'section_entries_append d "$1" "## Deviations"
+  section_entries_append k "$1" "## Review" declined
+  known_items_write "$2" "${d-}" "${k-}"' "$ki_golden/source.md" "$out_dir/golden.md"
+assert_eq "section_entries_append and known_items_write build the golden known-items file byte for byte" \
+  "$(cmp "$out_dir/golden.md" "$ki_golden/expected.md" 2>&1 && echo same)" "same"
+
 # Where each helper is defined: extdebug makes `declare -F` print the file.
 # shellcheck disable=SC2016 # expanded by the inner bash
 defined_in="$(sourced_orch_script 'shopt -s extdebug
-  for f in text_entries section_entries section_entries_append text_entries_append \
-      known_items_write entries_append; do
+  for f in text_entries section_entries section_entries_append known_items_write \
+      entries_append; do
     printf "%s %s\n" "$f" "$(declare -F "$f" | sed "s/^[^ ]* [0-9]* //; s#.*/##")"
   done')"
-assert_eq "the five known-items helpers live in known-items.sh, entries_append nowhere" \
+assert_eq "the four known-items helpers live in known-items.sh, entries_append nowhere" \
   "$defined_in" "text_entries known-items.sh
 section_entries known-items.sh
 section_entries_append known-items.sh
-text_entries_append known-items.sh
 known_items_write known-items.sh
 entries_append "
 # shellcheck disable=SC2016 # expanded by the inner bash

@@ -22,27 +22,16 @@ mc_object() { jq -cn '{number: 1, comments: ($ARGS.positional | map({body: .}))}
 # mc_jq <program>: runs the jq <program> over the module's prelude, on stdin.
 # shellcheck disable=SC2016 # the program is single-quoted, and the module expands in the child
 mc_jq() { sourced_orch_script 'jq -c "$(marked_comment_jq)"'"' $1'"; }
-# mc <function> <comments-json> [<arg>...]: sets mc_out, mc_rc and mc_err from
-# running the module's <function> on the JSON: stdout, status and stderr.
-mc() {
-  local fn="$1" json="$2" err_file; shift 2
-  err_file="$(mktemp)"
-  mc_out="$(sourced_orch "marked_comment_$fn" "$@" <<<"$json" 2>"$err_file"; echo "rc=$?")"
-  mc_err="$(cat "$err_file")"; rm -f "$err_file"
-  mc_rc="${mc_out##*rc=}"; mc_out="${mc_out%rc=*}"
-  mc_out="${mc_out%$'\n'}"
-}
-
-# mc_newest <comments-json> <kind> [<arg>]: sets mc_out and mc_rc as mc does,
-# from the index of the newest comment of <kind> (and <arg>) that the prelude's
-# marked_comment_of finds: rc 1 and no output when none is.
+# mc_newest <comments-json> <kind> [<arg>]: sets mc_out and mc_rc, stdout and
+# status, from the index of the newest comment of <kind> (and <arg>) that the
+# prelude's marked_comment_of finds: rc 1 and no output when none is.
 mc_newest() {
   mc_out="$(sourced_orch_script 'jq -r --arg k "$1" --arg a "$2" "$(marked_comment_jq)"'"' marked_comment_of(\$k; \$a) | last | .key // empty'" "$2" "${3-}" <<<"$1" 2>/dev/null; echo "rc=$?")"
   mc_rc="${mc_out##*rc=}"; mc_out="${mc_out%rc=*}"
   mc_out="${mc_out%$'\n'}"
   if [ -z "$mc_out" ]; then mc_rc=1; fi
 }
-# Round trip: each kind's writer line, read back by the prelude and texts -
+# Round trip: each kind's writer line, read back by the prelude -
 # every hidden-marker kind the registry holds, so a newly added one is covered
 # too.
 hidden_kinds="$(sourced_orch_script 'printf "%s " $MARKED_COMMENT_KINDS')"
@@ -55,9 +44,6 @@ for entry in $(printf '%s:plan ' $hidden_kinds) "spec-review" "spec-ruling"; do
   arr="$(mc_array "first" "$line"$'\nthe text\n' "last")"
   mc_newest "$arr" "$kind" $arg
   assert_eq "$kind: the newest comment is found by kind${arg:+ and argument} (writer round trip)" "$mc_out/$mc_rc" "1/0"
-  mc texts "$arr" "$kind" $arg
-  assert_eq "$kind: the opening-stripped text is the text, trailing newline kept" "$mc_out" \
-    "$([ "$kind" = spec-ruling ] && echo '["\nthe text\n"]' || echo '["the text\n"]')"
 done
 assert_eq "the writer prints the question marker" "$(marker_of question plan)" "<!-- orch:question plan -->"
 assert_eq "the writer prints the retired handoff marker" "$(marker_of handoff 01-plan retired)" "<!-- orch:handoff 01-plan retired -->"
@@ -72,18 +58,10 @@ for bad_args in "bogus x" "question" "question ''" "spec-review x" "spec-ruling 
   assert_eq "the writer refuses '$bad_args', printing nothing" "$rc:$out" "1:"
 done
 
-# Exact texts: trailing newlines are kept; a body with no second line is empty.
-q="$(marker_of question plan)"
-mc texts "$(mc_array "$q"$'\nline\n\n\n')" question
-assert_eq "the opening-stripped text keeps its trailing newlines" "$mc_out" '["line\n\n\n"]'
-mc texts "$(mc_array "$q")" question
-assert_eq "a marker-only comment has an empty text" "$mc_rc:$mc_out" '0:[""]'
-
 # CR line endings.
+q="$(marker_of question plan)"
 mc_newest "$(mc_array "$q"$'\r\ntext')" question plan
 assert_eq "a marker line ending in CR is still a question comment" "$mc_out/$mc_rc" "0/0"
-mc texts "$(mc_array "$q"$'\r\ntext\r\n')" question
-assert_eq "the text of a CR comment drops the marker line and every CR" "$mc_out" '["text\n"]'
 mc_newest "$(mc_array "$(marker_of handoff 01-plan)"$'\r\nbody')" handoff 01-plan
 assert_eq "a handoff marker line ending in CR is still the newest handoff of its name" "$mc_out/$mc_rc" "0/0"
 
@@ -124,11 +102,6 @@ mc_newest "$(mc_array $'## Spec review \t\nRound 1 of 2')" spec-review
 assert_eq "spec-review allows trailing spaces and tabs" "$mc_rc:$mc_out" "0:0"
 mc_newest "$(mc_array $'## Spec review of x\nRound 1')" spec-review
 assert_eq "spec-review is exactly the heading" "$mc_rc:$mc_out" "1:"
-arr="$(mc_array "keep" $'## Spec review\nRound 1 of 2' "also")"
-mc texts "$arr" spec-review
-assert_eq "texts drops the spec-review heading line" "$mc_out" '["Round 1 of 2"]'
-mc texts "$(mc_object "keep" $'## Spec review\nx')" spec-review
-assert_eq "texts handed the issue object exits non-zero and prints nothing" "$([ "$mc_rc" != 0 ] && echo nonzero):$mc_out" "nonzero:"
 
 # The prelude's entries and of refuse the issue object themselves.
 # shellcheck disable=SC2016 # the script is single-quoted, and the module expands in the child
@@ -137,20 +110,7 @@ assert_eq "the prelude's entries and of handed the issue object fail and print n
   'marked_comment_entries:nonzero:
 marked_comment_of("spec-review"; ""):nonzero:'
 
-# Spec ruling.
-mc texts "$(mc_array $'Spec ruling: a\r\n- b\r\n' "x")" spec-ruling
-assert_eq "a spec ruling with CR line endings loses its prefix and its CRs" "$mc_out" '[" a\n- b\n"]'
-mc texts "$(mc_array $'Spec ruling: q - a' $'Spec ruling:\nlater' "x")" spec-ruling
-assert_eq "texts keeps a same-line ruling and a ruling on following lines" "$mc_out" '[" q - a","\nlater"]'
-mc texts "$(mc_array "$q"$'\r\nbody\r\n' "$q" "$(marker_of question build)"$'\nother')" question plan
-assert_eq "texts drops the marker line, strips CRs, and honours the argument" "$mc_out" '["body\n",""]'
-mc texts "$(mc_array "x" "$q")" spec-review
-assert_eq "texts prints an empty array when no comment is of the kind" "$mc_rc:$mc_out" "0:[]"
-mc texts "$(mc_array "Spec ruling:")" spec-ruling
-assert_eq "a ruling that is only its opening gives an empty string" "$mc_out" '[""]'
-mc texts "not json" spec-ruling
-assert_eq "texts on unreadable comments exits 2, printing nothing" "$mc_rc:$mc_out" "2:"
-assert_contains "and reports jq's parse error on stderr" "$mc_err" "parse error"
+# A re-entry comment.
 mc_newest "$(mc_array "$q" "$(marker_of reentry review)"$'\nrecorded')" reentry review
 assert_eq "a re-entry comment is found by its kind and phase" "$mc_rc:$mc_out" "0:1"
 got="$(mc_jq 'marked_comment_list | map(marked_comment_info)' <<<"$(mc_array "$(marker_of reentry review)")")"

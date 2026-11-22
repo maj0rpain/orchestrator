@@ -649,6 +649,32 @@ class Gh:
         # leave the comment, and a rerun would post it twice.
         self._gh(args, compound=bool(comment))
 
+    # --- PR operations ---
+
+    def prs_open(self, head: str, base: str = "") -> List[str]:
+        """The open PRs from the head branch - into the base branch, where one
+        is named - newest first, one line each as gh prints it,
+        `<number><TAB><isCrossRepository>`, unfiltered: the Trust module's
+        trust_filter_prs reads the lines and drops the fork PRs."""
+        args = ["pr", "list", "--head", head]
+        if base:
+            args += ["--base", base]
+        return _captured_lines(self._gh(
+            args + ["--state", "open", "--json", "number,isCrossRepository",
+                    "--jq", '.[] | "\\(.number)\\t\\(.isCrossRepository)"']
+        ))
+
+    def pr_body(self, n: int) -> str:
+        """The PR's body as GitHub holds it."""
+        return _strip_one_newline(
+            self._gh(["pr", "view", str(n), "--json", "body", "--jq", ".body"])
+        )
+
+    def pr_comments(self, n: int) -> List[dict]:
+        """The PR's comments as gh answers them, as issue_comments answers an
+        issue's. Unparsed when gh's answer is no comment list."""
+        return parse_comments(self._gh(["pr", "view", str(n), "--json", "comments"]))
+
     # --- label operations ---
 
     def label_create(self, name: str, colour: str, description: str) -> None:

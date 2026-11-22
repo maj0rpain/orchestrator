@@ -489,7 +489,7 @@ open_pr_draft_flag() {
 }
 
 # The current branch's open PR number, for the pr commands that act on the
-# branch's open PR, and review-pass known-items.
+# branch's open PR.
 # Returns 1, printing nothing, when the branch has no open PR; every other
 # failure - a detached HEAD, no repo (resolved here, after the detached-HEAD
 # check, since the gh guard's death exits 1), a GitHub that cannot be read -

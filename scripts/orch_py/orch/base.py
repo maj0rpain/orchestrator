@@ -1,6 +1,7 @@
-"""The base concept's module, holding only the default-branch lookup so far,
-as the bash side's default_branch_resolve and default_branch_seed find it;
-the later `base` noun grows it rather than moving it.
+"""The base concept's module, holding the default-branch lookup, as the bash
+side's default_branch_resolve and default_branch_seed find it, and the base
+a branch belongs to, as its recorded_base_into reads it, so far; the later
+`base` noun grows it rather than moving it.
 
 GitHub is asked first, and only when the repo pin resolves: origin/HEAD is a
 local pointer frozen at clone time, which in a clone taken while a feature
@@ -11,7 +12,7 @@ gh call - falls through to the next (#465).
 """
 from __future__ import annotations
 
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
 from orch.gh import GhFailed
 
@@ -47,3 +48,30 @@ def default_branch(gh, git, pin) -> DefaultBranch:
     if head and git.is_branch_name(head):
         return DefaultBranch(head, ORIGIN_HEAD)
     return DefaultBranch("main", FALLBACK)
+
+
+def branch_base_key(branch: str) -> str:
+    """The git config key recording the base branch <branch> was made off."""
+    return "branch.%s.orchestrator-base" % branch
+
+
+def branch_base_get(git, branch: str) -> Optional[str]:
+    """The base recorded for <branch> in git config, read through the git
+    adapter <git>; None when none is recorded."""
+    return git.config_value(branch_base_key(branch))
+
+
+def base_setting(git) -> str:
+    """The checkout's orchestrator.base setting; empty when it is unset."""
+    return git.config_value("orchestrator.base") or ""
+
+
+def recorded_base_into(gh, git, pin, branch: str) -> str:
+    """The base branch <branch> belongs to: the one recorded for it, else
+    the base branch in effect now - the base setting, else the default
+    branch (default_branch, through the gh adapter <gh> and the repo pin
+    <pin>). Never fails."""
+    recorded = branch_base_get(git, branch)
+    if recorded is not None:
+        return recorded
+    return base_setting(git) or default_branch(gh, git, pin).name
