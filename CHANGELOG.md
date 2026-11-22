@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.11.5
+
+`orch.sh spec-review` now runs as Python, the sixth noun moved out of bash. Its five verbs, `begin`, `check`, `apply`, `wait` and `prompt`, keep their arguments, output, exit codes and messages, and the paste-guard hooks still arm on `check`'s pass line and `view.md`. Golden files pin the round directory's state, the saved `apply` answer and a re-callable wait's stored total, so a round or a wait begun under the bash noun resumes under the Python one. The one exception is a saved answer holding control characters, which is refused so that round is rerun. The ticket commands `apply` reaches (`ticket exists`, `block`, `unblock` and `retire`) now have Python copies, and so do the GitHub operations they use. The bash spec-review module, its tests and the bash helpers only it called are gone.
+
 ## 6.11.4
 
 `orch.sh review-pass` now runs as Python, the fifth noun moved out of bash. `review-pass begin` and `review-pass known-items` keep their arguments, output, exit codes and messages, and `known-items` writes the same file byte for byte, pinned by a golden pair. A new read-only Python reader of the flow state (`.orchestrator/state.json`) follows the bash reader's rules for every key, pinned to it by golden `state.json` files, ready for the nouns converted next. The helpers the noun needs now live in the Python modules of the concepts they serve, and the bash review-pass module, its tests and the bash helpers only it called are gone.
