@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import (UNATTENDED_TAIL, assert_check_passes, assert_check_refused,
+from conftest import (AT_HINT, UNATTENDED_TAIL, assert_check_passes, assert_check_refused,
                       lines_rewritten, nudge, orch_spec_review, refused_lines as refused)
 
 T20 = """## What to build
@@ -303,9 +303,6 @@ def test_check_tickets_reads_no_github(root, capsys, seed):
 
 # --- refusals -----------------------------------------------------------------------
 
-HINT = " - a body line starting with @@ is written \\@@"
-
-
 @pytest.mark.parametrize("tickets, err", [
     (TICKETS.replace("Build alpha.\n@@", "Nowhere.\n@@"),
      ["tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body"]),
@@ -319,13 +316,13 @@ HINT = " - a body line starting with @@ is written \\@@"
     (TICKETS + "@@ bogus\n", ["tickets.md line 20: unknown line '@@ bogus'"]),
     (lines_rewritten(TICKETS, {6: []}),
      ["tickets.md line 7: expected @@ replace to end the anchor begun on line 4, got '@@ end'"
-      + HINT]),
+      + AT_HINT]),
     (lines_rewritten(TICKETS, {8: []}),
      ["tickets.md line 9: expected @@ end to end the replacement begun on line 6, got"
-      " '@@ item 2 unblock 21 by 20 apply'" + HINT]),
+      " '@@ item 2 unblock 21 by 20 apply'" + AT_HINT]),
     (lines_rewritten(TICKETS, {8: [], 10: ["@@ item 2 unblock 21 by 20 apply\r"]}),
      ["tickets.md line 9: expected @@ end to end the replacement begun on line 6, got"
-      " '@@ item 2 unblock 21 by 20 apply'" + HINT]),
+      " '@@ item 2 unblock 21 by 20 apply'" + AT_HINT]),
     (TICKETS + "@@ bogus\r\n", ["tickets.md line 20: unknown line '@@ bogus'"]),
     (TICKETS + "@@\r\n", ["tickets.md line 20: unknown line '@@ '"]),
     (TICKETS.replace("@@ item 3 block 20 by 21 apply", "@@ item 3 block 21 by 20 apply"),
@@ -540,10 +537,10 @@ def test_an_escaped_anchor_with_an_empty_replacement_passes(root, capsys):
 @pytest.mark.parametrize("block, err", [
     ("@@ anchor\n@@ note <text>\n@@ replace\nNew.\n@@ end",
      "tickets.md line 5: expected @@ replace to end the anchor begun on line 4, got"
-     " '@@ note <text>'" + HINT),
+     " '@@ note <text>'" + AT_HINT),
     ("@@ anchor\nAlpha.\n@@ replace\n@@ note <text>\n@@ end",
      "tickets.md line 7: expected @@ end to end the replacement begun on line 6, got"
-     " '@@ note <text>'" + HINT),
+     " '@@ note <text>'" + AT_HINT),
 ])
 def test_an_unescaped_at_line_inside_a_block_is_refused_with_the_hint(root, capsys, block, err):
     d = escaped_dir(root, block)

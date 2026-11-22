@@ -31,6 +31,7 @@ from typing import Callable, Dict, List, Mapping, NamedTuple, NoReturn, Optional
 from orch.common import (AT_LINE_ESCAPE_HINT, ORCH_DIR_NAME, die, file_lines,
                          file_write_atomic, lines_of, mkdir_p_or_die, plain_number, read_raw,
                          read_words, temp_text_file, text_file_append, text_file_write)
+from orch.gh import adapter_of
 from orch.git import Git
 from orch.repo import REPO_REMEDY, RepoPin
 from orch.root import checkout_root
@@ -321,13 +322,7 @@ def run(
 
     # The gh adapter, made at the first GitHub call: a state the save point
     # answers makes none.
-    def gh_of():
-        if gh is not None:
-            return gh
-        from orch.gh import adapter
-
-        return adapter(env, pin=pin)
-
+    gh_of = adapter_of(gh, env, pin=pin)
     if op == "publish":
         return publish(argv[1:], gh_of, root)
     return state(argv[1:], gh_of, root)

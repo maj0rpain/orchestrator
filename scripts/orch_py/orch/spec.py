@@ -52,6 +52,7 @@ from orch.common import (ORCH_DIR_NAME, copy_or_die, die, mkdir_p_or_die, plain_
                          plain_positive_number, read_raw, read_words, rm_f_or_die,
                          rm_rf_or_die, text_file_append, text_file_write)
 from orch.flow_state import NO_ISSUE_MSG, flow_state_file, require_state_read
+from orch.gh import adapter_of
 from orch.git import Git
 from orch.handoff import handoff_dir
 from orch.host import print_next_block
@@ -549,13 +550,7 @@ def run(
 
     # The gh adapter, made at the first GitHub call: only the issue ops and
     # an autopilot flow's pause --round make one.
-    def gh_of():
-        if gh is not None:
-            return gh
-        from orch.gh import adapter
-
-        return adapter(env)
-
+    gh_of = adapter_of(gh, env)
     if op in ISSUE_OPS:
         return issue_op(op, args, issue, phase, gh_of, git, env)
     if op == "pause":

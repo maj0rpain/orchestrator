@@ -888,3 +888,15 @@ def adapter(
 
         return FakeGh(store, env, pin=pin)
     return Gh(pin, env)
+
+
+def adapter_of(gh, env: Mapping[str, str], pin: Optional[RepoPin] = None) -> Callable[[], object]:
+    """A noun's gh adapter, made at its first GitHub call: a callable
+    answering <gh> when a test handed one in, else adapter(<env>, pin=<pin>)
+    - made afresh at each call, so an op that makes no GitHub call makes
+    none."""
+
+    def gh_of():
+        return gh if gh is not None else adapter(env, pin=pin)
+
+    return gh_of
