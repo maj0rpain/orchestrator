@@ -19,7 +19,7 @@ def orch_route(*argv, value=None):
     orchestrator.route, none when None: its exit code."""
     git = FakeGit(toplevel="/nonexistent/checkout")
     git.seed("config_value", KEY, answer=value)
-    return route.run(list(argv), git=git)
+    return route.run(list(argv), git=git, env={})
 
 
 @pytest.mark.parametrize("value", [None, ""], ids=["unset", "empty"])
@@ -51,6 +51,14 @@ def test_show_refuses_an_argument(capsys):
 def test_an_op_the_noun_does_not_have_is_refused(capsys, argv, named):
     assert died_of(capsys, lambda: orch_route(*argv)) == (
         1, "", "orch: unknown route op: %s (want show)\n" % named)
+
+
+def test_outside_a_checkout_every_op_dies_first(capsys):
+    code, out, err = died_of(
+        capsys, lambda: route.run(["show"], git=FakeGit(toplevel=None), env={}))
+
+    assert (code, out) == (1, "")
+    assert err.startswith("orch: not inside a git repository")
 
 
 def test_the_cli_dispatch_registers_the_noun():

@@ -3,7 +3,8 @@
 each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>`,
 `orch.sh verification <verb>`, `orch.sh audit <verb>`, `orch.sh review-pass
 <verb>`, `orch.sh spec-review <verb>`, `orch.sh breakdown <verb>`, `orch.sh
-spec <verb>`, `orch.sh parallel show` or `orch.sh route show` as a command, in a checkout under tmp_path, against a fake store
+spec <verb>`, `orch.sh glossary <verb>`, `orch.sh parallel show` or `orch.sh
+route show` as a command, in a checkout under tmp_path, against a fake store
 seeded in the layout the bash suite's fake_* helpers write, with
 ORCH_GH_FAKE_STORE set as fake_github sets it."""
 from __future__ import annotations

@@ -20,7 +20,7 @@ def orch_parallel(*argv, value=None):
     orchestrator.parallel, none when None: its exit code."""
     git = FakeGit(toplevel="/nonexistent/checkout")
     git.seed("config_value", KEY, answer=value)
-    return parallel.run(list(argv), git=git)
+    return parallel.run(list(argv), git=git, env={})
 
 
 def test_the_cap_is_3_when_orchestrator_parallel_is_unset(capsys):
@@ -56,6 +56,14 @@ def test_show_refuses_an_argument(capsys):
 def test_an_op_the_noun_does_not_have_is_refused(capsys, argv, named):
     assert died_of(capsys, lambda: orch_parallel(*argv)) == (
         1, "", "orch: unknown parallel op: %s (want show)\n" % named)
+
+
+def test_outside_a_checkout_every_op_dies_first(capsys):
+    code, out, err = died_of(
+        capsys, lambda: parallel.run(["show"], git=FakeGit(toplevel=None), env={}))
+
+    assert (code, out) == (1, "")
+    assert err.startswith("orch: not inside a git repository")
 
 
 def test_the_cli_dispatch_registers_the_noun():

@@ -13,10 +13,12 @@ accepted and printed trimmed where bash refused it.
 """
 from __future__ import annotations
 
-from typing import List
+import os
+from typing import List, Mapping, Optional
 
 from orch.common import die
 from orch.git import Git
+from orch.root import checkout_root
 
 # The verbs. docs_lint.sh reads this line as the verbs the noun dispatches, so
 # it stays one `OPS = "<verb>|..."` line.
@@ -38,10 +40,14 @@ def show(argv: List[str], git) -> int:
     return 0
 
 
-def run(argv: List[str], git=None) -> int:
-    """`orch.sh route <op> ...`: the real git adapter unless a test hands in
-    another."""
+def run(argv: List[str], git=None, env: Optional[Mapping[str, str]] = None) -> int:
+    """`orch.sh route <op> ...`: the real git adapter and the process's
+    environment unless a test hands in others. Outside a checkout it dies
+    first, as orch.sh does, whatever the op."""
+    env = os.environ if env is None else env
+    git = Git() if git is None else git
+    checkout_root(git, env)
     op = argv[0] if argv else ""
     if op not in OPS.split("|"):
         die("unknown route op: %s (want %s)" % (op or "<none>", OPS))
-    return show(argv[1:], Git() if git is None else git)
+    return show(argv[1:], git)

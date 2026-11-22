@@ -79,12 +79,12 @@ all.sh on every call but a shard group other than the first: it reports pytest's
 result as a suite's FAIL lines and summary, and prints `not installed - skipped`
 without pytest, which fails only under CI. The pytest suite is in neither
 all.sh's suites list nor the durations file, and has no durations file of its
-own. In affected.sh a change under `scripts/orch_py/` selects the redo, ticket
-and autopilot sections, the bash nouns whose sections run a converted noun's
-verb through the dispatch (the `redo spec` sections run `spec round` through
-it), hooks_test.sh, whose paste guard rows run `spec-review check` through it,
-and the side-checkout sections, whose `.orchestrator` entry classification
-scans the package.
+own. In affected.sh a change under `scripts/orch_py/` selects the redo, ticket,
+autopilot and doctor sections, the bash nouns whose sections run a converted
+noun's verb through the dispatch (the `redo spec` sections run `spec round`
+through it, doctor's glossary check `glossary terms`), hooks_test.sh, whose
+paste guard rows run `spec-review check` through it, and the side-checkout
+sections, whose `.orchestrator` entry classification scans the package.
 
 orch_test.sh is the suite's runner and holds no test. Its `# ---` sections live
 under `scripts/test/orch/`: `<noun>.sh` holds the sections for one orch.sh noun
