@@ -167,8 +167,8 @@ def item_line(batch, index: int, item, disposition, reasons: Dict[int, str],
     return "- (%s) resolved by (%s)" % (n, item.resolved)
 
 
-def changelog(result, reasons: Dict[int, str], round_arg: str, unattended: bool, tickets: str,
-              hosts: str) -> str:
+def changelog(result, reasons: Dict[int, str], round_arg: str, unattended: bool,
+              tickets_section: str, hosts: str) -> str:
     """The round's changelog, from the validated batch, its dispositions and
     the reasons: the spec-review marked comment's line, `Round <k> of <n>`,
     one section per lens and Consolidation, then Tickets and any host
@@ -186,7 +186,7 @@ def changelog(result, reasons: Dict[int, str], round_arg: str, unattended: bool,
         lines = [item_line(batch, i, item, result.dispositions[i], reasons, unattended) + "\n"
                  for i, item in enumerate(batch.items) if section in item_sections(item)]
         out += "".join(lines) or "None\n"
-    out += "\n### Tickets\n%s\n" % tickets
+    out += "\n### Tickets\n%s\n" % tickets_section
     if hosts:
         out += "\n**Host fallbacks:** %s\n" % hosts
     return out.rstrip("\n")
@@ -327,10 +327,10 @@ def apply_answer(options, resume: bool, gh_of: Callable[[], object], git,
         return gh_made[0]
 
     text, changed = result.text, result.text != result.fetched
-    tickets = TICKETS_NO_EDIT
+    tickets_section = TICKETS_NO_EDIT
     kind, breakdown = "", changed
     copies: Dict[str, object] = {}
-    items = None
+    ticket_items = None
     if changed and resume and logged(directory, label_retire(issue)):
         # The dead run's retire landed, so the live state no longer shows the
         # breakdown it decided on; the rerun keeps that decision.
@@ -340,7 +340,7 @@ def apply_answer(options, resume: bool, gh_of: Callable[[], object], git,
         if code == 0 and kind is None:
             code = 1
         if code == 1:
-            tickets, breakdown = TICKETS_NO_BREAKDOWN, False
+            tickets_section, breakdown = TICKETS_NO_BREAKDOWN, False
         elif code != 0:
             die("ticket exists #%s exited %d: %s - nothing written" % (issue, code, err_line(err)))
     if breakdown:
@@ -354,15 +354,16 @@ def apply_answer(options, resume: bool, gh_of: Callable[[], object], git,
         if not os.path.isfile(directory + "/tickets.md"):
             die("tickets.md not found in %s - --tickets answers the ticket items it holds"
                 % directory)
-        items = tickets_parse(read_raw(directory + "/tickets.md") or "", Violations(collect=False))
-        taken = tickets_answer(items, ticket_answer)
+        ticket_items = tickets_parse(read_raw(directory + "/tickets.md") or "",
+                                     Violations(collect=False))
+        taken = tickets_answer(ticket_items, ticket_answer)
         ticket_reasons = reasons_read(
-            "--ticket-reasons", options.ticket_reasons, [item.n for item in items.items],
-            [taken.dispositions.get(i) == "declined" for i in range(len(items.items))],
+            "--ticket-reasons", options.ticket_reasons, [item.n for item in ticket_items.items],
+            [taken.dispositions.get(i) == "declined" for i in range(len(ticket_items.items))],
             "ticket item", "tickets.md", "the --tickets answer")
-        followed = tickets_follow(gh(), items, taken, directory, text, kind, issue)
+        followed = tickets_follow(gh(), ticket_items, taken, directory, text, kind, issue)
         text, copies = followed.body.text, followed.copies
-        tickets = tickets_lines(items, taken, ticket_reasons)
+        tickets_section = tickets_lines(ticket_items, taken, ticket_reasons)
     local_write(directory + "/spec.md", text)
     for t, copy in copies.items():
         local_write("%s/ticket-%s.md" % (directory, t), copy.text)
@@ -371,15 +372,15 @@ def apply_answer(options, resume: bool, gh_of: Callable[[], object], git,
     # resumed run keeps the file it was resumed from.
     if not resume:
         spec.spec_round_answer_save(directory, FILE_OPTIONS, options.saved)
-    log = changelog(result, reasons, options.round, options.unattended, tickets, hosts)
+    log = changelog(result, reasons, options.round, options.unattended, tickets_section, hosts)
     local_write(directory + "/changelog.md", log + "\n")
 
     issues = Issue(gh(), git, env)
     # Ticket text edits, then edges, then the body, then the retire: a ticket's
     # text edit before its edge, whose ## Blocked by rewrite reads the edited
     # body back; a collapsed ## Ticket edit inside the body; a retire after it.
-    applied = [] if items is None else [
-        item for i, item in enumerate(items.items) if taken.applied(i)]
+    applied = [] if ticket_items is None else [
+        item for i, item in enumerate(ticket_items.items) if taken.applied(i)]
     done = []
     for item in applied:
         if item.kind == "ticket" and item.t not in done:
@@ -394,7 +395,7 @@ def apply_answer(options, resume: bool, gh_of: Callable[[], object], git,
     if changed:
         write(directory, "the body of issue #" + issue,
               lambda: issues.update([issue, directory + "/spec.md"]))
-    if items is not None and taken.retire:
+    if ticket_items is not None and taken.retire:
         write(directory, label_retire(issue), lambda: ticket.ticket_retire(gh(), issue, root))
     write(directory, label_changelog(issue),
           lambda: issues.comment([issue, directory + "/changelog.md"]))

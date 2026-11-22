@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import flow_state, orch_spec_review, read
+from conftest import flow_state, orch_spec_review, read, state_json
 
 AUTOPILOT = {"ORCH_AUTOPILOT": "1"}
 UNKNOWN = ("orch: unknown lens 'clarity'"
@@ -281,7 +281,7 @@ def test_under_autopilot_no_recorded_issue_dies_naming_it(root, seed, capsys):
 
 def test_under_autopilot_no_flow_dies_naming_the_missing_state(root, seed, capsys):
     d = autopilot_round(root, seed)
-    (root / ".orchestrator" / "state.json").unlink()
+    state_json(root).unlink()
 
     assert prompt(root, d, "fidelity", seed=seed, env=AUTOPILOT) == 1
 

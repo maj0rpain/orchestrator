@@ -1,5 +1,7 @@
-"""The spec-review noun: a standalone spec review's start, the wait for a
-round's lenses and a lens's prompt. run() is the noun's entry point.
+"""The spec-review noun: a standalone spec review's start (begin), the wait
+for a round's lenses (wait), a lens's prompt (prompt), the check of a round's
+batch or tickets (check), and the applying of a round's answer (apply). run()
+is the noun's entry point.
 
 begin's guard and working-directory reset each have one right answer, so
 they live here rather than in skill prose. It reads state.json only when one

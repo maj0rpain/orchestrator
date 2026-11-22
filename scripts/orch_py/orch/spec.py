@@ -29,8 +29,8 @@ import shlex
 import shutil
 from typing import List, Sequence, Tuple
 
-from orch.common import (ORCH_DIR_NAME, die, plain_positive_number, read_raw, rm_rf_or_die,
-                         text_file_write)
+from orch.common import (ORCH_DIR_NAME, die, plain_positive_number, read_raw, rm_f_or_die,
+                         rm_rf_or_die, text_file_write)
 
 # The empty file spec_round_complete writes in a round's directory, as its
 # last local step but the answer's clearing: a round counts as complete only
@@ -223,8 +223,7 @@ def spec_round_complete(directory: str, log: str, landed: str) -> None:
                 % (settled, landed))
     appended = "every GitHub write landed and settled.md is appended: " + landed
     fundamental = "%s/%s" % (directory, ROUND_FUNDAMENTAL)
-    if not _remove(fundamental):
-        die("could not remove %s - %s" % (fundamental, appended))
+    rm_f_or_die(fundamental, "could not remove %s - %s" % (fundamental, appended))
     marker = "%s/%s" % (directory, ROUND_COMPLETE)
     text_file_write(marker, "", "could not write %s - %s" % (marker, appended))
     spec_round_answer_clear(directory, landed)
