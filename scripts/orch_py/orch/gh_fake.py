@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import socket
 import time
 from typing import Callable, List, Mapping, Optional, Sequence, Tuple
 
@@ -570,6 +571,16 @@ class FakeGh:
         self._pr_known(n)
         return self._comments(n, _pr_path(self.store, n, "comments"))
 
+    # --- claim operations ---
+
+    def claim_delete(self, n: int) -> None:
+        """The claim on #n removed from the store; none there is freed all
+        the same."""
+        self._failing("adapter_claim_delete")
+        path = _store_path(self.store, "claims", n)
+        if os.path.lexists(path):
+            os.remove(path)
+
 
 class FakeStore:
     """Seeds the store at <store> and reads it back, as the bash suite's
@@ -655,6 +666,17 @@ class FakeStore:
 
     def next_issue(self, n: int) -> None:
         _write(_store_path(self.store, "next_issue"), "%d\n" % n)
+
+    def claim(self, n: int) -> None:
+        """A claim on issue #n, held by this host with pid 1, a start long
+        past and the spec phase, as fake_claim_seed seeds it."""
+        _write(_store_path(self.store, "claims", n),
+               "%d\t%s\t1\tspec\t2026-01-01T00:00:00Z\n" % (n, socket.gethostname()))
+
+    def claim_held(self, n: int) -> bool:
+        """Whether the store holds a claim on issue #n, as fake_claim_held
+        reads it."""
+        return os.path.isfile(_store_path(self.store, "claims", n))
 
     def fail(self, operation: str, stderr: Optional[str] = None) -> None:
         """Every later call of the operation fails with <stderr>, default

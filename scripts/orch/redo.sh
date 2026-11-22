@@ -172,6 +172,19 @@ $detail" ;;
   note "$new_n"
 }
 
+# The two markers a spec phase leaves in the handoff folder, which redo spec
+# moves aside with the stale handoffs: the Python spec noun
+# (scripts/orch_py/orch/spec.py) writes them, under these names, and its spec
+# round reads the round marker back (ADR-0067). Neither is a handoff - no phase
+# table entry names it, so handoff validate and doctor never look at it - nor a
+# state.json field (ADR-0005).
+# spec-paused (#1181), holding the issue number: left by spec pause when the
+# spec phase stops its session once the spec is written.
+readonly SPEC_PAUSED_MARKER=spec-paused
+# spec-round (#1346), one line `<issue> <k> <n>`: left by a flow's spec review,
+# naming its issue, a round k and the round count n.
+readonly SPEC_ROUND_MARKER=spec-round
+
 # The full `implement -> spec` transition. Defaults to keeping the existing
 # spec issue and re-reviewing it - through the spec phase's step 0, whose
 # redo check reads the pre-redo-spec-* folder this leaves behind and so
@@ -188,7 +201,6 @@ $detail" ;;
 # so a death anywhere earlier leaves phase implement with the issue and the keys
 # the entry guards need, and a re-run resumes.
 cmd_redo_spec() {
-  orch_load spec
   local phase issue slug branch pr redo_count new_issue=0 clear_issue=()
   require_state_read phase=phase issue=issue slug=slug branch=branch pr=pr \
     redo_count=redo_count

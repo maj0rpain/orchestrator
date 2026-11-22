@@ -6,7 +6,9 @@ Every GitHub call goes through an operation named for what its callers need.
 Each owns gh's flags and --jq expressions and answers in Python values; a gh
 failure raises GhFailed carrying gh's stderr, and an answer that does not
 parse as the operation's JSON raises Unparsed. A caller dies through gh_or_die
-or gh_die, or reacts another way through gh_reason.
+or gh_die, or reacts another way through gh_reason. The claim delete is the
+one operation the real adapter makes through git rather than gh, as bash's
+adapter_claim_delete is: the claim is a ref on origin.
 
 The real adapter, Gh, reproduces gh.sh's guard: every call is pinned to the
 repo (orch.repo), dying with the remedy when none resolves, and a failed call
@@ -463,6 +465,15 @@ class Limits:
         )
 
 
+# --- claims -------------------------------------------------------------------
+
+
+def claim_ref(n: int) -> str:
+    """The ref on origin that holds the claim on issue #n - bash
+    adapter_claim_ref."""
+    return "refs/orch/claims/%d" % n
+
+
 # --- the real adapter --------------------------------------------------------
 
 
@@ -695,6 +706,18 @@ class Gh:
         # gh posts the comment first and closes second, so a failed close can
         # leave the comment, and a rerun would post it twice.
         self._gh(args, compound=bool(comment))
+
+    # --- claim operations ---
+
+    def claim_delete(self, n: int) -> None:
+        """Frees the claim on #n - bash adapter_claim_delete: pushes the
+        delete of its ref to origin through the repo pin's git adapter, no gh
+        call. A claim already gone is freed all the same - a push whose
+        reason says it does not exist; any other failure raises GhFailed with
+        git's reason."""
+        reason = self.repo_pin.git.push("origin", ":" + claim_ref(n))
+        if reason is not None and "does not exist" not in reason:
+            raise GhFailed(reason + "\n")
 
     # --- PR operations ---
 

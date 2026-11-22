@@ -34,7 +34,7 @@
 2	2	the suite start (#3582)	7661d78242588461a38289fb228211e159d899f8
 7	8	the pytest suite (#3912)	21deea025158b43b9892524639c0a4fbc5b9bf3c
 2	3	the counting fixture's stdin counter (#3434)	b19a94c28ffbd5db955a5f10a39d0b15791cbc4f
-11	107	affected.sh, the ticket verification (#2023)	7281f26ef085bf0d3e725e6b255f55991141e646
+128	109	affected.sh, the ticket verification (#2023)	ccf2f86d042cf17caf0d095bbc762aa65cdcffef
 4	5	the row rule (#3549)	9fdb50e7e723c26a4127289109f27a68989c4579
 7	9	the shared test support, function by function (#3550)	de45838253c482219d70d5af6fd3b26e2079c3f8
 5	7	the gh fake, operation by operation (#3551)	987935a277e021eabb9c02e391ba40e84607a315
@@ -278,18 +278,8 @@
 10	12	side checkout marker issue: reading without re-classifying (#3073)	4d201251bfb73c22114fdcdc86ae808fb3930ed5
 5	6	archive reads the flow's slug once	d1e47a75531129e6123579f59802dd69c84d1d76
 6	7	side-checkout: the default branch is asked for only when needed	5f8f132611fabd4e0dede5d1e6b3db76ceff3111
-26	30	spec	a66453ea4b1d08fd96f23b38d6d509eaabeae8fd
-10	11	spec pause	1d162ea996a9c817686e6922bbd3c075fe2e33b7
-19	17	spec round-dir	e4b28bb1948a106b2cda0b56e1c51f2be207daec
-21	17	spec round	22792d8aa2c83709e472fd9d2540693a968f7412
-10	11	spec pause --round	027abcfc7dea70075df9b9f91c25e78f0084de2c
-5	6	spec pause --round in an autopilot flow (#1457)	538a0f0c05ff3eae5986077aea943807f8278613
-3	3	spec fetch on a truncated state.json (#1929)	60f3d67efe5d3d495d1adc47c8b0aea7008f5965
-7	8	spec ops read the flow's state once (#3063)	1ac4cb1881c14fda5d71d28175a34c212f051d4d
-6	6	spec round directory owner (#3078)	8542dde1c8ada3faccec284cd50c904e2d73fa03
-6	6	spec fetch drift line (#3458)	58d8dca777f8cf8f7b2d34df3ab34ac366362033
 30	26	Standing module	7360efe83df71e2983783f4ce7fefa500261a7d4
-124	117	Standing transitions	545e34fbb2e91632de6484af07eb526577b4f311
+115	87	Standing transitions	b4245e2815b85588cc2938ae650bfc9cc37bfc5d
 2	3	standing_ask reads the issue in one jq	323242a91458cfdc0852ce80bf275f3a21daf5f0
 19	21	state	8f8a6d0c9ed66193eb8616169bbf206ccea0a741
 21	20	a flow from before the budget shipped	74a733a87311a08cfe7a1e7bd6abe7956bdb2975

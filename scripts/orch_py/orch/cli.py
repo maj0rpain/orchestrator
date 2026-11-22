@@ -42,6 +42,12 @@ def _review_pass(argv: List[str]) -> int:
     return run(argv)
 
 
+def _spec(argv: List[str]) -> int:
+    from orch.spec import run
+
+    return run(argv)
+
+
 def _spec_review(argv: List[str]) -> int:
     from orch.spec_review import run
 
@@ -57,6 +63,7 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "audit": _audit,
     "review-pass": _review_pass,
     "spec-review": _spec_review,
+    "spec": _spec,
 }
 
 

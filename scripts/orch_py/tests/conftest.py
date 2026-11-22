@@ -158,6 +158,18 @@ def git_repo(path, origin=None, object_format=None):
     return Git(cwd=str(path))
 
 
+def origin_clone(origin, root, branch=None):
+    """A fresh bare repository at <origin>, its initial branch <branch> when
+    one is given, else git's default, and a fresh repository at <root> with
+    it as origin: the Git adapter on <root>."""
+    initial = ["-b", branch] if branch else []
+    subprocess.run(
+        ["git", "init", "-q", "--bare", *initial, str(origin)], check=True,
+        stdin=subprocess.DEVNULL,
+    )
+    return git_repo(root, str(origin))
+
+
 def run_git(root, *args, env=None):
     """git <args> in the repository at <root>, as a test author t with
     signing off, in <env> when given, else this process's environment: its

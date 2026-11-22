@@ -7,8 +7,8 @@ import subprocess
 
 import pytest
 
-from conftest import committed, git_repo, run_git, write_staged
-from orch.git import FakeGit, Git
+from conftest import committed, git_repo, origin_clone, run_git, write_staged
+from orch.git import FakeGit, Git, git_push_reason
 
 ORIGIN = "https://github.com/fork/widgets.git"
 
@@ -525,3 +525,55 @@ def test_a_detached_head_has_no_current_branch(worked):
 
 def test_outside_a_repository_there_is_no_current_branch(tmp_path):
     assert fails_alike(Git(cwd=str(tmp_path)), "current_branch") is None
+
+
+# --- the claim delete's push ------------------------------------------------------
+
+
+@pytest.fixture
+def pushed(tmp_path):
+    """A clone of a bare origin under tmp_path whose main and b, both pushed,
+    were then rewritten in the clone, so pushing either is rejected: the
+    clone's root."""
+    origin, root = tmp_path / "origin.git", tmp_path / "pushing"
+    origin_clone(origin, root, "main")
+    run_git(root, "checkout", "-qb", "main")
+    run_git(root, "commit", "-q", "--allow-empty", "-m", "one")
+    run_git(root, "branch", "b")
+    run_git(root, "push", "-q", "origin", "main", "b")
+    run_git(root, "commit", "-q", "--amend", "--allow-empty", "-m", "two")
+    run_git(root, "checkout", "-q", "b")
+    run_git(root, "commit", "-q", "--amend", "--allow-empty", "-m", "three")
+    return root
+
+
+def test_a_push_that_lands_answers_none_from_a_real_repo_and_the_fake(pushed):
+    run_git(pushed, "checkout", "-q", "main")
+
+    assert alike(Git(cwd=str(pushed)), "push", "origin", "+main:refs/heads/new") is None
+    assert run_git(pushed, "ls-remote", "origin", "refs/heads/new") != ""
+
+
+def test_a_rejected_push_gives_its_ref_lines_trimmed_and_joined(pushed):
+    assert alike(Git(cwd=str(pushed)), "push", "origin", "refs/heads/*:refs/heads/*") == (
+        "! [rejected]        b -> b (non-fast-forward); "
+        "! [rejected]        main -> main (non-fast-forward)")
+
+
+def test_a_push_to_no_repository_gives_its_first_fatal_line(pushed):
+    assert alike(Git(cwd=str(pushed)), "push", "nope", ":refs/heads/b") == (
+        "fatal: 'nope' does not appear to be a git repository")
+
+
+def test_a_push_with_no_ref_or_fatal_line_gives_its_first_non_empty_line(pushed):
+    assert alike(Git(cwd=str(pushed)), "push", "origin", "nosuch:refs/heads/x") == (
+        "error: src refspec nosuch does not match any")
+
+
+@pytest.mark.parametrize("stderr", ["", "\n  \n\t\n"], ids=["empty", "blank-lines"])
+def test_a_push_that_printed_nothing_gives_git_gave_no_reason(stderr):
+    assert git_push_reason(stderr) == "git gave no reason"
+
+
+def test_an_unseeded_push_on_the_fake_fails_with_no_reason():
+    assert FakeGit().push("origin", ":refs/orch/claims/5") == "git gave no reason"

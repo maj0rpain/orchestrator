@@ -29,7 +29,7 @@ BASH_HELPERS = {
         "fake_state_of", "fake_reason_of",
         "fake_title_of", "fake_body_of", "fake_labels_of", "fake_comments_of",
         "fake_pr", "fake_pr_comment", "fake_pr_cross", "fake_labels",
-        "fake_default_branch",
+        "fake_default_branch", "fake_claim_seed", "fake_claim_held",
     ],
     SCRIPTS / "test" / "orch" / "gh.sh": ["fake_ratelimit", "fake_duplicate_of"],
     SCRIPTS / "test" / "orch" / "pr.sh": ["fake_pr_body"],
@@ -359,6 +359,7 @@ def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
     ("adapter_sub_issue_unlink", lambda gh: gh.sub_issue_unlink(5, 7)),
     ("adapter_blocker_add", lambda gh: gh.blocker_add(5, 7)),
     ("adapter_blocker_remove", lambda gh: gh.blocker_remove(5, 7)),
+    ("adapter_claim_delete", lambda gh: gh.claim_delete(5)),
 ])
 def test_the_added_operations_fail_under_the_bash_operation_names(store, operation, call):
     bash(store, "fake_issue 5 open review:nit; fake_issue 7 open; fake_default_branch trunk; "
@@ -369,6 +370,39 @@ def test_the_added_operations_fail_under_the_bash_operation_names(store, operati
         call(fake(store))
 
     assert failed.value.stderr == "HTTP 502: Bad Gateway\n"
+
+
+# --- the claim delete -------------------------------------------------------------
+
+
+def test_a_claim_the_bash_seeder_wrote_is_freed_by_the_python_fake(store):
+    bash(store, "fake_claim_seed 5; fake_claim_seed 6")
+
+    assert fake(store).claim_delete(5) is None
+    assert bash(store, "fake_claim_held 5; fake_claim_held 6") == "free\nheld\n"
+
+
+def test_a_claim_already_gone_counts_as_freed(store):
+    gh = fake(store)
+
+    assert gh.claim_delete(5) is None
+    bash(store, "fake_claim_seed 5")
+    gh.claim_delete(5)
+    assert gh.claim_delete(5) is None
+    assert bash(store, "fake_claim_held 5") == "free\n"
+
+
+def test_a_claim_the_python_seeder_wrote_reads_back_as_the_bash_fake_holds_it(store):
+    seed = FakeStore(str(store))
+    seed.claim(5)
+    bash(store, "fake_claim_seed 6")
+
+    assert bash(store, "fake_claim_held 5") == "held\n"
+    assert (store / "claims" / "5").read_text() == (store / "claims" / "6").read_text().replace(
+        "6\t", "5\t", 1)
+    assert (seed.claim_held(5), seed.claim_held(6), seed.claim_held(7)) == (True, True, False)
+    fake(store).claim_delete(6)
+    assert seed.claim_held(6) is False
 
 
 # --- the operation audit adds --------------------------------------------------

@@ -7,8 +7,9 @@ tests/flow_state/ pin the two readers to each other (ADR-0067).
 Beside the reader sit the pieces of bash's state module that only read
 state.json: flow_holding_phase, the guard a branch or issue an active flow
 holds answers to (ADR-0029), STATE_UNREADABLE_MSG, the refusal an unreadable
-state.json earns, and require_issue, the entry read of the flow's issue a
-command that needs one makes.
+state.json earns, require_state_read, a command's entry read of the keys it
+needs, and require_issue, the entry read of the flow's issue a command that
+needs one makes.
 """
 from __future__ import annotations
 
@@ -128,6 +129,22 @@ def flow_holding_phase(state_file: str, branch: str, issue: str) -> Optional[Hol
     return Hold(state["phase"], state["issue"])
 
 
+def require_state_read(state_file: str, env: Mapping[str, str], keys: Sequence[str],
+                       code: int) -> Dict[str, str]:
+    """A command's entry read, bash require_state_read: every one of <keys>
+    in <state_file>, in one read (flow_state_get_many). Dies, exit <code> - 2
+    for a command that reserves exit 1 for a meaningful "no" - when there is
+    no state file, naming the host's start command from <env>, and with
+    STATE_UNREADABLE_MSG when it cannot be read."""
+    if not os.path.isfile(state_file):
+        die("no active flow (%s/state.json not found). Run %s first."
+            % (ORCH_DIR_NAME, flow_cmd(env, "start")), code)
+    state = flow_state_get_many(state_file, keys)
+    if state is None:
+        die(STATE_UNREADABLE_MSG, code)
+    return state
+
+
 def require_issue(state_file: str, env: Mapping[str, str],
                   keys: Sequence[str] = ()) -> Dict[str, str]:
     """The state read of <state_file>, its recorded issue and any further
@@ -135,12 +152,7 @@ def require_issue(state_file: str, env: Mapping[str, str],
     require_issue's order, when there is no state file (naming the host's
     start command from <env>), when it cannot be read, and when no issue is
     recorded."""
-    if not os.path.isfile(state_file):
-        die("no active flow (%s/state.json not found). Run %s first."
-            % (ORCH_DIR_NAME, flow_cmd(env, "start")))
-    state = flow_state_get_many(state_file, ("issue",) + tuple(keys))
-    if state is None:
-        die(STATE_UNREADABLE_MSG)
+    state = require_state_read(state_file, env, ("issue",) + tuple(keys), 1)
     if not state["issue"]:
         die(NO_ISSUE_MSG)
     return state

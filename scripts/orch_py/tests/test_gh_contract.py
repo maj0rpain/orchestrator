@@ -1,10 +1,13 @@
-"""Contract tests of the real gh adapter (ADR-0033): each operation run
+"""Contract tests of the real gh adapter (ADR-0033): each gh operation run
 against a fixture gh on PATH that answers by exact argv, proving the argv it
 hands gh, how it reads the answer, the repo pin and its remedy, the rate-limit
-handling and the `gh could not <action>` death."""
+handling and the `gh could not <action>` death. The claim delete, the one
+git-backed operation, runs instead against a real bare origin under
+tmp_path."""
 from __future__ import annotations
 
 import json
+import shutil
 
 import pytest
 
@@ -13,7 +16,7 @@ from orch.gh import (Gh, GhFailed, IssueRow, LabelledBody, SubIssue, Unparsed, g
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY, RepoPin
 
-from conftest import died_of
+from conftest import died_of, origin_clone, run_git
 
 FORK = "https://github.com/fork/widgets.git"
 BODY = ["issue", "view", "5", "--json", "body", "--jq", ".body"]
@@ -780,3 +783,45 @@ def test_a_limit_given_up_on_dies_carrying_the_limit_message(fixture_gh, capsys)
     assert code == 1
     assert err == ("orch: gh could not read the body of issue #5: orch: GitHub API rate limit"
                    " reached - it resets at 2036-07-18T13:20:00Z" + LIMIT_TAIL + "\n")
+
+
+# --- the claim delete ------------------------------------------------------------
+
+
+@pytest.fixture
+def claimed(tmp_path):
+    """A clone of a bare origin under tmp_path, origin holding a claim on #5:
+    (origin's path, the real adapter on the clone)."""
+    origin, root = tmp_path / "origin.git", tmp_path / "clone"
+    git = origin_clone(origin, root)
+    run_git(root, "commit", "-q", "--allow-empty", "-m", "claim")
+    run_git(root, "push", "-q", "origin", "HEAD:refs/orch/claims/5")
+    return origin, Gh(RepoPin({}, git), {})
+
+
+def claims_on(origin):
+    return run_git(origin, "for-each-ref", "--format=%(refname)", "refs/orch/claims/")
+
+
+def test_a_held_claim_is_deleted_from_origin(claimed):
+    origin, gh = claimed
+
+    assert gh.claim_delete(5) is None
+    assert claims_on(origin) == ""
+
+
+def test_a_claim_origin_does_not_hold_counts_as_freed(claimed):
+    origin, gh = claimed
+
+    assert gh.claim_delete(9) is None
+    assert claims_on(origin) == "refs/orch/claims/5"
+
+
+def test_any_other_push_failure_fails_the_delete_with_git_s_reason(claimed):
+    origin, gh = claimed
+    shutil.rmtree(str(origin))
+
+    with pytest.raises(GhFailed) as failed:
+        gh.claim_delete(5)
+
+    assert failed.value.stderr == "fatal: '%s' does not appear to be a git repository\n" % origin
