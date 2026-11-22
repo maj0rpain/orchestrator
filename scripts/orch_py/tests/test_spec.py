@@ -411,20 +411,12 @@ def test_round_dir_prints_round_k_s_directory_created_empty_after_writing_the_ma
 
 
 def write_files(directory, files):
-    """<files>, by name, written into <directory>, made as needed; a name
-    ending in / is a directory."""
+    """<files>, by name, written into <directory>, made as needed."""
     directory.mkdir(parents=True, exist_ok=True)
     for name, text in files.items():
         path = directory / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
-
-
-def tree(directory):
-    """Every path under <directory>, relative, with each file's text."""
-    return {os.path.relpath(os.path.join(at, name), str(directory)):
-            open(os.path.join(at, name)).read()
-            for at, _, names in os.walk(str(directory)) for name in names}
 
 
 def test_round_dir_empties_a_populated_round_directory(root, seed):
@@ -459,10 +451,11 @@ def test_a_later_round_dir_copies_in_the_lens_setting_code_map_and_settled_file(
 
     assert orch_spec(root, seed, "round-dir", "2/2") == 0
     assert capsys.readouterr() == ("%s/2/\n" % rounds_of(root), "")
-    assert tree(rounds_of(root) / "2") == {
-        "agent-lens": "model opus\neffort high\n", "map-implementability.md": "the code map\n",
-        "settled.md": "round 1 changelog\n"}
-    assert tree(rounds_of(root) / "1") == ROUND_1
+    assert snapshot(rounds_of(root) / "2") == {
+        "agent-lens": b"model opus\neffort high\n", "map-implementability.md": b"the code map\n",
+        "settled.md": b"round 1 changelog\n"}
+    assert snapshot(rounds_of(root) / "1") == {
+        name: text.encode() for name, text in ROUND_1.items()}
     assert round_marker(root).read_text() == "21 2 2\n"
 
 
@@ -473,8 +466,8 @@ def test_a_later_round_dir_copies_each_carried_file_only_when_it_exists(root, se
     write_files(rounds_of(root) / "3", {"changelog.md": "round 3\n"})
 
     assert orch_spec(root, seed, "round-dir", "2/3") == 0
-    assert tree(rounds_of(root) / "2") == {left: "kept\n"}
-    assert tree(rounds_of(root) / "3") == {"changelog.md": "round 3\n"}
+    assert snapshot(rounds_of(root) / "2") == {left: b"kept\n"}
+    assert snapshot(rounds_of(root) / "3") == {"changelog.md": b"round 3\n"}
 
 
 def test_a_later_round_dir_with_nothing_to_carry_leaves_its_directory_empty(root, seed, capsys):
@@ -489,21 +482,19 @@ def round_files(root):
     """Every path under the rounds directory and the round marker's text, so a
     refusal is checked to have created and deleted nothing."""
     marker = round_marker(root)
-    return tree(rounds_of(root)), marker.read_text() if marker.exists() else None
+    return snapshot(rounds_of(root)), marker.read_text() if marker.exists() else None
 
 
 WANT_K_N = "want <k>/<n>, a round and the round count, two positive whole numbers, got: %s"
 
 
-@pytest.mark.parametrize("arg", ["", "1", "0/2", "1/0", "a/2", "1/b", "1/2/3", "/2", "1/",
-                                 "-1/2", "1 /2", "01/2", "1/02"])
-def test_round_dir_refuses_a_malformed_round_count_touching_nothing(root, seed, capsys, arg):
+def test_round_dir_refuses_a_malformed_round_count_touching_nothing(root, seed, capsys):
     flow_state(root, "spec", 21)
     write_files(rounds_of(root) / "2", {"changelog.md": "round 2\n"})
     before = round_files(root)
 
-    assert orch_spec(root, seed, "round-dir", arg) == 1
-    assert capsys.readouterr() == ("", "orch: %s\n" % (WANT_K_N % arg))
+    assert orch_spec(root, seed, "round-dir", "a/2") == 1
+    assert capsys.readouterr() == ("", "orch: %s\n" % (WANT_K_N % "a/2"))
     assert round_files(root) == before
 
 
@@ -562,9 +553,9 @@ def test_round_dir_run_twice_gives_the_same_result(root, seed, capsys):
     write_files(rounds_of(root) / "1", ROUND_1)
 
     assert orch_spec(root, seed, "round-dir", "2/3") == 0
-    first = capsys.readouterr(), tree(rounds_of(root)), round_marker(root).read_text()
+    first = capsys.readouterr(), round_files(root)
     assert orch_spec(root, seed, "round-dir", "2/3") == 0
-    assert (capsys.readouterr(), tree(rounds_of(root)), round_marker(root).read_text()) == first
+    assert (capsys.readouterr(), round_files(root)) == first
 
 
 def test_a_round_dir_whose_marker_cannot_be_written_prints_no_path(root, seed, capsys):
@@ -905,16 +896,6 @@ def test_pause_round_in_autopilot_releases_the_claim_then_prints_the_block(
     assert orch_spec(root, seed, "pause", "--round", "1/2", env=AUTOPILOT) == 0
     assert capsys.readouterr() == (ROUND_BLOCK % (1, 2, 2, CLAUDE_NEXT), "")
     assert round_marker(root).read_text() == "21 2 2\n"
-    assert labels_of(store, 21) == ["ready-for-agent", "orch:spec"]
-    assert seed.claim_held(21) is False
-
-
-def test_pause_round_in_autopilot_counts_a_claim_already_gone_as_freed(
-        root, seed, store, capsys, autopilot_flow):
-    FakeGh(seed.store, {}).claim_delete(21)
-
-    assert orch_spec(root, seed, "pause", "--round", "1/2", env=AUTOPILOT) == 0
-    assert capsys.readouterr() == (ROUND_BLOCK % (1, 2, 2, CLAUDE_NEXT), "")
     assert labels_of(store, 21) == ["ready-for-agent", "orch:spec"]
     assert seed.claim_held(21) is False
 

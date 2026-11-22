@@ -352,7 +352,8 @@ def test_count_parse_reads_a_round_and_the_round_count(arg, k, n):
     assert spec.spec_round_count_parse(arg) == (k, n)
 
 
-@pytest.mark.parametrize("arg", ["", "1", "0/2", "01/2", "1/02", "a/2", "1/2/3", "-1/2", "1/"])
+@pytest.mark.parametrize("arg", ["", "1", "0/2", "01/2", "1/02", "a/2", "1/2/3", "-1/2", "1/",
+                                 "1/0", "1/b", "/2", "1 /2"])
 def test_count_parse_refuses_what_is_not_two_positive_whole_numbers(capsys, arg):
     code, _, err = died_of(capsys, lambda: spec.spec_round_count_parse(arg))
 

@@ -21,7 +21,7 @@ import re
 import subprocess
 from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Set, Tuple
 
-from orch.common import ORCH_DIR_NAME
+from orch.common import ORCH_DIR_NAME, trim
 
 
 class FileDiff(NamedTuple):
@@ -59,10 +59,6 @@ COULD_NOT: Dict[str, Any] = {
     "push": "git gave no reason",
 }
 
-# The whitespace bash's [:space:] class trims, as trim_split trims it.
-_SPACE = " \t\n\r\v\f"
-
-
 def git_push_reason(stderr: str) -> str:
     """The reason a git push's <stderr> gives - bash git_push_reason: its
     ` ! ` ref lines, trimmed and joined by "; ", since they carry a
@@ -72,7 +68,7 @@ def git_push_reason(stderr: str) -> str:
     bangs: List[str] = []
     fatal = first = ""
     for line in stderr.split("\n"):
-        trimmed = line.strip(_SPACE)
+        trimmed = trim(line)
         if line.startswith(" ! "):
             bangs.append(trimmed)
         elif line.startswith("fatal:") and not fatal:
