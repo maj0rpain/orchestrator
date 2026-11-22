@@ -1,7 +1,8 @@
 """The Marked comment module (scripts/orch/marked-comment.sh), kept to what
-the issue, review-pass and spec-review nouns use: recognising the spec
-review's changelogs, comments whose first line is the `## Spec review`
-heading, to drop them; the texts of the spec rulings, comments whose first
+the issue, review-pass and spec-review nouns use: the first line of the spec
+review's changelog (marked_comment_write, for the spec-review kind alone);
+recognising the spec review's changelogs, comments whose first line is the
+`## Spec review` heading, to drop them; the texts of the spec rulings, comments whose first
 line begins `Spec ruling:`, that a review pass reads; and every comment's
 kind, argument and retired tag (marked_comment_info, the jq prelude's), which
 the issue timeline reads the handoff comments by.
@@ -45,6 +46,16 @@ class MarkedInfo(NamedTuple):
 
 class NotText(ValueError):
     """A comment body that is neither text nor absent."""
+
+
+def marked_comment_write(kind: str) -> str:
+    """The first line a marked comment of <kind> opens with, newline
+    included, as bash's marked_comment_write prints it - so far only the
+    spec-review kind, whose line is its heading; any other kind is a
+    programming error, a ValueError."""
+    if kind != "spec-review":
+        raise ValueError("marked comment: kind not copied to Python: " + kind)
+    return SPEC_REVIEW_OPENING + "\n"
 
 
 def is_spec_review(comment: dict) -> bool:

@@ -33,7 +33,9 @@ the paste guards arm on its "; it is saved in <path>/view.md" tail - or,
 with --unattended, in a tail of its own they never arm on. check --tickets
 validates the round's tickets.md the same way (orch/spec_review_tickets.py),
 reading no GitHub; with @@ none-affected it removes any earlier view.md and
-saves none. apply is still served by the bash spec-review module.
+saves none. apply applies a round's answer and publishes it
+(orch/spec_review_apply.py). orch.sh still runs the bash spec-review module
+for every verb.
 """
 from __future__ import annotations
 
@@ -42,7 +44,7 @@ import sys
 import time
 from typing import Callable, List, Mapping, Optional
 
-from orch import spec
+from orch import spec, spec_review_apply
 from orch.common import (ORCH_DIR_NAME, capture, die, err_line, file_lines, plain_number,
                          read_raw, require_poll_knobs, text_file_write, warn)
 from orch.flow_state import STATE_UNREADABLE_MSG, flow_state_file, flow_state_get_many
@@ -51,7 +53,8 @@ from orch.git import Git
 from orch.handoff import handoff_path
 from orch.host import flow_cmd
 from orch.root import checkout_root, working_directory
-from orch.spec_review_batch import SPEC_REVIEW_LENSES, Edited, Violations, lens_known, validate
+from orch.spec_review_batch import (SPEC_REVIEW_LENSES, TITLES, Edited, Violations, lens_known,
+                                    lens_state_line, validate)
 from orch.spec_review_tickets import Tickets, TicketsOffline, tickets_parse
 from orch.wait import StoredTotal, still_running, wait_block
 
@@ -240,13 +243,6 @@ NUDGE = (" - end your turn on one plain-text reply, no tool call: the view above
 # no "; it is saved in" tail, so the paste guards never arm on it.
 UNATTENDED_TAIL = " - unattended: not a turn-final reply; go straight on to apply"
 
-# The changelog's and the views' heading for a section: Consolidation or a
-# lens.
-TITLES = {"consolidation": "Consolidation", "fidelity": "Fidelity",
-          "consistency": "Consistency", "testability": "Testability",
-          "implementability": "Implementability"}
-
-
 def view_path(directory: str, env: Mapping[str, str]) -> str:
     """<directory>/view.md's absolute path - <directory> taken from the
     working directory, as bash's $PWD names it, when relative; symlinks left
@@ -266,15 +262,6 @@ def group_title(item) -> str:
     if item.group == "contradicts-the-plan":
         return "Contradicts the plan"
     return TITLES[item.group]
-
-
-def lens_state_line(lens) -> str:
-    """How a lens line reads in the view and the changelog."""
-    if lens.state == "ran":
-        return "ran"
-    if lens.state == "not-run":
-        return "not run - " + lens.reason
-    return "not run - standalone review, no plan to check against"
 
 
 def option_line(item, option) -> str:
@@ -552,7 +539,10 @@ def run(
     if op not in OPS.split("|"):
         die("unknown spec-review op: %s (want %s)" % (op or "<none>", OPS))
     if op == "apply":
-        raise NotImplementedError("spec-review apply is still served by bash")
+        # The gh adapter is made at the first GitHub call: a refusal before it
+        # makes none.
+        return spec_review_apply.apply(
+            argv[1:], lambda: gh if gh is not None else adapter(env, pin=pin), git, env, root)
     if op == "check":
         return check(argv[1:], env)
     if op == "wait":

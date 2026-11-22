@@ -18,11 +18,18 @@ validate() is the one validation: the batch, the lens files of the lenses
 that ran, the citations, the answer's dispositions, and every anchor visited
 in batch order - applied to the body when the answer accepts it, else checked
 on its own against the body as read - each problem naming its `@@ anchor`
-line. Its answer is all, the one check takes; apply's other answers come with
-apply.
+line. check takes the all answer; apply takes the batch question's answer
+(answer_dispositions), and the decline reasons the human gave
+(reasons_read), which the ticket items' answer reads with the same rule.
+
+An autopilot round's apply runs twice (the spec module's hold): the first,
+the hold run, takes every fundamental item as recommended and holds it back;
+the second, the resumed run, takes an answer naming the fundamental items
+alone, the rest as recommended.
 """
 from __future__ import annotations
 
+import os
 import re
 from typing import Dict, List, NoReturn, Optional, Tuple
 
@@ -31,6 +38,12 @@ from orch.common import die, read_raw, warn
 
 # The lenses, in the lens table's order - the changelog's section order.
 SPEC_REVIEW_LENSES = ("fidelity", "consistency", "testability", "implementability")
+
+# The changelog's and the views' heading for a section: Consolidation or a
+# lens.
+TITLES = {"consolidation": "Consolidation", "fidelity": "Fidelity",
+          "consistency": "Consistency", "testability": "Testability",
+          "implementability": "Implementability"}
 
 # The most words a @@ summary may hold (#1352), so each line of the compact
 # view stays short.
@@ -69,6 +82,24 @@ def read_words(text: str, count: int) -> List[str]:
         rest = rest[len(word):].lstrip(_IFS)
     words.append(rest)
     return words
+
+
+def one_line(text: str) -> str:
+    """<text> on one line - every line trimmed, the empty ones dropped, the
+    rest joined by one space - so a finding or quote copied word for word
+    stays one changelog line."""
+    return " ".join(line for line in (trim(line) for line in text.split("\n")) if line)
+
+
+def answer_tokens(answer: str) -> List[str]:
+    """An Other-list answer split on its commas, each token trimmed - a
+    trailing comma giving an empty last token."""
+    tokens = []
+    rest = answer + ","
+    while rest:
+        token, _, rest = rest.partition(",")
+        tokens.append(trim(token))
+    return tokens
 
 
 def at_line(line: str) -> Tuple[str, str]:
@@ -702,6 +733,15 @@ def findings_check(batch: Batch, violations: Violations) -> None:
                            " batch, if only as a recommend-decline item" % ", ".join(uncited))
 
 
+def lens_state_line(lens: Lens) -> str:
+    """How a lens line reads in the view and the changelog."""
+    if lens.state == "ran":
+        return "ran"
+    if lens.state == "not-run":
+        return "not run - " + lens.reason
+    return "not run - standalone review, no plan to check against"
+
+
 def occurrences(text: str, needle: str) -> int:
     """0, 1 or 2 - how often <needle> occurs in <text>, counting no further
     than two."""
@@ -735,12 +775,16 @@ class Edited:
 
 
 class Validation(Edited):
-    """validate()'s answer: the batch, the body as read and as edited, the
+    """validate()'s answer: the batch, the batch file's text as read, each
+    item's Disposition by its index, the body as read and as edited, the
     anchors visited and each anchor problem."""
 
-    def __init__(self, batch: Batch, fetched: str):
+    def __init__(self, batch: Batch, fetched: str, batch_text: str = "",
+                 dispositions: Optional[Dict[int, "Disposition"]] = None):
         super().__init__(fetched)
         self.batch = batch
+        self.batch_text = batch_text
+        self.dispositions = dispositions or {}
         self.anchors = 0
         self.problems: List[str] = []
 
@@ -752,50 +796,204 @@ class Validation(Edited):
             self.problems.append("%s: %s" % (what, problem))
 
 
-def all_dispositions(batch: Batch) -> Dict[int, Tuple[str, str]]:
-    """The all answer's disposition of each item, by its index: applied, a
-    decision's recommended option taken, or resolved."""
-    dispositions = {}
+class Disposition:
+    """What an answer did with an item: applied, declined, taken (a
+    decision's option <taken>), undecided or resolved, and whether the
+    human's call matched the recommendation (<as_recommended>)."""
+
+    def __init__(self, disposition: str, taken: str = "", as_recommended: bool = False):
+        self.disposition = disposition
+        self.taken = taken
+        self.as_recommended = as_recommended
+
+
+ANSWER_FORMS = "is not recommended, all, none or a list of departures such as 3B, -4, +2"
+
+
+def _held(item: Item, run: str) -> bool:
+    """Whether <item> is a fundamental item the hold run holds back for the
+    human's reply."""
+    return run == "hold" and item.fundamental
+
+
+def _resumed_as_recommended(item: Item, run: str) -> bool:
+    """Whether <item> is one the resumed run's answer cannot name - a
+    non-fundamental item, taken as recommended."""
+    return run == "resume" and not item.fundamental
+
+
+def answer_dispositions(batch: Batch, answer: str, run: str = "") -> Dict[int, Disposition]:
+    """Each item's Disposition, by its index, from the batch question's
+    <answer>: recommended, all, none, or an Other list such as `3B, -4, +2`
+    naming only the departures from the recommendation - `<n><letter>` a
+    decision's option, `-<n>` an item declined or a decision left undecided,
+    `+<n>` a recommend-decline item applied - every item it does not name
+    taken as recommended. <run> is the autopilot round's run, hold or resume,
+    or "". Dies, before any write, on a token of no such form, an unknown item
+    or option, a letter on an item that is no decision, `+` on a decision or
+    on an item not recommended for decline, a resolved item named, or an
+    item named twice."""
+    dispositions: Dict[int, Disposition] = {}
+    base = answer
+    if answer not in ("recommended", "all", "none"):
+        base = "recommended"
+        for token in answer_tokens(answer):
+            sign = letter = ""
+            if token[:1] in ("-", "+") and token:
+                sign, n = token[0], token[1:]
+            else:
+                n = re.match(r"[^A-Za-z]*", token).group()
+                letter = token[len(n):]
+            if (not re.fullmatch(r"[0-9]+", n)
+                    or not (re.fullmatch(r"[A-Za-z]", letter) if not sign else not letter)):
+                die("the answer '%s' %s - '%s' is not <n><letter>, -<n> or +<n>"
+                    % (answer, ANSWER_FORMS, token))
+            letter = letter.upper()
+            index = next((i for i, item in enumerate(batch.items) if item.n == n), None)
+            if index is None:
+                die("the answer names item %s, which batch.md does not have" % n)
+            item = batch.items[index]
+            if index in dispositions:
+                die("the answer names item %s twice" % n)
+            if _held(item, run):
+                die("the answer names item %s, a fundamental item held back for the human's"
+                    " reply - it takes no answer in this run" % n)
+            if _resumed_as_recommended(item, run):
+                die("the answer names item %s, which is not a fundamental item - the resumed"
+                    " answer names only fundamental items, the rest being taken as recommended"
+                    % n)
+            if item.rec == "resolved":
+                die("the answer names item %s, which is resolved by item %s and takes no answer"
+                    % (n, item.resolved))
+            if not sign:
+                if item.rec != "decision":
+                    die("the answer gives item %s the letter %s, but item %s is no decision item"
+                        % (n, letter, n))
+                if item.option(letter) is None:
+                    die("the answer gives item %s option %s, which it does not have" % (n, letter))
+                dispositions[index] = Disposition("taken", letter, letter == item.arg)
+            elif sign == "-":
+                if item.rec == "decision":
+                    dispositions[index] = Disposition("undecided")
+                else:
+                    dispositions[index] = Disposition("declined", "", item.rec == "decline")
+            elif item.rec == "decline":
+                dispositions[index] = Disposition("applied")
+            elif item.rec == "decision":
+                die("the answer names +%s, but item %s is a decision item: name its option, as %s%s"
+                    % (n, n, n, item.arg))
+            else:
+                die("the answer names +%s, but item %s is not recommended for decline" % (n, n))
     for index, item in enumerate(batch.items):
         if item.rec == "resolved":
-            dispositions[index] = ("resolved", "")
+            dispositions[index] = Disposition("resolved")
+            continue
+        # A fundamental item is validated as recommended in the hold run; the
+        # resumed run's answer is the fundamental items' alone.
+        item_base = base
+        if _held(item, run) or _resumed_as_recommended(item, run):
+            item_base = "recommended"
+        if index in dispositions:
+            continue
+        if item.rec == "apply" and item_base in ("recommended", "all") or (
+                item.rec == "decline" and item_base == "all"):
+            dispositions[index] = Disposition("applied", "", True)
+        elif item.rec == "decision" and item_base in ("recommended", "all"):
+            dispositions[index] = Disposition("taken", item.arg, True)
         elif item.rec == "decision":
-            dispositions[index] = ("taken", item.arg)
+            dispositions[index] = Disposition("undecided")
+        elif item.rec == "decline":
+            dispositions[index] = Disposition("declined", "", True)
         else:
-            dispositions[index] = ("applied", "")
+            dispositions[index] = Disposition("declined")
     return dispositions
 
 
-def validate(directory: str, body: str, violations: Violations, env) -> Validation:
-    """The one validation check and apply share, under the all answer: reads
-    <directory>/batch.md and the lens files of the lenses that ran, checks the
-    citations and visits every anchor, in batch order, against the file
-    <body>. Stops on the first structure violation or malformed lens file;
-    each anchor problem is in the answer's problems, for the caller to react
-    to."""
+def _reason_split(flag: str, lineno: int, line: str) -> Tuple[str, str]:
+    """One `<n>: <reason>` line of a reasons file split into its item number
+    and its reason, or a death naming <flag>'s line."""
+    n, colon, reason = line.partition(":")
+    reason = trim(reason)
+    if not (re.fullmatch(r"[0-9]+", n) and colon and reason and line.startswith(n + ": ")):
+        die("%s line %d: want <n>: <reason>, got '%s'" % (flag, lineno, line))
+    return n, reason
+
+
+def reasons_read(flag: str, path: str, numbers: List[str], declined: List[bool], noun: str,
+                 source: str, answer_name: str) -> Dict[int, str]:
+    """The human's decline reasons from the file <path>, given as <flag> -
+    none when <path> is empty - one `<n>: <reason>` line per item, by the
+    index of <n> in <numbers>. Blank lines are skipped; a malformed line, or
+    one naming an item <source> does not have, one whose item <answer_name>
+    does not decline (per <declined>), or one named twice, dies, calling the
+    item a <noun>."""
+    reasons: Dict[int, str] = {}
+    if not path:
+        return reasons
+    if not os.path.isfile(path):
+        die("%s file not found: %s" % (flag, path))
+    text = (read_raw(path) or "").replace("\x00", "")
+    for lineno, line in enumerate(text.split("\n") if text else [], 1):
+        line = without_cr(line)
+        if not trim(line):
+            continue
+        n, reason = _reason_split(flag, lineno, line)
+        index = numbers.index(n) if n in numbers else None
+        if index is None:
+            die("%s line %d names %s %s, which %s does not have" % (flag, lineno, noun, n, source))
+        if not declined[index]:
+            die("%s line %d names %s %s, which %s does not decline"
+                % (flag, lineno, noun, n, answer_name))
+        if index in reasons:
+            die("%s line %d names %s %s a second time" % (flag, lineno, noun, n))
+        reasons[index] = reason
+    return reasons
+
+
+def decline_reason(reasons: Dict[int, str], index: int, as_recommended: bool,
+                   recommended_reason: str) -> str:
+    """A declined item's changelog reason - the human's when it gave one,
+    else, when the decline was the recommendation, the recommendation's own,
+    else plain "declined"."""
+    if index in reasons:
+        return reasons[index]
+    if as_recommended:
+        return "declined as recommended: " + recommended_reason
+    return "declined"
+
+
+def validate(directory: str, body: str, violations: Violations, env, answer: str = "all",
+             run: str = "") -> Validation:
+    """The one validation check and apply share: reads <directory>/batch.md
+    and the lens files of the lenses that ran, checks the citations, takes
+    <answer> (answer_dispositions, in the autopilot <run>), and visits every
+    anchor, in batch order, against the file <body>. Stops on the first
+    structure violation or malformed lens file; each anchor problem is in the
+    answer's problems, for the caller to react to."""
     text = read_raw(directory + "/batch.md") or ""
     batch = batch_parse(text, violations, autopilot_active(env))
     for name in SPEC_REVIEW_LENSES:
         if batch.lens(name).state == "ran":
             batch.lens_findings += lens_parse(directory, name, violations)
     findings_check(batch, violations)
-    dispositions = all_dispositions(batch)
+    dispositions = answer_dispositions(batch, answer, run)
     fetched = read_raw(body)
     if fetched is None:
         violations.stop("could not read %s - nothing written" % body)
-    result = Validation(batch, fetched.replace("\x00", ""))
+    result = Validation(batch, fetched.replace("\x00", ""), text, dispositions)
     for index, item in enumerate(batch.items):
-        disposition, taken = dispositions[index]
+        disposition = dispositions[index]
         if item.rec in ("apply", "decline"):
             # An item reported as having no anchor block has nothing to visit.
             if item.edit is not None:
-                result.visit(disposition == "applied",
+                result.visit(disposition.disposition == "applied",
                              "batch.md line %d: item %s" % (item.edit.line, item.n), item.edit)
         elif item.rec == "decision":
             for option in item.options:
                 if option.edit is None:
                     continue
-                result.visit(disposition == "taken" and taken == option.letter,
+                result.visit(disposition.disposition == "taken"
+                             and disposition.taken == option.letter,
                              "batch.md line %d: item %s option %s"
                              % (option.edit.line, item.n, option.letter), option.edit)
     return result

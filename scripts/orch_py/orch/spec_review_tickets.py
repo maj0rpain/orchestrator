@@ -18,17 +18,28 @@ has taken it, else ticket-<t>.md, or the round's body for a `## Ticket`
 item - and every accepted edge against its ticket's `## Blocked by`
 (orch/ticket.py's blocked_by_section_numbers). Each problem names its
 tickets.md line, for the caller to react to.
+
+apply --tickets adds the ticket question's answer (tickets_answer), the
+checks that read GitHub - every entry naming a ticket is a ticket of the
+breakdown in the state its kind needs (tickets_follow) - and the changelog's
+Tickets lines (tickets_lines).
 """
 from __future__ import annotations
 
 import os
-from typing import Dict, List, NoReturn, Optional
+import re
+from typing import Dict, List, NoReturn, Optional, Tuple
 
 from orch.common import die, plain_number, read_raw
 from orch.spec_review_batch import (Block, BlockReader, Edit, Edited, Malformed, Violations,
-                                    at_line, is_at_line, positive_number, read_words, trim,
-                                    without_cr)
-from orch.ticket import blocked_by_section_numbers
+                                    answer_tokens, at_line, decline_reason, is_at_line,
+                                    one_line, positive_number, read_words, trim, without_cr)
+from orch.ticket import blocked_by_section_numbers, ticket_listing_state, ticket_sub_issues
+
+# The Tickets lines that report no ticket outcome.
+TICKETS_NO_EDIT = "Not checked - no edit applied"
+TICKETS_NO_BREAKDOWN = "None - no ticket breakdown"
+TICKETS_NONE_AFFECTED = "None - no ticket affected"
 
 
 class TicketItem:
@@ -303,3 +314,136 @@ class TicketsOffline:
             self.problems.append("%s: #%s is already blocked by #%s" % (what, item.t, item.b))
         elif item.kind == "unblock" and not have:
             self.problems.append("%s: #%s is not blocked by #%s" % (what, item.t, item.b))
+
+
+
+class TicketAnswer:
+    """The ticket question's answer taken: whether it retires the breakdown,
+    and otherwise each item's disposition, applied or declined, by its index,
+    and the indexes whose disposition matched the recommendation."""
+
+    def __init__(self) -> None:
+        self.retire = False
+        self.dispositions: Dict[int, str] = {}
+        self.as_recommended: set = set()
+
+    def applied(self, index: int) -> bool:
+        return self.dispositions.get(index) == "applied"
+
+
+def tickets_answer(tickets: Tickets, answer: str) -> TicketAnswer:
+    """Each ticket item's disposition from the ticket question's <answer>:
+    recommended (following @@ recommend), all, none, retire, or an Other list
+    such as `1, 3`, each item it names applied and the rest declined. Dies,
+    before any write, on a token that is no item number, an unknown item or
+    one named twice."""
+    taken = TicketAnswer()
+    if answer == "retire" or (answer == "recommended" and tickets.recommend == "retire"):
+        taken.retire = True
+        return taken
+    numbers = [item.n for item in tickets.items]
+    if answer not in ("recommended", "all", "none"):
+        for token in answer_tokens(answer):
+            if not re.fullmatch(r"[0-9]+", token):
+                die("the --tickets answer '%s' is not recommended, all, none, retire or a list such"
+                    " as 1, 3 - '%s' is no ticket item" % (answer, token))
+            if token not in numbers:
+                die("the --tickets answer names ticket item %s, which tickets.md does not have"
+                    % token)
+            index = numbers.index(token)
+            if index in taken.dispositions:
+                die("the --tickets answer names ticket item %s twice" % token)
+            taken.dispositions[index] = "applied"
+            if tickets.items[index].rec == "apply":
+                taken.as_recommended.add(index)
+    for index, item in enumerate(tickets.items):
+        if index in taken.dispositions:
+            continue
+        if item.rec == "apply" and answer in ("recommended", "all"):
+            taken.dispositions[index] = "applied"
+            taken.as_recommended.add(index)
+        elif item.rec == "decline" and answer == "all":
+            taken.dispositions[index] = "applied"
+        elif item.rec == "decline":
+            taken.dispositions[index] = "declined"
+            taken.as_recommended.add(index)
+        else:
+            taken.dispositions[index] = "declined"
+    return taken
+
+
+def _named_check(where: str, t: str, want: str, listing, issue: str) -> None:
+    """Dies, before any write, unless #<t> is a sub-issue of <issue> in the
+    state <want> (OPEN, CLOSED or any) in <listing>. <where> is the message's
+    prefix, up to and including its colon."""
+    state = ticket_listing_state(listing, t)
+    if not state:
+        die("%s #%s is not a ticket of #%s's breakdown - nothing written" % (where, t, issue))
+    if want == "OPEN" and state == "CLOSED":
+        die("%s #%s is a closed ticket of #%s's breakdown - nothing written" % (where, t, issue))
+    if want == "CLOSED" and state == "OPEN":
+        die("%s #%s is an open ticket of #%s's breakdown - nothing written" % (where, t, issue))
+
+
+def tickets_follow(gh, tickets: Tickets, taken: TicketAnswer, directory: str, body: str,
+                   kind: str, issue: str) -> TicketsOffline:
+    """Every ticket item checked against <body>, the round's body as the
+    batch items left it, and the ticket copies in <directory>: an accepted
+    one applied in memory, a declined text item's anchor checked on its own
+    (TicketsOffline) - and the checks that read GitHub: every entry naming a
+    ticket is a ticket of <issue>'s breakdown in the state its kind needs (a
+    text item's and an edge item's ticket open, an edge item's blocker
+    either, a `@@ closed` line's closed), and a `## Ticket` item only on a
+    breakdown of <kind> collapsed. Dies, before any write, on the first
+    GitHub-reading check that fails - the items in order, then the `@@
+    closed` lines - else on the first offline problem. The checks' answer
+    holds the edited body and copies; a retire checks nothing."""
+    offline = TicketsOffline(directory, Edited(body), Violations(collect=False))
+    if taken.retire:
+        return offline
+    listing = []
+    if tickets.closed or any(item.kind != "section" for item in tickets.items):
+        listing = ticket_sub_issues(gh, issue)
+    for index, item in enumerate(tickets.items):
+        what = "tickets.md line %d: ticket item %s:" % (item.line, item.n)
+        if item.kind == "section":
+            if kind != "collapsed":
+                die("%s: a ## Ticket item, but #%s's breakdown is %s - nothing written"
+                    % (what[:-1], issue, kind))
+        elif item.kind == "ticket":
+            _named_check(what, item.t, "OPEN", listing, issue)
+        else:
+            _named_check(what, item.t, "OPEN", listing, issue)
+            _named_check(what, item.b, "any", listing, issue)
+        offline.visit(item, taken.applied(index))
+    for closed in tickets.closed:
+        _named_check("tickets.md line %d:" % closed.line, closed.t, "CLOSED", listing, issue)
+    if offline.problems:
+        die(offline.problems[0] + " - nothing written")
+    return offline
+
+
+def tickets_lines(tickets: Tickets, taken: TicketAnswer, reasons: Dict[int, str]) -> str:
+    """The changelog's Tickets lines, from the parsed tickets.md, the ticket
+    answer and the human's decline reasons."""
+    lines = []
+    if taken.retire:
+        lines.append("- retired, to be broken down again")
+    for index, item in enumerate(tickets.items if not taken.retire else []):
+        n = item.n
+        if taken.applied(index):
+            if item.text():
+                lines.append("- (%s) %s" % (n, item.summary))
+            elif item.kind == "block":
+                lines.append("- (%s) #%s now blocked by #%s" % (n, item.t, item.b))
+            else:
+                lines.append("- (%s) #%s no longer blocked by #%s" % (n, item.t, item.b))
+            continue
+        reason = decline_reason(reasons, index, index in taken.as_recommended, item.arg)
+        if item.text():
+            lines.append('- (%s) "%s" - %s' % (n, one_line(item.edit.replace), reason))
+        else:
+            lines.append('- (%s) "%s #%s by #%s" - %s' % (n, item.kind, item.t, item.b, reason))
+    for closed in tickets.closed:
+        lines.append("- #%s closed, built against the earlier spec: %s" % (closed.t, closed.what))
+    return "\n".join(lines) or TICKETS_NONE_AFFECTED
