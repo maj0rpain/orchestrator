@@ -162,11 +162,12 @@ back, and the ticket's `## Blocked by` section is rewritten from its edges,
 before it reports success. Blockers are declared only on the draft's
 `@@ blocked-by` line: publishing replaces whatever stands under that heading
 with one `- #<n>` line per blocking edge, or `None (can start immediately)`.
-It prints the published numbers in the order its save point first recorded
-them. If it fails it names the ticket's draft position and the failed read or
-write, and a rerun on the same parent finishes from the saved draft, linking a
-ticket created but never linked rather than creating another, adding only the
-blocking edges it lacks, and rewriting its `## Blocked by` section. Never
+It prints the published numbers in
+publishing order. If it fails it names the ticket's draft position and the
+failed read or write, and a rerun on the same parent finishes from the saved
+draft, linking a ticket created but never linked rather than creating another,
+adding only the blocking edges it lacks, and rewriting its `## Blocked by`
+section. Never
 publish with an ad hoc `gh` call.
 
 When a published ticket's blocking edges are wrong - any number missing or
@@ -206,8 +207,7 @@ close or modify the parent issue.
 
 ### 6. Report
 
-The published ticket numbers in the order `breakdown publish` printed them, or
-`collapsed`.
+The published ticket numbers in publishing order, or `collapsed`.
 
 ## Unattended breakdown
 

@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Dict, List, Mapping, NamedTuple, NoReturn, Optional, Tuple
+from typing import Callable, Dict, List, Mapping, NamedTuple, NoReturn, Optional, Tuple, TypeVar
 
 from orch.common import (AT_LINE_ESCAPE_HINT, ORCH_DIR_NAME, die, file_lines,
                          file_write_atomic, lines_of, mkdir_p_or_die, plain_number, read_raw,
@@ -208,6 +208,18 @@ def _first_numbers(numbers: str) -> List[str]:
     return out
 
 
+_T = TypeVar("_T")
+
+
+def _or_die_naming(message: str, call: Callable[[], _T]) -> _T:
+    """<call>'s answer; when it dies, its own message stands and publish dies
+    with 1 after it, saying <message>, which names the draft ticket."""
+    try:
+        return call()
+    except SystemExit:
+        die(message)
+
+
 def publish(args: List[str], gh_of, root: str) -> int:
     """`breakdown publish <parent> <draft-file>`: every ticket of the draft
     created, linked as a sub-issue of <parent> with its blocking edges, and
@@ -250,19 +262,16 @@ def publish(args: List[str], gh_of, root: str) -> int:
             ticket = tickets[k]
             unmade = "could not create a temp file for ticket %s's body" % k
             with temp_text_file(ticket.body, unmade, unmade) as body_file:
-                try:
-                    n = str(ticket_create(gh, labels, ticket.title, body_file))
-                except SystemExit:
-                    die("ticket %s of the draft: the create failed" % k)
+                n = str(_or_die_naming(
+                    "ticket %s of the draft: the create failed" % k,
+                    lambda: ticket_create(gh, labels, ticket.title, body_file)))
             # Recorded before the link, so a rerun can tell "created,
             # unlinked" from "not created". A failed write dies here.
             breakdown_record(numbers, k, n, "created")
         # Fresh or resumed alike: link only what is not yet linked, add only
         # the blocking edges the ticket lacks, read it all back.
-        try:
-            ticket_link(gh, parent, n, want)
-        except SystemExit:
-            die("ticket %s of the draft (#%s): the link failed" % (k, n))
+        _or_die_naming("ticket %s of the draft (#%s): the link failed" % (k, n),
+                       lambda: ticket_link(gh, parent, n, want))
         breakdown_record(numbers, k, n, "linked")
     text_file_write(directory + "/published", "",
                     "could not write the published marker %s/published" % directory)
