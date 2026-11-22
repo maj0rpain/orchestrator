@@ -91,11 +91,13 @@ class StoredTotal:
         lines = file_lines(path) if os.path.isfile(path) else []
         start = lines[0] if lines else ""
         slept = lines[1] if len(lines) > 1 else ""
-        if not plain_number(start) or not is_number(slept):
+        fresh = not plain_number(start) or not is_number(slept)
+        if fresh:
             start, slept = "%d" % int(clock()), "0"
-            if not file_write_atomic(path, "%s\n%s\n" % (start, slept)):
-                die("could not store the wait")
-        return cls(path, start, slept, block, clock, sleep, call_start)
+        total = cls(path, start, slept, block, clock, sleep, call_start)
+        if fresh:
+            total._store()
+        return total
 
     def _elapsed(self, start: int, slept: str) -> float:
         """wait_elapsed: the larger of the wall clock since <start> and
@@ -117,8 +119,10 @@ class StoredTotal:
         return self._elapsed(self.call_start, self.blocked)
 
     def _store(self) -> bool:
-        """wait_store_and_exit's store: False, for the caller to end the
-        call as still running; dies when the total cannot be stored."""
+        """wait_store_and_exit's store, and open's of a fresh total: the
+        start and the seconds slept written to the file, then False, for
+        tick's caller to end the call as still running; dies when the total
+        cannot be stored."""
         if not file_write_atomic(self.file, "%s\n%s\n" % (self.start, self.slept)):
             die("could not store the wait")
         return False
