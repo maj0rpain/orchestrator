@@ -285,24 +285,31 @@ def spec_round_in_flow(directory: str, rounds: str) -> bool:
     return path.startswith(rounds + "/") and len(path) > len(rounds) + 1
 
 
+def spec_entries_rm_or_die(directory: str, kept: Sequence[str], unremoved: str) -> None:
+    """Every entry of <directory> but the names in <kept> deleted, in name
+    order; dies with <unremoved> when <directory> cannot be listed or an
+    entry cannot be removed."""
+    try:
+        names = sorted(os.listdir(directory))
+    except OSError:
+        die(unremoved)
+    for name in names:
+        if name not in kept:
+            rm_rf_or_die(os.path.join(directory, name), unremoved)
+
+
 def spec_round_dir_reset(directory: str, carry: bool = False) -> None:
     """A round's working directory made ready to run in: the reset a flow's
-    `spec round-dir` and a standalone review's begin run, the copy of bash
-    spec_round_dir_reset. With <carry>, every entry of an existing
-    <directory> but the code map and the settled file is deleted in place,
-    keeping what a round hands the next; without it <directory> is removed
-    whole. Either way it is then created when missing. Dies naming the
-    directory when it cannot, where bash's rm, find or mkdir gave its own
-    error."""
+    `spec round-dir` and a standalone review's begin run, keeping bash
+    spec_round_dir_reset's name and messages. With <carry>, every entry of
+    an existing <directory> but the code map and the settled file is deleted
+    in place, keeping what a round hands the next; without it <directory> is
+    removed whole. Either way it is then created when missing. Dies naming
+    the directory when it cannot, where bash's rm, find or mkdir gave its
+    own error."""
     unreset = "could not reset the round directory %s" % directory
     if carry and os.path.isdir(directory):
-        try:
-            names = sorted(os.listdir(directory))
-        except OSError:
-            die(unreset)
-        for name in names:
-            if name not in ROUND_CARRIED:
-                rm_rf_or_die(os.path.join(directory, name), unreset)
+        spec_entries_rm_or_die(directory, ROUND_CARRIED, unreset)
     else:
         rm_rf_or_die(directory, unreset)
     mkdir_p_or_die(directory, unreset)
@@ -427,14 +434,8 @@ def spec_round_sweep(rounds: str, directory: str) -> None:
     round 1's <directory> deleted, so a redone review leaks nothing stale;
     dies naming <directory> when it cannot, as spec_round_dir_reset does,
     where bash's find gave its own error."""
-    unreset = "could not reset the round directory %s" % directory
-    try:
-        names = sorted(os.listdir(rounds))
-    except OSError:
-        die(unreset)
-    for name in names:
-        if name != "1":
-            rm_rf_or_die(os.path.join(rounds, name), unreset)
+    spec_entries_rm_or_die(rounds, ("1",),
+                           "could not reset the round directory %s" % directory)
 
 
 def spec_round_carry(rounds: str, k: int) -> None:

@@ -4,9 +4,9 @@
 # orch:running, needs-human, orch:limited), the phase-label helpers, the label
 # table a tick upserts, the host id, the read of an issue's Standing, the
 # claim record's parsing, the claim transition and every other write to it
-# (begin, sync request, start, finish, pause, ask, stop, reenter, sync finish,
-# sync dropped, limit-stop, resume). Its tests:
-# scripts/test/orch/standing.sh.
+# (begin, sync request, start, finish, ask, stop, reenter, sync finish, sync
+# dropped, limit-stop, resume); the pause lives in the Python Standing module,
+# scripts/orch_py/orch/standing.py. Its tests: scripts/test/orch/standing.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 STANDING_RUNNING_LABEL="orch:running"
@@ -233,8 +233,9 @@ standing_resume() {
 # --- transitions ------------------------------------------------------------
 #
 # Every write to Standing goes through one transition: begin, sync request,
-# start, finish, pause, ask, stop, reenter, sync finish, sync dropped,
-# limit-stop, claim release, claim drop and resume. Begin, sync request, claim
+# start, finish, ask, stop, reenter, sync finish, sync dropped, limit-stop,
+# claim release, claim drop and resume (the pause is the Python Standing
+# module's, orch/standing.py). Begin, sync request, claim
 # drop and resume are single writes; the others are chains. A chain of writes a
 # session makes under its claim ends in the release - deletes orch:running and
 # then, last, the claim ref - which is internal to this module: a chain that

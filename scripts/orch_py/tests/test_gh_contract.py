@@ -2,8 +2,8 @@
 against a fixture gh on PATH that answers by exact argv, proving the argv it
 hands gh, how it reads the answer, the repo pin and its remedy, the rate-limit
 handling and the `gh could not <action>` death. The claim delete, the one
-git-backed operation, runs instead against a real bare origin under tmp_path
-and a seeded FakeGit."""
+git-backed operation, runs instead against a real bare origin under
+tmp_path."""
 from __future__ import annotations
 
 import json
@@ -820,14 +820,6 @@ def test_a_claim_origin_does_not_hold_counts_as_freed(claimed):
 
     assert gh.claim_delete(9) is None
     assert claims_on(origin) == "refs/orch/claims/5\n"
-
-
-def test_a_push_saying_the_ref_does_not_exist_counts_as_freed():
-    git = FakeGit()
-    git.seed("push", "origin", ":refs/orch/claims/9",
-             answer="error: unable to delete 'refs/orch/claims/9': remote ref does not exist")
-
-    assert Gh(RepoPin({}, git), {}).claim_delete(9) is None
 
 
 def test_any_other_push_failure_fails_the_delete_with_git_s_reason(claimed):
