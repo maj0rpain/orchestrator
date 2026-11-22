@@ -4372,11 +4372,11 @@ genv_run() {
     GIT_AUTHOR_NAME=a GIT_COMMITTER_DATE=d bash -c '
       source "$1/git_env.sh"
       test_git_env_clear; st=$?
-      echo "st=$st dir=${GIT_DIR-unset} probe=${GIT_PROBE_LOCAL-unset} ssh=${GIT_SSH_COMMAND-unset} an=${GIT_AUTHOR_NAME-unset} cd=${GIT_COMMITTER_DATE-unset}"' \
+      echo "st=$st dir=${GIT_DIR-unset} probe=${GIT_PROBE_LOCAL-unset} ssh=${GIT_SSH_COMMAND-unset} an=${GIT_AUTHOR_NAME-unset} cd=${GIT_COMMITTER_DATE-unset} prompt=${GIT_TERMINAL_PROMPT-unset}"' \
     _ "$(dirname "$SUITE_SCRIPT")" 2>&1
 }
-assert_eq "clears what git names, invented variable included, and keeps other knobs" \
-  "$(genv_run ok)" "st=0 dir=unset probe=unset ssh=ssh an=unset cd=unset"
+assert_eq "clears what git names, sets GIT_TERMINAL_PROMPT=0, and keeps other knobs" \
+  "$(genv_run ok)" "st=0 dir=unset probe=unset ssh=ssh an=unset cd=unset prompt=0"
 out="$(genv_run fail)"
 assert_contains "a failing git makes it fail with its message" "$out" \
   "cannot list git's repo-local variables"
@@ -4925,6 +4925,8 @@ af_row ".dockerignore selects the container and up suites" .dockerignore \
   "$TR_GATE,docs_lint.sh,autopilot_container_test.sh,autopilot_up_test.sh"
 af_row "a plugin manifest file selects the version bump and up suites" .claude-plugin/plugin.json \
   "$TR_GATE,docs_lint.sh,version_bump_test.sh,autopilot_up_test.sh"
+af_row "an Antigravity plugin manifest selects the version bump suite" .antigravity-plugin/plugin.json \
+  "$TR_GATE,docs_lint.sh,version_bump_test.sh"
 for af_f in .github/workflows/test.yml .gitignore .gitattributes .ignore LICENSE .claude/settings.json; do
   af_row "$af_f selects nothing more" "$af_f" "$TR_GATE,docs_lint.sh"
 done

@@ -20,17 +20,18 @@ quick autopilot's planner.
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, run `ls
+If `CLAUDE_PLUGIN_ROOT` is unset and the host gave this skill's directory,
+`ORCH` is `scripts/orch.sh` two directories above this skill's own directory
+(the plugin root). Otherwise run `ls
 "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` (the Junie CLI
 install). If it prints one path, `ORCH` is that path. If it prints more than
-one, stop and show the human the paths. If it prints nothing, `ORCH` is
-`scripts/orch.sh` two directories above this skill's own directory (the plugin
-root).
+one, stop and show the human the paths.
 
 If `orch.sh` is at none of these paths, this is a skills-only install: stop, and
 tell the human `orch.sh` is missing and to install the full orchestrator
-plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
-`maj0rpain/orchestrator` as a Junie extension, which is unverified).
+plugin (`/plugin install orchestrator@orchestrator` on Claude Code,
+`agy plugin install <clone-dir>` on Antigravity, or `maj0rpain/orchestrator` as
+a Junie extension, which is unverified).
 
 Steps here name capabilities (ask the user a question, start a fresh
 subagent). `docs/host-capabilities.md` under the plugin root maps each one to
@@ -202,11 +203,12 @@ message supplies what depends on the session: this repo's triage label strings
 for the roles named below (`ready-for-agent`, `wontfix`, `ready-for-human`), and
 whether a flow is active beside this session. Use those label strings wherever
 a step names a role. Every question below is asked as one blocking question to
-the user. On Junie: the ask tool is `ask_user`, and a skill is run by reading
-`"${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md"` and following it verbatim,
-since Junie has no Skill tool. If `CLAUDE_PLUGIN_ROOT` is unset, the plugin
-root is found as for `ORCH`: two directories above the `orch.sh` that `ls`
-printed, else two directories above this skill's own directory.
+the user with the host's ask tool (see `docs/host-capabilities.md`). On a host
+with no Skill tool, a skill is run by reading
+`"${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md"` and following it verbatim. If
+`CLAUDE_PLUGIN_ROOT` is unset, the plugin root is found as for `ORCH`: two
+directories above this skill's own directory when the host gave it, else two
+directories above the `orch.sh` that `ls` printed.
 
 ### Beside an active flow
 
@@ -282,15 +284,16 @@ these route options:
    through spec, implement and review unattended and asks the human only by
    comment on the issue.
 
-On Junie: ask exactly three options, 1 to 3; there is no Autopilot flow.
+Off Claude Code (Junie, Antigravity): ask exactly three options, 1 to 3; there
+is no Autopilot flow.
 
 Keep the route options in the order above unless you recommend one. The
 default route: `route show` prints a route word (`flow`, `quick`, `blueprint`
 or `autopilot`) or `none`. A word naming a route this host offers is that
 route: list it first, append " (Recommended)" to its label, give in one clause
 that it is the user's default route, and make no scope-based recommendation
-beside it. With `none`, or a route the host does not offer (`autopilot` on
-Junie), recommend from the scope of the work (Quick implementation for a
+beside it. With `none`, or a route the host does not offer (`autopilot` off
+Claude Code), recommend from the scope of the work (Quick implementation for a
 one-site fix, say): list it first, append " (Recommended)" to its label, and
 give that scope-based reason in one clause in its description, or in the
 question text where options have no description. If the command fails, report
@@ -368,13 +371,14 @@ An Other that is not a whole number from 0 up is asked again, naming the range;
 ask every time, never assume.
 
 On a count of 1 or more, run the standalone orch-spec-review for that many
-rounds (on Claude Code, args `<n> --rounds <count>`; on Junie, follow
-orch-spec-review for issue #<n> with `--rounds <count>`). Then publish its
-ticket breakdown (orch-to-tickets) against that issue, unless rewrite mode
-reported the breakdown `kept`: then skip that step. Rewrite mode reports the
-breakdown; run no breakdown check of your own. If orch-to-tickets fails after
-rewrite mode retired a breakdown, the report also says that #<n> carries its
-new body and no ticket breakdown, and needs `/orchestrator:to-tickets <n>`.
+rounds (on Claude Code, args `<n> --rounds <count>`; on a host with no Skill
+tool, follow orch-spec-review for issue #<n> with `--rounds <count>`). Then
+publish its ticket breakdown (orch-to-tickets) against that issue, unless
+rewrite mode reported the breakdown `kept`: then skip that step. Rewrite mode
+reports the breakdown; run no breakdown check of your own. If orch-to-tickets
+fails after rewrite mode retired a breakdown, the report also says that #<n>
+carries its new body and no ticket breakdown, and needs
+`/orchestrator:to-tickets <n>`.
 Then stop: do not implement or edit source. Report the issue number and how to
 pick it up later: `/orchestrator:start --issue <n>`, or a quick implementation
 that names the issue.

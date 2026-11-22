@@ -93,9 +93,8 @@ prints `spec`.
    criteria, several modules, a new noun or ADR). A failed fetch stops the
    phase, as `spec-phase.md`'s step 1 says for its own fetch.
    **The question blocks** - ask it as one question
-   with the host's ask tool (`AskUserQuestion` on Claude Code, `ask_user`
-   on Junie), before the first
-   round: "How many spec review rounds?" Any integer >= 1; there
+   with the host's ask tool (see `docs/host-capabilities.md`), before the
+   first round: "How many spec review rounds?" Any integer >= 1; there
    is no upper cap. Options: **2**, **1**, **3**, and **Other**
    for any other number, the recommended one listed first, its label
    followed by " (Recommended)" and its description giving the scope-based

@@ -39,17 +39,18 @@ pass** - see the `orch-review-pass` skill, the one definition of it.
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, run `ls
+If `CLAUDE_PLUGIN_ROOT` is unset and the host gave this skill's directory,
+`ORCH` is `scripts/orch.sh` two directories above this skill's own directory
+(the plugin root). Otherwise run `ls
 "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` (the Junie CLI
 install). If it prints one path, `ORCH` is that path. If it prints more than
-one, stop and show the human the paths. If it prints nothing, `ORCH` is
-`scripts/orch.sh` two directories above this skill's own directory (the plugin
-root).
+one, stop and show the human the paths.
 
 If `orch.sh` is at none of these paths, this is a skills-only install: stop, and
 tell the human `orch.sh` is missing and to install the full orchestrator
-plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
-`maj0rpain/orchestrator` as a Junie extension, which is unverified).
+plugin (`/plugin install orchestrator@orchestrator` on Claude Code,
+`agy plugin install <clone-dir>` on Antigravity, or `maj0rpain/orchestrator` as
+a Junie extension, which is unverified).
 
 ## Before the first iteration
 
@@ -125,9 +126,8 @@ alternatives` amendment, and autopilot budget sizing before steps 1-4 and
 
 5i. **Interactive only.** Never reached in an autopilot flow. Ask the budget.
    **The question blocks** - ask it as a question
-   with the host's ask tool (`AskUserQuestion` on Claude Code, `ask_user`
-   on Junie). Ask once, before the
-   first iteration, and never again mid-loop:
+   with the host's ask tool (see `docs/host-capabilities.md`). Ask once,
+   before the first iteration, and never again mid-loop:
    - First loop, whenever `iteration` is 0 - a flow's first loop, and the
      first loop after a Redo: "How many review iterations?" Options 3, 5 and
      8, plus Other for any integer ≥ 1; there is no upper cap. Suggest one

@@ -28,13 +28,13 @@
 1	2	declaration substitutions (#1327)	9c0dbb68451572a48c9a20766d8153eaf05b2265
 21	29	the helper index (#1144)	4bec5050a14f98603d9ad142e552f7096142b885
 1	1	stand-in adapter (#2465)	083d2468f4dc10930c43ce98d227bbbab8c8df59
-1	1	git env clear (#1905)	5c7aff1ce2ceca8fffbc945cac64dda0b4967c86
+2	2	git env clear (#1905)	8c9493556b5cd00e5a9aa04b69f286f5e7aea5e2
 4	5	runner git isolation (#1905)	4d5868e89b095661ef7c36fee9150a55ccbc49e8
 1	1	the background child start (#3025)	d9194185445d683ec89255e5c41ab205248f69e5
 2	2	the suite start (#3582)	7661d78242588461a38289fb228211e159d899f8
 7	8	the pytest suite (#3912)	21deea025158b43b9892524639c0a4fbc5b9bf3c
 2	3	the counting fixture's stdin counter (#3434)	b19a94c28ffbd5db955a5f10a39d0b15791cbc4f
-133	111	affected.sh, the ticket verification (#2023)	46b28951beccba792634810b4fcb4d8c74cbc7bb
+132	109	affected.sh, the ticket verification (#2023)	804dfb750bb9264c84f450aff35f63f80ea70a6d
 4	5	the row rule (#3549)	9fdb50e7e723c26a4127289109f27a68989c4579
 7	9	the shared test support, function by function (#3550)	de45838253c482219d70d5af6fd3b26e2079c3f8
 5	7	the gh fake, operation by operation (#3551)	987935a277e021eabb9c02e391ba40e84607a315
@@ -49,7 +49,7 @@
 16	13	autopilot tick: started by a relative path (#3055)	5dbf8b4bfcf95499e5acb0c7e014539cd8b4454c
 32	25	autopilot tick: the flow-issue read at the issue-list limit	8e0186476182ffe71e40b3bda333677da341c323
 44	41	autopilot tick: the direct read before each claim	627ef418ad78d8594b33048a5fb3654439d23cbd
-193	174	autopilot tick: the cap, lost claims and the order	d8e315568d7323255049e1c9316a42218d1bad28
+149	120	autopilot tick: the cap, lost claims and the order	279cfafeb20cb98184df412871df27e550e60dd1
 145	134	autopilot tick: side checkouts, refusals and failed steps	87eabc128db0f567a95c5d80518b0b1331d26f19
 26	10	autopilot watch	8c1c3968588dcf6484eca097fb2aed0b991673d5
 42	37	autopilot tick: the usage limit	1ce2fa84715216efbde0e73c75065ea2d5b006fa
@@ -116,11 +116,11 @@
 1	2	capture_err and capture without a temp file (#1780)	fc19f584557286e04c9abe1748bf4408b90215bf
 7	9	capture, capture_err and file_read	15f31dc392fbcce33a8210b2b13e103e6a539901
 0	1	die_hinted and die_opt_check	a31d5ea9ef99f315cf022f51ad5894482feffb9e
-0	1	host detection (host.sh, #281)	9d7272356d7fbf0f5fdca9c46ffa86f8c5c036cd
+3	4	host detection (host.sh, #281)	ee3476064ac5700e62e72b8ebcbeeeb98af6e70a
 5	6	doctor.sh is a one-way dependency (#281)	b86ca6ac46faa586b4d718a1aa26e9018e2539ea
 201	219	doctor	9d2d2d59740f1be906e1c255723925b28a5134f8
 7	10	doctor: python3 check (#3912)	94a9d42f7c56e2c5c7e10b58becce6663ae6e07e
-36	40	doctor: host (#128)	0ff10dbdae9d20ee078396950c793cb2ec3a2d69
+79	68	doctor: host (#128)	630c2c609f2e1674c6746fa454a5175e669b6357
 94	102	doctor --flow	8d28021dd7fd5c64f62d12573dc1792e590cfa6d
 40	44	doctor --env: finished side checkouts (#727)	8d56eb5df3a1cea24b7c1e0173d431eb1a742f7b
 12	14	doctor at the review phase	f758faa73c220475b21e8e6f7ce147e4217392d6
@@ -198,7 +198,7 @@
 21	21	on-demand loading	7957c71ca0967785d56a21072a507db8cfeb69b3
 24	24	stub table cache	0dfcfd022a0f039e7a998d2b824491567eeb9374
 29	25	marked-comment module	f6f5c1a7f89a0d4a6d8a53403309d4f68d4fe0c2
-55	58	phase advance / phase boundary	db56fe480597de86f8a487c134e1e6b488336fee
+54	42	phase advance / phase boundary	53643e8f5205e719060ccafbba68352b2f848db6
 0	1	phase advance help names handoffs by role (#1066)	fb4e9c6b059ec9f7d1aed9b47f5b974a48096e04
 31	35	phase advance in an autopilot flow (#1457)	3f11f48e53c11f24a0c5683139056f0b493b1fe0
 7	8	phase advance with a failed phase write (#1931)	c82e166171de5000ca89ef4f8614cc5c24820382
@@ -305,8 +305,8 @@
 43	35	trust module	dd0183ac4380b097c6b51f9e75c4a3038ab514c5
 89	19	wait: a call's block is wall time	90d20fdb4b55a5964e512640526d36f24c6b6f96
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594
-353	238	docs_lint.sh	b88c92055cad20c560173b019fea4bff6d2fe090
-6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
+373	248	docs_lint.sh	83592c17136c05d3d895a32cb6fd9e9a74c598eb
+40	30	version_bump_test.sh	13c6acda626586d9df9be1d51a465dd889fdc723
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 17	17	autopilot_up_test.sh	e83bb3b5d6213ab54507233be7cc6e624358622c
 51	51	lens_bench_test.sh	ffb52c95b18f2076683217dffc8d27f1d03a136d

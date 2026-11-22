@@ -107,13 +107,14 @@ autopilot_show() {
 autopilot_active() { [ "${ORCH_AUTOPILOT:-}" = 1 ]; }
 
 # autopilot_gate: the host and settings gate tick and watch start with. Dies
-# on a host other than Claude Code (Junie, or no claude on PATH), then with no
-# permission mode set, naming the key, then on a model or effort outside its
-# list, before any issue is claimed: a run's own check dies with its output
-# discarded.
+# on any detected host other than Claude Code (or no claude on PATH), then
+# with no permission mode set, naming the key, then on a model or effort
+# outside its list, before any issue is claimed: a run's own check dies with
+# its output discarded.
 autopilot_gate() {
-  local name
-  if [ "$(host_detect)" = junie ] || ! command -v claude >/dev/null 2>&1; then
+  local name host
+  host="$(host_detect)"
+  if { [ -n "$host" ] && [ "$host" != claude ]; } || ! command -v claude >/dev/null 2>&1; then
     die "autopilot is Claude Code only (no headless-session fallback on this host; see docs/host-capabilities.md)"
   fi
   autopilot_mode_require

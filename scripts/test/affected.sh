@@ -63,6 +63,7 @@
 #   docker/, .dockerignore            autopilot_container_test.sh and
 #                                     autopilot_up_test.sh
 #   .claude-plugin/                   version_bump_test.sh, autopilot_up_test.sh
+#   .antigravity-plugin/              version_bump_test.sh
 #   .shellcheckrc                     shellcheck over every scripts/**/*.sh,
 #                                     plus the harness sections
 #   skills, agents, docs, markdown, changelog fragments, the durations file
@@ -468,6 +469,7 @@ classify() {
       scripts/test/orch_py_test.sh) sections_of harness ;;
       docker/* | .dockerignore) want+=(autopilot_container_test.sh autopilot_up_test.sh) ;;
       .claude-plugin/*) want+=(version_bump_test.sh autopilot_up_test.sh) ;;
+      .antigravity-plugin/*) want+=(version_bump_test.sh) ;;
       .shellcheckrc) sc_all=1; sections_of harness ;;
       .github/workflows/* | .gitignore | .gitattributes | .ignore | LICENSE | .claude/settings.json) return 0 ;;
       scripts/test/docs_lint.sh) ;;

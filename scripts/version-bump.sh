@@ -13,13 +13,16 @@
 # removed. Any other file under changelog.d/, dotfiles included, is refused.
 #
 # With no fragment it changes nothing, prints nothing and exits 0. Otherwise
-# it bumps .claude-plugin/plugin.json's version by the highest level among
-# the fragments, editing only its "version" line; inserts "## <new version>",
-# a blank line and the fragments' prose, in ascending issue-number order and
-# separated by blank lines, above CHANGELOG.md's top ## heading; deletes the
-# fragments; and prints the new version. It does not commit.
+# it bumps .claude-plugin/plugin.json and .antigravity-plugin/plugin.json in
+# lockstep by the highest level among the fragments, editing only each file's
+# "version" line; inserts "## <new version>", a blank line and the fragments'
+# prose, in ascending issue-number order and separated by blank lines, above
+# CHANGELOG.md's top ## heading; deletes the fragments; and prints the new
+# version. It does not commit.
 
 PLUGIN_JSON=.claude-plugin/plugin.json
+ANTIGRAVITY_PLUGIN_JSON=.antigravity-plugin/plugin.json
+PLUGIN_JSONS=("$PLUGIN_JSON" "$ANTIGRAVITY_PLUGIN_JSON")
 CHANGELOG=CHANGELOG.md
 
 # dotglob too, so a stray dotfile under changelog.d/ is refused, not skipped;
@@ -73,16 +76,26 @@ for name in "${names[@]}"; do
   fi
 done
 
-[ -f "$PLUGIN_JSON" ] || refuse "$PLUGIN_JSON" "missing"
-version_lines="$(grep -n '"version"' "$PLUGIN_JSON")"
-[ -n "$version_lines" ] && [ "$(printf '%s\n' "$version_lines" | wc -l)" -eq 1 ] ||
-  refuse "$PLUGIN_JSON" "it has no single \"version\" line"
-line_no="${version_lines%%:*}"
 semver_line='^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"([0-9]+)\.([0-9]+)\.([0-9]+)"[[:space:]]*,?[[:space:]]*$'
-[[ "${version_lines#*:}" =~ $semver_line ]] ||
-  refuse "$PLUGIN_JSON" "its \"version\" line holds no MAJOR.MINOR.PATCH version"
-major="${BASH_REMATCH[1]}" minor="${BASH_REMATCH[2]}" patch="${BASH_REMATCH[3]}"
-old="$major.$minor.$patch"
+old=""
+major="" minor="" patch=""
+line_nos=()
+for pj in "${PLUGIN_JSONS[@]}"; do
+  [ -f "$pj" ] || refuse "$pj" "missing"
+  version_lines="$(grep -n '"version"' "$pj")"
+  [ -n "$version_lines" ] && [ "$(printf '%s\n' "$version_lines" | wc -l)" -eq 1 ] ||
+    refuse "$pj" "it has no single \"version\" line"
+  line_nos+=("${version_lines%%:*}")
+  [[ "${version_lines#*:}" =~ $semver_line ]] ||
+    refuse "$pj" "its \"version\" line holds no MAJOR.MINOR.PATCH version"
+  pj_ver="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+  if [ -z "$old" ]; then
+    major="${BASH_REMATCH[1]}" minor="${BASH_REMATCH[2]}" patch="${BASH_REMATCH[3]}"
+    old="$pj_ver"
+  elif [ "$pj_ver" != "$old" ]; then
+    refuse "$pj" "version $pj_ver does not match $PLUGIN_JSON ($old)"
+  fi
+done
 [ -f "$CHANGELOG" ] || refuse "$CHANGELOG" "missing"
 grep -q '^## ' "$CHANGELOG" || refuse "$CHANGELOG" "it has no ## heading to insert the entry above"
 
@@ -92,7 +105,9 @@ case "$max_level" in
   1) new="$((10#$major)).$((10#$minor)).$((10#$patch + 1))" ;;
 esac
 
-sed "${line_no}s/\"$old\"/\"$new\"/" "$PLUGIN_JSON" >"$work/plugin.json"
+for i in "${!PLUGIN_JSONS[@]}"; do
+  sed "${line_nos[$i]}s/\"$old\"/\"$new\"/" "${PLUGIN_JSONS[$i]}" >"$work/plugin-$i.json"
+done
 {
   awk '/^## / { exit } { print }' "$CHANGELOG"
   printf '## %s\n\n' "$new"
@@ -103,7 +118,9 @@ sed "${line_no}s/\"$old\"/\"$new\"/" "$PLUGIN_JSON" >"$work/plugin.json"
   awk '/^## / { found = 1 } found { print }' "$CHANGELOG"
 } >"$work/CHANGELOG.md"
 
-cat "$work/plugin.json" >"$PLUGIN_JSON"
+for i in "${!PLUGIN_JSONS[@]}"; do
+  cat "$work/plugin-$i.json" >"${PLUGIN_JSONS[$i]}"
+done
 cat "$work/CHANGELOG.md" >"$CHANGELOG"
 rm -f "${fragments[@]}"
 printf '%s\n' "$new"

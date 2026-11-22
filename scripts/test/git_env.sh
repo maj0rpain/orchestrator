@@ -11,10 +11,11 @@ TEST_GIT_ENV_IDENTITY=(GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_AUTHOR_DATE
 #
 # test_git_env_clear: unsets every variable `git rev-parse --local-env-vars`
 # prints (GIT_DIR, GIT_INDEX_FILE, ... - git's own list, read at runtime), and
-# the TEST_GIT_ENV_IDENTITY variables. Other GIT_* knobs, GIT_TRACE and
-# GIT_SSH_COMMAND among them, stay. When git exits non-zero or prints nothing
-# it prints "<runner>: cannot list git's repo-local variables" on stderr and
-# returns 1, for the runner to exit on.
+# the TEST_GIT_ENV_IDENTITY variables, and exports GIT_TERMINAL_PROMPT=0 so
+# git never blocks prompting on a PTY (such as Antigravity's run_command).
+# Other GIT_* knobs, GIT_TRACE and GIT_SSH_COMMAND among them, stay. When git
+# exits non-zero or prints nothing it prints "<runner>: cannot list git's
+# repo-local variables" on stderr and returns 1, for the runner to exit on.
 test_git_env_clear() {
   local runner vars name
   runner="$(basename "${BASH_SOURCE[1]:-$0}")"
@@ -26,4 +27,5 @@ test_git_env_clear() {
     [ -n "$name" ] && unset "$name"
   done <<<"$vars"
   unset "${TEST_GIT_ENV_IDENTITY[@]}"
+  export GIT_TERMINAL_PROMPT=0
 }

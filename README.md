@@ -16,7 +16,7 @@ when no planning close agreed the test seams.
 
 ## Requirements
 
-- Claude Code, or the Junie CLI (see [Install](#install)).
+- Claude Code, the Junie CLI, or the Antigravity CLI (see [Install](#install)).
 - `gh`, `jq`, `git` and `python3` 3.9 or newer, with `gh` signed in to the
   repo's GitHub.
 - bash 4.2 or newer. macOS ships 3.2 as `/bin/bash`: run `brew install bash`.
@@ -43,7 +43,8 @@ The repo doubles as its own single-plugin marketplace, so there is no separate
 marketplace repo. It installs at user scope, so it is available in every
 project on that machine.
 
-On the Junie CLI, see [docs/junie/README.md](docs/junie/README.md).
+On the Junie CLI, see [docs/junie/README.md](docs/junie/README.md). On the
+Antigravity CLI, see [docs/antigravity/README.md](docs/antigravity/README.md).
 
 ## Quick start
 
@@ -164,6 +165,8 @@ Every command in full:
 - [docs/host-capabilities.md](docs/host-capabilities.md) - how each host
   provides each capability, and the fallbacks.
 - [docs/junie/README.md](docs/junie/README.md) - running on the Junie CLI.
+- [docs/antigravity/README.md](docs/antigravity/README.md) - running on the
+  Antigravity CLI.
 - [CONTRIBUTING.md](CONTRIBUTING.md) - layout, authoring rules, development,
   and reporting a bug.
 - [CHANGELOG.md](CHANGELOG.md) - every release.

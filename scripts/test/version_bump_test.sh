@@ -3,12 +3,13 @@
 # Tests for scripts/version-bump.sh, the script the version-bump Action runs
 # on every push to main.
 #
-# Each case runs the script from the root of a temporary checkout holding a
-# .claude-plugin/plugin.json, a CHANGELOG.md and, under changelog.d/, the
-# fragments, and asserts only what the run leaves: the files, its output and
-# its exit status. The failure modes worth catching: a fragment lost or bumped
-# twice, a bump at the wrong level, prose out of issue-number order, a byte of
-# either file changed beyond the bump, and a refusal that writes anything.
+# Each case runs the script from the root of a temporary checkout holding
+# .claude-plugin/plugin.json, .antigravity-plugin/plugin.json, CHANGELOG.md
+# and, under changelog.d/, the fragments, and asserts only what the run
+# leaves: the files, its output and its exit status. The failure modes worth
+# catching: a fragment lost or bumped twice, a bump at the wrong level, prose
+# out of issue-number order, version drift between the manifests, a byte of
+# any file changed beyond the bump, and a refusal that writes anything.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=git_env.sh
@@ -46,15 +47,17 @@ tally_init
 
 # >>> checks
 
-# checkout <version>: a fresh checkout whose plugin.json carries <version> on
-# its one "version" line, among other lines, and whose CHANGELOG.md is a
+# checkout <version>: a fresh checkout whose plugin manifests carry <version>
+# on their one "version" line, among other lines, and whose CHANGELOG.md is a
 # preamble and two older entries. Prints its path.
 checkout() {
-  local c
+  local c m
   c="$(mktemp -d "$bump_root/checkout.XXXXXX")"
-  mkdir "$c/.claude-plugin"
-  printf '{\n  "name": "orchestrator",\n  "version": "%s",\n  "keywords": [\n    "handoff"\n  ]\n}\n' \
-    "$1" >"$c/.claude-plugin/plugin.json"
+  mkdir "$c/.claude-plugin" "$c/.antigravity-plugin"
+  for m in .claude-plugin .antigravity-plugin; do
+    printf '{\n  "name": "orchestrator",\n  "version": "%s",\n  "keywords": [\n    "handoff"\n  ]\n}\n' \
+      "$1" >"$c/$m/plugin.json"
+  done
   printf '%s\n' '# Changelog' '' 'All notable changes.' '' "## $1" '' 'The latest change.' '' \
     '## 0.0.1' '' 'The first change.' >"$c/CHANGELOG.md"
   printf '%s\n' "$c"
@@ -79,10 +82,10 @@ snapshot() {
   (cd "$1" && find . -type f | LC_ALL=C sort | while IFS= read -r f; do
     printf '== %s\n' "$f"; cat "$f"; done)
 }
-# version_of <checkout>: the version its plugin.json carries.
+# version_of <checkout> [manifest]: the version its plugin manifest carries.
 version_of() {
   sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
-    "$1/.claude-plugin/plugin.json"
+    "$1/${2:-.claude-plugin/plugin.json}"
 }
 # top_heading <checkout>: its CHANGELOG's first ## heading.
 top_heading() { grep -m 1 -E '^## ' "$1/CHANGELOG.md"; }
@@ -108,6 +111,8 @@ for level_case in "patch 4.5.7" "minor 4.6.0" "major 5.0.0"; do
   assert_status "a $level fragment exits 0" "$st" 0
   assert_eq "a $level fragment bumps 4.5.6 to $want, printing it" "$out" "$want"
   assert_eq "a $level fragment sets plugin.json's version to $want" "$(version_of "$c")" "$want"
+  assert_eq "a $level fragment sets .antigravity-plugin/plugin.json's version to $want" \
+    "$(version_of "$c" .antigravity-plugin/plugin.json)" "$want"
   assert_eq "a $level fragment tops the CHANGELOG with ## $want" "$(top_heading "$c")" "## $want"
 done
 c="$(checkout 9.9.9)"
@@ -131,6 +136,9 @@ assert_eq "the preamble, the new entry and the older entries, byte for byte" \
     '## 0.0.1' '' 'The first change.')"
 assert_eq "every other plugin.json line is kept byte for byte" \
   "$(cat "$c/.claude-plugin/plugin.json")" \
+  "$(printf '{\n  "name": "orchestrator",\n  "version": "4.5.7",\n  "keywords": [\n    "handoff"\n  ]\n}')"
+assert_eq "every other .antigravity-plugin/plugin.json line is kept byte for byte" \
+  "$(cat "$c/.antigravity-plugin/plugin.json")" \
   "$(printf '{\n  "name": "orchestrator",\n  "version": "4.5.7",\n  "keywords": [\n    "handoff"\n  ]\n}')"
 assert_eq "the fragments are deleted" "$(find "$c" -path '*changelog.d*' -type f)" ""
 assert_eq "the printed version is plugin.json's new version" "$out" "$(version_of "$c")"
@@ -266,6 +274,18 @@ refused "a plugin.json version that is not MAJOR.MINOR.PATCH" "$c" ".claude-plug
 c="$(checkout 4.5.6-rc1)"
 fragment "$c" 11.md 'bump: patch' '' 'A good one.'
 refused "a plugin.json version with a suffix" "$c" ".claude-plugin/plugin.json"
+c="$(checkout 4.5.6)"
+fragment "$c" 11.md 'bump: patch' '' 'A good one.'
+rm "$c/.antigravity-plugin/plugin.json"
+refused "a missing .antigravity-plugin/plugin.json" "$c" ".antigravity-plugin/plugin.json"
+c="$(checkout 4.5.6)"
+fragment "$c" 11.md 'bump: patch' '' 'A good one.'
+printf '{\n  "name": "orchestrator"\n}\n' >"$c/.antigravity-plugin/plugin.json"
+refused "an .antigravity-plugin/plugin.json with no version line" "$c" ".antigravity-plugin/plugin.json"
+c="$(checkout 4.5.6)"
+fragment "$c" 11.md 'bump: patch' '' 'A good one.'
+printf '{\n  "name": "orchestrator",\n  "version": "4.5.5"\n}\n' >"$c/.antigravity-plugin/plugin.json"
+refused "a drifted .antigravity-plugin/plugin.json version" "$c" ".antigravity-plugin/plugin.json"
 c="$(checkout 4.5.6)"
 fragment "$c" 11.md 'bump: patch' '' 'A good one.'
 printf '%s\n' '# Changelog' '' 'No entries yet.' >"$c/CHANGELOG.md"

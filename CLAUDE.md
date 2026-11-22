@@ -94,8 +94,9 @@ See CONTRIBUTING.md's Develop section.
 ## Versioning
 
 Every PR to `main` adds one changelog fragment, `changelog.d/<issue>.md`, and
-never bumps `version` in `.claude-plugin/plugin.json` or adds a `## ` heading to
-`CHANGELOG.md` by hand. The fragment's first line is exactly `bump: patch`,
+never bumps `version` in `.claude-plugin/plugin.json` or
+`.antigravity-plugin/plugin.json` or adds a `## ` heading to `CHANGELOG.md` by
+hand. The fragment's first line is exactly `bump: patch`,
 `bump: minor` or `bump: major`, and the rest, after any blank lines, is its
 CHANGELOG prose. The fragment is named for the PR's issue - in a flow or a quick
 implementation, the spec issue, never a ticket - and is written once: by the one

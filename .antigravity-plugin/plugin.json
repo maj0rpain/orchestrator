@@ -1,0 +1,19 @@
+{
+  "name": "orchestrator",
+  "version": "6.11.9",
+  "description": "Sequences planning, spec writing, implementation, and review into four handoff-connected phases, each running with fresh context.",
+  "author": {
+    "name": "maj0rpain",
+    "url": "https://github.com/maj0rpain"
+  },
+  "homepage": "https://github.com/maj0rpain/orchestrator",
+  "repository": "https://github.com/maj0rpain/orchestrator",
+  "license": "MIT",
+  "keywords": [
+    "orchestration",
+    "workflow",
+    "handoff",
+    "spec",
+    "review"
+  ]
+}

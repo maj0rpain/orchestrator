@@ -52,8 +52,8 @@
 #     mattpocock-skills skill, points at docs/host-capabilities.md
 #   scan_claude_scoped_names  no skill file or agent names a skill by its
 #     Claude-scoped name
-#   scan_ask_tool_names  each skill-file or agent sentence naming
-#     AskUserQuestion also names ask_user
+#   scan_ask_tool_names  no skill file or agent hardcodes a host ask-tool name
+#     (AskUserQuestion, ask_user, ask_question)
 #   scan_offered_commands  each plugin command a skill file or agent offers has
 #     a commands/<cmd>.md
 #   scan_command_runs_orch  no command runs orch.sh itself
@@ -81,8 +81,8 @@
 #   scan_early_exit_pipe  no script pipes into a quiet grep or into head
 #   scan_junie_planning  the Junie snippet has one begin and end marker and
 #     restates the planning allowlist and records
-#   scan_capability_table  each docs/host-capabilities.md row has both hosts'
-#     cells filled
+#   scan_capability_table  each docs/host-capabilities.md row has every host's
+#     cell filled
 #   scan_row_unverified  the named docs/host-capabilities.md row marks its Junie
 #     cell **Unverified**
 #   scan_names_phrase  each listed file, or section of one, names its phrase:
@@ -174,8 +174,9 @@
 #   scan_driver_loop  the loop step labels live in docs/driver-loop.md only
 #   scan_layout_map  CONTRIBUTING's Layout map lists every docs/ file and
 #     directory
-#   scan_changelog  the CHANGELOG's top heading is the plugin version, with one
-#     non-empty section
+#   scan_changelog  .antigravity-plugin/plugin.json's version matches
+#     .claude-plugin/plugin.json's, and the CHANGELOG's top heading is that
+#     version, with one non-empty section
 #   scan_line_width  no covered Markdown or shell comment line is past 80
 #     columns, outside the exempt lines
 #   scan_interview_closing  orch-interview's SKILL.md's Closing section has
@@ -370,7 +371,7 @@ version_field() {
 # own. The one fragment's issue must not be a sub-issue: a fragment is named
 # for the PR's issue, never a ticket (CLAUDE.md Versioning).
 scan_changelog_fragments() {
-  local r="$1" base="$2" no_bump="${3:-}" mb status path added=() old new heading frag issue parent
+  local r="$1" base="$2" no_bump="${3:-}" mb status path added=() old new ag_old ag_new heading frag issue parent m
   if ! mb="$(git -C "$r" merge-base "$base" HEAD 2>/dev/null)"; then
     echo "CHANGELOG_BASE: no merge-base with HEAD for '$base'"; return 0
   fi
@@ -402,8 +403,10 @@ scan_changelog_fragments() {
       # Well-formed as the version-bump script reads it: the script itself,
       # run on a scratch checkout holding only this fragment.
       frag="$(new_fixture)"
-      mkdir -p "$frag/.claude-plugin" "$frag/changelog.d"
-      printf '{\n  "version": "0.0.0"\n}\n' >"$frag/.claude-plugin/plugin.json"
+      mkdir -p "$frag/.claude-plugin" "$frag/.antigravity-plugin" "$frag/changelog.d"
+      for m in .claude-plugin .antigravity-plugin; do
+        printf '{\n  "version": "0.0.0"\n}\n' >"$frag/$m/plugin.json"
+      done
       printf '%s\n' '## 0.0.0' '' 'Scratch.' >"$frag/CHANGELOG.md"
       git -C "$r" show "HEAD:${added[0]}" >"$frag/${added[0]}"
       (cd "$frag" && bash "$PLUGIN_ROOT/scripts/version-bump.sh" 2>&1 >/dev/null) |
@@ -420,6 +423,14 @@ scan_changelog_fragments() {
   new="$(git -C "$r" show "HEAD:.claude-plugin/plugin.json" 2>/dev/null | version_field)"
   [ "$old" = "$new" ] ||
     echo ".claude-plugin/plugin.json: version changed from $old to $new; the version-bump Action bumps it on merge"
+  ag_old="$(git -C "$r" show "$mb:.antigravity-plugin/plugin.json" 2>/dev/null | version_field)"
+  ag_new="$(git -C "$r" show "HEAD:.antigravity-plugin/plugin.json" 2>/dev/null | version_field)"
+  if [ -n "$ag_old" ]; then
+    [ "$ag_old" = "$ag_new" ] ||
+      echo ".antigravity-plugin/plugin.json: version changed from $ag_old to $ag_new; the version-bump Action bumps it on merge"
+  elif [ -n "$ag_new" ] && [ "$ag_new" != "$old" ]; then
+    echo ".antigravity-plugin/plugin.json: initial version $ag_new does not match .claude-plugin/plugin.json ($old)"
+  fi
   while IFS= read -r heading; do
     [ -n "$heading" ] &&
       echo "CHANGELOG.md: $heading added; the version-bump Action adds the entry on merge"
@@ -909,46 +920,51 @@ claude_code_only_skill() {
 }
 
 # --- orch.sh resolution (#123) ------------------------------------------------
-# Only Claude Code expands CLAUDE_PLUGIN_ROOT, and only in hooks/hooks.json on
-# other hosts, so skill and command text must pair it with the relative
-# fallback. The documented form (CONTRIBUTING.md, "Resolving orch.sh") is the
-# ORCH= line, the Junie step, and the fallback sentence, or, for a skill marked
-# "Claude Code only.", the ORCH= line and one stop. A cross-host command that
+# Only Claude Code expands CLAUDE_PLUGIN_ROOT in skills (Junie expands it only
+# in hooks/hooks.json; Antigravity sets PLUGIN_ROOT in hooks), so skill and
+# command text must pair it with the relative fallback. The documented form
+# (CONTRIBUTING.md, "Resolving orch.sh") is the ORCH= line, the relative step,
+# and the Junie step, or, for a skill marked "Claude Code only.", the ORCH=
+# line and one stop. A cross-host command that
 # uses orch.sh, or SKILL.md whose skill uses it in any of its files, not marked
 # "Claude Code only.", is held to every step: the ORCH= line, as a line of its
-# own, and the Junie step, the one-install step, the several-installs stop and
-# the relative fallback, these four in the documented order; sibling skill
+# own, and the relative step, the Junie step, the one-install step and the
+# several-installs stop, these four in the documented order; sibling skill
 # reference files are spared that block. In any cross-host skill file or command
-# CLAUDE_PLUGIN_ROOT is allowed only on the ORCH= line, in the Junie sentence,
-# and in the plugin-root fallback sentence and its plugin-root paths; a file
-# that names the plugin root carries the Junie step in that sentence. A marked
+# CLAUDE_PLUGIN_ROOT is allowed only on the ORCH= line, in the relative
+# sentence, and in the plugin-root fallback sentence and its plugin-root paths;
+# a file that names the plugin root carries the relative step before the Junie
+# step in that sentence. A marked
 # skill's SKILL.md, when the skill uses orch.sh or `$ORCH`, is held to the ORCH=
 # line; any file of a marked skill has CLAUDE_PLUGIN_ROOT nowhere else and no
 # Junie lookup. Any other mention of the variable, any missing step, or a file
 # that runs orch.sh without the ORCH= line, is a regression. hooks/hooks.json is
-# deliberately out of scope: both hosts expand it there.
+# deliberately out of scope: Claude Code and Junie expand it there.
 echo
 echo "orch.sh resolution (#123)"
 orch_line='ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"'
-# On Junie CLI the agent's shell has no plugin-root variable at all, so the
-# Junie install is found by a literal ls before the relative fallback (#201).
-# This prose sentence opens with the same fixed prefix in every file.
-orch_junie='If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`'
+# Hosts that give the skill's directory (such as Antigravity CLI) resolve
+# scripts/orch.sh relative to it first; hosts that do not (Junie CLI, #201)
+# fall back to a literal ls of the Junie extension install.
+orch_relative='If `CLAUDE_PLUGIN_ROOT` is unset and the host gave this skill'\''s directory, `ORCH` is `scripts/orch.sh`'
+orch_relative_tail='two directories above this skill'\''s own directory (the plugin root).'
+orch_junie='Otherwise run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`'
+orch_junie_cmd='ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh'
 orch_junie_one='If it prints one path, `ORCH` is that path.'
 orch_junie_many='If it prints more than one, stop and show the human the paths.'
-orch_fallback='If it prints nothing, `ORCH` is `scripts/orch.sh`'
 # A path under the plugin root other than orch.sh (#155) is the one other
 # documented form: "${CLAUDE_PLUGIN_ROOT}/<path>", in a file that also carries
 # this sentence naming the same unset fallback the ORCH line has.
 root_fallback='If `CLAUDE_PLUGIN_ROOT` is unset, the plugin root is'
-# ...and that sentence takes the same Junie step first (#201).
+# ...and that sentence takes the relative path first, then the Junie step.
+root_relative='two directories above this skill'\''s own directory'
 root_junie='two directories above the `orch.sh` that `ls` printed'
 # The steps wrap differently from file to file, so order is checked on the
 # file's text with every run of whitespace collapsed to one space.
-# The Junie lookup up to the several-installs stop; the Junie snippet carries
-# this much of it too (#416).
-orch_lookup="$orch_junie (the Junie CLI install). $orch_junie_one $orch_junie_many"
-orch_steps="$orch_lookup $orch_fallback"
+orch_steps="$orch_relative $orch_relative_tail $orch_junie (the Junie CLI install). $orch_junie_one $orch_junie_many"
+# The Junie snippet's own lookup (#416) starts directly with the Junie ls.
+junie_orch_ls='If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`'
+orch_lookup="$junie_orch_ls (the Junie CLI install). $orch_junie_one $orch_junie_many"
 # skill_uses_orch <file>: succeeds when the file is a SKILL.md and any .md file
 # in its skill directory, itself or a sibling reference file, uses orch.sh or
 # `$ORCH`.
@@ -964,7 +980,7 @@ cc_orch_resolution() {
   rest="${flat//"$orch_line"/}"
   [[ "$rest" != *CLAUDE_PLUGIN_ROOT* ]] ||
     echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line"
-  [[ "$flat" != *"$orch_junie"* ]] ||
+  [[ "$flat" != *"$orch_junie_cmd"* ]] ||
     echo "${f#"$r"/}: Claude Code only skill carries the Junie lookup"
   if skill_uses_orch "$f"; then
     grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
@@ -989,7 +1005,7 @@ scan_orch_resolution() {
       continue
     fi
     rest="${flat//"$orch_line"/}"
-    rest="${rest//"$orch_junie"/}"
+    rest="${rest//"$orch_relative"/}"
     if [[ "$flat" == *"$root_fallback"* ]]; then
       rest="${rest//"$root_fallback"/}"
       rest="${rest//'"${CLAUDE_PLUGIN_ROOT}/'/}"
@@ -1002,16 +1018,19 @@ scan_orch_resolution() {
       # orch.sh's own dot is followed by a backtick, so it does not end it.
       root_sentence="${flat#*"$root_fallback"}"
       root_sentence="${root_sentence%%. *}"
-      [[ "$root_sentence" == *"$root_junie"* ]] ||
+      if [[ "$root_sentence" != *"$root_junie"* ]]; then
         echo "${f#"$r"/}: names the plugin root without the Junie step"
+      elif [[ "$root_sentence" != *"$root_relative"*"$root_junie"* ]]; then
+        echo "${f#"$r"/}: names the plugin root out of the documented order"
+      fi
     fi
     if skill_uses_orch "$f" ||
       { [[ "$f" == "$r"/commands/*.md ]] && grep -qE 'orch\.sh|\$ORCH' "$f"; }; then
       grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
+      [[ "$flat" == *"$orch_relative"* ]] || echo "${f#"$r"/}: uses orch.sh without the relative step"
       [[ "$flat" == *"$orch_junie"* ]] || echo "${f#"$r"/}: uses orch.sh without the Junie step"
       [[ "$flat" == *"$orch_junie_one"* ]] || echo "${f#"$r"/}: uses orch.sh without the one-install step"
       [[ "$flat" == *"$orch_junie_many"* ]] || echo "${f#"$r"/}: uses orch.sh without the stop on several Junie installs"
-      [[ "$flat" == *"$orch_fallback"* ]] || echo "${f#"$r"/}: uses orch.sh without the relative fallback"
       [[ "$flat" == *"$orch_steps"* ]] || echo "${f#"$r"/}: resolves orch.sh out of the documented order"
     fi
   done
@@ -1022,14 +1041,14 @@ printf 'Run `${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh status`.\n' >"$fixture/comman
 flags "the scan covers commands/ and flags a bare CLAUDE_PLUGIN_ROOT" \
   "$(scan_orch_resolution "$fixture")" "commands/orch.md: CLAUDE_PLUGIN_ROOT outside the ORCH= line and its fallback"
 printf '%s\n' '```' "$orch_line" '```' \
-  'If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh` two directories above this skill.' \
+  "$orch_relative $orch_relative_tail" \
   >"$fixture/commands/orch.md"
 flags "the scan flags orch.sh resolved without the Junie step" \
   "$(scan_orch_resolution "$fixture")" "commands/orch.md: uses orch.sh without the Junie step"
 # documented_orch_form [step]...: the documented form, minus each step named.
 documented_orch_form() {
-  local -a steps=("$orch_junie (the Junie CLI install)." "$orch_junie_one" "$orch_junie_many"
-    "$orch_fallback two directories above this skill's own directory.")
+  local -a steps=("$orch_relative $orch_relative_tail" "$orch_junie (the Junie CLI install)."
+    "$orch_junie_one" "$orch_junie_many")
   local step
   printf '%s\n' '```' "$orch_line" '```'
   for step in "${steps[@]}"; do
@@ -1076,6 +1095,12 @@ flags "the scan flags a plugin-root fallback with no Junie step" \
 flags "the scan flags a Junie step outside the plugin-root sentence" \
   "$(scan_orch_resolution "$fixture")" "commands/orch.md: names the plugin root without the Junie step"
 { plugin_root_fence
+  printf '%s\n' "$root_fallback found as for \`ORCH\`:" \
+    "$root_junie, else $root_relative."
+} >"$fixture/commands/orch.md"
+flags "the scan flags a plugin-root fallback with Junie before relative" \
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: names the plugin root out of the documented order"
+{ plugin_root_fence
   printf '%s\n' "$root_fallback two directories above this skill's own directory."
 } >"$fixture2/skills/orch-x/root-ref.md"
 flags "a reference file naming the plugin root without the Junie step is flagged" \
@@ -1090,7 +1115,7 @@ flags "a SKILL.md whose sibling reference file uses \$ORCH must still carry the 
 { documented_orch_form
   plugin_root_fence
   printf '%s\n' "$root_fallback found as for \`ORCH\`:" \
-    "$root_junie, else two directories above this skill's own directory."
+    "$root_relative when the host gave it, else $root_junie."
 } >"$fixture/commands/orch.md"
 assert_empty "the scan accepts a plugin-root path with its unset fallback" \
   "$(scan_orch_resolution "$fixture")"
@@ -1115,7 +1140,7 @@ flags "a marked skill's sibling reference file carrying the Junie lookup is flag
   "$(scan_orch_resolution "$fixture")" \
   "skills/orch-cc/ref.md: Claude Code only skill carries the Junie lookup"
 rm -f "$fixture/skills/orch-cc/ref.md"
-cc_skill "$cc_desc" "$orch_junie (the Junie CLI install)." 'Run `bash "$ORCH" status`.'
+cc_skill "$cc_desc" "$junie_orch_ls (the Junie CLI install)." 'Run `bash "$ORCH" status`.'
 assert_eq "a marked skill carrying the Junie lookup is flagged" "$(scan_orch_resolution "$fixture")" \
   "skills/orch-cc/SKILL.md: CLAUDE_PLUGIN_ROOT outside the ORCH= line
 skills/orch-cc/SKILL.md: Claude Code only skill carries the Junie lookup
@@ -1157,7 +1182,8 @@ scan_orch_bash() {
   mapfile -t skill_files < <(skill_md_files "$r")
   for f in "${skill_files[@]}" "$r"/commands/*.md \
            "$r"/README.md "$r"/CONTRIBUTING.md "$r"/docs/how-it-works.md \
-           "$r"/docs/junie/README.md "$r"/docs/host-capabilities.md; do
+           "$r"/docs/junie/README.md "$r"/docs/antigravity/README.md \
+           "$r"/docs/host-capabilities.md; do
     [ -f "$f" ] || continue
     sed 's/bash "\$ORCH"//g' "$f" | grep -nE '\$\{?ORCH\b' \
       | sed -E "s|^([0-9]+):|${f#"$r"/}:\\1: runs orch.sh without bash: |"
@@ -1335,28 +1361,28 @@ scan_junie_snippet_lookup() {
 junie_find_section() { printf '%s\n' '<!-- orchestrator:begin -->' "$junie_find_heading" "$@" '<!-- orchestrator:end -->'; }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/docs/junie"
-printf '%s\n' '## orchestrator plugin: planning' "$orch_junie (the Junie CLI install)." "$orch_junie_one" "$orch_junie_many" \
+printf '%s\n' '## orchestrator plugin: planning' "$junie_orch_ls (the Junie CLI install)." "$orch_junie_one" "$orch_junie_many" \
   'See docs/host-capabilities.md.' >"$fixture/docs/junie/AGENTS.md"
 flags "the lookup check flags a snippet with no finding-the-plugin section" \
   "$(scan_junie_snippet_lookup "$fixture")" "docs/junie/AGENTS.md: no '$junie_find_heading' section"
-junie_find_section "$orch_junie (the Junie CLI install)." "$orch_junie_many" 'See docs/host-capabilities.md.' \
+junie_find_section "$junie_orch_ls (the Junie CLI install)." "$orch_junie_many" 'See docs/host-capabilities.md.' \
   >"$fixture/docs/junie/AGENTS.md"
 flags "the lookup check flags a lookup missing its one-install step" \
   "$(scan_junie_snippet_lookup "$fixture")" "docs/junie/AGENTS.md: finding the plugin without the orch.sh lookup"
-junie_find_section "$orch_junie (the Junie CLI install)." "$orch_junie_many" "$orch_junie_one" 'See docs/host-capabilities.md.' \
+junie_find_section "$junie_orch_ls (the Junie CLI install)." "$orch_junie_many" "$orch_junie_one" 'See docs/host-capabilities.md.' \
   >"$fixture/docs/junie/AGENTS.md"
 flags "the lookup check flags the lookup's steps out of order" \
   "$(scan_junie_snippet_lookup "$fixture")" "docs/junie/AGENTS.md: finding the plugin without the orch.sh lookup"
-junie_find_section "$orch_junie (the Junie CLI install)." "$orch_junie_one" "$orch_junie_many" >"$fixture/docs/junie/AGENTS.md"
+junie_find_section "$junie_orch_ls (the Junie CLI install)." "$orch_junie_one" "$orch_junie_many" >"$fixture/docs/junie/AGENTS.md"
 out="$(scan_junie_snippet_lookup "$fixture")"
 flags "the lookup check flags a section that never points at the reference" \
   "$out" "docs/junie/AGENTS.md: finding the plugin never points at docs/host-capabilities.md"
 spares "the lookup check accepts the lookup in order" "$out" 'orch\.sh lookup'
-junie_find_section "$orch_junie (the Junie CLI install)." "$orch_junie_one" "$orch_junie_many" '## other section' \
+junie_find_section "$junie_orch_ls (the Junie CLI install)." "$orch_junie_one" "$orch_junie_many" '## other section' \
   'See docs/host-capabilities.md.' >"$fixture/docs/junie/AGENTS.md"
 flags "the lookup check flags a reference only outside the section" \
   "$(scan_junie_snippet_lookup "$fixture")" "docs/junie/AGENTS.md: finding the plugin never points at docs/host-capabilities.md"
-junie_find_section "$orch_junie (the Junie CLI install)." "$orch_junie_one" "$orch_junie_many" \
+junie_find_section "$junie_orch_ls (the Junie CLI install)." "$orch_junie_one" "$orch_junie_many" \
   'See docs/host-capabilities.md.' >"$fixture/docs/junie/AGENTS.md"
 spares "the lookup check accepts a complete section" "$(scan_junie_snippet_lookup "$fixture")" '.'
 check "the Junie snippet finds the plugin" "$(scan_junie_snippet_lookup "$PLUGIN_ROOT")"
@@ -1434,52 +1460,44 @@ spares "the scan accepts a bare skill name and the generic scoped form" "$out" '
 check "no skill or agent names a skill by its Claude-scoped name" \
   "$(scan_claude_scoped_names "$PLUGIN_ROOT")"
 
-# scan_ask_tool_names <plugin root>: one line per sentence of a skill or agent
-# that names Claude Code's ask tool without Junie's. A sentence that copies one
-# host's tool from docs/host-capabilities.md's "Ask a multiple-choice question"
-# row copies the other host's tool too (ADR-0027). Each file is read as one
-# line and split into sentences at ". ", so a name wrapped across lines still
-# counts; docs/ is not scanned, since parts of it are Claude-only on purpose.
+# scan_ask_tool_names <plugin root>: flag any hardcoded host ask-tool name
+# (AskUserQuestion, ask_user, ask_question) in skills/ or agents/. Skills and
+# agents describe the capability and point at docs/host-capabilities.md.
 scan_ask_tool_names() {
   local r="$1" f
   local -a skill_files
   mapfile -t skill_files < <(skill_md_files "$r")
   for f in "${skill_files[@]}" "$r"/agents/*.md; do
     [ -f "$f" ] || continue
-    flat_text "$f" | awk -v file="${f#"$r"/}" '{
-      n = split($0, s, /\. /)
-      for (i = 1; i <= n; i++)
-        if (index(s[i], "AskUserQuestion") && !index(s[i], "ask_user"))
-          print file ": names AskUserQuestion without ask_user"
-    }'
+    grep -nE '\b(AskUserQuestion|ask_user|ask_question)\b' "$f" \
+      | sed -E "s|^([0-9]+):.*|${f#"$r"/}:\\1: hardcodes host ask-tool name (use docs/host-capabilities.md)|"
   done
   return 0
 }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-a" "$fixture/skills/orch-b" "$fixture/skills/orch-c" \
   "$fixture/skills/orch-d" "$fixture/agents"
-printf 'Ask the human with the `AskUserQuestion` tool. Then carry on.\n' \
+printf 'Ask the human with the `AskUserQuestion` tool.\n' \
   >"$fixture/skills/orch-a/SKILL.md"
-printf 'Ask one question\n(`AskUserQuestion` on both Claude Code and Junie). Ask once.\n' \
-  >"$fixture/skills/orch-b/SKILL.md"
-printf 'Ask with `AskUserQuestion`. Junie has `ask_user`.\n' >"$fixture/skills/orch-c/SKILL.md"
-printf 'Ask with the host'"'"'s ask tool (`AskUserQuestion` on Claude Code,\n`ask_user` on Junie). Then carry on.\n' \
+printf 'Ask with `ask_user` on Junie.\n' >"$fixture/skills/orch-b/SKILL.md"
+printf 'Ask with `ask_question` on Antigravity.\n' >"$fixture/skills/orch-c/SKILL.md"
+printf 'Ask with the host'"'"'s ask tool (see `docs/host-capabilities.md`).\n' \
   >"$fixture/skills/orch-d/SKILL.md"
 printf 'Ask the human with `AskUserQuestion`.\n' >"$fixture/agents/orch-z.md"
-printf 'Ask the human with `AskUserQuestion`.\n' >"$fixture/skills/orch-d/ref.md"
+printf 'Ask the human with `ask_user`.\n' >"$fixture/skills/orch-d/ref.md"
 out="$(scan_ask_tool_names "$fixture")"
-flags "the scan flags a skill sentence naming AskUserQuestion alone" \
-  "$out" "skills/orch-a/SKILL.md: names AskUserQuestion without ask_user"
-flags "the scan flags AskUserQuestion said to exist on both hosts" \
-  "$out" "skills/orch-b/SKILL.md: names AskUserQuestion without ask_user"
-flags "the scan flags ask_user only in the next sentence" \
-  "$out" "skills/orch-c/SKILL.md: names AskUserQuestion without ask_user"
-flags "the scan flags an agent sentence naming AskUserQuestion alone" \
-  "$out" "agents/orch-z.md: names AskUserQuestion without ask_user"
-flags "the scan flags a reference-file sentence naming AskUserQuestion alone" \
-  "$out" "skills/orch-d/ref.md: names AskUserQuestion without ask_user"
-spares "the scan accepts both hosts' ask tools wrapped across lines" "$out" '^skills/orch-d/SKILL\.md'
-check "every skill or agent sentence naming AskUserQuestion also names ask_user" \
+flags "the scan flags AskUserQuestion in a skill" \
+  "$out" "skills/orch-a/SKILL.md:1: hardcodes host ask-tool name"
+flags "the scan flags ask_user in a skill" \
+  "$out" "skills/orch-b/SKILL.md:1: hardcodes host ask-tool name"
+flags "the scan flags ask_question in a skill" \
+  "$out" "skills/orch-c/SKILL.md:1: hardcodes host ask-tool name"
+flags "the scan flags AskUserQuestion in an agent" \
+  "$out" "agents/orch-z.md:1: hardcodes host ask-tool name"
+flags "the scan flags ask_user in a reference file" \
+  "$out" "skills/orch-d/ref.md:1: hardcodes host ask-tool name"
+spares "the scan accepts host-neutral ask-tool prose" "$out" '^skills/orch-d/SKILL\.md'
+check "no skill or agent hardcodes a host ask-tool name" \
   "$(scan_ask_tool_names "$PLUGIN_ROOT")"
 
 # scan_offered_commands <plugin root>: each plugin command a skill or agent
@@ -2484,27 +2502,27 @@ check "the Junie snippet is marked once and lists planning-allowlist.sh's lists"
 echo
 echo "host capability table"
 # docs/host-capabilities.md maps each capability to each host, so every row
-# carries the capability and both hosts' cells, filled, and no stray pipe.
+# carries the capability and all three hosts' cells, filled, and no stray pipe.
 # scan_capability_table <plugin root>: each row off the rule, with its line.
 scan_capability_table() {
   local r="$1" doc="docs/host-capabilities.md"
   awk -F'|' -v f="$doc" '
     /^\|/ && !/^\| *---/ {
-      if (NF != 5) { print f ":" NR ": a row with " NF - 2 " cells, not 3"; next }
-      for (i = 2; i <= 4; i++) if ($i ~ /^ *$/) { print f ":" NR ": a row with an empty cell"; next }
+      if (NF != 6) { print f ":" NR ": a row with " NF - 2 " cells, not 4"; next }
+      for (i = 2; i <= 5; i++) if ($i ~ /^ *$/) { print f ":" NR ": a row with an empty cell"; next }
     }' "$r/$doc"
   return 0
 }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/docs"
-printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
-  '| Ask | `AskUserQuestion`. | Plain text. |' '| Guard | A hook. |  |' \
-  '| Start | The Agent tool. | One | two. |' >"$fixture/docs/host-capabilities.md"
+printf '%s\n' '| Capability | Claude Code | Junie CLI | Antigravity CLI |' '| --- | --- | --- | --- |' \
+  '| Ask | `AskUserQuestion`. | `ask_user`. | `ask_question`. |' '| Guard | A hook. | Plain text. |  |' \
+  '| Start | The Agent tool. | One | two | three. |' >"$fixture/docs/host-capabilities.md"
 out="$(scan_capability_table "$fixture")"
 flags "a row with an empty cell is flagged" "$out" "docs/host-capabilities.md:4: a row with an empty cell"
-flags "a row with a stray pipe is flagged" "$out" "docs/host-capabilities.md:5: a row with 4 cells, not 3"
+flags "a row with a stray pipe is flagged" "$out" "docs/host-capabilities.md:5: a row with 5 cells, not 4"
 spares "a filled row is not flagged" "$out" ':(1|2|3):'
-check "every host capability row has both hosts' cells filled" \
+check "every host capability row has every host's cell filled" \
   "$(scan_capability_table "$PLUGIN_ROOT")"
 
 # scan_row_unverified <plugin root> <row>: <row> is the text of a
@@ -4754,13 +4772,21 @@ echo
 echo "version and CHANGELOG (CLAUDE.md Versioning)"
 # plugin_version <plugin root>: the version field of its plugin.json.
 plugin_version() { version_field <"$1/.claude-plugin/plugin.json" 2>/dev/null; }
-# scan_changelog <plugin root>: the CHANGELOG's first ## heading is exactly
+# scan_changelog <plugin root>: .antigravity-plugin/plugin.json matches
+# .claude-plugin/plugin.json, the CHANGELOG's first ## heading is exactly
 # ## <version>, its section is non-empty, and no other ## <version> heading
 # for that version exists.
 scan_changelog() {
-  local r="$1" v top entry
+  local r="$1" v av top entry
   v="$(plugin_version "$r")"
   if [ -z "$v" ]; then echo ".claude-plugin/plugin.json: no version"; return 0; fi
+  av=""
+  [ -f "$r/.antigravity-plugin/plugin.json" ] && av="$(version_field <"$r/.antigravity-plugin/plugin.json")"
+  if [ -z "$av" ]; then
+    echo ".antigravity-plugin/plugin.json: no version"
+  elif [ "$av" != "$v" ]; then
+    echo ".antigravity-plugin/plugin.json: version is '$av', not '$v' (.claude-plugin/plugin.json)"
+  fi
   if [ ! -f "$r/CHANGELOG.md" ]; then echo "CHANGELOG.md: missing, so it has no ## $v entry"; return 0; fi
   top="$(grep -m 1 -E '^## ' "$r/CHANGELOG.md" | sed 's/[[:space:]]*$//')"
   if [ "$top" != "## $v" ]; then
@@ -4775,14 +4801,19 @@ scan_changelog() {
   return 0
 }
 # changelog_fixture <version> <CHANGELOG lines...>: a fixture root whose
-# plugin.json carries <version> (none when empty) and whose CHANGELOG.md is
+# plugin manifests carry <version> (none when empty) and whose CHANGELOG.md is
 # the given lines.
 changelog_fixture() {
-  local f v="$1"; shift
+  local f m v="$1"; shift
   f="$(new_fixture)"
-  mkdir -p "$f/.claude-plugin"
-  if [ -n "$v" ]; then printf '{\n  "name": "x",\n  "version": "%s"\n}\n' "$v" >"$f/.claude-plugin/plugin.json"
-  else printf '{\n  "name": "x"\n}\n' >"$f/.claude-plugin/plugin.json"; fi
+  mkdir -p "$f/.claude-plugin" "$f/.antigravity-plugin"
+  for m in .claude-plugin .antigravity-plugin; do
+    if [ -n "$v" ]; then
+      printf '{\n  "name": "x",\n  "version": "%s"\n}\n' "$v" >"$f/$m/plugin.json"
+    else
+      printf '{\n  "name": "x"\n}\n' >"$f/$m/plugin.json"
+    fi
+  done
   printf '%s\n' "$@" >"$f/CHANGELOG.md"
   echo "$f"
 }
@@ -4801,9 +4832,18 @@ flags "a missing CHANGELOG.md is flagged" "$(scan_changelog "$fixture")" "CHANGE
 flags "a plugin.json with no version is flagged" \
   "$(scan_changelog "$(changelog_fixture '' '# Changelog' '' '## 3.2.0' '' 'New.')")" \
   ".claude-plugin/plugin.json: no version"
+fixture="$(changelog_fixture 3.2.0 '# Changelog' '' '## 3.2.0' '' 'New.')"
+rm "$fixture/.antigravity-plugin/plugin.json"
+flags "a missing .antigravity-plugin/plugin.json is flagged" \
+  "$(scan_changelog "$fixture")" ".antigravity-plugin/plugin.json: no version"
+fixture="$(changelog_fixture 3.2.0 '# Changelog' '' '## 3.2.0' '' 'New.')"
+printf '{\n  "name": "x",\n  "version": "3.1.0"\n}\n' >"$fixture/.antigravity-plugin/plugin.json"
+flags "a drifted .antigravity-plugin/plugin.json version is flagged" \
+  "$(scan_changelog "$fixture")" ".antigravity-plugin/plugin.json: version is '3.1.0', not '3.2.0'"
 spares "a CHANGELOG topped by a non-empty entry for the version is not flagged" \
   "$(scan_changelog "$(changelog_fixture 3.2.0 '# Changelog' '' '## 3.2.0' '' 'New.' '' '## 3.1.0' '' 'Old.')")" '.'
-check "CHANGELOG.md's top entry is the plugin.json version" "$(scan_changelog "$PLUGIN_ROOT")"
+check "both plugin.json manifests carry CHANGELOG.md's top entry version" \
+  "$(scan_changelog "$PLUGIN_ROOT")"
 
 # fragment_fixture: a fixture git repo whose main branch holds plugin.json at
 # 4.5.6, a CHANGELOG topped by ## 4.5.6, and one fragment not yet bumped,
@@ -4911,6 +4951,25 @@ fixture_sed "$fixture/.claude-plugin/plugin.json" 's/4\.5\.6/4.5.7/'
 fragment_add "$fixture" 12.md 'bump: patch' '' 'A fix.'
 flags "a changed plugin.json version is flagged" \
   "$(scan_changelog_fragments "$fixture" main)" ".claude-plugin/plugin.json: version changed from 4.5.6 to 4.5.7"
+fixture="$(fragment_fixture)"
+fixture_sed "$fixture/.antigravity-plugin/plugin.json" 's/4\.5\.6/4.5.7/'
+fragment_add "$fixture" 12.md 'bump: patch' '' 'A fix.'
+flags "a changed .antigravity-plugin/plugin.json version is flagged" \
+  "$(scan_changelog_fragments "$fixture" main)" ".antigravity-plugin/plugin.json: version changed from 4.5.6 to 4.5.7"
+fixture="$(fragment_fixture)"
+fixture_git "$fixture" checkout -q main
+rm -rf "$fixture/.antigravity-plugin"
+fragment_commit "$fixture"
+fixture_git "$fixture" checkout -q -B pr
+mkdir -p "$fixture/.antigravity-plugin"
+printf '{\n  "name": "x",\n  "version": "4.5.6"\n}\n' >"$fixture/.antigravity-plugin/plugin.json"
+fragment_add "$fixture" 12.md 'bump: minor' '' 'Add Antigravity manifest.'
+spares "introducing .antigravity-plugin/plugin.json matching main's version is not flagged" \
+  "$(scan_changelog_fragments "$fixture" main)" '.'
+fixture_sed "$fixture/.antigravity-plugin/plugin.json" 's/4\.5\.6/4.6.0/'
+fragment_commit "$fixture"
+flags "introducing .antigravity-plugin/plugin.json with a bumped version is flagged" \
+  "$(scan_changelog_fragments "$fixture" main)" ".antigravity-plugin/plugin.json: initial version 4.6.0 does not match .claude-plugin/plugin.json (4.5.6)"
 fixture="$(fragment_fixture)"
 fixture_sed "$fixture/CHANGELOG.md" 's/^## 4\.5\.6$/## 4.5.7\n\nNew.\n\n## 4.5.6/'
 fragment_add "$fixture" 12.md 'bump: patch' '' 'A fix.'
