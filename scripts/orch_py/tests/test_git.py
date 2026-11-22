@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from conftest import committed, git_repo, run_git, write_staged
+from conftest import committed, git_repo, origin_clone, run_git, write_staged
 from orch.git import FakeGit, Git, git_push_reason
 
 ORIGIN = "https://github.com/fork/widgets.git"
@@ -536,9 +536,7 @@ def pushed(tmp_path):
     were then rewritten in the clone, so pushing either is rejected: the
     clone's root."""
     origin, root = tmp_path / "origin.git", tmp_path / "pushing"
-    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(origin)], check=True,
-                   stdin=subprocess.DEVNULL)
-    git_repo(root, str(origin))
+    origin_clone(origin, root, "main")
     run_git(root, "checkout", "-qb", "main")
     run_git(root, "commit", "-q", "--allow-empty", "-m", "one")
     run_git(root, "branch", "b")

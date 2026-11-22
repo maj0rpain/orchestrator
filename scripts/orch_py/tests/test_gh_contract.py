@@ -8,16 +8,15 @@ from __future__ import annotations
 
 import json
 import shutil
-import subprocess
 
 import pytest
 
 from orch.gh import (Gh, GhFailed, IssueRow, LabelledBody, SubIssue, Unparsed, gh_die,
                      gh_or_die)
-from orch.git import FakeGit, Git
+from orch.git import FakeGit
 from orch.repo import REPO_REMEDY, RepoPin
 
-from conftest import died_of, git_repo, run_git
+from conftest import died_of, origin_clone, run_git
 
 FORK = "https://github.com/fork/widgets.git"
 BODY = ["issue", "view", "5", "--json", "body", "--jq", ".body"]
@@ -794,18 +793,14 @@ def claimed(tmp_path):
     """A clone of a bare origin under tmp_path, origin holding a claim on #5:
     (origin's path, the real adapter on the clone)."""
     origin, root = tmp_path / "origin.git", tmp_path / "clone"
-    subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True,
-                   stdin=subprocess.DEVNULL)
-    git_repo(root, str(origin))
+    git = origin_clone(origin, root)
     run_git(root, "commit", "-q", "--allow-empty", "-m", "claim")
     run_git(root, "push", "-q", "origin", "HEAD:refs/orch/claims/5")
-    return origin, Gh(RepoPin({}, Git(cwd=str(root))), {})
+    return origin, Gh(RepoPin({}, git), {})
 
 
 def claims_on(origin):
-    return subprocess.run(["git", "-C", str(origin), "for-each-ref", "--format=%(refname)",
-                           "refs/orch/claims/"], check=True, stdin=subprocess.DEVNULL,
-                          stdout=subprocess.PIPE).stdout.decode()
+    return run_git(origin, "for-each-ref", "--format=%(refname)", "refs/orch/claims/")
 
 
 def test_a_held_claim_is_deleted_from_origin(claimed):
@@ -819,7 +814,7 @@ def test_a_claim_origin_does_not_hold_counts_as_freed(claimed):
     origin, gh = claimed
 
     assert gh.claim_delete(9) is None
-    assert claims_on(origin) == "refs/orch/claims/5\n"
+    assert claims_on(origin) == "refs/orch/claims/5"
 
 
 def test_any_other_push_failure_fails_the_delete_with_git_s_reason(claimed):

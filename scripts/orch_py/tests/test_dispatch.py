@@ -25,6 +25,7 @@ from conftest import (
     git_repo,
     gone,
     labels_of,
+    origin_clone,
     path_without,
     read,
     run_git,
@@ -192,9 +193,7 @@ def test_a_finding_triage_usage_error_exits_1_with_the_usage_line(tmp_path, repo
 
 def test_finding_triage_scan_reads_a_real_history_fetched_from_a_bare_origin(tmp_path, seed):
     origin, clone = tmp_path / "origin.git", tmp_path / "repo"
-    subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True,
-                   stdin=subprocess.DEVNULL)
-    git_repo(clone, str(origin))
+    origin_clone(origin, clone)
 
     def commit(text, message):
         sha = committed(clone, {"src/app.sh": text}, message)
