@@ -34,8 +34,7 @@ with --unattended, in a tail of its own they never arm on. check --tickets
 validates the round's tickets.md the same way (orch/spec_review_tickets.py),
 reading no GitHub; with @@ none-affected it removes any earlier view.md and
 saves none. apply applies a round's answer and publishes it
-(orch/spec_review_apply.py). orch.sh still runs the bash spec-review module
-for every verb.
+(orch/spec_review_apply.py).
 """
 from __future__ import annotations
 
@@ -233,7 +232,7 @@ CHECK_USAGE = "usage: orch.sh spec-review check <dir> [--tickets | --full <n>...
 # What a check pass line that saved a view ends with: the instruction to end
 # the turn on one plain-text reply holding the view word for word and the
 # question, with no tool call (ADR-0051), and the view.md it was saved to, by
-# absolute path. bash spec_review_nudge's words, unchanged: the paste guards
+# absolute path. The bash spec_review_nudge's words, unchanged: the paste guards
 # (scripts/paste-guard.sh) arm on a pass line ending "; it is saved in
 # <path>/view.md", their PASTE_GUARD_NEEDLE.
 NUDGE = (" - end your turn on one plain-text reply, no tool call: the view above word for word,"

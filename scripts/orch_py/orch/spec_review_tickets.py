@@ -1,6 +1,7 @@
 """A spec-review round's ticket items, <dir>/tickets.md: their parse and the
 offline checks check --tickets and apply --tickets share, copied from the
-bash spec-review module with its messages and its order of checks.
+bash spec-review module, gone since the noun's cutover, with its messages
+and its order of checks.
 
 On the rerun after the ticket pause, tickets.md holds the ticket items the
 session drafted - text edits against ticket-<t>.md or the collapsed body's

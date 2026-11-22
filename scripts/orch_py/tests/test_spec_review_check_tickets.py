@@ -5,7 +5,7 @@ grammar, every text anchor against the copy apply would edit, every edge
 against its ticket's ## Blocked by - with nothing written but view.md and no
 GitHub read. Each call is checked by its stdout, its exit code, its `orch:`
 lines and the view.md it saves, removes or leaves; the expected views and
-messages are the ones the bash spec-review check --tickets section pins."""
+messages are the ones the bash spec-review check --tickets section pinned."""
 from __future__ import annotations
 
 import os

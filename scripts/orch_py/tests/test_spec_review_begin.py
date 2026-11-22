@@ -2,7 +2,7 @@
 in-process against FakeGit, with the checkout, its state.json and its
 .orchestrator/spec-review/<n>/ directory under tmp_path, each checked by its
 stdout, its exit code, its `orch:` message and the files it leaves - as the
-bash spec-review begin answers."""
+bash spec-review begin answered."""
 from __future__ import annotations
 
 import json

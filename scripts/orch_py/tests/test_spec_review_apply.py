@@ -6,7 +6,7 @@ round-complete marker, the autopilot hold and its reply, the saved answer
 and --resume, flow mode and standalone mode. Each call is checked by its exit
 code, its `orch:` lines, the files it leaves in the round directory and what
 reached the store; the cases, messages and changelogs are the ones the bash
-spec-review apply sections pin. The ticket step is test_spec_review_apply_tickets.py's."""
+spec-review apply sections pinned. The ticket step is test_spec_review_apply_tickets.py's."""
 from __future__ import annotations
 
 import json
@@ -742,7 +742,7 @@ def test_a_saved_answer_bash_wrote_in_ansi_c_quotes_is_refused(root, seed, capsy
         "orch: %s/apply-answer is unreadable - rerun the round\n" % d)
 
 
-# The five applied.log labels bash spec_review_write logs, word for word.
+# The five applied.log labels bash spec_review_write logged, word for word.
 BASH_LOG = """ticket #20's body
 unblock #21 by #20
 block #20 by #21

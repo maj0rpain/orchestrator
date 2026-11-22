@@ -7,7 +7,8 @@
 # same window of text blocks and re-read over the same wait.
 #
 # - Armed by the latest `check` pass line in a tool result that names a
-#   view.md (scripts/orch/spec-review.sh's spec_review_nudge words it). An
+#   view.md (the Python spec-review noun's NUDGE words it, in
+#   scripts/orch_py/orch/spec_review.py). An
 #   unattended check's pass line carries no such tail, so it never arms.
 # - Disarmed by a later Bash tool_use whose command contains
 #   `spec-review apply`, whatever its exit status. The apply wins within its
@@ -54,8 +55,8 @@ PASTE_GUARD_WAIT=3
 
 # The tail every arming pass line ends with, before the view.md path: the one
 # copy of it. paste_guard_scan's search and its capture pattern both read it,
-# and a transcript without it cannot arm the guard. It must match
-# spec_review_nudge's words.
+# and a transcript without it cannot arm the guard. It must match the words
+# of the Python spec-review noun's NUDGE, which the hooks test pins it against.
 PASTE_GUARD_NEEDLE='; it is saved in '
 
 # The command text that disarms the guard in a Bash tool_use: the one copy of

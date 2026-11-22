@@ -1,14 +1,13 @@
 """The spec-review noun's check verb without --tickets, run in-process
 against FakeGit with the checkout and its round directory under tmp_path:
 each call checked by its stdout, its exit code, its `orch:` lines and the
-view.md it saves or leaves, as the bash spec-review check answers. The
-expected views are the ones the bash spec-review check sections pin, so the
+view.md it saves or leaves, as the bash spec-review check answered. The
+expected views are the ones the bash spec-review check sections pinned, so the
 Python views match bash's for the same batch."""
 from __future__ import annotations
 
 import os
 import re
-from pathlib import Path
 
 import pytest
 
@@ -17,7 +16,6 @@ from orch import spec_review
 
 USAGE = "usage: orch.sh spec-review check <dir> [--tickets | --full <n>...]"
 UNATTENDED_TAIL = " - unattended: not a turn-final reply; go straight on to apply"
-BASH_MODULE = Path(__file__).resolve().parents[2] / "orch" / "spec-review.sh"
 
 SRC_BODY = """# Spec
 
@@ -625,7 +623,7 @@ def test_a_batch_violation_is_refused_naming_its_line(root, capsys, changes, err
 
 
 # Every other refusal of the batch and of a lens findings file, each line as
-# the bash spec-review check prints it for the same batch. A lens file given
+# the bash spec-review check printed it for the same batch. A lens file given
 # as None is removed.
 @pytest.mark.parametrize("changes, lenses, err", [
     ({16: [..., "@@ lens fidelity ran"]}, {},
@@ -1307,19 +1305,3 @@ def test_a_missing_directory_and_a_missing_body_are_refused(root, capsys):
     (d / "spec.md").unlink()
 
     assert_refused(root, capsys, d, refused("spec.md not found in %s" % d))
-
-
-# --- the nudge ----------------------------------------------------------------------
-
-
-def bash_nudge_format():
-    """The printf format of bash spec_review_nudge, in the bash spec-review
-    module."""
-    text = BASH_MODULE.read_text(encoding="utf-8")
-    body = text.split("\nspec_review_nudge() {\n", 1)[1]
-    return re.search(r"printf '([^']*)'", body).group(1)
-
-
-@pytest.mark.skipif(not BASH_MODULE.exists(), reason="the bash spec-review module is gone")
-def test_the_nudge_s_words_match_bash_spec_review_nudge_word_for_word():
-    assert spec_review.NUDGE == bash_nudge_format()

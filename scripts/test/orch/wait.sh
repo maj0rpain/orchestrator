@@ -21,26 +21,34 @@ wt_slow_awk() {
 # ORCH_WAIT_BLOCK bounds one call's wall time, the cost of each poll included,
 # not only the time it slept: a poll that is slow does not stretch the call past
 # the block a host's foreground limit is set against.
+# The re-callable wait run through orch.sh is review ci, the bash one: PR 7's
+# checks stay pending, so every call waits out its block.
 echo
 echo "wait: a call's block is wall time"
 new_repo >/dev/null
+fake_github
+fake_pr 7 open topic main
+fake_pr_head 7 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+fake_checks 7 all pending
+# wt_ci <interval> <block>: review ci 7 against a timeout nothing reaches.
+wt_ci() {
+  ORCH_CI_GRACE=0 ORCH_CI_TIMEOUT=100 ORCH_CI_INTERVAL="$1" ORCH_WAIT_BLOCK="$2" \
+    "$ORCH" review ci 7 >/dev/null 2>&1
+}
 wt_awk="$(wt_slow_awk 0.3)"
 
-wt_lens="$(mktemp -d)"
 wt_t0=$SECONDS
-PATH="$wt_awk:$PATH" ORCH_SPEC_REVIEW_WAIT_TIMEOUT=100 ORCH_SPEC_REVIEW_WAIT_INTERVAL=0.2 \
-  ORCH_WAIT_BLOCK=2 "$ORCH" spec-review wait "$wt_lens" fidelity >/dev/null 2>&1; st=$?
-assert_status "spec-review wait with slow polls still exits 75" "$st" 75
+PATH="$wt_awk:$PATH" wt_ci 0.2 2; st=$?
+assert_status "review ci with slow polls still exits 75" "$st" 75
 assert_eq "and ends within the wall-clock block, not the summed sleep" \
   "$(( SECONDS - wt_t0 < 5 ))" "1"
 
 # A call never sleeps past its block: the sleep is clamped to what is left, and
 # a call whose sleep spent the block exits 75 without another turn.
-wt_lens="$(mktemp -d)"
+rm -rf "${ORCH_DIR_NAME:?}/wait"
 wt_t0=$SECONDS
-ORCH_SPEC_REVIEW_WAIT_TIMEOUT=100 ORCH_SPEC_REVIEW_WAIT_INTERVAL=6 \
-  ORCH_WAIT_BLOCK=0.5 "$ORCH" spec-review wait "$wt_lens" fidelity >/dev/null 2>&1; st=$?
-assert_status "spec-review wait with an interval past the block exits 75" "$st" 75
+wt_ci 6 0.5; st=$?
+assert_status "review ci with an interval past the block exits 75" "$st" 75
 assert_eq "and ends within the block, not a whole interval after it" \
   "$(( SECONDS - wt_t0 < 4 ))" "1"
 
@@ -108,23 +116,19 @@ assert_contains "naming the variable" "$out" "ORCH_WAIT_BLOCK"
 # The stored total keeps the seconds slept across calls: each call that exits
 # 75 stores more, and the next call on the same key reads it back.
 rm -rf "${ORCH_DIR_NAME:?}/wait"
-wt_lens="$(mktemp -d)"
-wt_run() {
-  ORCH_SPEC_REVIEW_WAIT_TIMEOUT=100 ORCH_SPEC_REVIEW_WAIT_INTERVAL=0.5 \
-    ORCH_WAIT_BLOCK=1.1 "$ORCH" spec-review wait "$wt_lens" fidelity >/dev/null 2>&1
-}
-wt_run; st=$?
-assert_status "a first spec-review wait call exits 75" "$st" 75
+wt_ci 0.5 1.1; st=$?
+assert_status "a first review ci call exits 75" "$st" 75
 wt_file="$(find "$ORCH_DIR_NAME/wait" -type f)"
 wt_first="$(sed -n 2p "$wt_file")"
 assert_eq "and stores seconds slept above 0" "$(awk -v s="$wt_first" 'BEGIN { print (s > 0) }')" "1"
-wt_run; st=$?
+wt_ci 0.5 1.1; st=$?
 assert_status "a second call on the same key exits 75 again" "$st" 75
 assert_eq "and stores more seconds slept than the first" \
   "$(awk -v a="$wt_first" -v b="$(sed -n 2p "$wt_file")" 'BEGIN { print (b > a) }')" "1"
 
 # The golden stored-total files the Python wait module's tests read and advance
-# too, with the same expected values (ADR-0067): stored-total, 1.2 s slept, its
+# too, with the same expected values (ADR-0067), under a key the Python
+# spec-review wait would store its total by: stored-total, 1.2 s slept, its
 # first call far in the future so the slept total alone counts, reads as 1.200,
 # and one call of 1-second ticks under a 5-second block, its sleep stood in for
 # so the wall clock never catches up, stores stored-total.advanced and exits 75.

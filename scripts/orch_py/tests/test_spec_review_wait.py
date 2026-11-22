@@ -2,7 +2,7 @@
 FakeClock - its sleep advancing its clock, so no test sleeps - with the
 round directory and the orchestrator directory's wait/ folder under
 tmp_path, each call checked by its stdout, its exit code, its `orch:` lines
-and the stored total it leaves - as the bash spec-review wait answers."""
+and the stored total it leaves - as the bash spec-review wait answered."""
 from __future__ import annotations
 
 import os

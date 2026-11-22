@@ -8,8 +8,11 @@ reads it (`spec round`, `spec round-dir`): these are copies of its
 spec_round_* functions under their bash names, less the prefix, each keeping
 bash's messages and the order of its local steps. The golden round
 directories of tests/spec_round/ pin the two copies of spec_round_state to each
-other, and the golden saved-answer lines of tests/spec_round/answer/ the two
-saved-answer formats (ADR-0067).
+other (ADR-0067). The saved answer's writers and its loader left bash with the
+spec-review noun, and bash spec_round_state only checks that apply-answer
+exists, so the golden line bash wrote before its writer went,
+tests/spec_round/answer/bash-written, is the bash side of the saved-answer
+format, which a round that died under bash still resumes by.
 
 The saved answer (apply-answer) is one shell-quoted line, as bash's `printf
 %q` writes it: answer_save writes each word with shlex.quote, and answer_load

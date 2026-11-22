@@ -301,11 +301,8 @@ printf 'model opus\neffort high\n' >"$rounds/1/agent-lens"
 : >"$rounds/1/round-complete"
 mkdir -p "$rounds/2"
 writeln stale >"$rounds/2/spec.md"
-rd_load="$(mktemp)"
-out="$(ORCH_LOAD_TRACE="$rd_load" "$ORCH" spec round-dir 2/2 2>&1)"; st=$?
+out="$("$ORCH" spec round-dir 2/2 2>&1)"; st=$?
 assert_status "round-dir 2/2 succeeds" "$st" 0
-assert_trace_names_no "spec round-dir" "$rd_load" spec-review
-rm -f "$rd_load"
 assert_eq "printing round 2's fixed directory" "$out" "$rounds/2/"
 assert_eq "emptied, then holding only round 1's lens setting, code map and settled file" \
   "$(ls -A "$rounds/2" 2>&1)" "$(writeln agent-lens map-implementability.md settled.md)"
@@ -398,8 +395,10 @@ assert_eq "printing done and the count" "$out" "done 2"
 # An autopilot round holding fundamental items back waits for the human's
 # answer.
 "$ORCH" spec round-dir 1/2 >/dev/null
-# A flow round's real hold run (autopilot apply with a fundamental item) writes
-# fundamental.md and no apply-answer, and the round then waits.
+# A flow round's real hold run (autopilot apply with a fundamental item),
+# through orch.sh's dispatch to the Python spec-review noun, writes
+# fundamental.md and no apply-answer, and bash spec round then reads the round
+# Python wrote as waiting.
 fake_github
 fake_issue 21 open
 fake_issue_body 21 "Gamma line."
@@ -605,12 +604,12 @@ rm -f "$spec_body"
 restore_suite_env
 
 # --- spec round directory owner (#3078) ------------------------------------
-# The round directory's state, held, flow-membership and reset, called as the
-# spec-review module does, through sourced_orch.
+# The round directory's state, called as spec round reads it, through
+# sourced_orch. The rest of the round directory's helpers went with the bash
+# spec-review module: their cases are the Python spec module's tests.
 echo
 echo "spec round directory owner (#3078)"
-fresh_flow rdowner
-top="$(git rev-parse --show-toplevel)"
+new_repo >/dev/null
 od="$(mktemp -d)"
 combos=(none a f c af ac fc afc)
 wants=(open applying waiting complete applying applying waiting applying)
@@ -627,70 +626,11 @@ for n in "${!combos[@]}"; do
   assert_eq "spec_round_state of a directory holding '${combos[$n]}' is ${wants[$n]}" "${got[$n]}" "${wants[$n]}"
 done
 assert_eq "spec_round_state of a missing directory is open" "${got[${#combos[@]}]}" "open"
-mkdir "$od/d"
-: >"$od/d/fundamental.md"
-sourced_orch spec_round_held "$od/d"; st=$?
-assert_status "spec_round_held succeeds beside fundamental.md" "$st" 0
-sourced_orch spec_round_held "$od/missing"; st=$?
-assert_status "spec_round_held fails without it" "$st" 1
-sourced_orch spec_round_in_flow "$top/.orchestrator/spec-rounds/2"; st=$?
-assert_status "spec_round_in_flow holds for a flow's round directory" "$st" 0
-sourced_orch spec_round_in_flow "$top/.orchestrator/spec-review/21"; st=$?
-assert_status "spec_round_in_flow fails for a standalone review's directory" "$st" 1
-sourced_orch spec_round_in_flow "$od/d"; st=$?
-assert_status "spec_round_in_flow fails for a path outside both" "$st" 1
-# The saved answer round trip: a file option's argument is saved as its copy.
-printf 'why\n' >"$od/reasons.src"
-rm -rf "$od/d"; mkdir "$od/d"
-sourced_orch spec_round_answer_save "$od/d" "--reasons --host-fallbacks" recommended --reasons "$od/reasons.src" --round "1/2"; st=$?
-assert_status "spec_round_answer_save succeeds" "$st" 0
-assert_eq "the file option's argument is saved as its copy" \
-  "$(cat "$od/d/apply-answer")" "recommended --reasons $od/d/apply-reasons.copy --round 1/2 "
-assert_eq "and the copy holds the file" "$(cat "$od/d/apply-reasons.copy")" why
-out="$(sourced_orch_script 'spec_round_answer_load "$1" a; printf "[%s]" "${a[@]}"' "$od/d")"
-assert_eq "spec_round_answer_load reads the arguments back" "$out" \
-  "[recommended][--reasons][$od/d/apply-reasons.copy][--round][1/2]"
-mkdir "$od/unreadable"; mkdir "$od/unreadable/apply-answer"
-out="$(sourced_orch_script 'spec_round_answer_load "$1" a; echo "survived"' "$od/unreadable" 2>&1)"; st=$?
-assert_status "spec_round_answer_load over an unreadable apply-answer dies" "$st" 1
-assert_eq "with the rerun message and no stray cat error" "$out" \
-  "orch: $od/unreadable/apply-answer is unreadable - rerun the round"
-sourced_orch spec_round_answer_clear "$od/d" nothing; st=$?
-assert_status "spec_round_answer_clear succeeds" "$st" 0
-assert_eq "it removes the answer and its copies" "$(ls -A "$od/d")" ""
-out="$(sourced_orch_script 'spec_round_answer_name n; echo "$n"')"
-assert_eq "spec_round_answer_name names the file" "$out" apply-answer
-# spec_round_complete twice leaves the changelog once.
-rm -rf "$od/d"; mkdir "$od/d"
-sourced_orch spec_round_complete "$od/d" "## Spec review" nothing; st=$?
-assert_status "spec_round_complete succeeds" "$st" 0
-sourced_orch spec_round_complete "$od/d" "## Spec review" nothing; st=$?
-assert_status "and runs again" "$st" 0
-assert_eq "leaving the changelog once" "$(grep -c '^## Spec review$' "$od/d/settled.md")" 1
-assert_eq "and round-complete written" "$(on_disk "$od/d/round-complete")" present
-# An unremovable fundamental.md: the could-not-remove message, no round-complete
-rm -rf "$od/d"; mkdir -p "$od/d/fundamental.md"; : >"$od/d/fundamental.md/x"
-out="$(sourced_orch spec_round_complete "$od/d" "## Spec review" landed-x 2>&1)"; st=$?
-assert_status "spec_round_complete over an unremovable fundamental.md dies" "$st" 1
-assert_contains "with the could-not-remove message" "$out" \
-  "could not remove $od/d/fundamental.md - every GitHub write landed and settled.md is appended: landed-x"
-assert_eq "writing no round-complete" "$(on_disk "$od/d/round-complete")" absent
-# spec_round_hold writes its argument byte for byte (#3757).
-rm -rf "$od/d"; mkdir "$od/d"
-sourced_orch spec_round_hold "$od/d" $'@@ item 1\nbody\n\n'; st=$?
-assert_status "spec_round_hold succeeds" "$st" 0
-assert_eq "it writes the blocks with the trailing blank line" "$(od -An -c "$od/d/fundamental.md" | tr -s ' ')" "$(printf '@@ item 1\nbody\n\n' | od -An -c | tr -s ' ')"
-rm -rf "$od/d"; mkdir -p "$od/d/fundamental.md"
-out="$(sourced_orch spec_round_hold "$od/d" x 2>&1)"; st=$?
-assert_status "spec_round_hold over a directory dies" "$st" 1
-assert_contains "with the write message" "$out" "could not write $od/d/fundamental.md - nothing written to GitHub"
 rm -rf "$od"
-# The golden round directories and saved-answer lines the Python spec module's
-# tests read too, with the same expected values (ADR-0067): each states/<name>/
-# reads as the state its expected file names; the answer bash writes for
-# answer/given, saving each file option's argument as its copy in the
-# relative round/, is answer/bash-written, and the line Python writes,
-# answer/python-written, loads as answer/args.
+# The golden round directories the Python spec module's tests read too, with
+# the same expected values (ADR-0067): each states/<name>/ reads as the state
+# its expected file names. Python's hold and complete leave the waiting and
+# complete goldens' files, so this reads what Python writes.
 rd_golden="${ORCH%/*}/orch_py/tests/spec_round"
 for rd_state in "$rd_golden"/states/*/; do
   rd_name="${rd_state%/}"; rd_name="${rd_name##*/}"
@@ -698,21 +638,6 @@ for rd_state in "$rd_golden"/states/*/; do
   assert_eq "spec_round_state reads the golden $rd_name round directory as its expected state" \
     "$out" "$(cat "$rd_state/expected")"
 done
-rd_work="$top/answer-golden"
-mkdir -p "$rd_work/round"
-printf '1 no\n' >"$rd_work/reasons.md"
-printf '2 later\n' >"$rd_work/ticket reasons.md"
-printf -- '- none\n' >"$rd_work/hosts.md"
-mapfile -t rd_given <"$rd_golden/answer/given"
-(cd "$rd_work" && sourced_orch spec_round_answer_save round "--reasons --ticket-reasons --host-fallbacks" "${rd_given[@]}"); st=$?
-assert_status "spec_round_answer_save of the golden answer succeeds" "$st" 0
-assert_eq "writing the golden bash-written line byte for byte" \
-  "$(cmp -s "$rd_work/round/apply-answer" "$rd_golden/answer/bash-written" && echo same)" same
-cp "$rd_golden/answer/python-written" "$rd_work/round/apply-answer"
-out="$(sourced_orch_script 'spec_round_answer_load "$1" a; printf "%s\n" "${a[@]}"' "$rd_work/round")"
-assert_eq "spec_round_answer_load reads the golden python-written line as the saved arguments" \
-  "$out" "$(cat "$rd_golden/answer/args")"
-rm -rf "$rd_work"
 restore_suite_env
 
 # --- spec fetch drift line (#3458) --------------------------------------------

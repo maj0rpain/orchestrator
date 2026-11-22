@@ -1,7 +1,7 @@
 """The spec-review noun's apply: a round's answer applied, the tickets
 followed, the body published when it changed, any retire run, and the
 changelog written to <dir>/changelog.md, posted, and appended to the
-review-wide settled file, copied from the bash spec-review module with its
+review-wide settled file, as the bash spec-review module had them, with its
 arguments, messages, exit codes and order of checks.
 
 Every check runs before the first write, so a refusal changes nothing; every
@@ -17,7 +17,8 @@ batch.
 The GitHub writes go in a fixed order - ticket text edits, then edges, then
 the body, then the retire, then the changelog comment - each through write(),
 which appends its label to <dir>/applied.log once it lands. The labels are
-bash spec_review_write's, word for word, so a log bash wrote resumes here.
+the bash spec_review_write's, word for word, so a log bash wrote before the
+noun's cutover resumes here.
 The answer is saved (orch/spec.py's answer_save) before the first write, so
 `apply <dir> --resume --round <k>/<n>` reruns a dead apply with it, skipping
 the writes applied.log records; with the changelog comment landed only the

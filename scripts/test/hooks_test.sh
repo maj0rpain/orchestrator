@@ -1133,12 +1133,16 @@ pg_ask() { pg_entry "$1" assistant "$(jq -nc --arg id "$2" '[{type:"tool_use", i
 pg_result() {
   pg_entry "$1" user "$(jq -nc --arg id "$2" --arg t "$3" --argjson e "${4:-false}" '[{type:"tool_result", tool_use_id:$id, content:$t, is_error:$e}]')"
 }
-# pg_nudge <view.md>: the pass line's tail naming <view.md>, from the producer
-# itself - spec-review.sh's spec_review_nudge, sourced - so a change to its
-# wording reaches the guard's cases rather than leaving them on a copy.
-pg_nudge() { (source "$DIR/orch/spec-review.sh" && spec_review_nudge "$(dirname "$1")"); }
+# PG_NUDGE: the producer's own words for the pass line's tail - the Python
+# spec-review module's NUDGE, read once, its %s the view.md path - so a change
+# to its wording reaches the guard's cases rather than leaving them on a copy.
+# Run from the package's directory, which -c puts first on the module path,
+# writing no bytecode there.
+PG_NUDGE="$(cd "$DIR/orch_py" && python3 -B -c 'import sys; from orch.spec_review import NUDGE; sys.stdout.write(NUDGE)')"
+# pg_nudge <view.md>: the pass line's tail naming <view.md>, as NUDGE words it.
+pg_nudge() { printf '%s%s%s' "${PG_NUDGE%%%s*}" "$1" "${PG_NUDGE#*%s}"; }
 # pg_pass_line <kind> <view.md>: check's stderr pass line for <kind>, batch or
-# tickets, naming <view.md>, ending as spec_review_nudge ends it.
+# tickets, naming <view.md>, ending as the nudge ends it.
 pg_pass_line() {
   printf '%s' "$1.md passes: 2 items, 3 anchors, each matching once, and the all answer applies cleanly$(pg_nudge "$2")"
 }
@@ -1486,7 +1490,7 @@ assert_eq "a long transcript without the tail starts no more jq than no transcri
   "$(jq_count pg_decide "$TL")" "$(jq_count pg_decide "")"
 assert_eq "and the Stop guard too" "$(jq_count sg_decide "$TL")" "$(jq_count sg_decide "")"
 TQ="$PG/quoted-tail.jsonl"; cp "$T11" "$TQ"
-pg_text "$TQ" "spec_review_nudge ends a pass line with '; it is saved in <path>/view.md'"
+pg_text "$TQ" "the check's nudge ends a pass line with '; it is saved in <path>/view.md'"
 assert_eq "a transcript quoting the tail outside a pass line allows (ask)" "$(pg_decide "$TQ")" allow
 assert_eq "and the Stop guard too" "$(sg_decide "$TQ")" allow
 assert_lt "the quoted tail decodes its candidate lines (ask)" "$(jq_count pg_decide "")" "$(jq_count pg_decide "$TQ")"
@@ -1687,9 +1691,34 @@ printf 'garbage\0line\n' >>"$PG/cost/seam.jsonl"
 assert_eq "a NUL-bearing line after a live pass line still arms" "$(pg_scan_with '; it is saved in ' 'zzz' "$PG/cost/seam.jsonl")" /tmp/x/view.md
 # The needle and the real pass line.
 pg_needle="$( (source "$DIR/paste-guard.sh"; printf '%s' "$PASTE_GUARD_NEEDLE") )"
-assert_contains "the pass line spec_review_nudge prints holds the paste guard's needle" \
+assert_contains "the pass line the Python nudge words holds the paste guard's needle" \
   "$(pg_pass_line batch "$PG/batch/view.md")" "$pg_needle"
 assert_eq "and a transcript holding that pass line as a tool result arms the guard" "$(sg_decide "$T")" block
+# The guard arms on the real pass line and view.md: a passing `spec-review
+# check` run through orch.sh's dispatch in a checkout of its own, its stdout
+# and stderr the tool result.
+pg_repo="$PG/real-repo"; pg_round="$pg_repo/.orchestrator/spec-review/7"
+git init -q "$pg_repo"; mkdir -p "$pg_round"
+printf 'Alpha line.\n' >"$pg_round/spec.md"
+printf '@@ finding 1\nAlpha is stale.\n' >"$pg_round/lens-fidelity.md"
+printf '%s\n' '@@ lens fidelity ran' '@@ lens consistency not-run skipped' \
+  '@@ lens testability not-run skipped' '@@ lens implementability not-run skipped' '' \
+  '@@ item 1 fidelity apply minor' '@@ finding fidelity 1' '@@ summary Alpha primed' \
+  '@@ anchor' 'Alpha line.' '@@ replace' 'Alpha prime line.' '@@ end' >"$pg_round/batch.md"
+pg_real="$(cd "$pg_repo" && bash "$DIR/orch.sh" spec-review check "$pg_round" 2>"$PG/real-check.err" </dev/null)"; st=$?
+assert_status "a passing spec-review check through the dispatch exits 0" "$st" 0
+assert_eq "its pass line ends on the nudge naming the view.md it saved" "$(cat "$PG/real-check.err")" \
+  "batch.md passes: 1 items, 1 anchors, each matching once in spec.md, and the all answer applies cleanly$(pg_nudge "$pg_round/view.md")"
+TRC="$PG/real-check.jsonl"
+pg_bash "$TRC" toolu_r1 "bash \"\$ORCH\" spec-review check .orchestrator/spec-review/7"
+pg_result "$TRC" toolu_r1 "$pg_real
+$(cat "$PG/real-check.err")"
+assert_eq "a transcript holding the real check's result arms the guard: an ask is refused" "$(pg_decide "$TRC")" deny
+assert_contains "naming the view.md the check saved" "$(cat "$PG/reason")" "$pg_round/view.md"
+assert_contains "with that view in the reason" "$(cat "$PG/reason")" "$(cat "$pg_round/view.md")"
+assert_eq "and the Stop guard blocks too" "$(sg_decide "$TRC")" block
+pg_text "$TRC" "$(cat "$pg_round/view.md")"
+assert_eq "the saved view pasted after it: allowed" "$(pg_decide "$TRC")" allow
 # The scan reads the needle constant: one copy. pg_scan_arms <needle> <tail>
 # prints the view.md path the scan finds on a pass line ending in <tail>, with
 # the constant set to <needle>.

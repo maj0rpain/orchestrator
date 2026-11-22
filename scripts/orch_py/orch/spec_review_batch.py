@@ -1,7 +1,7 @@
 """A spec-review round's batch file, <dir>/batch.md, and the lens findings
 files it cites, <dir>/lens-<lens>.md: their parse and the validation check
-and apply share, copied from the bash spec-review module with its messages
-and its order of checks.
+and apply share, copied from the bash spec-review module, gone since the
+noun's cutover, with its messages and its order of checks.
 
 The batch's grammar is the `@@` lines: the `@@ lens` lines first, then one
 entry per item - its findings, comments and quotes, its summary and why, its

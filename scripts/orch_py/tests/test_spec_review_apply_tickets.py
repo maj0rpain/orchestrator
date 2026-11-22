@@ -4,7 +4,7 @@ meets a ticket breakdown, then the --tickets rerun - ticket text edits, then
 edges, then the body, then any retire, then the changelog comment - every
 ticket-step refusal before any write, a failure at each GitHub write naming
 what landed, and --resume across the ticket writes. The cases and messages
-are the ones the bash spec-review apply section's ticket step pins; the
+are the ones the bash spec-review apply section's ticket step pinned; the
 fixture batch is test_spec_review_apply.py's."""
 from __future__ import annotations
 

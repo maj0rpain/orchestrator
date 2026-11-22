@@ -511,8 +511,9 @@ ticket_edges_verified() {
 }
 
 # The heading of a ticket body's section listing its blockers - kept in line
-# with the native edges for human readers, and read by `spec-review apply`'s
-# block/unblock precheck through blocked_by_section_numbers.
+# with the native edges for human readers, and read by the Python
+# `spec-review apply`'s block/unblock precheck through its
+# blocked_by_section_numbers (scripts/orch_py/orch/ticket.py).
 BLOCKED_BY_HEADING='## Blocked by'
 
 # The body on stdin with its first `## Blocked by` section outside a code
@@ -542,19 +543,6 @@ rewrite_blocked_by_section() {
         section(lastcr "\n")
       }
     }
-  '
-}
-
-# The blocker numbers the first `## Blocked by` section outside a code fence
-# lists in the body on stdin, one per line - its `- #<n>` lines, the section
-# bounded as rewrite_blocked_by_section bounds it. A body with no section, or
-# one reading `None (can start immediately)`, lists none.
-blocked_by_section_numbers() {
-  awk -v heading="$BLOCKED_BY_HEADING" "$FENCE_AWK"'
-    { l = $0; sub(/\r$/, "", l); f = fenced(l) }
-    in_section && !f && l ~ /^##?([ \t]|$)/ { in_section = 0 }
-    !done && !f && l == heading { in_section = 1; done = 1; next }
-    in_section && match(l, /^- #[0-9]+/) { print substr(l, 4, RLENGTH - 3) }
   '
 }
 

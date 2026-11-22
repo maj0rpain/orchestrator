@@ -1,13 +1,14 @@
 """The Python spec module's round helpers, against the golden round
-directories and saved-answer lines of spec_round/ - which the bash spec
-section reads too, with the same expected values (ADR-0067) - and against
+directories of spec_round/ - which the bash spec section reads too, with the
+same expected values (ADR-0067) - and its saved-answer lines, and against
 round directories under tmp_path, checked by the files they leave, their
-`orch:` messages and their exits, as bash's spec_round_* functions answer.
+`orch:` messages and their exits, as bash's spec_round_* functions answered.
 
 spec_round/states/<name>/ each hold the round files of one state and an
 `expected` file naming it; spec_round/answer/ holds the arguments apply
 saves (given), what a load reads back (args), and the line each language's
-writer writes (bash-written, python-written)."""
+writer writes (python-written, and bash-written, the line bash
+spec_round_answer_save wrote before it went with the bash spec-review module)."""
 from __future__ import annotations
 
 import os
@@ -70,6 +71,12 @@ def test_hold_leaves_the_waiting_golden_s_files(tmp_path):
 
     assert files_of(tmp_path) == golden_files("waiting")
     assert spec.state(str(tmp_path)) == "waiting"
+
+
+def test_hold_writes_the_blocks_byte_for_byte_with_their_trailing_blank_line(tmp_path):
+    spec.hold(str(tmp_path), "@@ item 1\nbody\n\n")
+
+    assert (tmp_path / "fundamental.md").read_bytes() == b"@@ item 1\nbody\n\n"
 
 
 def test_hold_that_cannot_write_dies_saying_nothing_reached_github(tmp_path, capsys):
@@ -248,9 +255,12 @@ def test_answer_load_reads_a_quoted_or_escaped_dollar_quote_as_text(tmp_path, li
     assert spec.answer_load(str(tmp_path)) == args
 
 
-@pytest.mark.parametrize("content", [None, "'unclosed \n"], ids=["missing", "unbalanced"])
-def test_answer_load_refuses_a_missing_or_unbalanced_answer(tmp_path, capsys, content):
-    if content is not None:
+@pytest.mark.parametrize("content", [None, "'unclosed \n", "directory"],
+                         ids=["missing", "unbalanced", "directory"])
+def test_answer_load_refuses_a_missing_unbalanced_or_unreadable_answer(tmp_path, capsys, content):
+    if content == "directory":
+        (tmp_path / "apply-answer").mkdir()
+    elif content is not None:
         (tmp_path / "apply-answer").write_text(content)
 
     code, _, err = died_of(capsys, lambda: spec.answer_load(str(tmp_path)))

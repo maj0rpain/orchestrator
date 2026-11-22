@@ -34,7 +34,7 @@
 2	2	the suite start (#3582)	7661d78242588461a38289fb228211e159d899f8
 7	8	the pytest suite (#3912)	21deea025158b43b9892524639c0a4fbc5b9bf3c
 2	3	the counting fixture's stdin counter (#3434)	b19a94c28ffbd5db955a5f10a39d0b15791cbc4f
-122	104	affected.sh, the ticket verification (#2023)	7be3a0fb777bc97b5ae415e0e433cba95e21e431
+11	107	affected.sh, the ticket verification (#2023)	7281f26ef085bf0d3e725e6b255f55991141e646
 4	5	the row rule (#3549)	9fdb50e7e723c26a4127289109f27a68989c4579
 7	9	the shared test support, function by function (#3550)	de45838253c482219d70d5af6fd3b26e2079c3f8
 5	7	the gh fake, operation by operation (#3551)	987935a277e021eabb9c02e391ba40e84607a315
@@ -205,7 +205,7 @@
 6	6	known-items module	4cac231615b2d8d9bc5665e54130500ba44570de
 8	9	Liveness module	a3eb853321244ddc291751d37b820bf4e3a80df7
 12	14	orch_load	78936724de415f7d72a2cb1732f2ec537485646c
-9	11	on-demand loading	6f5f8fdb61e60028685965dbdd5c3eb5ae8397b7
+21	21	on-demand loading	7957c71ca0967785d56a21072a507db8cfeb69b3
 14	15	stub table cache	4f0f12dcbedfdea3bf7690542ff5bf5d5a0e4a4e
 29	25	marked-comment module	f6f5c1a7f89a0d4a6d8a53403309d4f68d4fe0c2
 1	2	parallel show	29ed0447ad25daddc7f71a506dad5df2ad3d3cba
@@ -240,29 +240,29 @@
 10	11	redo reads its Flow state once, before its first write	c7e066d3d2068aae6549bf1324679159fbde39fd
 9	10	repo show	03b579d082d6e4e5353a860b91cb90f1006013d0
 7	8	default-branch	0177d6e5817d4d0befacac87fc2b2a0f621ad11b
-9	10	review ready's pointer to /orchestrator:finish (#727)	a9893c51acef3ce895b43d0f178599536435af94
-9	9	review begin	2ba9abde67db964730094c5a058de13e5ce061f2
-4	4	review path	7a16101d8b9b2159fca6d4f36f49cd0498205b47
-4	5	the multi-loop machinery is gone	4dc68ec08cdec3b566ae5db0cad490f806bb3f6c
-4	53	review file	ab82ec37844764bf50066b4a4c84f5d6c03383df
-12	13	review ready	853aca9f0b07301bf30cd70bb93cc1a9b4d8b763
-151	98	review ci	d69f950f561222ae0fa1d085e1ec31dd56673459
-16	15	the grace counts from the push (issue #475)	8557eb987d19d3da66520ea670fd868e2897accb
-17	18	review ci --no-wait	9dd6035438b4f4904bab68b6f88c4e6b7eda540f
-63	56	the grace is skipped on no evidence of CI (issue #476)	5b7f7e1d1df70ef1e2047b1afc7dc7473b8156d7
-13	15	review rerun	b425acf9a911d38030568a91d8a82655f0f6652f
-8	9	review ci-log	73944cda2851026f6a0b6b12969a0e07a97b7a74
-18	19	review terminal	72ab8a9090f9c2b0c797054eb2a98c97f0ea12f7
-22	24	review resume	a2c39bca6d2c13a816bfacef80785192a2f36d55
-4	5	review retire	d9b613e77e4967b95de352aa3336850e2a96ef96
-11	13	review known-items	b76ae4a4ac837766ed3a8185ae1d97a8246659ad
-9	9	review ready in an autopilot flow (#1457)	33a90ecc750788eb8dbb43f5c6ff343f0ea2164d
-8	9	review known-items in an autopilot flow (#1457)	4aa6dc9c2ece07068e0b2d9934e6d702883635b5
-20	24	review standards (#1532)	00508b8ab92107103a0a56b72e3864877919a3de
-8	9	review ready with a failed phase write (#1931)	db1a69dab77042aca601138bdc6e6d2db8719efd
-8	9	review reads its Flow state once	5afa7960282b47a0db2fbad77169c9e9899851d4
-4	4	review_terminal_record fallback reads once	bbbb15692b368d4d89e9ec30cf7e508f29cae285
-13	10	review ci <pr>	77afb3ecce576d16039afd6e0a737d20b4327d17
+14	12	review ready's pointer to /orchestrator:finish (#727)	01c77172316dd622467b9a479e60b8cef1904b77
+12	10	review begin	902b0736fa9d53f8649cc15981b103abb12e7352
+5	4	review path	c485ca66da4899ec9e74f9d1493517b4169e5520
+5	4	the multi-loop machinery is gone	1bef43094a7f6670e7ab6cbd9e8fdfd0d0d9a38f
+60	47	review file	0149ed4f1bd1c9fdda1201c619b24680cc03e5a2
+15	13	review ready	26e86f137971d0366cc61028dfec7a0e375da26f
+193	79	review ci	dc0957247bb0fa927b28d09b29b3281baabd73cc
+23	16	the grace counts from the push (issue #475)	cbf6b82ccdfc81e5ad2a255004249c2b63cb234a
+29	23	review ci --no-wait	5eef04340a8bf2f3c445181b9953788be1c13fee
+8	55	the grace is skipped on no evidence of CI (issue #476)	e88f7df5bf558e85492adab7fa5eb2216bbd67dd
+19	16	review rerun	151409ccf4b1c882115f99867c517f39666a3152
+11	10	review ci-log	836f698cab0ffbe5a3bf2e74d20d710ede040af7
+26	22	review terminal	48c1f706a2c1410e25f63d4310e8a48e7846a934
+31	27	review resume	63097b94426401069a76187b1a371de05cc1991d
+5	5	review retire	5b1190ac663d18708d42433f3358db302ac688ec
+15	13	review known-items	88cc3ad84175577bc51064351911f03dda0fea40
+12	10	review ready in an autopilot flow (#1457)	57b1493b1c3652aec3a5959ecf5c078b504d2dfc
+0	9	review known-items in an autopilot flow (#1457)	d8c5f2fa370ef25a027fd205c434c371b97fff80
+27	27	review standards (#1532)	d293fbbdd6496580187e488c6f3260e2c8f9f097
+10	9	review ready with a failed phase write (#1931)	418a6ec1eb247c9a2e62b95ad1ec256c191bde23
+0	10	review reads its Flow state once	29fa392a9282bbd56010e784520f1cced2bd4ac6
+5	4	review_terminal_record fallback reads once	fd2530b9caa907e04cfb1b054f72e8a81be39e7d
+18	12	review ci <pr>	bfce9ca90b46e8d5394334e62d78635b9cff5721
 2	3	route show	e41cb9679b1f09b9a73382b655216a8aff604ccd
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
 38	40	side-checkout (#722)	753522fea8c0be1dec4dc2f8633b7a5d78439049
@@ -271,36 +271,22 @@
 61	64	side-checkout prune (#726)	2bda70fa48dd4b380007de96e4897b5b0aea9095
 68	72	side-checkout prune: edge cases (#726)	be2f05022f06b567f8644f200d31cb3fcfb831ee
 18	19	archive keeps flow-less directories (#1247)	1cf41fafd151a6478b41bf1fd7aff5efd9847669
-44	32	side-checkout prune: a covered branch tip (#1906)	f84b823864eb50201507ad14b4ae01c045bcb80c
+40	34	side-checkout prune: a covered branch tip (#1906)	96688d9afa902688f89a5e39abbd012f99061cb8
 5	7	side-checkout prune: fork PRs are not proof (#1979)	004dd30e3e0deb54b95c8c79110e26cd2ffc4014
 49	52	side-checkout prune: the merged-PR close backstop (#2477)	69f285288eabcace9d74fa67194548b6bf7ab512
 2	3	side_checkout_marker reads the worktree's git pointer	7605e77ff7fdca5853e0a9cc368065fe764cb65e
 10	12	side checkout marker issue: reading without re-classifying (#3073)	4d201251bfb73c22114fdcdc86ae808fb3930ed5
 5	6	archive reads the flow's slug once	d1e47a75531129e6123579f59802dd69c84d1d76
 6	7	side-checkout: the default branch is asked for only when needed	5f8f132611fabd4e0dede5d1e6b3db76ceff3111
-6	6	spec-review begin (#224)	fe74fe8dd28fdc37ed2e86fe535752768ee13f03
-6	6	spec-review begin --carry (#1141, #1185)	2c305a83077a50dfcb50dc0bac0388c4ce86ff59
-0	1	quick implementation runs an unattended spec review (#237)	91dd9515c5afc42fce26ef3734a5366a26a9dacf
-443	384	spec-review apply (#1117)	1a433909eac5e64526aca311afe8c6b38a16f842
-80	61	spec-review check (#1137)	4e1cf37b37bbd15d6d6c71cb6635d5658ec8686b
-1	1	spec-review check literal item numbers (#1339)	8e294d00fe1843974f8bcf98772718fead1208da
-20	17	spec-review check --tickets (#1226)	2c45c5676cd09c963a89ba30ce20a765c537693a
-105	19	spec-review wait (#1183)	24595eef9ecba9ca8c420ae9e01b43b99e81d54c
-5	5	spec-review prompt (#1521)	03855f5a3b1eee00768bf61d20fb767598ec656b
-0	1	spec_review_lens_known matches one whole lens (#1546)	ff932b4f3886b09c7d687212266bba46be3e6899
-1	1	spec-review check requires every finding cited (#1914)	3f0992c2f13ba4d041395ab3a11157389a537692
-2	2	spec-review check on a CRLF body (#1916)	9a6ecd9fbddd4632a6029aec26eafbba8d2e25e5
-4	4	spec-review begin on a truncated state.json (#1929)	4e698a83fc58ac5329289ae911dc32a596aeb22d
-5	5	spec-review apply in a flow reads the state once (#3063)	3566f51f29484641d150af9ec89f0995fc20308a
 26	30	spec	a66453ea4b1d08fd96f23b38d6d509eaabeae8fd
 10	11	spec pause	1d162ea996a9c817686e6922bbd3c075fe2e33b7
-15	16	spec round-dir	37ce1d585142e7aff29c2cfc8a4a2fe864c50bc5
-19	20	spec round	f7f777e1de9228744f7299ef3af2a3adf9b9e058
+19	17	spec round-dir	e4b28bb1948a106b2cda0b56e1c51f2be207daec
+21	17	spec round	22792d8aa2c83709e472fd9d2540693a968f7412
 10	11	spec pause --round	027abcfc7dea70075df9b9f91c25e78f0084de2c
 5	6	spec pause --round in an autopilot flow (#1457)	538a0f0c05ff3eae5986077aea943807f8278613
 3	3	spec fetch on a truncated state.json (#1929)	60f3d67efe5d3d495d1adc47c8b0aea7008f5965
 7	8	spec ops read the flow's state once (#3063)	1ac4cb1881c14fda5d71d28175a34c212f051d4d
-14	13	spec round directory owner (#3078)	0ad1662d64cea902d995a0af6d94815806218b26
+6	6	spec round directory owner (#3078)	8542dde1c8ada3faccec284cd50c904e2d73fa03
 6	6	spec fetch drift line (#3458)	58d8dca777f8cf8f7b2d34df3ab34ac366362033
 30	26	Standing module	7360efe83df71e2983783f4ce7fefa500261a7d4
 124	117	Standing transitions	545e34fbb2e91632de6484af07eb526577b4f311
@@ -339,8 +325,8 @@
 104	110	ticket reclaim (ADR-0054)	7ec366d96e6a84ae723df4b5833904e10b5a6bb9
 2	3	ticket exists: no repo (#3050)	062de093bbfb2338a6a4265e1d0a90e8cf621544
 43	35	trust module	dd0183ac4380b097c6b51f9e75c4a3038ab514c5
-109	14	wait: a call's block is wall time	a104bdc0e8c371dfa7ceb0d1b486e98995db5fcc
-882	983	hooks_test.sh	8dec8318df78d1487d2d11c16c6ac962831bc14c
+89	19	wait: a call's block is wall time	90d20fdb4b55a5964e512640526d36f24c6b6f96
+444	28	hooks_test.sh	24af752d4b59ddd677411f094276be6c6fb0f5be
 308	214	docs_lint.sh	8291da5fa50794e3d56e50fa81d282db284a6253
 6	6	version_bump_test.sh	d1de32c167d83a647feee3742e43168847acdb65
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf

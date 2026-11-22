@@ -49,8 +49,7 @@ def _spec_review(argv: List[str]) -> int:
 
 
 # The converted nouns: each takes the arguments after the noun and returns its
-# exit code. spec-review is routed here while orch.sh still runs its bash
-# module, until the noun's cutover adds it to orch.sh's converted case.
+# exit code.
 NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "issue": _issue,
     "finding-triage": _finding_triage,

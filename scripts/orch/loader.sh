@@ -57,8 +57,8 @@ orch_load() {
 }
 
 # orch_modules: prints every module's name, one per line, in the C-locale
-# order of the names without .sh (spec before spec-review). Sorted in bash,
-# so no process is spawned.
+# order of the names without .sh (ticket before ticket-worktree). Sorted in
+# bash, so no process is spawned.
 orch_modules() {
   local LC_ALL=C f name i j tmp
   local -a names=()
