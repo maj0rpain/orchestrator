@@ -259,8 +259,29 @@ and unattended:
 bash "$ORCH" spec-review check <dir>
 ```
 
-Read `applying.md` in this skill's directory for `check`'s validation, the
-compact view format, ending the turn on a **turn-final reply** per
-`docs/turn-final-reply.md` under the plugin root, interactive answers
-(`show`, near-miss replies, questions), **Applying the answer**, and **The
-changelog**.
+`check` validates the batch as `apply` would take it, writing nothing but
+`<dir>/view.md`: its grammar, the lens files and the batch's citations of them,
+and every anchor - each item's and each option's - matching once in the body,
+then still matching once in a dry run of the **Apply all** answer. On exit 0 it
+prints the compact batch view on stdout and writes it to `<dir>/view.md`. On
+any other exit, each `orch:` line on stderr names what is wrong, most with its
+`batch.md` line: fix `batch.md` and run `check` again, until it exits 0. A
+batch that has not passed `check` is never shown and never asked about.
+
+Then end your turn on a **turn-final reply**, per `docs/turn-final-reply.md`
+under the plugin root: `check`'s stdout word for word, so the human reads
+each material edit's summary and reason, each decision option's summary, and
+each minor edit's summary, then the batch question with its answer words
+spelled out. Compose no view of your own - no summary, no shortening, no
+expansion, in any round: the view the human reads is `check`'s, every round
+alike. The turn ends on the list and the question, in one reply. No edit is
+applied and no changelog is posted before the answer arrives. On Claude Code
+an ask-tool call is refused while the view is unpasted: after each `check`
+that wrote a `view.md`, and until the next `apply` or human message, a hook
+refuses every ask until one text block after that `check` holds the whole view,
+handing back that view each time - end the turn on it and the batch question
+in plain text.
+
+Read `applying.md` in this skill's directory for the compact view format,
+the batch question's answers and interactive answers (`show`, near-miss
+replies, questions), **Applying the answer**, and **The changelog**.

@@ -6,15 +6,11 @@ answers) and to apply the answer and post the changelog.
 
 ## Batch view and interactive answers
 
-`check` validates the batch as `apply` would take it, writing nothing but
-`<dir>/view.md` (below): its grammar, the lens files and the batch's citations
-of them, and every anchor - each item's and each option's - matching once in the
-body, then still matching once in a dry run of the **Apply all** answer. On exit
-0 it prints the compact batch view on stdout - the lens lines, ran or not run
-with the reason, then the material items as one bulleted list in batch
-order, consolidation items first, each under its `batch.md` number and with
-no `### Item` heading. The number is written literally, in bold after the
-bullet, never as a Markdown ordered-list number, which a renderer would
+On exit 0 `check` prints the compact batch view on stdout - the lens lines,
+ran or not run with the reason, then the material items as one bulleted list
+in batch order, consolidation items first, each under its `batch.md` number
+and with no `### Item` heading. The number is written literally, in bold after
+the bullet, never as a Markdown ordered-list number, which a renderer would
 recount from the first item, so the number a human reads is the number
 their answer names. Each entry is one line, its summary and its reason -
 `- **<n>** - **<Group>** - <summary> (apply) - <why>`, or `- **<n>** -
@@ -40,24 +36,8 @@ pass summary goes to stderr: it names that `view.md` by absolute path and
 tells you to end your turn on one plain-text reply, with no tool call,
 holding the view above word for word and then the question with its answer
 words spelled out. A `check` that fails leaves any earlier `view.md` as it was.
-On any other exit, each `orch:` line on
-stderr names what is wrong, most with its `batch.md` line: fix `batch.md` and
-run `check` again, until it exits 0. A batch that has not passed `check` is
-never shown and never asked about.
 
-Then end your turn on a **turn-final reply**, per `docs/turn-final-reply.md`
-under the plugin root: `check`'s stdout word for word, so the human reads
-each material edit's summary and reason, each decision option's summary, and
-each minor edit's summary, then the batch question with its answer words
-spelled out. Compose no view of your own - no summary, no shortening, no
-expansion, in any round: the view the human reads is `check`'s, every round
-alike. The turn ends on the list and the question, in one reply. No edit is
-applied and no changelog is posted before the answer arrives. On Claude Code
-an ask-tool call is refused while the view is unpasted: after each `check`
-that wrote a `view.md`, and until the next `apply` or human message, a hook
-refuses every ask until one text block after that `check` holds the whole view,
-handing back that view each time - end the turn on it and the batch question
-in plain text. The answers:
+The batch question's answers:
 
 - **Apply as recommended (Recommended)**, answer word `recommended` - every
   proposed edit applied, every decision item takes its recommended option,
@@ -78,8 +58,8 @@ in plain text. The answers:
 The question spells every answer out: `recommended`, `all` when offered,
 `none`, a departure list in this format, `show <n>...`, or a question in
 plain words. An answer word and its option's full label (`Apply as
-recommended`, `Apply all`, `Apply none`) are the same answer, matched as the
-doc says.
+recommended`, `Apply all`, `Apply none`) are the same answer, matched as
+`docs/turn-final-reply.md` under the plugin root (the doc) says.
 
 Tell an Other answer's form this way. An answer starting with `show`
 followed by item numbers is a show request. An answer made only of

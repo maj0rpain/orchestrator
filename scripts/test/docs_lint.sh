@@ -61,8 +61,7 @@
 #     section of one, that exists
 #   scan_dispatch_copies  no skill file restates the implementer's report lines
 #     or the general-purpose-agent tier
-#   scan_agent_settings  each start site (each skill directory across SKILL.md
-#     and its reference files, and each agent or doc file) points at Agent
+#   scan_agent_settings  each file that starts a plugin agent points at Agent
 #     settings and names agent get <role> for each role it starts
 #   scan_agent_settings_section  docs/host-capabilities.md has Agent settings
 #     before Fallbacks, linked from its Start a fresh subagent row
@@ -910,22 +909,22 @@ claude_code_only_skill() {
 
 # --- orch.sh resolution (#123) ------------------------------------------------
 # Only Claude Code expands CLAUDE_PLUGIN_ROOT, and only in hooks/hooks.json on
-# other hosts, so skill and command text must pair it with the
-# relative fallback. The documented form (CONTRIBUTING.md, "Resolving
-# orch.sh") is the ORCH= line, the Junie step, and the fallback sentence, or,
-# for a skill marked "Claude Code only.", the ORCH= line and one stop. A
-# cross-host SKILL.md or command not marked "Claude Code only." that uses
-# orch.sh is held to every step: the ORCH= line, as a line of its own, and the
-# Junie step, the one-install step, the several-installs stop and the relative
-# fallback, these four in the documented order; sibling skill reference files
-# are spared that block. In any cross-host skill file or command
-# CLAUDE_PLUGIN_ROOT is allowed only on the ORCH= line, in the Junie
-# sentence, and in the plugin-root fallback sentence and its plugin-root
-# paths; a file that names the plugin root carries the Junie step in that
-# sentence. A marked skill's SKILL.md that uses orch.sh or `$ORCH` is held to
-# the ORCH= line; any file of a marked skill has CLAUDE_PLUGIN_ROOT nowhere
-# else and no Junie lookup. Any other mention of the variable, any missing step,
-# runs orch.sh without the ORCH= line, is a regression. hooks/hooks.json is
+# other hosts, so skill and command text must pair it with the relative
+# fallback. The documented form (CONTRIBUTING.md, "Resolving orch.sh") is the
+# ORCH= line, the Junie step, and the fallback sentence, or, for a skill marked
+# "Claude Code only.", the ORCH= line and one stop. A cross-host command that
+# uses orch.sh, or SKILL.md whose skill uses it in any of its files, not marked
+# "Claude Code only.", is held to every step: the ORCH= line, as a line of its
+# own, and the Junie step, the one-install step, the several-installs stop and
+# the relative fallback, these four in the documented order; sibling skill
+# reference files are spared that block. In any cross-host skill file or command
+# CLAUDE_PLUGIN_ROOT is allowed only on the ORCH= line, in the Junie sentence,
+# and in the plugin-root fallback sentence and its plugin-root paths; a file
+# that names the plugin root carries the Junie step in that sentence. A marked
+# skill's SKILL.md, when the skill uses orch.sh or `$ORCH`, is held to the ORCH=
+# line; any file of a marked skill has CLAUDE_PLUGIN_ROOT nowhere else and no
+# Junie lookup. Any other mention of the variable, any missing step, or a file
+# that runs orch.sh without the ORCH= line, is a regression. hooks/hooks.json is
 # deliberately out of scope: both hosts expand it there.
 echo
 echo "orch.sh resolution (#123)"
@@ -949,10 +948,16 @@ root_junie='two directories above the `orch.sh` that `ls` printed'
 # this much of it too (#416).
 orch_lookup="$orch_junie (the Junie CLI install). $orch_junie_one $orch_junie_many"
 orch_steps="$orch_lookup $orch_fallback"
+# skill_uses_orch <file>: succeeds when the file is a SKILL.md and any .md file
+# in its skill directory, itself or a sibling reference file, uses orch.sh or
+# `$ORCH`.
+skill_uses_orch() {
+  [[ "$1" == */SKILL.md ]] && grep -qE 'orch\.sh|\$ORCH' "${1%/*}"/*.md
+}
 # cc_orch_resolution <plugin root> <file> <flat text>: the Claude-Code-only
 # form's checks (#2718), one line per offence. The form names CLAUDE_PLUGIN_ROOT
-# on its ORCH= line alone, carries no Junie lookup, and needs the ORCH= line
-# whenever it uses orch.sh.
+# on its ORCH= line alone, carries no Junie lookup, and its SKILL.md needs the
+# ORCH= line whenever the skill uses orch.sh.
 cc_orch_resolution() {
   local r="$1" f="$2" flat="$3" rest
   rest="${flat//"$orch_line"/}"
@@ -960,7 +965,7 @@ cc_orch_resolution() {
     echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line"
   [[ "$flat" != *"$orch_junie"* ]] ||
     echo "${f#"$r"/}: Claude Code only skill carries the Junie lookup"
-  if [[ "$f" == */SKILL.md ]] && grep -qE 'orch\.sh|\$ORCH' "${f%/*}"/*.md; then
+  if skill_uses_orch "$f"; then
     grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
   fi
 }
@@ -999,7 +1004,7 @@ scan_orch_resolution() {
       [[ "$root_sentence" == *"$root_junie"* ]] ||
         echo "${f#"$r"/}: names the plugin root without the Junie step"
     fi
-    if { [[ "$f" == */SKILL.md ]] && grep -qE 'orch\.sh|\$ORCH' "${f%/*}"/*.md; } ||
+    if skill_uses_orch "$f" ||
       { [[ "$f" == "$r"/commands/*.md ]] && grep -qE 'orch\.sh|\$ORCH' "$f"; }; then
       grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
       [[ "$flat" == *"$orch_junie"* ]] || echo "${f#"$r"/}: uses orch.sh without the Junie step"
@@ -1658,40 +1663,20 @@ echo "start sites read the agent setting (#1359)"
 # implementer, **A driver's base sync** and **A driver's ticket resolution**
 # the resolver. A skill's scoped name, such as `orchestrator:orch-flow`, is
 # not a start, and a **Start a fresh subagent** pointer is not a read.
-# check_agent_settings_text <label> <text> <pattern>: check one start site
-# (a skill directory's combined .md files, or a single agent/doc file).
-check_agent_settings_text() {
-  local label="$1" text="$2" pattern="$3" roles="" name role
-  if grep -qE '`orchestrator:` plugin scope|subagent_type|orchestrator:<agent>' <<<"$text" ||
-    grep -qE "orchestrator:$pattern" <<<"$text"; then
-    # An agent's file path, such as agents/orch-fixer.md, names a file to
-    # read, not an agent to start.
-    while IFS= read -r name; do
-      case "$name" in /* | *.md | '') continue ;; esac
-      role="$(agent_role_of "$name")"
-      [ -n "$role" ] && roles+=" $role"
-    done < <(grep -oE "/?\\b$pattern\\b(\\.md)?" <<<"$text")
-  fi
-  grep -qF '**Dispatching a subagent**' <<<"$text" && roles+=" implementer"
-  grep -qE "\*\*A driver's (base sync|ticket resolution)\*\*" <<<"$text" && roles+=" resolver"
-  [ -n "$roles" ] || return 0
-  if ! grep -qE '\*\*Agent settings\*\*|#agent-settings\)' <<<"$text"; then
-    echo "$label: starts a plugin agent but does not point at **Agent settings**"
-  fi
-  for role in $(tr ' ' '\n' <<<"$roles" | sort -u); do
-    grep -qF "agent get $role" <<<"$text" ||
-      echo "$label: starts an agent of the $role role but does not name agent get $role"
-  done
+# agent_start_files <plugin root>: every skill file, agent file and docs/
+# file a start site can live in, one path per line.
+agent_start_files() {
+  skill_md_files "$1"
+  find "$1/agents" "$1/docs" -name '*.md' -type f 2>/dev/null | sort
+  return 0
 }
 # scan_agent_settings <plugin root>: one line per role a start site starts
-# without reading its setting. Each skill directory is scanned as one unit
-# across SKILL.md and its sibling reference files so an agent started from a
-# sibling file still requires an agent get <role> read in that skill. The agent
-# name shapes come from orch.sh's agent module, read from the real plugin root
-# (a scanned fixture carries no agent module) and sourced once.
+# without reading its setting. The agent name shapes come from orch.sh's agent
+# module, read from the real plugin root (a scanned fixture carries no agent
+# module) and sourced once.
 scan_agent_settings() {
-  local r="$1" d f text pattern shape
-  local -a files md_files
+  local r="$1" f text name roles role pattern shape
+  local -a files
   # shellcheck source=/dev/null
   if ! source "$PLUGIN_ROOT/scripts/orch/agent.sh" 2>/dev/null || [ -z "${AGENT_NAME_SHAPES:-}" ]; then
     echo "scripts/orch/agent.sh: no AGENT_NAME_SHAPES read"
@@ -1702,16 +1687,30 @@ scan_agent_settings() {
     pattern+="${pattern:+|}$(agent_shape_ere "${shape#*:}")"
   done < <(agent_name_shapes)
   pattern="($pattern)"
-  for d in "$r"/skills/*/; do
-    [ -d "$d" ] || continue
-    md_files=("$d"*.md)
-    [ -f "${md_files[0]}" ] || continue
-    text="$(awk '1' "${md_files[@]}" | flat_text)"
-    check_agent_settings_text "${d#"$r"/}SKILL.md" "$text" "$pattern"
-  done
-  mapfile -t files < <(find "$r/agents" "$r/docs" -name '*.md' -type f 2>/dev/null | sort)
+  mapfile -t files < <(agent_start_files "$r")
   for f in "${files[@]}"; do
-    check_agent_settings_text "${f#"$r"/}" "$(flat_text "$f")" "$pattern"
+    text="$(flat_text "$f")"
+    roles=""
+    if grep -qE '`orchestrator:` plugin scope|subagent_type|orchestrator:<agent>' <<<"$text" ||
+      grep -qE "orchestrator:$pattern" <<<"$text"; then
+      # An agent's file path, such as agents/orch-fixer.md, names a file to
+      # read, not an agent to start.
+      while IFS= read -r name; do
+        case "$name" in /* | *.md | '') continue ;; esac
+        role="$(agent_role_of "$name")"
+        [ -n "$role" ] && roles+=" $role"
+      done < <(grep -oE "/?\\b$pattern\\b(\\.md)?" <<<"$text")
+    fi
+    grep -qF '**Dispatching a subagent**' <<<"$text" && roles+=" implementer"
+    grep -qE "\*\*A driver's (base sync|ticket resolution)\*\*" <<<"$text" && roles+=" resolver"
+    [ -n "$roles" ] || continue
+    if ! grep -qE '\*\*Agent settings\*\*|#agent-settings\)' <<<"$text"; then
+      echo "${f#"$r"/}: starts a plugin agent but does not point at **Agent settings**"
+    fi
+    for role in $(tr ' ' '\n' <<<"$roles" | sort -u); do
+      grep -qF "agent get $role" <<<"$text" ||
+        echo "${f#"$r"/}: starts an agent of the $role role but does not name agent get $role"
+    done
   done
   return 0
 }
@@ -1769,10 +1768,11 @@ fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/sib"
 printf 'Start agents with `subagent_type`. Read `agent get fixer` per **Agent settings**.\n' \
   >"$fixture/skills/sib/SKILL.md"
-printf 'Start `orch-closer` at termination.\n' >"$fixture/skills/sib/termination.md"
-flags "an agent started in a sibling reference file still requires agent get for its role" \
+printf 'Start `orch-closer` with `subagent_type` at termination.\n' \
+  >"$fixture/skills/sib/termination.md"
+flags "an agent started in a sibling reference file needs agent get in that file" \
   "$(scan_agent_settings "$fixture")" \
-  "skills/sib/SKILL.md: starts an agent of the closer role but does not name agent get closer"
+  "skills/sib/termination.md: starts an agent of the closer role but does not name agent get closer"
 # A start site generated from AGENT_NAME_SHAPES, one name per shape with each *
 # as x, so a role or shape added there is covered with no edit here.
 mapfile -t shapes_read < <(source "$PLUGIN_ROOT/scripts/orch/agent.sh" && agent_name_shapes)
