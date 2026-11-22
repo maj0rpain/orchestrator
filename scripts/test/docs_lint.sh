@@ -960,15 +960,16 @@ cc_orch_resolution() {
     echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line"
   [[ "$flat" != *"$orch_junie"* ]] ||
     echo "${f#"$r"/}: Claude Code only skill carries the Junie lookup"
-  if [[ "$f" == */SKILL.md ]] && [[ "$flat" == *orch.sh* || "$flat" == *'$ORCH'* ]]; then
+  if [[ "$f" == */SKILL.md ]] && grep -qE 'orch\.sh|\$ORCH' "${f%/*}"/*.md; then
     grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
   fi
 }
 # scan_orch_resolution <plugin root>: print one line per offending file.
 # SKILL.md and commands/*.md must carry the full ORCH= resolution when using
-# orch.sh; sibling skill reference files are spared that block, while every
-# skill file and command is held to the CLAUDE_PLUGIN_ROOT and plugin-root
-# fallback rules.
+# orch.sh (for a skill, whenever SKILL.md or any sibling reference file uses
+# it); sibling skill reference files are spared that block, while every skill
+# file and command is held to the CLAUDE_PLUGIN_ROOT and plugin-root fallback
+# rules.
 scan_orch_resolution() {
   local r="$1" f flat rest root_sentence
   local -a files
@@ -998,8 +999,8 @@ scan_orch_resolution() {
       [[ "$root_sentence" == *"$root_junie"* ]] ||
         echo "${f#"$r"/}: names the plugin root without the Junie step"
     fi
-    if [[ "$f" == */SKILL.md || "$f" == "$r"/commands/*.md ]] &&
-      grep -qE 'orch\.sh|\$ORCH' "$f"; then
+    if { [[ "$f" == */SKILL.md ]] && grep -qE 'orch\.sh|\$ORCH' "${f%/*}"/*.md; } ||
+      { [[ "$f" == "$r"/commands/*.md ]] && grep -qE 'orch\.sh|\$ORCH' "$f"; }; then
       grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
       [[ "$flat" == *"$orch_junie"* ]] || echo "${f#"$r"/}: uses orch.sh without the Junie step"
       [[ "$flat" == *"$orch_junie_one"* ]] || echo "${f#"$r"/}: uses orch.sh without the one-install step"
@@ -1074,6 +1075,12 @@ flags "the scan flags a Junie step outside the plugin-root sentence" \
 flags "a reference file naming the plugin root without the Junie step is flagged" \
   "$(scan_orch_resolution "$fixture2")" \
   "skills/orch-x/root-ref.md: names the plugin root without the Junie step"
+mkdir -p "$fixture2/skills/orch-sib"
+printf '# Sib\n\nRead ref.md.\n' >"$fixture2/skills/orch-sib/SKILL.md"
+printf 'Run `bash "$ORCH" status`.\n' >"$fixture2/skills/orch-sib/ref.md"
+flags "a SKILL.md whose sibling reference file uses \$ORCH must still carry the ORCH= line" \
+  "$(scan_orch_resolution "$fixture2")" \
+  "skills/orch-sib/SKILL.md: uses orch.sh without the ORCH= line"
 { documented_orch_form
   plugin_root_fence
   printf '%s\n' "$root_fallback found as for \`ORCH\`:" \
@@ -2932,12 +2939,12 @@ check "quick implementation's steps 1, 2 and 3 run the unattended modes" \
 # --- skill reference files (#1147, #1145) -------------------------------------
 echo
 echo "skill reference files (#1147, #1145)"
-# A skill's SKILL.md holds what every path needs; what only one path needs sits
-# in a reference file beside it, read only on that path. A reference file is a
-# .md file directly in skills/<name>/ other than SKILL.md, and its SKILL.md
-# names it, so no reference file is orphaned. The files are worked out from
-# each skill's directory, never listed here, so adding one needs no edit to
-# this linter.
+# A skill's SKILL.md is the entrypoint (capped at 24000 body bytes); path-only
+# or shared detail sections sit in reference files beside it, read on demand. A
+# reference file is a .md file directly in skills/<name>/ other than SKILL.md,
+# and its SKILL.md names it, so no reference file is orphaned. The files are
+# worked out from each skill's directory, never listed here, so adding one needs
+# no edit to this linter.
 # scan_skill_refs <plugin root>: one line per reference file its skill's
 # SKILL.md does not name.
 scan_skill_refs() {
@@ -3786,47 +3793,60 @@ check "every skill description fits the Agent Skills 1024-character limit" \
 # --- skill bodies fit Antigravity's 24 KB load cap (#4054) --------------------
 # scan_skill_body_size <plugin root>: one line per SKILL.md whose body (after
 # YAML frontmatter) is over 24000 bytes, Antigravity CLI's load cap. Sibling
-# reference files are loaded on demand and are not capped. Runs in one LC_ALL=C
-# awk pass over every SKILL.md, handling CRLF frontmatter fences and treating
-# unclosed frontmatter as body bytes so a broken fence cannot bypass the cap.
+# reference files are loaded on demand and are not capped. Uses wc -c for exact
+# file byte sizes and one LC_ALL=C awk pass to subtract valid frontmatter bytes
+# (handling CRLF fences, missing trailing newlines, and treating unclosed
+# frontmatter as body bytes so a broken fence cannot bypass the cap).
 scan_skill_body_size() {
   local r="$1"
   local -a files=("$r"/skills/*/SKILL.md)
   [ -f "${files[0]}" ] || return 0
   LC_ALL=C awk -v r="$r/" '
     function finish(path,    n) {
-      n = (fm ? total : body)
+      n = sizes[path] - (closed ? fm_bytes : 0)
+      if (n < 0) n = 0
       if (n > 24000) {
         if (substr(path, 1, rlen) == r) path = substr(path, rlen + 1)
         print path ": body is " n " bytes, over 24000"
       }
     }
-    BEGIN { rlen = length(r) }
+    BEGIN { rlen = length(r); prev = "" }
+    NR == FNR {
+      if ($0 ~ /\/SKILL\.md$/) {
+        sz = $1 + 0
+        p = $0
+        sub(/^[[:space:]]*[0-9]+[[:space:]]+/, "", p)
+        sizes[p] = sz
+      }
+      next
+    }
     FNR == 1 {
-      if (NR > 1) finish(prev)
+      if (prev != "") finish(prev)
       prev = FILENAME
-      fm = 0; body = 0; total = 0
+      fm = 0; closed = 0; fm_bytes = 0
     }
     {
-      len = length($0) + 1
-      total += len
       line = $0
       sub(/\r$/, "", line)
-      if (FNR == 1 && line == "---") { fm = 1; next }
-      if (fm && line == "---") { fm = 0; next }
-      if (!fm) body += len
+      if (FNR == 1 && line == "---") { fm = 1; fm_bytes += length($0) + 1; next }
+      if (fm) {
+        fm_bytes += length($0) + 1
+        if (line == "---") { fm = 0; closed = 1 }
+      }
     }
-    END { if (NR > 0) finish(prev) }
-  ' "${files[@]}"
+    END { if (prev != "") finish(prev) }
+  ' <(wc -c "${files[@]}") "${files[@]}"
 }
 fixture="$(new_fixture)"
-mkdir -p "$fixture/skills/exact" "$fixture/skills/over" \
+mkdir -p "$fixture/skills/exact" "$fixture/skills/nonl" "$fixture/skills/over" \
   "$fixture/skills/utf8" "$fixture/skills/fm" "$fixture/skills/crlf" \
   "$fixture/skills/unclosed" "$fixture/skills/ref"
 b8000="$a1000$a1000$a1000$a1000$a1000$a1000$a1000$a1000"
 b24000="$b8000$b8000$b8000"
 printf -- '---\nname: exact\n---\n%s\n' "${b24000:0:23999}" \
   >"$fixture/skills/exact/SKILL.md"
+printf -- '---\nname: nonl\n---\n%s' "$b24000" \
+  >"$fixture/skills/nonl/SKILL.md"
 printf -- '---\nname: over\n---\n%s\n' "$b24000" \
   >"$fixture/skills/over/SKILL.md"
 # 23998 ASCII bytes + 3-byte em dash + newline = 24000 chars, 24002 bytes.
@@ -3848,6 +3868,7 @@ flags "a multi-byte UTF-8 body under 24000 chars but over 24000 bytes is flagged
 flags "unclosed frontmatter cannot bypass the 24000-byte cap" \
   "$out" "skills/unclosed/SKILL.md: body is "
 spares "a SKILL.md body of exactly 24000 bytes is spared" "$out" 'skills/exact/'
+spares "a 24000-byte body with no trailing newline is spared" "$out" 'skills/nonl/'
 spares "frontmatter does not count toward the 24000-byte body cap" \
   "$out" 'skills/fm/'
 spares "CRLF frontmatter fences are recognized" "$out" 'skills/crlf/'
