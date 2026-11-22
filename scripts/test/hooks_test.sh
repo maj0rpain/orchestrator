@@ -1706,7 +1706,7 @@ printf '%s\n' '@@ lens fidelity ran' '@@ lens consistency not-run skipped' \
   '@@ item 1 fidelity apply minor' '@@ finding fidelity 1' '@@ summary Alpha primed' \
   '@@ anchor' 'Alpha line.' '@@ replace' 'Alpha prime line.' '@@ end' >"$pg_round/batch.md"
 pg_real="$(cd "$pg_repo" && bash "$DIR/orch.sh" spec-review check "$pg_round" 2>"$PG/real-check.err" </dev/null)"; st=$?
-assert_status "a passing spec-review check through the dispatch exits 0" "$st" 0
+assert_eq "a passing spec-review check through the dispatch exits 0" "$st" 0
 assert_eq "its pass line ends on the nudge naming the view.md it saved" "$(cat "$PG/real-check.err")" \
   "batch.md passes: 1 items, 1 anchors, each matching once in spec.md, and the all answer applies cleanly$(pg_nudge "$pg_round/view.md")"
 TRC="$PG/real-check.jsonl"
