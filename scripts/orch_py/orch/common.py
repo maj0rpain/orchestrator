@@ -1,12 +1,15 @@
 """The primitives no concept owns: the `orch: ` message lines, the
-plain-number test every verb checks its issue numbers with, the decimal-number
-tests and the poll-knob check a waiting verb reads its knobs with, the atomic
-file write, the file read as bash's $(<file) gives it, the lines of a text
-and of a file, the markdown code-fence rule, the temporary file a comment is handed to gh from, the words a
-list and a state read as in a line, the orchestrator's directory name, the
-UTC stamp a run directory is named with, the git exclude writer, the
-removals bash's rm -f and rm -rf make, and the capture of a call's stderr and
-death that bash's capture and err_line make.
+plain-number tests every verb checks its issue numbers with - any plain
+number, and one with no leading zero - the decimal-number tests and the
+poll-knob check a waiting verb reads its knobs with, the trim bash's trim
+makes, the atomic file write, the plain file write and append, the file read
+as bash's $(<file) gives it, the lines of a text and of a file, the markdown
+code-fence rule, the temporary file a comment is handed to gh from, the words
+a list and a state read as in a line, the orchestrator's directory name, the
+UTC stamp a run directory is named with, the git exclude writer, the copy
+bash's cp makes, the directory bash's mkdir -p makes, the removals bash's
+rm -f and rm -rf make, and the capture of a call's stderr and death that
+bash's capture and err_line make.
 
 Every `orch: ` message goes through die or warn, as in the bash side's
 common.sh: die(message, 2) is the bash die2, for a command that reserves exit
@@ -63,6 +66,15 @@ def plain_positive_number(text: str) -> bool:
     """Whether <text> is a plain number (plain_number) with no leading zero,
     as bash's `''|*[!0-9]*|0*` refusal reads one."""
     return plain_number(text) and not text.startswith("0")
+
+
+# bash's [:space:], the characters trim drops.
+_SPACE = " \t\n\r\v\f"
+
+
+def trim(text: str) -> str:
+    """<text> with leading and trailing whitespace removed, as bash's trim."""
+    return text.strip(_SPACE)
 
 
 _NUMBER = re.compile(r"[0-9]+\.?[0-9]*|\.[0-9]+")
@@ -217,6 +229,15 @@ def copy_or_die(source: str, target: str, uncopied: str) -> None:
         shutil.copyfile(source, target)
     except OSError:
         die(uncopied)
+
+
+def mkdir_p_or_die(path: str, unmade: str) -> None:
+    """mkdir -p <path>: the directory and any missing parents made, one
+    already there no failure. Dies with <unmade> when it cannot be made."""
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError:
+        die(unmade)
 
 
 def rm_f(path: str) -> None:

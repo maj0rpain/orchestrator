@@ -21,7 +21,7 @@ import time
 from typing import Callable, Mapping
 
 from orch.common import die, file_lines, file_write_atomic, is_number, plain_number
-from orch.common import require_poll_knobs, rm_f, warn
+from orch.common import mkdir_p_or_die, require_poll_knobs, rm_f, warn
 
 # A call's block in seconds when ORCH_WAIT_BLOCK is unset or empty.
 WAIT_BLOCK_DEFAULT = "570"
@@ -86,10 +86,7 @@ class StoredTotal:
         started afresh - 0 slept from now - and stored at once."""
         call_start = int(clock())
         folder = orch_dir + "/wait"
-        try:
-            os.makedirs(folder, exist_ok=True)
-        except OSError:
-            die("could not create " + folder)
+        mkdir_p_or_die(folder, "could not create " + folder)
         path = "%s/%s" % (folder, blob_hash(key))
         lines = file_lines(path) if os.path.isfile(path) else []
         start = lines[0] if lines else ""

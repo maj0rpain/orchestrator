@@ -37,7 +37,8 @@ from typing import List, Mapping, Optional
 from orch.base import recorded_base_into
 from orch.checkout import current_branch_or_die
 from orch import comments
-from orch.common import ORCH_DIR_NAME, die, exclude_orch_dirs, plain_number, read_raw
+from orch.common import (ORCH_DIR_NAME, die, exclude_orch_dirs, mkdir_p_or_die, plain_number,
+                         read_raw)
 from orch.flow_state import (
     STATE_UNREADABLE_MSG,
     StateUnreadable,
@@ -128,10 +129,7 @@ def begin(argv: List[str], gh, git, pin, env: Mapping[str, str], root: str) -> i
             " refusing to review it; run orch.sh doctor --flow" % (hold.issue, hold.phase))
     exclude_orch_dirs(git)
     directory = os.path.join(root, ORCH_DIR_NAME, "review-pass", branch)
-    try:
-        os.makedirs(directory, exist_ok=True)
-    except OSError:
-        die("cannot make the review pass directory %s" % directory)
+    mkdir_p_or_die(directory, "cannot make the review pass directory %s" % directory)
     print("%s/%s%02d" % (directory, PREFIX, next_iteration(directory)))
     return 0
 

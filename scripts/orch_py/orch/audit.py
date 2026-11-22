@@ -44,6 +44,7 @@ from orch.common import (
     exclude_orch_dirs,
     file_lines,
     file_write_atomic,
+    mkdir_p_or_die,
     plain_number,
     read_raw,
     read_text,
@@ -217,11 +218,12 @@ def audit_begin(argv: List[str], git, root: str, clock: Callable[[], float]) -> 
     run_dir = os.path.join(audits, "%s-%s" % (kind, dir_stamp(clock)))
     if os.path.exists(run_dir):
         die("the audit run directory already exists: %s" % run_dir)
+    unmade = "cannot make the audit run directory %s" % run_dir
+    mkdir_p_or_die(audits, unmade)
     try:
-        os.makedirs(audits, exist_ok=True)
         os.mkdir(run_dir)
     except OSError:
-        die("cannot make the audit run directory %s" % run_dir)
+        die(unmade)
     made = False
     try:
         exclude_orch_dirs(git)

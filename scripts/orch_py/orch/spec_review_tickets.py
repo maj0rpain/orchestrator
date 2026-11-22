@@ -30,10 +30,10 @@ from __future__ import annotations
 import os
 from typing import Dict, List, NoReturn, Optional, Tuple
 
-from orch.common import die, lines_of, plain_number, plain_positive_number, read_raw
+from orch.common import die, lines_of, plain_number, plain_positive_number, read_raw, trim
 from orch.spec_review_batch import (Block, BlockReader, Edit, Edited, Malformed, Violations,
                                     answer_tokens, at_line, decline_reason, is_at_line,
-                                    one_line, read_words, trim, without_cr)
+                                    one_line, read_words, without_cr)
 from orch.ticket import blocked_by_section_numbers, ticket_listing_state, ticket_sub_issues
 
 # The Tickets lines that report no ticket outcome.

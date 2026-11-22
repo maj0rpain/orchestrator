@@ -34,7 +34,7 @@ import re
 from typing import Dict, List, NoReturn, Optional, Tuple
 
 from orch.autopilot import autopilot_active
-from orch.common import die, lines_of, plain_number, plain_positive_number, read_raw, warn
+from orch.common import die, lines_of, plain_number, plain_positive_number, read_raw, trim, warn
 
 # The lenses, in the lens table's order - the changelog's section order.
 SPEC_REVIEW_LENSES = ("fidelity", "consistency", "testability", "implementability")
@@ -53,8 +53,6 @@ SUMMARY_WORDS = 30
 # with @@ is written.
 AT_LINE_ESCAPE_HINT = " - a body line starting with @@ is written \\@@"
 
-# bash's [:space:], the characters trim drops.
-_SPACE = " \t\n\r\v\f"
 # bash's default IFS, the characters `read` splits words on.
 _IFS = " \t\n"
 
@@ -62,11 +60,6 @@ _IFS = " \t\n"
 def lens_known(name: str) -> bool:
     """Whether <name> is one of the four lenses, matched whole."""
     return name in SPEC_REVIEW_LENSES
-
-
-def trim(text: str) -> str:
-    """<text> with leading and trailing whitespace removed, as bash's trim."""
-    return text.strip(_SPACE)
 
 
 def read_words(text: str, count: int) -> List[str]:

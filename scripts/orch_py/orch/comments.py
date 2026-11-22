@@ -1,5 +1,6 @@
 """The Comments module (scripts/orch/comments.sh), kept to what the issue,
-finding-triage and review-pass nouns and the issue timeline use: the one
+finding-triage and review-pass nouns, the issue timeline and the ticket
+module's `ticket retire` (run by spec-review apply) use: the one
 reader of an issue's or a PR's trusted comments, in a dying form and one that
 hands its failure back, the rendered shape every comments read writes, the
 rendered read, and the split of a rendered text into its comments.

@@ -28,8 +28,8 @@ import os
 import shlex
 from typing import List, Sequence, Tuple
 
-from orch.common import (ORCH_DIR_NAME, copy_or_die, die, plain_positive_number, read_raw,
-                         rm_f_or_die, rm_rf_or_die, text_file_append, text_file_write)
+from orch.common import (ORCH_DIR_NAME, copy_or_die, die, mkdir_p_or_die, plain_positive_number,
+                         read_raw, rm_f_or_die, rm_rf_or_die, text_file_append, text_file_write)
 
 # The empty file spec_round_complete writes in a round's directory, as its
 # last local step but the answer's clearing: a round counts as complete only
@@ -249,10 +249,7 @@ def spec_round_dir_reset(directory: str, carry: bool = False) -> None:
                 rm_rf_or_die(os.path.join(directory, name), unreset)
     else:
         rm_rf_or_die(directory, unreset)
-    try:
-        os.makedirs(directory, exist_ok=True)
-    except OSError:
-        die(unreset)
+    mkdir_p_or_die(directory, unreset)
 
 
 def spec_round_count_parse(arg: str) -> Tuple[int, int]:
