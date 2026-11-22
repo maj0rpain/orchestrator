@@ -26,7 +26,6 @@ import re
 from typing import Callable, List, Optional, Sequence
 
 from orch import comments
-from orch.breakdown import breakdown_dir
 from orch.common import (ORCH_DIR_NAME, die, fenced, lines_of, plain_number, rm_f_or_die,
                          rm_rf_or_die, temp_text_file)
 from orch.gh import GhFailed, SubIssue, gh_die, gh_or_die, verify_twice
@@ -305,6 +304,10 @@ def ticket_retire(gh, parent: str, root: str) -> None:
     parent's own saved report dropped, every `## Ticket` section cut from its
     body and its breakdown save point removed. A breakdown already retired
     writes nothing. Any GitHub failure dies."""
+    # Imported here, not at the top: the breakdown noun imports this module,
+    # and only this one path lookup reaches back.
+    from orch.breakdown import breakdown_dir
+
     subs = ticket_sub_issues(gh, parent)
     message, old_message = RETIRED % parent, RETIRED_BY_REDO % parent
     for row in subs:
