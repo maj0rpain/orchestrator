@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from conftest import comments_of, died_of, flow_state, git_repo, read, snapshot
+from conftest import comments_of, died_of, flow_state, read, snapshot
 from orch import cli, spec
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit
@@ -43,9 +43,8 @@ def test_an_op_the_noun_does_not_have_is_refused_naming_the_ops(root, seed, caps
     assert capsys.readouterr() == ("", "orch: unknown spec op: %s %s\n" % (named, UNKNOWN))
 
 
-def test_the_cli_module_routes_the_spec_noun_to_this_module(tmp_path, capsys, monkeypatch):
-    git_repo(tmp_path / "repo")
-    monkeypatch.chdir(tmp_path / "repo")
+def test_the_cli_module_routes_the_spec_noun_to_this_module(root, capsys, monkeypatch):
+    monkeypatch.setattr(spec, "Git", lambda: FakeGit(toplevel=str(root)))
     monkeypatch.setenv("CLAUDECODE", "1")
 
     assert died_of(capsys, lambda: cli.main(["spec", "pause"])) == (
@@ -342,7 +341,10 @@ def test_pause_overwrites_a_marker_already_there_leaving_the_phase(root, seed, c
     ("done", 21, "the flow on issue #21 is done - spec pause acts only on an active flow"),
     ("implement", 21, "spec pause runs only in the spec phase - the flow is at phase implement"),
     ("review", 21, "spec pause runs only in the spec phase - the flow is at phase review"),
-], ids=["no-issue", "done", "implement", "review"])
+    ("done", None, "no issue recorded in state - the spec phase must publish one first"),
+    ("implement", None, "no issue recorded in state - the spec phase must publish one first"),
+], ids=["no-issue", "done", "implement", "review", "no-issue-before-done",
+        "no-issue-before-phase"])
 def test_pause_refuses_outside_an_active_spec_phase_writing_no_marker(
         root, seed, capsys, phase, issue, message):
     flow_state(root, phase, issue)
