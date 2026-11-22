@@ -624,6 +624,182 @@ def test_a_batch_violation_is_refused_naming_its_line(root, capsys, changes, err
     assert_refused(root, capsys, d, refused(*err))
 
 
+# Every other refusal of the batch and of a lens findings file, each line as
+# the bash spec-review check prints it for the same batch. A lens file given
+# as None is removed.
+@pytest.mark.parametrize("changes, lenses, err", [
+    ({16: [..., "@@ lens fidelity ran"]}, {},
+     ["batch.md line 17: the @@ lens lines come first, before any item"]),
+    ({1: ["@@ lens clarity ran"]}, {},
+     ["batch.md line 1: unknown lens 'clarity' (want one of: fidelity consistency"
+      " testability implementability)"]),
+    ({2: ["@@ lens fidelity ran"]}, {},
+     ["batch.md line 2: a second @@ lens line for fidelity"]),
+    ({1: ["@@ lens fidelity ran now"]}, {},
+     ["batch.md line 1: @@ lens fidelity ran takes nothing after it"]),
+    ({2: ["@@ lens consistency standalone"]}, {},
+     ["batch.md line 2: only fidelity can be standalone"]),
+    ({4: ["@@ lens implementability not-run"]}, {},
+     ["batch.md line 4: @@ lens implementability not-run needs a reason"]),
+    ({4: ["@@ lens implementability skipped"]}, {},
+     ["batch.md line 4: @@ lens implementability wants ran, not-run <reason> or"
+      " standalone"]),
+    ({6: ["@@ item 0 fidelity apply minor"]}, {},
+     ["batch.md line 6: item number must be a positive number, got '0'"]),
+    ({6: ["@@ item 01 fidelity apply minor"]}, {},
+     ["batch.md line 6: item number must be a positive number, got '01'"]),
+    ({15: ["@@ item 1 consistency decline material the plan chose this"]}, {},
+     ["batch.md line 15: a second item 1"]),
+    ({6: ["@@ item 1 clarity apply minor"]}, {},
+     ["batch.md line 6: unknown group 'clarity' (want consolidation, a lens, or"
+      " contradicts-the-plan)"]),
+    ({6: ["@@ item 1 fidelity apply minor now"]}, {},
+     ["batch.md line 6: @@ item 1 ... apply takes nothing after its mark"]),
+    ({41: ["@@ item 4 testability resolved because"]}, {},
+     ["batch.md line 41: @@ item 4 ... resolved takes nothing after it"]),
+    ({15: ["@@ item 2 consistency decline material"]}, {},
+     ["batch.md line 15: @@ item 2 ... decline needs a reason after its mark"]),
+    ({24: ["@@ item 3 testability decision a material"]}, {},
+     ["batch.md line 24: @@ item 3 ... decision needs the recommended option's letter,"
+      " A to Z"]),
+    ({24: ["@@ item 3 testability decision A material now"]}, {},
+     ["batch.md line 24: @@ item 3 ... decision takes nothing after its mark"]),
+    ({6: ["@@ item 1 fidelity accept minor"]}, {},
+     ["batch.md line 6: item 1's recommendation must be apply <mark>, decline <mark>"
+      " <reason>, decision <letter> <mark> or resolved"]),
+    ({8: ["@@ summary"]}, {},
+     ["batch.md line 8: @@ summary needs its line"]),
+    ({43: [..., "@@ summary Resolved"]}, {},
+     ["batch.md line 44: a resolved item carries no @@ summary"]),
+    ({26: [..., "@@ summary Gamma"]}, {},
+     ["batch.md line 27: a decision item's summaries go under its options"]),
+    ({8: [..., "@@ summary Again"]}, {},
+     ["batch.md line 9: a second @@ summary for this item"]),
+    ({28: [..., "@@ summary Again"]}, {},
+     ["batch.md line 29: a second @@ summary for this option"]),
+    ({7: ["@@ finding fidelity"]}, {},
+     ["batch.md line 7: @@ finding wants <lens> <k>, k a positive number"]),
+    ({7: ["@@ finding fidelity 1 2"]}, {},
+     ["batch.md line 7: @@ finding wants <lens> <k>"]),
+    ({7: ["@@ finding fidelity 0"]}, {},
+     ["batch.md line 7: @@ finding wants <lens> <k>, k a positive number"]),
+    ({7: ["@@ comment alice 2026"]}, {},
+     ["batch.md line 7: @@ comment wants @<login> <createdAt>"]),
+    ({7: ["@@ comment @alice"]}, {},
+     ["batch.md line 7: @@ comment wants @<login> <createdAt>"]),
+    ({7: ["@@ comment @alice 2026-01-01T00:00:00Z"]}, {},
+     ["batch.md line 8: @@ comment must be followed by @@ quote"]),
+    ({7: [..., "@@ quote"]}, {},
+     ["batch.md line 8: @@ quote must follow @@ comment"]),
+    ({7: [..., "@@ comment @alice 2026", "@@ quote now"]}, {},
+     ["batch.md line 9: @@ quote takes nothing after it; the quote is the lines below"
+      " it"]),
+    ({43: [..., "@@ comment @alice 2026"]}, {},
+     ["batch.md line 44: @@ comment must be followed by @@ quote"]),
+    ({43: [..., "@@ resolved-by 3"]}, {},
+     ["batch.md line 44: a second @@ resolved-by"]),
+    ({8: [..., "@@ resolved-by 3"]}, {},
+     ["batch.md line 9: @@ resolved-by belongs to a resolved item"]),
+    ({43: ["@@ resolved-by 9"]}, {},
+     ["batch.md line 43: @@ resolved-by names '9', which is no earlier item"]),
+    ({43: ["@@ resolved-by 4"]}, {},
+     ["batch.md line 43: @@ resolved-by names '4', which is no earlier item"]),
+    ({43: ["@@ resolved-by"]}, {},
+     ["batch.md line 43: @@ resolved-by names '', which is no earlier item"]),
+    ({8: [..., "@@ option A x"]}, {},
+     ["batch.md line 9: @@ option belongs to a decision item"]),
+    ({27: ["@@ option a Keep gamma"]}, {},
+     ["batch.md line 27: @@ option wants <letter> <label>, the letter A to Z"]),
+    ({27: ["@@ option A"]}, {},
+     ["batch.md line 27: @@ option A needs a label"]),
+    ({34: ["@@ option A Drop gamma"]}, {},
+     ["batch.md line 34: a second option A"]),
+    ({9: ["@@ anchor now"]}, {},
+     ["batch.md line 9: @@ anchor takes nothing after it; the anchor is the lines"
+      " below it"]),
+    ({43: [..., "@@ anchor"]}, {},
+     ["batch.md line 44: a resolved item takes no @@ anchor, @@ replace or @@ end"]),
+    ({43: [..., "@@ replace"]}, {},
+     ["batch.md line 44: a resolved item takes no @@ anchor, @@ replace or @@ end"]),
+    ({26: [..., "@@ anchor"]}, {},
+     ["batch.md line 27: a decision item's anchors go under its options"]),
+    ({33: [..., "@@ anchor"]}, {},
+     ["batch.md line 34: a second @@ anchor for this option"]),
+    ({13: [..., "@@ anchor"]}, {},
+     ["batch.md line 14: a second @@ anchor for this item"]),
+    ({5: ["@@ summary x"]}, {},
+     ["batch.md line 5: @@ summary outside an item"]),
+    ({5: ["stray"]}, {},
+     ["batch.md line 5: text outside an @@ anchor, @@ replace or @@ quote block"]),
+    ({43: []}, {},
+     ["batch.md line 41: resolved item 4 has no @@ resolved-by line"]),
+    ({34: [], 35: [], 36: [], 37: [], 38: [], 39: [], 40: []}, {},
+     ["batch.md line 24: decision item 3 needs at least two @@ option blocks"]),
+    ({24: ["@@ item 3 testability decision C material"]}, {},
+     ["batch.md line 24: decision item 3 recommends option C, which it does not have"]),
+    ({35: []}, {},
+     ["batch.md line 34: item 3 option B has no @@ summary"]),
+    ({36: [], 37: [], 38: [], 39: [], 40: []}, {},
+     ["batch.md line 34: item 3 option B has no @@ anchor/@@ replace/@@ end block - an"
+      " option not recommended still carries the edit it would make"]),
+    ({29: [], 30: [], 31: [], 32: [], 33: []}, {},
+     ["batch.md line 27: item 3 option A has no @@ anchor/@@ replace/@@ end block"]),
+    ({18: [], 19: [], 20: [], 21: [], 22: []}, {},
+     ["batch.md line 15: item 2 has no @@ anchor/@@ replace/@@ end block - a decline"
+      " item still carries the edit it declines"]),
+    ({6: ["@@ item 1 consolidation apply minor"]}, {},
+     ["batch.md line 6: consolidation item 1 cites no @@ comment"]),
+    ({7: []}, {},
+     ["batch.md line 6: item 1 cites no @@ finding",
+      "batch.md leaves findings uncited: fidelity 1 - every lens finding goes in the"
+      " batch, if only as a recommend-decline item"]),
+    ({7: ["@@ finding clarity 1"]}, {},
+     ["batch.md line 7: unknown lens 'clarity'",
+      "batch.md leaves findings uncited: fidelity 1 - every lens finding goes in the"
+      " batch, if only as a recommend-decline item"]),
+    ({7: ["@@ finding implementability 1"]}, {},
+     ["batch.md line 7: cites lens implementability, which did not run",
+      "batch.md leaves findings uncited: fidelity 1 - every lens finding goes in the"
+      " batch, if only as a recommend-decline item"]),
+    ({6: ["@@ item 1 implementability apply minor"]}, {},
+     ["batch.md line 6: item 1 is in group implementability, which did not run"]),
+    ({}, {"fidelity": None},
+     ["lens-fidelity.md not found in {d} - lens fidelity is marked ran in batch.md"]),
+    ({}, {"consistency": "@@ none\n@@ none\n"},
+     ["lens-consistency.md line 2: @@ none stands alone in its file"]),
+    ({}, {"consistency": "@@ finding 1\nx\n@@ none\n"},
+     ["lens-consistency.md line 3: @@ none stands alone in its file"]),
+    ({}, {"consistency": "@@ none\n@@ finding 1\nx\n"},
+     ["lens-consistency.md line 2: @@ none stands alone in its file"]),
+    ({}, {"consistency": "@@ finding 1\n\n@@ finding 2\nx\n"},
+     ["lens-consistency.md line 3: finding 1 is empty"]),
+    ({}, {"consistency": "@@ finding 2\nx\n"},
+     ["lens-consistency.md line 1: expected @@ finding 1, got '@@ finding 2'"]),
+    ({}, {"consistency": "@@ finding 1\nx\n@@ bogus\n"},
+     ["lens-consistency.md line 3: unknown line '@@ bogus' (want @@ finding <k> or @@"
+      " none)"]),
+    ({}, {"consistency": "@@ finding 1\n  \n"},
+     ["lens-consistency.md line 2: finding 1 is empty"]),
+    ({}, {"consistency": ""},
+     ["lens-consistency.md holds no @@ finding and no @@ none"]),
+    ({}, {"consistency": "\n\n"},
+     ["lens-consistency.md holds no @@ finding and no @@ none"]),
+    ({}, {"consistency": "@@ none\nx\n"},
+     ["lens-consistency.md line 2: text before the first @@ finding"]),
+])
+def test_every_batch_and_lens_file_refusal_is_bash_s(root, capsys, changes, lenses, err):
+    d = round_dir(root)
+    rewrite(d / "batch.md", changes)
+    for lens, text in lenses.items():
+        path = d / ("lens-%s.md" % lens)
+        if text is None:
+            path.unlink()
+        else:
+            path.write_text(text)
+
+    assert_refused(root, capsys, d, refused(*(line.format(d=d) for line in err)))
+
+
 def test_thirty_word_summaries_pass(root, capsys):
     d = round_dir(root)
     rewrite(d / "batch.md", {17: ["@@ summary " + W30], 35: ["@@ summary " + W30]})
