@@ -33,12 +33,15 @@ the paste guards arm on its "; it is saved in <path>/view.md" tail - or,
 with --unattended, in a tail of its own they never arm on. check --tickets
 validates the round's tickets.md the same way (orch/spec_review_tickets.py),
 reading no GitHub; with @@ none-affected it removes any earlier view.md and
-saves none. apply applies a round's answer and publishes it
-(orch/spec_review_apply.py).
+saves none. apply applies a round's answer and publishes it: its arguments
+are parsed and checked here, and the machinery it calls - the answer, the
+edits, the changelog, the saved answer and --resume, and the GitHub writes -
+is orch/spec_review_apply.py's.
 """
 from __future__ import annotations
 
 import os
+import re
 import sys
 import time
 from typing import Callable, List, Mapping, Optional, Sequence
@@ -385,7 +388,7 @@ def tickets_view(tickets: Tickets) -> str:
             out += "\n**Recommendation:** apply\n"
         else:
             out += "\n**Recommendation:** recommend decline - %s\n" % item.arg
-        if item.text():
+        if item.is_text_edit():
             out += edit_view(item.edit)
     out += "\n### Closed tickets\n\n"
     out += "".join("- #%s - %s\n" % (closed.t, closed.what) for closed in tickets.closed)
@@ -523,6 +526,134 @@ def check(argv: List[str], env: Mapping[str, str]) -> int:
                    unattended, env)
 
 
+APPLY_USAGE = (
+    "usage: orch.sh spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]"
+    " [--tickets <answer> [--ticket-reasons <file>]] [--issue <n>] [--unattended]"
+    " [--host-fallbacks <file>] | orch.sh spec-review apply <dir> --resume --round <k>/<n>")
+
+# apply's options that take a value, each with the ApplyOptions attribute it
+# sets.
+APPLY_VALUE_OPTIONS = {"--round": "round", "--reasons": "reasons", "--issue": "issue",
+                       "--host-fallbacks": "hosts_file", "--tickets": "ticket_answer",
+                       "--ticket-reasons": "ticket_reasons"}
+
+
+class ApplyOptions:
+    """apply's parsed arguments: <saved> the ones the saved answer keeps, in
+    the order given."""
+
+    def __init__(self) -> None:
+        self.directory = self.answer = self.round = self.reasons = self.issue = ""
+        self.hosts_file = self.ticket_answer = self.ticket_reasons = ""
+        self.have_answer = self.unattended = False
+        self.saved: List[str] = []
+
+
+def _apply_parse(args: List[str]) -> ApplyOptions:
+    options = ApplyOptions()
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in APPLY_VALUE_OPTIONS:
+            if i + 1 >= len(args) or not args[i + 1]:
+                die("%s needs a value (%s)" % (arg, APPLY_USAGE))
+            value = args[i + 1]
+            options.saved += [arg, value]
+            setattr(options, APPLY_VALUE_OPTIONS[arg], value)
+            i += 2
+            continue
+        if arg == "--unattended":
+            options.unattended = True
+            options.saved.append(arg)
+            i += 1
+            continue
+        # An override answer may begin with -, as -4: before <dir> any leading
+        # dash makes an unknown option, after it only a double one - one dash
+        # is stripped first, so a single dash starts the answer.
+        option_like = arg if not options.directory else (arg[1:] if arg.startswith("-") else arg)
+        if option_like.startswith("-"):
+            die("unknown option: %s (%s)" % (arg, APPLY_USAGE))
+        if not options.directory:
+            options.directory = arg
+        elif not options.have_answer:
+            options.answer, options.have_answer = arg, True
+            options.saved.append(arg)
+        else:
+            die(APPLY_USAGE)
+        i += 1
+    return options
+
+
+def _apply_resume_args(given: List[str]) -> List[str]:
+    """`apply <dir> --resume --round <k>/<n>`'s arguments: <dir>, then the
+    answer the dead apply saved, after its own checks."""
+    directory = round_arg = ""
+    i = 0
+    while i < len(given):
+        arg = given[i]
+        if arg == "--round":
+            if i + 1 >= len(given) or not given[i + 1]:
+                die("--round needs a value (%s)" % APPLY_USAGE)
+            round_arg = given[i + 1]
+            i += 2
+        elif arg.startswith("-"):
+            die("--resume takes only <dir> and --round <k>/<n>, got: %s (%s)"
+                % (arg, APPLY_USAGE))
+        else:
+            if directory:
+                die(APPLY_USAGE)
+            directory = arg
+            i += 1
+    if not directory or not round_arg:
+        die(APPLY_USAGE)
+    directory, saved = spec_review_apply.saved_answer(directory)
+    return [directory, round_arg] + saved
+
+
+def apply(argv: List[str], gh_of: Callable[[], object], git, env: Mapping[str, str],
+          root: str) -> int:
+    """`spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
+    [--tickets <answer> [--ticket-reasons <file>]] [--issue <n>]
+    [--unattended] [--host-fallbacks <file>]`, or `spec-review apply <dir>
+    --resume --round <k>/<n>`: its exit code, 3 for the ticket pause. <gh_of>
+    makes the gh adapter, at the first GitHub call. The arguments are checked
+    here; the run is orch/spec_review_apply.py's apply_answer."""
+    resume = "--resume" in argv
+    given = [arg for arg in argv if arg != "--resume"]
+    resumed_round = ""
+    if resume:
+        resumed = _apply_resume_args(given)
+        resumed_dir, resumed_round = resumed[0], resumed[1]
+        given = [resumed_dir] + resumed[2:]
+    options = _apply_parse(given)
+    if resume and resumed_round != options.round:
+        die("--resume --round %s: the saved answer in %s is for round %s"
+            % (resumed_round, resumed_dir, options.round))
+    if not options.directory or not options.have_answer:
+        die(APPLY_USAGE)
+    if not options.round:
+        die("--round <k>/<n> is required (%s)" % APPLY_USAGE)
+    spec.spec_round_count_parse(options.round)
+    issue = options.issue
+    if issue and not plain_number(issue):
+        die("--issue must be a plain issue number, got: " + issue)
+    ticket_answer = options.ticket_answer
+    if ticket_answer not in ("", "recommended", "all", "none", "retire") and re.search(
+            r"[^0-9, ]", ticket_answer):
+        die("--tickets wants recommended, all, none, retire or a list such as 1, 3, got: "
+            + ticket_answer)
+    if options.ticket_reasons and not ticket_answer:
+        die("--ticket-reasons goes with --tickets: it holds the ticket answer's decline reasons")
+    if options.unattended:
+        if not issue:
+            die("--unattended needs --issue: an unattended spec review is a standalone one")
+        if options.answer != "recommended":
+            die("--unattended takes only the answer recommended, got: " + options.answer)
+        if ticket_answer not in ("", "recommended"):
+            die("--unattended takes only --tickets recommended, got: " + ticket_answer)
+    return spec_review_apply.apply_answer(options, resume, gh_of, git, env, root)
+
+
 def run(
     argv: List[str],
     gh=None,
@@ -541,18 +672,18 @@ def run(
     op = argv[0] if argv else ""
     if op not in OPS.split("|"):
         die("unknown spec-review op: %s (want %s)" % (op or "<none>", OPS))
+    # The gh adapter, made at the first GitHub call: apply's refusals before
+    # it make none, and prompt makes one only for the Fidelity lens, the one
+    # whose plan handoff may be read from a comment.
+    def gh_of():
+        return gh if gh is not None else adapter(env, pin=pin)
+
     if op == "apply":
-        # The gh adapter is made at the first GitHub call: a refusal before it
-        # makes none.
-        return spec_review_apply.apply(
-            argv[1:], lambda: gh if gh is not None else adapter(env, pin=pin), git, env, root)
+        return apply(argv[1:], gh_of, git, env, root)
     if op == "check":
         return check(argv[1:], env)
     if op == "wait":
         return wait(argv[1:], env, root, clock, sleep)
     if op == "prompt":
-        # The gh adapter is made only for the Fidelity lens, the one whose
-        # plan handoff may be read from a comment.
-        return prompt(argv[1:], lambda: gh if gh is not None else adapter(env, pin=pin),
-                      env, root)
+        return prompt(argv[1:], gh_of, env, root)
     return begin(argv[1:], env, root)

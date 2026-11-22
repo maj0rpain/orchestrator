@@ -1,8 +1,11 @@
-"""The spec-review noun's apply: a round's answer applied, the tickets
+"""The machinery the spec-review noun's apply verb calls, the way
+orch/spec_review_batch.py and orch/spec_review_tickets.py serve the noun:
+the verb itself - its entry, usage line and argument parse - is
+orch/spec_review.py's. Here a round's answer is applied, the tickets
 followed, the body published when it changed, any retire run, and the
 changelog written to <dir>/changelog.md, posted, and appended to the
 review-wide settled file, as the bash spec-review module had them, with its
-arguments, messages, exit codes and order of checks.
+messages, exit codes and order of checks.
 
 Every check runs before the first write, so a refusal changes nothing; every
 accepted edit is applied to the body as first fetched, <dir>/spec.fetched.md,
@@ -34,13 +37,11 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import sys
-from typing import Callable, Dict, List, Mapping
+from typing import Callable, Dict, List, Mapping, Tuple
 
 from orch import spec, ticket
 from orch.autopilot import autopilot_active
-from orch.common import (capture, die, err_line, file_lines, plain_number, read_raw,
-                         text_file_write)
+from orch.common import capture, die, err_line, file_lines, lines_of, read_raw, text_file_write
 from orch.flow_state import flow_state_file, require_issue
 from orch.issue import Issue
 from orch.marked_comment import marked_comment_write
@@ -49,14 +50,8 @@ from orch.spec_review_batch import (SPEC_REVIEW_LENSES, TITLES, Violations, decl
 from orch.spec_review_tickets import (TICKETS_NO_BREAKDOWN, TICKETS_NO_EDIT, tickets_answer,
                                       tickets_follow, tickets_lines, tickets_parse)
 
-USAGE = ("usage: orch.sh spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]"
-         " [--tickets <answer> [--ticket-reasons <file>]] [--issue <n>] [--unattended]"
-         " [--host-fallbacks <file>] | orch.sh spec-review apply <dir> --resume --round <k>/<n>")
-
-# The options that take a value, and those of them whose value is a file the
-# saved answer copies into the round directory.
-VALUE_OPTIONS = ("--round", "--reasons", "--issue", "--host-fallbacks", "--tickets",
-                 "--ticket-reasons")
+# The value options of apply (orch/spec_review.py's APPLY_VALUE_OPTIONS)
+# whose value is a file the saved answer copies into the round directory.
 FILE_OPTIONS = ("--reasons", "--ticket-reasons", "--host-fallbacks")
 
 
@@ -197,83 +192,17 @@ def changelog(result, reasons: Dict[int, str], round_arg: str, unattended: bool,
     return out.rstrip("\n")
 
 
-class Options:
-    """apply's parsed arguments: <saved> the ones the saved answer keeps, in
-    the order given."""
-
-    def __init__(self) -> None:
-        self.directory = self.answer = self.round = self.reasons = self.issue = ""
-        self.hosts_file = self.ticket_answer = self.ticket_reasons = ""
-        self.have_answer = self.unattended = False
-        self.saved: List[str] = []
-
-
-def _parse(args: List[str]) -> Options:
-    options = Options()
-    i = 0
-    while i < len(args):
-        arg = args[i]
-        if arg in VALUE_OPTIONS:
-            if i + 1 >= len(args) or not args[i + 1]:
-                die("%s needs a value (%s)" % (arg, USAGE))
-            value = args[i + 1]
-            options.saved += [arg, value]
-            attribute = {"--round": "round", "--reasons": "reasons", "--issue": "issue",
-                         "--host-fallbacks": "hosts_file", "--tickets": "ticket_answer",
-                         "--ticket-reasons": "ticket_reasons"}[arg]
-            setattr(options, attribute, value)
-            i += 2
-            continue
-        if arg == "--unattended":
-            options.unattended = True
-            options.saved.append(arg)
-            i += 1
-            continue
-        # An override answer may begin with -, as -4: before <dir> any leading
-        # dash makes an unknown option, after it only a double one - one dash
-        # is stripped first, so a single dash starts the answer.
-        option_like = arg if not options.directory else (arg[1:] if arg.startswith("-") else arg)
-        if option_like.startswith("-"):
-            die("unknown option: %s (%s)" % (arg, USAGE))
-        if not options.directory:
-            options.directory = arg
-        elif not options.have_answer:
-            options.answer, options.have_answer = arg, True
-            options.saved.append(arg)
-        else:
-            die(USAGE)
-        i += 1
-    return options
-
-
-def _resume_args(given: List[str]) -> List[str]:
-    """`apply <dir> --resume --round <k>/<n>`'s arguments: <dir>, then the
-    answer the dead apply saved, after its own checks."""
-    directory = round_arg = ""
-    i = 0
-    while i < len(given):
-        arg = given[i]
-        if arg == "--round":
-            if i + 1 >= len(given) or not given[i + 1]:
-                die("--round needs a value (%s)" % USAGE)
-            round_arg = given[i + 1]
-            i += 2
-        elif arg.startswith("-"):
-            die("--resume takes only <dir> and --round <k>/<n>, got: %s (%s)" % (arg, USAGE))
-        else:
-            if directory:
-                die(USAGE)
-            directory = arg
-            i += 1
-    if not directory or not round_arg:
-        die(USAGE)
+def saved_answer(directory: str) -> Tuple[str, List[str]]:
+    """`apply <dir> --resume`'s round directory, its trailing slash dropped,
+    and the answer the dead apply saved in it; dies when it holds no apply
+    to resume."""
     if not os.path.isdir(directory):
         die("no such directory: " + directory)
     directory = directory[:-1] if directory.endswith("/") else directory
     if spec.spec_round_state(directory) != "applying":
         die("--resume: %s holds no %s - there is no apply to resume; run apply with its answer"
             % (directory, spec.spec_round_answer_name()))
-    return [directory, round_arg] + spec.spec_round_answer_load(directory)
+    return directory, spec.spec_round_answer_load(directory)
 
 
 def _hosts(path: str) -> str:
@@ -304,9 +233,7 @@ def _held_blocks(result) -> str:
     `@@ lens` lines, from the batch file as validate read it: every line
     newline-ended, as grep and awk print them."""
     held = {item.n for item in result.batch.items if item.fundamental}
-    lines = result.batch_text.split("\n")
-    if lines[-1] == "":
-        lines.pop()
+    lines = lines_of(result.batch_text)
     lens_lines = [line + "\n" for line in lines if line.startswith("@@ lens ")]
     item_lines = []
     keep = False
@@ -319,46 +246,14 @@ def _held_blocks(result) -> str:
     return "".join(lens_lines + item_lines)
 
 
-def apply(argv: List[str], gh_of: Callable[[], object], git, env: Mapping[str, str],
-          root: str) -> int:
-    """`spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
-    [--tickets <answer> [--ticket-reasons <file>]] [--issue <n>]
-    [--unattended] [--host-fallbacks <file>]`, or `spec-review apply <dir>
-    --resume --round <k>/<n>`: its exit code, 3 for the ticket pause. <gh_of>
-    makes the gh adapter, at the first GitHub call."""
-    resume = "--resume" in argv
-    given = [arg for arg in argv if arg != "--resume"]
-    resumed_round = ""
-    if resume:
-        resumed = _resume_args(given)
-        resumed_dir, resumed_round = resumed[0], resumed[1]
-        given = [resumed_dir] + resumed[2:]
-    options = _parse(given)
-    if resume and resumed_round != options.round:
-        die("--resume --round %s: the saved answer in %s is for round %s"
-            % (resumed_round, resumed_dir, options.round))
-    if not options.directory or not options.have_answer:
-        die(USAGE)
-    if not options.round:
-        die("--round <k>/<n> is required (%s)" % USAGE)
-    spec.spec_round_count_parse(options.round)
-    issue = options.issue
-    if issue and not plain_number(issue):
-        die("--issue must be a plain issue number, got: " + issue)
-    ticket_answer = options.ticket_answer
-    if ticket_answer not in ("", "recommended", "all", "none", "retire") and re.search(
-            r"[^0-9, ]", ticket_answer):
-        die("--tickets wants recommended, all, none, retire or a list such as 1, 3, got: "
-            + ticket_answer)
-    if options.ticket_reasons and not ticket_answer:
-        die("--ticket-reasons goes with --tickets: it holds the ticket answer's decline reasons")
-    if options.unattended:
-        if not issue:
-            die("--unattended needs --issue: an unattended spec review is a standalone one")
-        if options.answer != "recommended":
-            die("--unattended takes only the answer recommended, got: " + options.answer)
-        if ticket_answer not in ("", "recommended"):
-            die("--unattended takes only --tickets recommended, got: " + ticket_answer)
+def apply_answer(options, resume: bool, gh_of: Callable[[], object], git,
+                 env: Mapping[str, str], root: str) -> int:
+    """apply's run once orch/spec_review.py's apply has parsed and checked
+    its arguments, <options>: the round directory's checks, the answer
+    validated and applied, the ticket step and the GitHub writes - its exit
+    code, 3 for the ticket pause. <resume> is a --resume run's; <gh_of> makes
+    the gh adapter, at the first GitHub call."""
+    issue, ticket_answer = options.issue, options.ticket_answer
     directory = options.directory
     if not os.path.isdir(directory):
         die("no such directory: " + directory)

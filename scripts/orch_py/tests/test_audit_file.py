@@ -39,14 +39,6 @@ def temp_dir(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def root(tmp_path):
-    """The checkout's root: no triage-labels doc unless a test writes one."""
-    path = tmp_path / "repo"
-    path.mkdir()
-    return path
-
-
-@pytest.fixture
 def finding(tmp_path):
     """The finding file, holding FINDING."""
     path = tmp_path / "finding.md"

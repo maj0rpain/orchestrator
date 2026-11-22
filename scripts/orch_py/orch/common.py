@@ -59,6 +59,12 @@ def plain_number(text: str) -> bool:
     return text.isdigit() and text.isascii()
 
 
+def plain_positive_number(text: str) -> bool:
+    """Whether <text> is a plain number (plain_number) with no leading zero,
+    as bash's `''|*[!0-9]*|0*` refusal reads one."""
+    return plain_number(text) and not text.startswith("0")
+
+
 _NUMBER = re.compile(r"[0-9]+\.?[0-9]*|\.[0-9]+")
 
 

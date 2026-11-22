@@ -190,6 +190,12 @@ ISSUE_SEARCH_CAP = 1000
 LISTING_UNPARSED = "gh answered a listing that does not parse"
 
 
+def blocker_unparsed(line: str) -> str:
+    """The failure of a blocker listing whose <line> does not parse - the
+    adapter's and its fake's one wording."""
+    return "gh answered a blocker that does not parse: " + line
+
+
 def issue_list_limit(env: Mapping[str, str]) -> int:
     """The most issues one listing asks gh for: ORCH_ISSUE_LIST_LIMIT, a
     test's knob, else 1000."""
@@ -765,8 +771,7 @@ class Gh:
              "repos/{owner}/{repo}/issues/%d/dependencies/blocked_by" % n,
              "--jq", ".[].number"]
         )
-        return parse_numbers(
-            answer, lambda line: "gh answered a blocker that does not parse: " + line)
+        return parse_numbers(answer, blocker_unparsed)
 
     def _issue_api_id(self, n: int) -> str:
         """The issue's REST id, which the sub-issue and dependency writes name
@@ -814,8 +819,7 @@ class Gh:
              "repos/{owner}/{repo}/issues/%d/dependencies/blocked_by" % n,
              "--jq", '.[] | "\\(.number)\\t\\(.state | ascii_upcase)"']
         )
-        return parse_numbered_lines(
-            answer, lambda line: "gh answered a blocker that does not parse: " + line)
+        return parse_numbered_lines(answer, blocker_unparsed)
 
 
 def open_issue_read(

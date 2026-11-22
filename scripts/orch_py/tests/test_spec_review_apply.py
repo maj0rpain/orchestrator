@@ -9,13 +9,12 @@ reached the store; the cases, messages and changelogs are the ones the bash
 spec-review apply sections pinned. The ticket step is test_spec_review_apply_tickets.py's."""
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 
 import pytest
 
-from conftest import comments_of, orch_spec_review, read, snapshot
+from conftest import comments_of, flow_state, orch_spec_review, read, rewrite_lines, snapshot
 
 BODY = """# Spec
 
@@ -163,16 +162,12 @@ def batch_edit(d, old, new):
 
 def batch_line(d, lineno, new):
     """<d>/batch.md with its line <lineno>, numbered from 1, made <new>."""
-    lines = (d / "batch.md").read_text().split("\n")
-    lines[lineno - 1] = new
-    (d / "batch.md").write_text("\n".join(lines))
+    rewrite_lines(d / "batch.md", {lineno: [new]})
 
 
 def batch_drop(d, first, last):
     """<d>/batch.md less its lines <first> to <last>, numbered from 1."""
-    lines = (d / "batch.md").read_text().split("\n")
-    del lines[first - 1:last]
-    (d / "batch.md").write_text("\n".join(lines))
+    rewrite_lines(d / "batch.md", {lineno: [] for lineno in range(first, last + 1)})
 
 
 def apply(root, seed, d, *args, env=None, issue="14", rnd="1/2"):
@@ -213,13 +208,6 @@ def refused(capsys, root, seed, store, d, want, *args, env=None):
     assert kept(d) == before
     assert snapshot(store) == store_before
     return err
-
-
-def flow(root, phase="spec", issue="14"):
-    state = root / ".orchestrator" / "state.json"
-    state.parent.mkdir(parents=True, exist_ok=True)
-    state.write_text(json.dumps({"slug": "sra", "phase": phase, "issue": issue}) + "\n")
-    return state
 
 
 # --- the recommended answer ---------------------------------------------------------
@@ -645,7 +633,7 @@ def test_a_failed_github_write_stops_apply_naming_what_landed(root, seed, capsys
     d = round_dir(root, seed)
     (d / "settled.md").write_text("earlier round\n")
     if in_flow:
-        flow(root)
+        flow_state(root, "spec", "14")
     seed.fail(operation)
 
     assert apply(root, seed, d, "recommended", issue=None if in_flow else "14") == 1
@@ -1058,7 +1046,7 @@ def test_an_attended_apply_of_a_held_round_completes_it(root, seed):
 
 
 def test_flow_mode_applies_on_the_flow_s_issue(root, seed, store):
-    flow(root)
+    flow_state(root, "spec", "14")
     d = round_dir(root, seed)
 
     assert apply(root, seed, d, "recommended", issue=None, rnd="1/1") == 0
@@ -1076,11 +1064,11 @@ def test_flow_mode_applies_on_the_flow_s_issue(root, seed, store):
 ])
 def test_flow_mode_refuses_before_any_write(root, seed, store, capsys, state, message):
     if state == "":
-        flow(root, issue="")
+        flow_state(root, "spec", "")
     elif state == "done":
-        flow(root, phase="done")
+        flow_state(root, "done", "14")
     elif state == "truncated":
-        flow(root).write_text('{"phase": "spec", "iss')
+        flow_state(root, "spec", "14").write_text('{"phase": "spec", "iss')
     d = round_dir(root, seed)
     before = snapshot(store)
 
@@ -1091,7 +1079,7 @@ def test_flow_mode_refuses_before_any_write(root, seed, store, capsys, state, me
 
 
 def test_issue_mode_never_reads_state_json(root, seed, store):
-    flow(root, phase="done").write_text('{"phase": "do')
+    flow_state(root, "done", "14").write_text('{"phase": "do')
     d = round_dir(root, seed)
 
     assert apply(root, seed, d, "recommended") == 0

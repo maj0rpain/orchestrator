@@ -13,7 +13,7 @@ import pytest
 
 from conftest import (UNATTENDED_TAIL, assert_check_passes as assert_passes,
                       assert_check_refused as assert_refused, nudge, orch_issue,
-                      orch_spec_review)
+                      orch_spec_review, refused_lines as refused, rewrite_lines)
 from orch import spec_review
 
 USAGE = "usage: orch.sh spec-review check <dir> [--tickets | --full <n>...]"
@@ -110,17 +110,6 @@ def round_dir(root, name="round"):
     return d
 
 
-def rewrite(path, changes):
-    """<path>'s lines rewritten as one sed run rewrites them: <changes> maps
-    a line number of the file as it was to the lines that take its place -
-    [] deletes it, and ... in the list stands for the line itself."""
-    lines = path.read_text().split("\n")
-    out = []
-    for number, line in enumerate(lines, 1):
-        out += [line if part is ... else part for part in changes.get(number, [line])]
-    path.write_text("\n".join(out))
-
-
 def passes(items, anchors, body="spec.md"):
     return ("batch.md passes: %d items, %d anchors, each matching once in %s, and the all"
             " answer applies cleanly" % (items, anchors, body))
@@ -188,7 +177,7 @@ def test_the_implementability_map_is_never_parsed(root, capsys):
 
 def test_a_resolved_item_alone_makes_the_minor_edits_list(root, capsys):
     d = round_dir(root)
-    rewrite(d / "batch.md", {6: ["@@ item 1 fidelity apply material"],
+    rewrite_lines(d / "batch.md", {6: ["@@ item 1 fidelity apply material"],
                              14: ["@@ why Alpha is stale"]})
 
     assert check(root, d) == 0
@@ -199,7 +188,7 @@ def test_a_resolved_item_alone_makes_the_minor_edits_list(root, capsys):
 
 def test_a_batch_with_nothing_minor_or_resolved_has_no_minor_edits_heading(root, capsys):
     d = round_dir(root)
-    rewrite(d / "batch.md", {6: ["@@ item 1 fidelity apply material"],
+    rewrite_lines(d / "batch.md", {6: ["@@ item 1 fidelity apply material"],
                              14: ["@@ why Alpha is stale"],
                              25: [..., "@@ finding testability 2"],
                              41: [], 42: [], 43: []})
@@ -211,7 +200,7 @@ def test_a_batch_with_nothing_minor_or_resolved_has_no_minor_edits_heading(root,
 
 def test_a_minor_recommend_decline_line_carries_its_reason(root, capsys):
     d = round_dir(root)
-    rewrite(d / "batch.md", {15: ["@@ item 2 consistency decline minor the plan chose this"],
+    rewrite_lines(d / "batch.md", {15: ["@@ item 2 consistency decline minor the plan chose this"],
                              23: [""]})
 
     assert check(root, d) == 0
@@ -486,10 +475,6 @@ W30 = "  ".join("w%d" % k for k in range(1, 31))
 W31 = W30 + "\tw31"
 
 
-def refused(*lines):
-    return "".join("orch: %s\n" % line for line in lines)
-
-
 @pytest.mark.parametrize("changes, err", [
     # Marks.
     ({6: ["@@ item 1 fidelity apply"]},
@@ -575,7 +560,7 @@ def refused(*lines):
 ])
 def test_a_batch_violation_is_refused_naming_its_line(root, capsys, changes, err):
     d = round_dir(root)
-    rewrite(d / "batch.md", changes)
+    rewrite_lines(d / "batch.md", changes)
 
     assert_refused(root, capsys, d, refused(*err))
 
@@ -745,7 +730,7 @@ def test_a_batch_violation_is_refused_naming_its_line(root, capsys, changes, err
 ])
 def test_every_batch_and_lens_file_refusal_is_bash_s(root, capsys, changes, lenses, err):
     d = round_dir(root)
-    rewrite(d / "batch.md", changes)
+    rewrite_lines(d / "batch.md", changes)
     for lens, text in lenses.items():
         path = d / ("lens-%s.md" % lens)
         if text is None:
@@ -758,14 +743,15 @@ def test_every_batch_and_lens_file_refusal_is_bash_s(root, capsys, changes, lens
 
 def test_thirty_word_summaries_pass(root, capsys):
     d = round_dir(root)
-    rewrite(d / "batch.md", {17: ["@@ summary " + W30], 35: ["@@ summary " + W30]})
+    rewrite_lines(d / "batch.md", {17: ["@@ summary " + W30], 35: ["@@ summary " + W30]})
 
     assert check(root, d) == 0
 
 
 def test_the_fundamental_mark_is_read_as_material_in_an_autopilot_flow(root, capsys):
     d = round_dir(root)
-    rewrite(d / "batch.md", {15: ["@@ item 2 consistency decline fundamental the plan chose this"]})
+    rewrite_lines(d / "batch.md",
+                  {15: ["@@ item 2 consistency decline fundamental the plan chose this"]})
 
     assert check(root, d, env={"ORCH_AUTOPILOT": "1"}) == 0
 
@@ -774,7 +760,7 @@ def test_the_fundamental_mark_is_read_as_material_in_an_autopilot_flow(root, cap
 
 def test_a_resolved_item_refuses_the_fundamental_mark_in_an_autopilot_flow(root, capsys):
     d = round_dir(root)
-    rewrite(d / "batch.md", {41: ["@@ item 4 testability resolved fundamental"]})
+    rewrite_lines(d / "batch.md", {41: ["@@ item 4 testability resolved fundamental"]})
 
     assert check(root, d, env={"ORCH_AUTOPILOT": "1"}) == 1
 
@@ -792,7 +778,7 @@ def test_a_malformed_lens_file_is_refused(root, capsys):
 
 def test_a_malformed_lens_file_after_a_content_violation_prints_both(root, capsys):
     d = round_dir(root)
-    rewrite(d / "batch.md", {17: ["@@ summary " + W31]})
+    rewrite_lines(d / "batch.md", {17: ["@@ summary " + W31]})
     (d / "lens-consistency.md").write_text("preamble\n@@ finding 1\nx\n")
 
     assert_refused(root, capsys, d, refused(
@@ -867,7 +853,7 @@ def test_a_batch_with_crlf_on_every_line_passes_as_its_lf_twin(root, capsys):
 ])
 def test_a_crlf_batch_is_refused_as_its_lf_twin_quoting_no_cr(root, capsys, changes, tail, err):
     d = round_dir(root)
-    rewrite(d / "batch.md", changes)
+    rewrite_lines(d / "batch.md", changes)
     append(d / "batch.md", tail)
     crlf(d / "batch.md")
 
@@ -878,7 +864,7 @@ def consolidation_quote_dir(root):
     """The fixture batch with item 1 a material consolidation item folding
     in one comment."""
     d = round_dir(root)
-    rewrite(d / "batch.md", {
+    rewrite_lines(d / "batch.md", {
         6: ["@@ item 1 consolidation apply material"],
         7: [..., "@@ comment @alice 2026-01-02T00:00:00Z", "@@ quote", "Alpha should say",
             "alpha prime."],
@@ -1164,7 +1150,7 @@ def test_a_full_refusal_leaves_an_earlier_view_md_as_it_was(root, capsys, args, 
 
 def test_full_on_a_bad_batch_refuses_as_check_does(root, capsys):
     d = round_dir(root)
-    rewrite(d / "batch.md", {17: ["@@ summary " + W31]})
+    rewrite_lines(d / "batch.md", {17: ["@@ summary " + W31]})
     (d / "view.md").write_text("old view\n")
 
     assert_refused(root, capsys, d,
@@ -1222,7 +1208,7 @@ def test_a_failing_check_after_a_passing_one_leaves_the_earlier_view_md(root, ca
     d = round_dir(root)
     assert check(root, d) == 0
     capsys.readouterr()
-    rewrite(d / "batch.md", {19: ["Nowhere."]})
+    rewrite_lines(d / "batch.md", {19: ["Nowhere."]})
 
     assert_refused(root, capsys, d,
                    refused("batch.md line 18: item 2: its anchor matches no text in the body"))

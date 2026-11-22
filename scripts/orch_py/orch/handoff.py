@@ -7,8 +7,9 @@ A line inside a code fence (orch.common.fenced), its delimiters included, is
 never a heading: it neither opens nor closes a section, and inside an open
 one it is part of the body.
 
-The phase table is a copy of the bash side's (PHASE_TABLE), which Python
-does not read, pinned to it by tests/test_handoff.py's drift test. `handoff
+The phase table is the one Python copy of the bash side's (PHASE_TABLE),
+which Python does not read, pinned to it by tests/test_handoff.py's drift
+test; orch/standing.py's PHASES is its first column. `handoff
 path` resolves through the Handoff store's adapter handoff_store chooses per
 call: the file adapter, the handoff directory's files, and in an autopilot
 session the comment adapter, marked comments on the recorded issue, read

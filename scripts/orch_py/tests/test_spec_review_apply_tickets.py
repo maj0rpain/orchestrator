@@ -12,8 +12,8 @@ import os
 
 import pytest
 
-from conftest import comments_of, read, snapshot
-from test_spec_review_apply import (AUTOPILOT, BODY, CLEAN, apply, batch_edit, flow, on_disk,
+from conftest import comments_of, flow_state, read, snapshot
+from test_spec_review_apply import (AUTOPILOT, BODY, CLEAN, apply, batch_edit, on_disk,
                                     refused, resume, round_dir)
 
 T20 = "## What to build\n\nBuild alpha.\n\n## Blocked by\n\nNone (can start immediately)\n"
@@ -496,7 +496,7 @@ def test_an_unreadable_ticket_copy_is_refused_naming_its_tickets_md_line(root, s
 def test_every_ticket_step_error_names_its_line_and_writes_nothing(
         root, seed, store, capsys, in_flow, old, new, answer, message):
     if in_flow:
-        flow(root)
+        flow_state(root, "spec", "14")
     d = tickets_dir(root, seed)
     fetch(d)
     seed.issue(99, "open")
@@ -594,7 +594,7 @@ def test_an_edge_whose_blocker_is_closed_is_added(root, seed, store):
 def test_a_failed_ticket_step_write_stops_apply_naming_what_landed(
         root, seed, capsys, in_flow, how, operation, after, message):
     if in_flow:
-        flow(root)
+        flow_state(root, "spec", "14")
     d = tickets_dir(root, seed)
     fetch(d)
     seed.fail_after(operation, after)

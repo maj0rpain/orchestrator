@@ -34,7 +34,7 @@ import re
 from typing import Dict, List, NoReturn, Optional, Tuple
 
 from orch.autopilot import autopilot_active
-from orch.common import die, read_raw, warn
+from orch.common import die, lines_of, plain_number, plain_positive_number, read_raw, warn
 
 # The lenses, in the lens table's order - the changelog's section order.
 SPEC_REVIEW_LENSES = ("fidelity", "consistency", "testability", "implementability")
@@ -119,11 +119,6 @@ def is_at_line(line: str) -> bool:
 
 def without_cr(line: str) -> str:
     return line[:-1] if line.endswith("\r") else line
-
-
-def positive_number(text: str) -> bool:
-    """bash's refusal of `''|*[!0-9]*|0*`: ASCII digits, the first not 0."""
-    return re.fullmatch(r"[1-9][0-9]*", text) is not None
 
 
 def capital_letter(text: str) -> bool:
@@ -472,7 +467,7 @@ class _BatchParser:
         if self.item is not None:
             item_check(self.item, self.violations)
         n, group, rec, rec_tail = read_words(args, 4)
-        if not positive_number(n):
+        if not plain_positive_number(n):
             self.stop(lineno, "item number must be a positive number, got '%s'" % n)
         if self.batch.item(n) is not None:
             self.stop(lineno, "a second item %s" % n)
@@ -554,7 +549,7 @@ class _BatchParser:
         lens, k, extra = read_words(args, 3)
         if not lens or extra:
             self.stop(lineno, "@@ finding wants <lens> <k>")
-        if not positive_number(k):
+        if not plain_positive_number(k):
             self.stop(lineno, "@@ finding wants <lens> <k>, k a positive number")
         self.item.findings.append(Finding(lens, k, lineno))
 
@@ -649,9 +644,7 @@ def batch_parse(text: str, violations: Violations, autopilot: bool) -> Batch:
     only when <autopilot>, read as material. The citations' ranges are
     checked later, against the lens files."""
     parser = _BatchParser(violations, autopilot)
-    lines = text.split("\n")
-    if lines[-1] == "":
-        lines.pop()
+    lines = lines_of(text)
     for lineno, line in enumerate(lines, 1):
         parser.line(without_cr(line), lineno)
     return parser.finish(len(lines))
@@ -668,9 +661,7 @@ def lens_parse(directory: str, lens: str, violations: Violations) -> List[Tuple[
                         % (name, directory, lens))
     findings: List[List] = []
     none = False
-    lines = text.split("\n")
-    if lines[-1] == "":
-        lines.pop()
+    lines = lines_of(text)
     lineno = 0
     for raw in lines:
         lineno += 1
@@ -844,7 +835,7 @@ def answer_dispositions(batch: Batch, answer: str, run: str = "") -> Dict[int, D
             else:
                 n = re.match(r"[^A-Za-z]*", token).group()
                 letter = token[len(n):]
-            if (not re.fullmatch(r"[0-9]+", n)
+            if (not plain_number(n)
                     or not (re.fullmatch(r"[A-Za-z]", letter) if not sign else not letter)):
                 die("the answer '%s' %s - '%s' is not <n><letter>, -<n> or +<n>"
                     % (answer, ANSWER_FORMS, token))
@@ -914,7 +905,7 @@ def _reason_split(flag: str, lineno: int, line: str) -> Tuple[str, str]:
     and its reason, or a death naming <flag>'s line."""
     n, colon, reason = line.partition(":")
     reason = trim(reason)
-    if not (re.fullmatch(r"[0-9]+", n) and colon and reason and line.startswith(n + ": ")):
+    if not (plain_number(n) and colon and reason and line.startswith(n + ": ")):
         die("%s line %d: want <n>: <reason>, got '%s'" % (flag, lineno, line))
     return n, reason
 

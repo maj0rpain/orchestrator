@@ -5,12 +5,11 @@ exclude file under tmp_path, each checked by its stdout, its exit code, its
 replaced answered."""
 from __future__ import annotations
 
-import json
 
 import pytest
 
 from orch.git import FakeGit
-from conftest import orch_review_pass
+from conftest import flow_state, orch_review_pass, state_json
 
 ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
 BRANCH = "quick/12-foo"
@@ -42,18 +41,6 @@ def checkout_git(root, branch=BRANCH, base="trunk"):
 
 def pass_dir(root, branch=BRANCH):
     return root / ".orchestrator" / "review-pass" / branch
-
-
-def state_of(root):
-    return root / ".orchestrator" / "state.json"
-
-
-def flow(root, phase, issue, branch):
-    """A state.json recording a flow at <phase> on <issue> and <branch>, as
-    JSON values (None for null)."""
-    state_of(root).parent.mkdir(parents=True, exist_ok=True)
-    state_of(root).write_text(
-        json.dumps({"slug": "x", "phase": phase, "issue": issue, "branch": branch}) + "\n")
 
 
 def begin(seed, git, *args, env=None):
@@ -157,8 +144,8 @@ def test_with_nothing_answering_main_is_the_base(root, seed, capsys):
 
 
 def test_the_base_branch_refusal_comes_before_the_state_read(root, seed, capsys):
-    state_of(root).parent.mkdir()
-    state_of(root).write_text("{\n")
+    state_json(root).parent.mkdir()
+    state_json(root).write_text("{\n")
 
     assert begin(seed, checkout_git(root, base=BRANCH), "12") == 1
 
@@ -178,19 +165,19 @@ def review_loop_refusal(issue, phase, next_cmd):
 @pytest.mark.parametrize("phase", ["implement", "review"])
 def test_an_active_flow_holding_the_issue_refuses_it_naming_the_next_phase_command(
         root, seed, capsys, phase, env, next_cmd):
-    flow(root, phase, 12, "orch/12-x")
-    before = state_of(root).read_bytes()
+    flow_state(root, phase, 12, "orch/12-x")
+    before = state_json(root).read_bytes()
 
     assert begin(seed, checkout_git(root), "12", env=env) == 1
 
     assert capsys.readouterr() == ("", review_loop_refusal(12, phase, next_cmd))
-    assert state_of(root).read_bytes() == before
+    assert state_json(root).read_bytes() == before
     assert not pass_dir(root).exists()
 
 
 def test_an_active_flow_holding_the_branch_under_another_issue_names_its_own_issue(
         root, seed, capsys):
-    flow(root, "review", 30, BRANCH)
+    flow_state(root, "review", 30, BRANCH)
 
     assert begin(seed, checkout_git(root), "12") == 1
 
@@ -201,19 +188,19 @@ def test_an_active_flow_holding_the_branch_under_another_issue_names_its_own_iss
                          ids=["off-claude", "on-claude"])
 def test_a_flow_at_spec_holding_the_issue_refuses_it_as_not_yet_built(
         root, seed, capsys, env, next_cmd):
-    flow(root, "spec", 12, None)
-    before = state_of(root).read_bytes()
+    flow_state(root, "spec", 12, None)
+    before = state_json(root).read_bytes()
 
     assert begin(seed, checkout_git(root), "12", env=env) == 1
 
     assert capsys.readouterr() == (
         "", "orch: the active flow holds issue #12 at phase spec - its change has not been"
             " built yet; run %s\n" % next_cmd)
-    assert state_of(root).read_bytes() == before
+    assert state_json(root).read_bytes() == before
 
 
 def test_a_phase_that_is_no_flow_phase_refuses_it_pointing_at_doctor(root, seed, capsys):
-    flow(root, "bogus", 12, None)
+    flow_state(root, "bogus", 12, None)
 
     assert begin(seed, checkout_git(root), "12", env=ON_CLAUDE) == 1
 
@@ -223,28 +210,28 @@ def test_a_phase_that_is_no_flow_phase_refuses_it_pointing_at_doctor(root, seed,
 
 
 def test_a_done_flow_holding_the_issue_and_branch_holds_nothing(root, seed, capsys):
-    flow(root, "done", 12, BRANCH)
-    before = state_of(root).read_bytes()
+    flow_state(root, "done", 12, BRANCH)
+    before = state_json(root).read_bytes()
 
     assert begin(seed, checkout_git(root), "12") == 0
 
     assert capsys.readouterr() == ("%s/iteration-01\n" % pass_dir(root), "")
-    assert state_of(root).read_bytes() == before
+    assert state_json(root).read_bytes() == before
 
 
 def test_an_active_flow_on_another_issue_and_branch_lets_it_through(root, seed, capsys):
-    flow(root, "implement", 14, "orch/14-x")
-    before = state_of(root).read_bytes()
+    flow_state(root, "implement", 14, "orch/14-x")
+    before = state_json(root).read_bytes()
 
     assert begin(seed, checkout_git(root), "12") == 0
 
     assert capsys.readouterr() == ("%s/iteration-01\n" % pass_dir(root), "")
-    assert state_of(root).read_bytes() == before
+    assert state_json(root).read_bytes() == before
 
 
 def test_an_unreadable_state_file_refuses_it(root, seed, capsys):
-    state_of(root).parent.mkdir()
-    state_of(root).write_text("{\n")
+    state_json(root).parent.mkdir()
+    state_json(root).write_text("{\n")
 
     assert begin(seed, checkout_git(root), "12") == 1
 
@@ -257,7 +244,7 @@ def test_with_no_state_file_begin_works_and_writes_none(root, seed, capsys):
     assert begin(seed, checkout_git(root), "12") == 0
 
     assert capsys.readouterr() == ("%s/iteration-01\n" % pass_dir(root), "")
-    assert not state_of(root).exists()
+    assert not state_json(root).exists()
 
 
 # --- the writes ----------------------------------------------------------------
@@ -274,7 +261,7 @@ def test_begin_excludes_the_plugin_s_directories(root, seed, capsys):
 
 
 def test_a_hold_refusal_writes_no_exclude_line(root, seed, capsys):
-    flow(root, "review", 12, BRANCH)
+    flow_state(root, "review", 12, BRANCH)
 
     assert begin(seed, checkout_git(root), "12") == 1
 

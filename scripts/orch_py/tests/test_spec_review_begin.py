@@ -5,12 +5,11 @@ stdout, its exit code, its `orch:` message and the files it leaves - as the
 bash spec-review begin answered."""
 from __future__ import annotations
 
-import json
 import os
 
 import pytest
 
-from conftest import orch_spec_review
+from conftest import flow_state, orch_spec_review, state_json
 
 USAGE = "orch: usage: orch.sh spec-review begin <n> [--carry]\n"
 ON_CLAUDE = {"CLAUDECODE": "1"}
@@ -18,16 +17,6 @@ ON_CLAUDE = {"CLAUDECODE": "1"}
 
 def review_dir(root, n="14"):
     return root / ".orchestrator" / "spec-review" / n
-
-
-def state_of(root):
-    return root / ".orchestrator" / "state.json"
-
-
-def flow(root, phase, issue):
-    state_of(root).parent.mkdir(parents=True, exist_ok=True)
-    state_of(root).write_text(
-        json.dumps({"slug": "x", "phase": phase, "issue": issue, "branch": None}) + "\n")
 
 
 def seed_review(root):
@@ -112,20 +101,20 @@ COMMANDS = {
 @pytest.mark.parametrize("phase", ["spec", "implement", "review"])
 def test_an_active_flow_holding_the_issue_refuses_it_naming_the_next_step(
         root, capsys, phase, carry, on_claude):
-    flow(root, phase, 14)
+    flow_state(root, phase, 14)
     seed_review(root)
-    before = state_of(root).read_bytes()
+    before = state_json(root).read_bytes()
 
     assert begin(root, "14", *carry, env=ON_CLAUDE if on_claude else {}) == 1
 
     assert capsys.readouterr() == (
         "", "orch: " + HOLDS[phase] % COMMANDS[(phase, on_claude)] + "\n")
     assert (review_dir(root) / "spec.md").read_text() == "stale\n"
-    assert state_of(root).read_bytes() == before
+    assert state_json(root).read_bytes() == before
 
 
 def test_a_flow_at_a_phase_outside_the_flow_s_phases_is_refused_pointing_at_doctor(root, capsys):
-    flow(root, "bogus", 14)
+    flow_state(root, "bogus", 14)
     seed_review(root)
 
     assert begin(root, "14") == 1
@@ -137,32 +126,32 @@ def test_a_flow_at_a_phase_outside_the_flow_s_phases_is_refused_pointing_at_doct
 
 
 def test_an_active_flow_on_another_issue_lets_the_issue_through(root, capsys):
-    flow(root, "implement", 14)
+    flow_state(root, "implement", 14)
     seed_review(root)
-    before = state_of(root).read_bytes()
+    before = state_json(root).read_bytes()
 
     assert begin(root, "15") == 0
 
     assert capsys.readouterr() == ("%s/\n" % review_dir(root, "15"), "")
     assert (review_dir(root) / "spec.md").read_text() == "stale\n"
-    assert state_of(root).read_bytes() == before
+    assert state_json(root).read_bytes() == before
 
 
 def test_a_done_flow_holds_nothing(root, capsys):
-    flow(root, "done", 14)
+    flow_state(root, "done", 14)
     seed_review(root)
-    before = state_of(root).read_bytes()
+    before = state_json(root).read_bytes()
 
     assert begin(root, "14") == 0
 
     assert capsys.readouterr() == ("%s/\n" % review_dir(root), "")
     assert entries(root) == []
-    assert state_of(root).read_bytes() == before
+    assert state_json(root).read_bytes() == before
 
 
 def test_a_truncated_state_json_is_refused_as_unreadable(root, capsys):
-    flow(root, "spec", 99)
-    state_of(root).write_text('{"slug":"x","pha')
+    flow_state(root, "spec", 99)
+    state_json(root).write_text('{"slug":"x","pha')
     seed_review(root)
 
     assert begin(root, "14") == 1
@@ -182,7 +171,7 @@ def test_with_no_state_json_begin_wipes_the_directory_and_writes_no_state(root, 
 
     assert capsys.readouterr() == ("%s/\n" % review_dir(root), "")
     assert entries(root) == []
-    assert not state_of(root).exists()
+    assert not state_json(root).exists()
 
 
 def test_a_directory_never_there_is_created_empty(root, capsys):

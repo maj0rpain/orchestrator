@@ -49,8 +49,8 @@ def seed(store):
 @pytest.fixture
 def root(tmp_path):
     """The checkout's root, tmp_path/repo resolved, an empty directory - the
-    toplevel a spec-review test's FakeGit names. A test file whose checkout
-    needs more defines its own."""
+    toplevel a test's FakeGit names; no triage-labels doc unless a test
+    writes one. A test file whose checkout needs more defines its own."""
     path = tmp_path.resolve() / "repo"
     path.mkdir()
     return path
@@ -91,6 +91,21 @@ def comments_of(store, n):
         bodies.append(read(store, "issues", n, "comments", k, "body"))
         k += 1
     return bodies
+
+
+def state_json(root):
+    """The flow's state.json in the checkout at <root>, a Path."""
+    return root / ".orchestrator" / "state.json"
+
+
+def flow_state(root, phase, issue, branch=None):
+    """<root>'s state.json, written to record a flow at <phase> on <issue>
+    and <branch>, each as a JSON value (None for null); its path."""
+    state = state_json(root)
+    state.parent.mkdir(parents=True, exist_ok=True)
+    state.write_text(
+        json.dumps({"slug": "x", "phase": phase, "issue": issue, "branch": branch}) + "\n")
+    return state
 
 
 def write_labels_doc(root, text):
@@ -392,6 +407,27 @@ def assert_check_refused(root, capsys, d, err, *args):
 
     assert capsys.readouterr() == ("", err)
     assert _round_files(d) == before
+
+
+def refused_lines(*lines):
+    """A refusal's stderr: each of <lines> as an `orch: ` line."""
+    return "".join("orch: %s\n" % line for line in lines)
+
+
+def lines_rewritten(text, changes):
+    """<text>'s lines rewritten as one sed run rewrites them: <changes> maps
+    a line number of <text> to the lines that take its place - [] deletes
+    it, and ... in the list stands for the line itself."""
+    out = []
+    for number, line in enumerate(text.split("\n"), 1):
+        out += [line if part is ... else part for part in changes.get(number, [line])]
+    return "\n".join(out)
+
+
+def rewrite_lines(path, changes):
+    """The file at <path>, a Path, with its lines rewritten by <changes>, as
+    lines_rewritten takes them."""
+    path.write_text(lines_rewritten(path.read_text(), changes))
 
 
 def edit(path, old, new):

@@ -28,13 +28,12 @@ Tickets lines (tickets_lines).
 from __future__ import annotations
 
 import os
-import re
 from typing import Dict, List, NoReturn, Optional, Tuple
 
-from orch.common import die, plain_number, read_raw
+from orch.common import die, lines_of, plain_number, plain_positive_number, read_raw
 from orch.spec_review_batch import (Block, BlockReader, Edit, Edited, Malformed, Violations,
                                     answer_tokens, at_line, decline_reason, is_at_line,
-                                    one_line, positive_number, read_words, trim, without_cr)
+                                    one_line, read_words, trim, without_cr)
 from orch.ticket import blocked_by_section_numbers, ticket_listing_state, ticket_sub_issues
 
 # The Tickets lines that report no ticket outcome.
@@ -55,7 +54,9 @@ class TicketItem:
         self.summary: Optional[str] = None
         self.edit: Optional[Edit] = None
 
-    def text(self) -> bool:
+    def is_text_edit(self) -> bool:
+        """Whether the item edits text - a ticket's body or the `## Ticket`
+        section - rather than an edge."""
         return self.kind in ("ticket", "section")
 
 
@@ -86,7 +87,7 @@ class Tickets:
 def item_check(item: TicketItem, violations: Violations) -> None:
     """Reports, naming the item's header line, a text item lacking its
     summary or its anchor/replace block - each a content violation."""
-    if not item.text():
+    if not item.is_text_edit():
         return
     if item.summary is None:
         violations.content("tickets.md line %d: item %s has no @@ summary" % (item.line, item.n))
@@ -157,7 +158,7 @@ class _TicketsParser:
     def kw_item(self, args: str, lineno: int) -> None:
         self.item_done()
         n, kind, tail = read_words(args, 3)
-        if not positive_number(n):
+        if not plain_positive_number(n):
             self.stop(lineno, "item number must be a positive number, got '%s'" % n)
         if self.tickets.item(n) is not None:
             self.stop(lineno, "a second item " + n)
@@ -194,7 +195,7 @@ class _TicketsParser:
     def kw_summary_anchor(self, keyword: str, args: str, lineno: int) -> None:
         if self.item is None:
             self.stop(lineno, "@@ %s outside an item" % keyword)
-        if not self.item.text():
+        if not self.item.is_text_edit():
             self.stop(lineno, "an edge item carries no @@ " + keyword)
         if keyword == "summary":
             if not args:
@@ -236,9 +237,7 @@ def tickets_parse(text: str, violations: Violations) -> Tickets:
     by its line number, after the content violations collected before it; a
     content violation goes to <violations>."""
     parser = _TicketsParser(violations)
-    lines = text.split("\n")
-    if lines[-1] == "":
-        lines.pop()
+    lines = lines_of(text)
     for lineno, line in enumerate(lines, 1):
         parser.line(without_cr(line), lineno)
     return parser.finish()
@@ -287,7 +286,7 @@ class TicketsOffline:
         `## Blocked by` as fetched. A problem names the item's `@@ anchor`
         line for a text item, else its header line."""
         what = "tickets.md line %d: ticket item %s" % (item.line, item.n)
-        if item.text():
+        if item.is_text_edit():
             # A text item reported as having no anchor block has nothing to
             # check.
             if item.edit is None:
@@ -345,7 +344,7 @@ def tickets_answer(tickets: Tickets, answer: str) -> TicketAnswer:
     numbers = [item.n for item in tickets.items]
     if answer not in ("recommended", "all", "none"):
         for token in answer_tokens(answer):
-            if not re.fullmatch(r"[0-9]+", token):
+            if not plain_number(token):
                 die("the --tickets answer '%s' is not recommended, all, none, retire or a list such"
                     " as 1, 3 - '%s' is no ticket item" % (answer, token))
             if token not in numbers:
@@ -433,7 +432,7 @@ def tickets_lines(tickets: Tickets, taken: TicketAnswer, reasons: Dict[int, str]
     for index, item in enumerate(tickets.items if not taken.retire else []):
         n = item.n
         if taken.applied(index):
-            if item.text():
+            if item.is_text_edit():
                 lines.append("- (%s) %s" % (n, item.summary))
             elif item.kind == "block":
                 lines.append("- (%s) #%s now blocked by #%s" % (n, item.t, item.b))
@@ -441,7 +440,7 @@ def tickets_lines(tickets: Tickets, taken: TicketAnswer, reasons: Dict[int, str]
                 lines.append("- (%s) #%s no longer blocked by #%s" % (n, item.t, item.b))
             continue
         reason = decline_reason(reasons, index, index in taken.as_recommended, item.arg)
-        if item.text():
+        if item.is_text_edit():
             lines.append('- (%s) "%s" - %s' % (n, one_line(item.edit.replace), reason))
         else:
             lines.append('- (%s) "%s #%s by #%s" - %s' % (n, item.kind, item.t, item.b, reason))

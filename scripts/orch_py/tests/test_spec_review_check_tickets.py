@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import (UNATTENDED_TAIL, assert_check_passes, assert_check_refused, nudge,
-                      orch_spec_review)
+from conftest import (UNATTENDED_TAIL, assert_check_passes, assert_check_refused,
+                      lines_rewritten, nudge, orch_spec_review, refused_lines as refused)
 
 T20 = """## What to build
 
@@ -119,10 +119,6 @@ def tickets_dir(root, name="round", tickets=TICKETS, spec="# Spec\n\nAlpha line.
 def passes(items, anchors):
     return ("tickets.md passes: %d items, %d anchors, each matching once, and the all answer"
             " applies cleanly" % (items, anchors))
-
-
-def refused(*lines):
-    return "".join("orch: %s\n" % line for line in lines)
 
 
 def check(root, *args, env=None):
@@ -310,15 +306,6 @@ def test_check_tickets_reads_no_github(root, capsys, seed):
 HINT = " - a body line starting with @@ is written \\@@"
 
 
-def lines_of(text, changes):
-    """<text>'s lines rewritten as one sed run rewrites them: <changes> maps a
-    line number to the lines that take its place, [] deleting it."""
-    out = []
-    for number, line in enumerate(text.split("\n"), 1):
-        out += changes.get(number, [line])
-    return "\n".join(out)
-
-
 @pytest.mark.parametrize("tickets, err", [
     (TICKETS.replace("Build alpha.\n@@", "Nowhere.\n@@"),
      ["tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body"]),
@@ -330,13 +317,13 @@ def lines_of(text, changes):
      ["tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body",
       "tickets.md line 14: ticket item 4 (#21): its anchor matches no text in the body"]),
     (TICKETS + "@@ bogus\n", ["tickets.md line 20: unknown line '@@ bogus'"]),
-    (lines_of(TICKETS, {6: []}),
+    (lines_rewritten(TICKETS, {6: []}),
      ["tickets.md line 7: expected @@ replace to end the anchor begun on line 4, got '@@ end'"
       + HINT]),
-    (lines_of(TICKETS, {8: []}),
+    (lines_rewritten(TICKETS, {8: []}),
      ["tickets.md line 9: expected @@ end to end the replacement begun on line 6, got"
       " '@@ item 2 unblock 21 by 20 apply'" + HINT]),
-    (lines_of(TICKETS, {8: [], 10: ["@@ item 2 unblock 21 by 20 apply\r"]}),
+    (lines_rewritten(TICKETS, {8: [], 10: ["@@ item 2 unblock 21 by 20 apply\r"]}),
      ["tickets.md line 9: expected @@ end to end the replacement begun on line 6, got"
       " '@@ item 2 unblock 21 by 20 apply'" + HINT]),
     (TICKETS + "@@ bogus\r\n", ["tickets.md line 20: unknown line '@@ bogus'"]),
@@ -346,7 +333,7 @@ def lines_of(text, changes):
     (TICKETS.replace("@@ item 2 unblock 21 by 20 apply", "@@ item 2 unblock 20 by 21 apply"),
      ["tickets.md line 10: ticket item 2: #20 is not blocked by #21"]),
     # The shared @@ block reader (#2568).
-    (lines_of(TICKETS, {5: ["  "]}), ["tickets.md line 4: the anchor is empty"]),
+    (lines_rewritten(TICKETS, {5: ["  "]}), ["tickets.md line 4: the anchor is empty"]),
     ("@@ recommend apply\n@@ item 1 ticket 20 apply\n@@ summary x\n@@ anchor\nBuild alpha.\n",
      ["tickets.md line 4: the @@ anchor block is never ended"]),
     ("@@ recommend apply\n@@ item 1 ticket 20 apply\n@@ summary x\n@@ anchor\nBuild alpha.\n"
@@ -355,7 +342,7 @@ def lines_of(text, changes):
     (TICKETS + "@@ end\n", ["tickets.md line 20: @@ end with no @@ anchor open"]),
     # check --tickets collects too (#3456): content violations first, then the
     # anchor problems; an incomplete item's anchor is not checked.
-    (lines_of(TICKETS, {3: [], 14: [], 15: [], 16: [], 17: [], 18: []})
+    (lines_rewritten(TICKETS, {3: [], 14: [], 15: [], 16: [], 17: [], 18: []})
      + "@@ item 5 ticket 20 apply\n@@ summary #20 again\n@@ anchor\nNowhere.\n@@ replace\n"
        "Somewhere.\n@@ end\n",
      ["tickets.md line 2: item 1 has no @@ summary",
@@ -363,7 +350,7 @@ def lines_of(text, changes):
       "tickets.md line 16: ticket item 5 (#20): its anchor matches no text in the body"]),
     # A structure violation stops the run after the content violations before
     # it.
-    (lines_of(TICKETS, {3: []}) + "@@ bogus\n",
+    (lines_rewritten(TICKETS, {3: []}) + "@@ bogus\n",
      ["tickets.md line 2: item 1 has no @@ summary",
       "tickets.md line 19: unknown line '@@ bogus'"]),
 ])
@@ -469,7 +456,7 @@ def test_a_ticket_copy_that_cannot_be_read_stops_naming_its_item(root, capsys):
 
 
 def test_an_unreadable_copy_reports_the_content_violations_first(root, capsys):
-    d = tickets_dir(root, tickets=lines_of(TICKETS, {13: []}))
+    d = tickets_dir(root, tickets=lines_rewritten(TICKETS, {13: []}))
     (d / "ticket-20.fetched.md").mkdir()
 
     assert_refused(root, capsys, d, refused(

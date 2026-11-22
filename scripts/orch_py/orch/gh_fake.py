@@ -498,8 +498,7 @@ class FakeGh:
         self._failing("adapter_blockers")
         stale = self._lagging("adapter_blockers")
         if stale is not None:
-            return real.parse_numbers(
-                stale, lambda line: "gh answered a blocker that does not parse: " + line)
+            return real.parse_numbers(stale, real.blocker_unparsed)
         self._known(n)
         return self._blockers(n)
 

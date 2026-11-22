@@ -8,11 +8,10 @@ gives: the file adapter's, and under autopilot the comment adapter's copy of
 the issue's live plan handoff comment."""
 from __future__ import annotations
 
-import json
 
 import pytest
 
-from conftest import orch_spec_review, read
+from conftest import flow_state, orch_spec_review, read
 
 AUTOPILOT = {"ORCH_AUTOPILOT": "1"}
 UNKNOWN = ("orch: unknown lens 'clarity'"
@@ -42,13 +41,6 @@ def plan_file(root):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("## Decisions\n- one\n")
     return path
-
-
-def flow(root, issue=14):
-    state = root / ".orchestrator" / "state.json"
-    state.parent.mkdir(parents=True, exist_ok=True)
-    state.write_text(json.dumps({"slug": "x", "phase": "spec", "issue": issue,
-                                 "branch": None}) + "\n")
 
 
 def prompt(root, *args, seed=None, env=None):
@@ -205,7 +197,7 @@ def test_fidelity_in_a_standalone_review_s_directory_is_refused(root, capsys, he
     d = fetched(standalone(root))
     plan_file(root)
     if held_elsewhere:
-        flow(root, 99)
+        flow_state(root, "spec", 99)
 
     assert prompt(root, d, "fidelity") == 1
 
@@ -223,7 +215,7 @@ def scratch_plan(root):
 
 def autopilot_round(root, seed):
     seed.issue(14, "open")
-    flow(root)
+    flow_state(root, "spec", 14)
     return fetched(flow_round(root))
 
 
@@ -278,7 +270,7 @@ def test_under_autopilot_a_missing_plan_handoff_comment_dies_naming_the_issue(
 
 def test_under_autopilot_no_recorded_issue_dies_naming_it(root, seed, capsys):
     d = autopilot_round(root, seed)
-    flow(root, None)
+    flow_state(root, "spec", None)
 
     assert prompt(root, d, "fidelity", seed=seed, env=AUTOPILOT) == 1
 

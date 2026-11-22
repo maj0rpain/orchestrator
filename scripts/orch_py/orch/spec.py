@@ -29,7 +29,8 @@ import shlex
 import shutil
 from typing import List, Sequence, Tuple
 
-from orch.common import ORCH_DIR_NAME, die, read_raw, rm_rf_or_die, text_file_write
+from orch.common import (ORCH_DIR_NAME, die, plain_positive_number, read_raw, rm_rf_or_die,
+                         text_file_write)
 
 # The empty file spec_round_complete writes in a round's directory, as its
 # last local step but the answer's clearing: a round counts as complete only
@@ -262,12 +263,6 @@ def spec_round_dir_reset(directory: str, carry: bool = False) -> None:
         die(unreset)
 
 
-def _round_number(text: str) -> bool:
-    """Whether <text> is a positive whole number with no leading zero - a
-    round or a round count."""
-    return text.isdigit() and text.isascii() and not text.startswith("0")
-
-
 def spec_round_count_parse(arg: str) -> Tuple[int, int]:
     """A round and the round count, `<k>/<n>`, two positive whole numbers
     with k no greater than n; dies otherwise."""
@@ -276,7 +271,7 @@ def spec_round_count_parse(arg: str) -> Tuple[int, int]:
     if "/" not in arg:
         die(want)
     k, n = arg.split("/", 1)
-    if not _round_number(k) or not _round_number(n):
+    if not plain_positive_number(k) or not plain_positive_number(n):
         die(want)
     if int(k) > int(n):
         die("round %s is past the round count %s" % (k, n))
