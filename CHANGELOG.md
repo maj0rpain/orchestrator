@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.12.0
+
+Antigravity CLI native plugin manifest, host detection, capability table, and doctor support (#4055): added `.antigravity-plugin/plugin.json` bumped in lockstep with `.claude-plugin/plugin.json` by `version-bump.sh` and checked by `docs_lint.sh`; added `antigravity` host detection (`ANTIGRAVITY_AGENT` / `ANTIGRAVITY_CONVERSATION_ID`), `next_phase_cmd` wording, and autopilot host gating across Bash and Python; taught `orch.sh doctor` to report Antigravity CLI capabilities, handle unset `CLAUDE_PLUGIN_ROOT`, scan `~/.gemini/config/skills`, and print the `agy plugin install` remedy; reordered cross-host `ORCH=` resolution to check the skill's relative path before the Junie `ls` lookup, added the Antigravity hint to skills-only stop text, removed hardcoded host ask-tool names from `skills/`, added the `Antigravity CLI` column to `docs/host-capabilities.md`, and added `docs/antigravity/README.md`.
+
 ## 6.11.9
 
 `orch.sh glossary`, `orch.sh parallel` and `orch.sh route` now run as Python, the last leaf nouns moved out of bash. Their verbs, `glossary terms|show|match`, `parallel show` and `route show`, keep their arguments, output, exit codes and messages. There are two differences. A padded `orchestrator.parallel` or `orchestrator.route` value, such as `" 5"` or `"flow "`, is now accepted and printed trimmed, where bash rejected it. And `glossary show` no longer needs a temp file, so it no longer fails when `TMPDIR` is unusable. Doctor's glossary check and docs_lint's `glossary_entry` now read through the one Python parser. The bash glossary, parallel and route modules and their tests are gone.
