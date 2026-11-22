@@ -434,10 +434,8 @@ def tickets_check(directory: str, unattended: bool, env: Mapping[str, str]) -> i
     view.md, and the pass line; with @@ none-affected its stdout is a stub,
     any earlier view.md is removed, none written, and the pass line names
     none."""
-    if not os.path.isfile(directory + "/tickets.md"):
-        die("tickets.md not found in " + directory)
-    if not os.path.isfile(directory + "/spec.md"):
-        die("spec.md not found in " + directory)
+    spec_review_apply.round_file_required(directory, "tickets.md")
+    spec_review_apply.round_file_required(directory, "spec.md")
     violations = Violations(collect=True)
     tickets = tickets_parse(read_raw(directory + "/tickets.md") or "", violations)
     body = read_raw(directory + "/spec.md")
@@ -503,13 +501,11 @@ def check(argv: List[str], env: Mapping[str, str]) -> int:
         die("no such directory: " + directory)
     if tickets:
         return tickets_check(directory, unattended, env)
-    if not os.path.isfile(directory + "/batch.md"):
-        die("batch.md not found in " + directory)
+    spec_review_apply.round_file_required(directory, "batch.md")
     body = "spec.fetched.md"
     if not os.path.exists("%s/%s" % (directory, body)):
         body = "spec.md"
-    if not os.path.isfile("%s/%s" % (directory, body)):
-        die("spec.md not found in " + directory)
+    spec_review_apply.round_file_required(directory, body, "spec.md")
     violations = Violations(collect=True)
     result = validate(directory, "%s/%s" % (directory, body), violations, env)
     if violations.recorded or result.problems:

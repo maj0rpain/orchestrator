@@ -71,6 +71,14 @@ def _log(directory: str) -> str:
     return directory + "/applied.log"
 
 
+def round_file_required(directory: str, name: str, shown: str = "") -> None:
+    """Die `<shown> not found in <directory>` unless <directory>/<name> is a
+    file; <shown> is <name> unless given, for a check that names the file it
+    stands for."""
+    if not os.path.isfile("%s/%s" % (directory, name)):
+        die("%s not found in %s" % (shown or name, directory))
+
+
 def logged(directory: str, label: str) -> bool:
     """Whether <directory>/applied.log records <label>, as a line of its
     own."""
@@ -268,8 +276,7 @@ def apply_answer(options, resume: bool, gh_of: Callable[[], object], git,
 
     # The changelog comment landed: only the local tail is left.
     if resume and logged(directory, label_changelog(issue)):
-        if not os.path.isfile(directory + "/changelog.md"):
-            die("changelog.md not found in " + directory)
+        round_file_required(directory, "changelog.md")
         settled_log = read_raw(directory + "/changelog.md")
         if settled_log is None:
             die("could not read %s/changelog.md - every GitHub write landed: %s"
@@ -277,10 +284,8 @@ def apply_answer(options, resume: bool, gh_of: Callable[[], object], git,
         spec.spec_round_complete(directory, settled_log.replace("\x00", "").rstrip("\n"),
                                  landed(directory))
         return 0
-    if not os.path.isfile(directory + "/spec.md"):
-        die("spec.md not found in " + directory)
-    if not os.path.isfile(directory + "/batch.md"):
-        die("batch.md not found in " + directory)
+    round_file_required(directory, "spec.md")
+    round_file_required(directory, "batch.md")
     if not os.path.exists(directory + "/spec.fetched.md"):
         copy_or_die(directory + "/spec.md", directory + "/spec.fetched.md",
                     "could not copy spec.md to %s/spec.fetched.md - nothing written" % directory)
