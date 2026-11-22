@@ -76,5 +76,6 @@ def bash_state_keys():
     return rows
 
 
+@pytest.mark.skipif(not BASH_MODULE.exists(), reason="the bash Flow state module is gone")
 def test_the_key_table_s_keys_and_defaults_equal_the_bash_state_key_table_s():
     assert list(STATE_KEYS) == bash_state_keys()

@@ -59,9 +59,9 @@ assert_eq "nothing prints when every entry is present" \
   "$(sourced_orch orch_dirs_unexcluded)" ""
 
 # --- exclude_line -------------------------------------------------------------
-# exclude_orch_dirs' four callers (init, side-checkout add, the ticket worktree,
-# the review pass) call it bare under set -e, so a failed write (#1548) pins
-# their message; the appends keep an unterminated last line whole (#1912).
+# exclude_orch_dirs' three callers (init, side-checkout add, the ticket
+# worktree) call it bare under set -e, so a failed write (#1548) pins their
+# message; the appends keep an unterminated last line whole (#1912).
 echo
 echo "exclude_line"
 new_repo >/dev/null

@@ -31,9 +31,9 @@ def git(tmp_path):
     with a GitHub origin."""
     root = tmp_path / "repo"
     root.mkdir()
-    git = FakeGit(ORIGIN, toplevel=str(root))
-    git.seed("current_branch", answer=BRANCH)
-    return git
+    adapter = FakeGit(ORIGIN, toplevel=str(root))
+    adapter.seed("current_branch", answer=BRANCH)
+    return adapter
 
 
 @pytest.fixture
@@ -315,19 +315,19 @@ def test_an_open_pr_listing_that_does_not_parse_stops_the_run(seed, git, pr, kep
 
 
 def test_a_detached_head_stops_the_run(seed, kept, issue, capsys):
-    git = FakeGit(ORIGIN, toplevel=str(kept.parent))
+    detached = FakeGit(ORIGIN, toplevel=str(kept.parent))
 
-    assert known_items(seed, git, "21", str(kept)) == 1
+    assert known_items(seed, detached, "21", str(kept)) == 1
     assert capsys.readouterr() == ("", "orch: not on a branch (detached HEAD)\n")
     assert_left_as_it_was(kept)
 
 
 def test_with_no_repo_it_dies_with_the_remedy_before_any_gh_read(seed, kept, pr, capsys):
-    git = FakeGit(toplevel=str(kept.parent))
-    git.seed("current_branch", answer=BRANCH)
+    unpinned = FakeGit(toplevel=str(kept.parent))
+    unpinned.seed("current_branch", answer=BRANCH)
     seed.fail("adapter_prs_open", "reached gh")
 
-    assert known_items(seed, git, "21", str(kept)) == 1
+    assert known_items(seed, unpinned, "21", str(kept)) == 1
     assert capsys.readouterr() == ("", "orch: %s\n" % REPO_REMEDY)
     assert_left_as_it_was(kept)
 
