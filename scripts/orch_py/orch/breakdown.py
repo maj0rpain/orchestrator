@@ -92,7 +92,7 @@ def breakdown_parse(text: str) -> List[DraftTicket]:
             rest = line[len("@@ ticket "):]
             k = rest.split(" ", 1)[0]
             title = rest[len(k):].lstrip(" ")
-            if not re.fullmatch(r"[0-9]+", k):
+            if not plain_number(k):
                 _malformed(number, "ticket position is not a plain number: " + k)
             if title == "":
                 _malformed(number, "ticket %s has no title" % k)

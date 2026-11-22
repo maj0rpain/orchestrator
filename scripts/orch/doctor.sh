@@ -13,8 +13,9 @@
 # Nothing here is called back from orch.sh or its other modules but
 # cmd_doctor and the reporters d_ok, d_warn, d_fail and d_remedy, which a
 # check living in the module of the concept it serves reports through
-# (agent.sh's check_agent_settings, review.sh's check_standards_declaration,
-# glossary.sh's check_glossary): init's adopted-issue check,
+# (agent.sh's check_agent_settings, review.sh's check_standards_declaration):
+# doctor's own glossary check, check_glossary, reaches the converted glossary
+# noun only through orch.sh; init's adopted-issue check,
 # validate_adopted_issue, lives in init.sh, and the triage-label parser the
 # checks read lives in triage-labels.sh.
 #
@@ -29,8 +30,8 @@
 # (default_branch_local, default_branch_seed, base_setting and
 # origin_has_branch from base.sh,
 # require_state from state.sh), and the checks its env check list names from
-# other modules (agent.sh's check_agent_settings, review.sh's
-# check_standards_declaration, glossary.sh's check_glossary), are defined by
+# other modules (agent.sh's check_agent_settings and review.sh's
+# check_standards_declaration; check_glossary is doctor's own), are defined by
 # the time cmd_doctor runs:
 # run as a command they are stubs that load their module on first call
 # (loader.sh's orch_stubs). cmd_doctor is then
@@ -484,6 +485,27 @@ check_labels_doc() {
   if [ "$n" -gt 0 ]; then d_ok "$n triage labels documented in $LABELS_DOC"; return 0; fi
   d_fail "$LABELS_DOC lists no triage labels - the spec phase labels its issue from it."
   d_remedy "fix $LABELS_DOC's table, or delete it to use the canonical names"
+}
+
+# The root GLOSSARY.md, read through the converted glossary noun's own parse,
+# run as a child orch.sh: no bash module loads the noun. Absent is ok; one that
+# parses is ok with its entry count; one that gives no entries - or a noun that
+# cannot run, with no python3 - is a FAIL carrying the noun's own message. No
+# heuristic for a near miss.
+check_glossary() {
+  local terms err n
+  if [ ! -f "$ROOT/GLOSSARY.md" ]; then
+    d_ok "no GLOSSARY.md - no glossary is read, so the Consistency lens reads none and the reviewers' glossary parse check does not run"
+    return 0
+  fi
+  if capture terms err "$BASH" "$ORCH_PLUGIN/scripts/orch.sh" glossary terms </dev/null; then
+    n="$(grep -c . <<<"$terms")" || n=0
+    d_ok "$n glossary entries read from GLOSSARY.md"
+    return 0
+  fi
+  d_fail "$(err_line "$err")"
+  d_remedy 'write each entry as a **Term**: line, e.g. "**Doctor**: the diagnostic command." (optionally after a "- " bullet)' \
+    "see docs/repo-setup.md under the plugin root"
 }
 
 # The ADR directory: absent is fine, no ADRs are read. A docs/adr that exists

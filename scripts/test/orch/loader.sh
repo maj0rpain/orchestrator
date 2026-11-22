@@ -25,10 +25,10 @@ loader_run() {
   out="$(bash -c 'source "$1/common.sh"; source "$1/loader.sh"; '"$1" _ "$loader_dir" 2>&1)" && status=0 || status=$?
 }
 
-loader_run 'orch_load glossary; declare -F cmd_glossary >/dev/null && echo defined'
+loader_run 'orch_load state; declare -F cmd_state >/dev/null && echo defined'
 assert_eq "orch_load sources a module" "$out" "defined"
 
-loader_run 'orch_load glossary; unset -f cmd_glossary; orch_load glossary; declare -F cmd_glossary >/dev/null || echo not-resourced'
+loader_run 'orch_load state; unset -f cmd_state; orch_load state; declare -F cmd_state >/dev/null || echo not-resourced'
 assert_eq "a second orch_load of a module does nothing" "$out" "not-resourced"
 
 loader_run 'orch_load nonesuch; echo reached'
@@ -252,8 +252,8 @@ fi
 rm -f "$cache_dir"/*
 cache_cmd "$cache_scripts"
 cf="$(cache_file)"
-sed -i.bak 's/^cmd_state() { orch_stub state /cmd_state() { orch_stub glossary /' "$cf"; rm -f "$cf.bak"
-assert_contains "the planted table names the wrong module" "$(cat "$cf")" "cmd_state() { orch_stub glossary "
+sed -i.bak 's/^cmd_state() { orch_stub state /cmd_state() { orch_stub repo /' "$cf"; rm -f "$cf.bak"
+assert_contains "the planted table names the wrong module" "$(cat "$cf")" "cmd_state() { orch_stub repo "
 touch -d '+10 minutes' "$cf"
 out="$(HOME="$cache_home" bash "$cache_scripts/orch.sh" state get phase 2>&1)" && status=0 || status=$?
 assert_eq "a planted wrong table is rebuilt and the call goes on" "$out" "$(bash "$ORCH" state get phase 2>&1)"
