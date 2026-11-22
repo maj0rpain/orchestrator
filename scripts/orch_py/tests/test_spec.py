@@ -1,10 +1,11 @@
 """The spec noun run in-process against the gh adapter's fake on a tmp_path
 store and a FakeGit checkout under tmp_path: the four reads and writes of the
 flow's issue (fetch, update, comment, comments), the pause that stops the
-spec phase's session, and the round directory a flow's spec review round
-works in (round-dir) with the round marker a resumed one reads (round), each
-checked by its stdout, its exit code, its `orch:` message, the markers and
-round directories it leaves and the store afterwards."""
+spec phase's session, the round directory a flow's spec review round works
+in (round-dir) with the round marker a resumed one reads (round), and the
+pause after a spec review round, with its claim release in an autopilot
+flow, each checked by its stdout, its exit code, its `orch:` message, the
+markers and round directories it leaves and the store afterwards."""
 from __future__ import annotations
 
 import builtins
@@ -12,7 +13,7 @@ import os
 
 import pytest
 
-from conftest import comments_of, died_of, flow_state, read, snapshot
+from conftest import GH_502, comments_of, died_of, flow_state, labels_of, read, snapshot
 from orch import cli, spec
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit
@@ -771,3 +772,197 @@ def test_round_exits_2_on_a_truncated_state_file(root, seed, capsys):
 
     assert orch_spec(root, seed, "round") == 2
     assert capsys.readouterr() == ("", UNREADABLE)
+
+
+# --- pause --round ---------------------------------------------------------------
+
+ROUND_BLOCK = ("Spec review round %d of %d applied. Round %d runs in a fresh session.\n\n"
+               "  Next: %s\n")
+CLAUDE_NEXT = "/clear, then /orchestrator:next"
+AUTOPILOT = {"ORCHESTRATOR_HOST": "claude", "ORCH_AUTOPILOT": "1"}
+PAUSE_USAGE = "orch: usage: orch.sh spec pause [--round <k>/<n>]\n"
+
+
+@pytest.mark.parametrize("k, n, env, next_line", [
+    (1, 3, {"CLAUDECODE": "1"}, CLAUDE_NEXT),
+    (2, 3, {"ORCHESTRATOR_HOST": "junie"}, "/new, then ask for the next phase with /orch-flow"),
+    (4, 12, {}, "a fresh session, then /orchestrator:next (or orch-flow's Next phase section)"),
+], ids=["claude", "junie", "other"])
+def test_pause_round_writes_the_marker_naming_the_next_round_then_prints_the_block(
+        root, seed, capsys, k, n, env, next_line):
+    state = flow_state(root, "spec", 21)
+    recorded = state.read_text()
+
+    assert orch_spec(root, seed, "pause", "--round", "%d/%d" % (k, n), env=env) == 0
+    assert capsys.readouterr() == (ROUND_BLOCK % (k, n, k + 1, next_line), "")
+    assert round_marker(root).read_text() == "21 %d %d\n" % (k + 1, n)
+    assert not paused_marker(root).exists()
+    assert state.read_text() == recorded
+
+
+def test_pause_round_overwrites_a_round_marker_already_there(root, seed, capsys):
+    flow_state(root, "spec", 21)
+    round_marker(root).parent.mkdir(parents=True)
+    round_marker(root).write_text("21 2 3\n")
+
+    assert orch_spec(root, seed, "pause", "--round", "2/3") == 0
+    assert round_marker(root).read_text() == "21 3 3\n"
+
+
+# Each refusal before the phase refusals, at a phase and with no issue that
+# the phase refusals would refuse too: the usage, the round-count parse, the
+# last round, in that order.
+@pytest.mark.parametrize("args, message", [
+    ((), PAUSE_USAGE),
+    (("1/2", "extra"), PAUSE_USAGE),
+    (("a/2", "extra"), PAUSE_USAGE),
+    (("a/2",), "orch: want <k>/<n>, a round and the round count, two positive whole numbers,"
+               " got: a/2\n"),
+    (("02/3",), "orch: want <k>/<n>, a round and the round count, two positive whole numbers,"
+                " got: 02/3\n"),
+    (("3/2",), "orch: round 3 is past the round count 2\n"),
+    (("2/2",), "orch: round 2 is the last of 2 - the last round never pauses; go on to the"
+               " ticket breakdown\n"),
+], ids=["no-round", "extra", "extra-before-parse", "malformed", "leading-zero", "past",
+        "last"])
+@pytest.mark.parametrize("phase, issue", [("spec", 21), ("implement", None), ("done", 21)],
+                         ids=["spec", "no-issue", "done"])
+def test_pause_round_refuses_its_argument_before_the_phase_refusals(
+        root, seed, store, capsys, args, message, phase, issue):
+    flow_state(root, phase, issue)
+    seed.issue(21, "open", "orch:running")
+    seed.claim(21)
+    before = snapshot(store)
+
+    assert orch_spec(root, seed, "pause", "--round", *args, env=AUTOPILOT) == 1
+    assert capsys.readouterr() == ("", message)
+    assert not round_marker(root).parent.exists()
+    assert snapshot(store) == before
+
+
+@pytest.mark.parametrize("phase, issue, message", [
+    ("spec", None, "no issue recorded in state - the spec phase must publish one first"),
+    ("done", 21, "the flow on issue #21 is done - spec pause acts only on an active flow"),
+    ("implement", 21, "spec pause runs only in the spec phase - the flow is at phase implement"),
+    ("done", None, "no issue recorded in state - the spec phase must publish one first"),
+    ("implement", None, "no issue recorded in state - the spec phase must publish one first"),
+], ids=["no-issue", "done", "implement", "no-issue-before-done", "no-issue-before-phase"])
+def test_pause_round_refuses_outside_an_active_spec_phase_writing_nothing(
+        root, seed, store, capsys, phase, issue, message):
+    flow_state(root, phase, issue)
+    seed.issue(21, "open", "orch:running")
+    seed.claim(21)
+    before = snapshot(store)
+
+    assert orch_spec(root, seed, "pause", "--round", "1/2", env=AUTOPILOT) == 1
+    assert capsys.readouterr() == ("", "orch: %s\n" % message)
+    assert not round_marker(root).parent.exists()
+    assert snapshot(store) == before
+
+
+@pytest.mark.parametrize("argv, message", [
+    ((), "orch: no active flow (.orchestrator/state.json not found). Run /orchestrator:start"
+         " first.\n"),
+    (("truncated",), UNREADABLE)], ids=["no-state", "truncated"])
+def test_pause_round_without_a_readable_state_file_is_refused_before_any_write(
+        root, seed, store, capsys, argv, message):
+    if argv:
+        state = flow_state(root, "spec", 21)
+        state.write_text(state.read_text()[:20])
+    seed.issue(21, "open", "orch:running")
+    seed.claim(21)
+    before = snapshot(store)
+
+    assert orch_spec(root, seed, "pause", "--round", "1/2", env=AUTOPILOT) == 1
+    assert capsys.readouterr() == ("", message)
+    assert not (root / ".orchestrator" / "handoff").exists()
+    assert snapshot(store) == before
+
+
+@pytest.mark.parametrize("phase", ["spec", "implement", "done"])
+def test_pause_round_opens_the_state_file_exactly_once(root, seed, capsys, monkeypatch, phase):
+    state = flow_state(root, phase, 21)
+    seed.issue(21, "open", "orch:running")
+    seed.claim(21)
+    opens = Opens(monkeypatch, state)
+
+    orch_spec(root, seed, "pause", "--round", "1/2", env=AUTOPILOT)
+
+    assert opens.count == 1
+
+
+@pytest.fixture
+def autopilot_flow(root, seed):
+    """An autopilot flow at phase spec on issue #21, which carries
+    orch:running and whose claim is held."""
+    flow_state(root, "spec", 21)
+    seed.issue(21, "open", "ready-for-agent", "orch:spec", "orch:running")
+    seed.claim(21)
+
+
+def test_pause_round_in_autopilot_releases_the_claim_then_prints_the_block(
+        root, seed, store, capsys, autopilot_flow):
+    assert orch_spec(root, seed, "pause", "--round", "1/2", env=AUTOPILOT) == 0
+    assert capsys.readouterr() == (ROUND_BLOCK % (1, 2, 2, CLAUDE_NEXT), "")
+    assert round_marker(root).read_text() == "21 2 2\n"
+    assert labels_of(store, 21) == ["ready-for-agent", "orch:spec"]
+    assert seed.claim_held(21) is False
+
+
+def test_pause_round_in_autopilot_counts_a_claim_already_gone_as_freed(
+        root, seed, store, capsys, autopilot_flow):
+    FakeGh(seed.store, {}).claim_delete(21)
+
+    assert orch_spec(root, seed, "pause", "--round", "1/2", env=AUTOPILOT) == 0
+    assert capsys.readouterr() == (ROUND_BLOCK % (1, 2, 2, CLAUDE_NEXT), "")
+    assert labels_of(store, 21) == ["ready-for-agent", "orch:spec"]
+    assert seed.claim_held(21) is False
+
+
+def test_a_failed_relabel_dies_with_the_marker_landed_trying_no_claim_delete(
+        root, seed, store, capsys, autopilot_flow):
+    seed.fail("adapter_issue_relabel", GH_502)
+
+    assert orch_spec(root, seed, "pause", "--round", "1/2", env=AUTOPILOT) == 1
+    assert capsys.readouterr() == (
+        "", "orch: could not remove orch:running on issue #21: HTTP 502: Bad Gateway - writes"
+            " that landed: wrote the round marker; the claim stays held\n")
+    assert round_marker(root).read_text() == "21 2 2\n"
+    assert labels_of(store, 21) == ["ready-for-agent", "orch:spec", "orch:running"]
+    assert seed.claim_held(21) is True
+
+
+def test_a_failed_claim_delete_dies_with_the_relabel_landed_and_the_claim_held(
+        root, seed, store, capsys, autopilot_flow):
+    seed.fail("adapter_claim_delete", "HTTP 500")
+
+    assert orch_spec(root, seed, "pause", "--round", "1/2", env=AUTOPILOT) == 1
+    assert capsys.readouterr() == (
+        "", "orch: could not delete the claim ref on issue #21: HTTP 500 - writes that landed:"
+            " wrote the round marker, removed orch:running; the claim stays held\n")
+    assert labels_of(store, 21) == ["ready-for-agent", "orch:spec"]
+    assert seed.claim_held(21) is True
+
+
+@pytest.mark.parametrize("env", [AUTOPILOT, {"ORCHESTRATOR_HOST": "claude"}],
+                         ids=["autopilot", "not-autopilot"])
+def test_a_round_marker_that_cannot_be_written_dies_releasing_nothing(
+        root, seed, store, capsys, autopilot_flow, env):
+    round_marker(root).mkdir(parents=True)
+    before = snapshot(store)
+
+    assert orch_spec(root, seed, "pause", "--round", "1/2", env=env) == 1
+    assert capsys.readouterr() == (
+        "", "orch: cannot write %s/.orchestrator/handoff/spec-round\n" % root)
+    assert snapshot(store) == before
+
+
+def test_pause_round_outside_autopilot_leaves_the_label_and_the_claim(
+        root, seed, store, capsys, autopilot_flow):
+    before = snapshot(store)
+
+    assert orch_spec(root, seed, "pause", "--round", "1/2", env={"ORCHESTRATOR_HOST": "claude",
+                                                                 "ORCH_AUTOPILOT": "0"}) == 0
+    assert capsys.readouterr() == (ROUND_BLOCK % (1, 2, 2, CLAUDE_NEXT), "")
+    assert snapshot(store) == before
+    assert seed.claim_held(21) is True

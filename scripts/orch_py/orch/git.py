@@ -8,8 +8,8 @@ an audit body's drift line reads, the commit resolution, fetches, file and
 line histories finding triage's scan, Lines fate and the default-branch
 lookup read, the working-tree state, object names, config value and main
 checkout the verification noun reads, the common directory the git exclude
-writer (orch.common) appends under, and the current branch a review pass
-starts on. There is no generic run: each later noun adds the operations it
+writer (orch.common) appends under, the current branch a review pass
+starts on, and the push the gh adapter's claim delete makes. There is no generic run: each later noun adds the operations it
 needs, each with a test run against a real repository and against FakeGit,
 asserting the same answers. The scan's, Lines fate's and the lookup's
 operations run at the checkout's top level, and answer their "could not"
@@ -56,7 +56,30 @@ COULD_NOT: Dict[str, Any] = {
     "main_checkout": None,
     "git_common_dir": None,
     "current_branch": None,
+    "push": "git gave no reason",
 }
+
+# The whitespace bash's [:space:] class trims, as trim_split trims it.
+_SPACE = " \t\n\r\v\f"
+
+
+def git_push_reason(stderr: str) -> str:
+    """The reason a git push's <stderr> gives - bash git_push_reason: its
+    ` ! ` ref lines, trimmed and joined by "; ", since they carry a
+    rejection's cause; else its first fatal: line, an auth or network
+    failure's; else its first non-empty line; else "git gave no reason".
+    git's first line is often just "To <url>", so it comes last."""
+    bangs: List[str] = []
+    fatal = first = ""
+    for line in stderr.split("\n"):
+        trimmed = line.strip(_SPACE)
+        if line.startswith(" ! "):
+            bangs.append(trimmed)
+        elif line.startswith("fatal:") and not fatal:
+            fatal = line
+        if not first:
+            first = trimmed
+    return "; ".join(bangs) or fatal or first or "git gave no reason"
 
 # A commit's full SHA-1 name, the only one the bash scan's line-range log
 # and blame took: a SHA-256 name matches neither, as it matched neither there.
@@ -367,6 +390,17 @@ class Git:
         prefix = "refs/heads/"
         return ref[len(prefix):] if ref.startswith(prefix) else ref
 
+    # The claim delete's operation, run where the adapter runs, as bash's
+    # git_push runs in orch.sh's directory.
+
+    def push(self, remote: str, refspec: str) -> Optional[str]:
+        """`git push <remote> <refspec>` - bash git_push: None when it
+        landed, else the reason its stderr gives (git_push_reason)."""
+        run = self._run(["push", remote, refspec])
+        if run.returncode == 0:
+            return None
+        return git_push_reason(run.stderr.decode("utf-8", "surrogateescape"))
+
 
 class FakeGit:
     """The in-process fake: a repository held in memory. <remotes> maps each
@@ -496,6 +530,9 @@ class FakeGit:
 
     def current_branch(self) -> Optional[str]:
         return self._answer("current_branch")
+
+    def push(self, remote: str, refspec: str) -> Optional[str]:
+        return self._answer("push", remote, refspec)
 
 
 def _call_key(name: str, args: Sequence[Any]) -> Tuple[Any, ...]:

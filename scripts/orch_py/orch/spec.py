@@ -10,11 +10,13 @@ update, comment and comments - go through here, where they are tested,
 rather than through a `gh issue edit` in skill prose: each resolves the
 number from the flow's state and runs the issue noun's op on it in-process.
 pause touches no issue: it writes the spec-paused marker, the stop of the
-spec phase's session once the spec is written. Every verb keeps the bash
-module's arguments, usage lines, stdout, exit codes, `orch:` messages and
-check order, and refuses before any write. round-dir prepares a flow's
+spec phase's session once the spec is written. pause --round writes the
+round marker, the stop after a spec review round, and in an autopilot flow
+releases the claim through the Standing module's chain. Every verb keeps the
+bash module's arguments, usage lines, stdout, exit codes, `orch:` messages
+and check order, and refuses before any write. round-dir prepares a flow's
 round directory and writes the round marker last; round reads the marker
-back for a resumed spec phase. pause --round is still bash's alone.
+back for a resumed spec phase.
 
 The bash spec module stays the round directory's owner while bash `spec`
 reads it (`spec round`, `spec round-dir`): these are copies of its
@@ -41,6 +43,7 @@ import os
 import shlex
 from typing import List, Mapping, Optional, Sequence, Tuple
 
+from orch.autopilot import autopilot_active
 from orch.common import (ORCH_DIR_NAME, copy_or_die, die, mkdir_p_or_die, plain_number,
                          plain_positive_number, read_raw, rm_f_or_die, rm_rf_or_die,
                          text_file_append, text_file_write)
@@ -361,18 +364,53 @@ def issue_op(op: str, args: List[str], issue: str, phase: str, gh_of, git,
     return getattr(Issue(gh_of(), git, env), op)([issue, args[0]])
 
 
-def pause(args: List[str], issue: str, phase: str, root: str, env: Mapping[str, str]) -> int:
+PAUSE_USAGE = "usage: orch.sh spec pause [--round <k>/<n>]"
+
+
+def pause(args: List[str], issue: str, phase: str, root: str, gh_of,
+          env: Mapping[str, str]) -> int:
     """`spec pause`: stops the spec phase's session after the spec is
     written - writes the spec-paused marker, then prints the stop block with
     the host's Next line. The marker is written first, so a failed write
-    prints no block; the phase is left at spec."""
+    prints no block; the phase is left at spec. With --round <k>/<n>, the
+    stop after a spec review round instead: see pause_round."""
     if args[:1] == ["--round"]:
-        raise NotImplementedError("spec pause --round")
+        return pause_round(args[1:], issue, phase, root, gh_of, env)
     if args:
-        die("usage: orch.sh spec pause [--round <k>/<n>]")
+        die(PAUSE_USAGE)
     spec_phase_guard("pause", issue, phase, 1)
     spec_marker_write(root, SPEC_PAUSED_MARKER, issue)
     print_next_block(env, "Spec #%s written. The spec review runs in a fresh session." % issue)
+    return 0
+
+
+def pause_round(args: List[str], issue: str, phase: str, root: str, gh_of,
+                env: Mapping[str, str]) -> int:
+    """`spec pause --round <k>/<n>` (#1347): the stop after round k of n,
+    k < n, has applied its answer - writes the round marker naming the
+    flow's issue, the next round k+1 and the count n, so the fresh session's
+    spec round resumes there, then prints the stop block. The marker is
+    written first, so a failed write prints no block. The last round never
+    pauses: the ticket breakdown and the handoff follow it in the same
+    session. In an autopilot flow the round's session ends here: the claim is
+    released between the marker and the block (#1457), and the next tick
+    starts the next round."""
+    if len(args) != 1:
+        die(PAUSE_USAGE)
+    k, n = spec_round_count_parse(args[0])
+    if k >= n:
+        die("round %d is the last of %d - the last round never pauses; go on to the ticket"
+            " breakdown" % (k, n))
+    spec_phase_guard("pause", issue, phase, 1)
+    spec_marker_write(root, SPEC_ROUND_MARKER, "%s %d %d" % (issue, k + 1, n))
+    if autopilot_active(env):
+        # Imported on call, as the issue noun is: a spec-review run never
+        # loads the chain.
+        from orch.standing import standing_pause
+
+        standing_pause(gh_of(), issue, "wrote the round marker")
+    print_next_block(env, "Spec review round %d of %d applied. Round %d runs in a fresh session."
+                     % (k, n, k + 1))
     return 0
 
 
@@ -504,8 +542,8 @@ def run(
         die("unknown spec op: %s (want %s)" % (op or "<none>", OPS))
     issue, phase = state["issue"], state["phase"]
 
-    # The gh adapter, made at the first GitHub call: only the issue ops make
-    # one.
+    # The gh adapter, made at the first GitHub call: only the issue ops and
+    # an autopilot flow's pause --round make one.
     def gh_of():
         if gh is not None:
             return gh
@@ -516,7 +554,7 @@ def run(
     if op in ISSUE_OPS:
         return issue_op(op, args, issue, phase, gh_of, git, env)
     if op == "pause":
-        return pause(args, issue, phase, root, env)
+        return pause(args, issue, phase, root, gh_of, env)
     if op == "round-dir":
         return round_dir(args, issue, phase, root)
     return round_op(args, root, env)
