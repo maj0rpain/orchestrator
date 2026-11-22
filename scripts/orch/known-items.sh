@@ -2,8 +2,8 @@
 # known-items.sh - the Known items module: a concept module with no orch.sh
 # noun of its own, holding what builds a known-items file - splitting a
 # record's text into entries, appending them as tagged bullets, and writing
-# the file - that review known-items and review-pass known-items read. Its
-# tests: scripts/test/orch/known-items.sh.
+# the file - that review known-items reads. Its tests:
+# scripts/test/orch/known-items.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 # section_entries <file> <heading>: the entries under <heading> in <file>, as
@@ -44,12 +44,6 @@ text_entries() {
 # when <tag> is given.
 section_entries_append() {
   entries_append_from "$1" "${4:-}" < <(section_entries "$2" "$3")
-}
-
-# text_entries_append <var> <file> [<tag>]: section_entries_append for every
-# entry of the whole of <file>, as text_entries splits them.
-text_entries_append() {
-  entries_append_from "$1" "${3:-}" < <(text_entries <"$2")
 }
 
 # entries_append_from <var> <tag>: the appenders' one loop - appends to <var>

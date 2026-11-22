@@ -36,6 +36,12 @@ def _audit(argv: List[str]) -> int:
     return run(argv)
 
 
+def _review_pass(argv: List[str]) -> int:
+    from orch.review_pass import run
+
+    return run(argv)
+
+
 # The converted nouns: each takes the arguments after the noun and returns its
 # exit code.
 NOUNS: Dict[str, Callable[[List[str]], int]] = {
@@ -43,6 +49,7 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "finding-triage": _finding_triage,
     "verification": _verification,
     "audit": _audit,
+    "review-pass": _review_pass,
 }
 
 

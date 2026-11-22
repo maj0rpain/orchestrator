@@ -2,7 +2,7 @@
 gh fake, with the checkout, its state.json, its pass directory and its git
 exclude file under tmp_path, each checked by its stdout, its exit code, its
 `orch:` message and the files it leaves - as the bash review-pass begin it
-replaces answers."""
+replaced answered."""
 from __future__ import annotations
 
 import json

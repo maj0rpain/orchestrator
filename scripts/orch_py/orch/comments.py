@@ -108,8 +108,8 @@ def rendered(gh, what: str, n: str, kind: str = "issue") -> str:
 
 
 def split(text: str) -> List[str]:
-    """<text>, comments in their rendered shape, split as bash's
-    comments_split splits a file: a comment opens at every line that is a
+    """<text>, comments in their rendered shape, split as the bash review
+    pass split its file before the noun was converted: a comment opens at every line that is a
     comment marker, one quoted inside a body included, and holds the lines
     up to the next, each newline-terminated; lines before the first marker
     belong to none."""

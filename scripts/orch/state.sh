@@ -278,10 +278,11 @@ flow_base_fallback_into() {
 # (phase not done) when it holds the branch, or the issue where one is given,
 # and returns 0. Returns 1 printing nothing when no active flow holds them,
 # and 2 when state.json cannot be read - so the guard fails closed. A branch
-# or issue an active flow holds belongs to it (ADR-0029), so review-pass begin
-# and pr draft/ready refuse it, each with its own message, and refuse status 2
-# too. Reads state.json only when one exists, in one read. Every
-# read is checked here: callers run it in `$(...) ||`, where errexit is off.
+# or issue an active flow holds belongs to it (ADR-0029), so pr draft/ready
+# refuse it, with its own message, and refuse status 2 too (the Python
+# review-pass begin has its own copy, orch/flow_state.py). Reads state.json
+# only when one exists, in one read. Every read is checked here: callers run
+# it in `$(...) ||`, where errexit is off.
 flow_holding_phase() {
   local branch="$1" issue="${2:-}" phase held_branch held_issue
   [ -f "$STATE" ] || return 1

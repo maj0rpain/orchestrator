@@ -6,9 +6,9 @@
 (( 0 )) && source setup.sh
 
 # --- comments module --------------------------------------------------------
-# The Comments module: the trusted reader, the two dying wrappers over it, the
-# rendered shape and the split, called through a sourced orch.sh over comments
-# seeded in the gh fake.
+# The Comments module: the trusted reader, the two dying wrappers over it and
+# the rendered shape, called through a sourced orch.sh over comments seeded in
+# the gh fake.
 echo
 echo "comments module"
 tick_fixture
@@ -108,10 +108,3 @@ assert_eq "the render step opens each comment with its author-and-date marker, o
     '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'Also: the second line' '\\ stays unescaped.')"
 assert_eq "and prints nothing at all for no comments" \
   "$(sourced_orch_script 'comments_render <<<"[]"' | wc -c | tr -d ' ')" "0"
-
-# The split, one file per comment, each its body alone.
-cm_dir="$(mktemp -d)"
-sourced_orch_script 'comments_render <<<"$1" >"$2/all"; comments_split "$2/all" "$2"' "$cm_json" "$cm_dir"
-assert_eq "the split writes one file per comment, numbered from 1, each its body" \
-  "$(cat "$cm_dir/2")" "$(printf 'Also: the second line\n\\\\ stays unescaped.')"
-rm -rf "$cm_dir"

@@ -3,8 +3,8 @@
 # its own, owning how an issue's or a PR's comments are read for orch.sh: the
 # one reader of the trusted comments (comments_trusted_read), the two dying
 # wrappers over it (comments_trusted, comments_rendered), the one definition of
-# the rendered shape (COMMENTS_RENDER_JQ), the render step (comments_render)
-# and the split of a rendered file into one file per comment (comments_split).
+# the rendered shape (COMMENTS_RENDER_JQ) and the render step
+# (comments_render).
 # No adapter renders: the adapters answer raw JSON, and rendering happens here,
 # after the trust filter (Trust module).
 # No function here passes a comment-sized value as a command-line argument: a
@@ -96,14 +96,4 @@ comments_rendered() {
   __cd_out="$(comments_render <<<"$__cd_kept")" \
     || die_hinted ${__cd_exit[@]+"${__cd_exit[@]}"} "could not $2: its comments did not parse"
   printf -v "$4" '%s' "$__cd_out"
-}
-
-# comments_split <file> <dir>: splits <file>, comments in its rendered shape,
-# into one file per comment under <dir>, numbered from 1 in order, each holding
-# the comment's body alone. A comment opens at its marker line, the one
-# COMMENTS_RENDER_JQ renders.
-comments_split() {
-  awk -v d="$2" '
-    /^<!-- comment @[^ ]* [^ ]* -->$/ { if (out != "") close(out); out = d "/" (++k); printf "" >out; next }
-    out != "" { print >out }' "$1"
 }

@@ -28,10 +28,11 @@ BASH_HELPERS = {
         "fake_unfail", "fake_offline", "fake_online", "fake_quota", "fake_lag",
         "fake_state_of", "fake_reason_of",
         "fake_title_of", "fake_body_of", "fake_labels_of", "fake_comments_of",
-        "fake_pr", "fake_pr_body", "fake_pr_comment", "fake_pr_cross", "fake_labels",
+        "fake_pr", "fake_pr_comment", "fake_pr_cross", "fake_labels",
         "fake_default_branch",
     ],
     SCRIPTS / "test" / "orch" / "gh.sh": ["fake_ratelimit", "fake_duplicate_of"],
+    SCRIPTS / "test" / "orch" / "pr.sh": ["fake_pr_body"],
     SCRIPTS / "test" / "orch" / "ticket.sh": ["fake_lag_after"],
 }
 SECONDARY = "You have exceeded a secondary rate limit."

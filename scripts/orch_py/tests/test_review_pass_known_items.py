@@ -1,7 +1,7 @@
 """The review-pass noun's known-items verb, run in-process against FakeGit and
 the gh fake, with the checkout and the known-items file under tmp_path, each
 checked by the file it writes, its exit code and its `orch:` message - as the
-bash review-pass known-items it replaces answers."""
+bash review-pass known-items it replaced answered."""
 from __future__ import annotations
 
 import os

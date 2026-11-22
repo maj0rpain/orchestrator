@@ -8,9 +8,10 @@ reads state.json only when one exists (the Flow state reader,
 orch/flow_state.py), and never writes it: a branch or issue an active flow
 holds belongs to that flow (ADR-0029). It never wipes - each pass takes the
 next number, so a second pass on a branch never overwrites the first. Its
-checks run in the bash verb's order, every one before any write: the usage,
-the plain number, the current branch, the recorded base, the flow-holding
-guard; then the exclude lines, the pass directory and the prefix.
+checks run in the order the bash verb ran them, every one before any write:
+the usage, the plain number, the current branch, the recorded base, the
+flow-holding guard; then the exclude lines, the pass directory and the
+prefix.
 
 known-items builds the pass's known-items file, also with no flow state:
 `## Deviations`, the PR body's Deviations or the --deviations file's entries
@@ -19,11 +20,13 @@ body and in each PR comment that is an earlier pass's (REVIEW_PASS_HEADINGS),
 tagged declined, then the Spec rulings lines of every PR comment and each of
 the spec issue's Spec ruling comments, joined into one entry - tagged spec
 ruling. With no open PR, only the issue's rulings and the --deviations file
-are read. CRs are removed from every text read. Its refusals come in the bash
-verb's order, every one before the write, and the file is built aside and
-moved into place, so a refused or failed run leaves <path> as it was.
+are read. CRs are removed from every text read. Its refusals come in the order
+the bash verb gave them, every one before the write, and the file is built
+aside and moved into place, so a refused or failed run leaves <path> as it
+was.
 
-Bash keeps serving `orch.sh review-pass` until the cutover.
+orch.sh runs it as a converted noun (ADR-0067): the bash review-pass module
+it replaced is gone.
 """
 from __future__ import annotations
 

@@ -58,7 +58,7 @@ echo "every gh call pinned to the repo"
 new_repo >/dev/null
 git remote set-url origin https://github.com/fork/widgets.git
 gh_fixture
-known="$(mktemp)"
+comments_file="$(mktemp)"
 subs_jq="$(sourced_orch_script 'printf "%s" "$SUB_ISSUES_JQ"')"
 # pinned_replies <repo>: the fixture's answers to every call below, for the
 # repo named - gh repo view alone takes it in its argv. Issue 5 is a collapsed
@@ -96,16 +96,18 @@ assert_eq "no bare capture or capture_err runs an adapter operation or gh" \
   "$(grep -hEv '^[[:space:]]*#' "$(dirname "$ORCH")"/orch/*.sh | grep -cE '(^|[^_[:alnum:]])capture(_err)? .*[[:space:]](adapter_[a-z_]+|gh)([[:space:]]|$)')" "0"
 
 # No usable repo: the first command that reaches GitHub dies naming GH_REPO,
-# whether it pins the repo itself first (review-pass known-items' open-PR
-# lookup) or meets the guard in a command substitution (ticket parent) - and
-# behind capture_err's stderr capture too (ticket parent, ticket close), whose
-# own capture must not swallow the remedy (#846).
+# whether it pins the repo itself first (pr comments' open-PR lookup,
+# current_open_pr, which exits 2 as pr comments does for all but no open PR)
+# or meets the guard in a command substitution (ticket parent) - and behind
+# capture_err's stderr capture too (ticket parent, ticket close), whose own
+# capture must not swallow the remedy (#846).
 git remote remove origin
 : >"$GH_FIXTURE/env.log"
-for args in "review-pass known-items 5 $known" "ticket parent 50" "ticket close 50"; do
+for args in "2 pr comments $comments_file" "1 ticket parent 50" "1 ticket close 50"; do
+  want="${args%% *}"; args="${args#* }"
   # shellcheck disable=SC2086 # each args string is a word list on purpose
   out="$(env -u ORCH_GH_ADAPTER "$ORCH" $args 2>&1)"; st=$?
-  assert_status "$args dies with no repo" "$st" 1
+  assert_status "$args dies with no repo" "$st" "$want"
   assert_contains "$args names GH_REPO as the remedy" "$out" "GH_REPO=<owner>/<repo>"
 done
 assert_eq "and nothing reached gh unpinned" "$(cat "$GH_FIXTURE/env.log")" ""
@@ -2119,7 +2121,7 @@ gl_wf="$(mktemp)"
 SECONDS=0
 out="$(ORCH_WAIT_BLOCK=1 ORCH_GH_LIMIT_WAIT=30 sourced_orch_script 'WAIT_MARK=$1.limited; adapter_issue_body 5' "$gl_wf" 2>&1)"; st=$?
 assert_status "a secondary limit a wait's block cannot hold fails the guarded call" "$st" 1
-assert_status "its mark for the poll loop is left" "$([ -e "$gl_wf.limited" ]; echo $?)" 0
+assert_status "its mark for the poll loop is left" "$([ -e "$gl_wf.limited" ] && echo 0 || echo 1)" 0
 assert_eq "with no limit message, nothing being given up" "$(grep -c 'rate limit reached' <<<"$out")" "0"
 assert_status "and it waits the block, not ORCH_GH_LIMIT_WAIT" "$((SECONDS < 20 ? 0 : 1))" 0
 rm -f "$gl_wf" "$gl_wf.limited" "$ORCH_GH_FAKE_STORE/ratelimit"

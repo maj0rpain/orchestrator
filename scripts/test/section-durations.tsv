@@ -107,7 +107,7 @@
 12	13	checkout (#1078)	85b65822bd5ebac5cdac093e84c0a28d92c25cc0
 3	4	checkout current branch (#1079)	8ed29994be0d37ea761c6fba66a7f1594d5332d1
 19	14	checkout busy, redo-retired branch (#1981)	d6d2a1101edb4c54066c3be0085daad6d002bc7b
-13	14	comments module	b8079bb02c58cd0da75f06afa0fd8a1c049fcaca
+14	13	comments module	bbd8dd8d448e627f5c855c4a453ae228cf85d6d3
 8	10	common.sh is the bottom layer	04f7eed4e1b745bc381196f09f7ddd3c7337cc02
 0	1	orch_dirs_unexcluded	12a7c2c452ab0556c398c46950d20b677e85748f
 2	2	exclude_line	91fd2dfe3a47af5e150b38ca04a8fa5232fb2954
@@ -158,7 +158,7 @@
 3	3	category table	4ddf897afb91fdb5736b0ac6486b6b06637af785
 1	2	axis table	e40740a4628929a0916a63a510c2590c3efae4a6
 9	10	finding body	5696eec5199d748658645aa3edd3f64bf40a7c35
-18	20	every gh call pinned to the repo (#520)	dc4b457722320e58c8666c05404851c65334dbfc
+28	24	every gh call pinned to the repo (#520)	67e9f2684fc0f11d79c0f6a50603256fed966a4e
 2	3	gh_reason and capture_err (#846)	095a11c195140d34a159babf35edf478a88ae658
 2	2	label_listed	a8ee5ba113a5b8ad46d21d87f9f5a69bec86286e
 26	27	gh failure verb and readers (#1022)	d42eaadd21f5b460ceef3fde92d86dd208a3f973
@@ -167,7 +167,7 @@
 162	175	gh adapter contract (#280)	e32d728acc800337850114304416363eb73cc454
 22	24	claim adapter operations (#1454)	00d248bcaf92e509ae82a735118d19ee3eaae9f4
 4	5	label casing (#1943)	7e3b89c80227bd15583b493104e3fd6e36ff9f1c
-61	46	gh rate limits (#2577)	9ff503560d53d5f90fc4290850ee8e77ae779f07
+78	49	gh rate limits (#2577)	d271a3eb8cd5a9f98fb8f5f6538b7be3f1c9002c
 14	15	gh rate limits: the GitHub pause and the hit file (#2577)	81ab2bc578eeeaacb0cab9ae3ddf537247cf6e64
 0	1	slug	0e5d14cb85802ac178af168a4ee7e009fa0b927b
 9	11	archive	ab01c77d6d8c6c3784c7e3244adedb382528bdd9
@@ -202,31 +202,31 @@
 14	16	init seeds the review loop	4fdc693af71369d7c69cb32de471d5038986af35
 5	6	init --issue trust warning	e3f8a66b3ae93ca44a635cd3eae2decbe1c33c24
 185	223	issue-timeline module	c60c74521e712ce2d67cc0b5fceb0a3a9673363e
-8	6	known-items module	091cffc0be5ee724d23395b87046a36491894c7e
+6	6	known-items module	4cac231615b2d8d9bc5665e54130500ba44570de
 8	9	Liveness module	a3eb853321244ddc291751d37b820bf4e3a80df7
 12	14	orch_load	78936724de415f7d72a2cb1732f2ec537485646c
 9	11	on-demand loading	6f5f8fdb61e60028685965dbdd5c3eb5ae8397b7
 14	15	stub table cache	4f0f12dcbedfdea3bf7690542ff5bf5d5a0e4a4e
-32	33	marked-comment module	fbf96690f59c83108a2387d3173115e249c6229d
+29	25	marked-comment module	f6f5c1a7f89a0d4a6d8a53403309d4f68d4fe0c2
 1	2	parallel show	29ed0447ad25daddc7f71a506dad5df2ad3d3cba
 55	58	phase advance / phase boundary	db56fe480597de86f8a487c134e1e6b488336fee
 0	1	phase advance help names handoffs by role (#1066)	fb4e9c6b059ec9f7d1aed9b47f5b974a48096e04
 31	35	phase advance in an autopilot flow (#1457)	3f11f48e53c11f24a0c5683139056f0b493b1fe0
 7	8	phase advance with a failed phase write (#1931)	c82e166171de5000ca89ef4f8614cc5c24820382
 8	9	phase advance and boundary read the flow's state once (#3063)	77bfab77e7199983dcb02b7ba2f7e0f59aa1636e
-60	63	pr open	3d61a1ed5ffcfbf019c9e155be8f6555a491cf74
-20	23	pr publish	902d8d87fdb4ea7e9ea7e6451bc95df1467b527a
-9	10	pr draft (#967)	2fcf41b7bf15a3cb9053a6513a3f264017c4cd09
-17	19	pr ready (#967)	c09179592ea47f3380ff5e59efd231c6abcdb0d8
-0	1	pr: unknown op	23a8d9f3afcf9188f83053f77307c3bb57660727
-17	20	pr release	a2a3fb885605dfa4b828b95ec1e2a21b00b020a9
-6	8	pr comment (#343)	d23b28b8ee74493e1aba607a529c1b5a0b947b7c
-12	14	pr fetch / pr update (#444)	dbe87bc76e7031ba3de6691684c366745f3ab0e2
-12	15	pr comments (#418)	99115a5ae7f9ed8a92206166a683f1a8cb8e4d1e
-18	20	pr read (#1573)	9cf4f283c66797b956629e21c992ab96cd0a9442
-15	18	pr: fork PRs (#1977)	b1369b7108b029e0296053c992eb0b53cbbff1e3
-5	6	pr: no repo (#3050)	8b3b809ad4bd20c29b28db9f93669024b929cd12
-0	1	pr: PR-line pick and newest merge (#3074)	f4c619df6cb7bde1cd52f0d8181a321aa7b5511e
+69	56	pr open	d9e007d3c480063307746cb0d73014ab7453d134
+45	38	pr publish	45af0b92c1455f1911f2daa73f5f8d03c9e5adb4
+17	15	pr draft (#967)	13ea96875dc38f4a1da2d0f8c4a3daf1f61b7f51
+39	34	pr ready (#967)	ac2ed66fdf328eda1ef6ab7849ab695ff9f0eedd
+1	2	pr: unknown op	8a056484b5fefc8db1c037396627fe136ed29252
+47	46	pr release	20ca92d5d540b7916263a8f91dee3541b35769fe
+15	14	pr comment (#343)	a356a3b11b881bc9d7fd9f5f737219facbb5b248
+30	28	pr fetch / pr update (#444)	ccd2477fcffd0095e187c3fa695271e25dda558b
+17	16	pr comments (#418)	1028676890fdf3f78cacfab80c12e8a13608675f
+25	21	pr read (#1573)	c75cb0d183eda9ec9e53e231baeb61383ff6df06
+2	30	pr: fork PRs (#1977)	fe6ded54e75b246aacfe0668a731e2d9e206e8a2
+9	9	pr: no repo (#3050)	c9d51d377fbe3e137b80431202c6d625b41119de
+1	2	pr: PR-line pick and newest merge (#3074)	37c4d9ac64b64eb5a46348880835b74ebd1e59f0
 78	81	redo review	b62654b38632ca3b2c5f4b61a4abeb2acb82faff
 8	9	redo review refuses a taken handoff destination	3fa122ad40f6cf338d95a10c114170d1f36c2318
 46	40	redo review rerun after review retire (#2569)	cd4da3ad670722945bb9f2dd3e2c8ec23e9b4fab
@@ -240,8 +240,6 @@
 10	11	redo reads its Flow state once, before its first write	c7e066d3d2068aae6549bf1324679159fbde39fd
 9	10	repo show	03b579d082d6e4e5353a860b91cb90f1006013d0
 7	8	default-branch	0177d6e5817d4d0befacac87fc2b2a0f621ad11b
-9	10	review-pass begin (#342)	c9a9274e4ded397a8c551e3b82717cd167110d2b
-52	64	review-pass known-items	1fef82c7211e3ec0461af015f37fbe44425ea8b8
 9	10	review ready's pointer to /orchestrator:finish (#727)	a9893c51acef3ce895b43d0f178599536435af94
 9	9	review begin	2ba9abde67db964730094c5a058de13e5ce061f2
 4	4	review path	7a16101d8b9b2159fca6d4f36f49cd0498205b47
@@ -340,7 +338,7 @@
 5	6	ticket merge beside a same-named tag (#2337)	3858a2ca9bc1227bed78d1eca0300eba2827ff86
 104	110	ticket reclaim (ADR-0054)	7ec366d96e6a84ae723df4b5833904e10b5a6bb9
 2	3	ticket exists: no repo (#3050)	062de093bbfb2338a6a4265e1d0a90e8cf621544
-20	22	trust module	dfb000c56ba19484f278d67a5e9d3d661b2728a7
+43	35	trust module	dd0183ac4380b097c6b51f9e75c4a3038ab514c5
 82	14	wait: a call's block is wall time	12313962ae192f692a6bf9948173a94ce462aa53
 882	983	hooks_test.sh	8dec8318df78d1487d2d11c16c6ac962831bc14c
 308	214	docs_lint.sh	8291da5fa50794e3d56e50fa81d282db284a6253
