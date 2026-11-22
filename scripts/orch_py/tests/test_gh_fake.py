@@ -356,9 +356,12 @@ def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
     ("adapter_pr_comments", lambda gh: gh.pr_comments(6)),
     ("adapter_sub_issues", lambda gh: gh.sub_issues(5)),
     ("adapter_blockers", lambda gh: gh.blockers(5)),
+    ("adapter_sub_issue_unlink", lambda gh: gh.sub_issue_unlink(5, 7)),
+    ("adapter_blocker_add", lambda gh: gh.blocker_add(5, 7)),
+    ("adapter_blocker_remove", lambda gh: gh.blocker_remove(5, 7)),
 ])
 def test_the_added_operations_fail_under_the_bash_operation_names(store, operation, call):
-    bash(store, "fake_issue 5 open review:nit; fake_default_branch trunk; "
+    bash(store, "fake_issue 5 open review:nit; fake_issue 7 open; fake_default_branch trunk; "
                 "fake_pr 6 open topic main; "
                 "fake_fail %s 'HTTP 502: Bad Gateway'" % operation)
 
@@ -494,6 +497,39 @@ fake_next_issue_after=$(cat "$ORCH_GH_FAKE_STORE/next_issue"); echo "next $fake_
         "CLOSED||||||\n"
         "next 41\n"
     )
+
+
+def test_python_unlinks_and_edge_writes_read_back_through_the_bash_fake(store):
+    bash(store, r"""
+for n in 10 11 12 13 14; do fake_issue $n open; done
+adapter_sub_issue_link 10 11
+adapter_sub_issue_link 10 12
+adapter_blocker_add 12 13
+""")
+    gh = fake(store)
+
+    gh.sub_issue_unlink(10, 11)
+    gh.blocker_add(12, 14)
+    gh.blocker_add(12, 14)
+    gh.blocker_remove(12, 13)
+    gh.blocker_remove(11, 13)
+
+    assert bash(store, "adapter_sub_issues 10; echo --; adapter_blockers 12; echo --; "
+                       "adapter_blockers 11") == "12\tOPEN\t1\n--\n14\n--\n"
+
+
+@pytest.mark.parametrize("call", [
+    lambda gh: gh.sub_issue_unlink(10, 99), lambda gh: gh.sub_issue_unlink(99, 10),
+    lambda gh: gh.blocker_add(10, 99), lambda gh: gh.blocker_remove(99, 10),
+])
+def test_an_unlink_or_edge_write_naming_an_issue_the_store_lacks_fails(store, call):
+    FakeStore(str(store)).issue(10, "open")
+
+    with pytest.raises(GhFailed) as failed:
+        call(fake(store))
+
+    assert "Could not resolve to an issue or pull request with the number of 99" in (
+        failed.value.stderr)
 
 
 def test_a_new_issue_with_no_next_number_seeded_takes_one_past_the_highest(store, tmp_path):

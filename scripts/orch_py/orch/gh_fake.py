@@ -68,6 +68,15 @@ def _countdown(path: str) -> bool:
     return True
 
 
+def _lines_drop(path: str, line: str) -> None:
+    """Every line of the file that is exactly <line> dropped, as the bash
+    fake's fake_lines_drop drops it; nothing where the file is absent."""
+    text = read_raw(path)
+    if text is None:
+        return
+    _write(path, "".join(kept + "\n" for kept in real.lines_of(text) if kept != line))
+
+
 def _numbered(directory: str) -> List[str]:
     """The names of the directory's entries, in numeric order."""
     try:
@@ -493,6 +502,30 @@ class FakeGh:
                 stale, lambda line: "gh answered a blocker that does not parse: " + line)
         self._known(n)
         return self._blockers(n)
+
+    def sub_issue_unlink(self, parent: int, child: int) -> None:
+        """The child dropped from the parent's stored sub-issues."""
+        self._failing("adapter_sub_issue_unlink")
+        self._known(parent)
+        self._known(child)
+        _lines_drop(_store_path(self.store, "subs", parent), str(child))
+
+    def blocker_add(self, n: int, blocker: int) -> None:
+        """The blocker appended to #n's stored blockers, once - GitHub stores
+        an edge once however often it is asked for."""
+        self._failing("adapter_blocker_add")
+        self._known(n)
+        self._known(blocker)
+        path = _store_path(self.store, "blocked_by", n)
+        if str(blocker) not in real.lines_of(read_raw(path) or ""):
+            _write(path, "%d\n" % blocker, "ab")
+
+    def blocker_remove(self, n: int, blocker: int) -> None:
+        """The blocker dropped from #n's stored blockers."""
+        self._failing("adapter_blocker_remove")
+        self._known(n)
+        self._known(blocker)
+        _lines_drop(_store_path(self.store, "blocked_by", n), str(blocker))
 
     def issue_open_blockers(self, n: int) -> Optional[int]:
         self._failing("adapter_issue_open_blockers")

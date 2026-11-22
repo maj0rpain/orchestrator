@@ -768,6 +768,30 @@ class Gh:
         return parse_numbers(
             answer, lambda line: "gh answered a blocker that does not parse: " + line)
 
+    def _issue_api_id(self, n: int) -> str:
+        """The issue's REST id, which the sub-issue and dependency writes name
+        the other issue by."""
+        return self._gh(["api", "repos/{owner}/{repo}/issues/%d" % n, "--jq", ".id"]).rstrip("\n")
+
+    def sub_issue_unlink(self, parent: int, child: int) -> None:
+        """Unlinks the child from the parent's sub-issues."""
+        child_id = self._issue_api_id(child)
+        self._gh(["api", "--method", "DELETE", "repos/{owner}/{repo}/issues/%d/sub_issue" % parent,
+                  "-F", "sub_issue_id=" + child_id])
+
+    def blocker_add(self, n: int, blocker: int) -> None:
+        """Adds the edge marking #n blocked by the blocker."""
+        blocker_id = self._issue_api_id(blocker)
+        self._gh(["api", "--method", "POST",
+                  "repos/{owner}/{repo}/issues/%d/dependencies/blocked_by" % n,
+                  "-F", "issue_id=" + blocker_id])
+
+    def blocker_remove(self, n: int, blocker: int) -> None:
+        """Removes the edge marking #n blocked by the blocker."""
+        blocker_id = self._issue_api_id(blocker)
+        self._gh(["api", "--method", "DELETE",
+                  "repos/{owner}/{repo}/issues/%d/dependencies/blocked_by/%s" % (n, blocker_id)])
+
     def issue_open_blockers(self, n: int) -> Optional[int]:
         """The count of #n's blockers still open, from its dependency
         summary; None where GitHub leaves the summary off - never a stand-in
