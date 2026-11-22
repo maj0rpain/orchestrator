@@ -585,7 +585,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               rewriting each ticket's `## Blocked by`
                               section from its blocking edges; the
                               published marker is written last. Prints the
-                              numbers in publishing order
+                              numbers in the order the numbers file first
+                              records them
   breakdown state <parent>    print complete, partial or none; with no draft
                               saved, ticket exists decides; exits 2 on a
                               failed read

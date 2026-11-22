@@ -2,14 +2,15 @@
 unescaped @@ line's refusal adds, the plain-number tests every verb checks its
 issue numbers with - any plain number, and one with no leading zero - the
 decimal-number tests and the poll-knob check a waiting verb reads its knobs
-with, the trim bash's trim makes, the atomic file write, the plain file write
-and append, the file read as bash's $(<file) gives it, the lines of a text and
-of a file, the markdown code-fence rule, the temporary file a comment is
-handed to gh from, the words a list and a state read as in a line, the
-orchestrator's directory name, the UTC stamp a run directory is named with,
-the git exclude writer, the copy bash's cp makes, the directory bash's
-mkdir -p makes, the removals bash's rm -f and rm -rf make, and the capture of
-a call's stderr and death that bash's capture and err_line make.
+with, the trim bash's trim makes, the word split bash's read -r makes, the
+atomic file write, the plain file write and append, the file read as bash's
+$(<file) gives it, the lines of a text and of a file, the markdown code-fence
+rule, the temporary file a comment is handed to gh from, the words a list and
+a state read as in a line, the orchestrator's directory name, the UTC stamp
+a run directory is named with, the git exclude writer, the copy bash's cp
+makes, the directory bash's mkdir -p makes, the removals bash's rm -f and
+rm -rf make, and the capture of a call's stderr and death that bash's capture
+and err_line make.
 
 Every `orch: ` message goes through die or warn, as in the bash side's
 common.sh: die(message, 2) is the bash die2, for a command that reserves exit
@@ -80,6 +81,25 @@ _SPACE = " \t\n\r\v\f"
 def trim(text: str) -> str:
     """<text> with leading and trailing whitespace removed, as bash's trim."""
     return text.strip(_SPACE)
+
+
+# bash's default IFS, the characters `read` splits words on.
+IFS = " \t\n"
+
+
+def read_words(text: str, count: int) -> List[str]:
+    """<text> split as bash's `read -r` splits a line into <count> names:
+    a word each, separated by runs of spaces, tabs or newlines, the last name
+    taking the rest, its trailing ones dropped. A name past the words is
+    empty."""
+    rest = text.strip(IFS)
+    words = []
+    for _ in range(count - 1):
+        word = re.match(r"[^ \t\n]*", rest).group()
+        words.append(word)
+        rest = rest[len(word):].lstrip(IFS)
+    words.append(rest)
+    return words
 
 
 _NUMBER = re.compile(r"[0-9]+\.?[0-9]*|\.[0-9]+")

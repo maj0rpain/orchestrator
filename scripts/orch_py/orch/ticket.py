@@ -7,10 +7,11 @@ under (ADR-0012), detected and cut; the commands spec-review apply runs on a
 breakdown, `ticket exists`, `ticket block`, `ticket unblock` and `ticket
 retire`, with the helpers they reach; and the create and link breakdown
 publish runs on each ticket, ticket_create and ticket_link, with
-ticket_links_verified and blockers_set. Each is copied from the bash ticket
-module under its bash name, with its messages and its order of steps; the
-bash copies stay while a bash caller remains (ADR-0067). The commands' usage
-refusals stay in the bash `ticket` noun: apply never reaches them.
+ticket_links_verified, ticket_edges_verified and blockers_set. Each is copied
+from the bash ticket module under its bash name, with its messages and its
+order of steps; the bash copies stay while a bash caller remains (ADR-0067).
+The commands' usage refusals stay in the bash `ticket` noun: apply never
+reaches them.
 
 The body reads take the body as awk reads it, one line per newline, a last
 line with no newline included, and each line's trailing CR ignored, so a
@@ -223,7 +224,15 @@ def ticket_links_verified(gh, parent: str, child: str, want: Sequence[int]) -> b
     GhFailed, never answered as a mismatch (#843)."""
     if not ticket_listing_state(gh.sub_issues(int(parent)), child):
         return False
-    return sorted(set(gh.blockers(int(child)))) == sorted(set(want))
+    return ticket_edges_verified(gh, child, want)
+
+
+def ticket_edges_verified(gh, n: str, want: Sequence[int]) -> bool:
+    """Whether ticket <n>'s blockers, read fresh, are the set <want>, both
+    sides sorted and de-duplicated - the verifier verify_twice runs for its
+    blocking edges, and ticket_links_verified's second half. A failed read
+    raises GhFailed, never answered as a mismatch."""
+    return sorted(set(gh.blockers(int(n)))) == sorted(set(want))
 
 
 def ticket_create(gh, labels: TriageLabels, title: str, body_file: str) -> int:
@@ -320,7 +329,7 @@ def ticket_edges_change(gh, verb: str, n: str, by_text: str) -> None:
     want = sorted(set(before) | set(by)) if block else [b for b in before if b not in by]
     verify_twice("read ticket #%s's blockers" % n,
                  "ticket #%s's blocking edges did not verify - checked twice, both failed" % n,
-                 lambda: sorted(set(gh.blockers(int(n)))) == want)
+                 lambda: ticket_edges_verified(gh, n, want))
     ticket_blocked_by_rewrite(gh, n, want)
 
 

@@ -26,16 +26,14 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 from typing import Dict, List, Mapping, NamedTuple, NoReturn, Optional, Tuple
 
-from orch.common import (AT_LINE_ESCAPE_HINT, ORCH_DIR_NAME, die, file_lines, lines_of,
-                         mkdir_p_or_die, plain_number, read_raw, temp_text_file,
-                         text_file_append, text_file_write)
+from orch.common import (AT_LINE_ESCAPE_HINT, ORCH_DIR_NAME, die, file_lines,
+                         file_write_atomic, lines_of, mkdir_p_or_die, plain_number, read_raw,
+                         read_words, temp_text_file, text_file_append, text_file_write)
 from orch.git import Git
 from orch.repo import REPO_REMEDY, RepoPin
 from orch.root import checkout_root
-from orch.spec_review_batch import read_words
 from orch.ticket import (blockers_set, issue_number_list, ticket_create, ticket_exists,
                          ticket_link)
 from orch.triage_labels import TriageLabels
@@ -188,14 +186,11 @@ def breakdown_record(numbers: str, k: str, n: str, status: str) -> None:
                      "could not write ticket #%s's %s record to %s" % (n, status, numbers))
 
 
-def _save_draft(draft: str, directory: str, saved: str) -> None:
-    """The given draft saved as the save point's draft.md: copied to a temp
-    file beside it, then renamed over it."""
+def _save_draft(text: str, directory: str, saved: str) -> None:
+    """The given draft's <text> saved as the save point's draft.md, written
+    atomically (file_write_atomic)."""
     mkdir_p_or_die(directory, "could not create " + directory)
-    try:
-        shutil.copyfile(draft, saved + ".tmp")
-        os.replace(saved + ".tmp", saved)
-    except OSError:
+    if not file_write_atomic(saved, text, False):
         die("could not save the breakdown draft to " + saved)
 
 
@@ -217,10 +212,10 @@ def publish(args: List[str], gh_of, root: str) -> int:
     """`breakdown publish <parent> <draft-file>`: every ticket of the draft
     created, linked as a sub-issue of <parent> with its blocking edges, and
     verified, in publishing order; then the published marker, and the
-    numbers printed in publishing order. A saved draft wins over the one
-    given; with none, the given draft is parsed and ordered before it is
-    saved, so a malformed or cyclic draft saves nothing. Every failure dies
-    with 1."""
+    numbers printed in the order the numbers file first records them
+    (_first_numbers). A saved draft wins over the one given; with none, the
+    given draft is parsed and ordered before it is saved, so a malformed or
+    cyclic draft saves nothing. Every failure dies with 1."""
     if len(args) != 2:
         die("usage: orch.sh breakdown publish <parent> <draft-file>")
     parent, draft = args
@@ -231,8 +226,9 @@ def publish(args: List[str], gh_of, root: str) -> int:
     if not os.path.isfile(saved):
         if not os.path.isfile(draft):
             die("draft file not found: " + draft)
-        breakdown_order(breakdown_parse(read_raw(draft) or ""))
-        _save_draft(draft, directory, saved)
+        text = read_raw(draft) or ""
+        breakdown_order(breakdown_parse(text))
+        _save_draft(text, directory, saved)
     tickets = {ticket.position: ticket for ticket in breakdown_parse(read_raw(saved) or "")}
     order, blockers = breakdown_order(list(tickets.values()))
     numbers = directory + "/numbers"

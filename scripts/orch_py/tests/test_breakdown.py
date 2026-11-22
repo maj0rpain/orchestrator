@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import (GH_502, died_of, labels_doc, labels_of, read, snapshot,
+from conftest import (GH_502, blockers_of, died_of, labels_doc, labels_of, read, snapshot,
                       write_labels_doc)
 from orch import breakdown, cli
 from orch.gh_fake import FakeGh
@@ -161,11 +161,6 @@ def subs_of(seed, parent):
     return (read(seed.store, "subs", parent) or "").split()
 
 
-def blockers_of(seed, n):
-    """The numbers the store lists as issue #n's blockers, in edge order."""
-    return (read(seed.store, "blocked_by", n) or "").split()
-
-
 def body_of(seed, n):
     return read(seed.store, "issues", n, "body")
 
@@ -185,7 +180,7 @@ def test_a_clean_publish_creates_links_and_blocks_every_ticket_in_publishing_ord
         "First\n", "Second\n", "Third\n"]
     assert [labels_of(spec.store, n) for n in (100, 101, 102)] == [["ready-for-agent"]] * 3
     assert subs_of(spec, 50) == ["100", "101", "102"]
-    assert [blockers_of(spec, n) for n in (100, 101, 102)] == [[], ["100"], ["100", "101"]]
+    assert [blockers_of(spec.store, n) for n in (100, 101, 102)] == [[], ["100"], ["100", "101"]]
     assert [body_of(spec, n) for n in (100, 101, 102)] == [
         "Body one.\n\n## Blocked by\n\nNone (can start immediately)\n",
         "Body two.\n\n## Blocked by\n\n- #100\n",
@@ -225,7 +220,7 @@ def test_escaped_grammar_lines_publish_as_body_lines_losing_one_backslash(
 
     assert capsys.readouterr().out == "100\n101\n"
     assert subs_of(spec, 50) == ["100", "101"]
-    assert blockers_of(spec, 100) == []
+    assert blockers_of(spec.store, 100) == []
     assert body_of(spec, 100) == (
         "@@ blocked-by 1\n@@ end\n@@ ticket 9 x\n\\@@ x\n\\a @@ y\n@@x\n@@-1\n"
         "\n## Blocked by\n\nNone (can start immediately)\n")
@@ -242,7 +237,7 @@ def test_a_crlf_draft_publishes_as_its_lf_form_and_is_saved_byte_for_byte(
     assert capsys.readouterr().out == "100\n101\n"
     assert [read(spec.store, "issues", n, "title") for n in (100, 101)] == ["Alpha\n", "Beta\n"]
     assert body_of(spec, 100).startswith("Body line.\n@@ end\n\n## Blocked by")
-    assert blockers_of(spec, 101) == ["100"]
+    assert blockers_of(spec.store, 101) == ["100"]
     assert (root / ".orchestrator/breakdown/50/draft.md").read_bytes() == text.encode()
 
 
@@ -251,7 +246,7 @@ def test_an_empty_blocked_by_list_means_no_blockers(root, spec, tmp_path, capsys
 
     assert orch_breakdown(root, spec, "publish", "50", draft_file(tmp_path, text)) == 0
 
-    assert blockers_of(spec, 100) == []
+    assert blockers_of(spec.store, 100) == []
 
 
 def test_blockers_keep_the_draft_s_text_de_duplicated_by_number(root, spec, tmp_path, capsys):
@@ -260,7 +255,7 @@ def test_blockers_keep_the_draft_s_text_de_duplicated_by_number(root, spec, tmp_
 
     assert orch_breakdown(root, spec, "publish", "50", draft_file(tmp_path, text)) == 0
 
-    assert blockers_of(spec, 101) == ["100"]
+    assert blockers_of(spec.store, 101) == ["100"]
 
 
 def test_tickets_publish_blockers_first_and_otherwise_in_draft_order(
@@ -275,7 +270,7 @@ def test_tickets_publish_blockers_first_and_otherwise_in_draft_order(
     assert capsys.readouterr().out == "100\n101\n102\n103\n"
     assert [read(spec.store, "issues", n, "title") for n in (100, 101, 102, 103)] == [
         "Two\n", "Three\n", "Four\n", "One\n"]
-    assert blockers_of(spec, 103) == ["101"]
+    assert blockers_of(spec.store, 103) == ["101"]
 
 
 HINT = " - a body line starting with @@ is written \\@@"
@@ -398,8 +393,8 @@ def test_a_resume_links_a_ticket_recorded_created_and_never_creates_it_again(
     assert subs_of(spec, 50) == ["100", "101", "102"]
     assert [read(spec.store, "issues", n, "title") for n in (101, 102, 103)] == [
         "Second\n", "Third\n", None]
-    assert blockers_of(spec, 101) == ["100"]
-    assert blockers_of(spec, 102) == ["100", "101"]
+    assert blockers_of(spec.store, 101) == ["100"]
+    assert blockers_of(spec.store, 102) == ["100", "101"]
     assert published(root) == (
         "1 100 created\n1 100 linked\n2 101 created\n2 101 linked\n3 102 created\n"
         "3 102 linked\n", True)
@@ -448,7 +443,7 @@ def test_a_resume_writes_only_the_links_and_edges_that_never_landed(
 
     assert capsys.readouterr() == ("100\n101\n102\n", "")
     assert subs_of(spec, 50) == ["100", "101", "102"]
-    assert blockers_of(spec, 102) == ["100", "101"]
+    assert blockers_of(spec.store, 102) == ["100", "101"]
     assert published(root)[1]
 
 
@@ -524,7 +519,7 @@ def test_a_ticket_left_created_by_a_failed_link_is_linked_by_the_rerun(
 
     assert capsys.readouterr() == ("100\n101\n102\n", "")
     assert subs_of(spec, 50) == ["100", "101", "102"]
-    assert blockers_of(spec, 101) == ["100"]
+    assert blockers_of(spec.store, 101) == ["100"]
 
 
 def test_links_that_never_read_back_die_as_unverified(root, spec, tmp_path, capsys):
@@ -579,13 +574,14 @@ def test_a_save_point_that_cannot_be_made_dies_creating_nothing(root, spec, tmp_
 
 def test_a_draft_that_cannot_be_saved_dies_creating_nothing(root, spec, tmp_path, capsys):
     directory = save_point(root, 50)
-    (directory / "draft.md.tmp").mkdir()
+    (directory / "draft.md").mkdir()
 
     assert orch_breakdown(root, spec, "publish", "50", draft_file(tmp_path, DRAFT)) == 1
 
     assert capsys.readouterr() == (
         "", "orch: could not save the breakdown draft to %s/draft.md\n" % directory)
-    assert not (directory / "draft.md").exists()
+    assert os.listdir(directory) == ["draft.md"]
+    assert not (directory / "draft.md").is_file()
     assert read(spec.store, "issues", 100, "title") is None
 
 

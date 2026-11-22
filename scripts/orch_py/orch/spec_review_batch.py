@@ -34,8 +34,8 @@ import re
 from typing import Dict, List, NoReturn, Optional, Tuple
 
 from orch.autopilot import autopilot_active
-from orch.common import (AT_LINE_ESCAPE_HINT, die, lines_of, plain_number, plain_positive_number,
-                         read_raw, trim, warn)
+from orch.common import (AT_LINE_ESCAPE_HINT, IFS, die, lines_of, plain_number,
+                         plain_positive_number, read_raw, read_words, trim, warn)
 
 # The lenses, in the lens table's order - the changelog's section order.
 SPEC_REVIEW_LENSES = ("fidelity", "consistency", "testability", "implementability")
@@ -50,28 +50,10 @@ TITLES = {"consolidation": "Consolidation", "fidelity": "Fidelity",
 # view stays short.
 SUMMARY_WORDS = 30
 
-# bash's default IFS, the characters `read` splits words on.
-_IFS = " \t\n"
-
 
 def lens_known(name: str) -> bool:
     """Whether <name> is one of the four lenses, matched whole."""
     return name in SPEC_REVIEW_LENSES
-
-
-def read_words(text: str, count: int) -> List[str]:
-    """<text> split as bash's `read -r` splits a line into <count> names:
-    a word each, separated by runs of spaces, tabs or newlines, the last name
-    taking the rest, its trailing ones dropped. A name past the words is
-    empty."""
-    rest = text.strip(_IFS)
-    words = []
-    for _ in range(count - 1):
-        word = re.match(r"[^ \t\n]*", rest).group()
-        words.append(word)
-        rest = rest[len(word):].lstrip(_IFS)
-    words.append(rest)
-    return words
 
 
 def one_line(text: str) -> str:
@@ -388,7 +370,7 @@ class _BatchParser:
         self.stop(line, "item %s's mark must be material or minor, got '%s'" % (n, mark))
 
     def summary_cap(self, line: int, what: str, summary: str) -> None:
-        words = [word for word in re.split("[" + _IFS + "]+", summary) if word]
+        words = [word for word in re.split("[" + IFS + "]+", summary) if word]
         if len(words) > SUMMARY_WORDS:
             self.content(line, "%s's @@ summary has %d words, more than %d"
                          % (what, len(words), SUMMARY_WORDS))
