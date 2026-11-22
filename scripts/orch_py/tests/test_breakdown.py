@@ -420,6 +420,21 @@ def test_the_last_numbers_line_for_a_position_wins(root, spec, tmp_path, capsys)
     assert subs_of(spec, 50) == ["100", "101"]
 
 
+def test_the_numbers_print_in_the_order_their_positions_first_appear_in_the_numbers_file(
+        root, spec, tmp_path, capsys):
+    # A bash-format save point whose numbers file names ticket 2 before
+    # ticket 1: the output follows the file, not the publishing order.
+    saved(root, spec, DRAFT, "2 101 created\n1 100 created\n1 100 linked\n2 101 linked\n",
+          (100, "First", True, ()), (101, "Second", True, (100,)))
+
+    assert orch_breakdown(root, spec, "publish", "50", "/nonexistent") == 0
+
+    assert capsys.readouterr() == ("101\n100\n102\n", "")
+    assert published(root) == (
+        "2 101 created\n1 100 created\n1 100 linked\n2 101 linked\n3 102 created\n"
+        "3 102 linked\n", True)
+
+
 def test_a_resume_writes_only_the_links_and_edges_that_never_landed(
         root, spec, tmp_path, capsys):
     saved(root, spec, DRAFT,
