@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.11.7
+
+`orch.sh breakdown` now runs as Python, the eighth noun moved out of bash. Its verbs, `publish <parent> <draft-file>` and `state <parent>`, keep their arguments, output, exit codes and messages. The draft is parsed in memory, with the same malformed-draft messages and line numbers as before, and the save point under `.orchestrator/breakdown/<parent>/` keeps its layout, so a publish that died under the bash version resumes under the Python one. The `@@`-escape hint now lives once, in the Python common module, which closes #4028. The bash breakdown module and its tests are gone.
+
 ## 6.11.6
 
 `orch.sh spec` now runs as Python, the seventh noun moved out of bash. Its verbs, `fetch`, `update`, `comment`, `comments`, `pause` (with `--round <k>/<n>`), `round` and `round-dir`, keep their arguments, usage lines, output, exit codes and messages, and the order of their checks. In an autopilot flow, `pause --round` still releases the claim after writing the round marker, and a failed release still names the writes that landed. The Python spec module's copies of the round helpers are now the only ones. `redo spec` stays in bash and holds the two marker names itself. The bash spec module and its tests are gone.
