@@ -404,6 +404,8 @@ def api_id_argv(number):
     return ["api", "repos/{owner}/{repo}/issues/%d" % number, "--jq", ".id"]
 
 
+LINK = ["api", "--method", "POST", "repos/{owner}/{repo}/issues/5/sub_issues",
+        "-F", "sub_issue_id=9007"]
 UNLINK = ["api", "--method", "DELETE", "repos/{owner}/{repo}/issues/5/sub_issue",
           "-F", "sub_issue_id=9007"]
 BLOCKER_ADD = ["api", "--method", "POST", "repos/{owner}/{repo}/issues/5/dependencies/blocked_by",
@@ -413,11 +415,12 @@ BLOCKER_REMOVE = ["api", "--method", "DELETE",
 
 
 @pytest.mark.parametrize("call, write", [
+    (lambda gh: gh.sub_issue_link(5, 7), LINK),
     (lambda gh: gh.sub_issue_unlink(5, 7), UNLINK),
     (lambda gh: gh.blocker_add(5, 7), BLOCKER_ADD),
     (lambda gh: gh.blocker_remove(5, 7), BLOCKER_REMOVE),
 ])
-def test_an_unlink_or_edge_write_names_the_other_issue_by_its_api_id(fixture_gh, call, write):
+def test_a_link_unlink_or_edge_write_names_the_other_issue_by_its_api_id(fixture_gh, call, write):
     fixture_gh.reply(api_id_argv(7), "9007\n")
     fixture_gh.reply(write, "{}\n")
 
@@ -425,13 +428,25 @@ def test_an_unlink_or_edge_write_names_the_other_issue_by_its_api_id(fixture_gh,
     assert fixture_gh.argvs() == [api_id_argv(7), write]
 
 
-def test_an_edge_write_whose_api_id_read_fails_makes_no_write(fixture_gh):
+@pytest.mark.parametrize("call", [
+    lambda gh: gh.sub_issue_link(5, 7), lambda gh: gh.blocker_add(5, 7)])
+def test_a_link_or_edge_write_whose_api_id_read_fails_makes_no_write(fixture_gh, call):
     fixture_gh.reply(api_id_argv(7), stderr="HTTP 404: Not Found\n", exit=1)
 
     with pytest.raises(GhFailed) as failed:
-        real_gh(fixture_gh).blocker_add(5, 7)
+        call(real_gh(fixture_gh))
     assert failed.value.stderr == "HTTP 404: Not Found\n"
     assert fixture_gh.argvs() == [api_id_argv(7)]
+
+
+def test_a_failed_sub_issue_link_write_passes_gh_s_stderr_through(fixture_gh):
+    fixture_gh.reply(api_id_argv(7), "9007\n")
+    fixture_gh.reply(LINK, stderr="HTTP 422: Sub issue may only have one parent\n", exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).sub_issue_link(5, 7)
+    assert failed.value.stderr == "HTTP 422: Sub issue may only have one parent\n"
+    assert fixture_gh.argvs() == [api_id_argv(7), LINK]
 
 
 OPEN_TITLES = ["api", "--paginate", "repos/{owner}/{repo}/issues?state=open&per_page=100",

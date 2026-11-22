@@ -2,9 +2,10 @@
 `python3 -m orch` would be, through a `-c` bootstrap (ADR-0067), end to end:
 each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>`,
 `orch.sh verification <verb>`, `orch.sh audit <verb>`, `orch.sh review-pass
-<verb>`, `orch.sh spec-review <verb>` or `orch.sh spec <verb>` as a command, in
-a checkout under tmp_path, against a fake store seeded in the layout the bash suite's fake_*
-helpers write, with ORCH_GH_FAKE_STORE set as fake_github sets it."""
+<verb>`, `orch.sh spec-review <verb>`, `orch.sh breakdown <verb>` or `orch.sh
+spec <verb>` as a command, in a checkout under tmp_path, against a fake store
+seeded in the layout the bash suite's fake_* helpers write, with
+ORCH_GH_FAKE_STORE set as fake_github sets it."""
 from __future__ import annotations
 
 import os
@@ -501,6 +502,20 @@ def test_help_lists_all_five_spec_review_verbs(tmp_path, repo, seed):
     assert [line.split()[1] for line in out.splitlines()
             if line.startswith("  spec-review ")] == [
         "begin", "check", "wait", "prompt", "apply", "apply"]
+
+
+# --- breakdown ---------------------------------------------------------------
+
+def test_breakdown_state_reads_the_spec_s_tickets_through_the_python_noun(tmp_path, repo, seed):
+    seed.issue(50, "open")
+    seed.issue(60, "open")
+    seed.sub_issue(50, 60)
+
+    answer = orch_sh(tmp_path, repo, seed, "breakdown", "state", "50",
+                     path=python3_shim(tmp_path))
+
+    assert answer == ("complete\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
 
 
 # --- spec --------------------------------------------------------------------

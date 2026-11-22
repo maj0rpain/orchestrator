@@ -65,6 +65,11 @@ def read(store, *parts):
         return f.read()
 
 
+def blockers_of(store, n):
+    """The numbers the store lists as issue #n's blockers, in edge order."""
+    return (read(store, "blocked_by", n) or "").split()
+
+
 def snapshot(store):
     """Every file the store holds, with its contents - but the comment-read
     counter, which a read bumps."""

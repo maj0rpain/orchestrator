@@ -52,7 +52,7 @@ from orch import spec, spec_review_apply
 from orch.common import (ORCH_DIR_NAME, capture, die, err_line, file_lines, plain_number,
                          read_raw, require_poll_knobs, rm_f_or_die, text_file_write, warn)
 from orch.flow_state import STATE_UNREADABLE_MSG, flow_state_file, flow_state_get_many
-from orch.gh import adapter
+from orch.gh import adapter_of
 from orch.git import Git
 from orch.handoff import handoff_path
 from orch.host import flow_cmd
@@ -673,9 +673,7 @@ def run(
     # The gh adapter, made at the first GitHub call: apply's refusals before
     # it make none, and prompt makes one only for the Fidelity lens, the one
     # whose plan handoff may be read from a comment.
-    def gh_of():
-        return gh if gh is not None else adapter(env, pin=pin)
-
+    gh_of = adapter_of(gh, env, pin=pin)
     if op == "apply":
         return apply(argv[1:], gh_of, git, env, root)
     if op == "check":

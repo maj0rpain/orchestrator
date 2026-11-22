@@ -1,14 +1,17 @@
-"""The ticket concept's Python copies, kept to what the spec-review noun
-reaches so far: a breakdown's sub-issue listing (ticket_sub_issues) and the
-state of one ticket in it; the reads and rewrites of a body's markdown - the
-numbers a ticket's `## Blocked by` section lists, that section rewritten, and
-the `## Ticket` heading a collapsed breakdown sits under (ADR-0012), detected
-and cut; and the commands spec-review apply runs on a breakdown, `ticket
-exists`, `ticket block`, `ticket unblock` and `ticket retire`, with the
-helpers they reach. Each is copied from the bash ticket module under its bash
-name, with its messages and its order of steps; the bash copies stay while a
-bash caller remains (ADR-0067). The commands' usage refusals stay in the bash
-`ticket` noun: apply never reaches them.
+"""The ticket concept's Python copies, kept to what the spec-review and
+breakdown nouns reach so far: a breakdown's sub-issue listing
+(ticket_sub_issues) and the state of one ticket in it; the reads and rewrites
+of a body's markdown - the numbers a ticket's `## Blocked by` section lists,
+that section rewritten, and the `## Ticket` heading a collapsed breakdown sits
+under (ADR-0012), detected and cut; the commands spec-review apply runs on a
+breakdown, `ticket exists`, `ticket block`, `ticket unblock` and `ticket
+retire`, with the helpers they reach; and the create and link breakdown
+publish runs on each ticket, ticket_create and ticket_link, with
+ticket_links_verified, ticket_edges_verified and blockers_set. Each is copied
+from the bash ticket module under its bash name, with its messages and its
+order of steps; the bash copies stay while a bash caller remains (ADR-0067).
+The commands' usage refusals stay in the bash `ticket` noun: apply never
+reaches them.
 
 The body reads take the body as awk reads it, one line per newline, a last
 line with no newline included, and each line's trailing CR ignored, so a
@@ -23,20 +26,23 @@ either, is not commented on again.
 from __future__ import annotations
 
 import re
-from typing import Callable, List, Optional, Sequence
+from typing import Callable, Iterable, List, Optional, Sequence
 
 from orch import comments
-from orch.breakdown import breakdown_dir
 from orch.common import (ORCH_DIR_NAME, die, fenced, lines_of, plain_number, rm_f_or_die,
-                         rm_rf_or_die, temp_text_file)
+                         rm_rf_or_die, temp_text_file, without_cr)
 from orch.gh import GhFailed, SubIssue, gh_die, gh_or_die, verify_twice
 from orch.repo import REPO_REMEDY
+from orch.triage_labels import TriageLabels
 
 # The fixed heading line a collapsed ticket breakdown sits under (ADR-0012).
 TICKET_HEADING = "## Ticket"
 
 # The heading of a ticket body's section listing its blockers.
 BLOCKED_BY_HEADING = "## Blocked by"
+
+# The refusal of a parent that is no plain issue number, the parent appended.
+PARENT_NOT_PLAIN = "parent must be a plain issue number, got: "
 
 # A line that is a `#` or `##` heading: what ends a section.
 _SECTION_END = re.compile(r"##?([ \t]|$)")
@@ -49,7 +55,7 @@ def ticket_sub_issues(gh, parent: str, code: int = 1) -> List[SubIssue]:
     that cannot list them dies in the gh failure contract's grammar, exit
     <code>."""
     if not plain_number(parent):
-        die("parent must be a plain issue number, got: " + parent)
+        die(PARENT_NOT_PLAIN + parent)
     return gh_or_die("list sub-issues of #" + parent, gh.sub_issues, int(parent), code=code)
 
 
@@ -65,7 +71,7 @@ def ticket_listing_state(listing: Sequence[SubIssue], n: str) -> str:
 def _read(body: str):
     """<body>'s lines with their trailing CR dropped, and the fence state of
     each."""
-    lines = [line[:-1] if line.endswith("\r") else line for line in lines_of(body)]
+    lines = [without_cr(line) for line in lines_of(body)]
     return lines, fenced(lines)
 
 
@@ -207,6 +213,66 @@ def ticket_blocked_by_rewrite(gh, n: str, want: Sequence[int]) -> None:
                        lambda body: rewrite_blocked_by_section(body, want))
 
 
+def blockers_set(numbers: Iterable[str]) -> List[int]:
+    """The numbers of <numbers>, blank entries dropped, sorted numerically
+    and de-duplicated; none for an empty list."""
+    return sorted({int(n) for n in numbers if n})
+
+
+def ticket_links_verified(gh, parent: str, child: str, want: Sequence[int]) -> bool:
+    """Whether both links read back exactly as published: <parent>'s
+    sub-issue listing contains <child>, and <child>'s blockers are the set
+    <want>, in any order, both sides de-duplicated. Read fresh every call,
+    never cached, so verify_twice's retry reads again; a failed read raises
+    GhFailed, never answered as a mismatch (#843)."""
+    if not ticket_listing_state(gh.sub_issues(int(parent)), child):
+        return False
+    return ticket_edges_verified(gh, child, want)
+
+
+def ticket_edges_verified(gh, n: str, want: Sequence[int]) -> bool:
+    """Whether ticket <n>'s blockers, read fresh, are the set <want>, both
+    sides sorted and de-duplicated - the verifier verify_twice runs for its
+    blocking edges, and ticket_links_verified's second half. A failed read
+    raises GhFailed, never answered as a mismatch."""
+    return sorted(set(gh.blockers(int(n)))) == sorted(set(want))
+
+
+def ticket_create(gh, labels: TriageLabels, title: str, body_file: str) -> int:
+    """The ticket's issue, created with <title> and the body in <body_file>
+    under this repo's ready-for-agent label, as <labels> maps the role: its
+    number. Dies when the create fails."""
+    ready = labels.label("ready-for-agent")
+    return gh_or_die("create the ticket", gh.issue_create, title, body_file, [ready])
+
+
+def ticket_link(gh, parent: str, n: str, want: Sequence[int]) -> None:
+    """Ticket <n> put in place under <parent> with the blockers <want> (a
+    blockers_set), whatever already landed. The parent's sub-issue listing is
+    read and the ticket linked only when it is not listed; its blockers are
+    read once, and only when <want> is non-empty, and only the edges it lacks
+    are added, so a resume never writes a link already present. Then every
+    link is read back through verify_twice (ADR-0011), and once they verify
+    the ticket's `## Blocked by` section is rewritten from <want>, as `ticket
+    block` writes it."""
+    subs = ticket_sub_issues(gh, parent)
+    if not ticket_listing_state(subs, n):
+        gh_or_die("link ticket #%s as a sub-issue of #%s" % (n, parent), gh.sub_issue_link,
+                  int(parent), int(n))
+    if want:
+        have = ticket_blockers(gh, n)
+        for b in want:
+            if b in have:
+                continue
+            gh_or_die("add a blocking edge from ticket #%s on #%d" % (n, b), gh.blocker_add,
+                      int(n), b)
+    verify_twice("read ticket #%s's links" % n,
+                 "ticket #%s's sub-issue/blocked-by links did not verify - checked twice, both"
+                 " failed" % n,
+                 lambda: ticket_links_verified(gh, parent, n, want))
+    ticket_blocked_by_rewrite(gh, n, want)
+
+
 def ticket_exists(gh, parent: str) -> Optional[str]:
     """`ticket exists <parent>`: "sub-issues" when <parent> has sub-issues,
     open or closed, else "collapsed" when its body has the `## Ticket`
@@ -214,7 +280,7 @@ def ticket_exists(gh, parent: str) -> Optional[str]:
     cannot read, a repo it cannot pin, or a parent that is no plain number
     dies with 2, never 1."""
     if not plain_number(parent):
-        die("parent must be a plain issue number, got: " + parent, 2)
+        die(PARENT_NOT_PLAIN + parent, 2)
     if not gh.pin():
         die(REPO_REMEDY, 2)
     if ticket_sub_issues(gh, parent, code=2):
@@ -266,7 +332,7 @@ def ticket_edges_change(gh, verb: str, n: str, by_text: str) -> None:
     want = sorted(set(before) | set(by)) if block else [b for b in before if b not in by]
     verify_twice("read ticket #%s's blockers" % n,
                  "ticket #%s's blocking edges did not verify - checked twice, both failed" % n,
-                 lambda: sorted(set(gh.blockers(int(n)))) == want)
+                 lambda: ticket_edges_verified(gh, n, want))
     ticket_blocked_by_rewrite(gh, n, want)
 
 
@@ -305,6 +371,10 @@ def ticket_retire(gh, parent: str, root: str) -> None:
     parent's own saved report dropped, every `## Ticket` section cut from its
     body and its breakdown save point removed. A breakdown already retired
     writes nothing. Any GitHub failure dies."""
+    # Imported here, not at the top: the breakdown noun imports this module,
+    # and only this one path lookup reaches back.
+    from orch.breakdown import breakdown_dir
+
     subs = ticket_sub_issues(gh, parent)
     message, old_message = RETIRED % parent, RETIRED_BY_REDO % parent
     for row in subs:

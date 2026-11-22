@@ -11,7 +11,7 @@ import os
 
 import pytest
 
-from conftest import GH_502, comments_of, died_of, fake, read, snapshot
+from conftest import GH_502, blockers_of, comments_of, died_of, fake, read, snapshot
 from orch.gh import SubIssue
 from orch.repo import REPO_REMEDY
 from orch.ticket import (blocked_by_section_numbers, has_ticket_heading,
@@ -178,10 +178,6 @@ def breakdown(seed, *tickets, parent=96):
         seed.issue(n, "open")
         seed.body(n, UNBLOCKED)
         seed.sub_issue(parent, n)
-
-
-def blockers_of(store, n):
-    return (read(store, "blocked_by", n) or "").split()
 
 
 def test_block_adds_each_missing_edge_once_and_rewrites_the_blocked_by_section(seed, store):

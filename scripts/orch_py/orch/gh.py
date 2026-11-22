@@ -801,6 +801,12 @@ class Gh:
         the other issue by."""
         return self._gh(["api", "repos/{owner}/{repo}/issues/%d" % n, "--jq", ".id"]).rstrip("\n")
 
+    def sub_issue_link(self, parent: int, child: int) -> None:
+        """Links the child as a sub-issue of the parent."""
+        child_id = self._issue_api_id(child)
+        self._gh(["api", "--method", "POST", "repos/{owner}/{repo}/issues/%d/sub_issues" % parent,
+                  "-F", "sub_issue_id=" + child_id])
+
     def sub_issue_unlink(self, parent: int, child: int) -> None:
         """Unlinks the child from the parent's sub-issues."""
         child_id = self._issue_api_id(child)
@@ -882,3 +888,15 @@ def adapter(
 
         return FakeGh(store, env, pin=pin)
     return Gh(pin, env)
+
+
+def adapter_of(gh, env: Mapping[str, str], pin: Optional[RepoPin] = None) -> Callable[[], object]:
+    """A noun's gh adapter, made at its first GitHub call: a callable
+    answering <gh> when a test handed one in, else adapter(<env>, pin=<pin>)
+    - made afresh at each call, so an op that makes no GitHub call makes
+    none."""
+
+    def gh_of():
+        return gh if gh is not None else adapter(env, pin=pin)
+
+    return gh_of

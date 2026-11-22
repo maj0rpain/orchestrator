@@ -49,14 +49,14 @@ from typing import List, Mapping, Optional, Sequence, Tuple
 
 from orch.autopilot import autopilot_active
 from orch.common import (ORCH_DIR_NAME, copy_or_die, die, mkdir_p_or_die, plain_number,
-                         plain_positive_number, read_raw, rm_f_or_die, rm_rf_or_die,
-                         text_file_append, text_file_write)
+                         plain_positive_number, read_raw, read_words, rm_f_or_die,
+                         rm_rf_or_die, text_file_append, text_file_write)
 from orch.flow_state import NO_ISSUE_MSG, flow_state_file, require_state_read
+from orch.gh import adapter_of
 from orch.git import Git
 from orch.handoff import handoff_dir
 from orch.host import print_next_block
 from orch.root import checkout_root
-from orch.spec_review_batch import read_words
 
 # The verbs, in the unknown-op message's order. docs_lint.sh reads this line
 # as the verbs the noun dispatches, so it stays one `OPS = "<verb>|..."` line.
@@ -550,13 +550,7 @@ def run(
 
     # The gh adapter, made at the first GitHub call: only the issue ops and
     # an autopilot flow's pause --round make one.
-    def gh_of():
-        if gh is not None:
-            return gh
-        from orch.gh import adapter
-
-        return adapter(env)
-
+    gh_of = adapter_of(gh, env)
     if op in ISSUE_OPS:
         return issue_op(op, args, issue, phase, gh_of, git, env)
     if op == "pause":

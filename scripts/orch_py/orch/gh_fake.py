@@ -69,6 +69,13 @@ def _countdown(path: str) -> bool:
     return True
 
 
+def _line_append_once(path: str, n: int) -> None:
+    """<n> appended to the file as a line of its own, unless a line already
+    holds it - the counterpart of _lines_drop."""
+    if str(n) not in _lines(path):
+        _write(path, "%d\n" % n, "ab")
+
+
 def _lines_drop(path: str, line: str) -> None:
     """Every line of the file that is exactly <line> dropped, as the bash
     fake's fake_lines_drop drops it; nothing where the file is absent."""
@@ -503,6 +510,13 @@ class FakeGh:
         self._known(n)
         return self._blockers(n)
 
+    def sub_issue_link(self, parent: int, child: int) -> None:
+        """The child appended to the parent's stored sub-issues, once."""
+        self._failing("adapter_sub_issue_link")
+        self._known(parent)
+        self._known(child)
+        _line_append_once(_store_path(self.store, "subs", parent), child)
+
     def sub_issue_unlink(self, parent: int, child: int) -> None:
         """The child dropped from the parent's stored sub-issues."""
         self._failing("adapter_sub_issue_unlink")
@@ -516,9 +530,7 @@ class FakeGh:
         self._failing("adapter_blocker_add")
         self._known(n)
         self._known(blocker)
-        path = _store_path(self.store, "blocked_by", n)
-        if str(blocker) not in _lines(path):
-            _write(path, "%d\n" % blocker, "ab")
+        _line_append_once(_store_path(self.store, "blocked_by", n), blocker)
 
     def blocker_remove(self, n: int, blocker: int) -> None:
         """The blocker dropped from #n's stored blockers."""

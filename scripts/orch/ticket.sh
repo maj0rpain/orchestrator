@@ -387,6 +387,11 @@ strip_ticket_sections() {
   '
 }
 
+# breakdown_dir <parent>: the parent's breakdown save point directory, which
+# ticket retire removes. The breakdown noun itself is Python, with its own
+# copy of this path in scripts/orch_py/orch/breakdown.py's breakdown_dir.
+breakdown_dir() { printf '%s/breakdown/%s' "$ORCH" "$1"; }
+
 # Retires <parent>'s ticket breakdown so nothing later picks it up again
 # (issue #334): every sub-issue is closed as not planned if still open,
 # commented on, and unlinked from <parent> - unlinked last, so a run that
