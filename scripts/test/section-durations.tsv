@@ -158,7 +158,7 @@
 3	3	category table	4ddf897afb91fdb5736b0ac6486b6b06637af785
 1	2	axis table	e40740a4628929a0916a63a510c2590c3efae4a6
 9	10	finding body	5696eec5199d748658645aa3edd3f64bf40a7c35
-28	24	every gh call pinned to the repo (#520)	67e9f2684fc0f11d79c0f6a50603256fed966a4e
+29	24	every gh call pinned to the repo (#520)	2e9c74ab5d1d92d163d14c1131888081b4feb6ae
 2	3	gh_reason and capture_err (#846)	095a11c195140d34a159babf35edf478a88ae658
 2	2	label_listed	a8ee5ba113a5b8ad46d21d87f9f5a69bec86286e
 26	27	gh failure verb and readers (#1022)	d42eaadd21f5b460ceef3fde92d86dd208a3f973

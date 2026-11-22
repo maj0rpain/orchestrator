@@ -78,8 +78,8 @@ def spec_ruling_entries(texts: List[str]) -> List[str]:
     blank ones dropped, and the rest joined by single spaces - "" for a text
     with none."""
     return [
-        " ".join(line for line in (_BLANK_ENDS.sub("", line) for line in text.split("\n"))
-                 if line)
+        " ".join(trimmed for trimmed in (_BLANK_ENDS.sub("", line) for line in text.split("\n"))
+                 if trimmed)
         for text in texts
     ]
 
@@ -161,8 +161,8 @@ def known_items(argv: List[str], gh, git) -> int:
     pr = current_open_pr(gh, git, code=1)
     if pr is not None:
         body = gh_or_die("read the body of PR #%d" % pr, gh.pr_body, pr).replace("\r", "")
-        text = comments.rendered(gh, "read the comments of PR #%d" % pr, str(pr), kind="pr")
-        text = (text + "\n" if text else "").replace("\r", "")
+        text = comments.rendered(gh, "read the comments of PR #%d" % pr, str(pr),
+                                 kind="pr").replace("\r", "")
         if not devfile:
             deviations += section_entries_append(body, "## Deviations")
         declined += section_entries_append(body, "## Review", "declined")

@@ -103,8 +103,8 @@ assert_eq "no bare capture or capture_err runs an adapter operation or gh" \
 # capture must not swallow the remedy (#846).
 git remote remove origin
 : >"$GH_FIXTURE/env.log"
-for args in "2 pr comments $comments_file" "1 ticket parent 50" "1 ticket close 50"; do
-  want="${args%% *}"; args="${args#* }"
+for entry in "2 pr comments $comments_file" "1 ticket parent 50" "1 ticket close 50"; do
+  want="${entry%% *}"; args="${entry#* }"
   # shellcheck disable=SC2086 # each args string is a word list on purpose
   out="$(env -u ORCH_GH_ADAPTER "$ORCH" $args 2>&1)"; st=$?
   assert_status "$args dies with no repo" "$st" "$want"

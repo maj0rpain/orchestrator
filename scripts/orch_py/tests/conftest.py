@@ -277,14 +277,15 @@ def orch_audit(git, *argv, gh=None):
         return died.code
 
 
-def orch_review_pass(seed, git, *argv, env=None):
+def orch_review_pass(seed, git, *argv, gh=None, env=None):
     """`orch.sh review-pass <argv>` in-process, in the checkout of the git
-    adapter <git>, with the gh fake on <seed>'s store pinned to <git>'s
-    origin, under <env> (empty when None): its exit code, a SystemExit's
-    included."""
+    adapter <git>, under <env> (empty when None), with the gh adapter <gh> -
+    the gh fake on <seed>'s store pinned to <git>'s origin when None: its
+    exit code, a SystemExit's included."""
     env = {} if env is None else env
     pin = RepoPin(env, git)
-    gh = FakeGh(seed.store, env, pin=pin, sleep=lambda _: None)
+    if gh is None:
+        gh = FakeGh(seed.store, env, pin=pin, sleep=lambda _: None)
     try:
         return review_pass.run(list(argv), gh=gh, git=git, env=env, pin=pin)
     except SystemExit as died:

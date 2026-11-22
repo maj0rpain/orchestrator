@@ -8,7 +8,6 @@ import os
 
 import pytest
 
-from orch import review_pass
 from orch.gh import Unparsed
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit
@@ -288,17 +287,10 @@ class UnparsedPrComments(FakeGh):
         raise Unparsed("no comment list")
 
 
-def known_items_on(gh, git, *args):
-    try:
-        return review_pass.run(["known-items", *args], gh=gh, git=git, env={})
-    except SystemExit as died:
-        return died.code
-
-
 def test_pr_comments_that_do_not_parse_stop_the_run(seed, git, pr, kept, capsys):
     gh = UnparsedPrComments(seed.store, {}, pin=RepoPin({}, git), sleep=lambda _: None)
 
-    assert known_items_on(gh, git, "21", str(kept)) == 1
+    assert orch_review_pass(seed, git, "known-items", "21", str(kept), gh=gh) == 1
     assert capsys.readouterr() == (
         "", "orch: could not read the comments of PR #57: its comments did not parse\n")
     assert_left_as_it_was(kept)

@@ -46,9 +46,9 @@ section_entries_append() {
   entries_append_from "$1" "${4:-}" < <(section_entries "$2" "$3")
 }
 
-# entries_append_from <var> <tag>: the appenders' one loop - appends to <var>
-# one `- ` bullet line per entry line on stdin, each ending ` - <tag>` when
-# <tag> is non-empty.
+# entries_append_from <var> <tag>: section_entries_append's loop - appends to
+# <var> one `- ` bullet line per entry line on stdin, each ending ` - <tag>`
+# when <tag> is non-empty.
 entries_append_from() {
   local _ea_entry _ea_tag="${2:+ - $2}"
   while IFS= read -r _ea_entry; do
