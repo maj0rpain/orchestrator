@@ -468,13 +468,38 @@ class FakeGh:
         return [int(line) for line in _lines(_store_path(self.store, "blocked_by", n))
                 if plain_number(line)]
 
+    def _open_count(self, n: int) -> int:
+        """How many of #n's stored blockers are still open."""
+        return sum(1 for b in self._blockers(n)
+                   if _first_line(_issue_path(self.store, b, "state")) == "OPEN")
+
+    def sub_issues(self, parent: int) -> List[real.SubIssue]:
+        """The stored sub-issues, in link order, each with its stored state
+        and its count of open blockers."""
+        self._failing("adapter_sub_issues")
+        stale = self._lagging("adapter_sub_issues")
+        if stale is not None:
+            return real.parse_sub_issues(stale)
+        self._known(parent)
+        return [real.SubIssue(int(n), _first_line(_issue_path(self.store, int(n), "state")),
+                              self._open_count(int(n)))
+                for n in _lines(_store_path(self.store, "subs", parent)) if plain_number(n)]
+
+    def blockers(self, n: int) -> List[int]:
+        self._failing("adapter_blockers")
+        stale = self._lagging("adapter_blockers")
+        if stale is not None:
+            return real.parse_numbers(
+                stale, lambda line: "gh answered a blocker that does not parse: " + line)
+        self._known(n)
+        return self._blockers(n)
+
     def issue_open_blockers(self, n: int) -> Optional[int]:
         self._failing("adapter_issue_open_blockers")
         self._known(n)
         if str(n) in real.lines_of(read_raw(_store_path(self.store, "no_dependency_summary")) or ""):
             return None
-        return sum(1 for b in self._blockers(n)
-                   if _first_line(_issue_path(self.store, b, "state")) == "OPEN")
+        return self._open_count(n)
 
     def blockers_states(self, n: int) -> List[Tuple[int, str]]:
         self._failing("adapter_blockers_states")

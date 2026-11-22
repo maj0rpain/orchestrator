@@ -8,7 +8,8 @@ import json
 
 import pytest
 
-from orch.gh import Gh, GhFailed, IssueRow, LabelledBody, Unparsed, gh_die, gh_or_die
+from orch.gh import (Gh, GhFailed, IssueRow, LabelledBody, SubIssue, Unparsed, gh_die,
+                     gh_or_die)
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY, RepoPin
 
@@ -354,6 +355,46 @@ def test_blockers_states_lists_each_blocker_and_its_state(fixture_gh):
                      "3\tOPEN\n4\tCLOSED\n")
 
     assert real_gh(fixture_gh).blockers_states(5) == [(3, "OPEN"), (4, "CLOSED")]
+
+
+SUB_ISSUES = ["api", "--paginate", "repos/{owner}/{repo}/issues/5/sub_issues", "--jq",
+              '.[] | "\\(.number)\\t\\(.state | ascii_upcase)\\t'
+              '\\(.issue_dependencies_summary.blocked_by // "")"']
+
+
+def test_sub_issues_lists_each_with_its_state_and_open_blocker_count_or_none(fixture_gh):
+    fixture_gh.reply(SUB_ISSUES, "11\tOPEN\t2\n12\tCLOSED\t\n")
+
+    assert real_gh(fixture_gh).sub_issues(5) == [
+        SubIssue(11, "OPEN", 2), SubIssue(12, "CLOSED", None)]
+
+
+@pytest.mark.parametrize("answer", ["x\tOPEN\t0\n", "11\tOPEN\tmany\n", "11\n"])
+def test_a_sub_issue_listing_that_does_not_parse_fails(fixture_gh, answer):
+    fixture_gh.reply(SUB_ISSUES, answer)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).sub_issues(5)
+    assert failed.value.stderr == ("gh answered a sub-issue that does not parse: "
+                                   + answer.rstrip("\n"))
+
+
+BLOCKERS = ["api", "--paginate", "repos/{owner}/{repo}/issues/5/dependencies/blocked_by",
+            "--jq", ".[].number"]
+
+
+def test_blockers_lists_each_blocker_s_number_in_github_s_order(fixture_gh):
+    fixture_gh.reply(BLOCKERS, "4\n3\n")
+
+    assert real_gh(fixture_gh).blockers(5) == [4, 3]
+
+
+def test_a_blocker_listing_that_does_not_parse_fails(fixture_gh):
+    fixture_gh.reply(BLOCKERS, "4\nnull\n")
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).blockers(5)
+    assert failed.value.stderr == "gh answered a blocker that does not parse: null"
 
 
 OPEN_TITLES = ["api", "--paginate", "repos/{owner}/{repo}/issues?state=open&per_page=100",

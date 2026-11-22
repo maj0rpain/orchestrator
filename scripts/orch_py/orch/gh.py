@@ -46,6 +46,12 @@ T = TypeVar("T")
 # with is dropped, so the shape does not change with gh's version.
 ISSUE_JSON_JQ = "{number, title, body, labels: [.labels[].name]}"
 
+# A parent's sub-issues as sub_issues reads them, gh.sh's SUB_ISSUES_JQ. GitHub
+# can leave the dependency summary off an issue; its blocker field is then
+# empty rather than a count.
+SUB_ISSUES_JQ = ('.[] | "\\(.number)\\t\\(.state | ascii_upcase)\\t'
+                 '\\(.issue_dependencies_summary.blocked_by // "")"')
+
 # The GraphQL query and --jq behind issue_authorship, gh.sh's own: one line,
 # so a logged argv stays one line.
 ISSUE_AUTHORSHIP_QUERY = (
@@ -79,6 +85,16 @@ class LabelledBody(NamedTuple):
     number: int
     labels: List[str]
     body: str
+
+
+class SubIssue(NamedTuple):
+    """One sub-issue of a parent: its number, OPEN or CLOSED, and the count
+    of its blockers still open - None where GitHub gave no dependency
+    summary, never a stand-in zero."""
+
+    number: int
+    state: str
+    open_blockers: Optional[int]
 
 
 # --- the failure contract ----------------------------------------------------
@@ -279,6 +295,31 @@ def parse_numbered_lines(text: str, unparsed: Callable[[str], str]) -> List[Tupl
             raise GhFailed(unparsed(line))
         rows.append((int(number), value))
     return rows
+
+
+def parse_sub_issues(text: str) -> List[SubIssue]:
+    """<number><TAB><state><TAB><open blockers> lines, the count empty where
+    GitHub gave no dependency summary; GhFailed on a line that is not one."""
+    rows = []
+    for line in _captured_lines(text):
+        fields = line.split("\t")
+        if (len(fields) != 3 or not plain_number(fields[0])
+                or not (fields[2] == "" or plain_number(fields[2]))):
+            raise GhFailed("gh answered a sub-issue that does not parse: " + line)
+        rows.append(SubIssue(int(fields[0]), fields[1],
+                             int(fields[2]) if fields[2] else None))
+    return rows
+
+
+def parse_numbers(text: str, unparsed: Callable[[str], str]) -> List[int]:
+    """One number a line; GhFailed with unparsed(<line>) on a line that is
+    not one."""
+    numbers = []
+    for line in _captured_lines(text):
+        if not plain_number(line):
+            raise GhFailed(unparsed(line))
+        numbers.append(int(line))
+    return numbers
 
 
 def urlnumber_of(out: str) -> Optional[int]:
@@ -708,6 +749,24 @@ class Gh:
         if not plain_number(number):
             raise GhFailed("gh api printed a parent URL with no issue number: " + url)
         return int(number)
+
+    def sub_issues(self, parent: int) -> List[SubIssue]:
+        """Every sub-issue of the parent, open or closed, in the order GitHub
+        published them; none for a parent with none."""
+        return parse_sub_issues(self._gh(
+            ["api", "--paginate", "repos/{owner}/{repo}/issues/%d/sub_issues" % parent,
+             "--jq", SUB_ISSUES_JQ]
+        ))
+
+    def blockers(self, n: int) -> List[int]:
+        """The issues #n is blocked by, open or closed, in GitHub's order."""
+        answer = self._gh(
+            ["api", "--paginate",
+             "repos/{owner}/{repo}/issues/%d/dependencies/blocked_by" % n,
+             "--jq", ".[].number"]
+        )
+        return parse_numbers(
+            answer, lambda line: "gh answered a blocker that does not parse: " + line)
 
     def issue_open_blockers(self, n: int) -> Optional[int]:
         """The count of #n's blockers still open, from its dependency

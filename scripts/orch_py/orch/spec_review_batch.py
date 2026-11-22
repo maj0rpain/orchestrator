@@ -708,35 +708,48 @@ def occurrences(text: str, needle: str) -> int:
     return min(text.count(needle), 2)
 
 
-class Validation:
+class Edited:
+    """A text as read, <fetched>, and as the accepted edits leave it,
+    <text>."""
+
+    def __init__(self, fetched: str):
+        self.fetched = fetched
+        self.text = fetched
+
+    def edit(self, accepted: bool, edit: Edit) -> str:
+        """<edit> made to the text when <accepted>, else its anchor checked on
+        its own against the text as read: the anchor must occur exactly once
+        in the text as read, and once in the text the earlier edits left. The
+        problem when it does not, the text left unedited; "" when none."""
+        text = self.text if accepted else self.fetched
+        count = occurrences(self.fetched, edit.anchor)
+        if count == 0:
+            return "its anchor matches no text in the body"
+        if count == 2:
+            return "its anchor matches more than one place in the body"
+        if occurrences(text, edit.anchor) != 1:
+            return "its anchor no longer matches exactly once after the earlier items' edits"
+        if accepted:
+            self.text = text.replace(edit.anchor, edit.replace, 1)
+        return ""
+
+
+class Validation(Edited):
     """validate()'s answer: the batch, the body as read and as edited, the
     anchors visited and each anchor problem."""
 
     def __init__(self, batch: Batch, fetched: str):
+        super().__init__(fetched)
         self.batch = batch
-        self.fetched = fetched
-        self.text = fetched
         self.anchors = 0
         self.problems: List[str] = []
 
     def visit(self, accepted: bool, what: str, edit: Edit) -> None:
-        """One anchor, counted: applied to the edited body when <accepted>,
-        else checked on its own against the body as read. A problem names
-        <what> and leaves the body unedited."""
+        """One anchor, counted, through edit(); a problem names <what>."""
         self.anchors += 1
-        text = self.text if accepted else self.fetched
-        count = occurrences(self.fetched, edit.anchor)
-        problem = ""
-        if count == 0:
-            problem = "its anchor matches no text in the body"
-        elif count == 2:
-            problem = "its anchor matches more than one place in the body"
-        elif occurrences(text, edit.anchor) != 1:
-            problem = "its anchor no longer matches exactly once after the earlier items' edits"
+        problem = self.edit(accepted, edit)
         if problem:
             self.problems.append("%s: %s" % (what, problem))
-        elif accepted:
-            self.text = text.replace(edit.anchor, edit.replace, 1)
 
 
 def all_dispositions(batch: Batch) -> Dict[int, Tuple[str, str]]:

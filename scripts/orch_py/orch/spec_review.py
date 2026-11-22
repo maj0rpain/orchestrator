@@ -31,7 +31,9 @@ line each, exit 1 and any earlier view.md left as it was; on a pass the view
 on stdout, saved to view.md, and one pass line on stderr ending in the nudge -
 the paste guards arm on its "; it is saved in <path>/view.md" tail - or,
 with --unattended, in a tail of its own they never arm on. check --tickets
-and apply are still served by the bash spec-review module.
+validates the round's tickets.md the same way (orch/spec_review_tickets.py),
+reading no GitHub; with @@ none-affected it removes any earlier view.md and
+saves none. apply is still served by the bash spec-review module.
 """
 from __future__ import annotations
 
@@ -42,14 +44,15 @@ from typing import Callable, List, Mapping, Optional
 
 from orch import spec
 from orch.common import (ORCH_DIR_NAME, capture, die, err_line, file_lines, plain_number,
-                         require_poll_knobs, text_file_write, warn)
+                         read_raw, require_poll_knobs, text_file_write, warn)
 from orch.flow_state import STATE_UNREADABLE_MSG, flow_state_file, flow_state_get_many
 from orch.gh import adapter
 from orch.git import Git
 from orch.handoff import handoff_path
 from orch.host import flow_cmd
 from orch.root import checkout_root, working_directory
-from orch.spec_review_batch import SPEC_REVIEW_LENSES, Violations, lens_known, validate
+from orch.spec_review_batch import SPEC_REVIEW_LENSES, Edited, Violations, lens_known, validate
+from orch.spec_review_tickets import Tickets, TicketsOffline, tickets_parse
 from orch.wait import StoredTotal, still_running, wait_block
 
 # The verbs. docs_lint.sh reads a converted noun's verbs from this line, so it
@@ -375,6 +378,88 @@ def batch_view(batch) -> str:
     return out
 
 
+def tickets_view(tickets: Tickets) -> str:
+    """The parsed tickets.md as the human reads it before the ticket
+    question - every item in order, with its ticket or the `## Ticket`
+    section, its recommendation and its edit in full, then the closed
+    tickets and the file's recommended answer; with @@ none-affected, a stub
+    saying so."""
+    out = "## The ticket items\n"
+    if tickets.none_affected:
+        return out + "\nNo open ticket is affected.\n"
+    for item in tickets.items:
+        if item.kind == "ticket":
+            target = "#" + item.t
+        elif item.kind == "section":
+            target = "the `## Ticket` section"
+        else:
+            target = "%s #%s by #%s" % (item.kind, item.t, item.b)
+        out += "\n### Item %s - %s\n" % (item.n, target)
+        if item.rec == "apply":
+            out += "\n**Recommendation:** apply\n"
+        else:
+            out += "\n**Recommendation:** recommend decline - %s\n" % item.arg
+        if item.text():
+            out += edit_view(item.edit)
+    out += "\n### Closed tickets\n\n"
+    out += "".join("- #%s - %s\n" % (closed.t, closed.what) for closed in tickets.closed)
+    if not tickets.closed:
+        out += "None\n"
+    if tickets.recommend == "apply":
+        return out + "\n**Recommended answer:** apply\n"
+    return (out + "\n**Recommended answer:** retire - the ticket breakdown retired, to be"
+            " broken down again\n")
+
+
+def tickets_check(directory: str, unattended: bool, env: Mapping[str, str]) -> int:
+    """`spec-review check <dir> --tickets [--unattended]`: <dir>/tickets.md
+    validated as apply --tickets would take the all answer, against the
+    ticket copies and <dir>/spec.md, with nothing written but view.md and no
+    GitHub read. A structure violation stops the run after the content
+    violations before it; otherwise every problem is reported, content
+    violations first, and exits 1. A clean file prints its view, saved to
+    view.md, and the pass line; with @@ none-affected its stdout is a stub,
+    any earlier view.md is removed, none written, and the pass line names
+    none."""
+    if not os.path.isfile(directory + "/tickets.md"):
+        die("tickets.md not found in " + directory)
+    if not os.path.isfile(directory + "/spec.md"):
+        die("spec.md not found in " + directory)
+    violations = Violations(collect=True)
+    tickets = tickets_parse(read_raw(directory + "/tickets.md") or "", violations)
+    body = read_raw(directory + "/spec.md")
+    if body is None:
+        violations.stop("could not read %s/spec.md" % directory)
+    offline = TicketsOffline(directory, Edited(body.replace("\x00", "")), violations)
+    # The all answer applies every item, a recommended decline included.
+    for item in tickets.items:
+        offline.visit(item, True)
+    if violations.recorded or offline.problems:
+        violations.flush()
+        for problem in offline.problems:
+            warn(problem)
+        return 1
+    view = tickets_view(tickets)
+    if tickets.none_affected:
+        try:
+            os.remove(directory + "/view.md")
+        except FileNotFoundError:
+            pass
+        except OSError:
+            die("could not remove " + view_path(directory, env))
+        sys.stdout.write(view)
+        sys.stdout.flush()
+        sys.stderr.write("tickets.md passes: no open ticket affected\n")
+        return 0
+    text_file_write(directory + "/view.md", view, "could not write " + view_path(directory, env))
+    sys.stdout.write(view)
+    sys.stdout.flush()
+    tail = UNATTENDED_TAIL if unattended else nudge(directory, env)
+    sys.stderr.write("tickets.md passes: %d items, %d anchors, each matching once, and the all"
+                     " answer applies cleanly%s\n" % (len(tickets.items), offline.anchors, tail))
+    return 0
+
+
 def check(argv: List[str], env: Mapping[str, str]) -> int:
     """`spec-review check <dir> [--full <n>... | --unattended]`: the round's
     batch validated as apply would take the all answer, against
@@ -415,7 +500,7 @@ def check(argv: List[str], env: Mapping[str, str]) -> int:
     if not os.path.isdir(directory):
         die("no such directory: " + directory)
     if tickets:
-        raise NotImplementedError("spec-review check --tickets is still served by bash")
+        return tickets_check(directory, unattended, env)
     if not os.path.isfile(directory + "/batch.md"):
         die("batch.md not found in " + directory)
     body = "spec.fetched.md"
