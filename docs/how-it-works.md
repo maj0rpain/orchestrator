@@ -687,4 +687,4 @@ start.
 
 | Command | What it does |
 | --- | --- |
-| `orch.sh route show` | Print the default route, `flow`, `quick`, `blueprint` or `autopilot`, from the git config key `orchestrator.route`, the clone's local value first, then the user's global one, or `none` when it is unset or empty; any other value is refused, naming the key, the value and the four words. Set it with `git config [--global] orchestrator.route <route>`. |
+| `orch.sh route show` | Print the default route, `flow`, `quick`, `blueprint` or `autopilot`, from the git config key `orchestrator.route`, the clone's local value first, then the user's global one, read trimmed, so a padded value such as `"flow "` prints as `flow`, or `none` when it is unset or empty; any other value is refused, naming the key, the value and the four words. Set it with `git config [--global] orchestrator.route <route>`. |

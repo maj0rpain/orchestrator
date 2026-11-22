@@ -34,7 +34,7 @@
 2	2	the suite start (#3582)	7661d78242588461a38289fb228211e159d899f8
 7	8	the pytest suite (#3912)	21deea025158b43b9892524639c0a4fbc5b9bf3c
 2	3	the counting fixture's stdin counter (#3434)	b19a94c28ffbd5db955a5f10a39d0b15791cbc4f
-117	106	affected.sh, the ticket verification (#2023)	3193faa11ddf07364e9eed907580474d4cf1ba96
+132	109	affected.sh, the ticket verification (#2023)	804dfb750bb9264c84f450aff35f63f80ea70a6d
 4	5	the row rule (#3549)	9fdb50e7e723c26a4127289109f27a68989c4579
 7	9	the shared test support, function by function (#3550)	de45838253c482219d70d5af6fd3b26e2079c3f8
 5	7	the gh fake, operation by operation (#3551)	987935a277e021eabb9c02e391ba40e84607a315
@@ -146,6 +146,7 @@
 8	6	doctor --env: git processes per worktree	916024b571106425e62a6e376fe1d1909f1af56f
 11	7	doctor --env: Standards declaration check (#3358)	db8ddf96af0952ab923f7cf7dd0cf95391a3537e
 8	6	doctor --env: glossary check (#3358)	4172d39e3dea88c444bbb7d3c631acd77046832e
+8	7	doctor --env: glossary check without python3	c54424b8576dc59cb8d5ecc07683c454bec04415
 8	6	doctor --env: ADR directory check (#3358)	109f685c4bfd5cad8897ef55f9d3141822d4e817
 22	25	doctor --env: verification lines	a51e6873e722538705f4c710c1c7feb43423557f
 51	36	doctor --env: verification commands (#3346)	743a90c9a46a5ef85c7ea302c35fd60401839eb4
@@ -171,13 +172,6 @@
 0	1	mp-skill	42a828d6f818ccb7afe36031ee93138e2a7dfc35
 2	4	bash version guard	e62fe631ce5eb2d4dc1040aa81ae0eb6d24dc370
 1	1	outside a checkout (#931)	fb1af0dbb49fb7114e01ab80e594110f67d370ae
-0	1	glossary terms	791773bc1306a4b30242cbf20709956dbdcb5101
-2	3	glossary show	4b96379c1390bb7c58e73c7de9c01bb4624a0e7d
-2	3	glossary match	8e337663ef5fb5db17f60cc455eba019d0fdce9d
-1	2	glossary shapes	9f2f00f7999f56901c16d973d03fb3430afa72cc
-1	2	glossary unreadable	722e09bf357b106a6bc62606072364bcb90cd059
-0	1	glossary help	ac597a2695cbd8bd03f43dcdc53fa7d32acfd0f2
-0	1	glossary show: unusable temp directory (#3050)	8a07a358ecebfddbe70960860cf4401f4d368e98
 2	3	handoff path	08b72398d3efd891b74fabceebbc287e57597a16
 15	17	phase table	b86a1ec68d10558d7454229c58975c60ba748791
 14	15	handoff validate	979e62e48edf8946440a03aa27d2e16f209320f9
@@ -200,12 +194,11 @@
 185	223	issue-timeline module	c60c74521e712ce2d67cc0b5fceb0a3a9673363e
 6	6	known-items module	4cac231615b2d8d9bc5665e54130500ba44570de
 8	9	Liveness module	a3eb853321244ddc291751d37b820bf4e3a80df7
-12	14	orch_load	78936724de415f7d72a2cb1732f2ec537485646c
+18	11	orch_load	b8cfd2af7aa636d9bb938c887ade1470c8660684
 21	21	on-demand loading	7957c71ca0967785d56a21072a507db8cfeb69b3
-14	15	stub table cache	4f0f12dcbedfdea3bf7690542ff5bf5d5a0e4a4e
+24	24	stub table cache	0dfcfd022a0f039e7a998d2b824491567eeb9374
 29	25	marked-comment module	f6f5c1a7f89a0d4a6d8a53403309d4f68d4fe0c2
-1	2	parallel show	29ed0447ad25daddc7f71a506dad5df2ad3d3cba
-48	41	phase advance / phase boundary	53643e8f5205e719060ccafbba68352b2f848db6
+54	42	phase advance / phase boundary	53643e8f5205e719060ccafbba68352b2f848db6
 0	1	phase advance help names handoffs by role (#1066)	fb4e9c6b059ec9f7d1aed9b47f5b974a48096e04
 31	35	phase advance in an autopilot flow (#1457)	3f11f48e53c11f24a0c5683139056f0b493b1fe0
 7	8	phase advance with a failed phase write (#1931)	c82e166171de5000ca89ef4f8614cc5c24820382
@@ -259,7 +252,6 @@
 9	8	review reads its Flow state once	d709c7a35864a331ee508151b4b6e62951770ee1
 5	5	review_terminal_record fallback reads once	950150136ed31e16ef857ccc8dc7da695501183d
 19	11	review ci <pr>	de3b4d1f2441533e0c12f016b42632d94e98a763
-2	3	route show	e41cb9679b1f09b9a73382b655216a8aff604ccd
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
 38	40	side-checkout (#722)	753522fea8c0be1dec4dc2f8633b7a5d78439049
 20	21	status lists every checkout (#725)	0e2829f44c533a36ede63218f75dc3b6b9f517bf
@@ -313,8 +305,8 @@
 43	35	trust module	dd0183ac4380b097c6b51f9e75c4a3038ab514c5
 89	19	wait: a call's block is wall time	90d20fdb4b55a5964e512640526d36f24c6b6f96
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594
-360	242	docs_lint.sh	59509d98462d9f758ef9582d3e17d760ea50051b
-23	18	version_bump_test.sh	fc90c903e886fe33912160becd8856b4ef108cf4
+331	222	docs_lint.sh	29ba99ff8108ac10b7557070e0c66e61096c9ce9
+34	27	version_bump_test.sh	fc90c903e886fe33912160becd8856b4ef108cf4
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 17	17	autopilot_up_test.sh	e83bb3b5d6213ab54507233be7cc6e624358622c
 51	51	lens_bench_test.sh	ffb52c95b18f2076683217dffc8d27f1d03a136d

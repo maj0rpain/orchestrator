@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.11.9
+
+`orch.sh glossary`, `orch.sh parallel` and `orch.sh route` now run as Python, the last leaf nouns moved out of bash. Their verbs, `glossary terms|show|match`, `parallel show` and `route show`, keep their arguments, output, exit codes and messages. There are two differences. A padded `orchestrator.parallel` or `orchestrator.route` value, such as `" 5"` or `"flow "`, is now accepted and printed trimmed, where bash rejected it. And `glossary show` no longer needs a temp file, so it no longer fails when `TMPDIR` is unusable. Doctor's glossary check and docs_lint's `glossary_entry` now read through the one Python parser. The bash glossary, parallel and route modules and their tests are gone.
+
 ## 6.11.8
 
 Split `orch-flow`, `orch-review`, and `orch-spec-review` into sibling reference files so every `SKILL.md` body sits under Antigravity CLI's 24,000-byte load cap, with no behaviour change on Claude Code or Junie CLI. `orch-flow` moves its spec and implement phases into `phase-spec.md` and `phase-implement.md`; `orch-review` moves autopilot-only rules, CI/termination/closer, and triage/severity/authority/clean-record rules into `autopilot.md`, `termination.md`, and `triage.md`; `orch-spec-review` moves its standalone entry, batch-file grammar, and view/answers/applying/changelog rules into `standalone.md`, `batch-file.md`, and `applying.md`. `docs_lint.sh` now enforces the 24,000-byte `SKILL.md` body cap (`scan_skill_body_size`), checks plugin-root resolution and agent settings across sibling reference files, and tracks moved sections in their new sibling files.

@@ -2,8 +2,9 @@
 `python3 -m orch` would be, through a `-c` bootstrap (ADR-0067), end to end:
 each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>`,
 `orch.sh verification <verb>`, `orch.sh audit <verb>`, `orch.sh review-pass
-<verb>`, `orch.sh spec-review <verb>`, `orch.sh breakdown <verb>` or `orch.sh
-spec <verb>` as a command, in a checkout under tmp_path, against a fake store
+<verb>`, `orch.sh spec-review <verb>`, `orch.sh breakdown <verb>`, `orch.sh
+spec <verb>`, `orch.sh glossary <verb>`, `orch.sh parallel show` or `orch.sh
+route show` as a command, in a checkout under tmp_path, against a fake store
 seeded in the layout the bash suite's fake_* helpers write, with
 ORCH_GH_FAKE_STORE set as fake_github sets it."""
 from __future__ import annotations
@@ -46,10 +47,12 @@ def repo(tmp_path):
     return root
 
 
-def orch_sh(tmp_path, cwd, seed, *args, path=None, knobs=None, unset=()):
+def orch_sh(tmp_path, cwd, seed, *args, path=None, knobs=None, unset=(), joined=False):
     """`orch.sh <args>` run by bash in <cwd> on <seed>'s store, PATH <path>
     (the test's own when None), with the variables <knobs> set and those
-    named in <unset> unset: its stdout, stderr and exit code."""
+    named in <unset> unset: its stdout, stderr and exit code. <joined> sends
+    stderr into stdout, one stream in the order written, its stderr then
+    empty."""
     env = dict(os.environ, HOME=str(tmp_path), ORCH_GH_FAKE_STORE=seed.store,
                PYTHONDONTWRITEBYTECODE="1", **(knobs or {}))
     for name in unset:
@@ -59,9 +62,10 @@ def orch_sh(tmp_path, cwd, seed, *args, path=None, knobs=None, unset=()):
     run = subprocess.run(
         ["/bin/bash", str(SCRIPTS / "orch.sh"), *args],
         cwd=str(cwd), env=env, stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT if joined else subprocess.PIPE,
+        timeout=30,
     )
-    return run.stdout.decode(), run.stderr.decode(), run.returncode
+    return run.stdout.decode(), (run.stderr or b"").decode(), run.returncode
 
 
 
@@ -652,3 +656,128 @@ def test_help_lists_every_spec_verb(tmp_path, repo, seed):
     assert (err, code) == ("", 0)
     assert [line.split()[1] for line in out.splitlines() if line.startswith("  spec ")] == [
         "fetch", "update", "comment", "comments", "pause", "pause", "round-dir", "round"]
+
+
+# --- parallel and route ------------------------------------------------------
+
+# The variables naming a git config file other than $HOME's, unset so a test's
+# HOME under tmp_path holds the only global config git reads.
+GLOBAL_CONFIG = ("GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME")
+
+
+def git_config(tmp_path, repo, *args):
+    """`git config <args>` in <repo>, HOME tmp_path, as orch_sh runs."""
+    env = dict(os.environ, HOME=str(tmp_path))
+    for name in GLOBAL_CONFIG:
+        env.pop(name, None)
+    run_git(repo, "config", *args, env=env)
+
+
+def test_parallel_show_prints_the_default_cap_through_the_python_noun(tmp_path, repo, seed):
+    answer = orch_sh(tmp_path, repo, seed, "parallel", "show", path=python3_shim(tmp_path),
+                     unset=GLOBAL_CONFIG)
+
+    assert answer == ("3\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_parallel_show_prints_a_padded_cap_trimmed_through_the_python_noun(
+        tmp_path, repo, seed):
+    git_config(tmp_path, repo, "orchestrator.parallel", " 5")
+
+    assert orch_sh(tmp_path, repo, seed, "parallel", "show", unset=GLOBAL_CONFIG) == (
+        "5\n", "", 0)
+
+
+def test_route_show_reads_the_global_route_and_the_local_one_over_it(tmp_path, repo, seed):
+    git_config(tmp_path, repo, "--global", "orchestrator.route", "quick")
+    global_only = orch_sh(tmp_path, repo, seed, "route", "show", path=python3_shim(tmp_path),
+                          unset=GLOBAL_CONFIG)
+    git_config(tmp_path, repo, "orchestrator.route", "blueprint")
+
+    assert global_only == ("quick\n", "", 0)
+    assert orch_sh(tmp_path, repo, seed, "route", "show", unset=GLOBAL_CONFIG) == (
+        "blueprint\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_route_show_prints_a_padded_route_trimmed_through_the_python_noun(
+        tmp_path, repo, seed):
+    git_config(tmp_path, repo, "orchestrator.route", "flow ")
+
+    assert orch_sh(tmp_path, repo, seed, "route", "show", unset=GLOBAL_CONFIG) == (
+        "flow\n", "", 0)
+
+
+def test_help_lists_parallel_show_beside_base_and_route_show(tmp_path, repo, seed):
+    out, err, code = orch_sh(tmp_path, repo, seed, "help")
+    lines = out.splitlines()
+    after_base_clear = next(i for i, line in enumerate(lines) if line.startswith("  base clear"))
+
+    assert (err, code) == ("", 0)
+    assert any(line.startswith("  parallel show ") for line in lines[after_base_clear:][:4])
+    assert any(line.startswith("  route show ") for line in lines)
+    assert "### Default route" in (SCRIPTS.parent / "docs" / "how-it-works.md").read_text(
+        ).splitlines()
+
+
+# --- glossary -----------------------------------------------------------------
+
+# Two entries, the second with an avoided alias.
+GLOSSARY = ("# Glossary\n\n**Flow**:\nOne run of the pipeline.\n\n"
+            "- **Round**: One review of the spec.\n  _Avoid_: pass.\n")
+FLOW_ENTRY = "**Flow**:\nOne run of the pipeline.\n"
+ROUND_ENTRY = "- **Round**: One review of the spec.\n  _Avoid_: pass.\n"
+
+
+def test_glossary_terms_lists_the_root_glossary_s_terms_through_the_python_noun(
+        tmp_path, repo, seed):
+    (repo / "GLOSSARY.md").write_text(GLOSSARY)
+
+    answer = orch_sh(tmp_path, repo, seed, "glossary", "terms", path=python3_shim(tmp_path))
+
+    assert answer == ("Flow\nRound\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_glossary_show_warns_of_a_missing_term_after_the_entries_it_found(
+        tmp_path, repo, seed):
+    (repo / "GLOSSARY.md").write_text(GLOSSARY)
+
+    answer = orch_sh(tmp_path, repo, seed, "glossary", "show", "Nonesuch", "Flow", "Round",
+                     "Other", joined=True)
+
+    assert answer == (FLOW_ENTRY + "\n" + ROUND_ENTRY
+                      + "orch: no glossary entry for 'Nonesuch'\n"
+                      "orch: no glossary entry for 'Other'\n", "", 1)
+
+
+def test_glossary_match_prints_the_entries_a_file_mentions_through_the_python_noun(
+        tmp_path, repo, seed):
+    (repo / "GLOSSARY.md").write_text(GLOSSARY)
+    text = tmp_path / "text.md"
+    text.write_text("Each\nPASS of the review.\n")
+
+    answer = orch_sh(tmp_path, repo, seed, "glossary", "match", str(text),
+                     path=python3_shim(tmp_path))
+
+    assert answer == (ROUND_ENTRY, "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_an_unknown_glossary_op_is_refused_through_the_python_noun(tmp_path, repo, seed):
+    answer = orch_sh(tmp_path, repo, seed, "glossary", "list", path=python3_shim(tmp_path))
+
+    assert answer == ("", "orch: unknown glossary op: list (want terms|show|match)\n", 2)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_help_lists_the_glossary_verbs_and_the_entry_grammar(tmp_path, repo, seed):
+    out, err, code = orch_sh(tmp_path, repo, seed, "help")
+
+    assert (err, code) == ("", 0)
+    assert "glossary terms" in out
+    assert "glossary show <term>..." in out
+    assert "glossary match <file>..." in out
+    assert "optionally after a - or * bullet" in out
+    assert "no entries is an error" in out
