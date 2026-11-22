@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.11.6
+
+`orch.sh spec` now runs as Python, the seventh noun moved out of bash. Its verbs, `fetch`, `update`, `comment`, `comments`, `pause` (with `--round <k>/<n>`), `round` and `round-dir`, keep their arguments, usage lines, output, exit codes and messages, and the order of their checks. In an autopilot flow, `pause --round` still releases the claim after writing the round marker, and a failed release still names the writes that landed. The Python spec module's copies of the round helpers are now the only ones. `redo spec` stays in bash and holds the two marker names itself. The bash spec module and its tests are gone.
+
 ## 6.11.5
 
 `orch.sh spec-review` now runs as Python, the sixth noun moved out of bash. Its five verbs, `begin`, `check`, `apply`, `wait` and `prompt`, keep their arguments, output, exit codes and messages, and the paste-guard hooks still arm on `check`'s pass line and `view.md`. Golden files pin the round directory's state, the saved `apply` answer and a re-callable wait's stored total, so a round or a wait begun under the bash noun resumes under the Python one. The one exception is a saved answer holding control characters, which is refused so that round is rerun. The ticket commands `apply` reaches (`ticket exists`, `block`, `unblock` and `retire`) now have Python copies, and so do the GitHub operations they use. The bash spec-review module, its tests and the bash helpers only it called are gone.
