@@ -42,14 +42,21 @@ def _review_pass(argv: List[str]) -> int:
     return run(argv)
 
 
+def _spec(argv: List[str]) -> int:
+    from orch.spec import run
+
+    return run(argv)
+
+
 def _spec_review(argv: List[str]) -> int:
     from orch.spec_review import run
 
     return run(argv)
 
 
-# The converted nouns: each takes the arguments after the noun and returns its
-# exit code.
+# The converted nouns, and spec, whose verbs move here while bash still serves
+# `orch.sh spec`: each takes the arguments after the noun and returns its exit
+# code.
 NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "issue": _issue,
     "finding-triage": _finding_triage,
@@ -57,6 +64,7 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "audit": _audit,
     "review-pass": _review_pass,
     "spec-review": _spec_review,
+    "spec": _spec,
 }
 
 

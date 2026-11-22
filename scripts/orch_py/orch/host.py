@@ -1,6 +1,8 @@
-"""The host orch.sh runs under, as the bash side's host.sh detects it, and
-the plugin commands a message names for it (common.sh's plugin_cmd), a flow
-command's among them (common.sh's flow_cmd).
+"""The host orch.sh runs under, as the bash side's host.sh detects it, the
+plugin commands a message names for it (common.sh's plugin_cmd), a flow
+command's among them (common.sh's flow_cmd), and the block that ends a
+session naming the fresh one to start in the host's own words (phase.sh's
+next_phase_cmd and print_next_block).
 """
 from __future__ import annotations
 
@@ -53,3 +55,24 @@ def finding_triage_cmd(env: Mapping[str, str]) -> str:
     """Finding triage, its fallback the skill the command runs, since finding
     triage is no orch-flow section."""
     return plugin_cmd(env, "finding-triage", "the orch-finding-triage skill")
+
+
+def next_phase_cmd(env: Mapping[str, str]) -> str:
+    """How to start the next phase in a fresh session, in the host's own
+    words: the Next line of a block that ends a session. Junie's
+    fresh-session wording is its own, not a flow_cmd name
+    (docs/host-capabilities.md, "Start a fresh session"); every other host
+    gets flow_cmd's."""
+    host = host_detect(env)
+    if host == "claude":
+        return "/clear, then " + flow_cmd(env, "next")
+    if host == "junie":
+        return "/new, then ask for the next phase with /orch-flow"
+    return "a fresh session, then " + flow_cmd(env, "next")
+
+
+def print_next_block(env: Mapping[str, str], headline: str) -> None:
+    """Prints a block that ends a session: <headline>, a blank line, then the
+    indented Next line naming the fresh session to start
+    (next_phase_cmd)."""
+    print("%s\n\n  Next: %s" % (headline, next_phase_cmd(env)))

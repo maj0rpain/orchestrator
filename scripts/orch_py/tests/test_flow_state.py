@@ -10,7 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from orch.flow_state import STATE_KEYS, flow_state_get_many
+from conftest import died_of
+from orch.flow_state import (STATE_KEYS, STATE_UNREADABLE_MSG, flow_state_get_many,
+                             require_state_read)
 
 GOLDEN = Path(__file__).resolve().parent / "flow_state"
 BASH_MODULE = Path(__file__).resolve().parents[2] / "flow-state.sh"
@@ -52,6 +54,38 @@ def test_a_key_outside_the_table_is_a_programming_error_not_a_failed_read(tmp_pa
 def test_a_key_outside_the_table_raises_even_when_the_file_is_missing(tmp_path):
     with pytest.raises(ValueError):
         flow_state_get_many(str(tmp_path / "state.json"), ["bogus"])
+
+
+# --- the entry read ------------------------------------------------------------
+
+
+@pytest.mark.parametrize("code", [1, 2])
+def test_the_entry_read_of_a_missing_state_file_names_the_host_s_start_command(
+        tmp_path, capsys, code):
+    died = died_of(capsys, lambda: require_state_read(
+        str(tmp_path / "state.json"), {"CLAUDECODE": "1"}, ("issue",), code))
+
+    assert died == (code, "", "orch: no active flow (.orchestrator/state.json not found)."
+                    " Run /orchestrator:start first.\n")
+
+
+@pytest.mark.parametrize("code", [1, 2])
+def test_the_entry_read_of_a_state_file_it_cannot_read_is_refused_as_unreadable(
+        tmp_path, capsys, code):
+    state = tmp_path / "state.json"
+    state.write_text('{"issue": "1')
+
+    died = died_of(capsys, lambda: require_state_read(str(state), {}, ("issue",), code))
+
+    assert died == (code, "", "orch: %s\n" % STATE_UNREADABLE_MSG)
+
+
+def test_the_entry_read_assigns_each_key_its_value_or_its_default(tmp_path):
+    state = tmp_path / "state.json"
+    state.write_text('{"issue": 14, "phase": null}')
+
+    assert require_state_read(str(state), {}, ("issue", "phase", "iteration"), 1) == {
+        "issue": "14", "phase": "", "iteration": "0"}
 
 
 def test_a_nul_inside_a_value_is_dropped(tmp_path):

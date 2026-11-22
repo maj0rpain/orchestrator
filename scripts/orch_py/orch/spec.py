@@ -1,7 +1,19 @@
-"""The spec concept's module (scripts/orch/spec.sh), kept to the round
-directory the spec-review noun works in: the files saying where a spec review
-round stands, the working-directory reset, what a round hands the next, and
-the round count's parse.
+"""The spec concept's module (scripts/orch/spec.sh): the spec noun, moving
+here verb by verb while bash still serves `orch.sh spec` (ADR-0067), and the
+round directory the spec-review noun works in - the files saying where a spec
+review round stands, the working-directory reset, what a round hands the
+next, and the round count's parse.
+
+The noun is the spec review's one hand on GitHub. The body is the truth the
+implement phase reads, so the four ways it is read and written - fetch,
+update, comment and comments - go through here, where they are tested,
+rather than through a `gh issue edit` in skill prose: each resolves the
+number from the flow's state and runs the issue noun's op on it in-process.
+pause touches no issue: it writes the spec-paused marker, the stop of the
+spec phase's session once the spec is written. Every verb keeps the bash
+module's arguments, usage lines, stdout, exit codes, `orch:` messages and
+check order, and refuses before any write. round, round-dir and pause
+--round are still bash's alone.
 
 The bash spec module stays the round directory's owner while bash `spec`
 reads it (`spec round`, `spec round-dir`): these are copies of its
@@ -26,10 +38,34 @@ from __future__ import annotations
 import glob
 import os
 import shlex
-from typing import List, Sequence, Tuple
+from typing import List, Mapping, Optional, Sequence, Tuple
 
 from orch.common import (ORCH_DIR_NAME, copy_or_die, die, mkdir_p_or_die, plain_positive_number,
                          read_raw, rm_f_or_die, rm_rf_or_die, text_file_append, text_file_write)
+from orch.flow_state import NO_ISSUE_MSG, flow_state_file, require_state_read
+from orch.git import Git
+from orch.handoff import handoff_dir
+from orch.host import print_next_block
+from orch.root import checkout_root
+
+# The verbs, in the unknown-op message's order. docs_lint.sh reads this line
+# as the verbs the noun dispatches, so it stays one `OPS = "<verb>|..."` line.
+OPS = "fetch|update|comment|comments|pause|round|round-dir"
+# The verbs that read or write the flow's issue through the issue noun.
+ISSUE_OPS = ("fetch", "update", "comment", "comments")
+
+# The marker a spec phase leaves when it stops its session once the spec is
+# written (#1181), holding the issue number: the fresh session's spec phase
+# reads it and goes straight to the spec review. A file in the handoff folder
+# but not a handoff - no phase table entry names it, so handoff validate and
+# doctor never look at it - and no state.json field (ADR-0005). redo spec
+# moves it aside with the stale handoffs.
+SPEC_PAUSED_MARKER = "spec-paused"
+# The round marker (#1346): the file a flow's spec review leaves in the
+# handoff folder naming the flow's issue, a round k and the round count n, as
+# one line `<issue> <k> <n>` - a format spec round alone reads. Like
+# spec-paused it is no handoff and no state.json field.
+SPEC_ROUND_MARKER = "spec-round"
 
 # The empty file spec_round_complete writes in a round's directory, as its
 # last local step but the answer's clearing: a round counts as complete only
@@ -51,6 +87,13 @@ ROUND_SETTLED = "settled.md"
 ROUND_CARRIED = ("map-implementability.md", ROUND_SETTLED)
 # Where a flow's spec review rounds work, under the orchestrator directory.
 ROUNDS_DIR_NAME = "spec-rounds"
+# The file round 1 of a flow's spec review writes its `agent get lens` read
+# to, in its round directory: every later round, in a session of its own,
+# starts its lenses on these values rather than reading the setting again, so
+# the whole review runs on one lens setting (#1353). A flow's round-dir
+# carries it; a standalone review reads the lens setting once, in one
+# session.
+ROUND_LENS_SETTING = "agent-lens"
 
 
 def spec_rounds_dir(root: str) -> str:
@@ -265,3 +308,107 @@ def spec_round_count_parse(arg: str) -> Tuple[int, int]:
     if int(k) > int(n):
         die("round %s is past the round count %s" % (k, n))
     return int(k), int(n)
+
+
+# --- the noun -----------------------------------------------------------------
+
+
+def spec_phase_guard(op: str, issue: str, phase: str, code: int) -> None:
+    """The refusals every op that acts inside the spec phase shares once the
+    caller holds the flow's <issue> and <phase> from its entry read - no
+    recorded issue, a done flow, a phase other than spec - each dying with
+    exit <code>; it reads nothing."""
+    if not issue:
+        die(NO_ISSUE_MSG, code)
+    if phase == "done":
+        die("the flow on issue #%s is done - spec %s acts only on an active flow" % (issue, op),
+            code)
+    if phase != "spec":
+        die("spec %s runs only in the spec phase - the flow is at phase %s" % (op, phase), code)
+
+
+def spec_marker_write(root: str, marker: str, line: str) -> None:
+    """Creates the handoff folder of the checkout at <root> and writes <line>
+    as the one line of the marker file <marker> in it - the one writer of the
+    spec module's two markers; dies naming what it could not create or
+    write."""
+    directory = handoff_dir(root)
+    mkdir_p_or_die(directory, "cannot create " + directory)
+    path = "%s/%s" % (directory, marker)
+    text_file_write(path, line + "\n", "cannot write " + path)
+
+
+def issue_op(op: str, args: List[str], issue: str, phase: str, gh_of, git,
+             env: Mapping[str, str]) -> int:
+    """`spec <fetch|update|comment|comments> <file>`: `issue <op>` on the
+    flow's recorded issue, run in-process, so the drift line and every issue
+    message come from the code that prints them. A done flow's issue is
+    finished work - state.json lingers after the flow ends - so the op refuses
+    it and points at the stateless issue op."""
+    if len(args) != 1:
+        die("usage: orch.sh spec <fetch|update|comment|comments> <file>")
+    if not issue:
+        die(NO_ISSUE_MSG)
+    if phase == "done":
+        die("the flow on issue #%s is done - spec %s acts only on an active flow's issue;"
+            " for another issue use orch.sh issue %s <n> <file>" % (issue, op, op))
+    # Imported on call, so a spec-review run, which loads this module for the
+    # round directory, never loads the issue noun.
+    from orch.issue import Issue
+
+    return getattr(Issue(gh_of(), git, env), op)([issue, args[0]])
+
+
+def pause(args: List[str], issue: str, phase: str, root: str, env: Mapping[str, str]) -> int:
+    """`spec pause`: stops the spec phase's session after the spec is
+    written - writes the spec-paused marker, then prints the stop block with
+    the host's Next line. The marker is written first, so a failed write
+    prints no block; the phase is left at spec."""
+    if args[:1] == ["--round"]:
+        raise NotImplementedError("spec pause --round")
+    if args:
+        die("usage: orch.sh spec pause [--round <k>/<n>]")
+    spec_phase_guard("pause", issue, phase, 1)
+    spec_marker_write(root, SPEC_PAUSED_MARKER, issue)
+    print_next_block(env, "Spec #%s written. The spec review runs in a fresh session." % issue)
+    return 0
+
+
+def run(
+    argv: List[str],
+    gh=None,
+    git=None,
+    env: Optional[Mapping[str, str]] = None,
+) -> int:
+    """`orch.sh spec <op> ...`: the real adapters and the process's
+    environment unless a test hands in fakes. Outside a checkout it dies
+    first, as orch.sh does, whatever the op. Every op but round makes the
+    entry read of the flow's issue and phase here, before the op is checked,
+    and hands both on; round reserves exit 1 for "no round marker", so it
+    makes its own read, dying exit 2."""
+    env = os.environ if env is None else env
+    git = Git() if git is None else git
+    root = checkout_root(git, env)
+    op = argv[0] if argv else ""
+    args = argv[1:]
+    state = {"issue": "", "phase": ""}
+    if op != "round":
+        state = require_state_read(flow_state_file(root), env, ("issue", "phase"), 1)
+    if op not in OPS.split("|"):
+        die("unknown spec op: %s (want %s)" % (op or "<none>", OPS))
+    issue, phase = state["issue"], state["phase"]
+
+    # The gh adapter, made at the first GitHub call: only the issue ops make
+    # one.
+    def gh_of():
+        if gh is not None:
+            return gh
+        from orch.gh import adapter
+
+        return adapter(env)
+
+    if op in ISSUE_OPS:
+        return issue_op(op, args, issue, phase, gh_of, git, env)
+    if op == "pause":
+        return pause(args, issue, phase, root, env)
+    raise NotImplementedError("spec " + op)
