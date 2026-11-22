@@ -685,6 +685,34 @@ out="$(sourced_orch spec_round_hold "$od/d" x 2>&1)"; st=$?
 assert_status "spec_round_hold over a directory dies" "$st" 1
 assert_contains "with the write message" "$out" "could not write $od/d/fundamental.md - nothing written to GitHub"
 rm -rf "$od"
+# The golden round directories and saved-answer lines the Python spec module's
+# tests read too, with the same expected values (ADR-0067): each states/<name>/
+# reads as the state its expected file names; the answer bash writes for
+# answer/given, saving each file option's argument as its copy in the
+# relative round/, is answer/bash-written, and the line Python writes,
+# answer/python-written, loads as answer/args.
+rd_golden="${ORCH%/*}/orch_py/tests/spec_round"
+for rd_state in "$rd_golden"/states/*/; do
+  rd_name="${rd_state%/}"; rd_name="${rd_name##*/}"
+  out="$(sourced_orch_script 'spec_round_state "$1" s; echo "$s"' "$rd_state")"
+  assert_eq "spec_round_state reads the golden $rd_name round directory as its expected state" \
+    "$out" "$(cat "$rd_state/expected")"
+done
+rd_work="$top/answer-golden"
+mkdir -p "$rd_work/round"
+printf '1 no\n' >"$rd_work/reasons.md"
+printf '2 later\n' >"$rd_work/ticket reasons.md"
+printf -- '- none\n' >"$rd_work/hosts.md"
+mapfile -t rd_given <"$rd_golden/answer/given"
+(cd "$rd_work" && sourced_orch spec_round_answer_save round "--reasons --ticket-reasons --host-fallbacks" "${rd_given[@]}"); st=$?
+assert_status "spec_round_answer_save of the golden answer succeeds" "$st" 0
+assert_eq "writing the golden bash-written line byte for byte" \
+  "$(cmp -s "$rd_work/round/apply-answer" "$rd_golden/answer/bash-written" && echo same)" same
+cp "$rd_golden/answer/python-written" "$rd_work/round/apply-answer"
+out="$(sourced_orch_script 'spec_round_answer_load "$1" a; printf "%s\n" "${a[@]}"' "$rd_work/round")"
+assert_eq "spec_round_answer_load reads the golden python-written line as the saved arguments" \
+  "$out" "$(cat "$rd_golden/answer/args")"
+rm -rf "$rd_work"
 restore_suite_env
 
 # --- spec fetch drift line (#3458) --------------------------------------------
