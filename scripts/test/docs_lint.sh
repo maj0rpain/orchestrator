@@ -33,10 +33,11 @@
 #     CONTEXT-MAP.md
 #   scan_skill_names  each skill directory has the orch- prefix and its SKILL.md
 #     declares its name
-#   scan_orch_resolution  each SKILL.md and command resolves orch.sh and the
-#     plugin root the one documented way; a SKILL.md whose frontmatter
-#     description ends in "Claude Code only." takes the Claude-Code-only form
-#     (the ORCH= line, no Junie lookup) instead
+#   scan_orch_resolution  each SKILL.md and command resolves orch.sh the one
+#     documented way (sibling reference files spared the ORCH= block), and
+#     every skill file and command obeys the CLAUDE_PLUGIN_ROOT and plugin-root
+#     fallback rules; a skill whose frontmatter description ends in
+#     "Claude Code only." takes the Claude-Code-only form instead
 #   scan_orch_bash  each skill file, command and listed doc runs orch.sh through
 #     bash
 #   scan_plugin_root_placeholder  no skill file or command carries a
@@ -60,7 +61,8 @@
 #     section of one, that exists
 #   scan_dispatch_copies  no skill file restates the implementer's report lines
 #     or the general-purpose-agent tier
-#   scan_agent_settings  each file that starts a plugin agent points at Agent
+#   scan_agent_settings  each start site (each skill directory across SKILL.md
+#     and its reference files, and each agent or doc file) points at Agent
 #     settings and names agent get <role> for each role it starts
 #   scan_agent_settings_section  docs/host-capabilities.md has Agent settings
 #     before Fallbacks, linked from its Start a fresh subagent row
@@ -912,16 +914,17 @@ claude_code_only_skill() {
 # relative fallback. The documented form (CONTRIBUTING.md, "Resolving
 # orch.sh") is the ORCH= line, the Junie step, and the fallback sentence, or,
 # for a skill marked "Claude Code only.", the ORCH= line and one stop. A
-# cross-host file (a skill or command not marked "Claude Code only.") that uses
+# cross-host SKILL.md or command not marked "Claude Code only." that uses
 # orch.sh is held to every step: the ORCH= line, as a line of its own, and the
 # Junie step, the one-install step, the several-installs stop and the relative
-# fallback, these four in the documented order. In any cross-host file
+# fallback, these four in the documented order; sibling skill reference files
+# are spared that block. In any cross-host skill file or command
 # CLAUDE_PLUGIN_ROOT is allowed only on the ORCH= line, in the Junie
 # sentence, and in the plugin-root fallback sentence and its plugin-root
 # paths; a file that names the plugin root carries the Junie step in that
-# sentence. A marked skill that uses orch.sh or `$ORCH` is held to the ORCH=
-# line; any marked skill has CLAUDE_PLUGIN_ROOT nowhere else and no Junie
-# lookup. Any other mention of the variable, any missing step, or a file that
+# sentence. A marked skill's SKILL.md that uses orch.sh or `$ORCH` is held to
+# the ORCH= line; any file of a marked skill has CLAUDE_PLUGIN_ROOT nowhere
+# else and no Junie lookup. Any other mention of the variable, any missing step,
 # runs orch.sh without the ORCH= line, is a regression. hooks/hooks.json is
 # deliberately out of scope: both hosts expand it there.
 echo
@@ -957,7 +960,7 @@ cc_orch_resolution() {
     echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line"
   [[ "$flat" != *"$orch_junie"* ]] ||
     echo "${f#"$r"/}: Claude Code only skill carries the Junie lookup"
-  if [[ "$flat" == *orch.sh* || "$flat" == *'$ORCH'* ]]; then
+  if [[ "$f" == */SKILL.md ]] && [[ "$flat" == *orch.sh* || "$flat" == *'$ORCH'* ]]; then
     grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
   fi
 }
@@ -974,7 +977,7 @@ scan_orch_resolution() {
     [ -f "$f" ] || continue
     # Checked on the flat text: a sentence wrapped at 80 columns still counts.
     flat="$(flat_text "$f")"
-    if claude_code_only_skill "$f"; then
+    if [[ "$f" == "$r"/skills/*/*.md ]] && claude_code_only_skill "${f%/*}/SKILL.md"; then
       cc_orch_resolution "$r" "$f" "$flat"
       continue
     fi
@@ -1091,8 +1094,14 @@ cc_desc='Does a thing. Claude Code only.'
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-cc" "$fixture/commands"
 cc_skill "$cc_desc" '```' "$orch_line" '```' "$cc_stop" 'Run `bash "$ORCH" status`.'
-assert_empty "a marked skill with the ORCH= line and the one stop passes the resolution scan" \
+printf 'Run `bash "$ORCH" status`.\n' >"$fixture/skills/orch-cc/ref.md"
+assert_empty "a marked skill and its sibling reference file pass the resolution scan" \
   "$(scan_orch_resolution "$fixture")"
+printf '%s\n' "$orch_junie (the Junie CLI install)." >"$fixture/skills/orch-cc/ref.md"
+flags "a marked skill's sibling reference file carrying the Junie lookup is flagged" \
+  "$(scan_orch_resolution "$fixture")" \
+  "skills/orch-cc/ref.md: Claude Code only skill carries the Junie lookup"
+rm -f "$fixture/skills/orch-cc/ref.md"
 cc_skill "$cc_desc" "$orch_junie (the Junie CLI install)." 'Run `bash "$ORCH" status`.'
 assert_eq "a marked skill carrying the Junie lookup is flagged" "$(scan_orch_resolution "$fixture")" \
   "skills/orch-cc/SKILL.md: CLAUDE_PLUGIN_ROOT outside the ORCH= line
@@ -1631,8 +1640,9 @@ echo
 echo "start sites read the agent setting (#1359)"
 # Every start of one of the plugin's agents runs on its role's agent setting,
 # and the rule for that lives once, in docs/host-capabilities.md's **Agent
-# settings** section. So every file that starts a plugin agent points at that
-# section and names `agent get <role>` for each role it starts. A file starts
+# settings** section. So every start site (each skill directory across SKILL.md
+# and its sibling reference files, and each agent or doc file) points at that
+# section and names `agent get <role>` for each role it starts. A site starts
 # an agent when, read flattened, it starts one under the `orchestrator:`
 # plugin scope (the scope named, `subagent_type`, or `orchestrator:<agent>`) -
 # its roles then come from the orch- agent names it gives, never from an
@@ -1689,7 +1699,7 @@ scan_agent_settings() {
     [ -d "$d" ] || continue
     md_files=("$d"*.md)
     [ -f "${md_files[0]}" ] || continue
-    text="$(cat "${md_files[@]}" | flat_text)"
+    text="$(awk '1' "${md_files[@]}" | flat_text)"
     check_agent_settings_text "${d#"$r"/}SKILL.md" "$text" "$pattern"
   done
   mapfile -t files < <(find "$r/agents" "$r/docs" -name '*.md' -type f 2>/dev/null | sort)

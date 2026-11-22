@@ -184,8 +184,8 @@ alternatives` amendment, and autopilot budget sizing before steps 1-4 and
 2. **Base sync.** Bring the PR's branch up to date with its base before
    anyone looks at it, so the final clean iteration reviewed the code that
    will merge. Follow **A driver's base sync** in `agents/orch-resolver.md`
-   under the plugin root (found as **Clean-iteration record** in `triage.md`
-   says), with the spec issue as the resolver's issue. Then read
+   under the plugin root (two directories above `ORCH`), with the spec issue as
+   the resolver's issue. Then read
    this iteration's **base SHA**: `bash "$ORCH" state get base_sha`, after the
    sync, for this iteration's reviewers and fixer.
    Keep the sync's **Merge resolutions**, per **Merge resolutions** in the
@@ -239,17 +239,16 @@ alternatives` amendment, and autopilot budget sizing before steps 1-4 and
    Every iteration's triage also looks at CI once, without waiting: run
    `bash "$ORCH" review ci --no-wait` (one pass of the probe, never a wait,
    writing no state, wait file or guard). Only `failing` matters: read
-   `bash "$ORCH" review ci-log <pr>` and judge the failure by the rule
-   **CI failure judgement** in `termination.md` applies in an autopilot flow,
-   here in every flow. A failure the change can fix is a blocking finding of
-   this iteration, marked CI-found in the fixable list with the log excerpt. A
-   failure that looks flaky rather than caused by the change, or that needs a
-   decision by that rule, raises nothing and is left to **Termination**, which
-   alone may spend the flake rerun. On a re-entry's first iteration, a failure
-   the previous record's `## CI` section brought in and the look shows again is
-   one finding, not two. `green`, `none`, `pending` and `unreachable` raise
-   nothing, and an iteration whose look printed `pending` can still be clean.
-   **Termination** is unchanged.
+   `bash "$ORCH" review ci-log <pr>` and judge the failure by **CI failure
+   judgement** in `termination.md`, here in every flow. A failure the change
+   can fix is a blocking finding of this iteration, marked CI-found in the
+   fixable list with the log excerpt. A failure that looks flaky rather than
+   caused by the change, or that needs a decision by that rule, raises nothing
+   and is left to **Termination**, which alone may spend the flake rerun. On a
+   re-entry's first iteration, a failure the previous record's `## CI` section
+   brought in and the look shows again is one finding, not two. `green`, `none`,
+   `pending` and `unreachable` raise nothing, and an iteration whose look
+   printed `pending` can still be clean. **Termination** is unchanged.
 
    Read `triage.md` in this skill's directory and apply **Authority**,
    **Severity**, and **Dispositions and triage rules** until every finding
@@ -367,9 +366,9 @@ first iteration** step 6, per **Agent settings** in
 
 **Host fallback.** A host that cannot start one of them natively takes
 `docs/host-capabilities.md`'s **Start a fresh subagent** fallback, with the
-prompt given for that agent here. The review phase writes no handoff, so
-record the fallback in the iteration's record and pass it to the closer for
-the PR comment.
+prompt given for that agent (here, or in `termination.md` for the closer). The
+review phase writes no handoff, so record the fallback in the iteration's
+record and pass it to the closer for the PR comment.
 
 ## Termination
 

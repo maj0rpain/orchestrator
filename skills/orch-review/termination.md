@@ -1,8 +1,9 @@
 # CI, Termination, and the closer
 
 A reference file of the `orch-review` skill, read once the loop reaches
-**Termination** (when `review begin` refuses, a base sync fails, or known
-items could not be built).
+**Termination** (when `review begin` refuses, `review resume` prints
+`terminate`, a base sync fails, or known items could not be built), and at step
+4 of **The iteration** when `review ci --no-wait` prints `failing`.
 
 ## CI
 
