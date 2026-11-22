@@ -1,8 +1,10 @@
 """The spec noun run in-process against the gh adapter's fake on a tmp_path
 store and a FakeGit checkout under tmp_path: the four reads and writes of the
-flow's issue (fetch, update, comment, comments) and the pause that stops the
-spec phase's session, each checked by its stdout, its exit code, its `orch:`
-message, the markers it leaves and the store afterwards."""
+flow's issue (fetch, update, comment, comments), the pause that stops the
+spec phase's session, and the round directory a flow's spec review round
+works in (round-dir) with the round marker a resumed one reads (round), each
+checked by its stdout, its exit code, its `orch:` message, the markers and
+round directories it leaves and the store afterwards."""
 from __future__ import annotations
 
 import builtins
@@ -79,6 +81,7 @@ def test_with_no_state_file_every_verb_says_there_is_no_active_flow(root, seed, 
     assert capsys.readouterr() == ("", NO_FLOW)
     assert snapshot(store) == before
     assert not (root / ".orchestrator" / "handoff").exists()
+    assert not (root / ".orchestrator" / "spec-rounds").exists()
 
 
 @pytest.mark.parametrize("argv", VERBS, ids=VERB_IDS)
@@ -96,6 +99,7 @@ def test_a_truncated_state_file_is_refused_as_unreadable_before_any_write(root, 
     assert capsys.readouterr() == ("", UNREADABLE)
     assert snapshot(store) == before
     assert not (root / ".orchestrator" / "handoff").exists()
+    assert not (root / ".orchestrator" / "spec-rounds").exists()
 
 
 class Opens:
@@ -125,10 +129,12 @@ class Opens:
 
 
 @pytest.mark.parametrize("phase", ["spec", "implement", "done"])
-@pytest.mark.parametrize("argv", VERBS[:5], ids=VERB_IDS[:5])
+@pytest.mark.parametrize("argv", VERBS[:6] + [("round",)], ids=VERB_IDS[:6] + ["round"])
 def test_each_verb_opens_the_state_file_exactly_once(root, seed, capsys, tmp_path, monkeypatch,
                                                      argv, phase):
     state = flow_state(root, phase, 14)
+    (root / ".orchestrator" / "handoff").mkdir()
+    (root / ".orchestrator" / "handoff" / "spec-round").write_text("14 1 2\n")
     seed.issue(14, "open")
     seed.body(14, "The spec.")
     body = tmp_path / "body.md"
@@ -380,3 +386,388 @@ def test_a_marker_that_cannot_be_written_dies_naming_it_with_no_block(root, seed
     assert orch_spec(root, seed, "pause") == 1
     assert capsys.readouterr() == (
         "", "orch: cannot write %s/.orchestrator/handoff/spec-paused\n" % root)
+
+
+# --- round-dir -----------------------------------------------------------------
+
+
+def rounds_of(root):
+    return root / ".orchestrator" / "spec-rounds"
+
+
+def round_marker(root):
+    return root / ".orchestrator" / "handoff" / "spec-round"
+
+
+def test_round_dir_prints_round_k_s_directory_created_empty_after_writing_the_marker(
+        root, seed, capsys):
+    flow_state(root, "spec", 21)
+
+    assert orch_spec(root, seed, "round-dir", "1/2") == 0
+    assert capsys.readouterr() == ("%s/1/\n" % rounds_of(root), "")
+    assert os.listdir(str(rounds_of(root) / "1")) == []
+    assert round_marker(root).read_text() == "21 1 2\n"
+
+
+def write_files(directory, files):
+    """<files>, by name, written into <directory>, made as needed; a name
+    ending in / is a directory."""
+    directory.mkdir(parents=True, exist_ok=True)
+    for name, text in files.items():
+        path = directory / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+
+def tree(directory):
+    """Every path under <directory>, relative, with each file's text."""
+    return {os.path.relpath(os.path.join(at, name), str(directory)):
+            open(os.path.join(at, name)).read()
+            for at, _, names in os.walk(str(directory)) for name in names}
+
+
+def test_round_dir_empties_a_populated_round_directory(root, seed):
+    flow_state(root, "spec", 21)
+    write_files(rounds_of(root) / "1", {"changelog.md": "stale\n", "settled.md": "stale\n",
+                                        "sub/x": "stale\n"})
+
+    assert orch_spec(root, seed, "round-dir", "1/2") == 0
+    assert os.listdir(str(rounds_of(root) / "1")) == []
+
+
+def test_round_dir_1_deletes_every_other_round_s_directory(root, seed):
+    flow_state(root, "spec", 21)
+    write_files(rounds_of(root) / "2", {"changelog.md": "stale\n"})
+    write_files(rounds_of(root) / "3", {"map-implementability.md": "stale\n"})
+    write_files(rounds_of(root), {"stray": "stale\n"})
+
+    assert orch_spec(root, seed, "round-dir", "1/2") == 0
+    assert os.listdir(str(rounds_of(root))) == ["1"]
+
+
+ROUND_1 = {"map-implementability.md": "the code map\n", "settled.md": "round 1 changelog\n",
+           "changelog.md": "round 1 changelog\n", "agent-lens": "model opus\neffort high\n",
+           "round-complete": ""}
+
+
+def test_a_later_round_dir_copies_in_the_lens_setting_code_map_and_settled_file(
+        root, seed, capsys):
+    flow_state(root, "spec", 21)
+    write_files(rounds_of(root) / "1", ROUND_1)
+    write_files(rounds_of(root) / "2", {"spec.md": "stale\n"})
+
+    assert orch_spec(root, seed, "round-dir", "2/2") == 0
+    assert capsys.readouterr() == ("%s/2/\n" % rounds_of(root), "")
+    assert tree(rounds_of(root) / "2") == {
+        "agent-lens": "model opus\neffort high\n", "map-implementability.md": "the code map\n",
+        "settled.md": "round 1 changelog\n"}
+    assert tree(rounds_of(root) / "1") == ROUND_1
+    assert round_marker(root).read_text() == "21 2 2\n"
+
+
+@pytest.mark.parametrize("left", ["agent-lens", "map-implementability.md", "settled.md"])
+def test_a_later_round_dir_copies_each_carried_file_only_when_it_exists(root, seed, left):
+    flow_state(root, "spec", 21)
+    write_files(rounds_of(root) / "1", {left: "kept\n", "changelog.md": "not carried\n"})
+    write_files(rounds_of(root) / "3", {"changelog.md": "round 3\n"})
+
+    assert orch_spec(root, seed, "round-dir", "2/3") == 0
+    assert tree(rounds_of(root) / "2") == {left: "kept\n"}
+    assert tree(rounds_of(root) / "3") == {"changelog.md": "round 3\n"}
+
+
+def test_a_later_round_dir_with_nothing_to_carry_leaves_its_directory_empty(root, seed, capsys):
+    flow_state(root, "spec", 21)
+
+    assert orch_spec(root, seed, "round-dir", "3/3") == 0
+    assert capsys.readouterr() == ("%s/3/\n" % rounds_of(root), "")
+    assert os.listdir(str(rounds_of(root) / "3")) == []
+
+
+def round_files(root):
+    """Every path under the rounds directory and the round marker's text, so a
+    refusal is checked to have created and deleted nothing."""
+    marker = round_marker(root)
+    return tree(rounds_of(root)), marker.read_text() if marker.exists() else None
+
+
+WANT_K_N = "want <k>/<n>, a round and the round count, two positive whole numbers, got: %s"
+
+
+@pytest.mark.parametrize("arg", ["", "1", "0/2", "1/0", "a/2", "1/b", "1/2/3", "/2", "1/",
+                                 "-1/2", "1 /2", "01/2", "1/02"])
+def test_round_dir_refuses_a_malformed_round_count_touching_nothing(root, seed, capsys, arg):
+    flow_state(root, "spec", 21)
+    write_files(rounds_of(root) / "2", {"changelog.md": "round 2\n"})
+    before = round_files(root)
+
+    assert orch_spec(root, seed, "round-dir", arg) == 1
+    assert capsys.readouterr() == ("", "orch: %s\n" % (WANT_K_N % arg))
+    assert round_files(root) == before
+
+
+@pytest.mark.parametrize("arg, message", [
+    ("3/2", "round 3 is past the round count 2"),
+    ("2/1", "round 2 is past the round count 1"),
+], ids=["3/2", "2/1"])
+def test_round_dir_refuses_a_round_past_the_count(root, seed, capsys, arg, message):
+    flow_state(root, "spec", 21)
+    before = round_files(root)
+
+    assert orch_spec(root, seed, "round-dir", arg) == 1
+    assert capsys.readouterr() == ("", "orch: %s\n" % message)
+    assert round_files(root) == before
+
+
+@pytest.mark.parametrize("args", [(), ("1/2", "2/2")], ids=["none", "two"])
+@pytest.mark.parametrize("phase, issue", [("spec", 21), ("implement", None)],
+                         ids=["spec", "no-issue"])
+def test_round_dir_takes_exactly_one_argument_before_the_phase_refusals(
+        root, seed, capsys, args, phase, issue):
+    flow_state(root, phase, issue)
+
+    assert orch_spec(root, seed, "round-dir", *args) == 1
+    assert capsys.readouterr() == ("", "orch: usage: orch.sh spec round-dir <k>/<n>\n")
+    assert round_files(root) == ({}, None)
+
+
+@pytest.mark.parametrize("phase, issue, message", [
+    ("spec", None, "no issue recorded in state - the spec phase must publish one first"),
+    ("done", 21, "the flow on issue #21 is done - spec round-dir acts only on an active flow"),
+    ("implement", 21,
+     "spec round-dir runs only in the spec phase - the flow is at phase implement"),
+    ("done", None, "no issue recorded in state - the spec phase must publish one first"),
+], ids=["no-issue", "done", "implement", "no-issue-before-done"])
+def test_round_dir_refuses_outside_an_active_spec_phase_touching_nothing(
+        root, seed, capsys, phase, issue, message):
+    flow_state(root, phase, issue)
+    write_files(rounds_of(root) / "2", {"changelog.md": "round 2\n"})
+    before = round_files(root)
+
+    assert orch_spec(root, seed, "round-dir", "1/2") == 1
+    assert capsys.readouterr() == ("", "orch: %s\n" % message)
+    assert round_files(root) == before
+
+
+def test_round_dir_checks_the_round_count_before_the_phase(root, seed, capsys):
+    flow_state(root, "implement", 21)
+
+    assert orch_spec(root, seed, "round-dir", "3/2") == 1
+    assert capsys.readouterr() == ("", "orch: round 3 is past the round count 2\n")
+
+
+def test_round_dir_run_twice_gives_the_same_result(root, seed, capsys):
+    flow_state(root, "spec", 21)
+    write_files(rounds_of(root) / "1", ROUND_1)
+
+    assert orch_spec(root, seed, "round-dir", "2/3") == 0
+    first = capsys.readouterr(), tree(rounds_of(root)), round_marker(root).read_text()
+    assert orch_spec(root, seed, "round-dir", "2/3") == 0
+    assert (capsys.readouterr(), tree(rounds_of(root)), round_marker(root).read_text()) == first
+
+
+def test_a_round_dir_whose_marker_cannot_be_written_prints_no_path(root, seed, capsys):
+    flow_state(root, "spec", 21)
+    round_marker(root).mkdir(parents=True)
+
+    assert orch_spec(root, seed, "round-dir", "1/2") == 1
+    assert capsys.readouterr() == ("", "orch: cannot write %s\n" % round_marker(root))
+
+
+# A read-only directory does not stop root.
+AS_ROOT = pytest.mark.skipif(os.geteuid() == 0, reason="root writes into a read-only directory")
+
+
+@pytest.mark.parametrize("blocked", ["rounds", pytest.param("round", marks=AS_ROOT)])
+def test_a_round_directory_that_cannot_be_prepared_dies_before_the_marker(
+        root, seed, capsys, blocked):
+    flow_state(root, "spec", 21)
+    if blocked == "rounds":
+        write_files(root / ".orchestrator", {"spec-rounds": "a file, not a folder\n"})
+    else:
+        write_files(rounds_of(root), {"1": "a file, not a folder\n"})
+        (rounds_of(root)).chmod(0o555)
+
+    try:
+        assert orch_spec(root, seed, "round-dir", "1/2") == 1
+    finally:
+        if rounds_of(root).is_dir():
+            rounds_of(root).chmod(0o755)
+    assert capsys.readouterr() == (
+        "", "orch: could not reset the round directory %s/1\n" % rounds_of(root))
+    assert not round_marker(root).exists()
+
+
+@AS_ROOT
+def test_a_round_1_sweep_that_cannot_delete_a_round_dies_before_the_marker(root, seed, capsys):
+    flow_state(root, "spec", 21)
+    write_files(rounds_of(root) / "2" / "deep", {"changelog.md": "round 2\n"})
+    (rounds_of(root) / "2" / "deep").chmod(0o555)
+
+    try:
+        assert orch_spec(root, seed, "round-dir", "1/2") == 1
+    finally:
+        (rounds_of(root) / "2" / "deep").chmod(0o755)
+    assert capsys.readouterr() == (
+        "", "orch: could not reset the round directory %s/1\n" % rounds_of(root))
+    assert not round_marker(root).exists()
+
+
+@AS_ROOT
+def test_a_carried_file_that_cannot_be_copied_dies_naming_it_before_the_marker(
+        root, seed, capsys):
+    flow_state(root, "spec", 21)
+    write_files(rounds_of(root) / "1", {"settled.md": "round 1 changelog\n"})
+    (rounds_of(root) / "1" / "settled.md").chmod(0o000)
+
+    try:
+        assert orch_spec(root, seed, "round-dir", "2/2") == 1
+    finally:
+        (rounds_of(root) / "1" / "settled.md").chmod(0o644)
+    assert capsys.readouterr() == (
+        "", "orch: cannot copy round 1's settled.md into %s/2\n" % rounds_of(root))
+    assert not round_marker(root).exists()
+
+
+# --- round ---------------------------------------------------------------------
+
+
+def write_marker(root, text):
+    round_marker(root).parent.mkdir(parents=True, exist_ok=True)
+    round_marker(root).write_text(text)
+
+
+@pytest.mark.parametrize("files, printed", [
+    ({}, "1 2"),
+    ({"settled.md": "carried in\n"}, "1 2"),
+    ({"apply-answer": ""}, "1 2 applying"),
+    ({"fundamental.md": ""}, "1 2 waiting"),
+    ({"fundamental.md": "", "apply-answer": ""}, "1 2 applying"),
+    ({"round-complete": ""}, "2 2"),
+    ({"round-complete": "", "fundamental.md": ""}, "1 2 waiting"),
+], ids=["open", "carried-only", "applying", "waiting", "applying-held", "complete",
+        "complete-but-held"])
+def test_round_says_where_the_marker_s_round_stands(root, seed, capsys, files, printed):
+    flow_state(root, "spec", 21)
+    write_marker(root, "21 1 2\n")
+    write_files(rounds_of(root) / "1", files)
+
+    assert orch_spec(root, seed, "round") == 0
+    assert capsys.readouterr() == (printed + "\n", "")
+
+
+@pytest.mark.parametrize("files, printed", [
+    ({}, "2 2"),
+    ({"round-complete": ""}, "done 2"),
+], ids=["open", "complete"])
+def test_round_on_the_last_round_says_done_once_it_is_complete(root, seed, capsys, files,
+                                                               printed):
+    flow_state(root, "spec", 21)
+    write_marker(root, "21 2 2\n")
+    write_files(rounds_of(root) / "2", files)
+
+    assert orch_spec(root, seed, "round") == 0
+    assert capsys.readouterr() == (printed + "\n", "")
+
+
+def test_round_reads_the_marker_round_dir_wrote(root, seed, capsys):
+    flow_state(root, "spec", 21)
+    assert orch_spec(root, seed, "round-dir", "1/1") == 0
+    capsys.readouterr()
+
+    assert orch_spec(root, seed, "round") == 0
+    assert capsys.readouterr() == ("1 1\n", "")
+
+
+@pytest.mark.parametrize("marker", [None, "22 1 2\n"], ids=["no-marker", "another-issue"])
+def test_round_exits_1_printing_nothing_with_no_marker_for_the_flow(root, seed, capsys, marker):
+    flow_state(root, "spec", 21)
+    if marker is not None:
+        write_marker(root, marker)
+
+    assert orch_spec(root, seed, "round") == 1
+    assert capsys.readouterr() == ("", "")
+
+
+def test_a_round_marker_that_is_a_directory_is_no_marker(root, seed, capsys):
+    flow_state(root, "spec", 21)
+    round_marker(root).mkdir(parents=True)
+
+    assert orch_spec(root, seed, "round") == 1
+    assert capsys.readouterr() == ("", "")
+
+
+RERUN = "want <issue> <k> <n>; rerun orch.sh spec round-dir <k>/<n>"
+
+
+@pytest.mark.parametrize("text, line", [
+    ("\n", ""), ("garbage\n", "garbage"), ("21\n", "21"), ("21 1\n", "21 1"),
+    ("21 3 2\n", "21 3 2"), ("21 0 2\n", "21 0 2"), ("21 a 2\n", "21 a 2"),
+    ("x 1 2\n", "x 1 2"), ("21 1 2 9\n", "21 1 2 9"), ("21 01 2\n", "21 01 2"),
+    ("21 1 2\r\n", "21 1 2\r"),
+], ids=["blank", "garbage", "issue-only", "no-count", "past-count", "zero", "word-round",
+        "word-issue", "extra", "leading-zero", "carriage-return"])
+def test_a_malformed_round_marker_exits_2_naming_it_and_the_rerun(root, seed, capsys, text, line):
+    flow_state(root, "spec", 21)
+    write_marker(root, text)
+
+    assert orch_spec(root, seed, "round") == 2
+    assert capsys.readouterr() == ("", "orch: malformed round marker %s: '%s' - %s\n"
+                                   % (round_marker(root), line, RERUN))
+
+
+def test_an_empty_round_marker_exits_2_saying_it_is_empty(root, seed, capsys):
+    flow_state(root, "spec", 21)
+    write_marker(root, "")
+
+    assert orch_spec(root, seed, "round") == 2
+    assert capsys.readouterr() == ("", "orch: malformed round marker %s: it is empty - %s\n"
+                                   % (round_marker(root), RERUN))
+
+
+@pytest.mark.parametrize("text", ["21 1 2", "  21\t1  2  \n", "21 1 2\nmore\n"],
+                         ids=["no-newline", "blanks", "second-line"])
+def test_a_round_marker_is_read_as_bash_reads_its_first_line(root, seed, capsys, text):
+    flow_state(root, "spec", 21)
+    write_marker(root, text)
+
+    assert orch_spec(root, seed, "round") == 0
+    assert capsys.readouterr() == ("1 2\n", "")
+
+
+@pytest.mark.parametrize("phase, issue, message", [
+    ("spec", None, "no issue recorded in state - the spec phase must publish one first"),
+    ("done", 21, "the flow on issue #21 is done - spec round acts only on an active flow"),
+    ("implement", 21, "spec round runs only in the spec phase - the flow is at phase implement"),
+], ids=["no-issue", "done", "implement"])
+def test_round_exits_2_outside_an_active_spec_phase(root, seed, capsys, phase, issue, message):
+    flow_state(root, phase, issue)
+    write_marker(root, "21 1 2\n")
+
+    assert orch_spec(root, seed, "round") == 2
+    assert capsys.readouterr() == ("", "orch: %s\n" % message)
+
+
+@pytest.mark.parametrize("state", ["missing", "spec", "truncated"])
+def test_round_refuses_an_argument_first_exiting_2(root, seed, capsys, state):
+    if state != "missing":
+        written = flow_state(root, "spec", 21)
+        if state == "truncated":
+            written.write_text(written.read_text()[:20])
+
+    assert orch_spec(root, seed, "round", "extra") == 2
+    assert capsys.readouterr() == ("", "orch: usage: orch.sh spec round\n")
+
+
+def test_round_exits_2_with_no_state_file(root, seed, capsys):
+    assert orch_spec(root, seed, "round") == 2
+    assert capsys.readouterr() == ("", NO_FLOW)
+
+
+def test_round_exits_2_on_a_truncated_state_file(root, seed, capsys):
+    state = flow_state(root, "spec", 21)
+    state.write_text(state.read_text()[:20])
+    write_marker(root, "21 1 2\n")
+
+    assert orch_spec(root, seed, "round") == 2
+    assert capsys.readouterr() == ("", UNREADABLE)

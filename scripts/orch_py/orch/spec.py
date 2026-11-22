@@ -12,8 +12,9 @@ number from the flow's state and runs the issue noun's op on it in-process.
 pause touches no issue: it writes the spec-paused marker, the stop of the
 spec phase's session once the spec is written. Every verb keeps the bash
 module's arguments, usage lines, stdout, exit codes, `orch:` messages and
-check order, and refuses before any write. round, round-dir and pause
---round are still bash's alone.
+check order, and refuses before any write. round-dir prepares a flow's
+round directory and writes the round marker last; round reads the marker
+back for a resumed spec phase. pause --round is still bash's alone.
 
 The bash spec module stays the round directory's owner while bash `spec`
 reads it (`spec round`, `spec round-dir`): these are copies of its
@@ -40,8 +41,9 @@ import os
 import shlex
 from typing import List, Mapping, Optional, Sequence, Tuple
 
-from orch.common import (ORCH_DIR_NAME, copy_or_die, die, mkdir_p_or_die, plain_positive_number,
-                         read_raw, rm_f_or_die, rm_rf_or_die, text_file_append, text_file_write)
+from orch.common import (ORCH_DIR_NAME, copy_or_die, die, mkdir_p_or_die, plain_number,
+                         plain_positive_number, read_raw, rm_f_or_die, rm_rf_or_die,
+                         text_file_append, text_file_write)
 from orch.flow_state import NO_ISSUE_MSG, flow_state_file, require_state_read
 from orch.git import Git
 from orch.handoff import handoff_dir
@@ -374,6 +376,110 @@ def pause(args: List[str], issue: str, phase: str, root: str, env: Mapping[str, 
     return 0
 
 
+def spec_round_sweep(rounds: str, directory: str) -> None:
+    """Round 1's sweep: every entry of the rounds directory <rounds> but
+    round 1's <directory> deleted, so a redone review leaks nothing stale;
+    dies naming <directory> when it cannot, as spec_round_dir_reset does,
+    where bash's find gave its own error."""
+    unreset = "could not reset the round directory %s" % directory
+    try:
+        names = sorted(os.listdir(rounds))
+    except OSError:
+        die(unreset)
+    for name in names:
+        if name != "1":
+            rm_rf_or_die(os.path.join(rounds, name), unreset)
+
+
+def spec_round_carry(rounds: str, k: int) -> None:
+    """Copies into round <k>'s directory under <rounds> what round k-1 of a
+    flow's review hands it - the lens setting, the code map and the settled
+    file, each when it exists; dies naming the file when a copy fails. A
+    copy, not a carry in place: every round keeps its own directory for the
+    final session to read its changelog from."""
+    previous = "%s/%d" % (rounds, k - 1)
+    for name in (ROUND_LENS_SETTING,) + ROUND_CARRIED:
+        source = "%s/%s" % (previous, name)
+        if os.path.isfile(source):
+            copy_or_die(source, "%s/%d/%s" % (rounds, k, name),
+                        "cannot copy round %d's %s into %s/%d" % (k - 1, name, rounds, k))
+
+
+def round_dir(args: List[str], issue: str, phase: str, root: str) -> int:
+    """`spec round-dir <k>/<n>`: round k's working directory made ready and
+    printed, after the round marker naming the flow's issue, k and n is
+    written - last, so a failed write prints no path and a round never runs
+    without its marker."""
+    if len(args) != 1:
+        die("usage: orch.sh spec round-dir <k>/<n>")
+    k, n = spec_round_count_parse(args[0])
+    spec_phase_guard("round-dir", issue, phase, 1)
+    rounds = spec_rounds_dir(root)
+    directory = "%s/%d" % (rounds, k)
+    spec_round_dir_reset(directory)
+    if k == 1:
+        spec_round_sweep(rounds, directory)
+    else:
+        spec_round_carry(rounds, k)
+    spec_marker_write(root, SPEC_ROUND_MARKER, "%s %d %d" % (issue, k, n))
+    print(directory + "/")
+    return 0
+
+
+def spec_round_marker_parse(marker: str) -> Tuple[str, int, int]:
+    """The round marker at <marker>, its first line read as `<issue> <k> <n>`
+    - a plain issue number, then a round and the round count no greater, two
+    positive whole numbers, and nothing after - split on blanks as bash's
+    `read` splits it. Dies, exit 2, naming the marker and its line when it
+    is malformed, or saying it is empty when it holds nothing; a marker that
+    cannot be read is empty, as bash's read of it gave no line."""
+    rerun = "want <issue> <k> <n>; rerun orch.sh spec round-dir <k>/<n>"
+    text = read_raw(marker) or ""
+    if not text:
+        die("malformed round marker %s: it is empty - %s" % (marker, rerun), 2)
+    line = text.split("\n", 1)[0]
+    words = line.replace("\t", " ").split(" ")
+    words = [word for word in words if word]
+    words += [""] * (3 - len(words))
+    issue, k, n = words[:3]
+    if not plain_number(issue) or not plain_positive_number(k) \
+            or not plain_positive_number(n) or len(words) > 3 or int(k) > int(n):
+        die("malformed round marker %s: '%s' - %s" % (marker, line, rerun), 2)
+    return issue, int(k), int(n)
+
+
+def round_op(args: List[str], root: str, env: Mapping[str, str]) -> int:
+    """`spec round`: the round a resumed flow's spec review runs next, from
+    the round marker - `<k> <n> applying` while the marker's round holds a
+    saved apply answer (an apply died), `<k> <n> waiting` while it holds
+    fundamental items back for the human's answer (autopilot), else `<k>
+    <n>`, the marker's k, or k+1 once round k's directory holds
+    round-complete - or `done <n>` once round n's does. Exit 1, printing
+    nothing, when there is no marker or it names another issue; every
+    failure is exit 2, so a caller never reads one as "no marker"."""
+    if args:
+        die("usage: orch.sh spec round", 2)
+    state = require_state_read(flow_state_file(root), env, ("issue", "phase"), 2)
+    spec_phase_guard("round", state["issue"], state["phase"], 2)
+    marker = "%s/%s" % (handoff_dir(root), SPEC_ROUND_MARKER)
+    if not os.path.isfile(marker):
+        return 1
+    issue, k, n = spec_round_marker_parse(marker)
+    if issue != state["issue"]:
+        return 1
+    rounds = spec_rounds_dir(root)
+    round_state = spec_round_state("%s/%d" % (rounds, k))
+    if round_state in ("applying", "waiting"):
+        print("%d %d %s" % (k, n, round_state))
+    elif round_state == "open":
+        print("%d %d" % (k, n))
+    elif k < n:
+        print("%d %d" % (k + 1, n))
+    else:
+        print("done %d" % n)
+    return 0
+
+
 def run(
     argv: List[str],
     gh=None,
@@ -411,4 +517,6 @@ def run(
         return issue_op(op, args, issue, phase, gh_of, git, env)
     if op == "pause":
         return pause(args, issue, phase, root, env)
-    raise NotImplementedError("spec " + op)
+    if op == "round-dir":
+        return round_dir(args, issue, phase, root)
+    return round_op(args, root, env)
