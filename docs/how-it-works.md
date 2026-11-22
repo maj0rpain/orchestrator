@@ -9,8 +9,8 @@ session. Terms in bold are defined in [GLOSSARY.md](../GLOSSARY.md).
 A planning session - `orch-interview`, or one of the
 [`mattpocock-skills`](https://github.com/mattpocock/skills) grilling entry
 points - ends, once a shared understanding is reached, on one question
-(`AskUserQuestion` on Claude Code, `ask_user` on Junie): flow, quick
-implementation, or blueprint only.
+(`AskUserQuestion` on Claude Code, `ask_user` on Junie, `ask_question` on
+Antigravity): flow, quick implementation, or blueprint only.
 
 - **Flow.** `/orchestrator:start` writes `01-plan.md`; then `/clear`.
   - The spec session: `orch-to-spec` publishes the issue (or, for one
@@ -612,8 +612,9 @@ repository. A load that sends nothing writes no marker, so on Claude Code it
 does not arm the edit guard (on Junie the guard never arms, ADR-0025). It
 tells the model that once a
 shared understanding is reached, the next step is a human's call, not the
-model's: call `AskUserQuestion` with exactly four options (three on Junie),
-start the flow (`orchestrator:orch-flow`), a quick implementation
+model's: call the host's ask tool with exactly four options (three off Claude
+Code, where Autopilot is unavailable), start the flow
+(`orchestrator:orch-flow`), a quick implementation
 (`orchestrator:orch-quick-implement`), a blueprint only (publish the spec,
 offer a spec review, publish the ticket breakdown, then stop), or, on Claude
 Code only, an autopilot flow, and do whichever the human picks. The question

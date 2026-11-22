@@ -918,11 +918,12 @@ claude_code_only_skill() {
 }
 
 # --- orch.sh resolution (#123) ------------------------------------------------
-# Only Claude Code expands CLAUDE_PLUGIN_ROOT, and only in hooks/hooks.json on
-# other hosts, so skill and command text must pair it with the relative
-# fallback. The documented form (CONTRIBUTING.md, "Resolving orch.sh") is the
-# ORCH= line, the relative step, and the Junie step, or, for a skill marked
-# "Claude Code only.", the ORCH= line and one stop. A cross-host command that
+# Only Claude Code expands CLAUDE_PLUGIN_ROOT in skills (Junie expands it only
+# in hooks/hooks.json; Antigravity sets PLUGIN_ROOT in hooks), so skill and
+# command text must pair it with the relative fallback. The documented form
+# (CONTRIBUTING.md, "Resolving orch.sh") is the ORCH= line, the relative step,
+# and the Junie step, or, for a skill marked "Claude Code only.", the ORCH=
+# line and one stop. A cross-host command that
 # uses orch.sh, or SKILL.md whose skill uses it in any of its files, not marked
 # "Claude Code only.", is held to every step: the ORCH= line, as a line of its
 # own, and the relative step, the Junie step, the one-install step and the
@@ -936,7 +937,7 @@ claude_code_only_skill() {
 # line; any file of a marked skill has CLAUDE_PLUGIN_ROOT nowhere else and no
 # Junie lookup. Any other mention of the variable, any missing step, or a file
 # that runs orch.sh without the ORCH= line, is a regression. hooks/hooks.json is
-# deliberately out of scope: both hosts expand it there.
+# deliberately out of scope: Claude Code and Junie expand it there.
 echo
 echo "orch.sh resolution (#123)"
 orch_line='ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"'

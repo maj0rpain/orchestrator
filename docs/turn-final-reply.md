@@ -12,9 +12,9 @@ End the turn on one plain-text reply with no tool call in it, holding the long
 block and then the question with its answer words spelled out. The human's next
 message is the answer. Never ask it with the ask-the-user capability (per
 `docs/host-capabilities.md`: `AskUserQuestion` on Claude Code, `ask_user` on
-Junie), and never write the block in a response that also calls a tool: some
-hosts hide a long text written beside a tool call, and the human never sees it
-(ADR-0051).
+Junie, `ask_question` on Antigravity), and never write the block in a response
+that also calls a tool: some hosts hide a long text written beside a tool call,
+and the human never sees it (ADR-0051).
 
 An answer word and its option's full label are the same answer, both matched
 after trimming surrounding whitespace, letter case and trailing punctuation:
@@ -26,10 +26,10 @@ A reply matching none of the site's answer forms - a typo, extra words around an
 answer word, mixed forms - is never guessed at and never re-shown. State in one
 line what you would do, in the site's answer format, then ask a short
 confirmation with the ask-the-user capability (`AskUserQuestion` on Claude Code,
-`ask_user` on Junie), nothing long in front of it: *Yes, apply that* / *No, I'll
-answer again*. *Yes, apply that* does exactly what the line states. Any other
-reply to the confirmation (*No*, free text, a dismissed ask) counts as *No*.
-Nothing is ever applied on a guess.
+`ask_user` on Junie, `ask_question` on Antigravity), nothing long in front of
+it: *Yes, apply that* / *No, I'll answer again*. *Yes, apply that* does
+exactly what the line states. Any other reply to the confirmation (*No*, free
+text, a dismissed ask) counts as *No*. Nothing is ever applied on a guess.
 
 ## Question path
 

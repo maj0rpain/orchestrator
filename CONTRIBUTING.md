@@ -687,15 +687,16 @@ cannot drift between sessions.
 
 ## Resolving orch.sh
 
-Only Claude Code expands `CLAUDE_PLUGIN_ROOT` in skills. Other hosts expand it
-only inside `hooks/hooks.json` (which keeps `${CLAUDE_PLUGIN_ROOT}` as is).
-Antigravity CLI gives the model each skill's own directory, so the relative
-path works directly without a shell probe. Junie CLI's agent shell has no
-`JUNIE_EXTENSION_ROOT` either, and Junie does not tell the model a skill's own
-directory. So every skill that runs `orch.sh`, other than a Claude-Code-only
-one (see below), states the path one way, in this order: the `ORCH=` line, then
-the relative path when the host gave the skill's directory, then the Junie CLI
-install lookup:
+Only Claude Code expands `CLAUDE_PLUGIN_ROOT` in skills. Junie expands it only
+inside `hooks/hooks.json` (which keeps `${CLAUDE_PLUGIN_ROOT}` as is), while
+Antigravity CLI uses `PLUGIN_ROOT` in hooks and does not load
+`hooks/hooks.json`. Antigravity CLI gives the model each skill's own
+directory, so the relative path works directly without a shell probe. Junie
+CLI's agent shell has no `JUNIE_EXTENSION_ROOT` either, and Junie does not tell
+the model a skill's own directory. So every skill that runs `orch.sh`, other
+than a Claude-Code-only one (see below), states the path one way, in this
+order: the `ORCH=` line, then the relative path when the host gave the skill's
+directory, then the Junie CLI install lookup:
 
 ````
 ```
