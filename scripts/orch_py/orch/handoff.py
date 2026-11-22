@@ -20,7 +20,7 @@ import os
 from typing import List, Mapping, Optional, Tuple
 
 from orch.autopilot import autopilot_active
-from orch.common import ORCH_DIR_NAME, die, fenced, file_write_atomic, lines_of, warn
+from orch.common import ORCH_DIR_NAME, die, fenced, file_write_atomic, lines_of, rm_f, warn
 from orch.flow_state import flow_state_file, require_issue
 from orch.issue_timeline import Entry, timeline_body, timeline_die, timeline_handoff, timeline_read
 
@@ -125,14 +125,6 @@ def handoff_comment_write(entries: List[Entry], name: str, path: str) -> int:
     return 0
 
 
-def _remove(path: str) -> None:
-    """rm -f <path>, its failure ignored, as the fetch ignores it."""
-    try:
-        os.remove(path)
-    except OSError:
-        pass
-
-
 def handoff_comment_fetch_due(gh, issue: str, phase: str, scratch: str) -> Tuple[int, str]:
     """Clears the scratch copy of every handoff due at <phase>, reads
     <issue>'s comments once and writes each live one to <scratch>: (0, "");
@@ -141,7 +133,7 @@ def handoff_comment_fetch_due(gh, issue: str, phase: str, scratch: str) -> Tuple
     written, its line on stderr, after the others are written."""
     due = handoffs_due(phase)
     for handoff in due:
-        _remove("%s/%s" % (scratch, handoff))
+        rm_f("%s/%s" % (scratch, handoff))
     entries, reason = timeline_read(gh, issue)
     if entries is None:
         return 1, reason
@@ -164,7 +156,7 @@ def handoff_path(phase: str, gh, env: Mapping[str, str], root: str) -> Tuple[str
         path = "%s/%s" % (handoff_dir(root), handoff)
         return path, os.path.isfile(path)
     state_file = flow_state_file(root)
-    issue = require_issue(state_file, env)
+    issue = require_issue(state_file, env)["issue"]
     scratch = handoff_scratch_dir(root)
     status, reason = handoff_comment_fetch_due(gh, issue, phase, scratch)
     if status == 1:

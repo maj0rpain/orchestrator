@@ -1,20 +1,22 @@
 # Further sharing between the spec review's batch and ticket parsers
 
-This project shares three pieces of the spec-review module's batch side
-and ticket side: the `@@` line split (`spec_review_at_line`), the `@@`
-block reader (#2568), and the Other-list token walk
-(`spec_review_answer_tokens`). Both sides use each of them the same way;
-only the batch side has a `@@ quote` block for the reader. Two further
-extractions were weighed and declined.
+This project shares three pieces of the spec-review noun's batch side
+(`scripts/orch_py/orch/spec_review_batch.py`) and ticket side
+(`scripts/orch_py/orch/spec_review_tickets.py`): the `@@` line split
+(`at_line`), the `@@` block reader (`BlockReader`, #2568), which raises
+`Malformed` for each side's parser to stop on, and the Other-list token walk
+(`answer_tokens`). Both sides use each of them the same way; only the batch
+side has a `@@ quote` block for the reader. Two further extractions were
+weighed and declined.
 
 ## Why these are out of scope
 
-- **A shared item lookup with its repeat check.** `spec_review_answer` and
-  `spec_review_tickets_answer` each find a token's item and refuse an unknown
-  one. To word its messages, a shared lookup would need each side's noun
-  (item or ticket item), source (`batch.md` or `tickets.md`) and answer name
-  passed in. That is the mode argument section 1 warns against.
-- **A batch-kind prefix or table for `spec_review_reasons`.** It takes eight
+- **A shared item lookup with its repeat check.** `answer_dispositions` and
+  `tickets_answer` each find a token's item and refuse an unknown one. To
+  word its messages, a shared lookup would need each side's noun (item or
+  ticket item), source (`batch.md` or `tickets.md`) and answer name passed
+  in. That is the mode argument section 1 warns against.
+- **A batch-kind prefix or table for `reasons_read`.** It takes seven
   positional arguments, and its two callers each pass one fixed set. A kind
   prefix and a lookup table would add indirection to rule out a mismatch
   between those arguments, and with only two call sites a mismatch is

@@ -22,14 +22,13 @@ either, is not commented on again.
 """
 from __future__ import annotations
 
-import os
 import re
-import shutil
 from typing import Callable, List, Optional, Sequence
 
 from orch import comments
 from orch.breakdown import breakdown_dir
-from orch.common import ORCH_DIR_NAME, die, fenced, lines_of, plain_number, temp_text_file
+from orch.common import (ORCH_DIR_NAME, die, fenced, lines_of, plain_number, rm_f_or_die,
+                         rm_rf_or_die, temp_text_file)
 from orch.gh import GhFailed, SubIssue, gh_die, gh_or_die, verify_twice
 from orch.repo import REPO_REMEDY
 
@@ -286,12 +285,8 @@ def ticket_unblock(gh, n: str, by: str) -> None:
 def ticket_report_remove(root: str, n: str) -> None:
     """Ticket <n>'s saved report, under the checkout at <root>, dropped if it
     has one."""
-    try:
-        os.remove("%s/%s/reports/%s.md" % (root, ORCH_DIR_NAME, n))
-    except FileNotFoundError:
-        pass
-    except OSError:
-        die("could not remove ticket #%s's saved report" % n)
+    rm_f_or_die("%s/%s/reports/%s.md" % (root, ORCH_DIR_NAME, n),
+                "could not remove ticket #%s's saved report" % n)
 
 
 # The comment a retire leaves on each ticket, and the wording a retire posted
@@ -333,11 +328,5 @@ def ticket_retire(gh, parent: str, root: str) -> None:
                        "remove the ## Ticket section from #" + parent, strip_ticket_sections)
     # The save point goes with it, so `breakdown state` never reads a retired
     # breakdown as complete.
-    save_point = breakdown_dir(root, parent)
-    try:
-        if os.path.isdir(save_point) and not os.path.islink(save_point):
-            shutil.rmtree(save_point)
-        elif os.path.lexists(save_point):
-            os.remove(save_point)
-    except OSError:
-        die("could not remove the breakdown save point of #" + parent)
+    rm_rf_or_die(breakdown_dir(root, parent),
+                 "could not remove the breakdown save point of #" + parent)

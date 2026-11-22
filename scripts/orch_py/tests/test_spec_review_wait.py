@@ -19,13 +19,6 @@ UNKNOWN = ("orch: unknown lens 'clarity'"
 
 
 @pytest.fixture
-def root(tmp_path):
-    path = tmp_path.resolve() / "repo"
-    path.mkdir()
-    return path
-
-
-@pytest.fixture
 def lenses(tmp_path):
     """A round directory, outside the checkout, as a mktemp one is."""
     path = tmp_path.resolve() / "round"

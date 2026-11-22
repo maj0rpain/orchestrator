@@ -128,17 +128,19 @@ def flow_holding_phase(state_file: str, branch: str, issue: str) -> Optional[Hol
     return Hold(state["phase"], state["issue"])
 
 
-def require_issue(state_file: str, env: Mapping[str, str]) -> str:
-    """The flow's recorded issue, from one read of <state_file>; dies, in
-    bash require_issue's order, when there is no state file (naming the
-    host's start command from <env>), when it cannot be read, and when no
-    issue is recorded."""
+def require_issue(state_file: str, env: Mapping[str, str],
+                  keys: Sequence[str] = ()) -> Dict[str, str]:
+    """The state read of <state_file>, its recorded issue and any further
+    <keys> a caller reads with it, in one read; dies, in bash
+    require_issue's order, when there is no state file (naming the host's
+    start command from <env>), when it cannot be read, and when no issue is
+    recorded."""
     if not os.path.isfile(state_file):
         die("no active flow (%s/state.json not found). Run %s first."
             % (ORCH_DIR_NAME, flow_cmd(env, "start")))
-    state = flow_state_get_many(state_file, ("issue",))
+    state = flow_state_get_many(state_file, ("issue",) + tuple(keys))
     if state is None:
         die(STATE_UNREADABLE_MSG)
     if not state["issue"]:
         die(NO_ISSUE_MSG)
-    return state["issue"]
+    return state

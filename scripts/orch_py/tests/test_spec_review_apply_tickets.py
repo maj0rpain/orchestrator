@@ -13,9 +13,8 @@ import os
 import pytest
 
 from conftest import comments_of, read, snapshot
-# root is the fixture the apply tests' checkout sits in, shared here.
 from test_spec_review_apply import (AUTOPILOT, BODY, CLEAN, apply, batch_edit, flow, on_disk,
-                                    refused, resume, root, round_dir)
+                                    refused, resume, round_dir)
 
 T20 = "## What to build\n\nBuild alpha.\n\n## Blocked by\n\nNone (can start immediately)\n"
 T21 = "## What to build\n\nBuild gamma.\n\n## Blocked by\n\n- #20\n"

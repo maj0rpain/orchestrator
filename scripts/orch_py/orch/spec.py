@@ -5,20 +5,21 @@ the round count's parse.
 
 The bash spec module stays the round directory's owner while bash `spec`
 reads it (`spec round`, `spec round-dir`): these are copies of its
-spec_round_* functions under their bash names, less the prefix, each keeping
-bash's messages and the order of its local steps. The golden round
-directories of tests/spec_round/ pin the two copies of spec_round_state to each
-other (ADR-0067). The saved answer's writers and its loader left bash with the
+spec_round_* functions under their bash names, each keeping bash's messages
+and the order of its local steps. The golden round directories of
+tests/spec_round/ pin the two copies of spec_round_state to each other
+(ADR-0067). The saved answer's writers and its loader left bash with the
 spec-review noun, and bash spec_round_state only checks that apply-answer
 exists, so the golden line bash wrote before its writer went,
 tests/spec_round/answer/bash-written, is the bash side of the saved-answer
 format, which a round that died under bash still resumes by.
 
 The saved answer (apply-answer) is one shell-quoted line, as bash's `printf
-%q` writes it: answer_save writes each word with shlex.quote, and answer_load
-reads it with shlex.split. That reads every line bash writes but one holding
-control characters, which %q writes as $'...' and shlex.split would read as a
-literal $ and the quoted text: such a line is refused, as unreadable.
+%q` writes it: spec_round_answer_save writes each word with shlex.quote, and
+spec_round_answer_load reads it with shlex.split. That reads every line bash
+writes but one holding control characters, which %q writes as $'...' and
+shlex.split would read as a literal $ and the quoted text: such a line is
+refused, as unreadable.
 """
 from __future__ import annotations
 
@@ -28,62 +29,63 @@ import shlex
 import shutil
 from typing import List, Sequence, Tuple
 
-from orch.common import ORCH_DIR_NAME, die, read_raw
+from orch.common import ORCH_DIR_NAME, die, read_raw, rm_rf_or_die, text_file_write
 
-# The empty file complete writes in a round's directory, as its last local
-# step but the answer's clearing: a round counts as complete only when its
-# directory holds it.
+# The empty file spec_round_complete writes in a round's directory, as its
+# last local step but the answer's clearing: a round counts as complete only
+# when its directory holds it.
 ROUND_COMPLETE = "round-complete"
-# The held-back fundamental items of an autopilot round, written by hold
-# (complete removes it): while it exists the round waits for the human's
-# answer.
+# The held-back fundamental items of an autopilot round, written by
+# spec_round_hold (spec_round_complete removes it): while it exists the round
+# waits for the human's answer.
 ROUND_FUNDAMENTAL = "fundamental.md"
 # The saved answer of an apply that is running or died in the round's
-# directory, written by answer_save and cleared by answer_clear: while it
-# exists the round is applying.
+# directory, written by spec_round_answer_save and cleared by
+# spec_round_answer_clear: while it exists the round is applying.
 ROUND_APPLY_ANSWER = "apply-answer"
 # The file every round's changelog is appended to, read by the next round's
 # lenses.
 ROUND_SETTLED = "settled.md"
 # What a round hands the next: the Implementability lens's code map and the
-# settled file, kept by dir_reset's carry.
+# settled file, kept by spec_round_dir_reset's carry.
 ROUND_CARRIED = ("map-implementability.md", ROUND_SETTLED)
 # Where a flow's spec review rounds work, under the orchestrator directory.
 ROUNDS_DIR_NAME = "spec-rounds"
 
 
-def rounds_dir(root: str) -> str:
+def spec_rounds_dir(root: str) -> str:
     """The flow's rounds directory of the checkout at <root>."""
     return "%s/%s/%s" % (root, ORCH_DIR_NAME, ROUNDS_DIR_NAME)
 
 
-def state(directory: str) -> str:
+def spec_round_state(directory: str) -> str:
     """The round's state: `applying` while <directory> holds the saved apply
     answer, else `waiting` while it holds fundamental.md, else `open` while it
     holds no round-complete, else `complete`. A missing <directory> is
     open."""
-    if os.path.lexists(os.path.join(directory, ROUND_APPLY_ANSWER)):
+    if os.path.exists(os.path.join(directory, ROUND_APPLY_ANSWER)):
         return "applying"
-    if os.path.lexists(os.path.join(directory, ROUND_FUNDAMENTAL)):
+    if os.path.exists(os.path.join(directory, ROUND_FUNDAMENTAL)):
         return "waiting"
-    if not os.path.lexists(os.path.join(directory, ROUND_COMPLETE)):
+    if not os.path.exists(os.path.join(directory, ROUND_COMPLETE)):
         return "open"
     return "complete"
 
 
-def held(directory: str) -> bool:
+def spec_round_held(directory: str) -> bool:
     """Whether <directory> holds fundamental.md, the items an autopilot round
     held back - apart from the state, as a resumed apply of a held round is
     `applying` and held at once."""
-    return os.path.lexists(os.path.join(directory, ROUND_FUNDAMENTAL))
+    return os.path.exists(os.path.join(directory, ROUND_FUNDAMENTAL))
 
 
-def answer_name() -> str:
+def spec_round_answer_name() -> str:
     """The saved answer's file name, for a caller's message that names it."""
     return ROUND_APPLY_ANSWER
 
 
-def answer_save(directory: str, file_options: Sequence[str], args: Sequence[str]) -> None:
+def spec_round_answer_save(
+        directory: str, file_options: Sequence[str], args: Sequence[str]) -> None:
     """apply's answer arguments <args> saved to <directory>/apply-answer, one
     shell-quoted line, before the first GitHub write. The argument after each
     of <file_options> is a file, copied into <directory> as
@@ -107,11 +109,7 @@ def answer_save(directory: str, file_options: Sequence[str], args: Sequence[str]
             file_option = arg
     line = "".join(shlex.quote(word) + " " for word in saved) + "\n"
     path = "%s/%s" % (directory, ROUND_APPLY_ANSWER)
-    try:
-        with open(path, "wb") as f:
-            f.write(line.encode("utf-8", "surrogateescape"))
-    except OSError:
-        die("could not write %s - nothing written to GitHub" % path)
+    text_file_write(path, line, "could not write %s - nothing written to GitHub" % path)
 
 
 def _ansi_c_quoted(line: str) -> bool:
@@ -148,7 +146,7 @@ def _ansi_c_quoted(line: str) -> bool:
     return False
 
 
-def answer_load(directory: str) -> List[str]:
+def spec_round_answer_load(directory: str) -> List[str]:
     """The saved answer's arguments; dies when the file is unreadable, or
     holds a line shlex.split cannot read as bash would."""
     path = "%s/%s" % (directory, ROUND_APPLY_ANSWER)
@@ -176,7 +174,7 @@ def _remove(path: str) -> bool:
     return True
 
 
-def answer_clear(directory: str, landed: str) -> None:
+def spec_round_answer_clear(directory: str, landed: str) -> None:
     """The saved answer and its file copies removed, at the end of the run
     that no resume continues. <landed> names the GitHub writes that landed,
     for the message."""
@@ -188,16 +186,12 @@ def answer_clear(directory: str, landed: str) -> None:
             % (directory, ROUND_APPLY_ANSWER, landed))
 
 
-def hold(directory: str, blocks: str) -> None:
+def spec_round_hold(directory: str, blocks: str) -> None:
     """The end of an autopilot round's first run - the held-back fundamental
     items' <blocks> written, byte for byte, to <directory>/fundamental.md: the
     round's save point, which the round's state reads as waiting."""
     path = "%s/%s" % (directory, ROUND_FUNDAMENTAL)
-    try:
-        with open(path, "wb") as f:
-            f.write(blocks.encode("utf-8", "surrogateescape"))
-    except OSError:
-        die("could not write %s - nothing written to GitHub" % path)
+    text_file_write(path, blocks, "could not write %s - nothing written to GitHub" % path)
 
 
 def _ends_with(path: str, log: str) -> bool:
@@ -213,7 +207,7 @@ def _ends_with(path: str, log: str) -> bool:
     return data[-len(want):].rstrip(b"\n") == log.encode("utf-8", "surrogateescape")
 
 
-def complete(directory: str, log: str, landed: str) -> None:
+def spec_round_complete(directory: str, log: str, landed: str) -> None:
     """The round's local tail once its changelog comment landed, safe to run
     again: <log> appended to settled.md unless it already ends with it, then
     fundamental.md removed, round-complete written, the saved answer
@@ -231,48 +225,41 @@ def complete(directory: str, log: str, landed: str) -> None:
     if not _remove(fundamental):
         die("could not remove %s - %s" % (fundamental, appended))
     marker = "%s/%s" % (directory, ROUND_COMPLETE)
-    try:
-        with open(marker, "wb"):
-            pass
-    except OSError:
-        die("could not write %s - %s" % (marker, appended))
-    answer_clear(directory, landed)
+    text_file_write(marker, "", "could not write %s - %s" % (marker, appended))
+    spec_round_answer_clear(directory, landed)
 
 
-def in_flow(directory: str, rounds: str) -> bool:
+def spec_round_in_flow(directory: str, rounds: str) -> bool:
     """Whether <directory> is under the flow's rounds directory <rounds>, at
     any depth - a flow's round directory, not a standalone review's."""
     path = (directory[:-1] if directory.endswith("/") else directory) + "/"
     return path.startswith(rounds + "/") and len(path) > len(rounds) + 1
 
 
-def _rm_rf(path: str) -> None:
-    """rm -rf <path>: a link or a file removed, a directory with all it
-    holds; nothing there is no failure. Raises OSError when it cannot."""
-    if os.path.isdir(path) and not os.path.islink(path):
-        shutil.rmtree(path)
-    elif os.path.lexists(path):
-        os.remove(path)
-
-
-def dir_reset(directory: str, carry: bool = False) -> None:
-    """A round's working directory made ready to run in - the one reset both
-    a standalone review's begin and a flow's `spec round-dir` run. With
-    <carry>, every entry of an existing <directory> but the code map and the
-    settled file is deleted in place, keeping what a round hands the next;
-    without it <directory> is removed whole. Either way it is then created
-    when missing. Dies naming the directory when it cannot, where bash's rm,
-    find or mkdir gave its own error."""
+def spec_round_dir_reset(directory: str, carry: bool = False) -> None:
+    """A round's working directory made ready to run in, for a standalone
+    review's begin - a copy of the reset a flow's `spec round-dir` runs, bash
+    spec_round_dir_reset. With <carry>, every entry of an existing
+    <directory> but the code map and the settled file is deleted in place,
+    keeping what a round hands the next; without it <directory> is removed
+    whole. Either way it is then created when missing. Dies naming the
+    directory when it cannot, where bash's rm, find or mkdir gave its own
+    error."""
+    unreset = "could not reset the round directory %s" % directory
+    if carry and os.path.isdir(directory):
+        try:
+            names = sorted(os.listdir(directory))
+        except OSError:
+            die(unreset)
+        for name in names:
+            if name not in ROUND_CARRIED:
+                rm_rf_or_die(os.path.join(directory, name), unreset)
+    else:
+        rm_rf_or_die(directory, unreset)
     try:
-        if carry and os.path.isdir(directory):
-            for name in sorted(os.listdir(directory)):
-                if name not in ROUND_CARRIED:
-                    _rm_rf(os.path.join(directory, name))
-        else:
-            _rm_rf(directory)
         os.makedirs(directory, exist_ok=True)
     except OSError:
-        die("could not reset the round directory %s" % directory)
+        die(unreset)
 
 
 def _round_number(text: str) -> bool:
@@ -281,7 +268,7 @@ def _round_number(text: str) -> bool:
     return text.isdigit() and text.isascii() and not text.startswith("0")
 
 
-def count_parse(arg: str) -> Tuple[int, int]:
+def spec_round_count_parse(arg: str) -> Tuple[int, int]:
     """A round and the round count, `<k>/<n>`, two positive whole numbers
     with k no greater than n; dies otherwise."""
     want = ("want <k>/<n>, a round and the round count, two positive whole numbers, got: %s"

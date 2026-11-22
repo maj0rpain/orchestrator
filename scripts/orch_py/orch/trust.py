@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import List, Mapping, NamedTuple, Optional
 
+from orch.autopilot import autopilot_active
 from orch.common import plain_number, warn
 from orch.gh import GhFailed, Unparsed, gh_reason
 
@@ -90,7 +91,7 @@ def warn_issue(gh, n: str, env: Mapping[str, str]) -> None:
     writer, or saying trust could not be checked when the read fails. Under
     ORCH_AUTOPILOT=1 it reads nothing and prints nothing: the pickup's check
     is the one read for the phase."""
-    if env.get("ORCH_AUTOPILOT", "") == "1":
+    if autopilot_active(env):
         return
     try:
         untrusted = issue_check(gh, int(n))

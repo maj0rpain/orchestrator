@@ -150,7 +150,8 @@ spec_round_state() {
 
 # spec_round_dir_reset <dir> [--carry]: a round's working directory made ready
 # to run in - the reset a flow's spec round-dir runs, and the one the Python
-# spec module's dir_reset copies for a standalone review's spec-review begin.
+# spec module's spec_round_dir_reset copies for a standalone review's
+# spec-review begin.
 # With --carry, every entry of an existing <dir> but the code map and the
 # settled file is deleted in place, keeping what a round hands the next;
 # without it <dir> is removed whole. Either way <dir> is then created when

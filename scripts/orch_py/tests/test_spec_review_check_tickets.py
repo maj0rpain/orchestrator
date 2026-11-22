@@ -8,13 +8,10 @@ lines and the view.md it saves, removes or leaves; the expected views and
 messages are the ones the bash spec-review check --tickets section pinned."""
 from __future__ import annotations
 
-import os
-
 import pytest
 
-from conftest import orch_spec_review
-
-UNATTENDED_TAIL = " - unattended: not a turn-final reply; go straight on to apply"
+from conftest import (UNATTENDED_TAIL, assert_check_passes, assert_check_refused, nudge,
+                      orch_spec_review)
 
 T20 = """## What to build
 
@@ -107,13 +104,6 @@ Build gamma twice.
 NONE_VIEW = "## The ticket items\n\nNo open ticket is affected.\n"
 
 
-@pytest.fixture
-def root(tmp_path):
-    path = tmp_path.resolve() / "repo"
-    path.mkdir()
-    return path
-
-
 def tickets_dir(root, name="round", tickets=TICKETS, spec="# Spec\n\nAlpha line.\n"):
     """A fresh round directory after the pause: spec.md, #20 and #21 fetched
     into ticket-<n>.md, and <tickets> drafted as tickets.md."""
@@ -124,27 +114,6 @@ def tickets_dir(root, name="round", tickets=TICKETS, spec="# Spec\n\nAlpha line.
     (d / "ticket-21.md").write_text(T21)
     (d / "tickets.md").write_text(tickets)
     return d
-
-
-def snapshot(d):
-    """Every file under <d>, by its path under <d>, with its bytes."""
-    files = {}
-    for here, _, names in os.walk(str(d)):
-        for name in names:
-            path = os.path.join(here, name)
-            with open(path, "rb") as f:
-                files[os.path.relpath(path, str(d))] = f.read()
-    return files
-
-
-def without_view(files):
-    return {name: data for name, data in files.items() if name != "view.md"}
-
-
-def nudge(d):
-    return (" - end your turn on one plain-text reply, no tool call: the view above word for"
-            " word, then the question with its answer words spelled out; it is saved in"
-            " %s/view.md" % d)
 
 
 def passes(items, anchors):
@@ -161,16 +130,8 @@ def check(root, *args, env=None):
 
 
 def assert_passes(root, capsys, d, view, line, *args):
-    """check --tickets on <d> exits 0 with exactly <view> on stdout and
-    <line>, the pass line, on stderr, saving <view> to view.md and changing
-    nothing else."""
-    before = without_view(snapshot(d))
-
-    assert check(root, d, *args) == 0
-
-    assert capsys.readouterr() == (view, line + "\n")
-    assert (d / "view.md").read_text() == view
-    assert without_view(snapshot(d)) == before
+    """check --tickets on <d> passes, as assert_check_passes has it."""
+    assert_check_passes(root, capsys, d, view, line, *args, "--tickets")
 
 
 # --- a clean ticket batch -------------------------------------------------------
@@ -184,14 +145,8 @@ def test_a_ticket_batch_passes_with_its_view_and_the_pass_line(root, capsys):
 
 
 def assert_refused(root, capsys, d, err, *args):
-    """check --tickets on <d> exits 1 with exactly <err> on stderr, nothing
-    on stdout and <d> as it was."""
-    before = snapshot(d)
-
-    assert check(root, d, *args) == 1
-
-    assert capsys.readouterr() == ("", err)
-    assert snapshot(d) == before
+    """check --tickets on <d> is refused, as assert_check_refused has it."""
+    assert_check_refused(root, capsys, d, err, *args, "--tickets")
 
 
 SECTION_TICKETS = """@@ recommend retire

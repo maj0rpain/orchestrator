@@ -10,19 +10,19 @@ so a rerun never applies one twice. With an accepted edit and a ticket
 breakdown but no --tickets the run pauses, exit 3, before any GitHub write,
 printing the breakdown's kind; the session drafts tickets.md and runs apply
 again with --tickets (orch/spec_review_tickets.py). Under autopilot a
-round's fundamental items are held back (orch/spec.py's hold): the first run
-writes fundamental.md and exits 0, the run after the reply applies the whole
-batch.
+round's fundamental items are held back (orch/spec.py's spec_round_hold): the
+first run writes fundamental.md and exits 0, the run after the reply applies
+the whole batch.
 
 The GitHub writes go in a fixed order - ticket text edits, then edges, then
 the body, then the retire, then the changelog comment - each through write(),
 which appends its label to <dir>/applied.log once it lands. The labels are
 the bash spec_review_write's, word for word, so a log bash wrote before the
 noun's cutover resumes here.
-The answer is saved (orch/spec.py's answer_save) before the first write, so
-`apply <dir> --resume --round <k>/<n>` reruns a dead apply with it, skipping
-the writes applied.log records; with the changelog comment landed only the
-round's local tail runs (orch/spec.py's complete).
+The answer is saved (orch/spec.py's spec_round_answer_save) before the first
+write, so `apply <dir> --resume --round <k>/<n>` reruns a dead apply with it,
+skipping the writes applied.log records; with the changelog comment landed
+only the round's local tail runs (orch/spec.py's spec_round_complete).
 
 Flow mode, chosen by a missing --issue, takes the issue from one read of the
 Flow state reader and refuses a done flow before any write. Either mode
@@ -39,9 +39,9 @@ from typing import Callable, Dict, List, Mapping
 
 from orch import spec, ticket
 from orch.autopilot import autopilot_active
-from orch.common import ORCH_DIR_NAME, capture, die, err_line, file_lines, plain_number, read_raw
-from orch.flow_state import NO_ISSUE_MSG, STATE_UNREADABLE_MSG, flow_state_file, flow_state_get_many
-from orch.host import flow_cmd
+from orch.common import (capture, die, err_line, file_lines, plain_number, read_raw,
+                         text_file_write)
+from orch.flow_state import flow_state_file, require_issue
 from orch.issue import Issue
 from orch.marked_comment import marked_comment_write
 from orch.spec_review_batch import (SPEC_REVIEW_LENSES, TITLES, Violations, decline_reason,
@@ -112,11 +112,7 @@ def write(directory: str, what: str, call: Callable[[], object]) -> None:
 def local_write(path: str, text: str) -> None:
     """<text> written to <path>, exactly, before any GitHub write - so a
     failure dies saying none was made."""
-    try:
-        with open(path, "wb") as f:
-            f.write(text.encode("utf-8", "surrogateescape"))
-    except OSError:
-        die("could not write %s - nothing written to GitHub" % path)
+    text_file_write(path, text, "could not write %s - nothing written to GitHub" % path)
 
 
 def ticket_numbers(directory: str) -> List[str]:
@@ -274,10 +270,10 @@ def _resume_args(given: List[str]) -> List[str]:
     if not os.path.isdir(directory):
         die("no such directory: " + directory)
     directory = directory[:-1] if directory.endswith("/") else directory
-    if spec.state(directory) != "applying":
+    if spec.spec_round_state(directory) != "applying":
         die("--resume: %s holds no %s - there is no apply to resume; run apply with its answer"
-            % (directory, spec.answer_name()))
-    return [directory, round_arg] + spec.answer_load(directory)
+            % (directory, spec.spec_round_answer_name()))
+    return [directory, round_arg] + spec.spec_round_answer_load(directory)
 
 
 def _hosts(path: str) -> str:
@@ -296,15 +292,7 @@ def _hosts(path: str) -> str:
 def _flow_issue(root: str, env: Mapping[str, str]) -> str:
     """The active flow's issue, from one read of its phase and issue;
     refusing a done flow before any write."""
-    state_file = flow_state_file(root)
-    if not os.path.isfile(state_file):
-        die("no active flow (%s/state.json not found). Run %s first."
-            % (ORCH_DIR_NAME, flow_cmd(env, "start")))
-    state = flow_state_get_many(state_file, ("issue", "phase"))
-    if state is None:
-        die(STATE_UNREADABLE_MSG)
-    if not state["issue"]:
-        die(NO_ISSUE_MSG)
+    state = require_issue(flow_state_file(root), env, ("phase",))
     if state["phase"] == "done":
         die("the flow on issue #%s is done - spec-review apply acts only on an active flow's"
             " issue; for another issue use --issue <n>" % state["issue"])
@@ -353,7 +341,7 @@ def apply(argv: List[str], gh_of: Callable[[], object], git, env: Mapping[str, s
         die(USAGE)
     if not options.round:
         die("--round <k>/<n> is required (%s)" % USAGE)
-    spec.count_parse(options.round)
+    spec.spec_round_count_parse(options.round)
     issue = options.issue
     if issue and not plain_number(issue):
         die("--issue must be a plain issue number, got: " + issue)
@@ -375,18 +363,19 @@ def apply(argv: List[str], gh_of: Callable[[], object], git, env: Mapping[str, s
     if not os.path.isdir(directory):
         die("no such directory: " + directory)
     directory = directory[:-1] if directory.endswith("/") else directory
-    if not resume and spec.state(directory) == "applying":
+    if not resume and spec.spec_round_state(directory) == "applying":
         die("%s/%s holds the answer of an apply that died - run spec-review apply %s --resume"
-            " --round %s to resume it" % (directory, spec.answer_name(), directory, options.round))
+            " --round %s to resume it"
+            % (directory, spec.spec_round_answer_name(), directory, options.round))
     if not resume and os.path.exists(_log(directory)) and os.path.getsize(_log(directory)) > 0:
         die("%s/applied.log records writes that already landed: %s - this review stopped at a"
             " failed write; apply refuses to run again" % (directory, landed(directory)))
-    # An autopilot round's two runs (orch/spec.py's hold): the first holds the
-    # fundamental items back and writes nothing else, the run after the
-    # reply, finding fundamental.md, applies the whole batch.
+    # An autopilot round's two runs (orch/spec.py's spec_round_hold): the
+    # first holds the fundamental items back and writes nothing else, the run
+    # after the reply, finding fundamental.md, applies the whole batch.
     run = ""
     if autopilot_active(env):
-        run = "resume" if spec.held(directory) else "hold"
+        run = "resume" if spec.spec_round_held(directory) else "hold"
     hosts = _hosts(options.hosts_file) if options.hosts_file else ""
     flow = not issue
     if flow:
@@ -396,11 +385,12 @@ def apply(argv: List[str], gh_of: Callable[[], object], git, env: Mapping[str, s
     if resume and logged(directory, label_changelog(issue)):
         if not os.path.isfile(directory + "/changelog.md"):
             die("changelog.md not found in " + directory)
-        text = read_raw(directory + "/changelog.md")
-        if text is None:
+        settled_log = read_raw(directory + "/changelog.md")
+        if settled_log is None:
             die("could not read %s/changelog.md - every GitHub write landed: %s"
                 % (directory, landed(directory)))
-        spec.complete(directory, text.replace("\x00", "").rstrip("\n"), landed(directory))
+        spec.spec_round_complete(directory, settled_log.replace("\x00", "").rstrip("\n"),
+                                 landed(directory))
         return 0
     if not os.path.isfile(directory + "/spec.md"):
         die("spec.md not found in " + directory)
@@ -426,7 +416,7 @@ def apply(argv: List[str], gh_of: Callable[[], object], git, env: Mapping[str, s
         die(result.problems[0] + " - nothing applied, nothing written")
     batch = result.batch
     if run == "hold" and any(item.fundamental for item in batch.items):
-        spec.hold(directory, _held_blocks(result))
+        spec.spec_round_hold(directory, _held_blocks(result))
         return 0
     reasons = reasons_read("--reasons", options.reasons, [item.n for item in batch.items],
                            [result.dispositions[i].disposition == "declined"
@@ -463,7 +453,7 @@ def apply(argv: List[str], gh_of: Callable[[], object], git, env: Mapping[str, s
             # The pause: the session drafts the ticket items and runs apply
             # again.
             local_write(directory + "/spec.md", text)
-            spec.answer_clear(directory, landed(directory))
+            spec.spec_round_answer_clear(directory, landed(directory))
             print(kind)
             return 3
         if not os.path.isfile(directory + "/tickets.md"):
@@ -485,7 +475,7 @@ def apply(argv: List[str], gh_of: Callable[[], object], git, env: Mapping[str, s
     # The answer saved before the first GitHub write, for --resume to rerun; a
     # resumed run keeps the file it was resumed from.
     if not resume:
-        spec.answer_save(directory, FILE_OPTIONS, options.saved)
+        spec.spec_round_answer_save(directory, FILE_OPTIONS, options.saved)
     log = changelog(result, reasons, options.round, options.unattended, tickets, hosts)
     local_write(directory + "/changelog.md", log + "\n")
 
@@ -513,5 +503,5 @@ def apply(argv: List[str], gh_of: Callable[[], object], git, env: Mapping[str, s
         write(directory, label_retire(issue), lambda: ticket.ticket_retire(gh(), issue, root))
     write(directory, label_changelog(issue),
           lambda: issues.comment([issue, directory + "/changelog.md"]))
-    spec.complete(directory, log, landed(directory))
+    spec.spec_round_complete(directory, log, landed(directory))
     return 0

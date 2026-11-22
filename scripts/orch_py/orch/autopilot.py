@@ -1,5 +1,5 @@
 """The autopilot concept's module (scripts/orch/autopilot.sh), kept to what
-the spec-review noun reads: whether this is an autopilot session.
+the Python nouns read: whether this is an autopilot session.
 """
 from __future__ import annotations
 

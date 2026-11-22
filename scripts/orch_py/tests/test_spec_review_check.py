@@ -11,11 +11,12 @@ import re
 
 import pytest
 
-from conftest import orch_issue, orch_spec_review
+from conftest import (UNATTENDED_TAIL, assert_check_passes as assert_passes,
+                      assert_check_refused as assert_refused, nudge, orch_issue,
+                      orch_spec_review)
 from orch import spec_review
 
 USAGE = "usage: orch.sh spec-review check <dir> [--tickets | --full <n>...]"
-UNATTENDED_TAIL = " - unattended: not a turn-final reply; go straight on to apply"
 
 SRC_BODY = """# Spec
 
@@ -95,13 +96,6 @@ SRC_VIEW = """## The batch
 """
 
 
-@pytest.fixture
-def root(tmp_path):
-    path = tmp_path.resolve() / "repo"
-    path.mkdir()
-    return path
-
-
 def round_dir(root, name="round"):
     """A fresh round directory under <root>, holding the fixture body, batch
     and lens files."""
@@ -127,27 +121,6 @@ def rewrite(path, changes):
     path.write_text("\n".join(out))
 
 
-def snapshot(d):
-    """Every file under <d>, by its path under <d>, with its bytes."""
-    files = {}
-    for here, _, names in os.walk(str(d)):
-        for name in names:
-            path = os.path.join(here, name)
-            with open(path, "rb") as f:
-                files[os.path.relpath(path, str(d))] = f.read()
-    return files
-
-
-def without_view(files):
-    return {name: data for name, data in files.items() if name != "view.md"}
-
-
-def nudge(d):
-    return (" - end your turn on one plain-text reply, no tool call: the view above word for"
-            " word, then the question with its answer words spelled out; it is saved in"
-            " %s/view.md" % d)
-
-
 def passes(items, anchors, body="spec.md"):
     return ("batch.md passes: %d items, %d anchors, each matching once in %s, and the all"
             " answer applies cleanly" % (items, anchors, body))
@@ -155,30 +128,6 @@ def passes(items, anchors, body="spec.md"):
 
 def check(root, *args, env=None):
     return orch_spec_review(root, "check", *(str(a) for a in args), env=env)
-
-
-def assert_passes(root, capsys, d, view, line, *args):
-    """check on <d> with <args> exits 0 with exactly <view> on stdout and
-    <line>, the pass line, on stderr, saving <view> to view.md and changing
-    nothing else."""
-    before = without_view(snapshot(d))
-
-    assert check(root, d, *args) == 0
-
-    assert capsys.readouterr() == (view, line + "\n")
-    assert (d / "view.md").read_text() == view
-    assert without_view(snapshot(d)) == before
-
-
-def assert_refused(root, capsys, d, err, *args):
-    """check on <d> with <args> exits 1 with exactly <err> on stderr, nothing
-    on stdout and <d> as it was."""
-    before = snapshot(d)
-
-    assert check(root, d, *args) == 1
-
-    assert capsys.readouterr() == ("", err)
-    assert snapshot(d) == before
 
 
 # --- a clean batch --------------------------------------------------------------
@@ -442,6 +391,15 @@ def test_the_body_read_is_spec_fetched_md_when_it_exists(root, capsys):
     assert check(root, d) == 0
 
     assert capsys.readouterr().err == passes(4, 4, "spec.fetched.md") + nudge(d) + "\n"
+
+
+def test_a_dangling_symlink_at_spec_fetched_md_reads_spec_md_as_bash_s_test_e_does(root, capsys):
+    d = round_dir(root)
+    os.symlink(str(d / "nowhere"), str(d / "spec.fetched.md"))
+
+    assert check(root, d) == 0
+
+    assert capsys.readouterr().err == passes(4, 4) + nudge(d) + "\n"
 
 
 def test_an_anchor_spec_md_has_but_spec_fetched_md_lacks_is_refused(root, capsys):

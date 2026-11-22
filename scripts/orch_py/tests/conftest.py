@@ -46,6 +46,16 @@ def seed(store):
     return FakeStore(str(store))
 
 
+@pytest.fixture
+def root(tmp_path):
+    """The checkout's root, tmp_path/repo resolved, an empty directory - the
+    toplevel a spec-review test's FakeGit names. A test file whose checkout
+    needs more defines its own."""
+    path = tmp_path.resolve() / "repo"
+    path.mkdir()
+    return path
+
+
 def read(store, *parts):
     """A file of the store, or None where it is absent."""
     path = os.path.join(str(store), *(str(part) for part in parts))
@@ -331,6 +341,57 @@ def orch_spec_review(root, *argv, seed=None, env=None, clock=None, sleep=None):
                                **timing)
     except SystemExit as died:
         return died.code
+
+
+# The tail of spec-review check's pass line under --unattended.
+UNATTENDED_TAIL = " - unattended: not a turn-final reply; go straight on to apply"
+
+
+def nudge(d):
+    """The tail of spec-review check's pass line on round directory <d>,
+    attended: the nudge to end the turn on the view."""
+    return (" - end your turn on one plain-text reply, no tool call: the view above word for"
+            " word, then the question with its answer words spelled out; it is saved in"
+            " %s/view.md" % d)
+
+
+def _round_files(d):
+    """Every file under <d>, by its path under <d>, with its bytes."""
+    files = {}
+    for here, _, names in os.walk(str(d)):
+        for name in names:
+            path = os.path.join(here, name)
+            with open(path, "rb") as f:
+                files[os.path.relpath(path, str(d))] = f.read()
+    return files
+
+
+def _without_view(files):
+    return {name: data for name, data in files.items() if name != "view.md"}
+
+
+def assert_check_passes(root, capsys, d, view, line, *args):
+    """`spec-review check <d> <args>` in the checkout at <root> exits 0 with
+    exactly <view> on stdout and <line>, the pass line, on stderr, saving
+    <view> to view.md and changing nothing else."""
+    before = _without_view(_round_files(d))
+
+    assert orch_spec_review(root, "check", *(str(a) for a in (d,) + args)) == 0
+
+    assert capsys.readouterr() == (view, line + "\n")
+    assert (d / "view.md").read_text() == view
+    assert _without_view(_round_files(d)) == before
+
+
+def assert_check_refused(root, capsys, d, err, *args):
+    """`spec-review check <d> <args>` in the checkout at <root> exits 1 with
+    exactly <err> on stderr, nothing on stdout and <d> as it was."""
+    before = _round_files(d)
+
+    assert orch_spec_review(root, "check", *(str(a) for a in (d,) + args)) == 1
+
+    assert capsys.readouterr() == ("", err)
+    assert _round_files(d) == before
 
 
 def edit(path, old, new):

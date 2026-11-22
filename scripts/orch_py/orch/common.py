@@ -4,8 +4,9 @@ tests and the poll-knob check a waiting verb reads its knobs with, the atomic
 file write, the file read as bash's $(<file) gives it, the lines of a text
 and of a file, the markdown code-fence rule, the temporary file a comment is handed to gh from, the words a
 list and a state read as in a line, the orchestrator's directory name, the
-UTC stamp a run directory is named with, the git exclude writer, and the
-capture of a call's stderr and death that bash's capture and err_line make.
+UTC stamp a run directory is named with, the git exclude writer, the
+removals bash's rm -f and rm -rf make, and the capture of a call's stderr and
+death that bash's capture and err_line make.
 
 Every `orch: ` message goes through die or warn, as in the bash side's
 common.sh: die(message, 2) is the bash die2, for a command that reserves exit
@@ -19,6 +20,7 @@ from __future__ import annotations
 import io
 import os
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -104,10 +106,7 @@ def file_write_atomic(path: str, text: str, make_directory: bool = True) -> bool
             f.write(text.encode("utf-8", "surrogateescape"))
         os.replace(tmp, path)
     except OSError:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+        rm_f(tmp)
         return False
     return True
 
@@ -192,6 +191,38 @@ def text_file_write(file: Union[str, int], text: str, unwritten: str) -> None:
             f.write(text.encode("utf-8", "surrogateescape"))
     except OSError:
         die(unwritten)
+
+
+def rm_f(path: str) -> None:
+    """rm -f <path>, its failure ignored."""
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def rm_f_or_die(path: str, unremoved: str) -> None:
+    """rm -f <path>: nothing there is no failure; dies with <unremoved>
+    when something there cannot be removed."""
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        die(unremoved)
+
+
+def rm_rf_or_die(path: str, unremoved: str) -> None:
+    """rm -rf <path>: a link or a file removed, a directory with all it
+    holds; nothing there is no failure. Dies with <unremoved> when it
+    cannot."""
+    try:
+        if os.path.isdir(path) and not os.path.islink(path):
+            shutil.rmtree(path)
+        elif os.path.lexists(path):
+            os.remove(path)
+    except OSError:
+        die(unremoved)
 
 
 @contextmanager

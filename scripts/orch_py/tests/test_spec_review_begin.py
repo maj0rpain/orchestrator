@@ -16,13 +16,6 @@ USAGE = "orch: usage: orch.sh spec-review begin <n> [--carry]\n"
 ON_CLAUDE = {"CLAUDECODE": "1"}
 
 
-@pytest.fixture
-def root(tmp_path):
-    path = tmp_path.resolve() / "repo"
-    path.mkdir()
-    return path
-
-
 def review_dir(root, n="14"):
     return root / ".orchestrator" / "spec-review" / n
 

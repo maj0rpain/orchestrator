@@ -6,7 +6,7 @@ they live here rather than in skill prose. It reads state.json only when one
 exists (the Flow state reader, orch/flow_state.py), in one read of the flow's
 phase and issue, and never writes it: the issue number is the caller's, and
 the guard only compares. With --carry, given on rounds 2 and later, the reset
-keeps what a round hands the next (orch/spec.py's dir_reset).
+keeps what a round hands the next (orch/spec.py's spec_round_dir_reset).
 
 wait is the session's one blocking call for a round's lenses, run in the
 response that starts them, so a lens's hand-back queues behind it instead of
@@ -41,11 +41,11 @@ from __future__ import annotations
 import os
 import sys
 import time
-from typing import Callable, List, Mapping, Optional
+from typing import Callable, List, Mapping, Optional, Sequence
 
 from orch import spec, spec_review_apply
 from orch.common import (ORCH_DIR_NAME, capture, die, err_line, file_lines, plain_number,
-                         read_raw, require_poll_knobs, text_file_write, warn)
+                         read_raw, require_poll_knobs, rm_f_or_die, text_file_write, warn)
 from orch.flow_state import STATE_UNREADABLE_MSG, flow_state_file, flow_state_get_many
 from orch.gh import adapter
 from orch.git import Git
@@ -111,7 +111,7 @@ def begin(argv: List[str], env: Mapping[str, str], root: str) -> int:
     # Built from the validated number alone, so the wipe stays inside
     # spec-review/.
     directory = "%s/%s/spec-review/%s" % (root, ORCH_DIR_NAME, issue)
-    spec.dir_reset(directory, carry=carry)
+    spec.spec_round_dir_reset(directory, carry=carry)
     print(directory + "/")
     return 0
 
@@ -204,8 +204,8 @@ def prompt(argv: List[str], gh, env: Mapping[str, str], root: str) -> int:
         die("no comments file: %s/comments.md does not exist - fetch it first" % directory)
     plan = ""
     if lens == "fidelity":
-        rounds = spec.rounds_dir(root)
-        if not spec.in_flow(directory, rounds):
+        rounds = spec.spec_rounds_dir(root)
+        if not spec.spec_round_in_flow(directory, rounds):
             die("the Fidelity lens runs only in a flow's spec review: %s is not under %s/"
                 % (directory, rounds))
         plan = plan_handoff(gh(), env, root)
@@ -397,6 +397,28 @@ def tickets_view(tickets: Tickets) -> str:
             " broken down again\n")
 
 
+def _refused(violations: Violations, problems: Sequence[str]) -> int:
+    """A check's end on a refusal: the collected violations flushed, then
+    each of <problems> warned; exit 1."""
+    violations.flush()
+    for problem in problems:
+        warn(problem)
+    return 1
+
+
+def _passed(directory: str, view: str, head: str, unattended: bool,
+            env: Mapping[str, str]) -> int:
+    """A check's end on a pass: <view> saved to <directory>/view.md and
+    printed, then the pass line, <head> and its tail - the unattended one, or
+    the nudge to end the turn on the view; exit 0."""
+    text_file_write(directory + "/view.md", view, "could not write " + view_path(directory, env))
+    sys.stdout.write(view)
+    sys.stdout.flush()
+    tail = UNATTENDED_TAIL if unattended else nudge(directory, env)
+    sys.stderr.write(head + tail + "\n")
+    return 0
+
+
 def tickets_check(directory: str, unattended: bool, env: Mapping[str, str]) -> int:
     """`spec-review check <dir> --tickets [--unattended]`: <dir>/tickets.md
     validated as apply --tickets would take the all answer, against the
@@ -421,29 +443,18 @@ def tickets_check(directory: str, unattended: bool, env: Mapping[str, str]) -> i
     for item in tickets.items:
         offline.visit(item, True)
     if violations.recorded or offline.problems:
-        violations.flush()
-        for problem in offline.problems:
-            warn(problem)
-        return 1
+        return _refused(violations, offline.problems)
     view = tickets_view(tickets)
     if tickets.none_affected:
-        try:
-            os.remove(directory + "/view.md")
-        except FileNotFoundError:
-            pass
-        except OSError:
-            die("could not remove " + view_path(directory, env))
+        rm_f_or_die(directory + "/view.md", "could not remove " + view_path(directory, env))
         sys.stdout.write(view)
         sys.stdout.flush()
         sys.stderr.write("tickets.md passes: no open ticket affected\n")
         return 0
-    text_file_write(directory + "/view.md", view, "could not write " + view_path(directory, env))
-    sys.stdout.write(view)
-    sys.stdout.flush()
-    tail = UNATTENDED_TAIL if unattended else nudge(directory, env)
-    sys.stderr.write("tickets.md passes: %d items, %d anchors, each matching once, and the all"
-                     " answer applies cleanly%s\n" % (len(tickets.items), offline.anchors, tail))
-    return 0
+    return _passed(directory, view,
+                   "tickets.md passes: %d items, %d anchors, each matching once, and the all"
+                   " answer applies cleanly" % (len(tickets.items), offline.anchors),
+                   unattended, env)
 
 
 def check(argv: List[str], env: Mapping[str, str]) -> int:
@@ -490,17 +501,14 @@ def check(argv: List[str], env: Mapping[str, str]) -> int:
     if not os.path.isfile(directory + "/batch.md"):
         die("batch.md not found in " + directory)
     body = "spec.fetched.md"
-    if not os.path.lexists("%s/%s" % (directory, body)):
+    if not os.path.exists("%s/%s" % (directory, body)):
         body = "spec.md"
     if not os.path.isfile("%s/%s" % (directory, body)):
         die("spec.md not found in " + directory)
     violations = Violations(collect=True)
     result = validate(directory, "%s/%s" % (directory, body), violations, env)
     if violations.recorded or result.problems:
-        violations.flush()
-        for problem in result.problems:
-            warn(problem)
-        return 1
+        return _refused(violations, result.problems)
     batch = result.batch
     if full:
         for n in wanted:
@@ -509,14 +517,10 @@ def check(argv: List[str], env: Mapping[str, str]) -> int:
         view = "".join(item_view(batch, batch.item(n)) for n in wanted)
     else:
         view = batch_view(batch)
-    text_file_write(directory + "/view.md", view, "could not write " + view_path(directory, env))
-    sys.stdout.write(view)
-    sys.stdout.flush()
-    tail = UNATTENDED_TAIL if unattended else nudge(directory, env)
-    sys.stderr.write("batch.md passes: %d items, %d anchors, each matching once in %s, and the"
-                     " all answer applies cleanly%s\n"
-                     % (len(batch.items), result.anchors, body, tail))
-    return 0
+    return _passed(directory, view,
+                   "batch.md passes: %d items, %d anchors, each matching once in %s, and the"
+                   " all answer applies cleanly" % (len(batch.items), result.anchors, body),
+                   unattended, env)
 
 
 def run(

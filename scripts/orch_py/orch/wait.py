@@ -21,7 +21,7 @@ import time
 from typing import Callable, Mapping
 
 from orch.common import die, file_lines, file_write_atomic, is_number, plain_number
-from orch.common import require_poll_knobs, warn
+from orch.common import require_poll_knobs, rm_f, warn
 
 # A call's block in seconds when ORCH_WAIT_BLOCK is unset or empty.
 WAIT_BLOCK_DEFAULT = "570"
@@ -113,10 +113,7 @@ class StoredTotal:
         """wait_forget: the stored total and its mark removed, once a call
         delivers an outcome."""
         for path in (self.file, self.mark):
-            try:
-                os.remove(path)
-            except OSError:
-                pass
+            rm_f(path)
 
     def _spent(self) -> float:
         """wait_block_spent: what this call has blocked."""

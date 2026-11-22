@@ -20,13 +20,6 @@ UNKNOWN = ("orch: unknown lens 'clarity'"
 CREATED = "2026-01-01T00:00:00Z"
 
 
-@pytest.fixture
-def root(tmp_path):
-    path = tmp_path.resolve() / "repo"
-    path.mkdir()
-    return path
-
-
 def standalone(root):
     return root / ".orchestrator" / "spec-review" / "14"
 

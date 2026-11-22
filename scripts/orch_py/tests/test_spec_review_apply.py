@@ -137,13 +137,6 @@ USAGE_HEAD = "(usage: orch.sh spec-review apply <dir>"
 ROOT_USER = os.geteuid() == 0
 
 
-@pytest.fixture
-def root(tmp_path):
-    path = tmp_path.resolve() / "repo"
-    path.mkdir()
-    return path
-
-
 def round_dir(root, seed, name="round", batch=BATCH, body=BODY):
     """A fresh round directory holding the fixture spec, batch and lens
     files, with issue #14 reset to the fixture body."""
