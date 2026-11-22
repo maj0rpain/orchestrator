@@ -1,10 +1,15 @@
 """The primitives no concept owns: the `orch: ` message lines, the
-plain-number test every verb checks its issue numbers with, the decimal-number
-tests and the poll-knob check a waiting verb reads its knobs with, the atomic
-file write, the file read as bash's $(<file) gives it, the lines of a text
-and of a file, the markdown code-fence rule, the temporary file a comment is handed to gh from, the words a
-list and a state read as in a line, the orchestrator's directory name, the
-UTC stamp a run directory is named with, and the git exclude writer.
+plain-number tests every verb checks its issue numbers with - any plain
+number, and one with no leading zero - the decimal-number tests and the
+poll-knob check a waiting verb reads its knobs with, the trim bash's trim
+makes, the atomic file write, the plain file write and append, the file read
+as bash's $(<file) gives it, the lines of a text and of a file, the markdown
+code-fence rule, the temporary file a comment is handed to gh from, the words
+a list and a state read as in a line, the orchestrator's directory name, the
+UTC stamp a run directory is named with, the git exclude writer, the copy
+bash's cp makes, the directory bash's mkdir -p makes, the removals bash's
+rm -f and rm -rf make, and the capture of a call's stderr and death that
+bash's capture and err_line make.
 
 Every `orch: ` message goes through die or warn, as in the bash side's
 common.sh: die(message, 2) is the bash die2, for a command that reserves exit
@@ -15,13 +20,16 @@ the gh adapter's rate-limit failure - uses alone.
 """
 from __future__ import annotations
 
+import io
 import os
 import re
+import shutil
 import sys
 import tempfile
 import time
-from contextlib import contextmanager
-from typing import Callable, Iterable, Iterator, List, NoReturn, Optional, Sequence, Tuple, Union
+from contextlib import contextmanager, redirect_stderr
+from typing import (Any, Callable, Iterable, Iterator, List, NoReturn, Optional, Sequence, Tuple,
+                    Union)
 
 # The directory every checkout keeps the orchestrator's own files in.
 ORCH_DIR_NAME = ".orchestrator"
@@ -52,6 +60,21 @@ def plain_number(text: str) -> bool:
     """Whether <text> is a plain number: one or more ASCII digits and nothing
     else, as bash's `''|*[!0-9]*` refusal reads one."""
     return text.isdigit() and text.isascii()
+
+
+def plain_positive_number(text: str) -> bool:
+    """Whether <text> is a plain number (plain_number) with no leading zero,
+    as bash's `''|*[!0-9]*|0*` refusal reads one."""
+    return plain_number(text) and not text.startswith("0")
+
+
+# bash's [:space:], the characters trim drops.
+_SPACE = " \t\n\r\v\f"
+
+
+def trim(text: str) -> str:
+    """<text> with leading and trailing whitespace removed, as bash's trim."""
+    return text.strip(_SPACE)
 
 
 _NUMBER = re.compile(r"[0-9]+\.?[0-9]*|\.[0-9]+")
@@ -101,10 +124,7 @@ def file_write_atomic(path: str, text: str, make_directory: bool = True) -> bool
             f.write(text.encode("utf-8", "surrogateescape"))
         os.replace(tmp, path)
     except OSError:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+        rm_f(tmp)
         return False
     return True
 
@@ -189,6 +209,67 @@ def text_file_write(file: Union[str, int], text: str, unwritten: str) -> None:
             f.write(text.encode("utf-8", "surrogateescape"))
     except OSError:
         die(unwritten)
+
+
+def text_file_append(path: str, text: str, unappended: str) -> None:
+    """Appends <text> and a newline to the file at <path>, made where it is
+    missing, as UTF-8, surrogateescape, as text_file_write writes. Dies with
+    <unappended> when it cannot be appended."""
+    try:
+        with open(path, "ab") as f:
+            f.write((text + "\n").encode("utf-8", "surrogateescape"))
+    except OSError:
+        die(unappended)
+
+
+def copy_or_die(source: str, target: str, uncopied: str) -> None:
+    """cp <source> <target>: the file's bytes copied over whatever <target>
+    held. Dies with <uncopied> when it cannot be copied."""
+    try:
+        shutil.copyfile(source, target)
+    except OSError:
+        die(uncopied)
+
+
+def mkdir_p_or_die(path: str, unmade: str) -> None:
+    """mkdir -p <path>: the directory and any missing parents made, one
+    already there no failure. Dies with <unmade> when it cannot be made."""
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError:
+        die(unmade)
+
+
+def rm_f(path: str) -> None:
+    """rm -f <path>, its failure ignored."""
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def rm_f_or_die(path: str, unremoved: str) -> None:
+    """rm -f <path>: nothing there is no failure; dies with <unremoved>
+    when something there cannot be removed."""
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        die(unremoved)
+
+
+def rm_rf_or_die(path: str, unremoved: str) -> None:
+    """rm -rf <path>: a link or a file removed, a directory with all it
+    holds; nothing there is no failure. Dies with <unremoved> when it
+    cannot."""
+    try:
+        if os.path.isdir(path) and not os.path.islink(path):
+            shutil.rmtree(path)
+        elif os.path.lexists(path):
+            os.remove(path)
+    except OSError:
+        die(unremoved)
 
 
 @contextmanager
@@ -280,3 +361,25 @@ def exclude_missing(lines: Sequence[str], git) -> List[str]:
     text = read_raw(_exclude_file(git))
     present = set() if text is None else set(text.split("\n"))
     return [line for line in lines if line and line not in present]
+
+
+def capture(call: Callable[[], Any]) -> Tuple[Any, str, int]:
+    """bash's capture: runs <call> with its stderr taken, a death included -
+    (its answer, or None when it died; its stderr, byte for byte; 0, or the
+    exit it died with). For a caller that words a callee's failure as its
+    own, its message quoted through err_line."""
+    err = io.StringIO()
+    try:
+        with redirect_stderr(err):
+            answer = call()
+    except SystemExit as died:
+        code = died.code if isinstance(died.code, int) else 1
+        return None, err.getvalue(), code
+    return answer, err.getvalue(), 0
+
+
+def err_line(err: str) -> str:
+    """A captured error's first line, everything through its first `orch: `
+    dropped, for quoting inside a message of our own."""
+    head, found, rest = err.partition("orch: ")
+    return (rest if found else head).split("\n", 1)[0]

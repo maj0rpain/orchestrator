@@ -68,3 +68,8 @@ def test_the_issue_noun_is_converted(capsys):
 def test_the_finding_triage_noun_is_converted(capsys):
     assert died_of(capsys, lambda: main(["finding-triage", "scan", "--all", "--all"])) == (
         1, "", "orch: usage: orch.sh finding-triage scan [--all] [<issue> | --pr <n>]\n")
+
+
+def test_the_spec_review_noun_is_routed_to_its_module(capsys):
+    assert died_of(capsys, lambda: main(["spec-review", "wipe"])) == (
+        1, "", "orch: unknown spec-review op: wipe (want begin|check|apply|wait|prompt)\n")

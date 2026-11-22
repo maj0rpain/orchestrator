@@ -1,17 +1,18 @@
 # shellcheck shell=bash
 # wait.sh - the stored total of a re-callable wait (GLOSSARY.md): `review ci`
-# and `spec-review wait` poll against a total counted from their first call and
-# kept in $ORCH/wait/<key>, and each call blocks at most ORCH_WAIT_BLOCK
-# seconds of wall time (default 570, the setting `verification run` reads),
-# leaving stdout empty, saying so on stderr and exiting 75 while its wait is
-# not over. The
-# file holds two lines: the epoch second of the first call, and the seconds
-# slept so far across every call (the larger of that and the wall clock since
-# the first call is what has elapsed, as wait_elapsed counts it, so a sub-second
-# test override still advances). A stored total belongs to one wait, named by
-# the key the caller builds, and is forgotten as soon as a call delivers an
-# outcome. Its tests: scripts/test/orch/wait.sh, and the `review ci` and
-# `spec-review wait` sections, and the `gh rate limits (#2577)` section of
+# polls against a total counted from its first call and kept in
+# $ORCH/wait/<key>, as the Python `spec-review wait` does through its copy
+# (scripts/orch_py/orch/wait.py, pinned to this one by the golden files of
+# scripts/orch_py/tests/wait/, ADR-0067), and each call blocks at most
+# ORCH_WAIT_BLOCK seconds of wall time (default 570, the setting `verification
+# run` reads), leaving stdout empty, saying so on stderr and exiting 75 while
+# its wait is not over. The file holds two lines: the epoch second of the first
+# call, and the seconds slept so far across every call (the larger of that and
+# the wall clock since the first call is what has elapsed, as wait_elapsed
+# counts it, so a sub-second test override still advances). A stored total
+# belongs to one wait, named by the key the caller builds, and is forgotten as
+# soon as a call delivers an outcome. Its tests: scripts/test/orch/wait.sh, the
+# `review ci` sections, and the `gh rate limits (#2577)` section of
 # scripts/test/orch/gh.sh.
 # The module also owns the limit decision - whether a GitHub rate-limit wait
 # fits in what is left of the block (wait_limit_fits) - and the ".limited" mark
@@ -19,8 +20,8 @@
 # wait's mark path: beside the stored total (wait_open), or at the guard's
 # provisional name (wait_guard) before the key is known; WAIT_FILE is the stored
 # total alone, set only by wait_open. wait_guard is `review ci`'s guard;
-# wait_block_check is the ORCH_WAIT_BLOCK knob check of the two bash
-# re-callable commands (`review ci`, `spec-review wait`).
+# wait_block_check is the ORCH_WAIT_BLOCK knob check of the bash re-callable
+# command, `review ci`.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 ORCH_WAIT_BLOCK="${ORCH_WAIT_BLOCK:-570}"
@@ -131,9 +132,8 @@ wait_block_check() {
 }
 
 # wait_exit_running: says on stderr that the call's wait is not over and exits
-# 75; the one ending of every call of the two bash re-callable commands
-# (`review ci`, `spec-review wait`) that blocked ORCH_WAIT_BLOCK seconds
-# without an outcome.
+# 75; the one ending of every call of the bash re-callable command, `review
+# ci`, that blocked ORCH_WAIT_BLOCK seconds without an outcome.
 wait_exit_running() {
   warn "still running after ${ORCH_WAIT_BLOCK}s - run the same command again"
   exit 75

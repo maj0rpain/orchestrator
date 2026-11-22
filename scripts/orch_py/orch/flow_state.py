@@ -4,18 +4,20 @@ multi-key reader (scripts/flow-state.sh's flow_state_get_many), which stays
 the state format's owner and its one writer. The golden state.json files of
 tests/flow_state/ pin the two readers to each other (ADR-0067).
 
-Beside the reader sit the two pieces of bash's state module that only read
+Beside the reader sit the pieces of bash's state module that only read
 state.json: flow_holding_phase, the guard a branch or issue an active flow
-holds answers to (ADR-0029), and STATE_UNREADABLE_MSG, the refusal an
-unreadable state.json earns.
+holds answers to (ADR-0029), STATE_UNREADABLE_MSG, the refusal an unreadable
+state.json earns, and require_issue, the entry read of the flow's issue a
+command that needs one makes.
 """
 from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict, NamedTuple, Optional, Sequence
+from typing import Any, Dict, Mapping, NamedTuple, Optional, Sequence
 
-from orch.common import ORCH_DIR_NAME
+from orch.common import ORCH_DIR_NAME, die
+from orch.host import flow_cmd
 
 # The key and default columns of the bash state key table (STATE_KEYS in
 # scripts/flow-state.sh), in table order: what a key reads as when it is null
@@ -41,6 +43,8 @@ _DEFAULTS = dict(STATE_KEYS)
 
 # The one spelling of the refusal an unparseable state.json earns.
 STATE_UNREADABLE_MSG = "state.json cannot be read - run orch.sh doctor --flow"
+# The one spelling of the issue's required-field message.
+NO_ISSUE_MSG = "no issue recorded in state - the spec phase must publish one first"
 
 
 def flow_state_file(root: str) -> str:
@@ -122,3 +126,21 @@ def flow_holding_phase(state_file: str, branch: str, issue: str) -> Optional[Hol
     if state["branch"] != branch and (not issue or state["issue"] != issue):
         return None
     return Hold(state["phase"], state["issue"])
+
+
+def require_issue(state_file: str, env: Mapping[str, str],
+                  keys: Sequence[str] = ()) -> Dict[str, str]:
+    """The state read of <state_file>, its recorded issue and any further
+    <keys> a caller reads with it, in one read; dies, in bash
+    require_issue's order, when there is no state file (naming the host's
+    start command from <env>), when it cannot be read, and when no issue is
+    recorded."""
+    if not os.path.isfile(state_file):
+        die("no active flow (%s/state.json not found). Run %s first."
+            % (ORCH_DIR_NAME, flow_cmd(env, "start")))
+    state = flow_state_get_many(state_file, ("issue",) + tuple(keys))
+    if state is None:
+        die(STATE_UNREADABLE_MSG)
+    if not state["issue"]:
+        die(NO_ISSUE_MSG)
+    return state

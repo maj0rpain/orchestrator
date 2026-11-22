@@ -372,18 +372,6 @@ file_write_atomic() {
   return 1
 }
 
-# array_index <array-name> <value>: the index of the first element of the
-# named indexed array equal to <value>, or nothing when none is.
-array_index() {
-  local _array_index_keys _array_index_i _array_index_ref
-  eval "_array_index_keys=(\${$1[@]+\"\${!$1[@]}\"})"
-  for _array_index_i in ${_array_index_keys[@]+"${_array_index_keys[@]}"}; do
-    _array_index_ref="$1[$_array_index_i]"
-    [ "${!_array_index_ref}" != "$2" ] || { printf '%s' "$_array_index_i"; return 0; }
-  done
-  return 0
-}
-
 # state_word <var> <state>: GitHub's uppercase issue or PR <state> into <var>
 # as the lowercase word a message prints. Any other value is passed through
 # unchanged.
@@ -549,9 +537,11 @@ require_clean_tree() {
 }
 
 # AT_LINE_ESCAPE_HINT: appended to the death of an unescaped @@ line inside a
-# block, in the breakdown draft and the spec review grammars (#1945, #2357).
-# Breakdown's awk reads it through ENVIRON, as -v would turn \@@ into @@.
-# shellcheck disable=SC2034 # used by the breakdown and spec-review modules
+# block, in the breakdown draft grammar and, through the Python copy in
+# scripts/orch_py/orch/spec_review_batch.py, the spec review grammars (#1945,
+# #2357). Breakdown's awk reads it through ENVIRON, as -v would turn \@@ into
+# @@.
+# shellcheck disable=SC2034 # used by the breakdown module
 AT_LINE_ESCAPE_HINT=' - a body line starting with @@ is written \@@'
 
 # FENCE_AWK: the one markdown code-fence rule, an awk function fragment each

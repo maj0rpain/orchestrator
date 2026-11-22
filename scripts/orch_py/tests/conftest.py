@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from orch import audit, issue, review_pass, verification
+from orch import audit, issue, review_pass, spec_review, verification
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit, Git
 from orch.repo import RepoPin
@@ -44,6 +44,16 @@ def store(tmp_path):
 def seed(store):
     """The store's seeder and reader, as the bash suite's fake_* helpers."""
     return FakeStore(str(store))
+
+
+@pytest.fixture
+def root(tmp_path):
+    """The checkout's root, tmp_path/repo resolved, an empty directory - the
+    toplevel a test's FakeGit names; no triage-labels doc unless a test
+    writes one. A test file whose checkout needs more defines its own."""
+    path = tmp_path.resolve() / "repo"
+    path.mkdir()
+    return path
 
 
 def read(store, *parts):
@@ -81,6 +91,21 @@ def comments_of(store, n):
         bodies.append(read(store, "issues", n, "comments", k, "body"))
         k += 1
     return bodies
+
+
+def state_json(root):
+    """The flow's state.json in the checkout at <root>, a Path."""
+    return root / ".orchestrator" / "state.json"
+
+
+def flow_state(root, phase, issue, branch=None):
+    """<root>'s state.json, written to record a flow at <phase> on <issue>
+    and <branch>, each as a JSON value (None for null); its path."""
+    state = state_json(root)
+    state.parent.mkdir(parents=True, exist_ok=True)
+    state.write_text(
+        json.dumps({"slug": "x", "phase": phase, "issue": issue, "branch": branch}) + "\n")
+    return state
 
 
 def write_labels_doc(root, text):
@@ -290,6 +315,119 @@ def orch_review_pass(seed, git, *argv, gh=None, env=None):
         return review_pass.run(list(argv), gh=gh, git=git, env=env, pin=pin)
     except SystemExit as died:
         return died.code
+
+
+# The epoch second a FakeClock starts at unless a test gives another.
+NOW = 1_800_000_000.0
+
+
+class FakeClock:
+    """A clock, called for the time, that its sleep advances: the clock and
+    the sleep a wait is handed, every sleep recorded in <slept>. <on_sleep>,
+    when given, is called after each sleep with the number of sleeps so
+    far."""
+
+    def __init__(self, now=NOW, on_sleep=None):
+        self.now = now
+        self.slept = []
+        self.on_sleep = on_sleep
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.slept.append(seconds)
+        self.now += seconds
+        if self.on_sleep is not None:
+            self.on_sleep(len(self.slept))
+
+
+def orch_spec_review(root, *argv, seed=None, env=None, clock=None, sleep=None):
+    """`orch.sh spec-review <argv>` in-process, in the checkout at <root>
+    (a FakeGit's toplevel), under <env> (empty when None), with the gh fake on
+    <seed>'s store when one is given, and the clock and sleep a wait reads
+    when given: its exit code, a SystemExit's included."""
+    env = {} if env is None else env
+    gh = None if seed is None else FakeGh(seed.store, env, sleep=lambda _: None)
+    timing = {name: value for name, value in (("clock", clock), ("sleep", sleep))
+              if value is not None}
+    try:
+        return spec_review.run(list(argv), gh=gh, git=FakeGit(toplevel=str(root)), env=env,
+                               **timing)
+    except SystemExit as died:
+        return died.code
+
+
+# The tail of spec-review check's pass line under --unattended.
+UNATTENDED_TAIL = " - unattended: not a turn-final reply; go straight on to apply"
+
+
+def nudge(d):
+    """The tail of spec-review check's pass line on round directory <d>,
+    attended: the nudge to end the turn on the view."""
+    return (" - end your turn on one plain-text reply, no tool call: the view above word for"
+            " word, then the question with its answer words spelled out; it is saved in"
+            " %s/view.md" % d)
+
+
+def _round_files(d):
+    """Every file under <d>, by its path under <d>, with its bytes."""
+    files = {}
+    for here, _, names in os.walk(str(d)):
+        for name in names:
+            path = os.path.join(here, name)
+            with open(path, "rb") as f:
+                files[os.path.relpath(path, str(d))] = f.read()
+    return files
+
+
+def _without_view(files):
+    return {name: data for name, data in files.items() if name != "view.md"}
+
+
+def assert_check_passes(root, capsys, d, view, line, *args):
+    """`spec-review check <d> <args>` in the checkout at <root> exits 0 with
+    exactly <view> on stdout and <line>, the pass line, on stderr, saving
+    <view> to view.md and changing nothing else."""
+    before = _without_view(_round_files(d))
+
+    assert orch_spec_review(root, "check", *(str(a) for a in (d,) + args)) == 0
+
+    assert capsys.readouterr() == (view, line + "\n")
+    assert (d / "view.md").read_text() == view
+    assert _without_view(_round_files(d)) == before
+
+
+def assert_check_refused(root, capsys, d, err, *args):
+    """`spec-review check <d> <args>` in the checkout at <root> exits 1 with
+    exactly <err> on stderr, nothing on stdout and <d> as it was."""
+    before = _round_files(d)
+
+    assert orch_spec_review(root, "check", *(str(a) for a in (d,) + args)) == 1
+
+    assert capsys.readouterr() == ("", err)
+    assert _round_files(d) == before
+
+
+def refused_lines(*lines):
+    """A refusal's stderr: each of <lines> as an `orch: ` line."""
+    return "".join("orch: %s\n" % line for line in lines)
+
+
+def lines_rewritten(text, changes):
+    """<text>'s lines rewritten as one sed run rewrites them: <changes> maps
+    a line number of <text> to the lines that take its place - [] deletes
+    it, and ... in the list stands for the line itself."""
+    out = []
+    for number, line in enumerate(text.split("\n"), 1):
+        out += [line if part is ... else part for part in changes.get(number, [line])]
+    return "\n".join(out)
+
+
+def rewrite_lines(path, changes):
+    """The file at <path>, a Path, with its lines rewritten by <changes>, as
+    lines_rewritten takes them."""
+    path.write_text(lines_rewritten(path.read_text(), changes))
 
 
 def edit(path, old, new):

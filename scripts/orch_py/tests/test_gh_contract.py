@@ -8,7 +8,8 @@ import json
 
 import pytest
 
-from orch.gh import Gh, GhFailed, IssueRow, LabelledBody, Unparsed, gh_die, gh_or_die
+from orch.gh import (Gh, GhFailed, IssueRow, LabelledBody, SubIssue, Unparsed, gh_die,
+                     gh_or_die)
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY, RepoPin
 
@@ -354,6 +355,80 @@ def test_blockers_states_lists_each_blocker_and_its_state(fixture_gh):
                      "3\tOPEN\n4\tCLOSED\n")
 
     assert real_gh(fixture_gh).blockers_states(5) == [(3, "OPEN"), (4, "CLOSED")]
+
+
+SUB_ISSUES = ["api", "--paginate", "repos/{owner}/{repo}/issues/5/sub_issues", "--jq",
+              '.[] | "\\(.number)\\t\\(.state | ascii_upcase)\\t'
+              '\\(.issue_dependencies_summary.blocked_by // "")"']
+
+
+def test_sub_issues_lists_each_with_its_state_and_open_blocker_count_or_none(fixture_gh):
+    fixture_gh.reply(SUB_ISSUES, "11\tOPEN\t2\n12\tCLOSED\t\n")
+
+    assert real_gh(fixture_gh).sub_issues(5) == [
+        SubIssue(11, "OPEN", 2), SubIssue(12, "CLOSED", None)]
+
+
+@pytest.mark.parametrize("answer", ["x\tOPEN\t0\n", "11\tOPEN\tmany\n", "11\n"])
+def test_a_sub_issue_listing_that_does_not_parse_fails(fixture_gh, answer):
+    fixture_gh.reply(SUB_ISSUES, answer)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).sub_issues(5)
+    assert failed.value.stderr == ("gh answered a sub-issue that does not parse: "
+                                   + answer.rstrip("\n"))
+
+
+BLOCKERS = ["api", "--paginate", "repos/{owner}/{repo}/issues/5/dependencies/blocked_by",
+            "--jq", ".[].number"]
+
+
+def test_blockers_lists_each_blocker_s_number_in_github_s_order(fixture_gh):
+    fixture_gh.reply(BLOCKERS, "4\n3\n")
+
+    assert real_gh(fixture_gh).blockers(5) == [4, 3]
+
+
+def test_a_blocker_listing_that_does_not_parse_fails(fixture_gh):
+    fixture_gh.reply(BLOCKERS, "4\nnull\n")
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).blockers(5)
+    assert failed.value.stderr == "gh answered a blocker that does not parse: null"
+
+
+def api_id_argv(number):
+    return ["api", "repos/{owner}/{repo}/issues/%d" % number, "--jq", ".id"]
+
+
+UNLINK = ["api", "--method", "DELETE", "repos/{owner}/{repo}/issues/5/sub_issue",
+          "-F", "sub_issue_id=9007"]
+BLOCKER_ADD = ["api", "--method", "POST", "repos/{owner}/{repo}/issues/5/dependencies/blocked_by",
+               "-F", "issue_id=9007"]
+BLOCKER_REMOVE = ["api", "--method", "DELETE",
+                  "repos/{owner}/{repo}/issues/5/dependencies/blocked_by/9007"]
+
+
+@pytest.mark.parametrize("call, write", [
+    (lambda gh: gh.sub_issue_unlink(5, 7), UNLINK),
+    (lambda gh: gh.blocker_add(5, 7), BLOCKER_ADD),
+    (lambda gh: gh.blocker_remove(5, 7), BLOCKER_REMOVE),
+])
+def test_an_unlink_or_edge_write_names_the_other_issue_by_its_api_id(fixture_gh, call, write):
+    fixture_gh.reply(api_id_argv(7), "9007\n")
+    fixture_gh.reply(write, "{}\n")
+
+    assert call(real_gh(fixture_gh)) is None
+    assert fixture_gh.argvs() == [api_id_argv(7), write]
+
+
+def test_an_edge_write_whose_api_id_read_fails_makes_no_write(fixture_gh):
+    fixture_gh.reply(api_id_argv(7), stderr="HTTP 404: Not Found\n", exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).blocker_add(5, 7)
+    assert failed.value.stderr == "HTTP 404: Not Found\n"
+    assert fixture_gh.argvs() == [api_id_argv(7)]
 
 
 OPEN_TITLES = ["api", "--paginate", "repos/{owner}/{repo}/issues?state=open&per_page=100",

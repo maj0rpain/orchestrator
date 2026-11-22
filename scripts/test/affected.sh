@@ -41,21 +41,21 @@
 #   flow-state.sh                     the core set, plus the state, init and
 #                                     side-checkout sections
 #   host.sh                           the core set, plus the doctor sections
-#   bash-walk.sh                      hooks_test.sh
-#   paste-guard.sh                    hooks_test.sh, plus the spec-review
-#                                     sections
+#   bash-walk.sh, paste-guard.sh      hooks_test.sh
 #   planning-allowlist.sh             hooks_test.sh, plus the doctor sections
 #   triage-labels.sh                  hooks_test.sh, plus the doctor sections
 #   scripts/dev/ other than the lens bench, hook-edit-width.sh, width.sh
 #                                     the harness section file's sections
 #   the Python package (scripts/orch_py/), its tests and dev files included
-#                                     the spec, spec-review, ticket and
-#                                     autopilot sections, the bash nouns whose
-#                                     sections run a converted noun's verb
-#                                     through the dispatch, plus the
-#                                     side-checkout sections, whose entry
-#                                     classification scans the package (the
-#                                     pytest suite runs on every call)
+#                                     the spec, ticket and autopilot sections,
+#                                     the bash nouns whose sections run a
+#                                     converted noun's verb through the
+#                                     dispatch, and hooks_test.sh, whose paste
+#                                     guard rows run spec-review check through
+#                                     it, plus the side-checkout sections,
+#                                     whose entry classification scans the
+#                                     package (the pytest suite runs on every
+#                                     call)
 #   the pytest suite's wrapper (scripts/test/orch_py_test.sh)
 #                                     the harness section file's sections
 #   hook-edit-width.sh, width.sh, shell_code.awk
@@ -442,8 +442,7 @@ classify() {
     case "$f" in
       scripts/flow-state.sh) core=1; sections_of state init side-checkout ;;
       scripts/host.sh) core=1; sections_of doctor ;;
-      scripts/bash-walk.sh) want+=(hooks_test.sh) ;;
-      scripts/paste-guard.sh) want+=(hooks_test.sh); sections_of spec-review ;;
+      scripts/bash-walk.sh | scripts/paste-guard.sh) want+=(hooks_test.sh) ;;
       scripts/planning-allowlist.sh) want+=(hooks_test.sh); sections_of doctor ;;
       scripts/triage-labels.sh) want+=(hooks_test.sh); sections_of doctor ;;
       scripts/orch/*.sh)
@@ -465,7 +464,7 @@ classify() {
       scripts/dev/hook-edit-width.sh | scripts/dev/width.sh | scripts/test/shell_code.awk)
         want+=(hooks_test.sh); sections_of harness ;;
       scripts/dev/*) sections_of harness ;;
-      scripts/orch_py/*) sections_of spec spec-review ticket autopilot side-checkout ;;
+      scripts/orch_py/*) want+=(hooks_test.sh); sections_of spec ticket autopilot side-checkout ;;
       scripts/test/orch_py_test.sh) sections_of harness ;;
       docker/* | .dockerignore) want+=(autopilot_container_test.sh autopilot_up_test.sh) ;;
       .claude-plugin/*) want+=(version_bump_test.sh autopilot_up_test.sh) ;;

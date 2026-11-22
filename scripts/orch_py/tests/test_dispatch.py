@@ -1,10 +1,10 @@
 """orch.sh's handoff of a converted noun to the orch package, run as
 `python3 -m orch` would be, through a `-c` bootstrap (ADR-0067), end to end:
 each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>`,
-`orch.sh verification <verb>`, `orch.sh audit <verb>` or `orch.sh review-pass
-<verb>` as a command, in a checkout under tmp_path, against a fake store seeded in the
-layout the bash suite's fake_* helpers write, with ORCH_GH_FAKE_STORE set as
-fake_github sets it."""
+`orch.sh verification <verb>`, `orch.sh audit <verb>`, `orch.sh review-pass
+<verb>` or `orch.sh spec-review <verb>` as a command, in a checkout under
+tmp_path, against a fake store seeded in the layout the bash suite's fake_*
+helpers write, with ORCH_GH_FAKE_STORE set as fake_github sets it."""
 from __future__ import annotations
 
 import os
@@ -386,3 +386,118 @@ def test_help_lists_both_review_pass_verbs(tmp_path, repo, seed):
     assert [line.split()[:3] for line in out.splitlines()
             if line.startswith("  review-pass ")] == [
         ["review-pass", "begin", "<issue>"], ["review-pass", "known-items", "<issue>"]]
+
+
+# --- spec-review -------------------------------------------------------------
+
+# A one-item round: the Fidelity lens's one finding, its one minor edit.
+SPEC_REVIEW_BATCH = """@@ lens fidelity ran
+@@ lens consistency not-run skipped
+@@ lens testability not-run skipped
+@@ lens implementability not-run skipped
+
+@@ item 1 fidelity apply minor
+@@ finding fidelity 1
+@@ summary Alpha primed
+@@ anchor
+Alpha line.
+@@ replace
+Alpha prime line.
+@@ end
+"""
+
+
+def spec_round(repo):
+    """A standalone review's round directory for issue #14 under <repo>,
+    holding the body, the comments, the one-item batch and its lens file."""
+    d = repo.resolve() / ".orchestrator" / "spec-review" / "14"
+    d.mkdir(parents=True)
+    (d / "spec.md").write_text("Alpha line.\n")
+    (d / "comments.md").write_text("")
+    (d / "batch.md").write_text(SPEC_REVIEW_BATCH)
+    (d / "lens-fidelity.md").write_text("@@ finding 1\nAlpha is stale.\n")
+    return d
+
+
+def test_spec_review_begin_resets_the_round_directory_through_the_python_noun(
+        tmp_path, repo, seed):
+    d = spec_round(repo)
+
+    answer = orch_sh(tmp_path, repo, seed, "spec-review", "begin", "14",
+                     path=python3_shim(tmp_path))
+
+    assert answer == ("%s/\n" % d, "", 0)
+    assert list(d.iterdir()) == []
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_spec_review_check_saves_the_view_through_the_python_noun(tmp_path, repo, seed):
+    d = spec_round(repo)
+
+    out, err, code = orch_sh(tmp_path, repo, seed, "spec-review", "check", str(d),
+                             path=python3_shim(tmp_path))
+
+    assert code == 0
+    assert out.endswith("### Minor edits\n\n- **1** - Fidelity: Alpha primed\n")
+    assert (d / "view.md").read_text() == out
+    assert err.startswith("batch.md passes: 1 items, 1 anchors")
+    assert err.endswith("; it is saved in %s/view.md\n" % d)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_spec_review_apply_publishes_the_round_through_the_python_noun(tmp_path, repo, seed):
+    d = spec_round(repo)
+    seed.issue(14, "open")
+    seed.body(14, "Alpha line.\n")
+
+    out, err, code = orch_sh(tmp_path, repo, seed, "spec-review", "apply", str(d),
+                             "recommended", "--round", "1/1", "--issue", "14",
+                             path=python3_shim(tmp_path))
+
+    assert (code, err) == (0, "")
+    assert read(seed.store, "issues", 14, "body") == "Alpha prime line.\n"
+    assert comments_of(seed.store, 14) == [(d / "changelog.md").read_text()]
+    assert (d / "round-complete").exists()
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_spec_review_wait_counts_the_lenses_back_through_the_python_noun(
+        tmp_path, repo, seed):
+    d = spec_round(repo)
+
+    answer = orch_sh(tmp_path, repo, seed, "spec-review", "wait", str(d), "fidelity",
+                     path=python3_shim(tmp_path))
+
+    assert answer == ("lenses back: fidelity 1\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_spec_review_prompt_prints_the_lens_s_lines_through_the_python_noun(
+        tmp_path, repo, seed):
+    d = spec_round(repo)
+
+    answer = orch_sh(tmp_path, repo, seed, "spec-review", "prompt", str(d), "consistency",
+                     path=python3_shim(tmp_path))
+
+    assert answer == ("Spec body: {d}/spec.md\nComments: {d}/comments.md\n"
+                      "Glossary: none\nADR directory: none\nSettled: none\n"
+                      "Findings file: {d}/lens-consistency.md\n".format(d=d),
+                      "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_an_unknown_spec_review_op_is_refused_through_the_python_noun(tmp_path, repo, seed):
+    answer = orch_sh(tmp_path, repo, seed, "spec-review", "wipe", path=python3_shim(tmp_path))
+
+    assert answer == ("", "orch: unknown spec-review op: wipe"
+                          " (want begin|check|apply|wait|prompt)\n", 1)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_help_lists_all_five_spec_review_verbs(tmp_path, repo, seed):
+    out, err, code = orch_sh(tmp_path, repo, seed, "help")
+
+    assert (err, code) == ("", 0)
+    assert [line.split()[1] for line in out.splitlines()
+            if line.startswith("  spec-review ")] == [
+        "begin", "check", "wait", "prompt", "apply", "apply"]

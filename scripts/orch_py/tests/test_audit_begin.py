@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from orch.git import FakeGit
-from conftest import AUDIT_USAGE, orch_audit
+from conftest import AUDIT_USAGE, orch_audit, state_json
 
 HEAD = "0123456789abcdef0123456789abcdef01234567"
 # The run directory's stamp: AUDIT_CLOCK's UTC time.
@@ -160,7 +160,7 @@ def test_a_failed_record_write_removes_the_run_directory_and_keeps_the_exclude_l
 
 
 def test_begin_leaves_an_active_flow_s_state_untouched(root, capsys):
-    state = root / ".orchestrator" / "state.json"
+    state = state_json(root)
     state.parent.mkdir()
     state.write_text('{"phase": "implement"}\n')
 

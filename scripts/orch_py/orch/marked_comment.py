@@ -1,25 +1,61 @@
 """The Marked comment module (scripts/orch/marked-comment.sh), kept to what
-the issue and review-pass nouns use: recognising the spec review's
-changelogs, comments whose first line is the `## Spec review` heading, to
-drop them; and the texts of the spec rulings, comments whose first line
-begins `Spec ruling:`, that a review pass reads.
+the issue, review-pass and spec-review nouns use: the first line of the spec
+review's changelog (marked_comment_write, for the spec-review kind alone);
+recognising the spec review's changelogs, comments whose first line is the
+`## Spec review` heading, to drop them; the texts of the spec rulings, comments whose first
+line begins `Spec ruling:`, that a review pass reads; and every comment's
+kind, argument and retired tag (marked_comment_info, the jq prelude's), which
+the issue timeline reads the handoff comments by.
 
-The other kinds - the hidden `<!-- orch:<kind> <arg> -->` markers - come with
-the nouns that read them. No other marked kind can open with the heading or
-with `Spec ruling:`, so recognising the opening alone is enough.
+No other marked kind can open with the heading or with `Spec ruling:`, so
+recognising the opening alone is enough there.
 """
 from __future__ import annotations
 
 import re
-from typing import List
+from typing import List, NamedTuple, Optional
 
 SPEC_REVIEW_OPENING = "## Spec review"
 SPEC_RULING_OPENING = "Spec ruling:"
 _SPEC_REVIEW_LINE = re.compile(re.escape(SPEC_REVIEW_OPENING) + r"[ \t]*")
 
+# The kind registry, as bash's: the hidden-marker kinds, the one kind that can
+# be retired, the one kind that takes a cause token after its argument and the
+# causes, and the legacy openings of a refusal and a failure stop comment.
+MARKED_COMMENT_KINDS = ("question", "limited", "reentry", "handoff", "refusal", "failure")
+MARKED_COMMENT_RETIRABLE = "handoff"
+MARKED_COMMENT_CAUSED = "limited"
+MARKED_COMMENT_CAUSES = ("github",)
+LEGACY_REFUSAL = "Autopilot refused to run the "
+LEGACY_FAILURE = "Autopilot failed in the "
+_MARKER = re.compile(
+    r"<!-- orch:(?P<kind>%s) (?P<arg>[^ ]+)(?: (?P<cause>%s))?(?P<retired> retired)? -->"
+    % ("|".join(MARKED_COMMENT_KINDS), "|".join(MARKED_COMMENT_CAUSES)))
+_LEGACY = re.compile(r"(?P<p>[^ ]+) phase")
+
+
+class MarkedInfo(NamedTuple):
+    """A comment's kind and argument (None for an unmarked comment, or a
+    kind that takes none), whether it is tagged retired, and its cause."""
+
+    kind: Optional[str]
+    arg: Optional[str]
+    retired: bool
+    cause: str
+
 
 class NotText(ValueError):
     """A comment body that is neither text nor absent."""
+
+
+def marked_comment_write(kind: str) -> str:
+    """The first line a marked comment of <kind> opens with, newline
+    included, as bash's marked_comment_write prints it - so far only the
+    spec-review kind, whose line is its heading; any other kind is a
+    programming error, a ValueError."""
+    if kind != "spec-review":
+        raise ValueError("marked comment: kind not copied to Python: " + kind)
+    return SPEC_REVIEW_OPENING + "\n"
 
 
 def is_spec_review(comment: dict) -> bool:
@@ -65,3 +101,32 @@ def marked_comment_texts(comments: List[dict]) -> List[str]:
         if body.split("\n", 1)[0].startswith(SPEC_RULING_OPENING):
             texts.append(body[len(SPEC_RULING_OPENING):].replace("\r", ""))
     return texts
+
+
+def marked_comment_info(comment: dict) -> MarkedInfo:
+    """The comment's MarkedInfo, read from its first line less a trailing CR
+    as the jq prelude's marked_comment_info reads it: a hidden marker of a
+    registered kind, retired only on a handoff and with a cause only on a
+    limited comment, else the spec review's heading, else a spec ruling's
+    opening, else a legacy stop's opening. NotText for a body that is no
+    text."""
+    line = _body_text(comment).split("\n", 1)[0]
+    if line.endswith("\r"):
+        line = line[:-1]
+    marker = _MARKER.fullmatch(line)
+    if marker is not None:
+        kind, cause = marker.group("kind"), marker.group("cause") or ""
+        retired = marker.group("retired") is not None
+        if (not retired or kind == MARKED_COMMENT_RETIRABLE) and \
+                (not cause or kind == MARKED_COMMENT_CAUSED):
+            return MarkedInfo(kind, marker.group("arg"), retired, cause)
+    if _SPEC_REVIEW_LINE.fullmatch(line) is not None:
+        return MarkedInfo("spec-review", None, False, "")
+    if line.startswith(SPEC_RULING_OPENING):
+        return MarkedInfo("spec-ruling", None, False, "")
+    for kind, opening in (("refusal", LEGACY_REFUSAL), ("failure", LEGACY_FAILURE)):
+        if line.startswith(opening):
+            legacy = _LEGACY.match(line, len(opening))
+            if legacy is not None:
+                return MarkedInfo(kind, legacy.group("p"), False, "")
+    return MarkedInfo(None, None, False, "")

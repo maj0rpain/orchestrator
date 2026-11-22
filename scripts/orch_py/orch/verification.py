@@ -111,6 +111,7 @@ from orch.common import (
     die,
     file_write_atomic,
     is_positive_number,
+    mkdir_p_or_die,
     plain_number,
     read_text,
     require_poll_knobs,
@@ -401,10 +402,7 @@ class Verification:
         state = self.git.tree_state()
         if state is None:
             die("could not read the working tree state")
-        try:
-            os.makedirs(self.store, exist_ok=True)
-        except OSError:
-            die("could not create %s" % self.store)
+        mkdir_p_or_die(self.store, "could not create %s" % self.store)
         self.clear_orphans()
         key = self.git.text_hash("root %s\nid %s\ncommand %s\n" % (self.root, token, command))
         if key is None:
