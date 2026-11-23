@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 import subprocess
-from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, NamedTuple, Optional, Sequence, Set, Tuple, Union
 
 from orch.common import ORCH_DIR_NAME, trim
 
@@ -83,6 +83,22 @@ _FULL_SHA = re.compile(r"[0-9a-f]{40}")
 # A porcelain blame's header line: the commit's full SHA-1 name, then line
 # numbers.
 _BLAME_HEADER = re.compile(r"(%s) [0-9]" % _FULL_SHA.pattern)
+_CONFIG_SCOPES = ("local", "global")
+
+
+def _check_config_scope(scope: str) -> None:
+    if scope not in _CONFIG_SCOPES:
+        raise ValueError("git config scope must be 'local' or 'global', got %r" % scope)
+
+
+def _config_entries(
+    entries: Optional[Union[Dict[str, Optional[str]], Sequence[Tuple[str, Optional[str]]]]],
+) -> List[Tuple[str, Optional[str]]]:
+    if entries is None:
+        return []
+    if isinstance(entries, dict):
+        return list(entries.items())
+    return list(entries)
 
 
 class Git:
@@ -397,6 +413,45 @@ class Git:
             return None
         return git_push_reason(run.stderr.decode("utf-8", "surrogateescape"))
 
+    # Scoped git config operations for the agent noun, run where the adapter
+    # runs, as bash's agent_cache_load, agent_write and git_config_unset run.
+
+    def config_regexp(self, scope: str, pattern: str) -> Dict[str, str]:
+        """The keys at <scope> ('local' or 'global') matching <pattern>, read
+        from `git config --<scope> -z --get-regexp <pattern>` as bash's agent
+        cache reads them: leading and trailing spaces kept, a key with no
+        value mapped to '', internal newlines kept, trailing newlines
+        stripped, the last entry winning on duplicate keys, and an empty
+        mapping when no key matches."""
+        _check_config_scope(scope)
+        run = self._run(["config", "--" + scope, "-z", "--get-regexp", "--", pattern])
+        if run.returncode != 0:
+            return {}
+        out: Dict[str, str] = {}
+        for rec in run.stdout.decode("utf-8", "surrogateescape").split("\0"):
+            if not rec:
+                continue
+            if "\n" in rec:
+                key, value = rec.split("\n", 1)
+                out[key] = value.rstrip("\n")
+            else:
+                out[rec] = ""
+        return out
+
+    def config_set(self, scope: str, key: str, value: str) -> bool:
+        """Writes <key> = <value> at <scope> ('local' or 'global'): whether
+        the write succeeded."""
+        _check_config_scope(scope)
+        return self._run(["config", "--" + scope, "--", key, value]).returncode == 0
+
+    def config_unset(self, scope: str, key: str) -> bool:
+        """Removes every value of <key> at <scope> ('local' or 'global'):
+        True on exit 0 or exit 5 (key not set), False on any other failure
+        such as a lock or write error."""
+        _check_config_scope(scope)
+        code = self._run(["config", "--" + scope, "--unset-all", "--", key]).returncode
+        return code in (0, 5)
+
 
 class FakeGit:
     """The in-process fake: a repository held in memory. <remotes> maps each
@@ -405,7 +460,11 @@ class FakeGit:
     to its contents; <head> is HEAD's commit, None on an unborn branch;
     <diff_fails> makes every comparison fail, as a git that cannot read its
     objects does; <checkouts> maps each other directory in a checkout to
-    that checkout's root.
+    that checkout's root; <local_config> and <global_config> hold the scoped
+    git config entries (dict or sequence of (key, value|None) pairs, None
+    for a valueless key); <config_write_fails> names scopes ('local',
+    'global') or (scope, key) pairs whose config_set and config_unset calls
+    fail, as a locked or unwritable config file does.
 
     The operations COULD_NOT names answer what seed() set for their
     arguments, and their "could not" value for a call nothing was seeded
@@ -419,6 +478,13 @@ class FakeGit:
         head: Optional[str] = None,
         diff_fails: bool = False,
         checkouts: Optional[Dict[str, str]] = None,
+        local_config: Optional[
+            Union[Dict[str, Optional[str]], Sequence[Tuple[str, Optional[str]]]]
+        ] = None,
+        global_config: Optional[
+            Union[Dict[str, Optional[str]], Sequence[Tuple[str, Optional[str]]]]
+        ] = None,
+        config_write_fails: Optional[Iterable[Union[str, Tuple[str, str]]]] = None,
     ) -> None:
         self.remotes = dict(remotes or {})
         self.root = toplevel
@@ -426,6 +492,13 @@ class FakeGit:
         self.commits = dict(commits or {})
         self.head = head
         self.diff_fails = diff_fails
+        self._config: Dict[str, List[Tuple[str, Optional[str]]]] = {
+            "local": _config_entries(local_config),
+            "global": _config_entries(global_config),
+        }
+        self.config_write_fails: Set[Union[str, Tuple[str, str]]] = set(
+            config_write_fails or ()
+        )
         self._answers: Dict[Tuple[Any, ...], Any] = {}
 
     def seed(self, name: str, *args: Any, answer: Any) -> None:
@@ -529,6 +602,39 @@ class FakeGit:
 
     def push(self, remote: str, refspec: str) -> Optional[str]:
         return self._answer("push", remote, refspec)
+
+    def config_regexp(self, scope: str, pattern: str) -> Dict[str, str]:
+        _check_config_scope(scope)
+        rx = re.compile(pattern)
+        out: Dict[str, str] = {}
+        for key, value in self._config[scope]:
+            if rx.search(key):
+                out[key] = "" if value is None else value.rstrip("\n")
+        return out
+
+    def _config_write_blocked(self, scope: str, key: str) -> bool:
+        return scope in self.config_write_fails or (scope, key) in self.config_write_fails
+
+    def config_set(self, scope: str, key: str, value: str) -> bool:
+        _check_config_scope(scope)
+        if self._config_write_blocked(scope, key):
+            return False
+        entries = self._config[scope]
+        matches = [i for i, (k, _) in enumerate(entries) if k == key]
+        if len(matches) > 1:
+            return False
+        if matches:
+            entries[matches[0]] = (key, value)
+        else:
+            entries.append((key, value))
+        return True
+
+    def config_unset(self, scope: str, key: str) -> bool:
+        _check_config_scope(scope)
+        if self._config_write_blocked(scope, key):
+            return False
+        self._config[scope] = [(k, v) for k, v in self._config[scope] if k != key]
+        return True
 
 
 def _call_key(name: str, args: Sequence[Any]) -> Tuple[Any, ...]:
