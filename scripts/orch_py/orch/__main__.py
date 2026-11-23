@@ -1,8 +1,9 @@
-"""`python3 -m orch <noun> <verb> ...`: the interpreter check, then orch.cli's
-main.
+"""`python3 -m orch <noun> <verb> ...` and `python3 -m orch --call <noun>
+<func> ...`: the interpreter check, then orch.cli's main or call_func.
 
-main(argv) takes `<noun> <verb> ...` as orch.sh hands them on. Below Python
-3.9 it dies before doing anything, exit 1, naming the version found.
+main(argv) takes `<noun> <verb> ...` as orch.sh's orch_python hands them on,
+or `--call <noun> <func> ...` as orch_python_call hands them on. Below Python
+3.9 it dies before doing anything, exit 1, naming the noun and version found.
 
 This file is in syntax every python3 compiles - no annotations, f-strings or
 `from __future__` imports - and imports the package's other modules only after
@@ -31,6 +32,11 @@ def require_python(noun):
 
 
 def main(argv):
+    if argv and argv[0] == "--call":
+        require_python(argv[1] if len(argv) > 1 else "")
+        from orch.cli import call_func
+
+        return call_func(argv[1:])
     require_python(argv[0] if argv else "")
     from orch.cli import main as run_noun
 

@@ -73,3 +73,33 @@ def test_the_finding_triage_noun_is_converted(capsys):
 def test_the_spec_review_noun_is_routed_to_its_module(capsys):
     assert died_of(capsys, lambda: main(["spec-review", "wipe"])) == (
         1, "", "orch: unknown spec-review op: wipe (want begin|check|apply|wait|prompt)\n")
+
+
+def test_call_mode_below_python_3_9_dies_naming_the_noun(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "version_info", (3, 8, 10, "final", 0))
+
+    assert died_of(capsys, lambda: main(["--call", "agent", "check_settings"])) == (
+        1, "",
+        "orch: orch.sh agent needs python3 3.9 or newer (found 3.8.10)"
+        " - run orch.sh doctor\n",
+    )
+
+
+def test_call_mode_dispatches_a_named_function_on_a_converted_noun(capsys):
+    assert died_of(capsys, lambda: main(["--call", "issue", "run", "labels"])) == (
+        1, "", "orch: usage: orch.sh issue labels <n>...\n")
+    assert died_of(capsys, lambda: main(["--call", "spec-review", "run", "wipe"])) == (
+        1, "", "orch: unknown spec-review op: wipe (want begin|check|apply|wait|prompt)\n")
+
+
+def test_call_mode_refuses_missing_args_unknown_noun_and_unknown_or_private_function(capsys):
+    assert died_of(capsys, lambda: main(["--call"])) == (
+        1, "", "orch: usage: orch_python_call <noun> <func> [<arg>...]\n")
+    assert died_of(capsys, lambda: main(["--call", "route"])) == (
+        1, "", "orch: usage: orch_python_call <noun> <func> [<arg>...]\n")
+    assert died_of(capsys, lambda: main(["--call", "no-such-noun", "run"])) == (
+        1, "", "orch: unknown command: no-such-noun (run 'orch.sh help')\n")
+    assert died_of(capsys, lambda: main(["--call", "route", "no_such_fn"])) == (
+        1, "", "orch: unknown route function: no_such_fn\n")
+    assert died_of(capsys, lambda: main(["--call", "route", "_private"])) == (
+        1, "", "orch: unknown route function: _private\n")

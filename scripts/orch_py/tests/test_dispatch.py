@@ -781,3 +781,125 @@ def test_help_lists_the_glossary_verbs_and_the_entry_grammar(tmp_path, repo, see
     assert "glossary match <file>..." in out
     assert "optionally after a - or * bullet" in out
     assert "no entries is an error" in out
+
+
+# --- orch_python_call bootstrap ----------------------------------------------
+
+
+def source_orch_sh(tmp_path, cwd, script, path=None, knobs=None, unset=()):
+    """Runs bash <script> with $1 = scripts/orch.sh in <cwd> and an isolated
+    HOME under <tmp_path>: (stdout, stderr, returncode)."""
+    env = dict(os.environ, HOME=str(tmp_path), PYTHONDONTWRITEBYTECODE="1", **(knobs or {}))
+    for name in unset:
+        env.pop(name, None)
+    if path is not None:
+        env["PATH"] = path
+    run = subprocess.run(
+        ["/bin/bash", "-euo", "pipefail", "-c", script, "_", str(SCRIPTS / "orch.sh")],
+        cwd=str(cwd), env=env, stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
+    )
+    return run.stdout.decode(), run.stderr.decode(), run.returncode
+
+
+def test_orch_python_call_runs_without_exec_and_returns_exit_code(tmp_path, repo):
+    git_config(tmp_path, repo, "orchestrator.route", "quick")
+    script = (
+        'ORCH_SOURCE_LAZY=1; source "$1"\n'
+        'orch_python_call route run show\n'
+        'st=0; orch_python_call route run bogus 2>&1 || st=$?\n'
+        'printf "after:%s\\n" "$st"\n'
+    )
+
+    out, err, code = source_orch_sh(tmp_path, repo, script, unset=GLOBAL_CONFIG)
+
+    assert (err, code) == ("", 0)
+    assert out == (
+        "quick\n"
+        "orch: unknown route op: bogus (want show)\n"
+        "after:1\n"
+    )
+
+
+@pytest.mark.parametrize("module", ["json.py", "orch.py"])
+def test_orch_python_call_drops_empty_sys_path_entry_so_cwd_modules_cannot_shadow(
+        tmp_path, repo, module):
+    (repo / module).write_text("import sys\nsys.stderr.write('shadowed\\n')\nsys.exit(7)\n")
+    script = 'ORCH_SOURCE_LAZY=1; source "$1"\norch_python_call route run show\n'
+
+    assert source_orch_sh(tmp_path, repo, script, unset=GLOBAL_CONFIG) == ("none\n", "", 0)
+
+
+@pytest.mark.parametrize("given", [None, "", "/the/caller/s/path"],
+                         ids=["unset", "empty", "set"])
+def test_orch_python_call_restores_callers_pythonpath_for_subprocesses(tmp_path, repo, given):
+    real_git = shutil.which("git")
+    shim_dir = tmp_path / "git-shim"
+    shim_dir.mkdir()
+    log = tmp_path / "pythonpath.log"
+    shim = shim_dir / "git"
+    shim.write_text(
+        '#!/bin/sh\n'
+        'printf "%%s\\n" "${PYTHONPATH-unset}" >>"%s"\n'
+        'exec "%s" "$@"\n' % (log, real_git)
+    )
+    shim.chmod(0o755)
+    script = (
+        'ORCH_SOURCE_LAZY=1; source "$1"\n'
+        'PATH="%s:$PATH" orch_python_call route run show\n' % shim_dir
+    )
+    knobs = {} if given is None else {"PYTHONPATH": given}
+    unset = GLOBAL_CONFIG + (("PYTHONPATH",) if given is None else ())
+
+    assert source_orch_sh(tmp_path, repo, script, knobs=knobs, unset=unset) == ("none\n", "", 0)
+    seen = log.read_text().splitlines()
+    assert seen and all(line == ("unset" if given is None else given) for line in seen)
+
+
+def test_orch_python_call_refuses_cleanly_when_python3_is_missing(tmp_path, repo):
+    script = (
+        'ORCH_SOURCE_LAZY=1; source "$1"\n'
+        'st=0; orch_python_call route run show || st=$?\n'
+        'printf "after:%s\\n" "$st"\n'
+    )
+
+    out, err, code = source_orch_sh(
+        tmp_path, repo, script, path=path_without(tmp_path, "python3"), unset=GLOBAL_CONFIG
+    )
+
+    assert (out, err, code) == (
+        "after:1\n",
+        "orch: orch.sh route needs python3 3.9 or newer (found none) - run orch.sh doctor\n",
+        0,
+    )
+
+
+def test_orch_python_call_refuses_cleanly_when_python3_is_below_3_9(tmp_path, repo):
+    shim_dir = tmp_path / "py38"
+    shim_dir.mkdir()
+    shim = shim_dir / "python3"
+    shim.write_text(
+        '#!/bin/sh\n'
+        'code="$2"\n'
+        'shift 2\n'
+        'exec "%s" -c \'import sys; sys.version_info = (3, 8, 10, "final", 0);'
+        ' exec(sys.argv.pop(1))\' "$code" "$@"\n' % sys.executable
+    )
+    shim.chmod(0o755)
+    script = (
+        'ORCH_SOURCE_LAZY=1; source "$1"\n'
+        'st=0; orch_python_call route run show || st=$?\n'
+        'printf "after:%s\\n" "$st"\n'
+    )
+
+    out, err, code = source_orch_sh(
+        tmp_path, repo, script,
+        path="%s%s%s" % (shim_dir, os.pathsep, os.environ["PATH"]),
+        unset=GLOBAL_CONFIG,
+    )
+
+    assert (out, err, code) == (
+        "after:1\n",
+        "orch: orch.sh route needs python3 3.9 or newer (found 3.8.10) - run orch.sh doctor\n",
+        0,
+    )

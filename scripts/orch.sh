@@ -170,26 +170,12 @@ fi
 # never disagree about them.
 source "$ORCH_SCRIPTS/planning-allowlist.sh"
 
-# orch_python <noun> [<arg>...]: runs a noun converted to Python (ADR-0067) as
-# `python3 -m orch <noun> <arg>...` would, in place of this process, so stdin,
-# stdout, stderr and the exit code are the noun's own. `-m` itself is not used:
-# it puts the caller's directory ahead of PYTHONPATH and the standard library,
-# so a json.py or orch.py there would shadow the package or its imports, and
-# Python 3.9 has no -P to stop it. A -c bootstrap instead drops the empty
-# entry -c puts first on sys.path, the caller's directory, before importing
-# anything, then runs the package's __main__ through runpy; the package
-# directory is first on PYTHONPATH. The bootstrap's first argument, given, is
-# the caller's PYTHONPATH after an `=`, or empty when it was unset: once
-# sys.path is built the bootstrap puts that back in the environment, so the
-# noun and every command it starts see the PYTHONPATH orch.sh was given. With
-# no python3 on PATH it dies before doing anything, exit 1 even for a verb that
-# reserves 1 for a "no" (the carve-out in coding-standards rule 2); the
-# package's entry point checks the version itself.
-orch_python() {
-  command -v python3 >/dev/null 2>&1 \
-    || die "orch.sh $1 needs python3 3.9 or newer (found none) - run orch.sh doctor"
-  local given="${PYTHONPATH+=$PYTHONPATH}"
-  PYTHONPATH="$ORCH_PLUGIN/scripts/orch_py${PYTHONPATH:+:$PYTHONPATH}" exec python3 -c '
+# The -c bootstrap shared by orch_python and orch_python_call: drops the empty
+# entry -c puts first on sys.path (the caller's directory) before importing
+# anything, restores the caller's PYTHONPATH from argv[1] (given after `=`, or
+# empty when it was unset), and runs the orch package's __main__ through runpy
+# so require_python stays the single Python 3.9+ version gate.
+readonly ORCH_PYTHON_BOOTSTRAP='
 import os, sys
 if sys.path and sys.path[0] == "":
     del sys.path[0]
@@ -200,7 +186,44 @@ else:
     os.environ.pop("PYTHONPATH", None)
 import runpy
 runpy.run_module("orch", run_name="__main__", alter_sys=True)
-' "$given" "$@"
+'
+
+# orch_python_run <exec|call> <noun> [<arg>...]: the one python3 check and
+# PYTHONPATH setup shared by orch_python and orch_python_call. `-m` itself is
+# not used: it puts the caller's directory ahead of PYTHONPATH and the standard
+# library, so a json.py or orch.py there would shadow the package or its
+# imports, and Python 3.9 has no -P to stop it. With no python3 on PATH it
+# fails exit 1 even for a verb that reserves 1 for a "no" (the carve-out in
+# coding-standards rule 2); the package's entry point checks the version
+# itself. In exec mode it replaces this process running `<noun> [<arg>...]`; in
+# call mode it runs a child process passing `--call <noun> <func> [<arg>...]`
+# so bash callers receive stdout, stderr and the exit code.
+orch_python_run() {
+  local mode="$1" noun="${2:-}"
+  shift
+  if ! command -v python3 >/dev/null 2>&1; then
+    local msg="orch.sh $noun needs python3 3.9 or newer (found none) - run orch.sh doctor"
+    if [ "$mode" = exec ]; then die "$msg"; fi
+    warn "$msg"
+    return 1
+  fi
+  local given="${PYTHONPATH+=$PYTHONPATH}"
+  local py_path="$ORCH_PLUGIN/scripts/orch_py${PYTHONPATH:+:$PYTHONPATH}"
+  if [ "$mode" = exec ]; then
+    PYTHONPATH="$py_path" exec python3 -c "$ORCH_PYTHON_BOOTSTRAP" "$given" "$@"
+  fi
+  PYTHONPATH="$py_path" python3 -c "$ORCH_PYTHON_BOOTSTRAP" "$given" --call "$@"
+}
+
+# orch_python <noun> [<arg>...]: runs a noun converted to Python (ADR-0067) in
+# place of this process, so stdin, stdout, stderr and exit code are its own.
+orch_python() { orch_python_run exec "$@"; }
+
+# orch_python_call <noun> <func> [<arg>...]: runs a named function of a
+# converted noun in a child Python process, routed through orch.__main__.
+orch_python_call() {
+  [ $# -ge 2 ] || { warn "usage: orch_python_call <noun> <func> [<arg>...]"; return 1; }
+  orch_python_run call "$@"
 }
 
 main() {
