@@ -1692,22 +1692,40 @@ agent_start_files() {
   find "$1/agents" "$1/docs" -name '*.md' -type f 2>/dev/null | sort
   return 0
 }
+# agent_name_shapes_read: prints AGENT_NAME_SHAPES from the Python agent module
+# as ordered `role<TAB>glob<TAB>ere` lines, dropping the empty sys.path[0] so a
+# shadowing orch.py in cwd cannot hijack the import.
+agent_name_shapes_read() {
+  PYTHONPATH="$PLUGIN_ROOT/scripts/orch_py" python3 -c '
+import sys
+if sys.path and sys.path[0] == "":
+    del sys.path[0]
+from orch.agent import name_shapes
+sys.exit(name_shapes())
+' </dev/null 2>/dev/null
+}
 # scan_agent_settings <plugin root>: one line per role a start site starts
-# without reading its setting. The agent name shapes come from orch.sh's agent
+# without reading its setting. The agent name shapes come from the Python agent
 # module, read from the real plugin root (a scanned fixture carries no agent
-# module) and sourced once.
+# module) in one upfront call.
 scan_agent_settings() {
-  local r="$1" f text ctx name roles role pattern shape
-  local -a files
-  # shellcheck source=/dev/null
-  if ! source "$PLUGIN_ROOT/scripts/orch/agent.sh" 2>/dev/null || [ -z "${AGENT_NAME_SHAPES:-}" ]; then
-    echo "scripts/orch/agent.sh: no AGENT_NAME_SHAPES read"
+  local r="$1" f text ctx name roles role ere pattern shapes_out i
+  local -a files shape_roles=() shape_eres=()
+  if ! shapes_out="$(agent_name_shapes_read)" || [ -z "$shapes_out" ]; then
+    echo "scripts/orch_py/orch/agent.py: no AGENT_NAME_SHAPES read"
     return 0
   fi
   pattern=""
-  while IFS= read -r shape; do
-    pattern+="${pattern:+|}$(agent_shape_ere "${shape#*:}")"
-  done < <(agent_name_shapes)
+  while IFS=$'\t' read -r role _ ere; do
+    [ -n "$role" ] && [ -n "$ere" ] || continue
+    shape_roles+=("$role")
+    shape_eres+=("$ere")
+    pattern+="${pattern:+|}$ere"
+  done <<<"$shapes_out"
+  if [ "${#shape_roles[@]}" -eq 0 ]; then
+    echo "scripts/orch_py/orch/agent.py: no AGENT_NAME_SHAPES read"
+    return 0
+  fi
   pattern="($pattern)"
   mapfile -t files < <(agent_start_files "$r")
   for f in "${files[@]}"; do
@@ -1724,7 +1742,13 @@ scan_agent_settings() {
       # read, not an agent to start.
       while IFS= read -r name; do
         case "$name" in /* | *.md | '') continue ;; esac
-        role="$(agent_role_of "$name")"
+        role=""
+        for ((i = 0; i < ${#shape_roles[@]}; i++)); do
+          if [[ "$name" =~ ^${shape_eres[$i]}$ ]]; then
+            role="${shape_roles[$i]}"
+            break
+          fi
+        done
         [ -n "$role" ] && roles+=" $role"
       done < <(grep -oE "/?\\b$pattern\\b(\\.md)?" <<<"$text")
     fi
@@ -1816,18 +1840,21 @@ flags "an unrelated sibling reference file cannot satisfy agent get for another 
   "skills/sib-iso/phase-implement.md: starts an agent of the implementer role but does not name agent get implementer"
 # A start site generated from AGENT_NAME_SHAPES, one name per shape with each *
 # as x, so a role or shape added there is covered with no edit here.
-mapfile -t shapes_read < <(source "$PLUGIN_ROOT/scripts/orch/agent.sh" && agent_name_shapes)
+mapfile -t shapes_read < <(agent_name_shapes_read)
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/a"
 {
   printf 'Start under the `orchestrator:` plugin scope:'
-  for shape in "${shapes_read[@]}"; do printf ' `%s`' "${shape#*:}" | sed 's/\*/x/g'; done
+  for shape in "${shapes_read[@]}"; do
+    IFS=$'\t' read -r _ shape_glob _ <<<"$shape"
+    printf ' `%s`' "${shape_glob//\*/x}"
+  done
   printf '.\n'
 } >"$fixture/skills/a/SKILL.md"
 out="$(scan_agent_settings "$fixture")"
 for shape in "${shapes_read[@]}"; do
-  role="${shape%%:*}"
-  flags "a start site naming ${shape#*:} without agent get $role is flagged" \
+  IFS=$'\t' read -r role shape_glob _ <<<"$shape"
+  flags "a start site naming $shape_glob without agent get $role is flagged" \
     "$out" "skills/a/SKILL.md: starts an agent of the $role role but does not name agent get $role"
 done
 fixture="$(new_fixture)"
@@ -1836,12 +1863,30 @@ printf 'Start `orch-auditor` under the `orchestrator:` plugin scope.\n' >"$fixtu
 spares "an orch- name matching no shape has no role" \
   "$(scan_agent_settings "$fixture")" 'starts an agent of the'
 flags "a plugin root with no agent module is flagged" \
-  "$( (PLUGIN_ROOT="$(new_fixture)"; scan_agent_settings "$fixture") )" "scripts/orch/agent.sh: no AGENT_NAME_SHAPES read"
+  "$( (PLUGIN_ROOT="$(new_fixture)"; scan_agent_settings "$fixture") )" "scripts/orch_py/orch/agent.py: no AGENT_NAME_SHAPES read"
 noshapes="$(new_fixture)"
-mkdir -p "$noshapes/scripts/orch"
-printf 'AGENT_ROLES="x"\n' >"$noshapes/scripts/orch/agent.sh"
-flags "an agent module that sets no shapes is flagged" \
-  "$( (PLUGIN_ROOT="$noshapes"; scan_agent_settings "$fixture") )" "scripts/orch/agent.sh: no AGENT_NAME_SHAPES read"
+mkdir -p "$noshapes/scripts/orch_py/orch"
+: >"$noshapes/scripts/orch_py/orch/__init__.py"
+printf 'def name_shapes():\n    return 0\n' >"$noshapes/scripts/orch_py/orch/agent.py"
+flags "an agent module that emits no shapes is flagged" \
+  "$( (PLUGIN_ROOT="$noshapes"; scan_agent_settings "$fixture") )" "scripts/orch_py/orch/agent.py: no AGENT_NAME_SHAPES read"
+as_multi="$(new_fixture)"
+mkdir -p "$as_multi/skills/a" "$as_multi/skills/b"
+printf 'Start `orch-reviewer-spec` and `orch-fixer` under the `orchestrator:` plugin scope.\n' >"$as_multi/skills/a/SKILL.md"
+printf 'Start `orch-code-auditor` and `orch-lens-domain` under the `orchestrator:` plugin scope.\n' >"$as_multi/skills/b/SKILL.md"
+as_py="$(TMPDIR="$FIXTURES" counting_bin python3)"
+out="$(PATH="$as_py:$PATH" scan_agent_settings "$as_multi")"
+assert_eq "scan_agent_settings makes exactly one upfront python3 call" \
+  "$(counting_starts "$as_py" python3)" "1"
+flags "the single-spawn run still flags matched roles" \
+  "$out" "skills/a/SKILL.md: starts an agent of the reviewer role but does not name agent get reviewer"
+as_shadow="$(new_fixture)"
+printf 'raise SystemExit("shadowed")\n' >"$as_shadow/orch.py"
+out="$( (cd "$as_shadow" && scan_agent_settings "$as_multi") )"
+flags "a shadowing orch.py in cwd does not hijack scan_agent_settings" \
+  "$out" "skills/a/SKILL.md: starts an agent of the reviewer role but does not name agent get reviewer"
+spares "a shadowing orch.py in cwd produces no missing-shapes diagnostic" \
+  "$out" 'no AGENT_NAME_SHAPES read'
 check "every start site points at Agent settings and reads each role it starts" \
   "$(scan_agent_settings "$PLUGIN_ROOT")"
 

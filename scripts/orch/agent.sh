@@ -565,22 +565,6 @@ agent_junie_unrecognized() {
   done < <(sed -n "s/.*Unrecognized 'model' value '\\([^']*\\)'.*/\\1/p" "$log" 2>/dev/null | awk '!seen[$0]++')
 }
 
-# check_agent_settings: doctor's agent settings check, named in its env check
-# list and reporting through its reporter trio. One ok line per role, in role
-# order, with its effective model and effort and their sources - a disallowed
-# effective value marked invalid, as agent show marks it. Each key is also read
-# at local and at global scope on its own, so a disallowed value is a FAIL, on
-# top of that listing, even where a local value hides it: it would still stop
-# a skill in every repo without that local value. The remedy clears that key
-# at that scope.
-check_agent_settings() {
-  check_agent_settings_host claude
-  agent_junie_session
-  agent_junie_unrecognized
-  check_junie_agent_settings
-  return 0
-}
-
 # check_agent_settings_host <host>: one ok line per role, with its effective
 # model and effort for <host> and their sources - a disallowed effective value
 # marked invalid - then a FAIL for each disallowed stored value, read at each

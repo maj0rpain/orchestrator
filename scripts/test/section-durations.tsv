@@ -41,7 +41,7 @@
 64	70	agent	0d79b59e4f3295e93a9ede1bda22fbbc139f7e19
 20	22	agent sync	b39ad35449afd2ba48dfe47fd1a68a53a2d8c22b
 3	4	agent copy marker and Junie field: no command per call	7261e94ea71b44582780d728312d592266f2e005
-17	14	autopilot	8bbc695acc905fd728a0df90ca62f731d151c603
+26	22	autopilot	ee339a6ab6e61a608418f09549611e3a1dc70f99
 23	20	autopilot rounds, budget and start	caf04385b557073d7f29edf5186b0114e5a0aa25
 31	27	autopilot ask and answer	893f3e7fffec4cc1cca429a022e66c605cec9b39
 29	26	autopilot reenter	e5af5b151f62e979831aea7c680f62058419ab45
@@ -117,9 +117,9 @@
 7	9	capture, capture_err and file_read	15f31dc392fbcce33a8210b2b13e103e6a539901
 0	1	die_hinted and die_opt_check	a31d5ea9ef99f315cf022f51ad5894482feffb9e
 3	4	host detection (host.sh, #281)	ee3476064ac5700e62e72b8ebcbeeeb98af6e70a
-5	6	doctor.sh is a one-way dependency (#281)	b86ca6ac46faa586b4d718a1aa26e9018e2539ea
+0	13	doctor.sh is a one-way dependency (#281)	13c113bacf7c474adb9e287589539788975b51de
 201	219	doctor	9d2d2d59740f1be906e1c255723925b28a5134f8
-7	10	doctor: python3 check (#3912)	94a9d42f7c56e2c5c7e10b58becce6663ae6e07e
+10	9	doctor: python3 check (#3912)	ca9f64503947e0ab879ca9c1dbb42ee19a19fad9
 79	68	doctor: host (#128)	630c2c609f2e1674c6746fa454a5175e669b6357
 94	102	doctor --flow	8d28021dd7fd5c64f62d12573dc1792e590cfa6d
 40	44	doctor --env: finished side checkouts (#727)	8d56eb5df3a1cea24b7c1e0173d431eb1a742f7b
@@ -131,8 +131,8 @@
 25	28	doctor: review draft check	8110e2a93d9df6cabfb904bc4eabd18576c756f1
 20	22	doctor: phase-listed flow checks	a0edc3b373a45de7e5f369a1975629a7d99b37a3
 11	13	doctor: base branch check	1552a8cbda5331cd8f73db7e27d1e7361ecde286
-9	11	doctor: agent settings check (#1358)	b648ff23c80cb03c31f597e4a99c84fbfac07cf4
-28	32	doctor: Junie session and log (#1449)	b852e2465d7e45f58704d21f310b80a3f7ebcb7b
+42	35	doctor: agent settings check (#1358)	f02c03f6c5653313ce7ebdd9c5962f3b7ffd17af
+49	42	doctor: Junie session and log (#1449)	d6e090e840bf5948148606a74151a2d311d85c27
 19	22	doctor: Junie agent settings check (#1448)	4f3a5171f61efb62e2a9e477ac0cfe4827e1b8e7
 40	31	doctor: autopilot phase label and claims (#1457)	69f776c54d8a5eb795415bc4ece7f7d994514165
 17	13	doctor: autopilot side-checkout flows	54d9e4367b18a9844022ac993cc49397bc0c7a22
@@ -305,7 +305,7 @@
 43	35	trust module	dd0183ac4380b097c6b51f9e75c4a3038ab514c5
 89	19	wait: a call's block is wall time	90d20fdb4b55a5964e512640526d36f24c6b6f96
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594
-373	248	docs_lint.sh	83592c17136c05d3d895a32cb6fd9e9a74c598eb
+342	233	docs_lint.sh	02acd7128b9260d27ced271f83bf61585febd357
 40	30	version_bump_test.sh	13c6acda626586d9df9be1d51a465dd889fdc723
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 17	17	autopilot_up_test.sh	e83bb3b5d6213ab54507233be7cc6e624358622c
