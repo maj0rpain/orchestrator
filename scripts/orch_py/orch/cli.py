@@ -79,6 +79,12 @@ def _route(argv: List[str]) -> int:
     return run(argv)
 
 
+def _agent(argv: List[str]) -> int:
+    from orch.agent import run
+
+    return run(argv)
+
+
 # The converted nouns: each takes the arguments after the noun and returns its
 # exit code.
 NOUNS: Dict[str, Callable[[List[str]], int]] = {
@@ -93,6 +99,7 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "glossary": _glossary,
     "parallel": _parallel,
     "route": _route,
+    "agent": _agent,
 }
 
 
