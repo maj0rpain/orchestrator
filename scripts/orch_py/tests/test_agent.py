@@ -4,7 +4,9 @@ verbs (set, show, clear, get, sync, roles), partial-mutation order on errors,
 shared agent_sync_plan, and .junie/agents/ copy-sync."""
 from __future__ import annotations
 
+import io
 import os
+import sys
 
 import pytest
 
@@ -291,6 +293,19 @@ def test_show_lists_all_roles_for_claude_then_junie_marking_invalid_values(root,
 
     assert orch_agent(git, "show", "extra") == 1
     assert capsys.readouterr() == ("", "orch: usage: orch.sh agent show\n")
+
+
+def test_show_prints_non_utf8_config_bytes_verbatim(root, monkeypatch):
+    git = FakeGit(
+        toplevel=str(root),
+        local_config={"orchestrator.model.fixer": "bad\udcffval"},
+    )
+    out = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
+    monkeypatch.setattr(sys, "stdout", out)
+
+    assert orch_agent(git, "show") == 0
+    out.flush()
+    assert b"fixer model bad\xffval (local, invalid) effort inherit (inherit)\n" in out.buffer.getvalue()
 
 
 def test_config_cache_loads_each_scope_once_per_run(root, capsys):

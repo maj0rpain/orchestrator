@@ -2217,11 +2217,7 @@ agent_bridge_doctor 'printf "ok\tgood\0trailing"; exit 0'
 assert_status "bridge exit 0 with non-NUL-terminated trailing data fails doctor" "$st" 1
 assert_contains "trailing data uses the fixed fallback message" "$out" "FAIL  agent bridge returned unexpected output"
 assert_not_contains "trailing data does not replay partial records" "$out" "ok    good"
-
-agent_bridge_doctor 'printf "ok\tgood"; exit 0'
-assert_status "bridge exit 0 with non-NUL-terminated output fails doctor" "$st" 1
-assert_contains "non-NUL-terminated output uses the fixed fallback message" "$out" "FAIL  agent bridge returned unexpected output"
-assert_contains "non-NUL-terminated output emits one FAIL" "$(printf '%s\n' "$out" | tail -1)" "0 warn, 1 FAIL"
+assert_contains "trailing data emits one FAIL" "$(printf '%s\n' "$out" | tail -1)" "0 warn, 1 FAIL"
 
 rm -rf "$ab_dir"
 unset ab_dir

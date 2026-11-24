@@ -275,7 +275,7 @@ def _show(args: List[str], cache: ConfigCache) -> int:
     for host, spec in HOST_SPECS.items():
         for role in AGENT_ROLES:
             lines.append("%s%s %s\n" % (spec.line_prefix, role, agent_role_values(cache, host, role, "")))
-    sys.stdout.write("".join(lines))
+    stdout_write("".join(lines))
     return 0
 
 

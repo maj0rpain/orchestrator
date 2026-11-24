@@ -673,8 +673,8 @@ def test_config_regexp_matches_bash_cache_semantics_for_spaces_valueless_multili
     assert fake.config_regexp("local", r"^orchestrator\.") == want
 
 
-def test_config_regexp_rejects_invalid_scope(config_env):
-    _, _, real = config_env
+def test_config_regexp_rejects_invalid_scope():
+    real = Git()
     fake = FakeGit()
 
     with pytest.raises(ValueError, match="scope"):
@@ -781,8 +781,8 @@ def test_fake_git_can_fail_a_single_scoped_key_write():
     }
 
 
-def test_config_set_and_unset_reject_invalid_scope(config_env):
-    _, _, real = config_env
+def test_config_set_and_unset_reject_invalid_scope():
+    real = Git()
     fake = FakeGit()
 
     for git in (real, fake):

@@ -9,7 +9,10 @@ line histories finding triage's scan, Lines fate and the default-branch
 lookup read, the working-tree state, object names, config value and main
 checkout the verification noun reads, the common directory the git exclude
 writer (orch.common) appends under, the current branch a review pass
-starts on, and the push the gh adapter's claim delete makes. There is no generic run: each later noun adds the operations it
+starts on, the push the gh adapter's claim delete makes, and the scoped git
+config reads, writes and unsets (`config_regexp`, `config_set`,
+`config_unset`) the agent noun uses. There is no generic run: each later
+noun adds the operations it
 needs, each with a test run against a real repository and against FakeGit,
 asserting the same answers. The scan's, Lines fate's and the lookup's
 operations run at the checkout's top level, and answer their "could not"

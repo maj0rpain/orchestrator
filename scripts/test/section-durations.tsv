@@ -128,7 +128,7 @@
 25	28	doctor: review draft check	8110e2a93d9df6cabfb904bc4eabd18576c756f1
 20	22	doctor: phase-listed flow checks	a0edc3b373a45de7e5f369a1975629a7d99b37a3
 11	13	doctor: base branch check	1552a8cbda5331cd8f73db7e27d1e7361ecde286
-42	35	doctor: agent settings check (#1358)	f02c03f6c5653313ce7ebdd9c5962f3b7ffd17af
+26	29	doctor: agent settings check (#1358)	be48745a591285bd5551bf7ddea9940182989f62
 49	42	doctor: Junie session and log (#1449)	d6e090e840bf5948148606a74151a2d311d85c27
 19	22	doctor: Junie agent settings check (#1448)	4f3a5171f61efb62e2a9e477ac0cfe4827e1b8e7
 40	31	doctor: autopilot phase label and claims (#1457)	69f776c54d8a5eb795415bc4ece7f7d994514165
