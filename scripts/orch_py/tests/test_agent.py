@@ -1080,3 +1080,565 @@ def test_default_plugin_root_resolves_symlinked_install(tmp_path):
     )
     assert (proc.returncode, proc.stderr) == (0, "")
     assert Path(proc.stdout.strip()) == real_root
+
+
+# --- bridges: docs linter, autopilot, and doctor ------------------------------
+
+
+def test_name_shapes_emits_ordered_role_glob_ere_lines_and_covers_all_roles(root, capsys):
+    assert agent.name_shapes() == 0
+    out, err = capsys.readouterr()
+    assert err == ""
+    assert out == (
+        "implementer\torch-implementer\torch-implementer\n"
+        "lens\torch-lens-*\torch-lens-[a-z]+\n"
+        "reviewer\torch-reviewer-*\torch-reviewer-[a-z]+\n"
+        "fixer\torch-fixer\torch-fixer\n"
+        "closer\torch-closer\torch-closer\n"
+        "resolver\torch-resolver\torch-resolver\n"
+        "auditor\torch-*-auditor\torch-[a-z]+-auditor\n"
+    )
+    rows = [line.split("\t") for line in out.splitlines()]
+    assert [role for role, _, _ in rows] == list(agent.AGENT_ROLES)
+    assert [(role, glob) for role, glob, _ in rows] == list(agent.AGENT_NAME_SHAPES)
+
+    # Dispatches via orch_python_call (cli.call_func) and refuses extra args.
+    assert cli.call_func(["agent", "name_shapes"]) == 0
+    assert capsys.readouterr() == (out, "")
+    assert died_of(capsys, lambda: cli.call_func(["agent", "name_shapes", "extra"])) == (
+        1, "", "orch: usage: orch_python_call agent name_shapes\n"
+    )
+
+    # Stays off the public CLI verb surface.
+    git = FakeGit(toplevel=str(root))
+    assert orch_agent(git, "name_shapes") == 1
+    assert capsys.readouterr() == (
+        "", "orch: unknown agent op: name_shapes (want set|show|clear|get|sync|roles)\n"
+    )
+
+
+def test_validate_autopilot_checks_claude_model_and_effort_and_preserves_error_message(
+    root, capsys
+):
+    for model in ("sonnet", "opus", "haiku", "fable", "inherit"):
+        assert cli.call_func(["agent", "validate_autopilot", "model", model]) == 0
+        assert capsys.readouterr() == ("", "")
+
+    for effort in ("low", "medium", "high", "xhigh", "max", "inherit"):
+        assert cli.call_func(["agent", "validate_autopilot", "effort", effort]) == 0
+        assert capsys.readouterr() == ("", "")
+
+    for bad_model in ("gpt", "Opus", "opus haiku", "", "opus\nsonnet"):
+        assert died_of(
+            capsys, lambda v=bad_model: cli.call_func(["agent", "validate_autopilot", "model", v])
+        ) == (
+            1, "",
+            "orch: orchestrator.autopilot.model is %s - not an allowed model"
+            " (want sonnet|opus|haiku|fable|inherit)\n" % bad_model,
+        )
+
+    for bad_effort in ("extreme", "High", ""):
+        assert died_of(
+            capsys, lambda v=bad_effort: cli.call_func(["agent", "validate_autopilot", "effort", v])
+        ) == (
+            1, "",
+            "orch: orchestrator.autopilot.effort is %s - not an allowed effort"
+            " (want low|medium|high|xhigh|max|inherit)\n" % bad_effort,
+        )
+
+    # Explicit third argument overrides the key named in the error message.
+    assert died_of(
+        capsys,
+        lambda: cli.call_func(["agent", "validate_autopilot", "model", "gpt", "custom.key"]),
+    ) == (
+        1, "",
+        "orch: custom.key is gpt - not an allowed model"
+        " (want sonnet|opus|haiku|fable|inherit)\n",
+    )
+
+    # Usage refusals for wrong arity or unknown setting kind.
+    for bad_args in ([], ["model"], ["bogus", "opus"], ["model", "opus", "k", "extra"]):
+        assert died_of(
+            capsys, lambda a=bad_args: agent.validate_autopilot(a)
+        ) == (
+            1, "",
+            "orch: usage: orch_python_call agent validate_autopilot <model|effort> <value> [<key>]\n",
+        )
+
+    # Stays off the public CLI verb surface.
+    git = FakeGit(toplevel=str(root))
+    assert orch_agent(git, "validate_autopilot") == 1
+    assert capsys.readouterr() == (
+        "", "orch: unknown agent op: validate_autopilot (want set|show|clear|get|sync|roles)\n"
+    )
+
+
+def doctor_records(capsys, git, home, plugin_root):
+    """Runs agent.check_settings in-process and parses NUL-delimited
+    `<kind>\\t<message>\\0` records, asserting clean exit 0 and empty stderr."""
+    code = agent.check_settings(
+        [],
+        git=git,
+        env={"HOME": str(home)},
+        plugin_root=str(plugin_root),
+    )
+    out, err = capsys.readouterr()
+    assert (code, err) == (0, "")
+    assert out.endswith("\0")
+    records = []
+    for raw in out[:-1].split("\0"):
+        kind, sep, msg = raw.partition("\t")
+        assert sep == "\t"
+        assert kind in ("ok", "warn", "fail", "remedy")
+        records.append((kind, msg))
+    return records
+
+
+def test_check_settings_emits_nul_records_for_host_settings_per_scope_validation_and_multiline_values(
+    root, tmp_path, capsys, monkeypatch
+):
+    home = tmp_path / "home"
+    home.mkdir()
+    empty_plugin = tmp_path / "no-agents"
+    git = FakeGit(
+        toplevel=str(root),
+        local_config=[
+            ("orchestrator.effort.implementer", "high"),
+            ("orchestrator.model.fixer", "gpt"),
+            ("orchestrator.effort.closer", "low"),
+            ("orchestrator.model.resolver", "opus\nsonnet"),
+            ("orchestrator.effort.auditor", None),
+            ("orchestrator.junie.effort.implementer", "high"),
+            ("orchestrator.junie.model.fixer", "my model"),
+            ("orchestrator.junie.effort.closer", "low"),
+        ],
+        global_config={
+            "orchestrator.model.reviewer": "haiku",
+            "orchestrator.effort.closer": "huge",
+            "orchestrator.junie.model.reviewer": "gpt-5",
+            "orchestrator.junie.effort.closer": "huge",
+        },
+    )
+
+    records = doctor_records(capsys, git, home, empty_plugin)
+
+    assert ("ok", "agent implementer: model inherit (inherit), effort high (local)") in records
+    assert ("ok", "agent reviewer: model haiku (global), effort inherit (inherit)") in records
+    assert ("ok", "agent fixer: model gpt (local, invalid), effort inherit (inherit)") in records
+    assert (
+        "fail",
+        "orchestrator.model.fixer is gpt (local) - not an allowed model"
+        " (want sonnet|opus|haiku|fable|inherit)",
+    ) in records
+    assert ("remedy", "orch.sh agent clear fixer --model") in records
+
+    # Hidden global invalid value still fails even when local overrides it cleanly.
+    assert ("ok", "agent closer: model inherit (inherit), effort low (local)") in records
+    assert (
+        "fail",
+        "orchestrator.effort.closer is huge (global) - not an allowed effort"
+        " (want low|medium|high|xhigh|max|inherit)",
+    ) in records
+    assert ("remedy", "orch.sh agent clear closer --effort --global") in records
+
+    # Multi-line git config value preserves internal newlines losslessly in NUL records.
+    assert (
+        "ok",
+        "agent resolver: model opus\nsonnet (local, invalid), effort inherit (inherit)",
+    ) in records
+    assert (
+        "fail",
+        "orchestrator.model.resolver is opus\nsonnet (local) - not an allowed model"
+        " (want sonnet|opus|haiku|fable|inherit)",
+    ) in records
+    assert ("remedy", "orch.sh agent clear resolver --model") in records
+
+    # Valueless config key reports empty value cleanly.
+    assert ("ok", "agent auditor: model inherit (inherit), effort  (local, invalid)") in records
+    assert (
+        "fail",
+        "orchestrator.effort.auditor is  (local) - not an allowed effort"
+        " (want low|medium|high|xhigh|max|inherit)",
+    ) in records
+
+    # Junie settings listing and per-scope validation with exact remedies.
+    assert ("ok", "agent junie implementer: model inherit (inherit), effort high (local)") in records
+    assert ("ok", "agent junie reviewer: model gpt-5 (global), effort inherit (inherit)") in records
+    assert ("ok", "agent junie auditor: model inherit (inherit), effort inherit (inherit)") in records
+    assert (
+        "fail",
+        "orchestrator.junie.model.fixer is my model (local) - not an allowed model"
+        " (want inherit or a name matching [A-Za-z0-9._:/-]+"
+        " - use the names Junie's /model picker and --model flag take;"
+        " aliases resolve unpredictably)",
+    ) in records
+    assert ("remedy", "orch.sh agent clear fixer --host junie --model") in records
+    assert (
+        "fail",
+        "orchestrator.junie.effort.closer is huge (global) - not an allowed effort"
+        " (want low|medium|high|inherit)",
+    ) in records
+    assert ("remedy", "orch.sh agent clear closer --host junie --effort --global") in records
+
+    # Dispatches via cli.call_func, refuses extra args, refuses outside checkout,
+    # and stays off the public CLI verb surface.
+    monkeypatch.setattr(agent, "Git", lambda: FakeGit(toplevel=str(root)))
+    monkeypatch.setenv("HOME", str(home))
+    assert cli.call_func(["agent", "check_settings"]) == 0
+    out, err = capsys.readouterr()
+    assert err == "" and out.endswith("\0")
+
+    assert died_of(capsys, lambda: cli.call_func(["agent", "check_settings", "extra"])) == (
+        1, "", "orch: usage: orch_python_call agent check_settings\n"
+    )
+    code, out, err = died_of(
+        capsys, lambda: agent.check_settings([], git=FakeGit(toplevel=None), env={})
+    )
+    assert (code, out) == (1, "") and err.startswith("orch: not inside a git repository")
+
+    assert orch_agent(git, "check_settings") == 1
+    assert capsys.readouterr() == (
+        "", "orch: unknown agent op: check_settings (want set|show|clear|get|sync|roles)\n"
+    )
+
+
+def write_junie_index(home, entries):
+    """Writes <entries> (dicts or raw strings) to <home>/.junie/sessions/index.jsonl."""
+    import json
+
+    sessions = home / ".junie" / "sessions"
+    sessions.mkdir(parents=True, exist_ok=True)
+    lines = [
+        entry if isinstance(entry, str) else json.dumps(entry)
+        for entry in entries
+    ]
+    (sessions / "index.jsonl").write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+
+
+def write_junie_log(home, filename, text, mtime=None):
+    """Writes <text> to <home>/.junie/logs/<filename> with optional mtime."""
+    logs = home / ".junie" / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    path = logs / filename
+    path.write_text(text, encoding="utf-8")
+    if mtime is not None:
+        os.utime(path, (mtime, mtime))
+    return path
+
+
+def test_check_settings_junie_session_reports_dated_matches_mismatches_and_cannot_tell_without_jq(
+    root, tmp_path, capsys, monkeypatch
+):
+    # Empty PATH proves stdlib json / pure Python parsing with zero jq or external tools.
+    monkeypatch.setenv("PATH", "")
+    empty_plugin = tmp_path / "no-agents"
+    home = tmp_path / "home"
+    home.mkdir()
+
+    write_junie_index(home, [
+        {"sessionId": "new", "projectDir": str(root), "createdAt": "1", "updatedAt": "20"},
+        {"sessionId": "old", "projectDir": str(root), "createdAt": "1", "updatedAt": "10"},
+    ])
+    write_junie_log(
+        home, "log-a.log",
+        "session old\n"
+        "x INFO Executing agent custom_agent_orch-reviewer-spec_1 with parameters"
+        " AgentParams(model=gpt-4, effort=null, reasoningEffort=low)\n",
+        mtime=100,
+    )
+    write_junie_log(
+        home, "log-b-old.log",
+        "session new\n"
+        "x INFO Executing agent custom_agent_orch-reviewer-spec_1 with parameters"
+        " AgentParams(model=old-log-model, effort=null, reasoningEffort=low)\n",
+        mtime=100,
+    )
+    write_junie_log(
+        home, "log-b.log",
+        "session new\n"
+        "x INFO Executing agent custom_agent_orch-reviewer-spec_1 with parameters"
+        " AgentParams(model=gpt-5-2025-08-07, xmodel=ignored, effort=null, reasoningEffort=high)\n"
+        "x INFO Executing agent custom_agent_orch-fixer_1 with parameters"
+        " AgentParams(model=claude-opus-5-5, effort=medium, reasoningEffort=null)\n"
+        "x INFO Executing agent custom_agent_orch-fixer_2 with parameters"
+        " AgentParams(model=claude-opus-5-5, effort=low, reasoningEffort=null)\n"
+        "x INFO Executing agent custom_agent_orch-autopilot-planner_1 with parameters"
+        " AgentParams(model=gpt-5, effort=null, reasoningEffort=null)\n",
+        mtime=200,
+    )
+    git = FakeGit(
+        toplevel=str(root),
+        local_config={
+            "orchestrator.junie.model.reviewer": "gpt-5",
+            "orchestrator.junie.effort.reviewer": "high",
+        },
+    )
+
+    records = doctor_records(capsys, git, home, empty_plugin)
+    claude_auditor_idx = records.index(
+        ("ok", "agent auditor: model inherit (inherit), effort inherit (inherit)")
+    )
+    junie_impl_idx = records.index(
+        ("ok", "agent junie implementer: model inherit (inherit), effort inherit (inherit)")
+    )
+    session_records = records[claude_auditor_idx + 1:junie_impl_idx]
+    assert session_records == [
+        ("ok", "junie orch-reviewer-spec ran model gpt-5-2025-08-07, effort high (set model gpt-5, effort high)"),
+        ("ok", "junie orch-fixer ran model claude-opus-5-5, effort low (set model inherit, effort inherit)"),
+        ("ok", "junie orch-autopilot-planner ran model gpt-5, effort inherited (set model inherit, effort inherit)"),
+    ]
+
+    # Model or effort mismatch (including prefix without '-' like gpt-50 vs gpt-5) warns.
+    git_mismatch = FakeGit(
+        toplevel=str(root),
+        local_config={
+            "orchestrator.junie.model.reviewer": "gpt-4",
+            "orchestrator.junie.effort.reviewer": "low",
+        },
+    )
+    records = doctor_records(capsys, git_mismatch, home, empty_plugin)
+    assert (
+        "warn",
+        "junie orch-reviewer-spec ran model gpt-5-2025-08-07, effort high (set model gpt-4, effort low)",
+    ) in records
+
+    git_prefix_mismatch = FakeGit(
+        toplevel=str(root),
+        local_config={
+            "orchestrator.junie.model.reviewer": "gpt",
+            "orchestrator.junie.effort.reviewer": "high",
+        },
+    )
+    # "gpt" matches "gpt-5-2025-08-07" (followed by '-'), whereas "gpt-5-2" does NOT.
+    assert (
+        "ok",
+        "junie orch-reviewer-spec ran model gpt-5-2025-08-07, effort high (set model gpt, effort high)",
+    ) in doctor_records(capsys, git_prefix_mismatch, home, empty_plugin)
+
+    git_non_dash_prefix = FakeGit(
+        toplevel=str(root),
+        local_config={
+            "orchestrator.junie.model.reviewer": "gpt-5-202",
+            "orchestrator.junie.effort.reviewer": "high",
+        },
+    )
+    assert (
+        "warn",
+        "junie orch-reviewer-spec ran model gpt-5-2025-08-07, effort high (set model gpt-5-202, effort high)",
+    ) in doctor_records(capsys, git_non_dash_prefix, home, empty_plugin)
+
+    # All cannot-tell reasons stay ok (never fail), with no jq-not-installed branch.
+    clean_git = FakeGit(toplevel=str(root))
+
+    h_missing = tmp_path / "h_missing"
+    h_missing.mkdir()
+    assert ("ok", "junie session: cannot tell (no Junie session index)") in doctor_records(
+        capsys, clean_git, h_missing, empty_plugin
+    )
+
+    h_empty = tmp_path / "h_empty"
+    write_junie_index(h_empty, [])
+    assert ("ok", "junie session: cannot tell (no session for this checkout)") in doctor_records(
+        capsys, clean_git, h_empty, empty_plugin
+    )
+
+    h_other = tmp_path / "h_other"
+    write_junie_index(h_other, [{"sessionId": "s1", "projectDir": "/elsewhere", "updatedAt": "5"}])
+    assert ("ok", "junie session: cannot tell (no session for this checkout)") in doctor_records(
+        capsys, clean_git, h_other, empty_plugin
+    )
+
+    h_malformed = tmp_path / "h_malformed"
+    write_junie_index(h_malformed, ["not json"])
+    assert ("ok", "junie session: cannot tell (the session index does not parse)") in doctor_records(
+        capsys, clean_git, h_malformed, empty_plugin
+    )
+
+    h_nonobj = tmp_path / "h_nonobj"
+    write_junie_index(h_nonobj, ["123"])
+    assert ("ok", "junie session: cannot tell (the session index does not parse)") in doctor_records(
+        capsys, clean_git, h_nonobj, empty_plugin
+    )
+
+    h_nolog = tmp_path / "h_nolog"
+    write_junie_index(h_nolog, [{"sessionId": "lost", "projectDir": str(root), "updatedAt": "5"}])
+    assert ("ok", "junie session: cannot tell (no log names session lost)") in doctor_records(
+        capsys, clean_git, h_nolog, empty_plugin
+    )
+
+    h_noruns = tmp_path / "h_noruns"
+    write_junie_index(h_noruns, [{"sessionId": "g", "projectDir": str(root), "updatedAt": "5"}])
+    write_junie_log(h_noruns, "log-g.log", "g\ngarbage\n")
+    assert ("ok", "junie session: cannot tell (the log holds no agent runs)") in doctor_records(
+        capsys, clean_git, h_noruns, empty_plugin
+    )
+
+    # Unparseable run line (missing model=) aborts session report atomically (drops earlier valid agent).
+    h_badrun = tmp_path / "h_badrun"
+    write_junie_index(h_badrun, [{"sessionId": "b", "projectDir": str(root), "updatedAt": "5"}])
+    write_junie_log(
+        h_badrun, "log-b.log",
+        "b\n"
+        "INFO Executing agent custom_agent_orch-fixer_1 with parameters AgentParams(model=gpt-5, effort=low)\n"
+        "INFO Executing agent custom_agent_orch-closer_1 with parameters AgentParams(effort=low)\n",
+    )
+    badrun_records = doctor_records(capsys, clean_git, h_badrun, empty_plugin)
+    assert ("ok", "junie session: cannot tell (the log does not parse)") in badrun_records
+    assert not any("junie orch-fixer ran model" in msg for _, msg in badrun_records)
+
+
+def test_check_settings_junie_unrecognized_model_fails_with_allowed_names_and_remedy(
+    root, tmp_path, capsys
+):
+    empty_plugin = tmp_path / "no-agents"
+    home = tmp_path / "home"
+    home.mkdir()
+
+    # Older log has an unrecognized model; newer log does not -> no failure.
+    write_junie_log(
+        home, "log-old.log",
+        "WARN Unrecognized 'model' value 'old-model', falling back to default."
+        " Allowed LLM names: a, b\n",
+        mtime=100,
+    )
+    write_junie_log(home, "log-new.log", "nothing\n", mtime=200)
+    git_old = FakeGit(
+        toplevel=str(root), local_config={"orchestrator.junie.model.fixer": "old-model"}
+    )
+    records = doctor_records(capsys, git_old, home, empty_plugin)
+    assert not any("did not recognise" in msg for _, msg in records)
+
+    # Newest log has unrecognized values (including duplicate using last line's Allowed LLM names,
+    # and one without Allowed LLM names); runs even with no session index.
+    write_junie_log(
+        home, "log-new.log",
+        "WARN Unrecognized 'model' value 'bad-model', falling back to default."
+        " Allowed LLM names: stale-list\n"
+        "WARN Unrecognized 'model' value 'bad-model', falling back to default."
+        " Allowed display names: X. Allowed LLM names: gpt-5, claude-opus-5-5\n"
+        "WARN Unrecognized 'model' value 'plain-bad', falling back to default.\n",
+        mtime=200,
+    )
+
+    # Unset value gives no failure.
+    records = doctor_records(capsys, FakeGit(toplevel=str(root)), home, empty_plugin)
+    assert not any("did not recognise" in msg for _, msg in records)
+
+    # Local match fails with Allowed LLM names from last line + agent set remedy;
+    # global match fails with (global); hidden global match gives no failure;
+    # line without Allowed LLM names omits that remedy.
+    git = FakeGit(
+        toplevel=str(root),
+        local_config={
+            "orchestrator.junie.model.fixer": "bad-model",
+            "orchestrator.junie.model.closer": "good",
+            "orchestrator.junie.model.auditor": "plain-bad",
+        },
+        global_config={
+            "orchestrator.junie.model.lens": "bad-model",
+            "orchestrator.junie.model.closer": "bad-model",
+        },
+    )
+    records = doctor_records(capsys, git, home, empty_plugin)
+    session_idx = records.index(("ok", "junie session: cannot tell (no Junie session index)"))
+    junie_impl_idx = records.index(
+        ("ok", "agent junie implementer: model inherit (inherit), effort inherit (inherit)")
+    )
+    unrec_records = records[session_idx + 1:junie_impl_idx]
+    assert unrec_records == [
+        ("fail", "Junie did not recognise model bad-model, set for lens (global) - it fell back to the session model"),
+        ("remedy", "Allowed LLM names: gpt-5, claude-opus-5-5"),
+        ("remedy", "orch.sh agent set lens --host junie --model <id>"),
+        ("fail", "Junie did not recognise model bad-model, set for fixer (local) - it fell back to the session model"),
+        ("remedy", "Allowed LLM names: gpt-5, claude-opus-5-5"),
+        ("remedy", "orch.sh agent set fixer --host junie --model <id>"),
+        ("fail", "Junie did not recognise model plain-bad, set for auditor (local) - it fell back to the session model"),
+        ("remedy", "orch.sh agent set auditor --host junie --model <id>"),
+    ]
+
+
+def test_check_settings_junie_copy_drift_warns_via_shared_sync_plan(root, tmp_path, capsys):
+    plugin = fake_plugin(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    git, _ = git_with_exclude(
+        root,
+        local_config={"orchestrator.junie.effort.implementer": "high"},
+        global_config={"orchestrator.junie.model.reviewer": "gpt-5"},
+    )
+    copies_dir = root / ".junie" / "agents"
+
+    # 1. Missing copies warn with agent sync remedy after Junie role lines.
+    records = doctor_records(capsys, git, home, plugin)
+    junie_auditor_idx = records.index(
+        ("ok", "agent junie auditor: model inherit (inherit), effort inherit (inherit)")
+    )
+    assert records[junie_auditor_idx + 1:] == [
+        (
+            "warn",
+            "Junie agent copies in %s are not what agent sync would leave:"
+            " missing orch-implementer.md orch-reviewer-spec.md orch-reviewer-standards.md"
+            % copies_dir,
+        ),
+        ("remedy", "orch.sh agent sync"),
+    ]
+
+    # 2. Once agent sync runs, no drift warning is emitted.
+    assert orch_agent(git, "sync", plugin_root=str(plugin)) == 0
+    capsys.readouterr()
+    records = doctor_records(capsys, git, home, plugin)
+    assert not any("Junie agent copies" in msg for _, msg in records)
+
+    # 3. Hand edit triggers stale warning.
+    with open(copies_dir / "orch-implementer.md", "a", encoding="utf-8") as f:
+        f.write("# hand edit\n")
+    records = doctor_records(capsys, git, home, plugin)
+    assert (
+        "warn",
+        "Junie agent copies in %s are not what agent sync would leave: stale orch-implementer.md"
+        % copies_dir,
+    ) in records
+    assert ("remedy", "orch.sh agent sync") in records
+
+    # 4. Unsetting a role's config leaves an extra marked copy.
+    git.config_unset("local", "orchestrator.junie.effort.implementer")
+    records = doctor_records(capsys, git, home, plugin)
+    assert (
+        "warn",
+        "Junie agent copies in %s are not what agent sync would leave: extra orch-implementer.md"
+        % copies_dir,
+    ) in records
+    assert orch_agent(git, "sync", plugin_root=str(plugin)) == 0
+    capsys.readouterr()
+
+    # 5. Unmarked files in the way are named together.
+    (copies_dir / "orch-reviewer-spec.md").write_text("mine\n", encoding="utf-8")
+    (copies_dir / "orch-reviewer-standards.md").write_text("mine too\n", encoding="utf-8")
+    records = doctor_records(capsys, git, home, plugin)
+    assert (
+        "warn",
+        "Junie agent copies in %s are not what agent sync would leave:"
+        " orch-reviewer-spec.md orch-reviewer-standards.md carries no sync marker and is in the way"
+        % copies_dir,
+    ) in records
+
+    # 6. Combined missing, stale, extra, and refused drift formats in exact order.
+    git.config_set("local", "orchestrator.junie.model.closer", "gpt-5")
+    git.config_set("local", "orchestrator.junie.model.fixer", "gpt-5")
+    (copies_dir / "orch-fixer.md").write_text(
+        "---\n%s\nname: orch-fixer\n---\nstale\n" % agent.AGENT_COPY_MARKER, encoding="utf-8"
+    )
+    (copies_dir / "orch-gone.md").write_text(
+        "---\n%s\nname: orch-gone\n---\n" % agent.AGENT_COPY_MARKER, encoding="utf-8"
+    )
+    records = doctor_records(capsys, git, home, plugin)
+    assert (
+        "warn",
+        "Junie agent copies in %s are not what agent sync would leave:"
+        " missing orch-closer.md;"
+        " stale orch-fixer.md;"
+        " extra orch-gone.md;"
+        " orch-reviewer-spec.md orch-reviewer-standards.md carries no sync marker and is in the way"
+        % copies_dir,
+    ) in records
+    assert ("remedy", "orch.sh agent sync") in records

@@ -3,13 +3,14 @@ settings stored in git config, modeled per host through an immutable
 data-driven HostSpec table, plus .junie/agents/ copy-sync."""
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from orch.common import (
     die,
@@ -605,3 +606,355 @@ def run(
     if op == "clear":
         return _clear(argv[1:], cache, root, plugin_root)
     return _sync(argv[1:], cache, root, plugin_root)
+
+
+def name_shapes(args: Optional[List[str]] = None) -> int:
+    """Bridge for docs_lint.sh: prints AGENT_NAME_SHAPES in order as
+    `role<TAB>glob<TAB>ere` lines, pre-expanded via agent_shape_ere."""
+    if args:
+        die("usage: orch_python_call agent name_shapes")
+    sys.stdout.write(
+        "".join(
+            "%s\t%s\t%s\n" % (role, glob, agent_shape_ere(glob))
+            for role, glob in AGENT_NAME_SHAPES
+        )
+    )
+    return 0
+
+
+def validate_autopilot(args: List[str]) -> int:
+    """Bridge for autopilot.sh: validates a Claude Code model or effort value
+    against HOST_SPECS, dying with the exact autopilot error message when
+    disallowed."""
+    if len(args) not in (2, 3) or args[0] not in AGENT_KINDS:
+        die("usage: orch_python_call agent validate_autopilot <model|effort> <value> [<key>]")
+    kind, value = args[0], args[1]
+    key = args[2] if len(args) == 3 else "orchestrator.autopilot.%s" % kind
+    if not agent_allowed(kind, value, AGENT_DEFAULT_HOST):
+        die(
+            "%s is %s - not an allowed %s (want %s)"
+            % (key, value, kind, agent_values(kind, AGENT_DEFAULT_HOST))
+        )
+    return 0
+
+
+def _write_stdout(text: str) -> None:
+    """Writes <text> to stdout, preserving bytes read through surrogateescape."""
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is None:
+        sys.stdout.write(text)
+        return
+    sys.stdout.flush()
+    buffer.write(text.encode("utf-8", "surrogateescape"))
+    buffer.flush()
+
+
+def _check_host_settings(
+    cache: ConfigCache,
+    host: str,
+    records: List[Tuple[str, str]],
+) -> None:
+    """One ok record per role with its effective model and effort for <host>
+    and their sources, plus fail + clear-remedy records for every disallowed
+    stored value at local or global scope."""
+    cache.load()
+    spec = HOST_SPECS[host]
+    for role in AGENT_ROLES:
+        records.append((
+            "ok",
+            "agent %s%s: %s" % (spec.line_prefix, role, agent_role_values(cache, host, role, ",")),
+        ))
+        for kind in AGENT_KINDS:
+            key = agent_key(host, kind, role)
+            for scope in ("local", "global"):
+                scoped = cache.scoped(scope, key)
+                if scoped is None or agent_allowed(kind, scoped, host):
+                    continue
+                records.append((
+                    "fail",
+                    "%s is %s (%s) - not an allowed %s (want %s)"
+                    % (key, scoped, scope, kind, agent_values(kind, host)),
+                ))
+                records.append(("remedy", agent_clear_cmd(host, kind, role, scope)))
+
+
+# The shape of the log line Junie writes when it runs an orch agent, matching
+# bash's custom_agent_<name><tail> regex parts.
+_JUNIE_EXEC_RE = re.compile(
+    r"Executing agent custom_agent_(orch-[A-Za-z0-9-]*)_[0-9]* with parameters"
+)
+_JUNIE_LAST_NAME_RE = re.compile(
+    r".*custom_agent_(orch-[A-Za-z0-9-]*)_[0-9]* with parameters"
+)
+_JUNIE_UNRECOGNIZED_RE = re.compile(r".*Unrecognized 'model' value '([^']*)'")
+_JUNIE_ALLOWED_NAMES_RE = re.compile(r".*(Allowed LLM names:.*)")
+
+
+def _json_sort_key(value: Any) -> Tuple[int, Any]:
+    """Total-order sort key matching jq's sort_by ordering across JSON types:
+    null < false < true < numbers < strings < arrays < objects."""
+    if value is None:
+        return (0, 0)
+    if isinstance(value, bool):
+        return (1, int(value))
+    if isinstance(value, (int, float)):
+        return (2, value)
+    if isinstance(value, str):
+        return (3, value)
+    if isinstance(value, list):
+        return (4, tuple(_json_sort_key(item) for item in value))
+    if isinstance(value, dict):
+        return (5, tuple((k, _json_sort_key(v)) for k, v in sorted(value.items())))
+    return (6, str(value))
+
+
+def _junie_newest_log(home: str, sid: Optional[str] = None) -> Optional[str]:
+    """Path of the newest <home>/.junie/logs/log-*.log by modification time,
+    restricted to files containing <sid> when one is given; None when none
+    qualifies."""
+    logs_dir = os.path.join(home, ".junie", "logs") if home else ".junie/logs"
+    try:
+        names = sorted(os.listdir(logs_dir))
+    except OSError:
+        return None
+    needle = sid.encode("utf-8", "surrogateescape") if sid else None
+    best_path: Optional[str] = None
+    best_mtime = -1
+    for name in names:
+        if not (name.startswith("log-") and name.endswith(".log") and len(name) >= 8):
+            continue
+        path = os.path.join(logs_dir, name)
+        if not os.path.isfile(path):
+            continue
+        if needle is not None:
+            try:
+                with open(path, "rb") as f:
+                    if needle not in f.read():
+                        continue
+            except OSError:
+                continue
+        try:
+            mtime = os.stat(path).st_mtime_ns
+        except OSError:
+            continue
+        if best_path is None or mtime > best_mtime:
+            best_path = path
+            best_mtime = mtime
+    return best_path
+
+
+def _junie_field(line: str, word: str) -> str:
+    """The value after <word>= in a Junie log line (not preceded by a letter),
+    up to a space, comma or closing parenthesis; empty when absent."""
+    match = re.match(r"^.*[^A-Za-z]" + re.escape(word) + r"=([^ ,)]*)", line)
+    return match.group(1) if match is not None else ""
+
+
+def _parse_json_stream(text: str) -> List[Any]:
+    """Parses a stream of zero or more whitespace-separated JSON values (as
+    `jq -s` reads JSONL or multi-line JSON objects)."""
+    decoder = json.JSONDecoder()
+    values: List[Any] = []
+    pos = 0
+    length = len(text)
+    while pos < length:
+        while pos < length and text[pos] in " \t\r\n":
+            pos += 1
+        if pos >= length:
+            break
+        obj, pos = decoder.raw_decode(text, pos)
+        values.append(obj)
+    return values
+
+
+def _check_junie_session(
+    cache: ConfigCache,
+    root: str,
+    home: str,
+    records: List[Tuple[str, str]],
+) -> None:
+    """Best-effort report of what each orch-* agent ran on in the newest Junie
+    session for <root>, read from <home>/.junie/sessions/index.jsonl with
+    stdlib json (no jq dependency) and <home>/.junie/logs/log-*.log."""
+    index = os.path.join(home, ".junie", "sessions", "index.jsonl") if home else ".junie/sessions/index.jsonl"
+    if not os.path.isfile(index):
+        records.append(("ok", "junie session: cannot tell (no Junie session index)"))
+        return
+    try:
+        with open(index, "r", encoding="utf-8") as f:
+            values = _parse_json_stream(f.read())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        records.append(("ok", "junie session: cannot tell (the session index does not parse)"))
+        return
+    matched: List[Dict[str, Any]] = []
+    for item in values:
+        if item is None:
+            continue
+        if not isinstance(item, dict):
+            records.append(("ok", "junie session: cannot tell (the session index does not parse)"))
+            return
+        if item.get("projectDir") == root:
+            matched.append(item)
+    matched.sort(key=lambda entry: _json_sort_key(entry.get("updatedAt")))
+    raw_sid = matched[-1].get("sessionId") if matched else None
+    if raw_sid is None or raw_sid is False or raw_sid == "":
+        records.append(("ok", "junie session: cannot tell (no session for this checkout)"))
+        return
+    sid = str(raw_sid)
+    log = _junie_newest_log(home, sid)
+    if log is None:
+        records.append(("ok", "junie session: cannot tell (no log names session %s)" % sid))
+        return
+    agents_ran: List[str] = []
+    last_line: Dict[str, str] = {}
+    for line in lines_of(read_raw(log) or ""):
+        if _JUNIE_EXEC_RE.search(line) is None:
+            continue
+        name_match = _JUNIE_LAST_NAME_RE.match(line)
+        if name_match is None:
+            continue
+        agent_name = name_match.group(1)
+        if agent_name not in last_line:
+            agents_ran.append(agent_name)
+        last_line[agent_name] = line
+    if not agents_ran:
+        records.append(("ok", "junie session: cannot tell (the log holds no agent runs)"))
+        return
+    pending: List[Tuple[str, str]] = []
+    for agent_name in agents_ran:
+        line = last_line[agent_name]
+        model = _junie_field(line, "model")
+        if not model:
+            records.append(("ok", "junie session: cannot tell (the log does not parse)"))
+            return
+        effort = "inherited"
+        for word in ("effort", "reasoningEffort"):
+            val = _junie_field(line, word)
+            if val and val != "null":
+                effort = val
+                break
+        role = agent_role_of(agent_name)
+        if role is not None:
+            set_model, _ = cache.lookup("model", role, "junie")
+            set_effort, _ = cache.lookup("effort", role, "junie")
+        else:
+            set_model, set_effort = "inherit", "inherit"
+        mismatch = False
+        if set_model != "inherit" and model != set_model and not model.startswith(set_model + "-"):
+            mismatch = True
+        if set_effort != "inherit" and effort != set_effort:
+            mismatch = True
+        verdict = "warn" if mismatch else "ok"
+        pending.append((
+            verdict,
+            "junie %s ran model %s, effort %s (set model %s, effort %s)"
+            % (agent_name, model, effort, set_model, set_effort),
+        ))
+    records.extend(pending)
+
+
+def _check_junie_unrecognized(
+    cache: ConfigCache,
+    home: str,
+    records: List[Tuple[str, str]],
+) -> None:
+    """Best-effort FAIL on Junie's own Unrecognized 'model' value lines in the
+    most recent log-*.log when the value is a role's effective Junie model."""
+    log = _junie_newest_log(home)
+    if log is None:
+        return
+    log_lines = lines_of(read_raw(log) or "")
+    values: List[str] = []
+    seen = set()
+    for line in log_lines:
+        match = _JUNIE_UNRECOGNIZED_RE.match(line)
+        if match is None:
+            continue
+        val = match.group(1)
+        if val and val not in seen:
+            seen.add(val)
+            values.append(val)
+    for val in values:
+        needle = "Unrecognized 'model' value '%s'" % val
+        last = ""
+        for line in reversed(log_lines):
+            if needle in line:
+                last = line
+                break
+        names_match = _JUNIE_ALLOWED_NAMES_RE.match(last)
+        names = names_match.group(1) if names_match is not None else ""
+        for role in AGENT_ROLES:
+            effective, src = cache.lookup("model", role, "junie")
+            if effective != val:
+                continue
+            records.append((
+                "fail",
+                "Junie did not recognise model %s, set for %s (%s) - it fell back to the session model"
+                % (val, role, src),
+            ))
+            if names:
+                records.append(("remedy", names))
+            records.append(("remedy", "orch.sh agent set %s --host junie --model <id>" % role))
+
+
+def _check_sync_drift(
+    cache: ConfigCache,
+    root: str,
+    plugin_root: Optional[str],
+    host: str,
+    records: List[Tuple[str, str]],
+) -> None:
+    """Warns when this checkout's copy directory for <host> differs from what
+    agent_sync_plan would leave (missing, stale, extra, or unmarked in the way)."""
+    plan = agent_sync_plan(cache.git, root, plugin_root=plugin_root, cache=cache, host=host)
+    missing = [w.name + ".md" for w in plan.writes if w.state == "missing"]
+    stale = [w.name + ".md" for w in plan.writes if w.state != "missing"]
+    extra = [name + ".md" for name in plan.deletes]
+    refused = [name + ".md" for name in plan.refused]
+    if not (missing or stale or extra or refused):
+        return
+    parts: List[str] = []
+    if missing:
+        parts.append("missing " + " ".join(missing))
+    if stale:
+        parts.append("stale " + " ".join(stale))
+    if extra:
+        parts.append("extra " + " ".join(extra))
+    if refused:
+        parts.append(" ".join(refused) + " carries no sync marker and is in the way")
+    records.append((
+        "warn",
+        "%s agent copies in %s are not what agent sync would leave: %s"
+        % (host.capitalize(), plan.directory, "; ".join(parts)),
+    ))
+    records.append(("remedy", "orch.sh agent sync"))
+
+
+def check_settings(
+    args: Optional[List[str]] = None,
+    git=None,
+    env: Optional[Mapping[str, str]] = None,
+    plugin_root: Optional[str] = None,
+) -> int:
+    """Bridge for doctor.sh's check_agent_settings: runs all four agent
+    settings sub-checks and emits NUL-delimited `<kind>\\t<message>\\0`
+    records (`ok`, `warn`, `fail`, `remedy`)."""
+    if args:
+        die("usage: orch_python_call agent check_settings")
+    env = os.environ if env is None else env
+    git = Git() if git is None else git
+    root = checkout_root(git, env)
+    home = env.get("HOME", "")
+    cache = ConfigCache(git)
+    records: List[Tuple[str, str]] = []
+    _check_host_settings(cache, AGENT_DEFAULT_HOST, records)
+    _check_junie_session(cache, root, home, records)
+    _check_junie_unrecognized(cache, home, records)
+    for host_name, spec in HOST_SPECS.items():
+        if host_name == AGENT_DEFAULT_HOST:
+            continue
+        _check_host_settings(cache, host_name, records)
+        if spec.syncs_copies:
+            _check_sync_drift(cache, root, plugin_root, host_name, records)
+    _write_stdout("".join("%s\t%s\0" % (kind, message) for kind, message in records))
+    return 0
