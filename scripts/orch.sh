@@ -233,12 +233,11 @@ main() {
   case "$cmd" in
     # The nouns converted to Python, the one place naming them: each runs
     # through orch_python, and has no module of its own here.
-    issue|finding-triage|verification|audit|review-pass|spec-review|spec|breakdown|glossary|parallel|route)
+    issue|finding-triage|verification|audit|review-pass|spec-review|spec|breakdown|glossary|parallel|route|agent)
       orch_python "$cmd" "$@" ;;
     doctor|health) cmd_doctor "$@" ;;
     default-branch) cmd_default_branch "$@" ;;
     base)          cmd_base "$@" ;;
-    agent)         cmd_agent "$@" ;;
     autopilot)     cmd_autopilot "$@" ;;
     repo)          cmd_repo "$@" ;;
     init)          cmd_init "$@" ;;

@@ -38,9 +38,6 @@
 4	5	the row rule (#3549)	9fdb50e7e723c26a4127289109f27a68989c4579
 7	9	the shared test support, function by function (#3550)	de45838253c482219d70d5af6fd3b26e2079c3f8
 5	7	the gh fake, operation by operation (#3551)	987935a277e021eabb9c02e391ba40e84607a315
-64	70	agent	0d79b59e4f3295e93a9ede1bda22fbbc139f7e19
-20	22	agent sync	b39ad35449afd2ba48dfe47fd1a68a53a2d8c22b
-3	4	agent copy marker and Junie field: no command per call	7261e94ea71b44582780d728312d592266f2e005
 26	22	autopilot	ee339a6ab6e61a608418f09549611e3a1dc70f99
 23	20	autopilot rounds, budget and start	caf04385b557073d7f29edf5186b0114e5a0aa25
 31	27	autopilot ask and answer	893f3e7fffec4cc1cca429a022e66c605cec9b39
