@@ -417,15 +417,14 @@ class Git:
         return git_push_reason(run.stderr.decode("utf-8", "surrogateescape"))
 
     # Scoped git config operations for the agent noun, run where the adapter
-    # runs, as bash's agent_cache_load, agent_write and git_config_unset run.
+    # runs, as bash's git_config_unset runs.
 
     def config_regexp(self, scope: str, pattern: str) -> Dict[str, str]:
         """The keys at <scope> ('local' or 'global') matching <pattern>, read
-        from `git config --<scope> -z --get-regexp <pattern>` as bash's agent
-        cache reads them: leading and trailing spaces kept, a key with no
-        value mapped to '', internal newlines kept, trailing newlines
-        stripped, the last entry winning on duplicate keys, and an empty
-        mapping when no key matches."""
+        from `git config --<scope> -z --get-regexp <pattern>`: leading and
+        trailing spaces kept, a key with no value mapped to '', internal
+        newlines kept, trailing newlines stripped, the last entry winning on
+        duplicate keys, and an empty mapping when no key matches."""
         _check_config_scope(scope)
         run = self._run(["config", "--" + scope, "-z", "--get-regexp", "--", pattern])
         if run.returncode != 0:

@@ -665,8 +665,7 @@ def _check_host_settings(
                 records.append(("remedy", agent_clear_cmd(host, kind, role, scope)))
 
 
-# The shape of the log line Junie writes when it runs an orch agent, matching
-# bash's custom_agent_<name><tail> regex parts.
+# The shape of the log line Junie writes when it runs an orch agent.
 _JUNIE_EXEC_RE = re.compile(
     r"Executing agent custom_agent_(orch-[A-Za-z0-9-]*)_[0-9]* with parameters"
 )

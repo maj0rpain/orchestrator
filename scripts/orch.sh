@@ -189,42 +189,38 @@ import runpy
 runpy.run_module("orch", run_name="__main__", alter_sys=True)
 '
 
-# orch_python_run <exec|call> <noun> [<arg>...]: the one python3 check and
-# PYTHONPATH setup shared by orch_python and orch_python_call. `-m` itself is
-# not used: it puts the caller's directory ahead of PYTHONPATH and the standard
-# library, so a json.py or orch.py there would shadow the package or its
-# imports, and Python 3.9 has no -P to stop it. With no python3 on PATH it
-# fails exit 1 even for a verb that reserves 1 for a "no" (the carve-out in
-# coding-standards rule 2); the package's entry point checks the version
-# itself. In exec mode it replaces this process running `<noun> [<arg>...]`; in
-# call mode it runs a child process passing `--call <noun> <func> [<arg>...]`
-# so bash callers receive stdout, stderr and the exit code.
-orch_python_run() {
-  local mode="$1" noun="${2:-}"
-  shift
+# orch_python_require <noun>: checks that python3 is on PATH; warns and returns
+# 1 when absent (exit 1 even for a verb that reserves 1 for a "no", the
+# carve-out in coding-standards rule 2). The package's entry point checks the
+# 3.9+ version itself.
+orch_python_require() {
   if ! command -v python3 >/dev/null 2>&1; then
-    local msg="orch.sh $noun needs python3 3.9 or newer (found none) - run orch.sh doctor"
-    if [ "$mode" = exec ]; then die "$msg"; fi
-    warn "$msg"
+    warn "orch.sh ${1:-} needs python3 3.9 or newer (found none) - run orch.sh doctor"
     return 1
   fi
-  local given="${PYTHONPATH+=$PYTHONPATH}"
-  local py_path="$ORCH_PLUGIN/scripts/orch_py${PYTHONPATH:+:$PYTHONPATH}"
-  if [ "$mode" = exec ]; then
-    PYTHONPATH="$py_path" exec python3 -c "$ORCH_PYTHON_BOOTSTRAP" "$given" "$@"
-  fi
-  PYTHONPATH="$py_path" python3 -c "$ORCH_PYTHON_BOOTSTRAP" "$given" --call "$@"
 }
 
 # orch_python <noun> [<arg>...]: runs a noun converted to Python (ADR-0067) in
 # place of this process, so stdin, stdout, stderr and exit code are its own.
-orch_python() { orch_python_run exec "$@"; }
+# `-m` itself is not used: it puts the caller's directory ahead of PYTHONPATH
+# and the standard library, so a json.py or orch.py there would shadow the
+# package or its imports, and Python 3.9 has no -P to stop it.
+orch_python() {
+  orch_python_require "${1:-}" || exit 1
+  local given="${PYTHONPATH+=$PYTHONPATH}"
+  PYTHONPATH="$ORCH_PLUGIN/scripts/orch_py${PYTHONPATH:+:$PYTHONPATH}" \
+    exec python3 -c "$ORCH_PYTHON_BOOTSTRAP" "$given" "$@"
+}
 
 # orch_python_call <noun> <func> [<arg>...]: runs a named function of a
-# converted noun in a child Python process, routed through orch.__main__.
+# converted noun in a child Python process, routed through orch.__main__ so
+# bash callers receive stdout, stderr and the exit code.
 orch_python_call() {
   [ $# -ge 2 ] || { warn "usage: orch_python_call <noun> <func> [<arg>...]"; return 1; }
-  orch_python_run call "$@"
+  orch_python_require "$1" || return 1
+  local given="${PYTHONPATH+=$PYTHONPATH}"
+  PYTHONPATH="$ORCH_PLUGIN/scripts/orch_py${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 -c "$ORCH_PYTHON_BOOTSTRAP" "$given" --call "$@"
 }
 
 main() {
