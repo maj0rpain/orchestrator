@@ -4,7 +4,8 @@ unescaped @@ line's refusal adds, the @@-line test and the trailing-CR drop the
 issue numbers with - any plain number, and one with no leading zero - the
 decimal-number tests and the poll-knob check a waiting verb reads its knobs
 with, the trim bash's trim makes, the word split bash's read -r makes, the
-atomic file write, the plain file write and append, the file read as bash's
+atomic file write, the plain file write and append, the surrogateescape
+stdout write, the file read as bash's
 $(<file) gives it, the lines of a text and of a file, the markdown code-fence
 rule, the temporary file a comment is handed to gh from, the words a list and
 a state read as in a line, the orchestrator's directory name, the UTC stamp
@@ -71,6 +72,18 @@ def message_line(message: str) -> str:
     """The `orch: <message>` line die and warn print, newline included, for a
     caller that hands the line on rather than printing it."""
     return "orch: " + message + "\n"
+
+
+def stdout_write(text: str) -> None:
+    """Writes <text> to stdout, bytes read through surrogateescape going back
+    as they were."""
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is None:
+        sys.stdout.write(text)
+        return
+    sys.stdout.flush()
+    buffer.write(text.encode("utf-8", "surrogateescape"))
+    buffer.flush()
 
 
 def plain_number(text: str) -> bool:

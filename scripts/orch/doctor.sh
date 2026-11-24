@@ -926,7 +926,7 @@ check_autopilot_claims() {
 # 0 with empty, unknown-kind or non-NUL-terminated output reports one FAIL and
 # returns 0 so doctor never aborts.
 check_agent_settings() {
-  local out_file err="" rec="" kind msg bad=0 i
+  local out_file err="" err_msg="" rec="" kind msg bad=0 i
   local fallback="agent bridge returned unexpected output"
   local -a kinds=() msgs=()
   if ! temp_file_make out_file; then
@@ -935,9 +935,8 @@ check_agent_settings() {
   fi
   if ! capture_err err orch_python_call agent check_settings </dev/null >"$out_file"; then
     rm -f "$out_file"
-    msg=""
-    [ -z "$err" ] || msg="$(err_line "$err")"
-    d_fail "${msg:-$fallback}"
+    [ -z "$err" ] || err_msg="$(err_line "$err")"
+    d_fail "${err_msg:-$fallback}"
     return 0
   fi
   while IFS= read -r -d '' rec; do
@@ -953,9 +952,8 @@ check_agent_settings() {
   done <"$out_file"
   rm -f "$out_file"
   if [ "$bad" -eq 1 ] || [ -n "$rec" ] || [ "${#kinds[@]}" -eq 0 ]; then
-    msg=""
-    [ -z "$err" ] || msg="$(err_line "$err")"
-    d_fail "${msg:-$fallback}"
+    [ -z "$err" ] || err_msg="$(err_line "$err")"
+    d_fail "${err_msg:-$fallback}"
     return 0
   fi
   for ((i = 0; i < ${#kinds[@]}; i++)); do

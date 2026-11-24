@@ -30,7 +30,7 @@ import re
 import sys
 from typing import List, Mapping, NamedTuple, Optional, Tuple
 
-from orch.common import die, lines_of, read_raw, warn
+from orch.common import die, lines_of, read_raw, stdout_write, warn
 from orch.git import Git
 from orch.root import checkout_root
 
@@ -185,18 +185,6 @@ def show_file(path: str, term: str) -> str:
     return entry.text() if entry is not None else ""
 
 
-def _write(text: str) -> None:
-    """Writes <text> to stdout, bytes read through surrogateescape going back
-    as they were."""
-    buffer = getattr(sys.stdout, "buffer", None)
-    if buffer is None:
-        sys.stdout.write(text)
-        return
-    sys.stdout.flush()
-    buffer.write(text.encode("utf-8", "surrogateescape"))
-    buffer.flush()
-
-
 def _entries_or_die(path: str) -> List[Entry]:
     entries = read_entries(path)
     if not entries:
@@ -209,7 +197,7 @@ def _terms(args: List[str], glossary: str) -> int:
         die("usage: orch.sh glossary terms", 2)
     if not os.path.isfile(glossary):
         return 0
-    _write("".join(entry.term + "\n" for entry in _entries_or_die(glossary)))
+    stdout_write("".join(entry.term + "\n" for entry in _entries_or_die(glossary)))
     return 0
 
 
@@ -233,7 +221,7 @@ def _show(args: List[str], glossary: str, root: str) -> int:
             sys.stderr.write("# alias of %s\n" % entry.term)
             sys.stderr.flush()
         if not any(entry is seen for seen in shown):
-            _write(("\n" if shown else "") + entry.text())
+            stdout_write(("\n" if shown else "") + entry.text())
             shown.append(entry)
     for want in missing:
         warn("no glossary entry for '%s'" % want)
@@ -250,7 +238,7 @@ def _match(args: List[str], glossary: str) -> int:
         return 0
     entries = _entries_or_die(glossary)
     found = matches(entries, [read_raw(path) or "" for path in args])
-    _write("\n".join(entry.text() for entry in found))
+    stdout_write("\n".join(entry.text() for entry in found))
     return 0
 
 

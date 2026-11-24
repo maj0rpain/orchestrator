@@ -29,7 +29,7 @@ import time
 from typing import Callable, List, Mapping, Optional, Sequence, Tuple
 
 from orch import gh as real
-from orch.common import plain_number, read_raw, read_text
+from orch.common import file_lines, plain_number, read_raw, read_text
 from orch.gh import GhFailed, IssueRow, LabelledBody, Limits
 
 # The author and timestamp of every comment the fake's own operations write.
@@ -47,13 +47,13 @@ def _write(path: str, text: str, mode: str = "wb") -> None:
 
 def _first_line(path: str) -> str:
     """The file's first line; "" where it is missing or empty."""
-    lines = real.lines_of(read_raw(path) or "")
+    lines = file_lines(path)
     return lines[0] if lines else ""
 
 
 def _lines(path: str) -> List[str]:
     """The file's non-empty lines; none where it is unreadable."""
-    return [line for line in real.lines_of(read_raw(path) or "") if line]
+    return [line for line in file_lines(path) if line]
 
 
 def _countdown(path: str) -> bool:
@@ -477,7 +477,7 @@ class FakeGh:
         self._known(n)
         subs = _store_path(self.store, "subs")
         for parent in sorted(os.listdir(subs)) if os.path.isdir(subs) else []:
-            if str(n) in real.lines_of(read_raw(os.path.join(subs, parent)) or ""):
+            if str(n) in file_lines(os.path.join(subs, parent)):
                 return int(parent)
         return None
 
@@ -542,7 +542,7 @@ class FakeGh:
     def issue_open_blockers(self, n: int) -> Optional[int]:
         self._failing("adapter_issue_open_blockers")
         self._known(n)
-        if str(n) in real.lines_of(read_raw(_store_path(self.store, "no_dependency_summary")) or ""):
+        if str(n) in file_lines(_store_path(self.store, "no_dependency_summary")):
             return None
         return self._open_count(n)
 

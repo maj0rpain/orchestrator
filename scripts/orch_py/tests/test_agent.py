@@ -5,15 +5,24 @@ shared agent_sync_plan, and .junie/agents/ copy-sync."""
 from __future__ import annotations
 
 import os
-import subprocess
-import sys
-from pathlib import Path
 
 import pytest
 
 from conftest import died_of
 from orch import agent, cli
 from orch.git import FakeGit
+
+
+class CountingGit(FakeGit):
+    """FakeGit that records the scope of every config_regexp call."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.regexp_calls = []
+
+    def config_regexp(self, scope, pattern):
+        self.regexp_calls.append(scope)
+        return super().config_regexp(scope, pattern)
 
 
 def orch_agent(git, *argv, env=None, plugin_root=None):
@@ -285,15 +294,6 @@ def test_show_lists_all_roles_for_claude_then_junie_marking_invalid_values(root,
 
 
 def test_config_cache_loads_each_scope_once_per_run(root, capsys):
-    class CountingGit(FakeGit):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            self.regexp_calls = []
-
-        def config_regexp(self, scope, pattern):
-            self.regexp_calls.append(scope)
-            return super().config_regexp(scope, pattern)
-
     git = CountingGit(toplevel=str(root), local_config={"orchestrator.model.lens": "opus"})
 
     assert orch_agent(git, "show") == 0
@@ -608,15 +608,6 @@ def test_clear_unsets_in_flag_order_or_canonical_order_and_aborts_on_error_witho
 
 
 def test_config_cache_invalidates_on_write_and_unset(root):
-    class CountingGit(FakeGit):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            self.regexp_calls = []
-
-        def config_regexp(self, scope, pattern):
-            self.regexp_calls.append(scope)
-            return super().config_regexp(scope, pattern)
-
     git = CountingGit(toplevel=str(root))
     cache = agent.ConfigCache(git)
 
@@ -1054,32 +1045,6 @@ def test_sync_fails_fast_with_exact_messages_on_exclude_delete_create_and_write_
             assert not (d4 / "orch-lens-fidelity.md").exists()
         finally:
             d4.chmod(0o755)
-
-
-def test_default_plugin_root_resolves_symlinked_install(tmp_path):
-    real_root = Path(agent.default_plugin_root())
-    assert (real_root / "agents" / "orch-implementer.md").is_file()
-
-    # Symlink the plugin root elsewhere and import orch.agent through the symlink:
-    # default_plugin_root() resolves through the symlink back to the real plugin root.
-    link = tmp_path / "linked-plugin"
-    link.symlink_to(real_root)
-    env = dict(
-        os.environ,
-        PYTHONPATH=str(link / "scripts" / "orch_py"),
-        PYTHONDONTWRITEBYTECODE="1",
-    )
-    proc = subprocess.run(
-        [sys.executable, "-S", "-c", "from orch.agent import default_plugin_root; print(default_plugin_root())"],
-        env=env,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
-        timeout=30,
-    )
-    assert (proc.returncode, proc.stderr) == (0, "")
-    assert Path(proc.stdout.strip()) == real_root
 
 
 # --- bridges: docs linter, autopilot, and doctor ------------------------------

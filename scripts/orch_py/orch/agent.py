@@ -15,10 +15,11 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 from orch.common import (
     die,
     exclude_line,
-    lines_of,
+    file_lines,
     mkdir_p_or_die,
     read_raw,
     rm_f_or_die,
+    stdout_write,
     text_file_write,
 )
 from orch.git import Git
@@ -335,10 +336,7 @@ def agent_copy_content(agent_file: str, model: str, effort: str) -> str:
     """What agent sync writes for a plugin agent: the file with the marker,
     then model: and reasoningLevel: (each only when not inherit) right after
     its opening ---."""
-    raw = read_raw(agent_file)
-    if raw is None:
-        return ""
-    lines = lines_of(raw)
+    lines = file_lines(agent_file)
     if not lines:
         return ""
     header = [lines[0], AGENT_COPY_MARKER]
@@ -638,17 +636,6 @@ def validate_autopilot(args: List[str]) -> int:
     return 0
 
 
-def _write_stdout(text: str) -> None:
-    """Writes <text> to stdout, preserving bytes read through surrogateescape."""
-    buffer = getattr(sys.stdout, "buffer", None)
-    if buffer is None:
-        sys.stdout.write(text)
-        return
-    sys.stdout.flush()
-    buffer.write(text.encode("utf-8", "surrogateescape"))
-    buffer.flush()
-
-
 def _check_host_settings(
     cache: ConfigCache,
     host: str,
@@ -807,7 +794,7 @@ def _check_junie_session(
         return
     agents_ran: List[str] = []
     last_line: Dict[str, str] = {}
-    for line in lines_of(read_raw(log) or ""):
+    for line in file_lines(log):
         if _JUNIE_EXEC_RE.search(line) is None:
             continue
         name_match = _JUNIE_LAST_NAME_RE.match(line)
@@ -863,7 +850,7 @@ def _check_junie_unrecognized(
     log = _junie_newest_log(home)
     if log is None:
         return
-    log_lines = lines_of(read_raw(log) or "")
+    log_lines = file_lines(log)
     values: List[str] = []
     seen = set()
     for line in log_lines:
@@ -956,5 +943,5 @@ def check_settings(
         _check_host_settings(cache, host_name, records)
         if spec.syncs_copies:
             _check_sync_drift(cache, root, plugin_root, host_name, records)
-    _write_stdout("".join("%s\t%s\0" % (kind, message) for kind, message in records))
+    stdout_write("".join("%s\t%s\0" % (kind, message) for kind, message in records))
     return 0
