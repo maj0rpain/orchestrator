@@ -1638,6 +1638,62 @@ def test_check_settings_junie_unrecognized_model_fails_with_allowed_names_and_re
     ]
 
 
+def test_check_settings_strips_nul_bytes_from_junie_log_text_and_keeps_every_record(
+    root, tmp_path, capsys
+):
+    empty_plugin = tmp_path / "no-agents"
+    git = FakeGit(toplevel=str(root), local_config={"orchestrator.junie.model.fixer": "bad-model"})
+
+    def junie_home(name, nul):
+        home = tmp_path / name
+        write_junie_index(home, [{"sessionId": "sess-n", "projectDir": str(root), "updatedAt": "5"}])
+        write_junie_log(
+            home, "log-n.log",
+            "session sess-n\n"
+            "x INFO Executing agent custom_agent_orch-fixer_1 with parameters"
+            " AgentParams(model=gpt%s-5, effort=low)\n"
+            "WARN Unrecognized 'model' value 'bad-model', falling back to default."
+            " Allowed LLM names: gpt-5,%s claude-opus-5-5\n" % (nul, nul),
+        )
+        return home
+
+    records = doctor_records(capsys, git, junie_home("h_nul", "\0"), empty_plugin)
+
+    assert all("\0" not in kind + msg for kind, msg in records)
+    assert ("warn", "junie orch-fixer ran model gpt-5, effort low (set model bad-model, effort inherit)") in records
+    assert ("remedy", "Allowed LLM names: gpt-5, claude-opus-5-5") in records
+    # Every other record - each Claude Code and Junie agent line - is still there.
+    assert records == doctor_records(capsys, git, junie_home("h_clean", ""), empty_plugin)
+
+
+def test_check_settings_junie_index_reads_past_invalid_utf8_inside_a_string_value(
+    root, tmp_path, capsys
+):
+    empty_plugin = tmp_path / "no-agents"
+    clean_git = FakeGit(toplevel=str(root))
+    home = tmp_path / "home"
+    write_junie_index(home, [])
+    index = home / ".junie" / "sessions" / "index.jsonl"
+    index.write_bytes(
+        b'{"sessionId":"other","projectDir":"/else\xff\xfewhere","updatedAt":"9"}\n'
+        + ('{"sessionId":"good","projectDir":"%s","updatedAt":"5"}\n' % root).encode()
+    )
+
+    # The valid matching entry is found and its log looked up.
+    assert ("ok", "junie session: cannot tell (no log names session good)") in doctor_records(
+        capsys, clean_git, home, empty_plugin
+    )
+
+    # Bytes outside any JSON value still do not parse.
+    index.write_bytes(
+        b'\xff\xfe\n'
+        + ('{"sessionId":"good","projectDir":"%s","updatedAt":"5"}\n' % root).encode()
+    )
+    assert ("ok", "junie session: cannot tell (the session index does not parse)") in doctor_records(
+        capsys, clean_git, home, empty_plugin
+    )
+
+
 def test_check_settings_with_empty_home_reads_root_junie_not_the_cwd(
     root, tmp_path, capsys, monkeypatch
 ):

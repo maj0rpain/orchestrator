@@ -116,7 +116,7 @@
 2	3	host detection (host.sh, #281)	a9cfcd11f81e5e9a41c296ad7d50186312744c8c
 8	9	doctor.sh is a one-way dependency (#281)	0e1888245e16505374f9df2115f7eb899c29f3b6
 178	194	doctor	326e49038ebc665af673e43854da4da17f99598d
-7	8	doctor: python3 check (#3912)	9f669fd605016aede843022ee31881a7fd64bae8
+10	8	doctor: python3 check (#3912)	1edeb683b87c57ae9f0cd8f7011d828d5f574304
 56	61	doctor: host (#128)	978721e4fb1dd1e01c15c20e997aaa02755fc8df
 101	114	doctor --flow	67a761391972caf4512b5b7fab3225c288aa3727
 52	58	doctor --env: finished side checkouts (#727)	6c5fffe7d725910de46bf5e712c18cc5800073b6
@@ -129,7 +129,7 @@
 21	24	doctor: phase-listed flow checks	4591ec1c5aeefa7f99c9e6cd525179a50341c58e
 16	18	doctor: base branch check	3ae622c4d1660952229a78f8006859988f469330
 26	29	doctor: agent settings check (#1358)	a482fb0436dc23f4fa3b508bbc7489276b830455
-35	39	doctor: Junie session and log (#1449)	62cf29bf6d2a1b5f3946ac394f91a96014766c62
+55	46	doctor: Junie session and log (#1449)	8eeae467d102184560c2700a04b073ef79cd26fd
 25	27	doctor: Junie agent settings check (#1448)	80f3e548acbebc9e69c558300e33505c15da8fb3
 30	33	doctor: autopilot phase label and claims (#1457)	29e0ceaeea2f72133dc0a9a8d72d215082bf1105
 14	15	doctor: autopilot side-checkout flows	70774bcff127d83b28113b99eb16a9bf6f84bc27

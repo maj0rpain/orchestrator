@@ -775,10 +775,16 @@ def _check_junie_session(
     if not os.path.isfile(index):
         records.append(("ok", "junie session: cannot tell (no Junie session index)"))
         return
-    try:
-        with open(index, "r", encoding="utf-8") as f:
-            values = _parse_json_stream(f.read())
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+    # Decoded with surrogateescape, as jq skipped over bytes that are not
+    # UTF-8: only malformed JSON makes the index not parse.
+    text = read_raw(index)
+    values: Optional[List[Any]] = None
+    if text is not None:
+        try:
+            values = _parse_json_stream(text)
+        except json.JSONDecodeError:
+            pass
+    if values is None:
         records.append(("ok", "junie session: cannot tell (the session index does not parse)"))
         return
     matched: List[Dict[str, Any]] = []
@@ -960,5 +966,10 @@ def check_settings(
         _check_host_settings(cache, host_name, records)
         if spec.syncs_copies:
             _check_sync_drift(cache, root, plugin_root, host_name, records)
-    stdout_write("".join("%s\t%s\0" % (kind, message) for kind, message in records))
+    # Some message text is copied verbatim from Junie's log; a NUL in it would
+    # split a record, so every NUL is dropped - no reported line holds one.
+    stdout_write("".join(
+        "%s\t%s\0" % (kind.replace("\0", ""), message.replace("\0", ""))
+        for kind, message in records
+    ))
     return 0
