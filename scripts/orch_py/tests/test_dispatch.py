@@ -993,7 +993,11 @@ def test_orch_python_call_restores_callers_pythonpath_for_subprocesses(tmp_path,
     assert seen and all(line == ("unset" if given is None else given) for line in seen)
 
 
-def test_orch_python_call_refuses_cleanly_when_python3_is_missing(tmp_path, repo):
+@pytest.mark.parametrize("path_of, found", [
+    (lambda tmp_path: path_without(tmp_path, "python3"), "none"),
+    (py38_path, "3.8.10"),
+], ids=["missing", "below-3.9"])
+def test_orch_python_call_refuses_cleanly_without_python3_3_9(tmp_path, repo, path_of, found):
     script = (
         'source "$1"\n'
         'st=0; orch_python_call route run show || st=$?\n'
@@ -1001,29 +1005,11 @@ def test_orch_python_call_refuses_cleanly_when_python3_is_missing(tmp_path, repo
     )
 
     out, err, code = source_orch_sh(
-        tmp_path, repo, script, path=path_without(tmp_path, "python3"), unset=GLOBAL_CONFIG
+        tmp_path, repo, script, path=path_of(tmp_path), unset=GLOBAL_CONFIG
     )
 
     assert (out, err, code) == (
         "after:1\n",
-        "orch: orch.sh route needs python3 3.9 or newer (found none) - run orch.sh doctor\n",
-        0,
-    )
-
-
-def test_orch_python_call_refuses_cleanly_when_python3_is_below_3_9(tmp_path, repo):
-    script = (
-        'source "$1"\n'
-        'st=0; orch_python_call route run show || st=$?\n'
-        'printf "after:%s\\n" "$st"\n'
-    )
-
-    out, err, code = source_orch_sh(
-        tmp_path, repo, script, path=py38_path(tmp_path), unset=GLOBAL_CONFIG
-    )
-
-    assert (out, err, code) == (
-        "after:1\n",
-        "orch: orch.sh route needs python3 3.9 or newer (found 3.8.10) - run orch.sh doctor\n",
+        "orch: orch.sh route needs python3 3.9 or newer (found %s) - run orch.sh doctor\n" % found,
         0,
     )
