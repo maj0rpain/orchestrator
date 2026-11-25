@@ -15,7 +15,7 @@ state.json earns, require_state_exists, the refusal when there is no flow,
 require_state_read, a command's entry read of the keys it needs, and
 require_issue, the entry read of the flow's issue a command that needs one
 makes; then what two keys read as when a flow never recorded them,
-review_budget_fallback and flow_base_fallback, whose bash copies stay for
+review_budget_fallback and flow_base_fallback_into, whose bash copies stay for
 the bash nouns that read them.
 """
 from __future__ import annotations
@@ -121,18 +121,28 @@ def phase_write(path: str, phase: str, clock: Callable[[], float] = time.time) -
     phases = " ".join(row[0] for row in PHASE_TABLE)
     if phase not in phases.split():
         die("not a flow phase: %s (want one of: %s)" % (phase, phases))
-    try:
-        with open(path, "rb") as f:
-            state = json.loads(f.read().decode("utf-8", "replace"), parse_constant=_refuse_constant)
-    except (OSError, ValueError):
-        state = None
-    if not isinstance(state, dict) or not flow_state_create(
+    state = _state_object(path)
+    if state is None or not flow_state_create(
             path, dict(state, updated=now(clock), phase=phase)):
         die("could not record phase in %s - the flow is unchanged" % path)
 
 
 def _refuse_constant(name: str) -> Any:
     raise ValueError("not JSON: " + name)
+
+
+def _state_object(path: str) -> Optional[Dict[str, Any]]:
+    """The JSON object the state file at <path> holds, read as bytes and
+    decoded as UTF-8 with any bad byte replaced. None when there is no file
+    or it cannot be read, or when it is not exactly one JSON object (null,
+    an array, truncated JSON, trailing text, a second value or a NaN or
+    Infinity included)."""
+    try:
+        with open(path, "rb") as f:
+            state = json.loads(f.read().decode("utf-8", "replace"), parse_constant=_refuse_constant)
+    except (OSError, ValueError):
+        return None
+    return state if isinstance(state, dict) else None
 
 
 def _tostring(value: Any) -> str:
@@ -159,13 +169,8 @@ def flow_state_get_many(path: str, keys: Sequence[str]) -> Optional[Dict[str, st
         raise ValueError("not a flow state key: %s" % ", ".join(unknown))
     if not keys:
         return {}
-    try:
-        with open(path, "rb") as f:
-            text = f.read().decode("utf-8", "replace")
-        state = json.loads(text, parse_constant=_refuse_constant)
-    except (OSError, ValueError):
-        return None
-    if not isinstance(state, dict):
+    state = _state_object(path)
+    if state is None:
         return None
     values = {}
     for key in keys:
@@ -253,7 +258,7 @@ def review_budget_fallback(raw: str) -> str:
     return raw if plain_number(raw) else DEFAULT_BUDGET
 
 
-def flow_base_fallback(raw: str, gh_of: Callable[[], Any], git, pin) -> str:
+def flow_base_fallback_into(raw: str, gh_of: Callable[[], Any], git, pin) -> str:
     """The base read from state, <raw>, or the default branch where it is
     empty - a flow started before base was recorded - bash
     flow_base_fallback_into. The gh adapter is made by <gh_of> only when the

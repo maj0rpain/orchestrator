@@ -75,16 +75,16 @@ def checkouts(git) -> Optional[List[Checkout]]:
         return None
     paths = [worktree.path for worktree in worktrees]
     return [
-        Checkout(_classify(git, i, paths), checkout_has_flow(worktree.path),
+        Checkout(checkout_classify(git, i, paths), checkout_has_flow(worktree.path),
                  worktree.branch, worktree.path)
         for i, worktree in enumerate(worktrees)
     ]
 
 
-def _classify(git, index: int, paths: List[str]) -> str:
+def checkout_classify(git, index: int, paths: List[str]) -> str:
     """The kind of entry <index> of <paths>: main, ticket, side or
-    hand-made, checked in that order - the one place the kind rule is
-    spelled."""
+    hand-made, checked in that order - bash checkout_classify, the one place
+    the kind rule is spelled."""
     # Imported here: the side-checkout module reads the git folder through
     # this one.
     from orch.side_checkout import side_checkout_marker
@@ -100,8 +100,8 @@ def _classify(git, index: int, paths: List[str]) -> str:
 
 
 def checkout_kind(git, path: str) -> Optional[str]:
-    """The kind _classify gives (main, ticket, side or hand-made) the
-    checkout holding <path>, a folder inside a checkout included - bash
+    """The kind checkout_classify gives (main, ticket, side or hand-made)
+    the checkout holding <path>, a folder inside a checkout included - bash
     checkout_kind, classifying only the matching entry. None when <path> is
     in no checkout, the list fails, or no entry matches."""
     top = git.toplevel_at(path)
@@ -111,7 +111,7 @@ def checkout_kind(git, path: str) -> Optional[str]:
     paths = [worktree.path for worktree in worktrees]
     if top not in paths:
         return None
-    return _classify(git, paths.index(top), paths)
+    return checkout_classify(git, paths.index(top), paths)
 
 
 def checkouts_or_die(git) -> List[Checkout]:

@@ -303,18 +303,24 @@ def test_under_autopilot_the_trust_warning_is_skipped(root, seed, capsys):
 # --- a done flow, against real repositories ------------------------------------
 
 @pytest.fixture
-def main(tmp_path, monkeypatch):
-    """A repository with one commit on main, its orchestrator.base main,
-    holding a done flow named first with a spec handoff, the working
-    directory: its root, resolved."""
-    root = tmp_path.resolve() / "main"
+def fresh(tmp_path, monkeypatch):
+    """A repository with one commit on main, its orchestrator.base main and
+    no flow, the working directory: its root, resolved."""
+    root = tmp_path.resolve() / "fresh"
     git_repo(root)
     committed(root, {"a.txt": "a\n"}, "first")
     run_git(root, "branch", "-M", "main")
     run_git(root, "config", "orchestrator.base", "main")
-    done_flow(root, "first")
     monkeypatch.chdir(root)
     return root
+
+
+@pytest.fixture
+def main(fresh):
+    """The fresh repository holding a done flow named first with a spec
+    handoff, the working directory: its root, resolved."""
+    done_flow(fresh, "first")
+    return fresh
 
 
 def real_init(seed, path, *argv):
@@ -384,19 +390,6 @@ def test_a_done_flow_with_a_valid_issue_is_archived_and_the_new_flow_records_it(
 
 
 # --- the git exclude, against real repositories --------------------------------
-
-
-@pytest.fixture
-def fresh(tmp_path, monkeypatch):
-    """A repository with one commit on main, its orchestrator.base main and
-    no flow, the working directory: its root, resolved."""
-    root = tmp_path.resolve() / "fresh"
-    git_repo(root)
-    committed(root, {"a.txt": "a\n"}, "first")
-    run_git(root, "branch", "-M", "main")
-    run_git(root, "config", "orchestrator.base", "main")
-    monkeypatch.chdir(root)
-    return root
 
 
 def exclude_of(root):

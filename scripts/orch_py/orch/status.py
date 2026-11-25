@@ -17,7 +17,7 @@ from typing import List, Mapping, Optional
 from orch.checkout import checkout_holding, checkouts_or_die
 from orch.common import stdout_write
 from orch.flow_state import (
-    flow_base_fallback,
+    flow_base_fallback_into,
     flow_state_file,
     require_state_read,
     review_budget_fallback,
@@ -40,7 +40,7 @@ def flow_lines(root: str, state_file: str, gh_of, git, pin, env: Mapping[str, st
     budget DEFAULT_BUDGET where none can be counted, and every handoff written
     so far, by its path under <root>. Dies when the state cannot be read."""
     state = require_state_read(state_file, env, FLOW_KEYS, 1)
-    base = flow_base_fallback(state["base"], gh_of, git, pin)
+    base = flow_base_fallback_into(state["base"], gh_of, git, pin)
     lines = [
         "flow:      " + state["slug"],
         "phase:     " + state["phase"],
