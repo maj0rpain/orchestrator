@@ -5,11 +5,6 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# has_line <text> <line>: yes when <line> is one whole line of <text>, else no.
-has_line() {
-  case $'\n'"$1"$'\n' in *$'\n'"$2"$'\n'*) echo yes ;; *) echo no ;; esac
-}
-
 # fresh_dir: a new empty directory's physical path, as git records it.
 fresh_dir() { (cd "$(mktemp -d)" && pwd -P); }
 

@@ -111,6 +111,11 @@ assert_first_line() {
   assert_eq "$1" "$(printf '%s\n' "$2" | sed -n 1p)" "$3"
 }
 
+# has_line <text> <line>: yes when <line> is one whole line of <text>, else no.
+has_line() {
+  case $'\n'"$1"$'\n' in *$'\n'"$2"$'\n'*) echo yes ;; *) echo no ;; esac
+}
+
 # adapter_stood_in <definitions> <cmd>...: runs <cmd> with ORCH_GH_ADAPTER at a
 # stand-in adapter, a temp file that sources the gh adapter fake and then holds
 # <definitions> (bash text) verbatim. The file is removed whatever <cmd>'s

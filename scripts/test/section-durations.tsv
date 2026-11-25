@@ -97,9 +97,9 @@
 1	1	branch: unknown op	ecb325a7ad0d1cf82b220bfceafbba618e24c396
 4	3	branch retire beside a same-named tag (#2337)	56db96e570c302663c97d70635bd46aab690e169
 13	7	branch create and branch off beside a same-named tag (#2337)	5aa652885fb897e6af44c485e9e50885c46b1d4d
-18	16	checkout (#1078)	6cadda2d1660c75bdca5f8eda6711241a54bcf30
-4	4	checkout current branch (#1079)	524aecb8fc3e0306ff7e1d3b9278fdc903747dd2
-20	12	checkout busy, redo-retired branch (#1981)	e8fd97c72c47cc44870e2747ce3ba8e83c9b311e
+21	17	checkout (#1078)	85b65822bd5ebac5cdac093e84c0a28d92c25cc0
+6	6	checkout current branch (#1079)	8ed29994be0d37ea761c6fba66a7f1594d5332d1
+24	13	checkout busy, redo-retired branch (#1981)	0608e4d5c7b58927eb7859c5d847edb713e43621
 14	13	comments module	bbd8dd8d448e627f5c855c4a453ae228cf85d6d3
 8	10	common.sh is the bottom layer	04f7eed4e1b745bc381196f09f7ddd3c7337cc02
 0	1	orch_dirs_unexcluded	12a7c2c452ab0556c398c46950d20b677e85748f
