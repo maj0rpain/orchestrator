@@ -13,9 +13,9 @@
 # Nothing here is called back from orch.sh or its other modules but
 # cmd_doctor and the reporters d_ok, d_warn, d_fail and d_remedy, which a
 # check living in the module of the concept it serves reports through
-# (agent.sh's check_agent_settings, review.sh's check_standards_declaration):
-# doctor's own glossary check, check_glossary, reaches the converted glossary
-# noun only through orch.sh; init's adopted-issue check,
+# (review.sh's check_standards_declaration): doctor's own glossary and agent
+# settings checks, check_glossary and check_agent_settings, reach their
+# converted Python modules only through orch.sh; init's adopted-issue check,
 # validate_adopted_issue, lives in init.sh, and the triage-label parser the
 # checks read lives in triage-labels.sh.
 #
@@ -30,9 +30,9 @@
 # (default_branch_local, default_branch_seed, base_setting and
 # origin_has_branch from base.sh,
 # require_state from state.sh), and the checks its env check list names from
-# other modules (agent.sh's check_agent_settings and review.sh's
-# check_standards_declaration; check_glossary is doctor's own), are defined by
-# the time cmd_doctor runs:
+# other modules (review.sh's check_standards_declaration; check_glossary and
+# check_agent_settings are doctor's own), are defined by the time cmd_doctor
+# runs:
 # run as a command they are stubs that load their module on first call
 # (loader.sh's orch_stubs). cmd_doctor is then
 # dispatched from main() exactly like any other command.
@@ -916,6 +916,55 @@ check_autopilot_claims() {
     d_warn "issue #$issue has been claimed by $host (pid ${STANDING_CLAIM_PID[$issue]}, phase ${STANDING_CLAIM_PHASE[$issue]}) since $started - more than a day."
     d_remedy "if that session is gone, run orch.sh autopilot tick on $host"
   done
+}
+
+# The agent settings check, run through the Python agent module's bridge
+# (orch_python_call agent check_settings) so Claude Code settings, Junie
+# session/log checks and Junie settings/copies stay single-sourced in Python.
+# Records arrive NUL-delimited (`<kind>\t<message>\0`) so multi-line git config
+# values replay losslessly. Missing or < 3.9 python3, a non-zero exit, or exit
+# 0 with empty, unknown-kind or non-NUL-terminated output reports one FAIL and
+# returns 0 so doctor never aborts.
+check_agent_settings() {
+  local out_file err="" err_msg="" rec="" kind msg bad=0 i
+  local fallback="agent bridge returned unexpected output"
+  local -a kinds=() msgs=()
+  if ! temp_file_make out_file; then
+    d_fail "could not create a temp file for the agent settings check"
+    return 0
+  fi
+  if ! capture_err err orch_python_call agent check_settings </dev/null >"$out_file"; then
+    rm -f "$out_file"
+    [ -z "$err" ] || err_msg="$(err_line "$err")"
+    d_fail "${err_msg:-$fallback}"
+    return 0
+  fi
+  while IFS= read -r -d '' rec; do
+    case "$rec" in
+      *$'\t'*) kind="${rec%%$'\t'*}"; msg="${rec#*$'\t'}" ;;
+      *) bad=1; break ;;
+    esac
+    case "$kind" in
+      ok|warn|fail|remedy) kinds+=("$kind"); msgs+=("$msg") ;;
+      *) bad=1; break ;;
+    esac
+    rec=""
+  done <"$out_file"
+  rm -f "$out_file"
+  if [ "$bad" -eq 1 ] || [ -n "$rec" ] || [ "${#kinds[@]}" -eq 0 ]; then
+    [ -z "$err" ] || err_msg="$(err_line "$err")"
+    d_fail "${err_msg:-$fallback}"
+    return 0
+  fi
+  for ((i = 0; i < ${#kinds[@]}; i++)); do
+    case "${kinds[$i]}" in
+      ok)     d_ok     "${msgs[$i]}" ;;
+      warn)   d_warn   "${msgs[$i]}" ;;
+      fail)   d_fail   "${msgs[$i]}" ;;
+      remedy) d_remedy "${msgs[$i]}" ;;
+    esac
+  done
+  return 0
 }
 
 ENV_CHECKS="

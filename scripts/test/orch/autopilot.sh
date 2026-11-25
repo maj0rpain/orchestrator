@@ -132,6 +132,19 @@ done
 git config --unset-all orchestrator.autopilot.model
 git config --unset-all orchestrator.autopilot.effort
 
+ap_py="$(counting_bin python3)"
+out="$(PATH="$ap_py:$PATH" "$ORCH" autopilot show 2>&1)"; st=$?
+assert_status "autopilot show succeeds with counting python3 when model and effort are unset" "$st" 0
+assert_eq "unset model and effort spawn zero python3 processes" "$(counting_starts "$ap_py" python3)" "0"
+git config orchestrator.autopilot.model opus
+: >"$ap_py/python3.log"
+out="$(PATH="$ap_py:$PATH" "$ORCH" autopilot show 2>&1)"; st=$?
+assert_status "autopilot show succeeds with a set model through python3" "$st" 0
+assert_eq "a set model validates through one python3 call" "$(counting_starts "$ap_py" python3)" "1"
+git config --unset-all orchestrator.autopilot.model
+rm -rf "$ap_py"
+unset ap_py
+
 out="$("$ORCH" autopilot show extra 2>&1)"; st=$?
 assert_status "autopilot show refuses an argument" "$st" 1
 assert_contains "with its usage line" "$out" "usage: orch.sh autopilot show"

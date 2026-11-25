@@ -3,10 +3,10 @@
 each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>`,
 `orch.sh verification <verb>`, `orch.sh audit <verb>`, `orch.sh review-pass
 <verb>`, `orch.sh spec-review <verb>`, `orch.sh breakdown <verb>`, `orch.sh
-spec <verb>`, `orch.sh glossary <verb>`, `orch.sh parallel show` or `orch.sh
-route show` as a command, in a checkout under tmp_path, against a fake store
-seeded in the layout the bash suite's fake_* helpers write, with
-ORCH_GH_FAKE_STORE set as fake_github sets it."""
+spec <verb>`, `orch.sh glossary <verb>`, `orch.sh parallel show`, `orch.sh
+route show` or `orch.sh agent <verb>` as a command, in a checkout under
+tmp_path, against a fake store seeded in the layout the bash suite's fake_*
+helpers write, with ORCH_GH_FAKE_STORE set as fake_github sets it."""
 from __future__ import annotations
 
 import os
@@ -20,6 +20,7 @@ import pytest
 
 from conftest import (
     AUDIT_FIXTURES,
+    GLOBAL_CONFIG,
     VERIFICATION_KNOBS,
     comments_of,
     committed,
@@ -47,25 +48,34 @@ def repo(tmp_path):
     return root
 
 
-def orch_sh(tmp_path, cwd, seed, *args, path=None, knobs=None, unset=(), joined=False):
-    """`orch.sh <args>` run by bash in <cwd> on <seed>'s store, PATH <path>
-    (the test's own when None), with the variables <knobs> set and those
-    named in <unset> unset: its stdout, stderr and exit code. <joined> sends
-    stderr into stdout, one stream in the order written, its stderr then
-    empty."""
-    env = dict(os.environ, HOME=str(tmp_path), ORCH_GH_FAKE_STORE=seed.store,
-               PYTHONDONTWRITEBYTECODE="1", **(knobs or {}))
+def bash_run(tmp_path, cwd, argv, path=None, knobs=None, unset=(), joined=False):
+    """bash <argv> run in <cwd>, HOME tmp_path, PATH <path> (the test's own
+    when None), with the variables <knobs> set and those named in <unset>
+    unset: its stdout, stderr and exit code. <joined> sends stderr into
+    stdout, one stream in the order written, its stderr then empty."""
+    env = dict(os.environ, HOME=str(tmp_path), PYTHONDONTWRITEBYTECODE="1", **(knobs or {}))
     for name in unset:
         env.pop(name, None)
     if path is not None:
         env["PATH"] = path
     run = subprocess.run(
-        ["/bin/bash", str(SCRIPTS / "orch.sh"), *args],
+        ["/bin/bash", *argv],
         cwd=str(cwd), env=env, stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT if joined else subprocess.PIPE,
         timeout=30,
     )
     return run.stdout.decode(), (run.stderr or b"").decode(), run.returncode
+
+
+def orch_sh(tmp_path, cwd, seed, *args, path=None, knobs=None, unset=(), joined=False,
+            script=None):
+    """`orch.sh <args>` run by bash_run on <seed>'s store. <script> overrides
+    the orch.sh path (e.g. a symlinked install)."""
+    return bash_run(
+        tmp_path, cwd, [str(SCRIPTS / "orch.sh" if script is None else script), *args],
+        path=path, knobs={"ORCH_GH_FAKE_STORE": seed.store, **(knobs or {})}, unset=unset,
+        joined=joined,
+    )
 
 
 
@@ -660,10 +670,6 @@ def test_help_lists_every_spec_verb(tmp_path, repo, seed):
 
 # --- parallel and route ------------------------------------------------------
 
-# The variables naming a git config file other than $HOME's, unset so a test's
-# HOME under tmp_path holds the only global config git reads.
-GLOBAL_CONFIG = ("GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME")
-
 
 def git_config(tmp_path, repo, *args):
     """`git config <args>` in <repo>, HOME tmp_path, as orch_sh runs."""
@@ -781,3 +787,229 @@ def test_help_lists_the_glossary_verbs_and_the_entry_grammar(tmp_path, repo, see
     assert "glossary match <file>..." in out
     assert "optionally after a - or * bullet" in out
     assert "no entries is an error" in out
+
+
+# --- agent --------------------------------------------------------------------
+
+
+def py38_path(tmp_path):
+    """A python3 first on PATH that fakes sys.version_info 3.8.10 before
+    running `-c <code>` on this interpreter: that PATH."""
+    shim_dir = tmp_path / "py38"
+    shim_dir.mkdir(exist_ok=True)
+    shim = shim_dir / "python3"
+    shim.write_text(
+        '#!/bin/sh\n'
+        'code="$2"\n'
+        'shift 2\n'
+        'exec "%s" -c \'import sys; sys.version_info = (3, 8, 10, "final", 0);'
+        ' exec(sys.argv.pop(1))\' "$code" "$@"\n' % sys.executable
+    )
+    shim.chmod(0o755)
+    return "%s%s%s" % (shim_dir, os.pathsep, os.environ["PATH"])
+
+
+def test_agent_roles_prints_the_canonical_roles_through_the_python_noun(tmp_path, repo, seed):
+    answer = orch_sh(tmp_path, repo, seed, "agent", "roles", path=python3_shim(tmp_path),
+                     unset=GLOBAL_CONFIG)
+
+    assert answer == (
+        "implementer\nlens\nreviewer\nfixer\ncloser\nresolver\nauditor\n", "", 0
+    )
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_agent_set_get_show_and_clear_round_trip_through_the_python_noun(tmp_path, repo, seed):
+    path = python3_shim(tmp_path)
+
+    assert orch_sh(tmp_path, repo, seed, "agent", "set", "implementer",
+                   "--model", "sonnet", "--effort", "high",
+                   path=path, unset=GLOBAL_CONFIG) == ("", "", 0)
+    assert orch_sh(tmp_path, repo, seed, "agent", "set", "lens",
+                   "--model", "opus", "--global",
+                   path=path, unset=GLOBAL_CONFIG) == ("", "", 0)
+    assert orch_sh(tmp_path, repo, seed, "agent", "get", "implementer",
+                   path=path, unset=GLOBAL_CONFIG) == ("model sonnet\neffort high\n", "", 0)
+    assert orch_sh(tmp_path, repo, seed, "agent", "get", "lens",
+                   path=path, unset=GLOBAL_CONFIG) == ("model opus\neffort inherit\n", "", 0)
+
+    out, err, code = orch_sh(tmp_path, repo, seed, "agent", "show",
+                             path=path, unset=GLOBAL_CONFIG)
+    assert (err, code) == ("", 0)
+    lines = out.splitlines()
+    assert "implementer model sonnet (local) effort high (local)" in lines
+    assert "lens model opus (global) effort inherit (inherit)" in lines
+    assert "junie implementer model inherit (inherit) effort inherit (inherit)" in lines
+
+    assert orch_sh(tmp_path, repo, seed, "agent", "clear", "implementer",
+                   path=path, unset=GLOBAL_CONFIG) == ("", "", 0)
+    assert orch_sh(tmp_path, repo, seed, "agent", "clear", "lens", "--global",
+                   path=path, unset=GLOBAL_CONFIG) == ("", "", 0)
+    assert orch_sh(tmp_path, repo, seed, "agent", "get", "implementer",
+                   path=path, unset=GLOBAL_CONFIG) == ("model inherit\neffort inherit\n", "", 0)
+    assert orch_sh(tmp_path, repo, seed, "agent", "get", "lens",
+                   path=path, unset=GLOBAL_CONFIG) == ("model inherit\neffort inherit\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n" * 9
+
+
+def test_agent_sync_writes_and_prunes_junie_copies_through_the_python_noun(tmp_path, repo, seed):
+    git_config(tmp_path, repo, "orchestrator.junie.model.implementer", "claude-sonnet-4-5")
+    git_config(tmp_path, repo, "orchestrator.junie.effort.implementer", "high")
+    path = python3_shim(tmp_path)
+
+    assert orch_sh(tmp_path, repo, seed, "agent", "sync",
+                   path=path, unset=GLOBAL_CONFIG) == ("", "", 0)
+    copy = repo / ".junie" / "agents" / "orch-implementer.md"
+    assert copy.is_file()
+    assert copy.read_text().startswith(
+        "---\n# written by orch.sh agent sync\nmodel: claude-sonnet-4-5\nreasoningLevel: high\n"
+    )
+    assert ".junie/agents/orch-*.md" in (repo / ".git" / "info" / "exclude").read_text().splitlines()
+
+    assert orch_sh(tmp_path, repo, seed, "agent", "clear", "implementer", "--host", "junie",
+                   path=path, unset=GLOBAL_CONFIG) == ("", "", 0)
+    assert not copy.exists()
+    assert (tmp_path / "shim.log").read_text() == "ran\nran\n"
+
+
+def test_agent_sync_resolves_the_default_plugin_root_through_a_symlinked_install(
+        tmp_path, repo, seed):
+    # Install directory with symlinked scripts/ and no local agents/ proves
+    # default_plugin_root follows symlinks back to the real plugin root.
+    install = tmp_path / "symlinked-install"
+    install.mkdir()
+    (install / "scripts").symlink_to(SCRIPTS)
+    git_config(tmp_path, repo, "orchestrator.junie.model.implementer", "claude-sonnet-4-5")
+
+    answer = orch_sh(tmp_path, repo, seed, "agent", "sync",
+                     path=python3_shim(tmp_path), unset=GLOBAL_CONFIG,
+                     script=install / "scripts" / "orch.sh")
+
+    assert answer == ("", "", 0)
+    copy = repo / ".junie" / "agents" / "orch-implementer.md"
+    assert copy.is_file()
+    text = copy.read_text()
+    assert text.startswith("---\n# written by orch.sh agent sync\nmodel: claude-sonnet-4-5\n")
+    assert "name: orch-implementer\n" in text
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_an_unknown_agent_op_is_refused_through_the_python_noun(tmp_path, repo, seed):
+    answer = orch_sh(tmp_path, repo, seed, "agent", "wipe",
+                     path=python3_shim(tmp_path), unset=GLOBAL_CONFIG)
+
+    assert answer == (
+        "", "orch: unknown agent op: wipe (want set|show|clear|get|sync|roles)\n", 1
+    )
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_agent_refuses_when_python3_is_missing_or_below_3_9(tmp_path, repo, seed):
+    missing = orch_sh(tmp_path, repo, seed, "agent", "roles",
+                      path=path_without(tmp_path, "python3"), unset=GLOBAL_CONFIG)
+    too_old = orch_sh(tmp_path, repo, seed, "agent", "roles",
+                      path=py38_path(tmp_path), unset=GLOBAL_CONFIG)
+
+    assert missing == (
+        "",
+        "orch: orch.sh agent needs python3 3.9 or newer (found none) - run orch.sh doctor\n",
+        1,
+    )
+    assert too_old == (
+        "",
+        "orch: orch.sh agent needs python3 3.9 or newer (found 3.8.10) - run orch.sh doctor\n",
+        1,
+    )
+
+
+# --- orch_python_call bootstrap ----------------------------------------------
+
+
+def source_orch_sh(tmp_path, cwd, script, path=None, knobs=None, unset=()):
+    """bash <script> with $1 = scripts/orch.sh, run by bash_run."""
+    return bash_run(
+        tmp_path, cwd, ["-euo", "pipefail", "-c", script, "_", str(SCRIPTS / "orch.sh")],
+        path=path, knobs=knobs, unset=unset,
+    )
+
+
+def test_orch_python_call_runs_without_exec_and_returns_exit_code(tmp_path, repo):
+    git_config(tmp_path, repo, "orchestrator.route", "quick")
+    script = (
+        'source "$1"\n'
+        'orch_python_call route run show\n'
+        'st=0; orch_python_call route run bogus 2>&1 || st=$?\n'
+        'printf "after:%s\\n" "$st"\n'
+    )
+
+    out, err, code = source_orch_sh(tmp_path, repo, script, unset=GLOBAL_CONFIG)
+
+    assert (err, code) == ("", 0)
+    assert out == (
+        "quick\n"
+        "orch: unknown route op: bogus (want show)\n"
+        "after:1\n"
+    )
+
+
+@pytest.mark.parametrize("module", ["json.py", "orch.py"])
+def test_orch_python_call_drops_empty_sys_path_entry_so_cwd_modules_cannot_shadow(
+        tmp_path, repo, module):
+    (repo / module).write_text("import sys\nsys.stderr.write('shadowed\\n')\nsys.exit(7)\n")
+    script = 'source "$1"\norch_python_call agent check_settings\n'
+
+    out, err, code = source_orch_sh(tmp_path, repo, script, unset=GLOBAL_CONFIG)
+
+    assert (err, code) == ("", 0)
+    assert out.startswith("ok\tagent implementer: model inherit (inherit), effort inherit (inherit)\0")
+
+
+@pytest.mark.parametrize("given", [None, "", "/the/caller/s/path"],
+                         ids=["unset", "empty", "set"])
+def test_orch_python_call_restores_callers_pythonpath_for_subprocesses(tmp_path, repo, given):
+    real_git = shutil.which("git")
+    shim_dir = tmp_path / "git-shim"
+    shim_dir.mkdir()
+    log = tmp_path / "pythonpath.log"
+    shim = shim_dir / "git"
+    shim.write_text(
+        '#!/bin/sh\n'
+        'printf "%%s\\n" "${PYTHONPATH-unset}" >>"%s"\n'
+        'exec "%s" "$@"\n' % (log, real_git)
+    )
+    shim.chmod(0o755)
+    script = (
+        'source "$1"\n'
+        'PATH="%s:$PATH" orch_python_call agent check_settings\n' % shim_dir
+    )
+    knobs = {} if given is None else {"PYTHONPATH": given}
+    unset = GLOBAL_CONFIG + (("PYTHONPATH",) if given is None else ())
+
+    out, err, code = source_orch_sh(tmp_path, repo, script, knobs=knobs, unset=unset)
+
+    assert (err, code) == ("", 0)
+    assert out.startswith("ok\tagent implementer: model inherit (inherit), effort inherit (inherit)\0")
+    seen = log.read_text().splitlines()
+    assert seen and all(line == ("unset" if given is None else given) for line in seen)
+
+
+@pytest.mark.parametrize("path_of, found", [
+    (lambda tmp_path: path_without(tmp_path, "python3"), "none"),
+    (py38_path, "3.8.10"),
+], ids=["missing", "below-3.9"])
+def test_orch_python_call_refuses_cleanly_without_python3_3_9(tmp_path, repo, path_of, found):
+    script = (
+        'source "$1"\n'
+        'st=0; orch_python_call route run show || st=$?\n'
+        'printf "after:%s\\n" "$st"\n'
+    )
+
+    out, err, code = source_orch_sh(
+        tmp_path, repo, script, path=path_of(tmp_path), unset=GLOBAL_CONFIG
+    )
+
+    assert (out, err, code) == (
+        "after:1\n",
+        "orch: orch.sh route needs python3 3.9 or newer (found %s) - run orch.sh doctor\n" % found,
+        0,
+    )

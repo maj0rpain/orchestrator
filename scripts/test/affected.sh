@@ -50,12 +50,13 @@
 #                                     the redo, ticket, autopilot and doctor
 #                                     sections, the bash nouns whose sections
 #                                     run a converted noun's verb through the
-#                                     dispatch, and hooks_test.sh, whose paste
-#                                     guard rows run spec-review check through
-#                                     it, plus the side-checkout sections,
-#                                     whose entry classification scans the
-#                                     package (the pytest suite runs on every
-#                                     call)
+#                                     dispatch (doctor and autopilot also call
+#                                     Python bridges via orch_python_call),
+#                                     and hooks_test.sh, whose paste guard
+#                                     rows run spec-review check through it,
+#                                     plus the side-checkout sections, whose
+#                                     entry classification scans the package
+#                                     (the pytest suite runs on every call)
 #   the pytest suite's wrapper (scripts/test/orch_py_test.sh)
 #                                     the harness section file's sections
 #   hook-edit-width.sh, width.sh, shell_code.awk

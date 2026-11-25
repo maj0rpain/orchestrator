@@ -6,6 +6,7 @@ NOUNS dies as orch.sh dies on an unknown command.
 """
 from __future__ import annotations
 
+import importlib
 from typing import Callable, Dict, List
 
 from orch.common import die
@@ -78,6 +79,12 @@ def _route(argv: List[str]) -> int:
     return run(argv)
 
 
+def _agent(argv: List[str]) -> int:
+    from orch.agent import run
+
+    return run(argv)
+
+
 # The converted nouns: each takes the arguments after the noun and returns its
 # exit code.
 NOUNS: Dict[str, Callable[[List[str]], int]] = {
@@ -92,6 +99,7 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "glossary": _glossary,
     "parallel": _parallel,
     "route": _route,
+    "agent": _agent,
 }
 
 
@@ -101,3 +109,23 @@ def main(argv: List[str]) -> int:
     if run is None:
         die("unknown command: %s (run 'orch.sh help')" % noun)
     return run(argv[1:])
+
+
+def call_func(argv: List[str]) -> int:
+    """`orch_python_call <noun> <func> [<arg>...]`: runs the named function of
+    a converted noun's module with `<arg>...`, returning its exit code (0 when
+    it returns None). Refuses an unknown noun or a missing or private
+    function."""
+    if len(argv) < 2:
+        die("usage: orch_python_call <noun> <func> [<arg>...]")
+    noun, name, args = argv[0], argv[1], argv[2:]
+    if noun not in NOUNS:
+        die("unknown command: %s (run 'orch.sh help')" % noun)
+    if not name or name.startswith("_"):
+        die("unknown %s function: %s" % (noun, name or "<none>"))
+    mod = importlib.import_module("orch." + noun.replace("-", "_"))
+    fn = getattr(mod, name, None)
+    if not callable(fn):
+        die("unknown %s function: %s" % (noun, name))
+    result = fn(args)
+    return 0 if result is None else result

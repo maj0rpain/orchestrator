@@ -38,10 +38,7 @@
 4	5	the row rule (#3549)	9fdb50e7e723c26a4127289109f27a68989c4579
 7	9	the shared test support, function by function (#3550)	de45838253c482219d70d5af6fd3b26e2079c3f8
 5	7	the gh fake, operation by operation (#3551)	987935a277e021eabb9c02e391ba40e84607a315
-64	70	agent	0d79b59e4f3295e93a9ede1bda22fbbc139f7e19
-20	22	agent sync	b39ad35449afd2ba48dfe47fd1a68a53a2d8c22b
-3	4	agent copy marker and Junie field: no command per call	7261e94ea71b44582780d728312d592266f2e005
-17	14	autopilot	8bbc695acc905fd728a0df90ca62f731d151c603
+26	22	autopilot	ee339a6ab6e61a608418f09549611e3a1dc70f99
 23	20	autopilot rounds, budget and start	caf04385b557073d7f29edf5186b0114e5a0aa25
 31	27	autopilot ask and answer	893f3e7fffec4cc1cca429a022e66c605cec9b39
 29	26	autopilot reenter	e5af5b151f62e979831aea7c680f62058419ab45
@@ -116,40 +113,40 @@
 1	2	capture_err and capture without a temp file (#1780)	fc19f584557286e04c9abe1748bf4408b90215bf
 7	9	capture, capture_err and file_read	15f31dc392fbcce33a8210b2b13e103e6a539901
 0	1	die_hinted and die_opt_check	a31d5ea9ef99f315cf022f51ad5894482feffb9e
-3	4	host detection (host.sh, #281)	ee3476064ac5700e62e72b8ebcbeeeb98af6e70a
-5	6	doctor.sh is a one-way dependency (#281)	b86ca6ac46faa586b4d718a1aa26e9018e2539ea
-201	219	doctor	9d2d2d59740f1be906e1c255723925b28a5134f8
-7	10	doctor: python3 check (#3912)	94a9d42f7c56e2c5c7e10b58becce6663ae6e07e
-79	68	doctor: host (#128)	630c2c609f2e1674c6746fa454a5175e669b6357
-94	102	doctor --flow	8d28021dd7fd5c64f62d12573dc1792e590cfa6d
-40	44	doctor --env: finished side checkouts (#727)	8d56eb5df3a1cea24b7c1e0173d431eb1a742f7b
-12	14	doctor at the review phase	f758faa73c220475b21e8e6f7ce147e4217392d6
-8	9	doctor: upstream beside an ambiguous origin/<branch> (#1331)	330a42c2865d5a02fae709612f503ac7b23ea5da
-50	43	doctor: review terminal check	88212d953c41af51b6bd5eeac27da3ee9a58006d
-13	14	doctor: review budget check	64764c88f8752a78a540c2aa14005f71384279ca
-23	26	doctor: review ci check	268086301745d5a78bc58b7ae955764aaec271d9
-25	28	doctor: review draft check	8110e2a93d9df6cabfb904bc4eabd18576c756f1
-20	22	doctor: phase-listed flow checks	a0edc3b373a45de7e5f369a1975629a7d99b37a3
-11	13	doctor: base branch check	1552a8cbda5331cd8f73db7e27d1e7361ecde286
-9	11	doctor: agent settings check (#1358)	b648ff23c80cb03c31f597e4a99c84fbfac07cf4
-28	32	doctor: Junie session and log (#1449)	b852e2465d7e45f58704d21f310b80a3f7ebcb7b
-19	22	doctor: Junie agent settings check (#1448)	4f3a5171f61efb62e2a9e477ac0cfe4827e1b8e7
-40	31	doctor: autopilot phase label and claims (#1457)	69f776c54d8a5eb795415bc4ece7f7d994514165
-17	13	doctor: autopilot side-checkout flows	54d9e4367b18a9844022ac993cc49397bc0c7a22
-38	43	doctor --flow: autopilot handoff comments (#1457)	f1299660b5d44d158a70a2a690e818196f8df5dc
-5	6	doctor: phase label in the repo's casing (#1943)	d415e6f6fca6a22696312118ea11a0b1ec5ab5ae
-5	6	doctor --flow: a deleted flow branch beside a same-named tag (#2337)	fb7c9171c3870e1e16989282c2b741ed4d138b61
-4	5	doctor --flow: a side checkout with a truncated state.json	9472519158abaf67343d4bf84a630639ac3c6e82
-16	18	doctor --env: ssh alias hint beside the gh auth check (#2585)	64a2b08d86ad95143dd7fb8b2c3e5821ec953a64
-43	47	doctor: one issue read and one PR read per run (#2554)	90c9a132f70999084a01af55f6622dc3f26a5495
-0	1	triage_label_into: parse once, later lookups start no command	207f2125d38fa532ae4552e00b7cf5168815af97
-8	6	doctor --env: git processes per worktree	916024b571106425e62a6e376fe1d1909f1af56f
-11	7	doctor --env: Standards declaration check (#3358)	db8ddf96af0952ab923f7cf7dd0cf95391a3537e
-8	6	doctor --env: glossary check (#3358)	4172d39e3dea88c444bbb7d3c631acd77046832e
-8	7	doctor --env: glossary check without python3	c54424b8576dc59cb8d5ecc07683c454bec04415
-8	6	doctor --env: ADR directory check (#3358)	109f685c4bfd5cad8897ef55f9d3141822d4e817
-22	25	doctor --env: verification lines	a51e6873e722538705f4c710c1c7feb43423557f
-51	36	doctor --env: verification commands (#3346)	743a90c9a46a5ef85c7ea302c35fd60401839eb4
+2	3	host detection (host.sh, #281)	a9cfcd11f81e5e9a41c296ad7d50186312744c8c
+8	9	doctor.sh is a one-way dependency (#281)	0e1888245e16505374f9df2115f7eb899c29f3b6
+178	194	doctor	326e49038ebc665af673e43854da4da17f99598d
+7	8	doctor: python3 check (#3912)	9f669fd605016aede843022ee31881a7fd64bae8
+56	61	doctor: host (#128)	978721e4fb1dd1e01c15c20e997aaa02755fc8df
+101	114	doctor --flow	67a761391972caf4512b5b7fab3225c288aa3727
+52	58	doctor --env: finished side checkouts (#727)	6c5fffe7d725910de46bf5e712c18cc5800073b6
+13	16	doctor at the review phase	3510b3a381c81866698adf3212d7c6f98ee07a04
+8	10	doctor: upstream beside an ambiguous origin/<branch> (#1331)	e22e633709e4b6b6d6a830a1f48baef119599fbb
+3	44	doctor: review terminal check	ebbc8f4ae923054c2d940b1502c12a29af4f5086
+12	14	doctor: review budget check	6c9474b53b64b286d26c1634b4114e508e0d52ba
+27	32	doctor: review ci check	7961e080062a591804d0685fed4615ef159173d1
+26	31	doctor: review draft check	be90a88f29d7c5361fd9c3017505e6bb361b65c8
+21	24	doctor: phase-listed flow checks	4591ec1c5aeefa7f99c9e6cd525179a50341c58e
+16	18	doctor: base branch check	3ae622c4d1660952229a78f8006859988f469330
+26	29	doctor: agent settings check (#1358)	a482fb0436dc23f4fa3b508bbc7489276b830455
+35	39	doctor: Junie session and log (#1449)	62cf29bf6d2a1b5f3946ac394f91a96014766c62
+25	27	doctor: Junie agent settings check (#1448)	80f3e548acbebc9e69c558300e33505c15da8fb3
+30	33	doctor: autopilot phase label and claims (#1457)	29e0ceaeea2f72133dc0a9a8d72d215082bf1105
+14	15	doctor: autopilot side-checkout flows	70774bcff127d83b28113b99eb16a9bf6f84bc27
+2	31	doctor --flow: autopilot handoff comments (#1457)	ef9e3a39700d435374b58022a8527ac9eeb5bfbe
+5	6	doctor: phase label in the repo's casing (#1943)	439d8300e44cf6f57bfd5819f438efc1316b9677
+6	7	doctor --flow: a deleted flow branch beside a same-named tag (#2337)	386178ed2be19d9f8c1319452be67961840082f8
+5	6	doctor --flow: a side checkout with a truncated state.json	26cc4dd0fcf25711a732dd2224f5ea3e9768f108
+23	25	doctor --env: ssh alias hint beside the gh auth check (#2585)	83148bc27e097c0a3ff9b5816270cd56defe8fa3
+43	49	doctor: one issue read and one PR read per run (#2554)	6404461c4732a0edfc319f0615f334ea8649fed0
+2	3	triage_label_into: parse once, later lookups start no command	fff1e7d366f30e7ec55e7105ab1b6fe2b53e152e
+11	9	doctor --env: git processes per worktree	9ecba8fdb057ab847f76e8faaaf52cf9588882f1
+12	13	doctor --env: Standards declaration check (#3358)	2c10a9f6b1a3fcaa8ce6d4ec0d7a1170ce002a9e
+11	13	doctor --env: glossary check (#3358)	199e2e69a5f2563301770df70cd879c66331db85
+5	6	doctor --env: glossary check without python3	4094529f9dc5deed0029e710eca2b83e78f5d316
+0	10	doctor --env: ADR directory check (#3358)	90f2e5fe47ee6a4fb9618720cc454391fa820037
+30	33	doctor --env: verification lines	4cb3cfb283efe42c5d0b75d14c23095db419ea48
+52	58	doctor --env: verification commands (#3346)	cf7c5eb67bf98108a3aa7ac69496c9a7486d783e
 0	1	is_filed_severity	41fb54217cc90b7a75a37b3ee336945167710410
 1	2	severity table	cbcec87893fb4d691f66b67cb960e1bc2f27d3d3
 3	3	category table	4ddf897afb91fdb5736b0ac6486b6b06637af785
@@ -305,7 +302,7 @@
 43	35	trust module	dd0183ac4380b097c6b51f9e75c4a3038ab514c5
 89	19	wait: a call's block is wall time	90d20fdb4b55a5964e512640526d36f24c6b6f96
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594
-373	248	docs_lint.sh	83592c17136c05d3d895a32cb6fd9e9a74c598eb
+216	266	docs_lint.sh	de06792960a8582aa0fc84e8be147240030ec0ff
 40	30	version_bump_test.sh	13c6acda626586d9df9be1d51a465dd889fdc723
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 17	17	autopilot_up_test.sh	e83bb3b5d6213ab54507233be7cc6e624358622c

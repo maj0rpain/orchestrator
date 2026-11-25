@@ -61,8 +61,7 @@ autopilot_setting() {
       fi ;;
     model|effort)
       [ "$AUTOPILOT_SOURCE" != unset ] || return 0
-      agent_allowed "$name" "$AUTOPILOT_VALUE" ||
-        die "$key is $AUTOPILOT_VALUE - not an allowed $name (want $(agent_values "$name"))" ;;
+      orch_python_call agent validate_autopilot "$name" "$AUTOPILOT_VALUE" "$key" </dev/null || exit 1 ;;
     auto-sync)
       if [ "$AUTOPILOT_SOURCE" = unset ]; then AUTOPILOT_VALUE=true; AUTOPILOT_SOURCE=default; fi
       case "$AUTOPILOT_VALUE" in

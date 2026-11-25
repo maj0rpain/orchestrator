@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from conftest import committed, git_repo, origin_clone, run_git, write_staged
+from conftest import GLOBAL_CONFIG, committed, git_repo, origin_clone, run_git, write_staged
 from orch.git import FakeGit, Git, git_push_reason
 
 ORIGIN = "https://github.com/fork/widgets.git"
@@ -577,3 +577,212 @@ def test_a_push_that_printed_nothing_gives_git_gave_no_reason(stderr):
 
 def test_an_unseeded_push_on_the_fake_fails_with_no_reason():
     assert FakeGit().push("origin", ":refs/orch/claims/5") == "git gave no reason"
+
+
+# --- scoped git config -------------------------------------------------------
+
+
+@pytest.fixture
+def config_env(tmp_path, monkeypatch):
+    """A fresh repo and an isolated throwaway HOME for scoped git config
+    parity tests: (repo_root, home_dir, real_git)."""
+    root = tmp_path / "cfg-repo"
+    home = tmp_path / "cfg-home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    for name in GLOBAL_CONFIG:
+        monkeypatch.delenv(name, raising=False)
+    real = git_repo(root)
+    return root, home, real
+
+
+@pytest.mark.parametrize("scope", ["local", "global"])
+def test_config_regexp_returns_empty_mapping_when_no_keys_match(config_env, scope):
+    _, _, real = config_env
+    fake = FakeGit()
+
+    assert real.config_regexp(scope, r"^orchestrator\.") == {}
+    assert fake.config_regexp(scope, r"^orchestrator\.") == {}
+
+
+def test_config_regexp_isolates_local_and_global_scopes(config_env):
+    root, _, real = config_env
+    run_git(root, "config", "--local", "orchestrator.model.implementer", "opus")
+    run_git(root, "config", "--global", "orchestrator.model.implementer", "sonnet")
+    run_git(root, "config", "--global", "orchestrator.effort.lens", "high")
+    fake = FakeGit(
+        local_config={"orchestrator.model.implementer": "opus"},
+        global_config={
+            "orchestrator.model.implementer": "sonnet",
+            "orchestrator.effort.lens": "high",
+        },
+    )
+
+    assert real.config_regexp("local", r"^orchestrator\.") == {
+        "orchestrator.model.implementer": "opus",
+    }
+    assert fake.config_regexp("local", r"^orchestrator\.") == {
+        "orchestrator.model.implementer": "opus",
+    }
+    assert real.config_regexp("global", r"^orchestrator\.") == {
+        "orchestrator.model.implementer": "sonnet",
+        "orchestrator.effort.lens": "high",
+    }
+    assert fake.config_regexp("global", r"^orchestrator\.") == {
+        "orchestrator.model.implementer": "sonnet",
+        "orchestrator.effort.lens": "high",
+    }
+
+
+def test_config_regexp_matches_bash_cache_semantics_for_spaces_valueless_multiline_dups_and_newlines(
+    config_env,
+):
+    root, _, real = config_env
+    with (root / ".git" / "config").open("a", encoding="utf-8") as f:
+        f.write('[orchestrator "model"]\n\tvalueless\n')
+    run_git(root, "config", "--local", "orchestrator.model.spaces", "  opus  ")
+    run_git(root, "config", "--local", "orchestrator.model.multi", "line1\nline2\n\n")
+    run_git(root, "config", "--local", "orchestrator.model.onlynl", "\n\n")
+    run_git(root, "config", "--local", "--add", "orchestrator.model.dup", "first")
+    run_git(root, "config", "--local", "--add", "orchestrator.model.dup", "second")
+    run_git(root, "config", "--local", "other.section.key", "ignored")
+    fake = FakeGit(
+        local_config=[
+            ("orchestrator.model.valueless", None),
+            ("orchestrator.model.spaces", "  opus  "),
+            ("orchestrator.model.multi", "line1\nline2\n\n"),
+            ("orchestrator.model.onlynl", "\n\n"),
+            ("orchestrator.model.dup", "first"),
+            ("orchestrator.model.dup", "second"),
+            ("other.section.key", "ignored"),
+        ]
+    )
+
+    want = {
+        "orchestrator.model.valueless": "",
+        "orchestrator.model.spaces": "  opus  ",
+        "orchestrator.model.multi": "line1\nline2",
+        "orchestrator.model.onlynl": "",
+        "orchestrator.model.dup": "second",
+    }
+    assert real.config_regexp("local", r"^orchestrator\.") == want
+    assert fake.config_regexp("local", r"^orchestrator\.") == want
+
+
+def test_config_regexp_rejects_invalid_scope():
+    real = Git()
+    fake = FakeGit()
+
+    with pytest.raises(ValueError, match="scope"):
+        real.config_regexp("system", r"^orchestrator\.")
+    with pytest.raises(ValueError, match="scope"):
+        fake.config_regexp("system", r"^orchestrator\.")
+
+
+def test_config_set_writes_overwrites_and_isolates_scopes_the_same(config_env):
+    _, _, real = config_env
+    fake = FakeGit()
+
+    for git in (real, fake):
+        assert git.config_set("local", "orchestrator.model.implementer", "opus") is True
+        assert git.config_set("local", "orchestrator.model.implementer", "  sonnet  ") is True
+        assert git.config_set("global", "orchestrator.model.implementer", "-custom") is True
+        assert git.config_regexp("local", r"^orchestrator\.") == {
+            "orchestrator.model.implementer": "  sonnet  ",
+        }
+        assert git.config_regexp("global", r"^orchestrator\.") == {
+            "orchestrator.model.implementer": "-custom",
+        }
+
+
+def test_config_set_fails_on_duplicate_keys_the_same(config_env):
+    root, _, real = config_env
+    run_git(root, "config", "--local", "--add", "orchestrator.model.dup", "first")
+    run_git(root, "config", "--local", "--add", "orchestrator.model.dup", "second")
+    fake = FakeGit(
+        local_config=[
+            ("orchestrator.model.dup", "first"),
+            ("orchestrator.model.dup", "second"),
+        ]
+    )
+
+    for git in (real, fake):
+        assert git.config_set("local", "orchestrator.model.dup", "third") is False
+        assert git.config_regexp("local", r"^orchestrator\.") == {
+            "orchestrator.model.dup": "second",
+        }
+
+
+def test_config_unset_removes_present_and_duplicate_keys_and_accepts_absent_keys(config_env):
+    root, _, real = config_env
+    run_git(root, "config", "--local", "--add", "orchestrator.model.dup", "first")
+    run_git(root, "config", "--local", "--add", "orchestrator.model.dup", "second")
+    run_git(root, "config", "--global", "orchestrator.model.dup", "global-val")
+    fake = FakeGit(
+        local_config=[
+            ("orchestrator.model.dup", "first"),
+            ("orchestrator.model.dup", "second"),
+        ],
+        global_config={"orchestrator.model.dup": "global-val"},
+    )
+
+    for git in (real, fake):
+        assert git.config_unset("local", "orchestrator.model.absent") is True
+        assert git.config_unset("global", "orchestrator.model.absent") is True
+        assert git.config_unset("local", "orchestrator.model.dup") is True
+        assert git.config_regexp("local", r"^orchestrator\.") == {}
+        assert git.config_regexp("global", r"^orchestrator\.") == {
+            "orchestrator.model.dup": "global-val",
+        }
+        assert git.config_unset("global", "orchestrator.model.dup") is True
+        assert git.config_regexp("global", r"^orchestrator\.") == {}
+
+
+@pytest.mark.parametrize("scope", ["local", "global"])
+def test_config_set_and_unset_fail_on_lock_errors_even_for_absent_keys(config_env, scope):
+    root, home, real = config_env
+    assert real.config_set(scope, "orchestrator.model.closer", "haiku") is True
+    lock = (root / ".git" / "config.lock") if scope == "local" else (home / ".gitconfig.lock")
+    lock.write_text("")
+    fake = FakeGit(
+        local_config={"orchestrator.model.closer": "haiku"} if scope == "local" else None,
+        global_config={"orchestrator.model.closer": "haiku"} if scope == "global" else None,
+        config_write_fails={scope},
+    )
+
+    try:
+        for git in (real, fake):
+            assert git.config_set(scope, "orchestrator.model.closer", "opus") is False
+            assert git.config_unset(scope, "orchestrator.model.closer") is False
+            assert git.config_unset(scope, "orchestrator.model.absent") is False
+            assert git.config_regexp(scope, r"^orchestrator\.") == {
+                "orchestrator.model.closer": "haiku",
+            }
+    finally:
+        lock.unlink()
+
+
+def test_fake_git_can_fail_a_single_scoped_key_write():
+    fake = FakeGit(
+        local_config={"orchestrator.effort.implementer": "low"},
+        config_write_fails={("local", "orchestrator.effort.implementer")},
+    )
+
+    assert fake.config_set("local", "orchestrator.model.implementer", "opus") is True
+    assert fake.config_set("local", "orchestrator.effort.implementer", "high") is False
+    assert fake.config_unset("local", "orchestrator.effort.implementer") is False
+    assert fake.config_regexp("local", r"^orchestrator\.") == {
+        "orchestrator.model.implementer": "opus",
+        "orchestrator.effort.implementer": "low",
+    }
+
+
+def test_config_set_and_unset_reject_invalid_scope():
+    real = Git()
+    fake = FakeGit()
+
+    for git in (real, fake):
+        with pytest.raises(ValueError, match="scope"):
+            git.config_set("system", "orchestrator.model.implementer", "opus")
+        with pytest.raises(ValueError, match="scope"):
+            git.config_unset("system", "orchestrator.model.implementer")

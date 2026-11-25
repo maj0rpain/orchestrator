@@ -63,6 +63,21 @@ doctor_github() {
 alias_doctor() { PATH="$ssh_stub_dir:$PATH" "$ORCH" doctor --env 2>&1; }
 hint="came from origin's SSH URL and may be an SSH Host alias"
 
+# py3_stub_doctor <dir> <version> <body>: doctor --env with <dir>/python3 first
+# on PATH, a stub that answers check_python3's version probe with <version> and
+# runs the sh <body> for every other call; its output in out, its status in st.
+py3_stub_doctor() {
+  cat >"$1/python3" <<EOF
+#!/bin/sh
+case "\$*" in
+  *sys.version_info*) echo "$2"; exit 0 ;;
+esac
+$3
+EOF
+  chmod +x "$1/python3"
+  out="$(PATH="$1:$PATH" "$ORCH" doctor --env 2>&1)"; st=$?
+}
+
 # path_without_jq() builds its restricted PATH from whatever's really on PATH,
 # not from repo state, so the one built here serves every no-jq assertion
 # (in doctor and in doctor --flow) instead of symlinking the same ~20 tools
@@ -127,8 +142,9 @@ echo "doctor.sh is a one-way dependency (#281)"
 # directory names, as a whole word, no function doctor.sh defines - a name in a
 # comment is no call; one in a quoted literal is - except cmd_doctor, which
 # main() dispatches, and the reporters d_ok, d_warn, d_fail and d_remedy, which
-# a check living in the module of the concept it serves (agent.sh's
-# check_agent_settings, #1358) reports through when doctor runs it.
+# a check living in the module of the concept it serves (review.sh's
+# check_standards_declaration) reports through when doctor runs it;
+# check_agent_settings is doctor's own, alongside check_glossary.
 # doctor_callbacks <scripts-dir> prints each such name found, for the
 # functions defined in <scripts-dir>/orch/doctor.sh. host.sh,
 # triage-labels.sh and planning-allowlist.sh are outside it: the hooks share
@@ -969,11 +985,22 @@ echo "doctor: python3 check (#3912)"
 healthy_repo
 doctor_github
 py3_dir="$(mktemp -d)"
+py3_real="$(command -v python3)"
 # py3_doctor <version>: doctor --env with a stub python3 reporting <version>.
+# 3.9.0 fakes check_python3's version probe and delegates other calls to the
+# real python3; 3.8.10 simulates 3.8.10 on non-version-probe calls so
+# check_agent_settings hits orch.__main__'s require_python failure.
 py3_doctor() {
-  printf '#!/bin/sh\necho %s\n' "$1" >"$py3_dir/python3"
-  chmod +x "$py3_dir/python3"
-  out="$(PATH="$py3_dir:$PATH" "$ORCH" doctor --env 2>&1)"; st=$?
+  local v="$1"
+  if [ "$v" = 3.9.0 ]; then
+    py3_stub_doctor "$py3_dir" "$v" "exec \"$py3_real\" \"\$@\""
+  else
+    local maj="${v%%.*}" rest="${v#*.}" min pat
+    min="${rest%%.*}"; pat="${rest#*.}"
+    py3_stub_doctor "$py3_dir" "$v" "code=\"\$2\"
+shift 2
+exec \"$py3_real\" -c 'import sys; sys.version_info = ($maj, $min, $pat, \"final\", 0); exec(sys.argv.pop(1))' \"\$code\" \"\$@\""
+  fi
 }
 py3_doctor 3.9.0
 assert_status "python3 3.9 passes" "$st" 0
@@ -983,7 +1010,12 @@ assert_status "python3 3.8 fails" "$st" 1
 assert_contains "naming the version found" "$out" "FAIL  python3 3.9 or newer not found (found 3.8.10)"
 assert_contains "with a platform-package remedy" "$out" \
   "$(printf '\n      brew install python3    # or your platform')"
+assert_contains "agent settings fails via require_python on 3.8.10" "$out" \
+  "FAIL  orch.sh agent needs python3 3.9 or newer (found 3.8.10) - run orch.sh doctor"
+assert_contains "doctor finishes its report after a 3.8.10 agent failure" \
+  "$(printf '%s\n' "$out" | tail -1)" " FAIL"
 rm -rf "$py3_dir"
+unset py3_real
 unset -f py3_doctor
 
 # --- doctor: host (#128) ---
@@ -2120,6 +2152,69 @@ git config --local orchestrator.effort.closer low
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a global bad value hidden by a local one still fails" "$st" 1
 assert_contains "naming the global key" "$out" "FAIL  orchestrator.effort.closer is huge (global)"
+git config --local --unset orchestrator.effort.closer
+git config --global --unset orchestrator.effort.closer
+
+# Multi-line git config values replay losslessly through the NUL-delimited
+# bridge.
+git config --local orchestrator.model.fixer $'line1\nline2'
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a multi-line disallowed model fails doctor" "$st" 1
+assert_contains "replaying the multi-line value in the ok line" "$out" \
+  "$(printf 'ok    agent fixer: model line1\nline2 (local, invalid), effort inherit (inherit)')"
+assert_contains "and in the FAIL line" "$out" \
+  "$(printf 'FAIL  orchestrator.model.fixer is line1\nline2 (local) - not an allowed model')"
+git config --local --unset orchestrator.model.fixer
+
+# Missing python3 fails check_agent_settings with one FAIL without aborting.
+if on_windows_bash; then
+  skip_no_jq "no python3: agent settings check fails with the noun's message"
+  skip_no_jq "no python3: doctor still reaches the summary line"
+else
+  out="$(PATH="$nojq_path" "$ORCH" doctor --env 2>&1)"; st=$?
+  assert_status "no python3: doctor --env fails" "$st" 1
+  assert_contains "no python3: agent settings check fails with the noun's message" "$out" \
+    "FAIL  orch.sh agent needs python3 3.9 or newer (found none) - run orch.sh doctor"
+  assert_contains "no python3: doctor still reaches the summary line" \
+    "$(printf '%s\n' "$out" | tail -1)" " FAIL"
+fi
+
+# Bridge exit failures and empty/malformed exit-0 output emit one FAIL without
+# aborting.
+ab_dir="$(mktemp -d)"
+# agent_bridge_doctor <body>: py3_stub_doctor with python3 3.9.0, <body> run
+# for every call but the version probe.
+agent_bridge_doctor() { py3_stub_doctor "$ab_dir" 3.9.0 "$1"; }
+agent_bridge_doctor 'printf "orch: bridge exploded\n" >&2; exit 1'
+assert_status "bridge non-zero exit with stderr fails doctor" "$st" 1
+assert_contains "reporting stderr through err_line" "$out" "FAIL  bridge exploded"
+assert_contains "and finishing the doctor report" "$(printf '%s\n' "$out" | tail -1)" "0 warn, 1 FAIL"
+
+agent_bridge_doctor 'exit 1'
+assert_status "bridge non-zero exit with empty stderr fails doctor" "$st" 1
+assert_contains "reporting the fixed fallback message" "$out" "FAIL  agent bridge returned unexpected output"
+assert_contains "and finishing with one FAIL" "$(printf '%s\n' "$out" | tail -1)" "0 warn, 1 FAIL"
+
+agent_bridge_doctor 'exit 0'
+assert_status "bridge exit 0 with empty output fails doctor" "$st" 1
+assert_contains "empty output uses the fixed fallback message" "$out" "FAIL  agent bridge returned unexpected output"
+assert_contains "empty output emits one FAIL" "$(printf '%s\n' "$out" | tail -1)" "0 warn, 1 FAIL"
+
+agent_bridge_doctor 'printf "ok\tgood\0bogus\tbad\0"; exit 0'
+assert_status "bridge exit 0 with unknown kind fails doctor" "$st" 1
+assert_contains "unknown kind uses the fixed fallback message" "$out" "FAIL  agent bridge returned unexpected output"
+assert_not_contains "unknown kind does not replay partial records" "$out" "ok    good"
+assert_contains "unknown kind emits one FAIL" "$(printf '%s\n' "$out" | tail -1)" "0 warn, 1 FAIL"
+
+agent_bridge_doctor 'printf "ok\tgood\0trailing"; exit 0'
+assert_status "bridge exit 0 with non-NUL-terminated trailing data fails doctor" "$st" 1
+assert_contains "trailing data uses the fixed fallback message" "$out" "FAIL  agent bridge returned unexpected output"
+assert_not_contains "trailing data does not replay partial records" "$out" "ok    good"
+assert_contains "trailing data emits one FAIL" "$(printf '%s\n' "$out" | tail -1)" "0 warn, 1 FAIL"
+
+rm -rf "$ab_dir"
+unset ab_dir
+unset -f agent_bridge_doctor
 restore_suite_env
 
 # --- doctor: Junie session and log (#1449) ------------------------------------
@@ -2162,6 +2257,22 @@ assert_contains "an inherit key gives an ok line with effort read from effort=, 
   "ok    junie orch-fixer ran model claude-opus-5-5, effort low (set model inherit, effort inherit)"
 assert_not_contains "an agent absent from the log gets no line" "$out" "junie orch-closer"
 assert_not_contains "no cannot-tell line when the session is read" "$out" "junie session: cannot tell"
+
+# With python3 present and jq absent, Junie's index.jsonl still parses (no jq
+# dependency).
+if on_windows_bash; then
+  skip_no_jq "without jq: Junie session index still parses via python3"
+  skip_no_jq "without jq: no jq-missing cannot-tell line"
+else
+  py_nojq_dir="$(mktemp -d)"
+  ln -sf "$(command -v python3)" "$py_nojq_dir/python3"
+  out="$(PATH="$py_nojq_dir:$nojq_path" "$ORCH" doctor --env 2>&1)"; st=$?
+  assert_contains "without jq: Junie session index still parses via python3" "$out" \
+    "ok    junie orch-reviewer-spec ran model gpt-5-2025-08-07, effort high (set model gpt-5, effort high)"
+  assert_not_contains "without jq: no jq-missing cannot-tell line" "$out" "jq is not installed"
+  rm -rf "$py_nojq_dir"
+  unset py_nojq_dir
+fi
 
 git config orchestrator.junie.model.reviewer gpt-4
 git config orchestrator.junie.effort.reviewer low
