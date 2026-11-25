@@ -423,6 +423,10 @@ def test_set_validates_flags_and_values_in_order_without_mutating_config(root, c
          "orch: usage: orch.sh agent set <role> [--model <m>] [--effort <e>] [--global] [--host junie]\n"),
         (["set", "implementer", "--model", "bogus", "--global", "--global"],
          "orch: model bogus is not allowed (want sonnet|opus|haiku|fable|inherit)\n"),
+        (["set", "implementer", "--model", "opus", "--global", "--global"],
+         "orch: usage: orch.sh agent set <role> [--model <m>] [--effort <e>] [--global] [--host junie]\n"),
+        (["set", "lens", "--effort", "high", "--effort", "low"],
+         "orch: usage: orch.sh agent set <role> [--model <m>] [--effort <e>] [--global] [--host junie]\n"),
         (["set", "implementer", "--effort", "bad", "--model"],
          "orch: effort bad is not allowed (want low|medium|high|xhigh|max|inherit)\n"),
         (["set", "implementer", "--effort", "bad", "--model", "bad"],
@@ -635,6 +639,44 @@ def test_clear_unsets_in_flag_order_or_canonical_order_and_aborts_on_error_witho
         "orchestrator.model.fixer": "opus",
         "orchestrator.effort.fixer": "high",
     }
+
+
+def test_clear_accepts_repeated_kind_and_scope_flags_and_refuses_an_unknown_flag_or_no_role(
+    root, capsys
+):
+    git = FakeGit(
+        toplevel=str(root),
+        local_config={
+            "orchestrator.model.lens": "opus",
+            "orchestrator.effort.lens": "high",
+        },
+        global_config={
+            "orchestrator.model.fixer": "sonnet",
+            "orchestrator.effort.fixer": "low",
+        },
+    )
+
+    assert orch_agent(git, "clear", "lens", "--model", "--model") == 0
+    assert capsys.readouterr() == ("", "")
+    assert git.config_regexp("local", r"^orchestrator\.") == {
+        "orchestrator.effort.lens": "high",
+    }
+
+    assert orch_agent(git, "clear", "fixer", "--global", "--global") == 0
+    assert capsys.readouterr() == ("", "")
+    assert git.config_regexp("global", r"^orchestrator\.") == {}
+
+    before = (git.config_regexp("local", r"."), git.config_regexp("global", r"."))
+    assert orch_agent(git, "clear", "lens", "--bogus") == 1
+    assert capsys.readouterr() == (
+        "", "orch: usage: orch.sh agent clear <role> [--model] [--effort] [--global] [--host junie]\n"
+    )
+    assert orch_agent(git, "clear") == 1
+    assert capsys.readouterr() == (
+        "",
+        "orch: unknown role <none> (want implementer|lens|reviewer|fixer|closer|resolver|auditor)\n",
+    )
+    assert (git.config_regexp("local", r"."), git.config_regexp("global", r".")) == before
 
 
 def test_config_cache_invalidates_on_write_and_unset(root):
@@ -861,6 +903,28 @@ def test_sync_writes_updates_prunes_copies_and_updates_git_exclude(root, tmp_pat
     )
     assert orch_agent(git, "clear", "implementer", "--host", "junie", plugin_root=str(plugin)) == 0
     assert sorted(p.name for p in copies_dir.iterdir()) == ["notes.md", "orch-gone.md"]
+
+
+def test_set_junie_model_and_effort_inherit_removes_that_roles_marked_copy(
+    root, tmp_path, capsys
+):
+    plugin = fake_plugin(tmp_path)
+    git, _ = git_with_exclude(root)
+    copies_dir = root / ".junie" / "agents"
+    for role in ("fixer", "closer"):
+        assert orch_agent(
+            git, "set", role, "--host", "junie", "--model", "gpt-5", "--effort", "low",
+            plugin_root=str(plugin),
+        ) == 0
+    assert sorted(p.name for p in copies_dir.iterdir()) == ["orch-closer.md", "orch-fixer.md"]
+
+    assert orch_agent(
+        git, "set", "fixer", "--host", "junie", "--model", "inherit", "--effort", "inherit",
+        plugin_root=str(plugin),
+    ) == 0
+    assert capsys.readouterr() == ("", "")
+    assert sorted(p.name for p in copies_dir.iterdir()) == ["orch-closer.md"]
+    assert git.config_regexp("local", r"^orchestrator\.junie\..*\.fixer$") == {}
 
 
 def test_sync_writes_exclude_to_common_git_dir_in_linked_worktree(tmp_path, capsys):
