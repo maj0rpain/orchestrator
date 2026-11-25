@@ -1862,11 +1862,21 @@ mkdir -p "$fixture/skills/a"
   printf '.\n'
 } >"$fixture/skills/a/SKILL.md"
 out="$(scan_agent_settings "$fixture")"
+shape_samples=0
 for shape in "${shapes_read[@]}"; do
   IFS=$'\t' read -r role shape_glob _ <<<"$shape"
+  [ -n "$role" ] && [ -n "$shape_glob" ] || continue
+  shape_samples=$((shape_samples + 1))
   flags "a start site naming $shape_glob without agent get $role is flagged" \
     "$out" "skills/a/SKILL.md: starts an agent of the $role role but does not name agent get $role"
 done
+# With no shapes read, the loop above generates no sample and checks nothing.
+if [ "$shape_samples" -gt 0 ]; then
+  ok "the generated start site has a sample for each agent name shape"
+else
+  bad "the generated start site has a sample for each agent name shape" \
+    "the agent module yielded no shapes, so no sample was generated"
+fi
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/a"
 printf 'Start `orch-auditor` under the `orchestrator:` plugin scope.\n' >"$fixture/skills/a/SKILL.md"

@@ -1013,3 +1013,50 @@ def test_orch_python_call_refuses_cleanly_without_python3_3_9(tmp_path, repo, pa
         "orch: orch.sh route needs python3 3.9 or newer (found %s) - run orch.sh doctor\n" % found,
         0,
     )
+
+
+@pytest.mark.parametrize("path_of, found", [
+    (lambda tmp_path: path_without(tmp_path, "python3"), "none"),
+    (py38_path, "3.8.10"),
+], ids=["missing", "below-3.9"])
+def test_orch_python_call_names_the_command_given_by_as_in_its_refusal(
+        tmp_path, repo, path_of, found):
+    script = (
+        'source "$1"\n'
+        'st=0; orch_python_call --as autopilot route run show || st=$?\n'
+        'printf "after:%s\\n" "$st"\n'
+    )
+
+    out, err, code = source_orch_sh(
+        tmp_path, repo, script, path=path_of(tmp_path), unset=GLOBAL_CONFIG
+    )
+
+    assert (out, err, code) == (
+        "after:1\n",
+        "orch: orch.sh autopilot needs python3 3.9 or newer (found %s) - run orch.sh doctor\n"
+        % found,
+        0,
+    )
+
+
+@pytest.mark.parametrize("args", [["--as"], ["--as", "autopilot", "route"], ["--as", "", "route", "run"]],
+                         ids=["as-alone", "as-without-func", "as-empty"])
+def test_orch_python_call_refuses_an_incomplete_call_with_its_usage(tmp_path, repo, args):
+    script = (
+        'source "$1"\n'
+        'shift\n'
+        'st=0; orch_python_call "$@" || st=$?\n'
+        'printf "after:%s\\n" "$st"\n'
+    )
+
+    out, err, code = bash_run(
+        tmp_path, repo,
+        ["-euo", "pipefail", "-c", script, "_", str(SCRIPTS / "orch.sh"), *args],
+        unset=GLOBAL_CONFIG,
+    )
+
+    assert (out, err, code) == (
+        "after:1\n",
+        "orch: usage: orch_python_call [--as <command>] <noun> <func> [<arg>...]\n",
+        0,
+    )

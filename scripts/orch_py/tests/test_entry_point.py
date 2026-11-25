@@ -85,6 +85,22 @@ def test_call_mode_below_python_3_9_dies_naming_the_noun(monkeypatch, capsys):
     )
 
 
+def test_call_mode_below_python_3_9_dies_naming_the_command_given_by_as(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "version_info", (3, 8, 10, "final", 0))
+
+    assert died_of(capsys, lambda: main(
+        ["--call", "--as", "autopilot", "agent", "validate_autopilot"])) == (
+        1, "",
+        "orch: orch.sh autopilot needs python3 3.9 or newer (found 3.8.10)"
+        " - run orch.sh doctor\n",
+    )
+
+
+def test_call_mode_with_as_dispatches_the_noun_after_it(capsys):
+    assert died_of(capsys, lambda: main(["--call", "--as", "autopilot", "issue", "run", "labels"])) == (
+        1, "", "orch: usage: orch.sh issue labels <n>...\n")
+
+
 def test_call_mode_dispatches_a_named_function_on_a_converted_noun(capsys):
     assert died_of(capsys, lambda: main(["--call", "issue", "run", "labels"])) == (
         1, "", "orch: usage: orch.sh issue labels <n>...\n")
@@ -93,10 +109,12 @@ def test_call_mode_dispatches_a_named_function_on_a_converted_noun(capsys):
 
 
 def test_call_mode_refuses_missing_args_unknown_noun_and_unknown_or_private_function(capsys):
-    assert died_of(capsys, lambda: main(["--call"])) == (
-        1, "", "orch: usage: orch_python_call <noun> <func> [<arg>...]\n")
-    assert died_of(capsys, lambda: main(["--call", "route"])) == (
-        1, "", "orch: usage: orch_python_call <noun> <func> [<arg>...]\n")
+    usage = "orch: usage: orch_python_call [--as <command>] <noun> <func> [<arg>...]\n"
+    assert died_of(capsys, lambda: main(["--call"])) == (1, "", usage)
+    assert died_of(capsys, lambda: main(["--call", "route"])) == (1, "", usage)
+    assert died_of(capsys, lambda: main(["--call", "--as"])) == (1, "", usage)
+    assert died_of(capsys, lambda: main(["--call", "--as", "autopilot", "route"])) == (
+        1, "", usage)
     assert died_of(capsys, lambda: main(["--call", "no-such-noun", "run"])) == (
         1, "", "orch: unknown command: no-such-noun (run 'orch.sh help')\n")
     assert died_of(capsys, lambda: main(["--call", "route", "no_such_fn"])) == (

@@ -212,15 +212,24 @@ orch_python() {
     exec python3 -c "$ORCH_PYTHON_BOOTSTRAP" "$given" "$@"
 }
 
-# orch_python_call <noun> <func> [<arg>...]: runs a named function of a
-# converted noun in a child Python process, routed through orch.__main__ so
-# bash callers receive stdout, stderr and the exit code.
+# orch_python_call [--as <command>] <noun> <func> [<arg>...]: runs a named
+# function of a converted noun in a child Python process, routed through
+# orch.__main__ so bash callers receive stdout, stderr and the exit code. A
+# python3 missing or older than 3.9 is refused naming `orch.sh <command>`, the
+# command the user ran (default <noun>), on both sides of the bridge.
 orch_python_call() {
-  [ $# -ge 2 ] || { warn "usage: orch_python_call <noun> <func> [<arg>...]"; return 1; }
-  orch_python_require "$1" || return 1
+  local usage="usage: orch_python_call [--as <command>] <noun> <func> [<arg>...]"
+  local as="${1:-}"
+  if [ "${1:-}" = --as ]; then
+    as="${2:-}"
+    if [ $# -lt 4 ] || [ -z "$as" ]; then warn "$usage"; return 1; fi
+    shift 2
+  fi
+  [ $# -ge 2 ] || { warn "$usage"; return 1; }
+  orch_python_require "$as" || return 1
   local given="${PYTHONPATH+=$PYTHONPATH}"
   PYTHONPATH="$ORCH_PLUGIN/scripts/orch_py${PYTHONPATH:+:$PYTHONPATH}" \
-    python3 -c "$ORCH_PYTHON_BOOTSTRAP" "$given" --call "$@"
+    python3 -c "$ORCH_PYTHON_BOOTSTRAP" "$given" --call --as "$as" "$@"
 }
 
 main() {
