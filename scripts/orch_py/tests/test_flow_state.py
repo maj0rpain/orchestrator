@@ -9,14 +9,13 @@ is checked against the bash state key table's keys, defaults and seed
 column, read through a bash child process."""
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import pytest
 
 from orch.flow_state import (STATE_KEYS, flow_state_create, flow_state_get_many,
                              flow_state_seed, phase_write)
-from conftest import died_of
+from conftest import bash_sourced, died_of
 
 GOLDEN = Path(__file__).resolve().parent / "flow_state"
 BASH_MODULE = Path(__file__).resolve().parents[2] / "flow-state.sh"
@@ -71,11 +70,8 @@ def bash_state_rows():
     """The data rows of the bash state key table, STATE_KEYS in
     scripts/flow-state.sh, as its one reader state_rows prints them in a bash
     child process: (key, default, seed, owner) each, in table order."""
-    run = subprocess.run(
-        ["bash", "-c", 'source "$1"; state_rows', "_", str(BASH_MODULE)],
-        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, timeout=30, check=True,
-    )
-    return [tuple(line.split("|", 3)) for line in run.stdout.decode("utf-8").splitlines()]
+    return [tuple(line.split("|", 3))
+            for line in bash_sourced(BASH_MODULE, "state_rows").splitlines()]
 
 
 @pytest.mark.skipif(not BASH_MODULE.exists(), reason="the bash Flow state module is gone")

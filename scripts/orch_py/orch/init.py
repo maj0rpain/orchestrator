@@ -2,8 +2,9 @@
 
 run(argv) takes the arguments after `init`, as orch.sh hands them on, and
 returns the exit code; every error dies through orch.common.die, exit 1, but
-the busy-checkout refusal's exit 3. It keeps the bash noun's usage line,
-stdout, exit codes and `orch:` messages.
+the busy-checkout refusal's exit 3 and make_folders' failure, which prints
+mkdir's own bare message and exits 1 without die. It keeps the bash noun's
+usage line, stdout, exit codes and `orch:` messages.
 """
 from __future__ import annotations
 

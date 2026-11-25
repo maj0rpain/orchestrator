@@ -109,11 +109,7 @@ def state_json(root):
 def flow_state(root, phase, issue, branch=None):
     """<root>'s state.json, written to record a flow at <phase> on <issue>
     and <branch>, each as a JSON value (None for null); its path."""
-    state = state_json(root)
-    state.parent.mkdir(parents=True, exist_ok=True)
-    state.write_text(
-        json.dumps({"slug": "x", "phase": phase, "issue": issue, "branch": branch}) + "\n")
-    return state
+    return hold_flow(root, slug="x", phase=phase, issue=issue, branch=branch)
 
 
 def write_labels_doc(root, text):
@@ -189,6 +185,16 @@ def run_git(root, *args, env=None):
     ).stdout.decode().strip()
 
 
+def bash_sourced(module, script, *args):
+    """The stdout, decoded, of <script> run in a bash child process with the
+    bash module at <module> sourced, <args> its positional parameters. A
+    failure raises."""
+    return subprocess.run(
+        ["bash", "-c", 'source "$1"; shift\n' + script, "_", str(module), *map(str, args)],
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, timeout=30, check=True,
+    ).stdout.decode()
+
+
 def worktree_add(main, path, *how):
     """`git worktree add <how> <path>` in the repository at <main>, <path>'s
     parent made first: <path>."""
@@ -206,10 +212,12 @@ def mark_side(path):
 
 
 def hold_flow(path, **state):
-    """Writes <state> as the state.json of the checkout at <path>."""
-    orch = path / ".orchestrator"
-    orch.mkdir(parents=True, exist_ok=True)
-    (orch / "state.json").write_text(json.dumps(state) + "\n")
+    """Writes <state> as the state.json of the checkout at <path>: its
+    path."""
+    state_file = state_json(path)
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(json.dumps(state) + "\n")
+    return state_file
 
 
 def done_flow(path, slug):

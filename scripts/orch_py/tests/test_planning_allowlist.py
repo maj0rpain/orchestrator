@@ -3,10 +3,9 @@ the bash module the edit guard sources, and the dirty-path scan the
 flow-start check refuses with."""
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
-from conftest import committed, died_of, git_repo, run_git, write_staged
+from conftest import bash_sourced, committed, died_of, git_repo, run_git, write_staged
 from orch import planning_allowlist
 from orch.git import FakeGit, Git
 
@@ -16,11 +15,7 @@ PLANNING_ALLOWLIST_SH = Path(__file__).resolve().parents[2] / "planning-allowlis
 def bash_lines(script, *args):
     """The NUL-separated fields <script> prints with the bash planning
     allowlist module sourced, <args> its positional parameters."""
-    run = subprocess.run(
-        ["bash", "-c", 'source "$1"; shift\n' + script, "_", str(PLANNING_ALLOWLIST_SH), *args],
-        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, timeout=30, check=True,
-    )
-    return run.stdout.decode().split("\0")[:-1]
+    return bash_sourced(PLANNING_ALLOWLIST_SH, script, *args).split("\0")[:-1]
 
 
 def test_the_lists_and_texts_are_the_bash_module_s():

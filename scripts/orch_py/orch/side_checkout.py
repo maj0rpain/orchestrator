@@ -108,12 +108,12 @@ def archive_flow(git, root: str, home: str, here_root: str,
     the rest in place, the message naming both - and a rerun archives what
     is left into a fresh directory. There is no rollback."""
     orch = os.path.join(root, ORCH_DIR_NAME)
-    state = flow_state_file(root)
+    state_file = flow_state_file(root)
     side_checkout_refuse_ticket_worktrees(git, root)
     # A state.json that does not parse still archives - abort is the remedy
     # for it - under a slug standing in for the one it cannot give.
-    read = flow_state_get_many(state, ("slug",))
-    slug = read["slug"] if read is not None else "unreadable"
+    state = flow_state_get_many(state_file, ("slug",))
+    slug = state["slug"] if state is not None else "unreadable"
     dest = os.path.join(home, ORCH_DIR_NAME, "archive", dir_stamp(clock) + "-" + slug)
     mkdir_p_or_die(dest, "could not create the archive directory %s - nothing was archived" % dest)
     try:
@@ -123,10 +123,10 @@ def archive_flow(git, root: str, home: str, here_root: str,
     entries = [
         os.path.join(orch, name) for name in names
         if name not in FLOW_LESS_ENTRIES and os.path.exists(os.path.join(orch, name))
-        and os.path.join(orch, name) != state
+        and os.path.join(orch, name) != state_file
     ]
-    if os.path.exists(state):
-        entries.append(state)
+    if os.path.exists(state_file):
+        entries.append(state_file)
     for i, entry in enumerate(entries):
         if not _move_into(entry, dest):
             die("could not move %s into %s - moved there: %s; left in place: %s"

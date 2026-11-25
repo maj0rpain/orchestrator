@@ -6,11 +6,11 @@ checked here by name too, so a regenerated golden file cannot drop one
 unnoticed."""
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import pytest
 
+from conftest import bash_sourced
 from orch import help as help_noun
 
 GOLDEN = Path(__file__).resolve().parent / "help" / "golden.txt"
@@ -49,11 +49,8 @@ def test_help_documents_the_entry(capsys, entry):
 def test_help_gives_review_file_the_finding_s_parts_as_flags(capsys):
     """The severities and axes come from the bash Filed finding tables that
     review file reads, so help names the ones review file takes."""
-    tables = subprocess.run(
-        ["bash", "-c", 'source "$1"; printf "%s\\n%s" "${FILED_SEVERITIES// /|}" "${FILED_AXES// /|}"',
-         "_", str(FILED_FINDING_SH)],
-        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, check=True, timeout=30,
-    ).stdout.decode()
+    tables = bash_sourced(
+        FILED_FINDING_SH, 'printf "%s\\n%s" "${FILED_SEVERITIES// /|}" "${FILED_AXES// /|}"')
     severities, axes = tables.split("\n")
     out = help_text(capsys)
     lines = out.splitlines()
