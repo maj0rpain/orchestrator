@@ -152,12 +152,13 @@ def main(argv: List[str]) -> int:
 
 
 def call_func(argv: List[str]) -> int:
-    """`orch_python_call <noun> <func> [<arg>...]`: runs the named function of
-    a converted noun's module with `<arg>...`, returning its exit code (0 when
-    it returns None). Refuses an unknown noun or a missing or private
-    function."""
+    """`orch_python_call [--as <command>] <noun> <func> [<arg>...]`, its
+    `--as <command>` already taken off by orch.__main__: runs the named
+    function of a converted noun's module with `<arg>...`, returning its exit
+    code (0 when it returns None). Refuses an unknown noun or a missing or
+    private function."""
     if len(argv) < 2:
-        die("usage: orch_python_call <noun> <func> [<arg>...]")
+        die("usage: orch_python_call [--as <command>] <noun> <func> [<arg>...]")
     noun, name, args = argv[0], argv[1], argv[2:]
     if noun not in NOUNS:
         die("unknown command: %s (run 'orch.sh help')" % noun)

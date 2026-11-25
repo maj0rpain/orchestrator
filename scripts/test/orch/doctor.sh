@@ -1010,10 +1010,12 @@ assert_status "python3 3.8 fails" "$st" 1
 assert_contains "naming the version found" "$out" "FAIL  python3 3.9 or newer not found (found 3.8.10)"
 assert_contains "with a platform-package remedy" "$out" \
   "$(printf '\n      brew install python3    # or your platform')"
-assert_contains "agent settings fails via require_python on 3.8.10" "$out" \
-  "FAIL  orch.sh agent needs python3 3.9 or newer (found 3.8.10) - run orch.sh doctor"
-assert_contains "doctor finishes its report after a 3.8.10 agent failure" \
-  "$(printf '%s\n' "$out" | tail -1)" " FAIL"
+assert_eq "agent settings fails via require_python on 3.8.10, as one exact line" \
+  "$(printf '%s\n' "$out" | grep -Fxc 'FAIL  orch.sh agent needs python3 3.9 or newer (found 3.8.10) - run orch.sh doctor')" "1"
+assert_contains "the checks after the python3 one still ran on 3.8.10" "$out" \
+  "ok    Full verification command: true"
+assert_contains "doctor finishes its report after a 3.8.10 agent failure, counting both FAILs" \
+  "$(printf '%s\n' "$out" | tail -1)" " ok, 0 warn, 2 FAIL"
 rm -rf "$py3_dir"
 unset py3_real
 unset -f py3_doctor
@@ -2329,6 +2331,27 @@ git config orchestrator.junie.model.closer good
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a global model hidden by a local one gives no failure" "$st" 0
 git config --unset orchestrator.junie.model.closer
+git config --global --unset orchestrator.junie.model.closer
+
+# A NUL byte in Junie's log text - a model= field, the Allowed LLM names: tail -
+# never splits the bridge's NUL-terminated records: every line stays.
+junie_reset
+junie_index s 5
+printf 'session s\nx INFO Executing agent custom_agent_orch-fixer_1 with parameters AgentParams(model=gpt\000-5, effort=low, reasoningEffort=null)\n' \
+  >"$JH/logs/log-n.log"
+printf "WARN Unrecognized 'model' value 'bad-model', falling back to default. Allowed LLM names: gpt-5,\000 claude-opus-5-5\n" \
+  >>"$JH/logs/log-n.log"
+git config orchestrator.junie.model.fixer bad-model
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_not_contains "a NUL in Junie's log does not fail the bridge" "$out" "agent bridge returned unexpected output"
+assert_eq "a NUL in Junie's log leaves every Claude Code and Junie agent line" \
+  "$(printf '%s\n' "$out" | grep -c '^ok    agent ')" "14"
+assert_contains "the session line drops the NUL from the model" "$out" \
+  "warn  junie orch-fixer ran model gpt-5, effort low (set model bad-model, effort inherit)"
+assert_contains "the unrecognised-model FAIL stays" "$out" \
+  "FAIL  Junie did not recognise model bad-model, set for fixer (local)"
+assert_contains "its allowed names drop the NUL" "$out" "Allowed LLM names: gpt-5, claude-opus-5-5"
+git config --unset orchestrator.junie.model.fixer
 rm -rf "$JH"
 restore_suite_env
 

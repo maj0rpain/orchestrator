@@ -1,5 +1,16 @@
 # Changelog
 
+## 6.12.2
+
+Fixed four gaps left by moving `orch.sh agent` to Python:
+
+- If a plugin agent file can't be read, `orch.sh agent sync` and the trailing sync of `agent set|clear --host junie` now stop with `orch: agent sync: cannot read <path>` before changing anything. They used to write an empty Junie agent copy and exit 0. Doctor's copy-drift warning names the file and suggests making it readable or reinstalling the plugin.
+- A NUL byte in Junie's log no longer replaces doctor's whole agent settings report with one `FAIL`.
+- Invalid UTF-8 inside a value in Junie's session index no longer makes doctor say the index does not parse.
+- When `python3` is missing or older than 3.9, autopilot's model/effort check now says `orch.sh autopilot needs python3`, not `orch.sh agent`. `orch_python_call` takes `--as <command>` for this.
+
+New tests cover the `agent set`/`clear` flag edge cases, and the docs linter's agent-name self-test no longer passes when it reads no name shapes.
+
 ## 6.12.1
 
 `orch.sh agent` now runs as Python (`scripts/orch_py/orch/agent.py`), moving the agent noun and its tests out of bash. Its CLI verbs (`set`, `show`, `clear`, `get`, `sync`, `roles`), arguments, output, exit codes and `orch:` messages stay the same, with three small differences: doctor reads Junie session index JSON in Python without needing `jq`, marker checks on unreadable paths stay quiet without `sed:` stderr, and doctor's agent-settings check reports a `FAIL` when `python3` 3.9+ is absent. Doctor, autopilot and `docs_lint.sh` now call named Python bridge functions through `orch_python_call` / `orch.agent`, and `scripts/orch/agent.sh` and `scripts/test/orch/agent.sh` are removed.
