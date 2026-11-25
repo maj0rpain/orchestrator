@@ -111,11 +111,6 @@ assert_first_line() {
   assert_eq "$1" "$(printf '%s\n' "$2" | sed -n 1p)" "$3"
 }
 
-# has_line <text> <line>: yes when <line> is one whole line of <text>, else no.
-has_line() {
-  case $'\n'"$1"$'\n' in *$'\n'"$2"$'\n'*) echo yes ;; *) echo no ;; esac
-}
-
 # adapter_stood_in <definitions> <cmd>...: runs <cmd> with ORCH_GH_ADAPTER at a
 # stand-in adapter, a temp file that sources the gh adapter fake and then holds
 # <definitions> (bash text) verbatim. The file is removed whatever <cmd>'s
@@ -366,10 +361,6 @@ restore_index() {
   idx="$(git -C "${1:-.}" rev-parse --absolute-git-dir)/index" || return 1
   mv "$idx.bak" "$idx"
 }
-# branch_and_config: the current branch and the local git config, the facts a
-# refusal on an unreadable tree must leave as they were (git status cannot run
-# there, so these are what can be read).
-branch_and_config() { git branch --show-current; git config --local --list; }
 # flat_text: stdin on one line with every whitespace run collapsed to one
 # space.
 flat_text() { tr -s ' \t\n' '   '; }
@@ -481,17 +472,6 @@ assert_state_unreadable() {
   assert_contains "$1 prints the unreadable line" "$3" \
     "orch: state.json cannot be read - run orch.sh doctor --flow"
   assert_not_contains "$1 leaks no jq text" "$3" "parse error"
-}
-
-# assert_busy_unreadable <label> <out> <st>: asserts a busy-checkout question
-# on a truncated state.json (see state_truncate) exited 3, printed the busy
-# line naming the unreadable state.json in <out>, and leaked no jq parse error.
-# The one place tests spell that line; a remedy is the caller's own assertion.
-assert_busy_unreadable() {
-  assert_status "$1 exits 3" "$3" 3
-  assert_contains "$1 names the unreadable state.json" "$2" \
-    "busy: a flow's state.json cannot be read"
-  assert_not_contains "$1 leaks no jq text" "$2" "parse error"
 }
 
 # state_fixture_drop <key>...: deletes each named key from the checkout's

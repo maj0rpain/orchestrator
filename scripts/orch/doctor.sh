@@ -15,9 +15,9 @@
 # check living in the module of the concept it serves reports through
 # (review.sh's check_standards_declaration): doctor's own glossary and agent
 # settings checks, check_glossary and check_agent_settings, reach their
-# converted Python modules only through orch.sh; init's adopted-issue check,
-# validate_adopted_issue, lives in init.sh, and the triage-label parser the
-# checks read lives in triage-labels.sh.
+# converted Python modules only through orch.sh; init's adopted-issue check
+# lives in the Python init noun (orch/init.py), and the triage-label parser
+# the checks read lives in triage-labels.sh.
 #
 # Sourced into orch.sh, from its orch/ directory, after its shared mechanism
 # (ORCH_SCRIPTS, ROOT, STATE, ORCH_DIR_NAME, HANDOFF_DIR), common.sh

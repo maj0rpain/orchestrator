@@ -5,11 +5,13 @@ each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>`,
 <verb>`, `orch.sh spec-review <verb>`, `orch.sh breakdown <verb>`, `orch.sh
 spec <verb>`, `orch.sh glossary <verb>`, `orch.sh parallel show`, `orch.sh
 route show`, `orch.sh agent <verb>`, `orch.sh slug <text>`, `orch.sh status`,
-`orch.sh archive` or `orch.sh help` (and its spellings) as a command, in a
-checkout under tmp_path, against a fake store seeded in the layout the bash suite's fake_*
-helpers write, with ORCH_GH_FAKE_STORE set as fake_github sets it."""
+`orch.sh init <slug>`, `orch.sh archive` or `orch.sh help` (and its spellings)
+as a command, in a checkout under tmp_path, against a fake store seeded in the
+layout the bash suite's fake_* helpers write, with ORCH_GH_FAKE_STORE set as
+fake_github sets it."""
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -952,7 +954,7 @@ def test_agent_refuses_when_python3_is_missing_or_below_3_9(tmp_path, repo, seed
     )
 
 
-# --- slug, status, archive and help ------------------------------------------
+# --- slug, status, init, archive and help --------------------------------
 
 HELP_GOLDEN = Path(__file__).resolve().parent / "help" / "golden.txt"
 
@@ -994,6 +996,18 @@ def test_archive_moves_the_flow_into_the_archive_through_the_python_noun(tmp_pat
     assert (repo / out.strip() / "state.json").is_file()
     assert not (repo / ".orchestrator" / "state.json").exists()
     assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_init_starts_a_flow_on_an_adopted_issue_through_the_python_noun(tmp_path, repo, seed):
+    seed.issue(12, "open", "ready-for-agent")
+    run_git(repo, "config", "orchestrator.base", "main")
+
+    assert orch_sh(tmp_path, repo, seed, "init", "My Feature!!", "--issue", "12",
+                   path=python3_shim(tmp_path)) == ("my-feature\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+    state = json.loads((repo / ".orchestrator" / "state.json").read_text())
+    assert (state["slug"], state["phase"], state["issue"], state["base"]) == \
+        ("my-feature", "spec", 12, "main")
 
 
 @pytest.mark.parametrize("argv", [("help",), ("-h",), ("--help",), ()],

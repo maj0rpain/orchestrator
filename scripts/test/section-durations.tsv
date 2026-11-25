@@ -34,7 +34,7 @@
 2	2	the suite start (#3582)	7661d78242588461a38289fb228211e159d899f8
 7	8	the pytest suite (#3912)	21deea025158b43b9892524639c0a4fbc5b9bf3c
 2	3	the counting fixture's stdin counter (#3434)	b19a94c28ffbd5db955a5f10a39d0b15791cbc4f
-132	109	affected.sh, the ticket verification (#2023)	804dfb750bb9264c84f450aff35f63f80ea70a6d
+110	100	affected.sh, the ticket verification (#2023)	88d1c2b50f59d72f5d5236b5ee2a6a8c16a482b3
 4	5	the row rule (#3549)	9fdb50e7e723c26a4127289109f27a68989c4579
 7	9	the shared test support, function by function (#3550)	de45838253c482219d70d5af6fd3b26e2079c3f8
 5	7	the gh fake, operation by operation (#3551)	987935a277e021eabb9c02e391ba40e84607a315
@@ -81,25 +81,25 @@
 10	11	base	4ca1f19cac3ef83ca996b678fba01404782aa24d
 37	38	a flow's base branch	45475caadc481a9fbcda51773787f44333982e42
 3	4	base set on a truncated state.json (#1929)	de4767097a86d163c76e27f57e97f2f368040804
-25	18	branch create	1dc2ff2bbd612ebe62e588cd8398e113e0eaa996
-21	16	branch off	a593304d47cbf00cd7703cb6cb488482578c09ae
-5	6	a quick implementation's base branch	46bcc2dc7b6d178534044f5ba9f13ebc3530850b
-3	4	a quick implementation's base SHA (#243)	35a26faa71afd7c0a5e72dedfebdc08736b4c9e3
-14	8	plugin-made branches have no upstream (#1152)	9fbf22e7b63732cecc65df507a97e629e4b2723b
-7	9	branch retire	3aacffdeb6d755080e2943b7462748b9dfce6681
-0	1	branch_records_base (#1713)	fe191a582c471d94004435e349209d91a1c7d92f
-48	36	branch sync (#792)	7aec0323684ca8ee37a88fba3410753194587e3e
-19	17	branch busy (#1201)	fafe7dc7d03fc92c6da1c58d3677d1034ffbde83
-22	12	branch off and branch create refuse a busy checkout (#1202)	46ffbc22a4df2bac376f28a930600b3e76e72850
-28	26	branch create on a restart (ADR-0054)	f0088790924b14428d0cdd4a98c9e4e7f5c2d85e
-56	39	branch create off the flow's branch (#1911)	fa52cd92d093e1dc3228426c2d14f59589b8896a
-11	11	the fork start point is decided where origin is asked (#1930)	3ceaf867c78b7705e4044fdf825391698dfedcca
-0	1	branch: unknown op	09ccbeff10e543f91244486e12686159f5541c9f
-2	3	branch retire beside a same-named tag (#2337)	4b6ee64b25b98b5c750805fad89df265fe42adb9
-14	7	branch create and branch off beside a same-named tag (#2337)	1128e41953f74cffde4492d138e78958e82ed68c
-12	13	checkout (#1078)	85b65822bd5ebac5cdac093e84c0a28d92c25cc0
-3	4	checkout current branch (#1079)	8ed29994be0d37ea761c6fba66a7f1594d5332d1
-19	14	checkout busy, redo-retired branch (#1981)	d6d2a1101edb4c54066c3be0085daad6d002bc7b
+20	12	branch create	fbc89613a30d9f6c699951df7b894afb1caa1dcc
+20	12	branch off	cd819d78aa02df9d8490caf34130a955c000b771
+0	10	a quick implementation's base branch	7200d48425a14770648b17c33d9e5dee68a2a7d2
+8	7	a quick implementation's base SHA (#243)	7538b933b7055e4cfc371405e43fb9aac320a934
+17	9	plugin-made branches have no upstream (#1152)	05298fba1b2a62cb59e12bfd5136a890dcc9a4c6
+14	12	branch retire	bb127ea2160ac8f2d460b525dd96d91a933b086b
+2	2	branch_records_base (#1713)	80ffad673f70cbc120fcd821cf330caf795807a1
+42	36	branch sync (#792)	70b1236b94b894ef98e92f65a2ccd658634c676f
+21	16	branch busy (#1201)	22851ea631d157f42dab7416fb75ec021e93825f
+26	11	branch off and branch create refuse a busy checkout (#1202)	76539516f0828f3039ef9ff067be7ec57f2ca8c8
+27	20	branch create on a restart (ADR-0054)	d95a6617a3026adeea33a2eab8b9481df7154ff8
+52	27	branch create off the flow's branch (#1911)	dd77eca8ed432dc1fcf5cafdb6b198aac77d379b
+16	12	the fork start point is decided where origin is asked (#1930)	ea314b54cb996fa636e7dec2c9a80539ccac860d
+1	1	branch: unknown op	ecb325a7ad0d1cf82b220bfceafbba618e24c396
+4	3	branch retire beside a same-named tag (#2337)	56db96e570c302663c97d70635bd46aab690e169
+13	7	branch create and branch off beside a same-named tag (#2337)	5aa652885fb897e6af44c485e9e50885c46b1d4d
+18	16	checkout (#1078)	6cadda2d1660c75bdca5f8eda6711241a54bcf30
+4	4	checkout current branch (#1079)	524aecb8fc3e0306ff7e1d3b9278fdc903747dd2
+20	12	checkout busy, redo-retired branch (#1981)	e8fd97c72c47cc44870e2747ce3ba8e83c9b311e
 14	13	comments module	bbd8dd8d448e627f5c855c4a453ae228cf85d6d3
 8	10	common.sh is the bottom layer	04f7eed4e1b745bc381196f09f7ddd3c7337cc02
 0	1	orch_dirs_unexcluded	12a7c2c452ab0556c398c46950d20b677e85748f
@@ -177,14 +177,6 @@
 84	93	handoff store contract (#1820)	01d536dfd06b50f15a2c820407f74a23639edf3a
 19	22	handoff comment retire's timeline read	d96753003b7a503ecfc2cd86362d11ba3c0826a2
 2	3	handoff post and fetch with no state file	8a63c0cd1839671032a4c9f386533f0456db50dc
-4	5	init	a38a74b72af29a137a06500944faf99d1f2fe91c
-8	9	init git-excludes the plugin's directories once	278940615078fb0ee72420473088edbcd8765858
-5	6	init refuses a dirty working tree	ab815b2a3529d11a2a3d0447b75bd7a7c397a318
-8	5	init refuses a busy checkout (#1202)	f424deaee7f1355748749442551a4044aa4578f5
-12	14	init --issue	82400ecf9c7249410b4749b5fe7a4f01da9cfdd0
-38	40	init archives a done flow	fc736cd53771a1495c3fe3ff72c4897f720e6d36
-10	8	init seeds the review loop	e45c2f4df91d52b41668d3e7c22601451466b4f3
-5	6	init --issue trust warning	e3f8a66b3ae93ca44a635cd3eae2decbe1c33c24
 185	223	issue-timeline module	c60c74521e712ce2d67cc0b5fceb0a3a9673363e
 6	6	known-items module	4cac231615b2d8d9bc5665e54130500ba44570de
 8	9	Liveness module	a3eb853321244ddc291751d37b820bf4e3a80df7
@@ -268,7 +260,7 @@
 16	17	the state writer accepts exactly the table's phases	8483d2441e21e1e5f965968522b0c3e00737359d
 7	8	state.json schema	425162b3d7cb59537674814f30ff0da8c11d57c4
 4	5	state set on a corrupt state.json	0813b93dd6fb8875d3936903ca0134a8792b0b9e
-18	14	the Flow state module, sourced alone	0d0e56078f43466fb5a431499fd631f738704640
+17	13	the Flow state module, sourced alone	c1268aa893ee9c2ba15499ace565eb9d4234b5f2
 4	4	commands on a truncated state.json (#1929)	13c01774543bda78ec2ac6965ee2467a5c58787b
 7	7	the shared and own-checkout readers on a truncated state.json	84f251301621e7e0eb35e16ed869c67daa50b697
 7	8	state set with a failed write (#1931)	277ecff0e3af2ccabe12e9fd2aebcc95a83b9bc3

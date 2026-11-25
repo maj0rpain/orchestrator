@@ -6,7 +6,8 @@
 # owner. The Python package's Flow state module,
 # scripts/orch_py/orch/flow_state.py, copies flow_state_get_many's rules and
 # the key table's key, default and seed columns, and writes a new flow's seed
-# for Python init; bash writes every later change. The golden state.json files
+# for Python init, the only writer that creates the file; bash writes every
+# later change. The golden state.json files
 # in scripts/orch_py/tests/flow_state/ pin the two: those under read/ and
 # refused/ the readers, which the state section reads through
 # flow_state_get_many too, and those under seed/, which only pytest reads, the
@@ -16,8 +17,8 @@
 # host.sh: every function takes the state file's path as an argument, none
 # reads $ROOT or $STATE, none calls die, and none prints a diagnostic of its
 # own - only a reader's value, a builder's JSON (flow_state_json,
-# flow_state_pairs_json, flow_state_seed) and flow_state_file's path reach
-# stdout. Every outcome is a status:
+# flow_state_pairs_json) and flow_state_file's path reach stdout. Every
+# outcome is a status:
 #
 # - Key lookups (flow_state_key_field, and flow_state_get before it reads):
 #   1 for a key outside the table, 2 for a programming error such as an
@@ -39,18 +40,13 @@
 #   whichever its one walk meets first. Either way it prints nothing.
 # - flow_state_merge: non-zero, the file untouched and no temp file left, for
 #   an absent file or a failed replace.
-# - Writers (flow_state_write, flow_state_write_string, flow_state_write_many,
-#   flow_state_create): non-zero, the state file untouched and no temp file
-#   left, when the write fails. flow_state_write, flow_state_write_string and
-#   flow_state_write_many change an existing state file: an absent one is a
-#   failed write, and nothing is created. flow_state_write_many takes
-#   --string before a pair to store that pair's value as a JSON string, as
-#   flow_state_write_string does; a malformed pair list is a failed write.
-#   flow_state_create is the one writer that creates the file, or replaces it
-#   whole.
-# - flow_state_seed: 2 for an arg row it has no value for, a programming
-#   error, and 1 when jq cannot build the seed. Either way it prints
-#   nothing.
+# - Writers (flow_state_write, flow_state_write_string, flow_state_write_many):
+#   non-zero, the state file untouched and no temp file left, when the write
+#   fails. Each changes an existing state file: an absent one is a failed
+#   write, and nothing is created - Python init creates it.
+#   flow_state_write_many takes --string before a pair to store that pair's
+#   value as a JSON string, as flow_state_write_string does; a malformed pair
+#   list is a failed write.
 #
 # Every function carries the flow_state_ prefix but state_rows and now, so
 # none collides with orch.sh's wrappers, which keep today's names. It stays
@@ -67,18 +63,20 @@
 ORCH_DIR_NAME=".orchestrator"
 
 # Every flow state key, one row each, in the order init seeds them into
-# state.json: key|default|seed|owner. state_get, state set and init all read
-# it, so adding a key is one row; an arg row also needs its value in
-# flow_state_seed's case, and without it init dies "could not build the state
-# seed". state_rows is its one reader: lines starting with # are comments, and
-# blank lines are skipped.
+# state.json: key|default|seed|owner. state_get and state set read it, so
+# adding a key is one row here and one in the Python Flow state module's
+# STATE_KEYS, which Python init seeds from; an arg row also needs its value in
+# that module's _SEED_ARGS, and without it init dies "could not build the
+# state seed". The seed column is the shared format's bash record, which
+# pytest's parity test pins Python's to. state_rows is its one reader: lines
+# starting with # are comments, and blank lines are skipped.
 #
 # default: what state_get returns for a null or missing value. A flow started
 #   by an older release lacks keys a fresh one seeds; each reads back as its
 #   default. The default applies only to a null or missing value, never to a
 #   stored false (jq's `//` would treat false like null).
 # seed: the JSON literal init writes, or arg where init supplies the value at
-#   run time; the value comes from flow_state_seed's case.
+#   run time; Python init writes it (orch/flow_state.py's _SEED_ARGS).
 # owner: - for a key state set may write (state_key_settable); otherwise the
 #   reason it refuses, printed as "state set refuses <key>: <owner>".
 STATE_KEYS='slug||arg|init seeds it
@@ -279,42 +277,6 @@ flow_state_put() {
   local obj
   obj="$(jq -nc --arg k "$2" --argjson v "$3" '{($k): $v}')" || return
   flow_state_merge "$1" "$obj"
-}
-
-# flow_state_seed <slug> <issue> <base>: prints the JSON init seeds a new
-# flow's state file with, built in one pass over the key table in table order:
-# a constant row gives its seed literal, and an arg row the value its case arm
-# below gives - an empty <issue> seeds null, any other a number. An arg row
-# with no arm returns 2 and prints nothing, rather than seed null.
-flow_state_seed() {
-  local k s v fields="" seed
-  while IFS='|' read -r k _ s _; do
-    v="$s"
-    if [ "$s" = arg ]; then
-      case "$k" in
-        slug)    v='$slug' ;;
-        issue)   v='(if $issue == "" then null else ($issue | tonumber) end)' ;;
-        base)    v='$base' ;;
-        created|updated) v='$now' ;;
-        *) return 2 ;;
-      esac
-    fi
-    fields="${fields:+$fields,}\"$k\":$v"
-  done <<EOT
-$(state_rows)
-EOT
-  seed="$(jq -n --arg slug "$1" --arg issue "$2" --arg base "$3" --arg now "$(now)" \
-    "{$fields}" 2>/dev/null)" || return 1
-  printf '%s\n' "$seed"
-}
-
-# flow_state_create <file> <json>: writes <json> to <file>, creating it or
-# replacing it whole - init's write of a new flow's seed - through
-# flow_state_replace, so a failed write leaves <file> untouched and no temp
-# file. The write goes through jq, so <json> that does not parse is a failed
-# write.
-flow_state_create() {
-  flow_state_replace "$1" . <<<"$2" 2>/dev/null
 }
 
 # flow_state_write <file> <key> <value>: the coercing writer. "null" stores a

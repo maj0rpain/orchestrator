@@ -38,7 +38,7 @@
 #   the lens bench's fixture directories (scripts/dev/lens-bench/,
 #   scripts/test/lens-bench/), markdown files included
 #                                     lens_bench_test.sh (wins over *.md)
-#   flow-state.sh                     the core set, plus the state, init and
+#   flow-state.sh                     the core set, plus the state and
 #                                     side-checkout sections
 #   host.sh                           the core set, plus the doctor sections
 #   bash-walk.sh, paste-guard.sh      hooks_test.sh
@@ -442,7 +442,7 @@ classify() {
     [ "$row" -eq 1 ] || support_select "$f" "$state"
   elif ! listed "$f" "${CORE_FILES[@]}"; then
     case "$f" in
-      scripts/flow-state.sh) core=1; sections_of state init side-checkout ;;
+      scripts/flow-state.sh) core=1; sections_of state side-checkout ;;
       scripts/host.sh) core=1; sections_of doctor ;;
       scripts/bash-walk.sh | scripts/paste-guard.sh) want+=(hooks_test.sh) ;;
       scripts/planning-allowlist.sh) want+=(hooks_test.sh); sections_of doctor ;;

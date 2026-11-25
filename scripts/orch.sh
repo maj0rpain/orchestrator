@@ -222,18 +222,17 @@ main() {
   shift || true
   case "$cmd" in
     # The nouns converted to Python, the one place naming them: each runs
-    # through orch_python, and has no module of its own here. Among them the
-    # bare global commands slug, status, archive and help, help with its
-    # option spellings, which the Python entry point runs as help; a bare
-    # orch.sh is help too.
-    issue|finding-triage|verification|audit|review-pass|spec-review|spec|breakdown|glossary|parallel|route|agent|slug|status|archive|help|-h|--help)
+    # through orch_python, and has no module of its own here. Among them
+    # init, and the bare global commands slug, status, archive and help, help
+    # with its option spellings, which the Python entry point runs as help; a
+    # bare orch.sh is help too.
+    issue|finding-triage|verification|audit|review-pass|spec-review|spec|breakdown|glossary|parallel|route|agent|slug|status|archive|help|-h|--help|init)
       orch_python "$cmd" "$@" ;;
     doctor|health) cmd_doctor "$@" ;;
     default-branch) cmd_default_branch "$@" ;;
     base)          cmd_base "$@" ;;
     autopilot)     cmd_autopilot "$@" ;;
     repo)          cmd_repo "$@" ;;
-    init)          cmd_init "$@" ;;
     state)         cmd_state "$@" ;;
     handoff)       cmd_handoff "$@" ;;
     phase)         cmd_phase "$@" ;;
