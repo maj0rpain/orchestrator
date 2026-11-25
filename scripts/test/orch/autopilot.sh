@@ -25,6 +25,26 @@ vrun_live() {
   kill -0 -- "-$pid" 2>/dev/null
 }
 
+# path_without <cmd>: PATH with no <cmd> on it, printed: each directory holding
+# one is replaced by a new directory linking every other command there.
+path_without() {
+  local dir links k=0 kept="" f
+  local -a dirs
+  IFS=: read -r -a dirs <<<"$PATH"
+  for dir in "${dirs[@]}"; do
+    k=$((k + 1))
+    if [ -e "$dir/$1" ]; then
+      links="$(mktemp -d)"
+      for f in "$dir"/*; do
+        [ "${f##*/}" = "$1" ] || ln -s "$f" "$links/${f##*/}"
+      done
+      dir="$links"
+    fi
+    kept="${kept:+$kept:}$dir"
+  done
+  printf '%s\n' "$kept"
+}
+
 # tick_calls: how many sessions the launcher has been asked for.
 tick_calls() { local n; n="$(grep -c '^argv:' "$launcher_dir/calls" 2>/dev/null)"; printf '%s\n' "${n:-0}"; }
 # picked: the side checkouts the launcher started sessions in, in order, one
@@ -132,6 +152,17 @@ done
 git config --unset-all orchestrator.autopilot.model
 git config --unset-all orchestrator.autopilot.effort
 
+git config orchestrator.autopilot.model gpt
+out="$("$ORCH" autopilot show 2>&1)"
+assert_eq "a disallowed model dies with the full not-an-allowed line" "$(has_line "$out" \
+  "orch: orchestrator.autopilot.model is gpt - not an allowed model (want sonnet|opus|haiku|fable|inherit)")" yes
+git config orchestrator.autopilot.model opus
+out="$(PATH="$(path_without python3)" "$ORCH" autopilot show 2>&1)"; st=$?
+assert_status "autopilot show dies on a set model with python3 absent" "$st" 1
+assert_eq "naming the autopilot command, not agent" "$(has_line "$out" \
+  "orch: orch.sh autopilot needs python3 3.9 or newer (found none) - run orch.sh doctor")" yes
+git config --unset-all orchestrator.autopilot.model
+
 ap_py="$(counting_bin python3)"
 out="$(PATH="$ap_py:$PATH" "$ORCH" autopilot show 2>&1)"; st=$?
 assert_status "autopilot show succeeds with counting python3 when model and effort are unset" "$st" 0
@@ -142,6 +173,12 @@ out="$(PATH="$ap_py:$PATH" "$ORCH" autopilot show 2>&1)"; st=$?
 assert_status "autopilot show succeeds with a set model through python3" "$st" 0
 assert_eq "a set model validates through one python3 call" "$(counting_starts "$ap_py" python3)" "1"
 git config --unset-all orchestrator.autopilot.model
+git config orchestrator.autopilot.effort high
+: >"$ap_py/python3.log"
+out="$(PATH="$ap_py:$PATH" "$ORCH" autopilot show 2>&1)"; st=$?
+assert_status "autopilot show succeeds with a set effort through python3" "$st" 0
+assert_eq "a set effort alone validates through one python3 call" "$(counting_starts "$ap_py" python3)" "1"
+git config --unset-all orchestrator.autopilot.effort
 rm -rf "$ap_py"
 unset ap_py
 
