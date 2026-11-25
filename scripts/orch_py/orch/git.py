@@ -9,7 +9,8 @@ line histories finding triage's scan, Lines fate and the default-branch
 lookup read, the working-tree state, object names, config value and main
 checkout the verification noun reads, the common directory the git exclude
 writer (orch.common) appends under, the current branch a review pass
-starts on, the push the gh adapter's claim delete makes, and the scoped git
+starts on, the push the gh adapter's claim delete makes, the dirty paths
+the planning allowlist's flow-start scan judges, and the scoped git
 config reads, writes and unsets (`config_regexp`, `config_set`,
 `config_unset`) the agent noun uses. There is no generic run: each later
 noun adds the operations it
@@ -60,6 +61,7 @@ COULD_NOT: Dict[str, Any] = {
     "git_common_dir": None,
     "current_branch": None,
     "push": "git gave no reason",
+    "dirty_paths": "git gave no reason",
 }
 
 def git_push_reason(stderr: str) -> str:
@@ -323,6 +325,31 @@ class Git:
         --branch` takes it: False for an empty one."""
         return self._run_at_top(["check-ref-format", "--branch", name]).returncode == 0
 
+    # The planning allowlist's dirty-path scan's operation, run at the top
+    # level as bash's `git -C "$ROOT" status` is.
+
+    def dirty_paths(self) -> Union[List[str], str]:
+        """Every path with tracked changes, staged or not, or an untracked
+        file, from the top level, in `status --porcelain=v1 -z -uall`'s
+        order: each untracked file named on its own, and both sides of a
+        rename or copy, since the source is gone from where it was. When
+        status cannot run, git's own error line, its stderr's first, instead:
+        a str, never a list, so it cannot read as a clean tree."""
+        run = self._run_at_top(["status", "--porcelain=v1", "-z", "-uall"])
+        if run.returncode != 0:
+            line = run.stderr.decode("utf-8", "surrogateescape").split("\n", 1)[0]
+            return line or COULD_NOT["dirty_paths"]
+        paths: List[str] = []
+        want_source = False
+        for rec in run.stdout.decode("utf-8", "surrogateescape").split("\0")[:-1]:
+            if want_source:
+                paths.append(rec)
+                want_source = False
+                continue
+            paths.append(rec[3:])
+            want_source = "R" in rec[:2] or "C" in rec[:2]
+        return paths
+
     # The verification noun's operations, each run at the top level, each None
     # on a git failure.
 
@@ -583,6 +610,9 @@ class FakeGit:
 
     def is_branch_name(self, name: str) -> bool:
         return self._answer("is_branch_name", name)
+
+    def dirty_paths(self) -> Union[List[str], str]:
+        return self._answer("dirty_paths")
 
     def tree_state(self) -> Optional[str]:
         return self._answer("tree_state")

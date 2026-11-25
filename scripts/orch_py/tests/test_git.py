@@ -481,6 +481,25 @@ def test_the_main_checkout_reads_the_same_from_a_worktree_and_the_fake(worked, t
     assert fails_alike(Git(cwd=str(tmp_path)), "main_checkout") is None
 
 
+# --- the planning allowlist's dirty-path scan's operation -----------------------
+
+
+def test_the_dirty_paths_read_the_same_from_a_real_repo_and_the_fake(worked, where):
+    assert alike(adapter(worked, where), "dirty_paths") == [
+        "a.txt", "b.txt", ".orchestrator/x", "bin.dat", "sub/new.txt",
+    ]
+
+
+def test_outside_a_repository_the_dirty_paths_are_git_s_error_line(tmp_path):
+    answer = Git(cwd=str(tmp_path)).dirty_paths()
+
+    assert answer.startswith("fatal: not a git repository")
+
+
+def test_an_unseeded_fake_answers_the_dirty_paths_with_no_reason():
+    assert FakeGit().dirty_paths() == "git gave no reason"
+
+
 # --- the exclude writer's operation -------------------------------------------
 
 
