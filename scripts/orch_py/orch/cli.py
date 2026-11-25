@@ -5,10 +5,17 @@ main(argv) takes `<noun> <verb> ...` as orch.sh hands them on. A noun not in
 NOUNS dies as orch.sh dies on an unknown command; `-h` and `--help`, help's
 option spellings, run help, through ALIASES rather than NOUNS, since call_func
 finds a noun's module by its name.
+
+Both main and call_func end a run whose stdout pipe is closed before it is all
+written as SIGPIPE ended bash's printf and cat: silently, with no Python
+traceback or flush warning.
 """
 from __future__ import annotations
 
 import importlib
+import os
+import signal
+import sys
 from typing import Callable, Dict, List
 
 from orch.common import die
@@ -143,12 +150,27 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
 ALIASES: Dict[str, str] = {"-h": "help", "--help": "help"}
 
 
+def _sigpipe_as_bash(run: Callable[[List[str]], int], argv: List[str]) -> int:
+    """run(<argv>) and its exit code, stdout flushed before it returns. Python
+    ignores SIGPIPE, so a write into a pipe whose reader is gone raises
+    BrokenPipeError where bash died of the signal: die of it too, so the
+    shell sees bash's status and nothing is printed."""
+    try:
+        code = run(argv)
+        sys.stdout.flush()
+        return code
+    except BrokenPipeError:
+        signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+        os.kill(os.getpid(), signal.SIGPIPE)
+        raise
+
+
 def main(argv: List[str]) -> int:
     noun = argv[0] if argv else ""
     run = NOUNS.get(ALIASES.get(noun, noun))
     if run is None:
         die("unknown command: %s (run 'orch.sh help')" % noun)
-    return run(argv[1:])
+    return _sigpipe_as_bash(run, argv[1:])
 
 
 def call_func(argv: List[str]) -> int:
@@ -168,5 +190,5 @@ def call_func(argv: List[str]) -> int:
     fn = getattr(mod, name, None)
     if not callable(fn):
         die("unknown %s function: %s" % (noun, name))
-    result = fn(args)
+    result = _sigpipe_as_bash(fn, args)
     return 0 if result is None else result

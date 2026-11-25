@@ -25,6 +25,7 @@ import pytest
 from conftest import (
     AUDIT_FIXTURES,
     GLOBAL_CONFIG,
+    PACKAGE_BOOTSTRAP,
     VERIFICATION_KNOBS,
     comments_of,
     committed,
@@ -168,8 +169,7 @@ def test_the_noun_run_outside_a_checkout_dies_as_orch_sh_does(tmp_path, repo, ca
     (repo / "sub").mkdir()
     outside = tmp_path / "outside"
     outside.mkdir()
-    env = dict(os.environ, HOME=str(tmp_path), PYTHONDONTWRITEBYTECODE="1",
-               PYTHONPATH=str(SCRIPTS / "orch_py"))
+    env = dict(os.environ, HOME=str(tmp_path), PYTHONDONTWRITEBYTECODE="1")
     env.pop("OLDPWD", None)
     if came_from is not None:
         env["OLDPWD"] = str(repo / came_from)
@@ -182,7 +182,7 @@ def test_the_noun_run_outside_a_checkout_dies_as_orch_sh_does(tmp_path, repo, ca
 
     bash = run("/bin/bash", str(SCRIPTS / "orch.sh"))
     assert bash[2] == 1 and "not inside a git repository" in bash[1]
-    assert run(sys.executable, "-m", "orch") == bash
+    assert run(sys.executable, "-c", PACKAGE_BOOTSTRAP, str(SCRIPTS / "orch_py")) == bash
 
 
 # --- finding-triage ----------------------------------------------------------

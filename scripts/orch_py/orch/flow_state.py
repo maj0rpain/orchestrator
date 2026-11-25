@@ -91,11 +91,11 @@ _SEED_ARGS = {
 
 def flow_state_seed(slug: str, issue: str, base: str,
                     clock: Callable[[], float] = time.time) -> Dict[str, Any]:
-    """The state a new flow is seeded with, bash flow_state_seed: every key
-    of the table in table order, a constant row its seed literal and an arg
-    row its _SEED_ARGS value, created and updated stamped with the time
-    <clock> reads. An arg row with no _SEED_ARGS value raises KeyError: a
-    programming error, never a seed of null."""
+    """The state a new flow is seeded with, ported from the deleted bash
+    flow_state_seed: every key of the table in table order, a constant row
+    its seed literal and an arg row its _SEED_ARGS value, created and updated
+    stamped with the time <clock> reads. An arg row with no _SEED_ARGS value
+    raises KeyError: a programming error, never a seed of null."""
     stamp = now(clock)
     return {key: _SEED_ARGS[key](slug, issue, base, stamp) if seed == "arg" else json.loads(seed)
             for key, _, seed in STATE_KEYS}
@@ -103,9 +103,10 @@ def flow_state_seed(slug: str, issue: str, base: str,
 
 def flow_state_create(path: str, state: Mapping[str, Any]) -> bool:
     """Writes <state> to <path> as jq prints it, creating the file or
-    replacing it whole, bash flow_state_create: through a temporary file
-    beside it, so a failed write - its directory gone included - leaves
-    <path> untouched and no temporary file. Whether it succeeded."""
+    replacing it whole, ported from the deleted bash flow_state_create:
+    through a temporary file beside it, so a failed write - its directory
+    gone included - leaves <path> untouched and no temporary file. Whether
+    it succeeded."""
     return file_write_atomic(path, _state_text(state), make_directory=False)
 
 

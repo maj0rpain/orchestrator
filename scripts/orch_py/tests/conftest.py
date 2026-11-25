@@ -33,6 +33,18 @@ CHECKOUT = "/nonexistent/checkout"
 # The variables naming a git config file other than $HOME's, unset so a test's
 # HOME holds the only global config git reads or writes.
 GLOBAL_CONFIG = ("GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME")
+# orch.sh's -c bootstrap, as `python3 -c PACKAGE_BOOTSTRAP <package dir>
+# <noun> ...`: the package directory, argv[1], goes first on sys.path - never
+# on PYTHONPATH, which splits a path holding a colon - and orch's __main__ runs
+# as `python3 -m orch` would.
+PACKAGE_BOOTSTRAP = (
+    "import sys\n"
+    "if sys.path and sys.path[0] == '':\n"
+    "    del sys.path[0]\n"
+    "sys.path.insert(0, sys.argv.pop(1))\n"
+    "import runpy\n"
+    "runpy.run_module('orch', run_name='__main__', alter_sys=True)\n"
+)
 
 
 @pytest.fixture

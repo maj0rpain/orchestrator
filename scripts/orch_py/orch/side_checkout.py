@@ -51,11 +51,6 @@ def side_checkout_marker(git, path: str) -> Optional[str]:
     return os.path.join(gitdir, SIDE_CHECKOUT_MARKER)
 
 
-def _note(text: str) -> None:
-    """bash note: <text> and a newline on stdout."""
-    stdout_write(text + "\n")
-
-
 def archive_root(git, root: str) -> Optional[str]:
     """The checkout whose .orchestrator/archive/ receives the flow in the
     checkout at <root> - the one computation of the rule. A side checkout's
@@ -140,8 +135,8 @@ def side_checkout_close_note(path: str, here: str) -> None:
     inside <path>, a worktree just removed: the session's working directory
     is gone."""
     if (here + "/").startswith(path + "/"):
-        _note("This session's working directory was that side checkout, and it is gone"
-              " - close this session.")
+        stdout_write("This session's working directory was that side checkout, and it is gone"
+                     " - close this session.\n")
 
 
 def side_checkout_remove_worktree(git, path: str, main_root: str, here: str,
@@ -161,7 +156,7 @@ def side_checkout_remove_worktree(git, path: str, main_root: str, here: str,
             die(message)
         warn(message)
         return False
-    _note("removed side checkout " + path)
+    stdout_write("removed side checkout " + path + "\n")
     side_checkout_close_note(path, here)
     return True
 
@@ -184,7 +179,7 @@ def side_checkout_archive_and_remove(git, path: str, main_root: str, here: str, 
         if code != 0:
             return 2, err.rstrip("\n")
         archive_out = shown
-        _note(archive_out)
+        stdout_write(archive_out + "\n")
     removed = side_checkout_remove_worktree(git, path, main_root, here, policy)
     return (0 if removed else 1), archive_out
 

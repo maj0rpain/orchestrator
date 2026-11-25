@@ -4,13 +4,10 @@ verbatim from bash cmd_help's here-document, byte for byte.
 
 run(argv) takes the arguments after `help` and ignores them, as cmd_help did,
 printing the text and returning 0. A pipe closed before the text is all read
-ends the process as SIGPIPE ended cat, silently, rather than with a Python
-traceback.
+ends the process as SIGPIPE ended cat, through orch.cli's main.
 """
 from __future__ import annotations
 
-import os
-import signal
 from typing import List
 
 from orch.common import stdout_write
@@ -1086,11 +1083,5 @@ orch.sh - deterministic operations for the orchestrator flow
 
 def run(argv: List[str]) -> int:
     """`orch.sh help`: prints HELP, whatever <argv> holds."""
-    try:
-        stdout_write(HELP)
-    except BrokenPipeError:
-        # Python ignores SIGPIPE; cat died of it. Die of it too, so the shell
-        # sees cat's status and no traceback or flush warning is printed.
-        signal.signal(signal.SIGPIPE, signal.SIG_DFL)
-        os.kill(os.getpid(), signal.SIGPIPE)
+    stdout_write(HELP)
     return 0
