@@ -63,6 +63,21 @@ doctor_github() {
 alias_doctor() { PATH="$ssh_stub_dir:$PATH" "$ORCH" doctor --env 2>&1; }
 hint="came from origin's SSH URL and may be an SSH Host alias"
 
+# py3_stub_doctor <dir> <version> <body>: doctor --env with <dir>/python3 first
+# on PATH, a stub that answers check_python3's version probe with <version> and
+# runs the sh <body> for every other call; its output in out, its status in st.
+py3_stub_doctor() {
+  cat >"$1/python3" <<EOF
+#!/bin/sh
+case "\$*" in
+  *sys.version_info*) echo "$2"; exit 0 ;;
+esac
+$3
+EOF
+  chmod +x "$1/python3"
+  out="$(PATH="$1:$PATH" "$ORCH" doctor --env 2>&1)"; st=$?
+}
+
 # path_without_jq() builds its restricted PATH from whatever's really on PATH,
 # not from repo state, so the one built here serves every no-jq assertion
 # (in doctor and in doctor --flow) instead of symlinking the same ~20 tools
@@ -978,28 +993,14 @@ py3_real="$(command -v python3)"
 py3_doctor() {
   local v="$1"
   if [ "$v" = 3.9.0 ]; then
-    cat >"$py3_dir/python3" <<EOF
-#!/bin/sh
-case "\$*" in
-  *sys.version_info*) echo "$v"; exit 0 ;;
-esac
-exec "$py3_real" "\$@"
-EOF
+    py3_stub_doctor "$py3_dir" "$v" "exec \"$py3_real\" \"\$@\""
   else
     local maj="${v%%.*}" rest="${v#*.}" min pat
     min="${rest%%.*}"; pat="${rest#*.}"
-    cat >"$py3_dir/python3" <<EOF
-#!/bin/sh
-case "\$*" in
-  *sys.version_info*) echo "$v"; exit 0 ;;
-esac
-code="\$2"
+    py3_stub_doctor "$py3_dir" "$v" "code=\"\$2\"
 shift 2
-exec "$py3_real" -c 'import sys; sys.version_info = ($maj, $min, $pat, "final", 0); exec(sys.argv.pop(1))' "\$code" "\$@"
-EOF
+exec \"$py3_real\" -c 'import sys; sys.version_info = ($maj, $min, $pat, \"final\", 0); exec(sys.argv.pop(1))' \"\$code\" \"\$@\""
   fi
-  chmod +x "$py3_dir/python3"
-  out="$(PATH="$py3_dir:$PATH" "$ORCH" doctor --env 2>&1)"; st=$?
 }
 py3_doctor 3.9.0
 assert_status "python3 3.9 passes" "$st" 0
@@ -2181,17 +2182,9 @@ fi
 # Bridge exit failures and empty/malformed exit-0 output emit one FAIL without
 # aborting.
 ab_dir="$(mktemp -d)"
-agent_bridge_doctor() { # <sh body for non-version-probe python3 calls>
-  cat >"$ab_dir/python3" <<EOF
-#!/bin/sh
-case "\$*" in
-  *sys.version_info*) echo 3.9.0; exit 0 ;;
-esac
-$1
-EOF
-  chmod +x "$ab_dir/python3"
-  out="$(PATH="$ab_dir:$PATH" "$ORCH" doctor --env 2>&1)"; st=$?
-}
+# agent_bridge_doctor <body>: py3_stub_doctor with python3 3.9.0, <body> run
+# for every call but the version probe.
+agent_bridge_doctor() { py3_stub_doctor "$ab_dir" 3.9.0 "$1"; }
 agent_bridge_doctor 'printf "orch: bridge exploded\n" >&2; exit 1'
 assert_status "bridge non-zero exit with stderr fails doctor" "$st" 1
 assert_contains "reporting stderr through err_line" "$out" "FAIL  bridge exploded"

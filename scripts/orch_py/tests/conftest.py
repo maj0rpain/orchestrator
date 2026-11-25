@@ -30,6 +30,9 @@ GH_502 = "HTTP 502: Bad Gateway\nsecond line"
 # The root of the checkout a test runs in when it needs no file there: no
 # triage-labels doc, so every role is its own label.
 CHECKOUT = "/nonexistent/checkout"
+# The variables naming a git config file other than $HOME's, unset so a test's
+# HOME holds the only global config git reads or writes.
+GLOBAL_CONFIG = ("GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME")
 
 
 @pytest.fixture

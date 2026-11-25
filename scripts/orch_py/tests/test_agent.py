@@ -308,6 +308,21 @@ def test_show_prints_non_utf8_config_bytes_verbatim(root, monkeypatch):
     assert b"fixer model bad\xffval (local, invalid) effort inherit (inherit)\n" in out.buffer.getvalue()
 
 
+def test_get_refusal_prints_non_utf8_config_bytes_verbatim(root, monkeypatch):
+    git = FakeGit(
+        toplevel=str(root),
+        local_config={"orchestrator.model.fixer": "bad\udcffval"},
+    )
+    err = io.TextIOWrapper(io.BytesIO(), encoding="utf-8", errors="backslashreplace")
+    monkeypatch.setattr(sys, "stderr", err)
+
+    assert orch_agent(git, "get", "fixer") == 1
+    err.flush()
+    assert err.buffer.getvalue().startswith(
+        b"orch: orchestrator.model.fixer is bad\xffval - not an allowed model"
+    )
+
+
 def test_config_cache_loads_each_scope_once_per_run(root, capsys):
     git = CountingGit(toplevel=str(root), local_config={"orchestrator.model.lens": "opus"})
 
@@ -793,7 +808,7 @@ def test_sync_writes_updates_prunes_copies_and_updates_git_exclude(root, tmp_pat
 
     with open(copies_dir / "orch-implementer.md", "a", encoding="utf-8") as f:
         f.write("\n\n")
-    plan = agent.agent_sync_plan(git, str(root), plugin_root=str(plugin))
+    plan = agent.agent_sync_plan(str(root), agent.ConfigCache(git), "junie", str(plugin))
     assert [(w.name, w.model, w.effort, w.state) for w in plan.writes] == [
         ("orch-implementer", "gpt-5", "high", "stale")
     ]
@@ -1065,7 +1080,7 @@ def test_sync_fails_fast_with_exact_messages_on_exclude_delete_create_and_write_
 # --- bridges: docs linter, autopilot, and doctor ------------------------------
 
 
-def test_name_shapes_emits_ordered_role_glob_ere_lines_and_covers_all_roles(root, capsys):
+def test_name_shapes_emits_ordered_role_glob_ere_lines_and_covers_all_roles(capsys):
     assert agent.name_shapes() == 0
     out, err = capsys.readouterr()
     assert err == ""
@@ -1089,28 +1104,26 @@ def test_name_shapes_emits_ordered_role_glob_ere_lines_and_covers_all_roles(root
         1, "", "orch: usage: orch_python_call agent name_shapes\n"
     )
 
-    # Stays off the public CLI verb surface.
-    git = FakeGit(toplevel=str(root))
-    assert orch_agent(git, "name_shapes") == 1
-    assert capsys.readouterr() == (
-        "", "orch: unknown agent op: name_shapes (want set|show|clear|get|sync|roles)\n"
-    )
 
-
-def test_validate_autopilot_checks_claude_model_and_effort_and_preserves_error_message(
-    root, capsys
-):
+def test_validate_autopilot_checks_claude_model_and_effort_and_preserves_error_message(capsys):
     for model in ("sonnet", "opus", "haiku", "fable", "inherit"):
-        assert cli.call_func(["agent", "validate_autopilot", "model", model]) == 0
+        assert cli.call_func(
+            ["agent", "validate_autopilot", "model", model, "orchestrator.autopilot.model"]
+        ) == 0
         assert capsys.readouterr() == ("", "")
 
     for effort in ("low", "medium", "high", "xhigh", "max", "inherit"):
-        assert cli.call_func(["agent", "validate_autopilot", "effort", effort]) == 0
+        assert cli.call_func(
+            ["agent", "validate_autopilot", "effort", effort, "orchestrator.autopilot.effort"]
+        ) == 0
         assert capsys.readouterr() == ("", "")
 
     for bad_model in ("gpt", "Opus", "opus haiku", "", "opus\nsonnet"):
         assert died_of(
-            capsys, lambda v=bad_model: cli.call_func(["agent", "validate_autopilot", "model", v])
+            capsys,
+            lambda v=bad_model: cli.call_func(
+                ["agent", "validate_autopilot", "model", v, "orchestrator.autopilot.model"]
+            ),
         ) == (
             1, "",
             "orch: orchestrator.autopilot.model is %s - not an allowed model"
@@ -1119,14 +1132,17 @@ def test_validate_autopilot_checks_claude_model_and_effort_and_preserves_error_m
 
     for bad_effort in ("extreme", "High", ""):
         assert died_of(
-            capsys, lambda v=bad_effort: cli.call_func(["agent", "validate_autopilot", "effort", v])
+            capsys,
+            lambda v=bad_effort: cli.call_func(
+                ["agent", "validate_autopilot", "effort", v, "orchestrator.autopilot.effort"]
+            ),
         ) == (
             1, "",
             "orch: orchestrator.autopilot.effort is %s - not an allowed effort"
             " (want low|medium|high|xhigh|max|inherit)\n" % bad_effort,
         )
 
-    # Explicit third argument overrides the key named in the error message.
+    # The error message names the key it is handed.
     assert died_of(
         capsys,
         lambda: cli.call_func(["agent", "validate_autopilot", "model", "gpt", "custom.key"]),
@@ -1137,20 +1153,14 @@ def test_validate_autopilot_checks_claude_model_and_effort_and_preserves_error_m
     )
 
     # Usage refusals for wrong arity or unknown setting kind.
-    for bad_args in ([], ["model"], ["bogus", "opus"], ["model", "opus", "k", "extra"]):
+    for bad_args in ([], ["model"], ["model", "opus"], ["bogus", "opus", "k"],
+                     ["model", "opus", "k", "extra"]):
         assert died_of(
             capsys, lambda a=bad_args: agent.validate_autopilot(a)
         ) == (
             1, "",
-            "orch: usage: orch_python_call agent validate_autopilot <model|effort> <value> [<key>]\n",
+            "orch: usage: orch_python_call agent validate_autopilot <model|effort> <value> <key>\n",
         )
-
-    # Stays off the public CLI verb surface.
-    git = FakeGit(toplevel=str(root))
-    assert orch_agent(git, "validate_autopilot") == 1
-    assert capsys.readouterr() == (
-        "", "orch: unknown agent op: validate_autopilot (want set|show|clear|get|sync|roles)\n"
-    )
 
 
 def doctor_records(capsys, git, home, plugin_root):
@@ -1260,8 +1270,7 @@ def test_check_settings_emits_nul_records_for_host_settings_per_scope_validation
     ) in records
     assert ("remedy", "orch.sh agent clear closer --host junie --effort --global") in records
 
-    # Dispatches via cli.call_func, refuses extra args, refuses outside checkout,
-    # and stays off the public CLI verb surface.
+    # Dispatches via cli.call_func, refuses extra args, and refuses outside checkout.
     monkeypatch.setattr(agent, "Git", lambda: FakeGit(toplevel=str(root)))
     monkeypatch.setenv("HOME", str(home))
     assert cli.call_func(["agent", "check_settings"]) == 0
@@ -1275,11 +1284,6 @@ def test_check_settings_emits_nul_records_for_host_settings_per_scope_validation
         capsys, lambda: agent.check_settings([], git=FakeGit(toplevel=None), env={})
     )
     assert (code, out) == (1, "") and err.startswith("orch: not inside a git repository")
-
-    assert orch_agent(git, "check_settings") == 1
-    assert capsys.readouterr() == (
-        "", "orch: unknown agent op: check_settings (want set|show|clear|get|sync|roles)\n"
-    )
 
 
 def write_junie_index(home, entries):

@@ -20,6 +20,7 @@ import pytest
 
 from conftest import (
     AUDIT_FIXTURES,
+    GLOBAL_CONFIG,
     VERIFICATION_KNOBS,
     comments_of,
     committed,
@@ -47,26 +48,34 @@ def repo(tmp_path):
     return root
 
 
-def orch_sh(tmp_path, cwd, seed, *args, path=None, knobs=None, unset=(), joined=False,
-            script=None):
-    """`orch.sh <args>` run by bash in <cwd> on <seed>'s store, PATH <path>
-    (the test's own when None), with the variables <knobs> set and those
-    named in <unset> unset: its stdout, stderr and exit code. <joined> sends
-    stderr into stdout, one stream in the order written, its stderr then
-    empty. <script> overrides the orch.sh path (e.g. a symlinked install)."""
-    env = dict(os.environ, HOME=str(tmp_path), ORCH_GH_FAKE_STORE=seed.store,
-               PYTHONDONTWRITEBYTECODE="1", **(knobs or {}))
+def bash_run(tmp_path, cwd, argv, path=None, knobs=None, unset=(), joined=False):
+    """bash <argv> run in <cwd>, HOME tmp_path, PATH <path> (the test's own
+    when None), with the variables <knobs> set and those named in <unset>
+    unset: its stdout, stderr and exit code. <joined> sends stderr into
+    stdout, one stream in the order written, its stderr then empty."""
+    env = dict(os.environ, HOME=str(tmp_path), PYTHONDONTWRITEBYTECODE="1", **(knobs or {}))
     for name in unset:
         env.pop(name, None)
     if path is not None:
         env["PATH"] = path
     run = subprocess.run(
-        ["/bin/bash", str(SCRIPTS / "orch.sh" if script is None else script), *args],
+        ["/bin/bash", *argv],
         cwd=str(cwd), env=env, stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT if joined else subprocess.PIPE,
         timeout=30,
     )
     return run.stdout.decode(), (run.stderr or b"").decode(), run.returncode
+
+
+def orch_sh(tmp_path, cwd, seed, *args, path=None, knobs=None, unset=(), joined=False,
+            script=None):
+    """`orch.sh <args>` run by bash_run on <seed>'s store. <script> overrides
+    the orch.sh path (e.g. a symlinked install)."""
+    return bash_run(
+        tmp_path, cwd, [str(SCRIPTS / "orch.sh" if script is None else script), *args],
+        path=path, knobs={"ORCH_GH_FAKE_STORE": seed.store, **(knobs or {})}, unset=unset,
+        joined=joined,
+    )
 
 
 
@@ -661,10 +670,6 @@ def test_help_lists_every_spec_verb(tmp_path, repo, seed):
 
 # --- parallel and route ------------------------------------------------------
 
-# The variables naming a git config file other than $HOME's, unset so a test's
-# HOME under tmp_path holds the only global config git reads.
-GLOBAL_CONFIG = ("GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME")
-
 
 def git_config(tmp_path, repo, *args):
     """`git config <args>` in <repo>, HOME tmp_path, as orch_sh runs."""
@@ -921,25 +926,17 @@ def test_agent_refuses_when_python3_is_missing_or_below_3_9(tmp_path, repo, seed
 
 
 def source_orch_sh(tmp_path, cwd, script, path=None, knobs=None, unset=()):
-    """Runs bash <script> with $1 = scripts/orch.sh in <cwd> and an isolated
-    HOME under <tmp_path>: (stdout, stderr, returncode)."""
-    env = dict(os.environ, HOME=str(tmp_path), PYTHONDONTWRITEBYTECODE="1", **(knobs or {}))
-    for name in unset:
-        env.pop(name, None)
-    if path is not None:
-        env["PATH"] = path
-    run = subprocess.run(
-        ["/bin/bash", "-euo", "pipefail", "-c", script, "_", str(SCRIPTS / "orch.sh")],
-        cwd=str(cwd), env=env, stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
+    """bash <script> with $1 = scripts/orch.sh, run by bash_run."""
+    return bash_run(
+        tmp_path, cwd, ["-euo", "pipefail", "-c", script, "_", str(SCRIPTS / "orch.sh")],
+        path=path, knobs=knobs, unset=unset,
     )
-    return run.stdout.decode(), run.stderr.decode(), run.returncode
 
 
 def test_orch_python_call_runs_without_exec_and_returns_exit_code(tmp_path, repo):
     git_config(tmp_path, repo, "orchestrator.route", "quick")
     script = (
-        'ORCH_SOURCE_LAZY=1; source "$1"\n'
+        'source "$1"\n'
         'orch_python_call route run show\n'
         'st=0; orch_python_call route run bogus 2>&1 || st=$?\n'
         'printf "after:%s\\n" "$st"\n'
@@ -959,7 +956,7 @@ def test_orch_python_call_runs_without_exec_and_returns_exit_code(tmp_path, repo
 def test_orch_python_call_drops_empty_sys_path_entry_so_cwd_modules_cannot_shadow(
         tmp_path, repo, module):
     (repo / module).write_text("import sys\nsys.stderr.write('shadowed\\n')\nsys.exit(7)\n")
-    script = 'ORCH_SOURCE_LAZY=1; source "$1"\norch_python_call agent check_settings\n'
+    script = 'source "$1"\norch_python_call agent check_settings\n'
 
     out, err, code = source_orch_sh(tmp_path, repo, script, unset=GLOBAL_CONFIG)
 
@@ -982,7 +979,7 @@ def test_orch_python_call_restores_callers_pythonpath_for_subprocesses(tmp_path,
     )
     shim.chmod(0o755)
     script = (
-        'ORCH_SOURCE_LAZY=1; source "$1"\n'
+        'source "$1"\n'
         'PATH="%s:$PATH" orch_python_call agent check_settings\n' % shim_dir
     )
     knobs = {} if given is None else {"PYTHONPATH": given}
@@ -998,7 +995,7 @@ def test_orch_python_call_restores_callers_pythonpath_for_subprocesses(tmp_path,
 
 def test_orch_python_call_refuses_cleanly_when_python3_is_missing(tmp_path, repo):
     script = (
-        'ORCH_SOURCE_LAZY=1; source "$1"\n'
+        'source "$1"\n'
         'st=0; orch_python_call route run show || st=$?\n'
         'printf "after:%s\\n" "$st"\n'
     )
@@ -1016,7 +1013,7 @@ def test_orch_python_call_refuses_cleanly_when_python3_is_missing(tmp_path, repo
 
 def test_orch_python_call_refuses_cleanly_when_python3_is_below_3_9(tmp_path, repo):
     script = (
-        'ORCH_SOURCE_LAZY=1; source "$1"\n'
+        'source "$1"\n'
         'st=0; orch_python_call route run show || st=$?\n'
         'printf "after:%s\\n" "$st"\n'
     )

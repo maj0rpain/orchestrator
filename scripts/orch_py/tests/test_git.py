@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from conftest import committed, git_repo, origin_clone, run_git, write_staged
+from conftest import GLOBAL_CONFIG, committed, git_repo, origin_clone, run_git, write_staged
 from orch.git import FakeGit, Git, git_push_reason
 
 ORIGIN = "https://github.com/fork/widgets.git"
@@ -581,10 +581,6 @@ def test_an_unseeded_push_on_the_fake_fails_with_no_reason():
 
 # --- scoped git config -------------------------------------------------------
 
-# Variables naming a git config file other than $HOME's, cleared so a test's
-# throwaway HOME holds the only global config git reads or writes.
-_GLOBAL_CONFIG_VARS = ("GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME")
-
 
 @pytest.fixture
 def config_env(tmp_path, monkeypatch):
@@ -594,7 +590,7 @@ def config_env(tmp_path, monkeypatch):
     home = tmp_path / "cfg-home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
-    for name in _GLOBAL_CONFIG_VARS:
+    for name in GLOBAL_CONFIG:
         monkeypatch.delenv(name, raising=False)
     real = git_repo(root)
     return root, home, real

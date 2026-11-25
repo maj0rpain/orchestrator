@@ -30,7 +30,7 @@ import re
 import sys
 from typing import List, Mapping, NamedTuple, Optional, Tuple
 
-from orch.common import die, lines_of, read_raw, stdout_write, warn
+from orch.common import die, lines_of, read_raw, stderr_write, stdout_write, warn
 from orch.git import Git
 from orch.root import checkout_root
 
@@ -218,8 +218,7 @@ def _show(args: List[str], glossary: str, root: str) -> int:
             continue
         if by_alias:
             sys.stdout.flush()
-            sys.stderr.write("# alias of %s\n" % entry.term)
-            sys.stderr.flush()
+            stderr_write("# alias of %s\n" % entry.term)
         if not any(entry is seen for seen in shown):
             stdout_write(("\n" if shown else "") + entry.text())
             shown.append(entry)

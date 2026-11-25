@@ -207,6 +207,20 @@ assert_contains() { case "$2" in *"$3"*) ok "$1" ;; *) bad "$1" "missing '$3' in
 # every whitespace run collapsed to one space.
 flat_text() { tr -s ' \t\n' '   ' <"${1:-/dev/stdin}"; }
 
+# orch_py_eval <code> [arg]...: runs the Python <code>, its `sys` imported and
+# the args in sys.argv[1:], against the plugin's orch package, the caller's
+# directory dropped from sys.path first, as orch.sh's bootstrap drops it, so a
+# shadowing module in cwd cannot hijack an import. Its stderr is dropped.
+orch_py_eval() {
+  local code="$1"
+  shift
+  PYTHONPATH="$PLUGIN_ROOT/scripts/orch_py" python3 -c '
+import sys
+if sys.path and sys.path[0] == "":
+    del sys.path[0]
+'"$code" "$@" 2>/dev/null
+}
+
 # skill_md_files <plugin root>: every .md file directly in a skills/<name>/
 # directory, SKILL.md and reference files alike, one path per line. It never
 # descends into subdirectories or lists other files, so a file added beside a
@@ -1693,16 +1707,12 @@ agent_start_files() {
   return 0
 }
 # agent_name_shapes_read: prints AGENT_NAME_SHAPES from the Python agent module
-# as ordered `role<TAB>glob<TAB>ere` lines, dropping the empty sys.path[0] so a
-# shadowing orch.py in cwd cannot hijack the import.
+# as ordered `role<TAB>glob<TAB>ere` lines, through orch_py_eval.
 agent_name_shapes_read() {
-  PYTHONPATH="$PLUGIN_ROOT/scripts/orch_py" python3 -c '
-import sys
-if sys.path and sys.path[0] == "":
-    del sys.path[0]
+  orch_py_eval '
 from orch.agent import name_shapes
 sys.exit(name_shapes())
-' </dev/null 2>/dev/null
+' </dev/null
 }
 # scan_agent_settings <plugin root>: one line per role a start site starts
 # without reading its setting. The agent name shapes come from the Python agent
@@ -4531,17 +4541,13 @@ echo "a side checkout's recorded issue (#874)"
 # command already typed, and quick implementation's passes --issue.
 side_checkout_sentence='One made for a quick implementation records that implementation'"'"'s issue, so a session opened in it picks the issue up without being told.'
 # glossary_entry <file> <term>: the entry's lines, on one line, read by the
-# Python glossary parser's show_file so the entry grammar is never re-derived
-# here. The caller's directory is dropped from sys.path before the import, as
-# orch.sh's bootstrap drops it.
+# Python glossary parser's show_file, through orch_py_eval, so the entry grammar
+# is never re-derived here.
 glossary_entry() {
-  PYTHONPATH="$PLUGIN_ROOT/scripts/orch_py" python3 -c '
-import sys
-if sys.path and sys.path[0] == "":
-    del sys.path[0]
+  orch_py_eval '
 from orch.glossary import show_file
 sys.stdout.buffer.write(show_file(sys.argv[1], sys.argv[2]).encode("utf-8", "surrogateescape"))
-' "$1" "$2" 2>/dev/null | flat_text
+' "$1" "$2" | flat_text
 }
 # scan_side_checkout_issue <plugin root>: one line per break of that rule.
 scan_side_checkout_issue() {

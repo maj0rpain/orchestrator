@@ -386,25 +386,16 @@ def _list_orch_md(directory: str) -> List[str]:
     )
 
 
-def _default_sync_host() -> str:
-    for name, spec in HOST_SPECS.items():
-        if spec.syncs_copies:
-            return name
-    raise RuntimeError("no host in HOST_SPECS syncs copies")
-
-
 def agent_sync_plan(
-    git,
     root: str,
+    cache: ConfigCache,
+    host: str,
     plugin_root: Optional[str] = None,
-    cache: Optional[ConfigCache] = None,
-    host: Optional[str] = None,
 ) -> SyncPlan:
     """Plans copy writes, stale deletes and unmarked-file refusals under
-    <root>/.junie/agents without mutating disk or git exclude."""
-    sync_host = _default_sync_host() if host is None else host
+    <root>/.junie/agents for <host>, from <cache>'s settings, without mutating
+    disk or git exclude."""
     resolved_plugin = default_plugin_root() if plugin_root is None else plugin_root
-    cfg = ConfigCache(git) if cache is None else cache
     plan_dir = os.path.join(root, ".junie", "agents")
     agents_dir = os.path.join(resolved_plugin, "agents")
 
@@ -418,10 +409,10 @@ def agent_sync_plan(
         role = agent_role_of(name)
         if role is None:
             continue
-        model, _ = cfg.lookup("model", role, sync_host)
-        effort, _ = cfg.lookup("effort", role, sync_host)
-        copy_model = model if agent_allowed("model", model, sync_host) else "inherit"
-        copy_effort = effort if agent_allowed("effort", effort, sync_host) else "inherit"
+        model, _ = cache.lookup("model", role, host)
+        effort, _ = cache.lookup("effort", role, host)
+        copy_model = model if agent_allowed("model", model, host) else "inherit"
+        copy_effort = effort if agent_allowed("effort", effort, host) else "inherit"
         if copy_model == "inherit" and copy_effort == "inherit":
             continue
         want.append(name)
@@ -456,7 +447,7 @@ def agent_sync_plan(
 
 
 def _apply_sync(cache: ConfigCache, root: str, plugin_root: Optional[str], host: str) -> None:
-    plan = agent_sync_plan(cache.git, root, plugin_root=plugin_root, cache=cache, host=host)
+    plan = agent_sync_plan(root, cache, host, plugin_root)
     if plan.refused:
         files = " ".join(name + ".md" for name in plan.refused)
         die(
@@ -624,10 +615,9 @@ def validate_autopilot(args: List[str]) -> int:
     """Bridge for autopilot.sh: validates a Claude Code model or effort value
     against HOST_SPECS, dying with the exact autopilot error message when
     disallowed."""
-    if len(args) not in (2, 3) or args[0] not in AGENT_KINDS:
-        die("usage: orch_python_call agent validate_autopilot <model|effort> <value> [<key>]")
-    kind, value = args[0], args[1]
-    key = args[2] if len(args) == 3 else "orchestrator.autopilot.%s" % kind
+    if len(args) != 3 or args[0] not in AGENT_KINDS:
+        die("usage: orch_python_call agent validate_autopilot <model|effort> <value> <key>")
+    kind, value, key = args
     if not agent_allowed(kind, value, AGENT_DEFAULT_HOST):
         die(
             "%s is %s - not an allowed %s (want %s)"
@@ -892,7 +882,7 @@ def _check_sync_drift(
 ) -> None:
     """Warns when this checkout's copy directory for <host> differs from what
     agent_sync_plan would leave (missing, stale, extra, or unmarked in the way)."""
-    plan = agent_sync_plan(cache.git, root, plugin_root=plugin_root, cache=cache, host=host)
+    plan = agent_sync_plan(root, cache, host, plugin_root)
     missing = [w.name + ".md" for w in plan.writes if w.state == "missing"]
     stale = [w.name + ".md" for w in plan.writes if w.state != "missing"]
     extra = [name + ".md" for name in plan.deletes]
