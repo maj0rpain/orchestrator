@@ -95,8 +95,10 @@ orch_test.sh is the suite's runner and holds no test. Its `# ---` sections live
 under `scripts/test/orch/`: `<noun>.sh` holds the sections for one orch.sh noun
 (`branch.sh`, `ticket.sh`, `review.sh`, ...), `harness.sh` the harness's
 own (the section filter, quiet mode, all.sh), `common.sh` the bottom-layer
-check on `scripts/orch/common.sh`, `loader.sh` the loader's sections, and
-`setup.sh` the shared setup and the summary. A concept module with no noun gets
+check on `scripts/orch/common.sh`, `loader.sh` the loader's sections and
+those about `orch.sh` itself (its bash version guard, its death outside a
+checkout and its removed nouns), and `setup.sh` the shared setup and the
+summary. A concept module with no noun gets
 a section file named as the module is, beside the per-noun files: `checkout.sh`
 for `scripts/orch/checkout.sh`, `comments.sh` for `scripts/orch/comments.sh`,
 `filed-finding.sh` for `scripts/orch/filed-finding.sh`,
@@ -622,7 +624,6 @@ scripts/orch/session-log.sh   the Session log module, a concept module with no n
 scripts/orch/standing.sh      the Standing module, a concept module with no noun: where an autopilot flow's issue stands - the label set, the host id, the read and the claims
 scripts/orch/trust.sh         the Trust module, a concept module with no noun: which comments and which PRs orch.sh reads and which issues autopilot runs on - the one filter dropping a comment whose author is not an owner, member or collaborator, the one filter dropping a fork PR, and the issue trust check
 scripts/orch/wait.sh          the Wait module, a concept module with no noun: a re-callable wait's stored total, and the wall-time block each of its calls keeps
-scripts/orch/global.sh        once the bare global commands with no module of their own; init, slug, status, archive and help are converted nouns, so it defines nothing
 scripts/orch/common.sh        the primitives no concept owns (die, capture, ...)
 scripts/orch/loader.sh        the module loader, always loaded beside common.sh: the stub table, its per-copy cache under ~/.cache/orchestrator/, the stub dispatch (orch_stubs, orch_stub), orch_load (once per shell) and the ORCH_LOAD_TRACE load trace
 scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), the capture pair gh_capture and gh_capture_err, every adapter_* operation, the ORCH_GH_ADAPTER hook
@@ -659,7 +660,7 @@ scripts/test/shell_code.awk    the SHELL_CODE_AWK library, the one rule of what 
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary
 scripts/test/orch/harness.sh  the harness's own sections: isolation, the section filter, quiet mode, all.sh
 scripts/test/orch/common.sh   the bottom-layer check on scripts/orch/common.sh
-scripts/test/orch/loader.sh   the loader's sections: orch_load, on-demand loading, the stub table cache
+scripts/test/orch/loader.sh   the loader's sections: orch_load, on-demand loading, the stub table cache, and the entry script's own: the removed mp-skill and suite-cost nouns, the bash version guard, and the death outside a checkout (#931)
 scripts/test/orch/<noun>.sh   one file per orch.sh noun (branch.sh, ticket.sh, ...): its sections, after an optional preamble
 scripts/test/orch/checkout.sh the Checkout module's sections, named as the module is
 scripts/test/orch/comments.sh      the Comments module's sections, named as the module is

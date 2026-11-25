@@ -115,7 +115,7 @@
 0	1	die_hinted and die_opt_check	a31d5ea9ef99f315cf022f51ad5894482feffb9e
 2	3	host detection (host.sh, #281)	a9cfcd11f81e5e9a41c296ad7d50186312744c8c
 8	9	doctor.sh is a one-way dependency (#281)	0e1888245e16505374f9df2115f7eb899c29f3b6
-178	194	doctor	326e49038ebc665af673e43854da4da17f99598d
+239	183	doctor	628b10784bb74bbb5a0f5e044f62c577c18a5029
 7	8	doctor: python3 check (#3912)	9f669fd605016aede843022ee31881a7fd64bae8
 56	61	doctor: host (#128)	978721e4fb1dd1e01c15c20e997aaa02755fc8df
 101	114	doctor --flow	67a761391972caf4512b5b7fab3225c288aa3727
@@ -163,9 +163,6 @@
 4	5	label casing (#1943)	7e3b89c80227bd15583b493104e3fd6e36ff9f1c
 78	49	gh rate limits (#2577)	d271a3eb8cd5a9f98fb8f5f6538b7be3f1c9002c
 14	15	gh rate limits: the GitHub pause and the hit file (#2577)	81ab2bc578eeeaacb0cab9ae3ddf537247cf6e64
-0	1	mp-skill	42a828d6f818ccb7afe36031ee93138e2a7dfc35
-2	4	bash version guard	e62fe631ce5eb2d4dc1040aa81ae0eb6d24dc370
-1	1	outside a checkout (#931)	fb1af0dbb49fb7114e01ab80e594110f67d370ae
 2	3	handoff path	08b72398d3efd891b74fabceebbc287e57597a16
 15	17	phase table	b86a1ec68d10558d7454229c58975c60ba748791
 14	15	handoff validate	979e62e48edf8946440a03aa27d2e16f209320f9
@@ -180,9 +177,12 @@
 185	223	issue-timeline module	c60c74521e712ce2d67cc0b5fceb0a3a9673363e
 6	6	known-items module	4cac231615b2d8d9bc5665e54130500ba44570de
 8	9	Liveness module	a3eb853321244ddc291751d37b820bf4e3a80df7
-18	11	orch_load	b8cfd2af7aa636d9bb938c887ade1470c8660684
-21	20	on-demand loading	7a8f2670e7e0429237029e99a3e723d310682a50
-24	24	stub table cache	0dfcfd022a0f039e7a998d2b824491567eeb9374
+17	11	orch_load	a8015cd4b32b847d8cb4db628fcf4875f1825828
+18	18	on-demand loading	9b0de9a2d7bf3ee1d146b1f2d34b2ec266a35450
+26	26	stub table cache	adcb99b0833cf7efb04197fab5b31d0fd6678f29
+3	3	mp-skill	6ac734149252de0268b27a22de4050894e49a354
+5	5	bash version guard	a8d2cfe5bbb32166e192820e2b3d83282e7a66ce
+1	3	outside a checkout (#931)	e5c70ed8a90ea1696b300a7a8f75e91707e1690b
 29	25	marked-comment module	f6f5c1a7f89a0d4a6d8a53403309d4f68d4fe0c2
 54	42	phase advance / phase boundary	53643e8f5205e719060ccafbba68352b2f848db6
 0	1	phase advance help names handoffs by role (#1066)	fb4e9c6b059ec9f7d1aed9b47f5b974a48096e04

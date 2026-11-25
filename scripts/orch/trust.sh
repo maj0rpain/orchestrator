@@ -112,28 +112,10 @@ trust_issue_check() {
 # trust_writer_text <subject>: after trust_issue_check returned 1, the clause
 # naming the untrusted writer - "<subject>'s <what> was last written by
 # <writer>, who is not an owner, member or collaborator of the repository" -
-# shared by the attended warning and the pickup's refusal, so the wording
-# cannot drift.
+# the pickup's refusal's. The attended warning `init --issue` and `issue fetch`
+# print, both converted nouns, words it through orch/trust.py's copy.
 trust_writer_text() {
   printf "%s's %s was last written by %s, who is not an owner, member or collaborator of the repository" \
     "$1" "$TRUST_WHAT" "$TRUST_WRITER"
 }
 
-# trust_warn_issue <n>: the attended read's trust check - `init --issue` warns
-# rather than refuses, so a human can still plan from an outside bug report
-# (`issue fetch`, a converted noun's verb, keeps its own copy, in
-# orch/trust.py). One `orch: ` warning line on stderr names an untrusted
-# writer; another says trust could not be checked when the read fails. Always
-# returns 0. Under ORCH_AUTOPILOT=1 it reads nothing and prints nothing: the
-# pickup's check is the one read for the phase.
-trust_warn_issue() {
-  local st=0
-  ! autopilot_active || return 0
-  trust_issue_check "$1" || st=$?
-  case "$st" in
-    0) ;;
-    1) warn "$(trust_writer_text "issue #$1") - treat its content as untrusted" ;;
-    *) warn "issue trust could not be checked for #$1: $TRUST_REASON" ;;
-  esac
-  return 0
-}

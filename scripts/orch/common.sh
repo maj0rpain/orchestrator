@@ -393,9 +393,10 @@ file_read_text() {
 }
 
 # The one normalisation a slug gets: lowercase, non-alphanumeric runs collapsed
-# to a single hyphen, trimmed, dying if nothing survives. `init` calls this
-# rather than carrying its own copy of the sed expression and the empty-result
-# check. `orch.sh slug`, a converted noun, runs the Python copy,
+# to a single hyphen, trimmed, dying if nothing survives. `side-checkout add`
+# and `side-checkout remove` and autopilot's short slug call this rather than
+# carrying their own copy of the sed expression and the empty-result check.
+# `init` and `orch.sh slug`, converted nouns, run the Python copy,
 # orch.common.normalize_slug, which keeps this one's rule (ADR-0067) - and a
 # caller outside this file (the quick-implement skill) reaches it through
 # `orch.sh slug` instead of re-deriving the algorithm as prose.

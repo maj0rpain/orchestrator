@@ -244,9 +244,10 @@ checkout_busy() {
   printf -v "$remedy_var" '%s' "$busy_remedy"
 }
 
-# refuse_busy_checkout <signal>...: the refusal shared by branch off, branch
-# create and init, so none of them ever moves another implementation's branch
-# or carries its uncommitted edits. Checks the signals named, as checkout_busy
+# refuse_busy_checkout <signal>...: the refusal shared by branch off and branch
+# create, so neither ever moves another implementation's branch or carries its
+# uncommitted edits; init, a converted noun, refuses through orch/checkout.py's
+# copy. Checks the signals named, as checkout_busy
 # does; in a busy checkout it warns with the line naming what holds it and its
 # remedy, and exits 3, a code no other failure of those commands uses, so a
 # skill can tell a busy checkout apart from every other refusal. A tree that

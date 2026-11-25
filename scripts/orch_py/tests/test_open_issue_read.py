@@ -1,6 +1,6 @@
 """The open-issue read beside the gh adapter's state reads: one read of an
 issue's labels, and its body when asked, refusing one that is not open -
-messages as the bash open_issue_read words them."""
+messages as the bash open_issue_read worded them."""
 from __future__ import annotations
 
 import pytest
