@@ -63,8 +63,8 @@ assert_eq "an unknown command loads no module" "$(cat "$trace")" ""
 run_traced side-checkout issue
 assert_eq "a load from a subshell records a depth above 0" \
   "$(awk '$2 > 0 {print $1}' "$trace" | sed -n 1p)" "checkout"
-out="$(bash "$ORCH" status 2>&1)"; status=$?
-out2="$(ORCH_LOAD_TRACE=/nonexistent/dir/trace bash "$ORCH" status 2>&1)"; status2=$?
+out="$(bash "$ORCH" state get phase 2>&1)"; status=$?
+out2="$(ORCH_LOAD_TRACE=/nonexistent/dir/trace bash "$ORCH" state get phase 2>&1)"; status2=$?
 assert_eq "an unwritable ORCH_LOAD_TRACE leaves the command's output as it is" "$out2" "$out"
 assert_status "and its exit status" "$status2" "$status"
 

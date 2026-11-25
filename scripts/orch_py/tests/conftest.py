@@ -189,6 +189,29 @@ def run_git(root, *args, env=None):
     ).stdout.decode().strip()
 
 
+def worktree_add(main, path, *how):
+    """`git worktree add <how> <path>` in the repository at <main>, <path>'s
+    parent made first: <path>."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    run_git(main, "worktree", "add", "-q", *how, str(path))
+    return path
+
+
+def mark_side(path):
+    """Writes the side-checkout ownership marker into the git folder of the
+    worktree at <path>."""
+    gitdir = run_git(path, "rev-parse", "--absolute-git-dir")
+    with open(os.path.join(gitdir, "orchestrator-side-checkout"), "w"):
+        pass
+
+
+def hold_flow(path, **state):
+    """Writes <state> as the state.json of the checkout at <path>."""
+    orch = path / ".orchestrator"
+    orch.mkdir(parents=True, exist_ok=True)
+    (orch / "state.json").write_text(json.dumps(state) + "\n")
+
+
 def write_staged(root, files):
     """Writes the files named, removes those mapped to None, and stages
     every change."""

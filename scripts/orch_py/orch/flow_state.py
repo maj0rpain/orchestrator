@@ -13,7 +13,9 @@ state.json: flow_holding_phase, the guard a branch or issue an active flow
 holds answers to (ADR-0029), STATE_UNREADABLE_MSG, the refusal an unreadable
 state.json earns, require_state_read, a command's entry read of the keys it
 needs, and require_issue, the entry read of the flow's issue a command that
-needs one makes.
+needs one makes; then what two keys read as when a flow never recorded them,
+review_budget_fallback and flow_base_fallback, whose bash copies stay for
+the bash nouns that read them.
 """
 from __future__ import annotations
 
@@ -22,7 +24,8 @@ import os
 import time
 from typing import Any, Callable, Dict, Mapping, NamedTuple, Optional, Sequence
 
-from orch.common import ORCH_DIR_NAME, die, file_write_atomic
+from orch.base import default_branch
+from orch.common import ORCH_DIR_NAME, die, file_write_atomic, plain_number
 from orch.host import flow_cmd
 
 # The key, default and seed columns of the bash state key table (STATE_KEYS
@@ -228,3 +231,26 @@ def require_issue(state_file: str, env: Mapping[str, str],
     if not state["issue"]:
         die(NO_ISSUE_MSG)
     return state
+
+
+# What a review budget reads as when nobody has set one - a flow started
+# before the key existed, or a value nothing can count: bash review.sh's
+# DEFAULT_BUDGET. The number itself is the human's, read from state.
+DEFAULT_BUDGET = "5"
+
+
+def review_budget_fallback(raw: str) -> str:
+    """The budget read from state, <raw>, or DEFAULT_BUDGET where it is
+    empty or not a plain number - bash review_budget_fallback."""
+    return raw if plain_number(raw) else DEFAULT_BUDGET
+
+
+def flow_base_fallback(raw: str, gh_of: Callable[[], Any], git, pin) -> str:
+    """The base read from state, <raw>, or the default branch where it is
+    empty - a flow started before base was recorded - bash
+    flow_base_fallback_into. The gh adapter is made by <gh_of> only when the
+    default branch is looked up, through the git adapter <git> and the repo
+    pin <pin>. Never fails."""
+    if raw:
+        return raw
+    return default_branch(gh_of(), git, pin).name

@@ -4,13 +4,19 @@ worktree semantics are git's, so no fake models them. Each failure message
 is bash checkout.sh's or ticket-worktree.sh's, verbatim."""
 from __future__ import annotations
 
-import json
-import os
 import shutil
 
 import pytest
 
-from conftest import committed, died_of, git_repo, run_git
+from conftest import (
+    committed,
+    died_of,
+    git_repo,
+    hold_flow,
+    mark_side,
+    run_git,
+    worktree_add,
+)
 from orch.checkout import (
     Checkout,
     checkout_gitdir_into,
@@ -27,21 +33,6 @@ UNREADABLE = "orch: could not read the checkouts - git worktree list failed\n"
 ENV = {"CLAUDECODE": "1"}
 
 
-def mark_side(path):
-    """Writes the side-checkout ownership marker into the git folder of the
-    worktree at <path>."""
-    gitdir = run_git(path, "rev-parse", "--absolute-git-dir")
-    with open(os.path.join(gitdir, "orchestrator-side-checkout"), "w"):
-        pass
-
-
-def hold_flow(path, **state):
-    """Writes <state> as the state.json of the checkout at <path>."""
-    orch = path / ".orchestrator"
-    orch.mkdir(parents=True, exist_ok=True)
-    (orch / "state.json").write_text(json.dumps(state) + "\n")
-
-
 @pytest.fixture
 def main(tmp_path):
     """A repository with one commit on orch/1-feature: its root, resolved."""
@@ -52,33 +43,27 @@ def main(tmp_path):
     return root
 
 
-def add(main, path, *how):
-    """`git worktree add <how> <path>` in <main>: <path>."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    run_git(main, "worktree", "add", "-q", *how, str(path))
-    return path
-
-
 @pytest.fixture
 def walked(main, tmp_path):
     """<main> with every kind of checkout beside it: (main, its checkouts by
     name)."""
     worktrees = main / ".orchestrator" / "worktrees"
-    side = add(main, main / ".orchestrator" / "checkouts" / "alpha", "-b", "side-branch")
+    side = worktree_add(main, main / ".orchestrator" / "checkouts" / "alpha", "-b", "side-branch")
     mark_side(side)
     made = {
         "side": side,
-        "t7": add(main, worktrees / "t7", "-b", "orch/1-feature--t7"),
-        "t3": add(main, side / ".orchestrator" / "worktrees" / "t3", "-b", "side-branch--t3"),
-        "t8": add(main, worktrees / "t8", "-b", "orch/1-feature--t8"),
-        "spaced": add(main, tmp_path.resolve() / "hand made", "-b", "spaced"),
-        "hand": add(main, tmp_path.resolve() / "hand", "-b", "handmade"),
-        "flowed": add(main, tmp_path.resolve() / "flowed", "-b", "flowed"),
-        "detached": add(main, tmp_path.resolve() / "detached", "--detach"),
-        "gone": add(main, tmp_path.resolve() / "gone", "-b", "gone"),
+        "t7": worktree_add(main, worktrees / "t7", "-b", "orch/1-feature--t7"),
+        "t3": worktree_add(main, side / ".orchestrator" / "worktrees" / "t3",
+                           "-b", "side-branch--t3"),
+        "t8": worktree_add(main, worktrees / "t8", "-b", "orch/1-feature--t8"),
+        "spaced": worktree_add(main, tmp_path.resolve() / "hand made", "-b", "spaced"),
+        "hand": worktree_add(main, tmp_path.resolve() / "hand", "-b", "handmade"),
+        "flowed": worktree_add(main, tmp_path.resolve() / "flowed", "-b", "flowed"),
+        "detached": worktree_add(main, tmp_path.resolve() / "detached", "--detach"),
+        "gone": worktree_add(main, tmp_path.resolve() / "gone", "-b", "gone"),
     }
     for name in ("t0", "t01", "tfoo", "t9"):
-        made[name] = add(main, worktrees / name, "--detach")
+        made[name] = worktree_add(main, worktrees / name, "--detach")
     mark_side(made["t9"])
     for name in ("t8", "gone"):
         shutil.rmtree(str(made[name]))
@@ -135,21 +120,21 @@ def test_a_main_checkout_s_git_folder_is_its_dot_git(main, tmp_path):
 
 
 def test_a_linked_worktree_s_git_folder_is_the_one_its_pointer_names(main, tmp_path):
-    wt = add(main, tmp_path.resolve() / "wt", "-b", "wt")
+    wt = worktree_add(main, tmp_path.resolve() / "wt", "-b", "wt")
 
     assert checkout_gitdir_into(Git(cwd=str(tmp_path)), str(wt)) == \
         str(main / ".git" / "worktrees" / "wt")
 
 
 def test_a_relative_pointer_is_read_from_the_worktree_its_dots_resolved(main, tmp_path):
-    wt = add(main, tmp_path.resolve() / "wt", "-b", "wt")
+    wt = worktree_add(main, tmp_path.resolve() / "wt", "-b", "wt")
     (wt / ".git").write_text("gitdir: ../main/./.git/worktrees/wt\n")
 
     assert checkout_gitdir_into(None, str(wt)) == str(main / ".git" / "worktrees" / "wt")
 
 
 def test_an_unterminated_pointer_line_is_read(main, tmp_path):
-    wt = add(main, tmp_path.resolve() / "wt", "-b", "wt")
+    wt = worktree_add(main, tmp_path.resolve() / "wt", "-b", "wt")
     gitdir = str(main / ".git" / "worktrees" / "wt")
     (wt / ".git").write_text("gitdir: " + gitdir)
 
@@ -157,7 +142,7 @@ def test_an_unterminated_pointer_line_is_read(main, tmp_path):
 
 
 def test_a_pointer_naming_no_git_folder_asks_git(main, tmp_path):
-    wt = add(main, tmp_path.resolve() / "wt", "-b", "wt")
+    wt = worktree_add(main, tmp_path.resolve() / "wt", "-b", "wt")
     sub = wt / "sub"
     sub.mkdir()
 
@@ -209,11 +194,11 @@ def ticketed(main, tmp_path):
     """<main> with ticket worktrees t4 and t12 under it, a hand-made t0, and
     a side checkout's own t5: (main, side)."""
     worktrees = main / ".orchestrator" / "worktrees"
-    add(main, worktrees / "t12", "-b", "orch/1-feature--t12")
-    add(main, worktrees / "t4", "-b", "orch/1-feature--t4")
-    add(main, worktrees / "t0", "--detach")
-    side = add(main, tmp_path.resolve() / "side", "-b", "side")
-    add(main, side / ".orchestrator" / "worktrees" / "t5", "-b", "side--t5")
+    worktree_add(main, worktrees / "t12", "-b", "orch/1-feature--t12")
+    worktree_add(main, worktrees / "t4", "-b", "orch/1-feature--t4")
+    worktree_add(main, worktrees / "t0", "--detach")
+    side = worktree_add(main, tmp_path.resolve() / "side", "-b", "side")
+    worktree_add(main, side / ".orchestrator" / "worktrees" / "t5", "-b", "side--t5")
     return main, side
 
 

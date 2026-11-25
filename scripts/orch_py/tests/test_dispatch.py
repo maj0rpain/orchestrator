@@ -4,8 +4,8 @@ each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>`,
 `orch.sh verification <verb>`, `orch.sh audit <verb>`, `orch.sh review-pass
 <verb>`, `orch.sh spec-review <verb>`, `orch.sh breakdown <verb>`, `orch.sh
 spec <verb>`, `orch.sh glossary <verb>`, `orch.sh parallel show`, `orch.sh
-route show`, `orch.sh agent <verb>`, `orch.sh slug <text>` or `orch.sh help`
-(and its spellings) as a command, in a checkout under
+route show`, `orch.sh agent <verb>`, `orch.sh slug <text>`, `orch.sh status`
+or `orch.sh help` (and its spellings) as a command, in a checkout under
 tmp_path, against a fake store seeded in the layout the bash suite's fake_*
 helpers write, with ORCH_GH_FAKE_STORE set as fake_github sets it."""
 from __future__ import annotations
@@ -951,7 +951,7 @@ def test_agent_refuses_when_python3_is_missing_or_below_3_9(tmp_path, repo, seed
     )
 
 
-# --- slug and help -----------------------------------------------------------
+# --- slug, status and help ---------------------------------------------------
 
 HELP_GOLDEN = Path(__file__).resolve().parent / "help" / "golden.txt"
 
@@ -959,6 +959,27 @@ HELP_GOLDEN = Path(__file__).resolve().parent / "help" / "golden.txt"
 def test_slug_prints_the_normalized_slug_through_the_python_noun(tmp_path, repo, seed):
     assert orch_sh(tmp_path, repo, seed, "slug", "My Feature!!", path=python3_shim(tmp_path)) == (
         "my-feature\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_status_prints_the_flow_lines_through_the_python_noun(tmp_path, repo, seed):
+    flow_state(repo, "spec", 12, "orch/12-x")
+    (repo / ".orchestrator" / "handoff").mkdir()
+    (repo / ".orchestrator" / "handoff" / "01-plan.md").write_text("")
+
+    assert orch_sh(tmp_path, repo, seed, "status", path=python3_shim(tmp_path),
+                   knobs={"CLAUDECODE": "1"}) == (
+        "flow:      x\n"
+        "phase:     spec\n"
+        "issue:     12\n"
+        "base:      main\n"
+        "branch:    orch/12-x\n"
+        "PR:        -\n"
+        "review:    iteration 0 of 5\n"
+        "redo:      0\n"
+        "\n"
+        "handoffs:\n"
+        "  .orchestrator/handoff/01-plan.md\n", "", 0)
     assert (tmp_path / "shim.log").read_text() == "ran\n"
 
 

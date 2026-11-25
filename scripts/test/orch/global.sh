@@ -51,29 +51,6 @@ assert_status "with the ticket worktrees removed, archive moves the flow as befo
 assert_eq "live state is cleared" "$(on_disk .orchestrator/state.json)" "absent"
 restore_suite_env
 
-# --- status -----------------------------------------------------------------
-# status reads the Flow state once, through the entry read (#3233).
-echo
-echo "status reads the flow's state once"
-fresh_flow statusflow
-st_jq="$(counting_bin jq)"
-PATH="$st_jq:$PATH" "$ORCH" status >/dev/null 2>&1
-assert_eq "status on a readable flow that records its base starts exactly one jq" "$(counting_starts "$st_jq" jq)" "1"
-state_truncate
-out="$("$ORCH" status 2>&1)"; st=$?
-assert_state_unreadable "status on a truncated state.json" 1 "$out" "$st"
-restore_suite_env
-
-echo
-echo "status on a flow started before the budget shipped"
-fresh_flow legacystatus
-state_fixture_drop budget loop flake_rerun_used
-assert_eq "the drop leaves state.json with no budget key" \
-  "$("$ORCH" state get | jq 'has("budget")')" "false"
-assert_contains "status reads the missing budget as the default" \
-  "$("$ORCH" status)" "iteration 0 of 5"
-restore_suite_env
-
 # --- mp-skill ---------------------------------------------------------------
 # The plugin reads no upstream skill any more (ADR-0028), so the resolver is
 # gone.
