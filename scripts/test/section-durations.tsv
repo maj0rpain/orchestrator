@@ -116,7 +116,7 @@
 2	3	host detection (host.sh, #281)	a9cfcd11f81e5e9a41c296ad7d50186312744c8c
 8	9	doctor.sh is a one-way dependency (#281)	0e1888245e16505374f9df2115f7eb899c29f3b6
 239	183	doctor	628b10784bb74bbb5a0f5e044f62c577c18a5029
-7	8	doctor: python3 check (#3912)	9f669fd605016aede843022ee31881a7fd64bae8
+10	8	doctor: python3 check (#3912)	1edeb683b87c57ae9f0cd8f7011d828d5f574304
 56	61	doctor: host (#128)	978721e4fb1dd1e01c15c20e997aaa02755fc8df
 101	114	doctor --flow	67a761391972caf4512b5b7fab3225c288aa3727
 52	58	doctor --env: finished side checkouts (#727)	6c5fffe7d725910de46bf5e712c18cc5800073b6
