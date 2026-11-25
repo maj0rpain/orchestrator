@@ -1,0 +1,16 @@
+{
+  "slug": "seed-golden",
+  "phase": "spec",
+  "issue": null,
+  "base": "rélease/2.0",
+  "branch": null,
+  "pr": null,
+  "base_sha": null,
+  "budget": null,
+  "iteration": 0,
+  "flake_rerun_used": false,
+  "redo_count": 0,
+  "host_fallbacks": true,
+  "created": "2026-01-02T03:04:05Z",
+  "updated": "2026-01-02T03:04:05Z"
+}

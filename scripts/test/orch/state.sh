@@ -477,6 +477,35 @@ for fs_file in "$fs_golden"/refused/*.json; do
     "$(fs_run "a=keep; flow_state_get_many $(printf '%q' "$fs_file") a=slug 2>/dev/null; echo \"rc=\$? \$a\"")" "rc=1 keep
 status 0"
 done
+# A state.json Python init wrote - the seed, created, then its spec phase
+# written, by orch/flow_state.py - is one bash changes from then on:
+# flow_state_write_many rewrites it in one replace, keeping its key order and
+# leaving no temp file, and the readers the hooks use read it through jq.
+fs_py="$fs_dir/python-seeded"
+mkdir -p "$fs_py"
+PYTHONPATH="${ORCH%/*}/orch_py" python3 -c '
+import sys
+from orch.flow_state import flow_state_create, flow_state_seed, phase_write
+assert flow_state_create(sys.argv[1], flow_state_seed("py-seed", "7", "rélease/2.0"))
+phase_write(sys.argv[1], "spec")
+' "$fs_py/state.json" </dev/null
+assert_eq "flow_state_write_many rewrites a Python-written state.json" \
+  "$(fs_run 'flow_state_write_many python-seeded/state.json branch feat/x iteration 2')" "status 0"
+assert_eq "keeping its keys in table order, with no temp file beside it" \
+  "$(fs_run 'jq -r "keys_unsorted | join(\" \")" python-seeded/state.json; ls -A python-seeded')" \
+  "slug phase issue base branch pr base_sha budget iteration flake_rerun_used redo_count host_fallbacks created updated
+state.json
+status 0"
+assert_eq "flow_state_get_many reads every key of the rewritten file" \
+  "$(fs_run 'flow_state_get_many python-seeded/state.json a=slug b=phase c=issue d=base e=branch f=iteration g=host_fallbacks h=pr; echo "$a|$b|$c|$d|$e|$f|$g|$h"')" \
+  "py-seed|spec|7|rélease/2.0|feat/x|2|true|
+status 0"
+assert_eq "flow_state_get reads one key of it" \
+  "$(fs_run 'flow_state_get python-seeded/state.json base')" "rélease/2.0
+status 0"
+assert_eq "flow_state_readable and flow_state_active both answer yes for it" \
+  "$(fs_run 'flow_state_readable python-seeded/state.json && flow_state_active python-seeded/state.json')" \
+  "status 0"
 restore_suite_env
 
 # --- commands on a truncated state.json (#1929) -----------------------------

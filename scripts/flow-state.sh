@@ -2,13 +2,15 @@
 # flow-state.sh - the Flow state module: the one owner of the state format of
 # a checkout's flow, .orchestrator/state.json - its keys, their defaults,
 # reading (one key per jq, or several in one), its writers and the active-flow
-# check - sourced by orch.sh and by hook-common.sh. It stays the format's owner
-# and its one writer: the Python package's Flow state reader,
-# scripts/orch_py/orch/flow_state.py, is a read-only copy of
-# flow_state_get_many's rules and of the key table's key and default columns,
-# pinned to it by the golden state.json files in
-# scripts/orch_py/tests/flow_state/, which the state section reads through
-# flow_state_get_many too.
+# check - sourced by orch.sh and by hook-common.sh. It stays the format's
+# owner. The Python package's Flow state module,
+# scripts/orch_py/orch/flow_state.py, copies flow_state_get_many's rules and
+# the key table's key, default and seed columns, and writes a new flow's seed
+# for Python init; bash writes every later change. The golden state.json files
+# in scripts/orch_py/tests/flow_state/ pin the two: those under read/ and
+# refused/ the readers, which the state section reads through
+# flow_state_get_many too, and those under seed/, which only pytest reads, the
+# seed to the bytes bash init wrote.
 #
 # It needs nothing from orch.sh, so the hooks can source it alone, as they do
 # host.sh: every function takes the state file's path as an argument, none
