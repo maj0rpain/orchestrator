@@ -163,7 +163,6 @@
 4	5	label casing (#1943)	7e3b89c80227bd15583b493104e3fd6e36ff9f1c
 78	49	gh rate limits (#2577)	d271a3eb8cd5a9f98fb8f5f6538b7be3f1c9002c
 14	15	gh rate limits: the GitHub pause and the hit file (#2577)	81ab2bc578eeeaacb0cab9ae3ddf537247cf6e64
-0	1	slug	0e5d14cb85802ac178af168a4ee7e009fa0b927b
 9	11	archive	ab01c77d6d8c6c3784c7e3244adedb382528bdd9
 6	7	status	5d72b4243f86d69884e2350f8a6bb4269b4ac54d
 0	1	mp-skill	42a828d6f818ccb7afe36031ee93138e2a7dfc35
@@ -186,7 +185,7 @@
 8	5	init refuses a busy checkout (#1202)	f424deaee7f1355748749442551a4044aa4578f5
 12	14	init --issue	82400ecf9c7249410b4749b5fe7a4f01da9cfdd0
 38	40	init archives a done flow	fc736cd53771a1495c3fe3ff72c4897f720e6d36
-14	16	init seeds the review loop	4fdc693af71369d7c69cb32de471d5038986af35
+10	8	init seeds the review loop	e45c2f4df91d52b41668d3e7c22601451466b4f3
 5	6	init --issue trust warning	e3f8a66b3ae93ca44a635cd3eae2decbe1c33c24
 185	223	issue-timeline module	c60c74521e712ce2d67cc0b5fceb0a3a9673363e
 6	6	known-items module	4cac231615b2d8d9bc5665e54130500ba44570de

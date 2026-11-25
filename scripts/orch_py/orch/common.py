@@ -370,6 +370,26 @@ def state_word(state: str) -> str:
     return STATE_WORDS.get(state, state)
 
 
+# bash's tr '[:upper:]' '[:lower:]', which lowercases ASCII letters alone.
+_ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+# A run of anything but a slug's characters, one hyphen in a slug.
+_SLUG_SEPARATORS = re.compile(r"[^a-z0-9]+")
+
+
+def normalize_slug(text: str) -> str:
+    """The one normalisation a slug gets, as the bash copy in common.sh makes
+    it: ASCII letters lowercased, each run of anything but a-z and 0-9 one
+    hyphen, hyphens trimmed. Like bash's sed it reads <text> a line at a time,
+    so a newline survives, and trailing newlines go as $(...) drops them. Dies
+    when nothing survives."""
+    lines = [_SLUG_SEPARATORS.sub("-", line.translate(_ASCII_LOWER)).strip("-")
+             for line in text.split("\n")]
+    slug = "\n".join(lines).rstrip("\n")
+    if not slug:
+        die("slug is empty after normalisation")
+    return slug
+
+
 def dir_stamp(clock: Callable[[], float] = time.time) -> str:
     """The time <clock> reads, in UTC, as a directory name's stamp:
     %Y%m%d-%H%M%S."""

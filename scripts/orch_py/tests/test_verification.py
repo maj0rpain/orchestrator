@@ -779,9 +779,9 @@ def test_a_runner_whose_checkout_is_gone_before_its_command_starts_removes_its_r
         (record / name).write_text("%s\n" % text)
 
     runner = subprocess.run(
-        [sys.executable, "-c", verification.RUNNER_BOOTSTRAP, "", str(record), "true", "10",
-         "0.1", FAST_WATCH],
-        env=dict(os.environ, PYTHONPATH=verification.package_dir()), stdin=subprocess.DEVNULL,
+        [sys.executable, "-c", verification.RUNNER_BOOTSTRAP, verification.package_dir(),
+         str(record), "true", "10", "0.1", FAST_WATCH],
+        stdin=subprocess.DEVNULL,
         timeout=10)
 
     assert (runner.returncode, record.exists()) == (1, False)

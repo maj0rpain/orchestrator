@@ -14,11 +14,11 @@ and only the primitives no concept owns in `scripts/orch/common.sh`;
 `common.sh` and the module loader `loader.sh` are the two files every start
 loads. A noun converted to Python (ADR-0067; `issue`, `finding-triage`,
 `verification`, `audit`, `review-pass`, `spec-review`, `spec`, `breakdown`,
-`glossary`, `parallel`, `route` and `agent` so far) has no bash module:
-`orch.sh`'s one case naming the converted nouns runs it as `python3 -m orch
-<noun> ...` would, through a `-c` bootstrap, from the standard-library package
-in `scripts/orch_py/orch/`, its pytest tests beside it in
-`scripts/orch_py/tests/`.
+`glossary`, `parallel`, `route`, `agent`, `slug` and `help` so far) has no
+bash module: `orch.sh`'s one case naming the converted nouns runs it as
+`python3 -m orch <noun> ...` would, through a `-c` bootstrap, from the
+standard-library package in `scripts/orch_py/orch/`, its pytest tests beside it
+in `scripts/orch_py/tests/`.
 See CONTRIBUTING.md's Layout for the full map. There is no top-level `tests/`,
 and `hooks/` holds only `hooks.json`.
 

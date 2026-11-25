@@ -459,37 +459,6 @@ assert_contains "status shows how many times the flow has been redone" \
   "$("$ORCH" status)" "redo:      0"
 state_fixture redo_count 2
 assert_contains "and updates once it has been" "$("$ORCH" status)" "redo:      2"
-assert_contains "help documents the review verb" "$("$ORCH" help)" "review begin"
-assert_contains "and the CI classifier's outcomes" "$("$ORCH" help)" "review ci"
-assert_contains "and filing" "$("$ORCH" help)" "review file"
-# shellcheck disable=SC2016 # expanded by the inner bash
-sevs="$(sourced_orch_script 'printf "%s" "${FILED_SEVERITIES// /|}"')"
-# shellcheck disable=SC2016 # expanded by the inner bash
-axes="$(sourced_orch_script 'printf "%s" "${FILED_AXES// /|}"')"
-assert_contains "with the finding's parts as flags" "$("$ORCH" help | flat_text)" \
-  "review file <$sevs> <title> --axis <$axes> --finding-file <f> --severity-reason <r> --location <<file>:<line>> --why <reason> [--spec-question <q>]"
-assert_not_contains "and no --body-file" "$("$ORCH" help | grep -A3 'review file')" "--body-file"
-assert_contains "and finding triage's scan" "$("$ORCH" help)" "finding-triage scan [--all] [<issue> | --pr <n>]"
-assert_contains "with --all's re-check" "$("$ORCH" help)" "--all: every open review:<severity> finding"
-assert_contains "and the triage-state column" "$("$ORCH" help)" "TAB <detail> TAB <state>"
-assert_contains "and its apply, in both forms" "$("$ORCH" help)" "finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>"
-assert_contains "the open one with its category" "$("$ORCH" help)" "--category <bug|enhancement> --comment-file <file>"
-assert_contains "and the terminal-state classifier" "$("$ORCH" help)" "review terminal"
-assert_contains "and retiring a loop's records" "$("$ORCH" help)" "review retire"
-assert_contains "help documents issue publish" "$("$ORCH" help)" "issue publish"
-assert_contains "and pr publish" "$("$ORCH" help)" "pr publish"
-assert_contains "and pr release" "$("$ORCH" help)" "pr release [--force] <title> <body-file>"
-assert_contains "and ticket publish" "$("$ORCH" help)" "ticket publish"
-assert_contains "and ticket next" "$("$ORCH" help)" "ticket next"
-assert_contains "and ticket close" "$("$ORCH" help)" "ticket close"
-assert_contains "and ticket reset" "$("$ORCH" help)" "ticket reset"
-assert_contains "and retiring a branch" "$("$ORCH" help)" "branch retire"
-assert_contains "and creating one" "$("$ORCH" help)" "branch create"
-assert_contains "and forking one for a quick implementation" "$("$ORCH" help)" "branch off"
-assert_contains "and opening a draft PR" "$("$ORCH" help)" "pr open"
-assert_contains "and redo review" "$("$ORCH" help)" "redo review"
-assert_contains "and redo spec" "$("$ORCH" help)" "redo spec"
-assert_eq "and no longer the loop machinery" "$("$ORCH" help | grep -c 'loop-next')" "0"
 restore_suite_env
 
 # --- init --issue trust warning ---------------------------------------------

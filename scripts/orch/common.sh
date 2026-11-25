@@ -393,11 +393,12 @@ file_read_text() {
 }
 
 # The one normalisation a slug gets: lowercase, non-alphanumeric runs collapsed
-# to a single hyphen, trimmed, dying if nothing survives. `init` and `cmd_slug`
-# both call this rather than each carrying their own copy of the sed expression
-# and the empty-result check - and a caller outside this file (the
-# quick-implement skill) reaches it through `orch.sh slug` instead of
-# re-deriving the algorithm as prose.
+# to a single hyphen, trimmed, dying if nothing survives. `init` calls this
+# rather than carrying its own copy of the sed expression and the empty-result
+# check. `orch.sh slug`, a converted noun, runs the Python copy,
+# orch.common.normalize_slug, which keeps this one's rule (ADR-0067) - and a
+# caller outside this file (the quick-implement skill) reaches it through
+# `orch.sh slug` instead of re-deriving the algorithm as prose.
 normalize_slug() {
   local slug
   slug="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"

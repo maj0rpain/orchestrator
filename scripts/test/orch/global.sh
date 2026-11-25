@@ -7,20 +7,6 @@
 
 guard_line_for() { echo "orch: bash $1 is too old - orch.sh needs bash 4.2 or newer: brew install bash"; }
 
-# --- slug -------------------------------------------------------------------
-# The same normalisation init applies to its own slug argument, exposed as a
-# primitive so the quick-implement skill can call it instead of restating the
-# algorithm as prose.
-echo
-echo "slug"
-new_repo >/dev/null
-assert_eq "matches init's own normalisation" "$("$ORCH" slug "My Feature!!")" "my-feature"
-out="$("$ORCH" slug "!!!" 2>&1)"; st=$?
-assert_status "refuses a slug empty after normalisation" "$st" 1
-assert_contains "explains why" "$out" "empty after normalisation"
-out="$("$ORCH" slug 2>&1)"; st=$?
-assert_status "refuses no argument at all" "$st" 1
-
 # --- archive ----------------------------------------------------------------
 echo
 echo "archive"

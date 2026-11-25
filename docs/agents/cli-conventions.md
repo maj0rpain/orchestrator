@@ -74,7 +74,7 @@ it on through `orch_python`; its tests are pytest, in `scripts/orch_py/tests/`.
 A new verb on an existing noun goes in that noun's module: the Python module
 of a converted noun, else the bash one, `scripts/orch/<noun>.sh`.
 
-A new bare global command goes in `scripts/orch/global.sh`, with its tests in
-`scripts/test/orch/global.sh`, unless it is big enough to earn its own module
-and test file, as `init` and `doctor` have, or its job belongs to an existing
-noun, as `default-branch` belongs to `repo`, when it goes in that noun's module.
+A new bare global command is a Python noun module, as `slug` and `help` are,
+with pytest tests in `scripts/orch_py/tests/`, unless its job belongs to an
+existing noun, as `default-branch` belongs to `repo`, when it goes in that
+noun's module.

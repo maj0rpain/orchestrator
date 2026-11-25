@@ -2,7 +2,9 @@
 once its interpreter check has passed.
 
 main(argv) takes `<noun> <verb> ...` as orch.sh hands them on. A noun not in
-NOUNS dies as orch.sh dies on an unknown command.
+NOUNS dies as orch.sh dies on an unknown command; `-h` and `--help`, help's
+option spellings, run help, through ALIASES rather than NOUNS, since call_func
+finds a noun's module by its name.
 """
 from __future__ import annotations
 
@@ -85,6 +87,18 @@ def _agent(argv: List[str]) -> int:
     return run(argv)
 
 
+def _slug(argv: List[str]) -> int:
+    from orch.slug import run
+
+    return run(argv)
+
+
+def _help(argv: List[str]) -> int:
+    from orch.help import run
+
+    return run(argv)
+
+
 # The converted nouns: each takes the arguments after the noun and returns its
 # exit code.
 NOUNS: Dict[str, Callable[[List[str]], int]] = {
@@ -100,12 +114,17 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "parallel": _parallel,
     "route": _route,
     "agent": _agent,
+    "slug": _slug,
+    "help": _help,
 }
+
+# The option spellings main runs as a noun: orch.sh hands them on as given.
+ALIASES: Dict[str, str] = {"-h": "help", "--help": "help"}
 
 
 def main(argv: List[str]) -> int:
     noun = argv[0] if argv else ""
-    run = NOUNS.get(noun)
+    run = NOUNS.get(ALIASES.get(noun, noun))
     if run is None:
         die("unknown command: %s (run 'orch.sh help')" % noun)
     return run(argv[1:])
