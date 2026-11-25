@@ -1541,6 +1541,29 @@ def test_check_settings_junie_unrecognized_model_fails_with_allowed_names_and_re
     ]
 
 
+def test_check_settings_with_empty_home_reads_root_junie_not_the_cwd(
+    root, tmp_path, capsys, monkeypatch
+):
+    # bash read "$HOME"/.junie/..., so an empty HOME means /.junie/..., never
+    # a .junie/ under the working directory.
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    write_junie_index(cwd, [
+        {"sessionId": "s", "projectDir": str(root), "createdAt": "1", "updatedAt": "2"},
+    ])
+    write_junie_log(
+        cwd, "log-a.log",
+        "session s\n"
+        "WARN Unrecognized 'model' value 'bad-model', falling back to default.\n",
+    )
+    monkeypatch.chdir(cwd)
+    git = FakeGit(toplevel=str(root), local_config={"orchestrator.junie.model.fixer": "bad-model"})
+
+    records = doctor_records(capsys, git, "", tmp_path / "no-agents")
+    assert ("ok", "junie session: cannot tell (no Junie session index)") in records
+    assert not any("did not recognise" in msg for _, msg in records)
+
+
 def test_check_settings_junie_copy_drift_warns_via_shared_sync_plan(root, tmp_path, capsys):
     plugin = fake_plugin(tmp_path)
     home = tmp_path / "home"

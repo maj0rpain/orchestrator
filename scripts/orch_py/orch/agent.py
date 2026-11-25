@@ -684,11 +684,17 @@ def _json_sort_key(value: Any) -> Tuple[int, Any]:
     return (6, str(value))
 
 
+def _junie_path(home: str, *parts: str) -> str:
+    """<home>/.junie/<parts>, joined as bash's "$HOME"/.junie/... reads it:
+    an empty <home> gives the absolute /.junie/..., never a cwd-relative path."""
+    return "/".join((home, ".junie") + parts)
+
+
 def _junie_newest_log(home: str, sid: Optional[str] = None) -> Optional[str]:
     """Path of the newest <home>/.junie/logs/log-*.log by modification time,
     restricted to files containing <sid> when one is given; None when none
     qualifies."""
-    logs_dir = os.path.join(home, ".junie", "logs") if home else ".junie/logs"
+    logs_dir = _junie_path(home, "logs")
     try:
         names = sorted(os.listdir(logs_dir))
     except OSError:
@@ -752,7 +758,7 @@ def _check_junie_session(
     """Best-effort report of what each orch-* agent ran on in the newest Junie
     session for <root>, read from <home>/.junie/sessions/index.jsonl with
     stdlib json (no jq dependency) and <home>/.junie/logs/log-*.log."""
-    index = os.path.join(home, ".junie", "sessions", "index.jsonl") if home else ".junie/sessions/index.jsonl"
+    index = _junie_path(home, "sessions", "index.jsonl")
     if not os.path.isfile(index):
         records.append(("ok", "junie session: cannot tell (no Junie session index)"))
         return
