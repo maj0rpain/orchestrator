@@ -1198,7 +1198,7 @@ fl_classify() {
   out="$(comm -23 <(printf '%s\n' "$found") <(printf '%s\n' "$listed") | sed 's|.*|.orchestrator/& is built by orch.sh but is on neither FLOW_LESS_ENTRIES nor the flow'"'"'s own entries|'
     comm -13 <(printf '%s\n' "$found") <(printf '%s\n' "$listed") | sed 's|.*|listed entry & was never found in the scan|')"
   [ -z "$out" ] && return 0
-  printf '%s\nThe rule: an entry a command creates for work that belongs to no flow goes on FLOW_LESS_ENTRIES (scripts/orch/side-checkout.sh); every other entry is the flow'"'"'s and goes on the test'"'"'s list of the flow'"'"'s own entries.\n' "$out"
+  printf '%s\nThe rule: an entry a command creates for work that belongs to no flow goes on FLOW_LESS_ENTRIES (scripts/orch/side-checkout.sh) and on its Python copy (scripts/orch_py/orch/side_checkout.py); every other entry is the flow'"'"'s and goes on the test'"'"'s list of the flow'"'"'s own entries.\n' "$out"
   return 1
 }
 

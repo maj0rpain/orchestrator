@@ -5,6 +5,8 @@ models them. Each message is bash side-checkout.sh's, verbatim."""
 from __future__ import annotations
 
 import os
+import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -12,10 +14,29 @@ from conftest import (ARCHIVE_STAMP, archive_clock, archive_main, archived, died
                       run_git, side_checkout)
 from orch.git import Git
 from orch.side_checkout import (
+    FLOW_LESS_ENTRIES,
     archive_flow,
     archive_root,
     side_checkout_archive_and_remove_or_exit,
 )
+
+SIDE_CHECKOUT_SH = Path(__file__).resolve().parents[2] / "orch" / "side-checkout.sh"
+
+
+def bash_flow_less_entries():
+    """FLOW_LESS_ENTRIES in scripts/orch/side-checkout.sh, read with the bash
+    module sourced in a bash child process, in list order."""
+    run = subprocess.run(
+        ["bash", "-c", 'source "$1"; printf "%s\\0" "${FLOW_LESS_ENTRIES[@]}"', "_",
+         str(SIDE_CHECKOUT_SH)],
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, timeout=30, check=True,
+    )
+    return tuple(run.stdout.decode().split("\0")[:-1])
+
+
+@pytest.mark.skipif(not SIDE_CHECKOUT_SH.exists(), reason="the bash side-checkout module is gone")
+def test_the_flow_less_entries_are_the_bash_module_s():
+    assert FLOW_LESS_ENTRIES == bash_flow_less_entries()
 
 
 @pytest.fixture

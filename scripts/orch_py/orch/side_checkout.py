@@ -19,7 +19,8 @@ from typing import Callable, Optional, Tuple
 
 from orch.checkout import (checkout_gitdir_into, checkout_has_flow, checkout_kind,
                            refuse_ticket_worktrees)
-from orch.common import ORCH_DIR_NAME, capture, die, dir_stamp, stdout_write, warn
+from orch.common import (ORCH_DIR_NAME, capture, die, dir_stamp, mkdir_p_or_die, stdout_write,
+                          warn)
 from orch.flow_state import flow_state_file, flow_state_get_many
 
 # The ownership marker's file name, in the worktree's own git folder.
@@ -114,10 +115,7 @@ def archive_flow(git, root: str, home: str, here_root: str,
     read = flow_state_get_many(state, ("slug",))
     slug = read["slug"] if read is not None else "unreadable"
     dest = os.path.join(home, ORCH_DIR_NAME, "archive", dir_stamp(clock) + "-" + slug)
-    try:
-        os.makedirs(dest, exist_ok=True)
-    except OSError:
-        die("could not create the archive directory %s - nothing was archived" % dest)
+    mkdir_p_or_die(dest, "could not create the archive directory %s - nothing was archived" % dest)
     try:
         names = sorted(name for name in os.listdir(orch) if not name.startswith("."))
     except OSError:
