@@ -27,6 +27,7 @@ from conftest import (
     until,
     verification_records as records,
     verification_store as store,
+    worktree_add,
 )
 from orch import verification
 from orch.git import Git
@@ -302,10 +303,8 @@ def test_a_run_whose_runner_died_is_met_by_a_fresh_run(repo, tmp_path, capsys):
 def side(repo, tmp_path):
     """A side checkout of <repo> at tmp_path/side, and its ticket worktree
     t5: their roots."""
-    path = (tmp_path / "side").resolve()
-    git(repo, "worktree", "add", "-q", str(path), "-b", "side")
-    ticket = path / ".orchestrator" / "worktrees" / "t5"
-    git(repo, "worktree", "add", "-q", str(ticket), "-b", "t5")
+    path = worktree_add(repo, (tmp_path / "side").resolve(), "-b", "side")
+    ticket = worktree_add(repo, path / ".orchestrator" / "worktrees" / "t5", "-b", "t5")
     return path, ticket
 
 
@@ -313,9 +312,7 @@ def side(repo, tmp_path):
 def wt(repo, tmp_path):
     """A worktree of <repo> at tmp_path/wt, on its own branch wt: its root,
     resolved as git names it."""
-    path = (tmp_path / "wt").resolve()
-    git(repo, "worktree", "add", "-q", str(path), "-b", "wt")
-    return path
+    return worktree_add(repo, (tmp_path / "wt").resolve(), "-b", "wt")
 
 
 def test_stop_stops_the_live_runs_of_a_checkout_and_its_ticket_worktrees(

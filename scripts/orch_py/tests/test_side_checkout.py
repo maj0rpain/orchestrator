@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from conftest import (ARCHIVE_STAMP, archive_clock, archive_main, archived, died_of, done_flow,
-                      run_git, side_checkout)
+                      run_git, side_checkout, worktree_add)
 from orch.git import Git
 from orch.side_checkout import (
     FLOW_LESS_ENTRIES,
@@ -198,8 +198,7 @@ def test_a_side_checkout_whose_move_fails_keeps_the_worktree(main, capsys):
 
 
 def test_a_hand_made_worktree_archives_in_place(main, tmp_path):
-    hand = tmp_path.resolve() / "hand"
-    run_git(main, "worktree", "add", "-q", "-b", "hand", str(hand))
+    hand = worktree_add(main, tmp_path.resolve() / "hand", "-b", "hand")
 
     assert archive_root(Git(cwd=str(main)), str(hand)) == str(hand)
 
@@ -210,8 +209,7 @@ def test_no_archive_root_when_the_checkouts_cannot_be_read(tmp_path):
 
 def test_a_flow_with_a_ticket_worktree_left_is_not_archived(main, capsys):
     done_flow(main, "first")
-    t6 = main / ".orchestrator" / "worktrees" / "t6"
-    run_git(main, "worktree", "add", "-q", "-b", "first--t6", str(t6))
+    t6 = worktree_add(main, main / ".orchestrator" / "worktrees" / "t6", "-b", "first--t6")
 
     code, out, err = died_of(
         capsys, lambda: archive_flow(Git(cwd=str(main)), str(main), str(main), str(main), archive_clock))
