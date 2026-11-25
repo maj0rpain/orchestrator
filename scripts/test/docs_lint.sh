@@ -208,17 +208,21 @@ assert_contains() { case "$2" in *"$3"*) ok "$1" ;; *) bad "$1" "missing '$3' in
 flat_text() { tr -s ' \t\n' '   ' <"${1:-/dev/stdin}"; }
 
 # orch_py_eval <code> [arg]...: runs the Python <code>, its `sys` imported and
-# the args in sys.argv[1:], against the plugin's orch package, the caller's
-# directory dropped from sys.path first, as orch.sh's bootstrap drops it, so a
-# shadowing module in cwd cannot hijack an import. Its stderr is dropped.
+# the args in sys.argv[1:], against the plugin's orch package, as orch.sh's
+# bootstrap (ORCH_PYTHON_BOOTSTRAP) runs it: the caller's directory dropped
+# from sys.path first, so a shadowing module in cwd cannot hijack an import,
+# then the package directory put on sys.path from an argument, never through
+# PYTHONPATH, which splits a plugin path holding a colon. Its stderr is
+# dropped.
 orch_py_eval() {
   local code="$1"
   shift
-  PYTHONPATH="$PLUGIN_ROOT/scripts/orch_py" python3 -c '
+  python3 -c '
 import sys
 if sys.path and sys.path[0] == "":
     del sys.path[0]
-'"$code" "$@" 2>/dev/null
+sys.path.insert(0, sys.argv.pop(1))
+'"$code" "$PLUGIN_ROOT/scripts/orch_py" "$@" 2>/dev/null
 }
 
 # skill_md_files <plugin root>: every .md file directly in a skills/<name>/

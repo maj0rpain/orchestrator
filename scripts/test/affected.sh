@@ -48,15 +48,20 @@
 #                                     the harness section file's sections
 #   the Python package (scripts/orch_py/), its tests and dev files included
 #                                     the redo, ticket, autopilot and doctor
-#                                     sections, the bash nouns whose sections
-#                                     run a converted noun's verb through the
-#                                     dispatch (doctor and autopilot also call
-#                                     Python bridges via orch_python_call),
+#                                     sections, which call a converted noun's
+#                                     own verbs through the dispatch (redo
+#                                     spec's spec round, doctor's glossary
+#                                     terms) or a Python bridge via
+#                                     orch_python_call (doctor, autopilot),
 #                                     and hooks_test.sh, whose paste guard
 #                                     rows run spec-review check through it,
 #                                     plus the side-checkout sections, whose
 #                                     entry classification scans the package
-#                                     (the pytest suite runs on every call)
+#                                     (the pytest suite runs on every call);
+#                                     not every section that reaches the
+#                                     package - fake_flow's init and the
+#                                     status and help calls reach it from
+#                                     most - which CI's whole run covers
 #   the pytest suite's wrapper (scripts/test/orch_py_test.sh)
 #                                     the harness section file's sections
 #   hook-edit-width.sh, width.sh, shell_code.awk

@@ -11,7 +11,7 @@ import os
 import time
 from typing import Callable, List, Mapping, Optional, Tuple
 
-from orch.base import base_setting, default_branch
+from orch.base import base_branch_into
 from orch.checkout import refuse_busy_checkout
 from orch.common import (ORCH_DIR_NAME, die, exclude_orch_dirs, normalize_slug, plain_number,
                          stderr_write, stdout_write)
@@ -19,8 +19,8 @@ from orch.flow_state import flow_state_create, flow_state_file, flow_state_seed,
 from orch.gh import adapter_of, label_listed, open_issue_read
 from orch.git import Git
 from orch.handoff import handoff_dir
-from orch.planning_allowlist import (RECORD_REDIRECT, allowlist_text, dirty_outside_allowlist,
-                                     record)
+from orch.planning_allowlist import (PLANNING_RECORD_REDIRECT, dirty_outside_allowlist,
+                                     planning_allowlist_text, planning_record)
 from orch.repo import RepoPin
 from orch.root import checkout_root
 from orch.side_checkout import archive_flow, archive_root
@@ -84,10 +84,10 @@ def require_clean_outside_allowlist(git) -> None:
     dirty = dirty_outside_allowlist(git)
     if not dirty:
         return
-    records = [path for path in dirty if record(path)]
-    outside = [path for path in dirty if not record(path)]
+    records = [path for path in dirty if planning_record(path)]
+    outside = [path for path in dirty if not planning_record(path)]
     outside_block = _indented(outside) + \
-        "     Planning may only change: %s." % allowlist_text()
+        "     Planning may only change: %s." % planning_allowlist_text()
     # With only source paths dirty, the message is exactly as before the
     # planning records (#186) got their own block.
     if not records:
@@ -98,7 +98,8 @@ def require_clean_outside_allowlist(git) -> None:
     msg = ("the working tree has changes planning does not make.\n"
            "     Planning records changed (planning does not edit these in place):\n"
            + _indented(records)
-           + "\n".join("     " + line.rstrip(" ") for line in fold_s(RECORD_REDIRECT, 75)))
+           + "\n".join("     " + line.rstrip(" ")
+                       for line in fold_s(PLANNING_RECORD_REDIRECT, 75)))
     # Committing a record from planning is the option ADR-0022 rejects, so
     # records are only ever discarded or stashed once their wording has moved.
     if not outside:
@@ -176,7 +177,7 @@ def run(
     # The whole seed is built before anything is written, so a build that
     # fails leaves the previous state untouched. Its base is the base branch
     # in effect now: the base setting, else the default branch.
-    base = base_setting(git) or default_branch(gh_of(), git, pin).name
+    base = base_branch_into(gh_of(), git, pin)
     try:
         seed = flow_state_seed(slug, issue, base, clock)
     except (KeyError, ValueError):

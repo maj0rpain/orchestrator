@@ -8,69 +8,32 @@ Every expected text is a literal of bash cmd_archive's output, byte for
 byte."""
 from __future__ import annotations
 
-import json
-
 import pytest
 
-from conftest import committed, died_of, git_repo, mark_side, run_git, worktree_add
+from conftest import (ARCHIVE_STAMP, archive_clock, archive_main, archived, died_of, done_flow,
+                      run_git, side_checkout, worktree_add)
 from orch import archive
 from orch.git import FakeGit
-
-# A clock pinned at 2026-01-02 03:04:05 UTC, so an archive directory's name
-# is known: 20260102-030405-<slug>.
-STAMP = "20260102-030405"
-
-
-def clock():
-    return 1767323045.0
-
-
-def hold_flow(path, slug):
-    """A flow named <slug> in the checkout at <path>: its state.json and a
-    spec handoff."""
-    orch = path / ".orchestrator"
-    (orch / "handoff").mkdir(parents=True, exist_ok=True)
-    (orch / "handoff" / "01-plan.md").write_text("plan\n")
-    (orch / "state.json").write_text(json.dumps({"slug": slug, "phase": "done"}) + "\n")
-
-
-def archived(main, slug):
-    """The archive directory of <slug> under <main>'s archive."""
-    return main / ".orchestrator" / "archive" / ("%s-%s" % (STAMP, slug))
 
 
 @pytest.fixture
 def main(tmp_path):
-    """A repository with one commit whose .orchestrator/ git ignores, as
-    init's exclude makes it: its root, resolved."""
-    root = tmp_path.resolve() / "main"
-    git_repo(root)
-    committed(root, {"a.txt": "a\n"}, "first")
-    with open(root / ".git" / "info" / "exclude", "a") as f:
-        f.write(".orchestrator/\n")
-    return root
-
-
-def side(main, name):
-    """A side checkout <name> of <main>, carrying the ownership marker."""
-    path = worktree_add(main, main / ".orchestrator" / "checkouts" / name, "-b", name)
-    mark_side(path)
-    return path
+    return archive_main(tmp_path)
 
 
 def orch_archive(at, monkeypatch, env=None, git=None):
     """`orch.sh archive` in-process, run from the directory <at>, under
     <env> (empty when None): its exit code."""
     monkeypatch.chdir(at)
-    return archive.run([], git=git, env={} if env is None else env, clock=clock)
+    return archive.run([], git=git, env={} if env is None else env, clock=archive_clock)
 
 
 def test_archive_in_the_main_checkout_moves_the_flow_in_place(main, monkeypatch, capsys):
-    hold_flow(main, "my-feature")
+    done_flow(main, "my-feature")
     (main / ".orchestrator" / "review-pass" / "b").mkdir(parents=True)
 
     assert orch_archive(main, monkeypatch) == 0
-    assert capsys.readouterr() == (".orchestrator/archive/%s-my-feature\n" % STAMP, "")
+    assert capsys.readouterr() == (".orchestrator/archive/%s-my-feature\n" % ARCHIVE_STAMP, "")
     assert sorted(p.name for p in archived(main, "my-feature").iterdir()) == [
         "handoff", "state.json"]
     assert sorted(p.name for p in (main / ".orchestrator").iterdir()) == [
@@ -78,7 +41,7 @@ def test_archive_in_the_main_checkout_moves_the_flow_in_place(main, monkeypatch,
 
 
 def test_archive_refuses_while_a_ticket_worktree_is_left(main, monkeypatch, capsys):
-    hold_flow(main, "my-feature")
+    done_flow(main, "my-feature")
     t4 = worktree_add(main, main / ".orchestrator" / "worktrees" / "t4", "-b", "f--t4")
     t5 = worktree_add(main, main / ".orchestrator" / "worktrees" / "t5", "-b", "f--t5")
 
@@ -94,8 +57,8 @@ def test_archive_refuses_while_a_ticket_worktree_is_left(main, monkeypatch, caps
 
 def test_archive_in_a_side_checkout_archives_into_the_main_checkout_then_removes_it(
         main, monkeypatch, capsys):
-    sc = side(main, "alpha")
-    hold_flow(sc, "second")
+    sc = side_checkout(main, "alpha")
+    done_flow(sc, "second")
 
     assert orch_archive(sc, monkeypatch) == 0
     assert capsys.readouterr() == (
@@ -110,8 +73,8 @@ def test_archive_in_a_side_checkout_archives_into_the_main_checkout_then_removes
 
 def test_a_refused_removal_keeps_the_side_checkout_warns_and_exits_0(
         main, monkeypatch, capsys):
-    sc = side(main, "alpha")
-    hold_flow(sc, "second")
+    sc = side_checkout(main, "alpha")
+    done_flow(sc, "second")
     (sc / "wip.txt").write_text("wip\n")
 
     assert orch_archive(sc, monkeypatch) == 0
@@ -126,8 +89,8 @@ def test_a_refused_removal_keeps_the_side_checkout_warns_and_exits_0(
 
 
 def test_a_side_checkout_whose_move_fails_is_kept_and_archive_dies(main, monkeypatch, capsys):
-    sc = side(main, "alpha")
-    hold_flow(sc, "second")
+    sc = side_checkout(main, "alpha")
+    done_flow(sc, "second")
     (archived(main, "second") / "handoff").mkdir(parents=True)
     (archived(main, "second") / "handoff" / "kept.md").write_text("kept\n")
     orch = sc / ".orchestrator"
@@ -153,7 +116,7 @@ def test_with_no_active_flow_archive_dies_naming_the_host_s_start_command(
 
 
 def test_a_failed_checkout_read_archives_nothing(main, monkeypatch, capsys):
-    hold_flow(main, "my-feature")
+    done_flow(main, "my-feature")
 
     assert died_of(capsys, lambda: orch_archive(
         main, monkeypatch, git=FakeGit(toplevel=str(main)))) == (

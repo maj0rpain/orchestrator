@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from conftest import (GH_502, committed, git_repo, hold_flow, labels_doc, mark_side, run_git,
-                      orch_review_pass, snapshot, state_json, worktree_add,
+from conftest import (ARCHIVE_STAMP, GH_502, archived, committed, done_flow, git_repo, hold_flow,
+                      labels_doc, orch_review_pass, run_git, side_checkout, snapshot, state_json,
                       write_labels_doc)
 from orch import flow_state, init
 from orch.gh_fake import FakeGh
@@ -22,7 +22,8 @@ from orch.repo import RepoPin
 
 ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
 CLAUDE = {"CLAUDECODE": "1"}
-# The clock the seed golden files were made with: 2026-01-02T03:04:05Z.
+# The clock the seed golden files were made with: 2026-01-02T03:04:05Z,
+# archive_clock's time, so a done flow init archives is stamped ARCHIVE_STAMP.
 CLOCK = 1767323045.0
 USAGE = "orch: usage: orch.sh init <slug> [--issue N]\n"
 
@@ -301,10 +302,6 @@ def test_under_autopilot_the_trust_warning_is_skipped(root, seed, capsys):
 
 # --- a done flow, against real repositories ------------------------------------
 
-# The archive directory's stamp: CLOCK's UTC time.
-STAMP = "20260102-030405"
-
-
 @pytest.fixture
 def main(tmp_path, monkeypatch):
     """A repository with one commit on main, its orchestrator.base main,
@@ -318,14 +315,6 @@ def main(tmp_path, monkeypatch):
     done_flow(root, "first")
     monkeypatch.chdir(root)
     return root
-
-
-def done_flow(path, slug):
-    """A done flow named <slug> in the checkout at <path>, with a spec
-    handoff."""
-    hold_flow(path, slug=slug, phase="done", issue=None)
-    (path / ".orchestrator" / "handoff").mkdir(exist_ok=True)
-    (path / ".orchestrator" / "handoff" / "spec.md").write_text("spec\n")
 
 
 def real_init(seed, path, *argv):
@@ -348,7 +337,7 @@ def test_a_done_flow_is_archived_in_place_its_note_printed_before_the_slug(
         main, seed, capsys):
     assert real_init(seed, main, "second") == 0
 
-    archive = ".orchestrator/archive/%s-first" % STAMP
+    archive = ".orchestrator/archive/%s-first" % ARCHIVE_STAMP
     assert capsys.readouterr() == ("%s\nsecond\n" % archive, "")
     assert sorted(p.name for p in (main / archive).iterdir()) == ["handoff", "state.json"]
     assert archived_slug(main / archive) == "first"
@@ -360,14 +349,13 @@ def test_a_done_flow_is_archived_in_place_its_note_printed_before_the_slug(
 
 def test_from_a_side_checkout_a_done_flow_moves_into_the_main_checkout_s_archive(
         main, seed, capsys, monkeypatch):
-    side = worktree_add(main, main / ".orchestrator" / "checkouts" / "alpha", "-b", "alpha")
-    mark_side(side)
+    side = side_checkout(main, "alpha")
     done_flow(side, "side-flow")
     monkeypatch.chdir(side)
 
     assert real_init(seed, side, "next") == 0
 
-    archive = main / ".orchestrator" / "archive" / ("%s-side-flow" % STAMP)
+    archive = archived(main, "side-flow")
     assert capsys.readouterr() == ("%s\nnext\n" % archive, "")
     assert archived_slug(archive) == "side-flow"
     assert slug_of(side) == "next"
@@ -391,7 +379,7 @@ def test_a_done_flow_with_a_valid_issue_is_archived_and_the_new_flow_records_it(
     assert real_init(seed, main, "second", "--issue", "42") == 0
 
     assert capsys.readouterr() == (
-        ".orchestrator/archive/%s-first\nsecond\n" % STAMP, "")
+        ".orchestrator/archive/%s-first\nsecond\n" % ARCHIVE_STAMP, "")
     assert json.loads(state_json(main).read_text())["issue"] == 42
 
 
@@ -505,6 +493,6 @@ def test_an_exclude_write_that_fails_dies_keeping_the_done_flow_s_archive(main, 
     assert capsys.readouterr() == (
         "", "orch: cannot add .orchestrator/, .scratch/ to the git exclude file"
             " .git/info/exclude\n")
-    archive = main / ".orchestrator" / "archive" / ("%s-first" % STAMP)
+    archive = archived(main, "first")
     assert archived_slug(archive) == "first"
     assert not state_json(main).exists()

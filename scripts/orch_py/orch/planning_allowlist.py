@@ -20,13 +20,13 @@ from typing import List, Sequence
 
 from orch.common import die
 
-ALLOWLIST = ("docs/agents/", ".scratch/", ".orchestrator/")
-EXCLUSIONS = (".orchestrator/checkouts/", ".orchestrator/worktrees/")
-RECORDS = ("GLOSSARY.md", "GLOSSARY-MAP.md", "CONTEXT.md", "CONTEXT-MAP.md", "docs/adr/")
+PLANNING_ALLOWLIST = ("docs/agents/", ".scratch/", ".orchestrator/")
+PLANNING_EXCLUSIONS = (".orchestrator/checkouts/", ".orchestrator/worktrees/")
+PLANNING_RECORDS = ("GLOSSARY.md", "GLOSSARY-MAP.md", "CONTEXT.md", "CONTEXT-MAP.md", "docs/adr/")
 
 # The sentences that say where a planning record's intended wording goes
 # instead, shared by the guard and the flow-start check.
-RECORD_REDIRECT = (
+PLANNING_RECORD_REDIRECT = (
     "Write the exact wording you intended - the new or replaced text, and where it goes"
     " - into the plan, so the spec carries it verbatim as an Implementation Decision"
     " and it lands with the change it describes. For a quick implementation, put it"
@@ -34,19 +34,19 @@ RECORD_REDIRECT = (
 )
 
 
-def allowlist_text() -> str:
+def planning_allowlist_text() -> str:
     """The allowlist as one comma-separated line, for messages that say what
     planning may still edit."""
-    return ", ".join(ALLOWLIST)
+    return ", ".join(PLANNING_ALLOWLIST)
 
 
-def records_text() -> str:
+def planning_records_text() -> str:
     """The records the same way, for messages that say what planning never
     edits in place."""
-    return ", ".join(RECORDS)
+    return ", ".join(PLANNING_RECORDS)
 
 
-def list_match(path: str, entries: Sequence[str]) -> bool:
+def planning_list_match(path: str, entries: Sequence[str]) -> bool:
     """Whether <path> matches one of <entries>: lies under a directory
     prefix, or equals an exact path."""
     return any(
@@ -54,21 +54,21 @@ def list_match(path: str, entries: Sequence[str]) -> bool:
     )
 
 
-def excluded(path: str) -> bool:
+def planning_excluded(path: str) -> bool:
     """Whether the repo-relative <path> matches one of the exclusions."""
-    return list_match(path, EXCLUSIONS)
+    return planning_list_match(path, PLANNING_EXCLUSIONS)
 
 
-def allowlisted(path: str) -> bool:
+def planning_allowlisted(path: str) -> bool:
     """Whether the repo-relative <path> is inside the planning allowlist: on
     it and not excluded."""
-    return not excluded(path) and list_match(path, ALLOWLIST)
+    return not planning_excluded(path) and planning_list_match(path, PLANNING_ALLOWLIST)
 
 
-def record(path: str) -> bool:
+def planning_record(path: str) -> bool:
     """Whether the repo-relative <path> is a planning record: the glossary or
     an ADR."""
-    return list_match(path, RECORDS)
+    return planning_list_match(path, PLANNING_RECORDS)
 
 
 def dirty_outside_allowlist(git) -> List[str]:
@@ -79,4 +79,4 @@ def dirty_outside_allowlist(git) -> List[str]:
     paths = git.dirty_paths()
     if isinstance(paths, str):
         die("git status failed - cannot check the working tree: " + paths)
-    return [path for path in paths if not allowlisted(path)]
+    return [path for path in paths if not planning_allowlisted(path)]

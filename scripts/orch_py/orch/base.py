@@ -1,6 +1,7 @@
 """The base concept's module, holding the default-branch lookup, as the bash
-side's default_branch_resolve and default_branch_seed find it, and the base
-a branch belongs to, as its recorded_base_into reads it, so far; the later
+side's default_branch_resolve and default_branch_seed find it, the base
+branch in effect now, as its base_branch_into reads it, and the base a branch
+belongs to, as its recorded_base_into reads it, so far; the later
 `base` noun grows it rather than moving it.
 
 GitHub is asked first, and only when the repo pin resolves: origin/HEAD is a
@@ -66,12 +67,17 @@ def base_setting(git) -> str:
     return git.config_value("orchestrator.base") or ""
 
 
+def base_branch_into(gh, git, pin) -> str:
+    """The base branch in effect now, bash base_branch_into: the base
+    setting, else the default branch (default_branch, through the gh adapter
+    <gh> and the repo pin <pin>). Never fails."""
+    return base_setting(git) or default_branch(gh, git, pin).name
+
+
 def recorded_base_into(gh, git, pin, branch: str) -> str:
     """The base branch <branch> belongs to: the one recorded for it, else
-    the base branch in effect now - the base setting, else the default
-    branch (default_branch, through the gh adapter <gh> and the repo pin
-    <pin>). Never fails."""
+    the base branch in effect now (base_branch_into). Never fails."""
     recorded = branch_base_get(git, branch)
     if recorded is not None:
         return recorded
-    return base_setting(git) or default_branch(gh, git, pin).name
+    return base_branch_into(gh, git, pin)

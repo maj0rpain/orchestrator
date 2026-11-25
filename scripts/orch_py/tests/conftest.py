@@ -212,6 +212,50 @@ def hold_flow(path, **state):
     (orch / "state.json").write_text(json.dumps(state) + "\n")
 
 
+def done_flow(path, slug):
+    """A done flow named <slug> in the checkout at <path>, with a spec
+    handoff."""
+    hold_flow(path, slug=slug, phase="done", issue=None)
+    (path / ".orchestrator" / "handoff").mkdir(exist_ok=True)
+    (path / ".orchestrator" / "handoff" / "spec.md").write_text("spec\n")
+
+
+def side_checkout(main, name):
+    """A side checkout <name> of the repository at <main>, on a new branch
+    <name>, carrying the ownership marker: its path."""
+    path = worktree_add(main, main / ".orchestrator" / "checkouts" / name, "-b", name)
+    mark_side(path)
+    return path
+
+
+def archive_main(tmp_path):
+    """A repository at tmp_path/main with one commit, whose .orchestrator/
+    git ignores, as init's exclude makes it: its root, resolved."""
+    root = tmp_path.resolve() / "main"
+    git_repo(root)
+    committed(root, {"a.txt": "a\n"}, "first")
+    with open(root / ".git" / "info" / "exclude", "a") as f:
+        f.write(".orchestrator/\n")
+    return root
+
+
+# The stamp of an archive directory made at archive_clock's time,
+# 2026-01-02 03:04:05 UTC.
+ARCHIVE_STAMP = "20260102-030405"
+
+
+def archive_clock():
+    """The clock an archive reads, pinned so an archive directory's name is
+    known: <ARCHIVE_STAMP>-<slug>."""
+    return 1767323045.0
+
+
+def archived(main, slug):
+    """The directory <slug>'s flow is archived to under the archive of the
+    main checkout at <main>, at archive_clock's time."""
+    return main / ".orchestrator" / "archive" / ("%s-%s" % (ARCHIVE_STAMP, slug))
+
+
 def write_staged(root, files):
     """Writes the files named, removes those mapped to None, and stages
     every change."""

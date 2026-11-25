@@ -453,12 +453,13 @@ done
 # leaving no temp file, and the readers the hooks use read it through jq.
 fs_py="$fs_dir/python-seeded"
 mkdir -p "$fs_py"
-PYTHONPATH="${ORCH%/*}/orch_py" python3 -c '
+python3 -c '
 import sys
+sys.path.insert(0, sys.argv.pop(1))
 from orch.flow_state import flow_state_create, flow_state_seed, phase_write
 assert flow_state_create(sys.argv[1], flow_state_seed("py-seed", "7", "rélease/2.0"))
 phase_write(sys.argv[1], "spec")
-' "$fs_py/state.json" </dev/null
+' "${ORCH%/*}/orch_py" "$fs_py/state.json" </dev/null
 assert_eq "flow_state_write_many rewrites a Python-written state.json" \
   "$(fs_run 'flow_state_write_many python-seeded/state.json branch feat/x iteration 2')" "status 0"
 assert_eq "keeping its keys in table order, with no temp file beside it" \

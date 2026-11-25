@@ -1218,10 +1218,13 @@ check_ticket_worktrees_left() {
 # Every phase commits and pushes its own work before it ends, so a change
 # outside the planning allowlist at a phase boundary is a bug in the phase that
 # left it - caught here, at the top of /orchestrator:next, while that phase's
-# context still exists. Pure reuse of init's check, so the two never disagree
-# about what counts. Silent on a clean tree. dirty_outside_allowlist dies when
-# git status cannot run; in its subshell that ends only the subshell, and its
-# message becomes this check's FAIL rather than the end of the report.
+# context still exists. Python init runs its own copy of the check,
+# orch/planning_allowlist.py's dirty_outside_allowlist, whose lists and
+# matcher a pytest parity test pins to planning-allowlist.sh's, so the two
+# agree about what counts. Silent on a clean tree. dirty_outside_allowlist
+# dies when git status cannot run; in its subshell that ends only the
+# subshell, and its message becomes this check's FAIL rather than the end of
+# the report.
 check_flow_worktree_clean() {
   local dirty err
   if ! capture dirty err dirty_outside_allowlist; then

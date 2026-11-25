@@ -32,12 +32,12 @@ def test_the_lists_and_texts_are_the_bash_module_s():
 
     python = [
         " ".join(entries) for entries in (
-            planning_allowlist.ALLOWLIST, planning_allowlist.EXCLUSIONS,
-            planning_allowlist.RECORDS)
+            planning_allowlist.PLANNING_ALLOWLIST, planning_allowlist.PLANNING_EXCLUSIONS,
+            planning_allowlist.PLANNING_RECORDS)
     ] + [
-        planning_allowlist.allowlist_text(),
-        planning_allowlist.records_text(),
-        planning_allowlist.RECORD_REDIRECT,
+        planning_allowlist.planning_allowlist_text(),
+        planning_allowlist.planning_records_text(),
+        planning_allowlist.PLANNING_RECORD_REDIRECT,
     ]
     assert python == bash
 
@@ -56,8 +56,9 @@ JUDGED_PATHS = [
 
 
 def python_judgement(path):
-    return "%d%d%d" % (planning_allowlist.allowlisted(path),
-                       planning_allowlist.excluded(path), planning_allowlist.record(path))
+    return "%d%d%d" % (planning_allowlist.planning_allowlisted(path),
+                       planning_allowlist.planning_excluded(path),
+                       planning_allowlist.planning_record(path))
 
 
 def test_the_matcher_judges_each_path_as_the_bash_one_does():

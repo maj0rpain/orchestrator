@@ -4,12 +4,12 @@ repositories under tmp_path: git's worktree semantics are git's, so no fake
 models them. Each message is bash side-checkout.sh's, verbatim."""
 from __future__ import annotations
 
-import json
 import os
 
 import pytest
 
-from conftest import committed, died_of, git_repo, run_git
+from conftest import (ARCHIVE_STAMP, archive_clock, archive_main, archived, died_of, done_flow,
+                      run_git, side_checkout)
 from orch.git import Git
 from orch.side_checkout import (
     archive_flow,
@@ -17,66 +17,25 @@ from orch.side_checkout import (
     side_checkout_archive_and_remove_or_exit,
 )
 
-# A clock pinned at 2026-01-02 03:04:05 UTC, so an archive directory's name
-# is known: 20260102-030405-<slug>.
-STAMP = "20260102-030405"
-
-
-def CLOCK():
-    return 1767323045.0
-
-
-def hold_flow(path, slug):
-    """A flow named <slug> in the checkout at <path>: its state.json and a
-    spec handoff."""
-    orch = path / ".orchestrator"
-    (orch / "handoffs").mkdir(parents=True, exist_ok=True)
-    (orch / "handoffs" / "spec.md").write_text("spec\n")
-    (orch / "state.json").write_text(json.dumps({"slug": slug, "phase": "done"}) + "\n")
-
 
 @pytest.fixture
 def main(tmp_path):
-    """A repository with one commit whose .orchestrator/ git ignores, as
-    init's exclude makes it: its root, resolved."""
-    root = tmp_path.resolve() / "main"
-    git_repo(root)
-    committed(root, {"a.txt": "a\n"}, "first")
-    with open(root / ".git" / "info" / "exclude", "a") as f:
-        f.write(".orchestrator/\n")
-    return root
-
-
-def side(main, name):
-    """A side checkout <name> of <main>, carrying the ownership marker: its
-    path."""
-    path = main / ".orchestrator" / "checkouts" / name
-    path.parent.mkdir(parents=True, exist_ok=True)
-    run_git(main, "worktree", "add", "-q", "-b", name, str(path))
-    gitdir = run_git(path, "rev-parse", "--absolute-git-dir")
-    with open(os.path.join(gitdir, "orchestrator-side-checkout"), "w"):
-        pass
-    return path
+    return archive_main(tmp_path)
 
 
 def test_a_main_checkout_s_flow_is_archived_in_place_leaving_flow_less_entries(main):
-    hold_flow(main, "first")
+    done_flow(main, "first")
     (main / ".orchestrator" / "review-pass" / "b").mkdir(parents=True)
     git = Git(cwd=str(main))
 
     home = archive_root(git, str(main))
-    shown = archive_flow(git, str(main), home, str(main), CLOCK)
+    shown = archive_flow(git, str(main), home, str(main), archive_clock)
 
-    dest = main / ".orchestrator" / "archive" / (STAMP + "-first")
-    assert (home, shown) == (str(main), ".orchestrator/archive/%s-first" % STAMP)
-    assert sorted(os.listdir(dest)) == ["handoffs", "state.json"]
+    dest = main / ".orchestrator" / "archive" / (ARCHIVE_STAMP + "-first")
+    assert (home, shown) == (str(main), ".orchestrator/archive/%s-first" % ARCHIVE_STAMP)
+    assert sorted(os.listdir(dest)) == ["handoff", "state.json"]
     assert sorted(os.listdir(main / ".orchestrator")) == ["archive", "review-pass"]
     assert (main / ".orchestrator" / "review-pass" / "b").is_dir()
-
-
-def archived(main, slug):
-    """The archive directory of <slug> under <main>, pinned to CLOCK."""
-    return main / ".orchestrator" / "archive" / ("%s-%s" % (STAMP, slug))
 
 
 def tear_down(main, path, policy, here=None):
@@ -84,24 +43,24 @@ def tear_down(main, path, policy, here=None):
     <path>, run from <here> (the main checkout when None): its status."""
     here = str(main if here is None else here)
     return side_checkout_archive_and_remove_or_exit(
-        Git(cwd=str(main)), str(path), str(main), here, policy, str(main), CLOCK)
+        Git(cwd=str(main)), str(path), str(main), here, policy, str(main), archive_clock)
 
 
 def test_a_side_checkout_s_flow_is_archived_in_the_main_checkout_then_the_worktree_removed(
         main, capsys):
-    sc = side(main, "alpha")
-    hold_flow(sc, "second")
+    sc = side_checkout(main, "alpha")
+    done_flow(sc, "second")
 
     assert archive_root(Git(cwd=str(sc)), str(sc)) == str(main)
     assert tear_down(main, sc, "die") == 0
     assert capsys.readouterr().out == (
-        ".orchestrator/archive/%s-second\nremoved side checkout %s\n" % (STAMP, sc))
-    assert sorted(os.listdir(archived(main, "second"))) == ["handoffs", "state.json"]
+        ".orchestrator/archive/%s-second\nremoved side checkout %s\n" % (ARCHIVE_STAMP, sc))
+    assert sorted(os.listdir(archived(main, "second"))) == ["handoff", "state.json"]
     assert not sc.exists()
 
 
 def test_a_removal_from_inside_the_side_checkout_says_to_close_the_session(main, capsys):
-    sc = side(main, "alpha")
+    sc = side_checkout(main, "alpha")
 
     assert tear_down(main, sc, "die", here=sc / "sub") == 0
     assert capsys.readouterr().out == (
@@ -116,19 +75,19 @@ def refusal(sc):
 
 
 def test_a_refused_removal_under_warn_keeps_the_worktree_and_the_archive_made(main, capsys):
-    sc = side(main, "alpha")
-    hold_flow(sc, "second")
+    sc = side_checkout(main, "alpha")
+    done_flow(sc, "second")
     (sc / "wip.txt").write_text("wip\n")
 
     assert tear_down(main, sc, "warn") == 1
     out, err = capsys.readouterr()
-    assert (out, err) == (".orchestrator/archive/%s-second\n" % STAMP, refusal(sc))
+    assert (out, err) == (".orchestrator/archive/%s-second\n" % ARCHIVE_STAMP, refusal(sc))
     assert (archived(main, "second") / "state.json").is_file()
     assert (sc / "wip.txt").is_file()
 
 
 def test_a_refused_removal_under_die_dies_with_the_same_message(main, capsys):
-    sc = side(main, "alpha")
+    sc = side_checkout(main, "alpha")
     (sc / "wip.txt").write_text("wip\n")
 
     code, _, err = died_of(capsys, lambda: tear_down(main, sc, "die"))
@@ -143,12 +102,12 @@ def block_archive(main):
 
 
 def test_an_archive_directory_that_cannot_be_made_archives_nothing(main, capsys):
-    hold_flow(main, "first")
+    done_flow(main, "first")
     block_archive(main)
     before = (main / ".orchestrator" / "state.json").read_text()
 
     code, out, err = died_of(
-        capsys, lambda: archive_flow(Git(cwd=str(main)), str(main), str(main), str(main), CLOCK))
+        capsys, lambda: archive_flow(Git(cwd=str(main)), str(main), str(main), str(main), archive_clock))
     assert (code, out, err) == (1, "", (
         "orch: could not create the archive directory %s - nothing was archived\n"
         % archived(main, "first")))
@@ -156,44 +115,44 @@ def test_an_archive_directory_that_cannot_be_made_archives_nothing(main, capsys)
 
 
 def block_move(main, slug):
-    """A non-empty handoffs/ already in <slug>'s archive directory, so the
-    flow's own handoffs/ cannot move there."""
-    (archived(main, slug) / "handoffs" / "kept.md").parent.mkdir(parents=True)
-    (archived(main, slug) / "handoffs" / "kept.md").write_text("kept\n")
+    """A non-empty handoff/ already in <slug>'s archive directory, so the
+    flow's own handoff/ cannot move there."""
+    (archived(main, slug) / "handoff" / "kept.md").parent.mkdir(parents=True)
+    (archived(main, slug) / "handoff" / "kept.md").write_text("kept\n")
 
 
 def test_a_move_failing_partway_names_what_moved_and_what_was_left(main, capsys):
-    hold_flow(main, "first")
+    done_flow(main, "first")
     (main / ".orchestrator" / "notes.md").write_text("n\n")
     block_move(main, "first")
     orch, dest = main / ".orchestrator", archived(main, "first")
 
     code, out, err = died_of(
-        capsys, lambda: archive_flow(Git(cwd=str(main)), str(main), str(main), str(main), CLOCK))
+        capsys, lambda: archive_flow(Git(cwd=str(main)), str(main), str(main), str(main), archive_clock))
     assert (code, out, err) == (1, "", (
-        "orch: could not move %s/handoffs into %s - moved there: nothing; left in place:"
-        " %s/handoffs %s/notes.md %s/state.json\n" % (orch, dest, orch, orch, orch)))
+        "orch: could not move %s/handoff into %s - moved there: nothing; left in place:"
+        " %s/handoff %s/notes.md %s/state.json\n" % (orch, dest, orch, orch, orch)))
 
 
 def test_a_move_failing_after_some_moved_leaves_them_moved_and_the_state_in_place(
         main, capsys):
-    hold_flow(main, "first")
+    done_flow(main, "first")
     (main / ".orchestrator" / "a-notes.md").write_text("n\n")
     block_move(main, "first")
     orch, dest = main / ".orchestrator", archived(main, "first")
 
     code, _, err = died_of(
-        capsys, lambda: archive_flow(Git(cwd=str(main)), str(main), str(main), str(main), CLOCK))
+        capsys, lambda: archive_flow(Git(cwd=str(main)), str(main), str(main), str(main), archive_clock))
     assert (code, err) == (1, (
-        "orch: could not move %s/handoffs into %s - moved there: %s/a-notes.md; left in"
-        " place: %s/handoffs %s/state.json\n" % (orch, dest, orch, orch, orch)))
+        "orch: could not move %s/handoff into %s - moved there: %s/a-notes.md; left in"
+        " place: %s/handoff %s/state.json\n" % (orch, dest, orch, orch, orch)))
     assert (dest / "a-notes.md").is_file()
     assert (orch / "state.json").is_file()
 
 
 def test_a_side_checkout_whose_archive_cannot_be_made_keeps_the_worktree(main, capsys):
-    sc = side(main, "alpha")
-    hold_flow(sc, "second")
+    sc = side_checkout(main, "alpha")
+    done_flow(sc, "second")
     block_archive(main)
 
     code, out, err = died_of(capsys, lambda: tear_down(main, sc, "die"))
@@ -204,15 +163,15 @@ def test_a_side_checkout_whose_archive_cannot_be_made_keeps_the_worktree(main, c
 
 
 def test_a_side_checkout_whose_move_fails_keeps_the_worktree(main, capsys):
-    sc = side(main, "alpha")
-    hold_flow(sc, "second")
+    sc = side_checkout(main, "alpha")
+    done_flow(sc, "second")
     block_move(main, "second")
     orch = sc / ".orchestrator"
 
     code, out, err = died_of(capsys, lambda: tear_down(main, sc, "warn"))
     assert (code, out, err) == (1, "", (
-        "orch: could not move %s/handoffs into %s - moved there: nothing; left in place:"
-        " %s/handoffs %s/state.json\n" % (orch, archived(main, "second"), orch, orch)))
+        "orch: could not move %s/handoff into %s - moved there: nothing; left in place:"
+        " %s/handoff %s/state.json\n" % (orch, archived(main, "second"), orch, orch)))
     assert (orch / "state.json").is_file()
     assert str(sc) in run_git(main, "worktree", "list")
 
@@ -229,12 +188,12 @@ def test_no_archive_root_when_the_checkouts_cannot_be_read(tmp_path):
 
 
 def test_a_flow_with_a_ticket_worktree_left_is_not_archived(main, capsys):
-    hold_flow(main, "first")
+    done_flow(main, "first")
     t6 = main / ".orchestrator" / "worktrees" / "t6"
     run_git(main, "worktree", "add", "-q", "-b", "first--t6", str(t6))
 
     code, out, err = died_of(
-        capsys, lambda: archive_flow(Git(cwd=str(main)), str(main), str(main), str(main), CLOCK))
+        capsys, lambda: archive_flow(Git(cwd=str(main)), str(main), str(main), str(main), archive_clock))
     assert (code, out, err) == (1, "", (
         "orch: ticket worktrees are left under %s - moving them would break git's record of"
         " them:\n       %s (orch.sh ticket-worktree remove 6)\n"
