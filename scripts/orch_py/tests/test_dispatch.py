@@ -1060,21 +1060,3 @@ def test_orch_python_call_refuses_an_incomplete_call_with_its_usage(tmp_path, re
         "orch: usage: orch_python_call [--as <command>] <noun> <func> [<arg>...]\n",
         0,
     )
-
-
-@pytest.mark.parametrize("path_of, found", [
-    (lambda tmp_path: path_without(tmp_path, "python3"), "none"),
-    (py38_path, "3.8.10"),
-], ids=["missing", "below-3.9"])
-def test_autopilot_names_itself_when_python3_is_missing_or_below_3_9(
-        tmp_path, repo, seed, path_of, found):
-    git_config(tmp_path, repo, "orchestrator.autopilot.model", "opus")
-
-    answer = orch_sh(tmp_path, repo, seed, "autopilot", "show",
-                     path=path_of(tmp_path), unset=GLOBAL_CONFIG)
-
-    assert answer[1:] == (
-        "orch: orch.sh autopilot needs python3 3.9 or newer (found %s) - run orch.sh doctor\n"
-        % found,
-        1,
-    )

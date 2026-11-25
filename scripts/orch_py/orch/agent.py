@@ -738,6 +738,12 @@ def _junie_newest_log(home: str, sid: Optional[str] = None) -> Optional[str]:
     return best_path
 
 
+def _junie_log_lines(log: str) -> List[str]:
+    """The lines of the Junie log at <log>, each with its NUL bytes dropped as
+    bash's read dropped them, so a logged value is compared as it prints."""
+    return [line.replace("\0", "") for line in file_lines(log)]
+
+
 def _junie_field(line: str, word: str) -> str:
     """The value after <word>= in a Junie log line (not preceded by a letter),
     up to a space, comma or closing parenthesis; empty when absent."""
@@ -808,7 +814,7 @@ def _check_junie_session(
         return
     agents_ran: List[str] = []
     last_line: Dict[str, str] = {}
-    for line in file_lines(log):
+    for line in _junie_log_lines(log):
         if _JUNIE_EXEC_RE.search(line) is None:
             continue
         name_match = _JUNIE_LAST_NAME_RE.match(line)
@@ -864,7 +870,7 @@ def _check_junie_unrecognized(
     log = _junie_newest_log(home)
     if log is None:
         return
-    log_lines = file_lines(log)
+    log_lines = _junie_log_lines(log)
     values: List[str] = []
     seen = set()
     for line in log_lines:

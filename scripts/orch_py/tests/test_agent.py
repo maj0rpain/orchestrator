@@ -1730,6 +1730,33 @@ def test_check_settings_strips_nul_bytes_from_junie_log_text_and_keeps_every_rec
     assert records == doctor_records(capsys, git, junie_home("h_clean", ""), empty_plugin)
 
 
+def test_check_settings_compares_junie_log_values_with_their_nul_bytes_dropped(
+    root, tmp_path, capsys
+):
+    # A NUL inside a logged value is dropped where the log is read, as bash's
+    # read dropped it, so the value is compared as it prints.
+    empty_plugin = tmp_path / "no-agents"
+    git = FakeGit(toplevel=str(root), local_config={"orchestrator.junie.model.fixer": "gpt-5"})
+    home = tmp_path / "home"
+    write_junie_index(home, [{"sessionId": "sess-n", "projectDir": str(root), "updatedAt": "5"}])
+    write_junie_log(
+        home, "log-n.log",
+        "session sess-n\n"
+        "x INFO Executing agent custom_agent_orch-fixer_1 with parameters"
+        " AgentParams(model=gpt\0-5, effort=low)\n"
+        "WARN Unrecognized 'model' value 'gpt\0-5', falling back to default."
+        " Allowed LLM names: gpt-4o\n",
+    )
+
+    records = doctor_records(capsys, git, home, empty_plugin)
+
+    assert ("ok", "junie orch-fixer ran model gpt-5, effort low (set model gpt-5, effort inherit)") in records
+    assert (
+        "fail",
+        "Junie did not recognise model gpt-5, set for fixer (local) - it fell back to the session model",
+    ) in records
+
+
 def test_check_settings_junie_index_reads_past_invalid_utf8_inside_a_string_value(
     root, tmp_path, capsys
 ):
