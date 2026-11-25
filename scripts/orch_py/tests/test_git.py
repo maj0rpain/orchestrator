@@ -8,7 +8,7 @@ import subprocess
 import pytest
 
 from conftest import GLOBAL_CONFIG, committed, git_repo, origin_clone, run_git, write_staged
-from orch.git import FakeGit, Git, git_push_reason
+from orch.git import FakeGit, Git, Worktree, git_push_reason
 
 ORIGIN = "https://github.com/fork/widgets.git"
 
@@ -498,6 +498,53 @@ def test_outside_a_repository_the_dirty_paths_are_git_s_error_line(tmp_path):
 
 def test_an_unseeded_fake_answers_the_dirty_paths_with_no_reason():
     assert FakeGit().dirty_paths() == "git gave no reason"
+
+
+# --- the checkout scan's operations ---------------------------------------------
+
+
+def test_the_worktree_list_reads_the_same_from_a_worktree_and_the_fake(worked, tmp_path):
+    run_git(worked, "checkout", "-qb", "trunk")
+    wt = tmp_path / "wt"
+    run_git(worked, "worktree", "add", "-q", str(wt), "-b", "side")
+    detached = tmp_path / "detached"
+    run_git(worked, "worktree", "add", "-q", "--detach", str(detached))
+
+    assert alike(Git(cwd=str(wt)), "worktree_list") == [
+        Worktree(str(worked.resolve()), "trunk"),
+        Worktree(str(detached.resolve()), None),
+        Worktree(str(wt.resolve()), "side"),
+    ]
+
+
+def test_outside_a_repository_there_is_no_worktree_list(tmp_path):
+    assert fails_alike(Git(cwd=str(tmp_path)), "worktree_list") is None
+
+
+def test_a_branch_at_another_checkout_reads_the_same_from_a_real_repo_and_the_fake(
+        worked, tmp_path):
+    wt = tmp_path / "wt"
+    run_git(worked, "worktree", "add", "-q", str(wt), "-b", "quick/7-bar")
+
+    assert alike(Git(cwd=str(worked)), "branch_at", str(wt)) == "quick/7-bar"
+
+
+def test_a_detached_or_missing_checkout_has_no_branch_at(worked, tmp_path):
+    run_git(worked, "checkout", "-q", "--detach")
+    git = Git(cwd=str(tmp_path))
+
+    assert fails_alike(git, "branch_at", str(worked)) is None
+    assert fails_alike(git, "branch_at", str(tmp_path / "gone")) is None
+
+
+def test_the_absolute_git_dir_at_a_worktree_reads_the_same_from_a_real_repo_and_the_fake(
+        worked, tmp_path):
+    wt = tmp_path / "wt"
+    run_git(worked, "worktree", "add", "-q", str(wt), "-b", "side")
+
+    assert alike(Git(cwd=str(tmp_path)), "absolute_git_dir_at", str(wt)) == \
+        str((worked / ".git" / "worktrees" / "wt").resolve())
+    assert fails_alike(Git(cwd=str(tmp_path)), "absolute_git_dir_at", str(tmp_path)) is None
 
 
 # --- the exclude writer's operation -------------------------------------------

@@ -9,10 +9,11 @@ line histories finding triage's scan, Lines fate and the default-branch
 lookup read, the working-tree state, object names, config value and main
 checkout the verification noun reads, the common directory the git exclude
 writer (orch.common) appends under, the current branch a review pass
-starts on, the push the gh adapter's claim delete makes, the dirty paths
-the planning allowlist's flow-start scan judges, and the scoped git
-config reads, writes and unsets (`config_regexp`, `config_set`,
-`config_unset`) the agent noun uses. There is no generic run: each later
+starts on, the worktree list, another checkout's branch and its git folder
+the checkout scan (orch.checkout) reads, the push the gh adapter's claim
+delete makes, the dirty paths the planning allowlist's flow-start scan
+judges, and the scoped git config reads, writes and unsets
+(`config_regexp`, `config_set`, `config_unset`) the agent noun uses. There is no generic run: each later
 noun adds the operations it
 needs, each with a test run against a real repository and against FakeGit,
 asserting the same answers. The scan's, Lines fate's and the lookup's
@@ -26,6 +27,14 @@ import subprocess
 from typing import Any, Dict, Iterable, List, NamedTuple, Optional, Sequence, Set, Tuple, Union
 
 from orch.common import ORCH_DIR_NAME, trim
+
+
+class Worktree(NamedTuple):
+    """One entry of `git worktree list`: its path, and git's own record of
+    the branch checked out there, None on a detached HEAD."""
+
+    path: str
+    branch: Optional[str]
 
 
 class FileDiff(NamedTuple):
@@ -58,6 +67,9 @@ COULD_NOT: Dict[str, Any] = {
     "text_hash": None,
     "config_value": None,
     "main_checkout": None,
+    "worktree_list": None,
+    "branch_at": None,
+    "absolute_git_dir_at": None,
     "git_common_dir": None,
     "current_branch": None,
     "push": "git gave no reason",
@@ -402,11 +414,45 @@ class Git:
     def main_checkout(self) -> Optional[str]:
         """The main checkout's root: the first entry `git worktree list`
         prints. None when the list fails or is empty."""
-        text = self._text_at_top(["worktree", "list", "--porcelain"])
-        for line in (text or "").splitlines():
+        worktrees = self.worktree_list()
+        return worktrees[0].path if worktrees else None
+
+    # The checkout scan's operations (orch.checkout), the list run where the
+    # adapter runs, as bash's checkout_parse runs, the others in the checkout
+    # they name, as bash's `git -C <path>`.
+
+    def worktree_list(self) -> Optional[List[Worktree]]:
+        """Every checkout of the clone, the main checkout first, read from
+        `git worktree list --porcelain` - bash checkout_parse, the one place
+        the porcelain is read: a Worktree for each `worktree` line, its branch
+        the `branch refs/heads/` line after it. A worktree whose directory is
+        gone is listed too. None when the list fails."""
+        run = self._run(["worktree", "list", "--porcelain"])
+        if run.returncode != 0:
+            return None
+        worktrees: List[Worktree] = []
+        for line in run.stdout.decode("utf-8", "surrogateescape").split("\n"):
             if line.startswith("worktree "):
-                return line[len("worktree "):]
-        return None
+                worktrees.append(Worktree(line[len("worktree "):], None))
+            elif line.startswith("branch refs/heads/") and worktrees:
+                worktrees[-1] = worktrees[-1]._replace(branch=line[len("branch refs/heads/"):])
+        return worktrees
+
+    def branch_at(self, path: str) -> Optional[str]:
+        """The branch checked out in the checkout at <path> - bash
+        checkout_branch <path>, its refs/heads/ taken off: None on a
+        detached HEAD, or where <path> is no checkout."""
+        ref = self._output(["-C", path, "symbolic-ref", "--quiet", "HEAD"])
+        if ref is None:
+            return None
+        prefix = "refs/heads/"
+        return ref[len(prefix):] if ref.startswith(prefix) else ref
+
+    def absolute_git_dir_at(self, path: str) -> Optional[str]:
+        """The git folder of the checkout holding <path>, as `git -C <path>
+        rev-parse --absolute-git-dir` prints it; None where <path> is in no
+        checkout."""
+        return self._output(["-C", path, "rev-parse", "--absolute-git-dir"])
 
 
     # The git exclude writer's operation, run where the adapter runs, as the
@@ -625,6 +671,15 @@ class FakeGit:
 
     def main_checkout(self) -> Optional[str]:
         return self._answer("main_checkout")
+
+    def worktree_list(self) -> Optional[List[Worktree]]:
+        return self._answer("worktree_list")
+
+    def branch_at(self, path: str) -> Optional[str]:
+        return self._answer("branch_at", path)
+
+    def absolute_git_dir_at(self, path: str) -> Optional[str]:
+        return self._answer("absolute_git_dir_at", path)
 
     def git_common_dir(self) -> Optional[str]:
         return self._answer("git_common_dir")
