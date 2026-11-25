@@ -413,15 +413,10 @@ class Git:
         """The value git config holds for <key>; None when it holds none."""
         return self._line_at_top(["config", "--get", key])
 
-    def main_checkout(self) -> Optional[str]:
-        """The main checkout's root: the first entry `git worktree list`
-        prints. None when the list fails or is empty."""
-        worktrees = self.worktree_list()
-        return worktrees[0].path if worktrees else None
-
-    # The checkout scan's operations (orch.checkout), the list run where the
-    # adapter runs, as bash's checkout_parse runs, the others in the checkout
-    # they name, as bash's `git -C <path>`.
+    # The checkout scan's operations (orch.checkout), the list, and the main
+    # checkout read from it, run where the adapter runs, as bash's
+    # checkout_parse runs, the others in the checkout they name, as bash's
+    # `git -C <path>`.
 
     def worktree_list(self) -> Optional[List[Worktree]]:
         """Every checkout of the clone, the main checkout first, read from
@@ -439,6 +434,12 @@ class Git:
             elif line.startswith("branch refs/heads/") and worktrees:
                 worktrees[-1] = worktrees[-1]._replace(branch=line[len("branch refs/heads/"):])
         return worktrees
+
+    def main_checkout(self) -> Optional[str]:
+        """The main checkout's root: the first entry `git worktree list`
+        prints. None when the list fails or is empty."""
+        worktrees = self.worktree_list()
+        return worktrees[0].path if worktrees else None
 
     def branch_at(self, path: str) -> Optional[str]:
         """The branch checked out in the checkout at <path> - bash
