@@ -165,7 +165,7 @@ archive_root() {
 # to no flow goes on this list; every other entry is the flow's, a spec phase's
 # freely named round directories and a flow's spec review round directories
 # (spec-rounds/<k>/) included. The round marker lives in the handoff folder, so
-# it goes with it.
+# it goes with it. The Python side_checkout module holds a copy of this list.
 FLOW_LESS_ENTRIES=(archive checkouts spec-review review-pass audit autopilot breakdown reports verification wait)
 
 # side_checkout_refuse_ticket_worktrees <root>: refuses while ticket worktrees

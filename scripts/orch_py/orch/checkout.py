@@ -1,9 +1,9 @@
 """The checkout concept's module, as far as a converted noun needs it: the
 main checkout, the current branch, whether a path is a ticket worktree's,
-the checkout scan, what a checkout holds, the ticket-worktree refusal and
-the busy-checkout refusal, as the bash side's checkout.sh and
-ticket-worktree.sh read them. Its bash copies stay while bash modules call
-them (ADR-0067).
+the checkout scan, one checkout's kind, what a checkout holds, the
+ticket-worktree refusal and the busy-checkout refusal, as the bash side's
+checkout.sh and ticket-worktree.sh read them. Its bash copies stay while
+bash modules call them (ADR-0067).
 """
 from __future__ import annotations
 
@@ -97,6 +97,21 @@ def _classify(git, index: int, paths: List[str]) -> str:
     if side_checkout_marker(git, path) is not None:
         return "side"
     return "hand-made"
+
+
+def checkout_kind(git, path: str) -> Optional[str]:
+    """The kind _classify gives (main, ticket, side or hand-made) the
+    checkout holding <path>, a folder inside a checkout included - bash
+    checkout_kind, classifying only the matching entry. None when <path> is
+    in no checkout, the list fails, or no entry matches."""
+    top = git.toplevel_at(path)
+    worktrees = git.worktree_list() if top is not None else None
+    if worktrees is None:
+        return None
+    paths = [worktree.path for worktree in worktrees]
+    if top not in paths:
+        return None
+    return _classify(git, paths.index(top), paths)
 
 
 def checkouts_or_die(git) -> List[Checkout]:

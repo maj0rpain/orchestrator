@@ -10,7 +10,8 @@ lookup read, the working-tree state, object names, config value and main
 checkout the verification noun reads, the common directory the git exclude
 writer (orch.common) appends under, the current branch a review pass
 starts on, the worktree list, another checkout's branch and its git folder
-the checkout scan (orch.checkout) reads, the push the gh adapter's claim
+the checkout scan (orch.checkout) reads, the worktree removal a side
+checkout's teardown (orch.side_checkout) makes, the push the gh adapter's claim
 delete makes, the dirty paths the planning allowlist's flow-start scan
 judges, and the scoped git config reads, writes and unsets
 (`config_regexp`, `config_set`, `config_unset`) the agent noun uses. There is no generic run: each later
@@ -73,6 +74,7 @@ COULD_NOT: Dict[str, Any] = {
     "git_common_dir": None,
     "current_branch": None,
     "push": "git gave no reason",
+    "worktree_remove": "git gave no reason",
     "dirty_paths": "git gave no reason",
 }
 
@@ -454,6 +456,18 @@ class Git:
         checkout."""
         return self._output(["-C", path, "rev-parse", "--absolute-git-dir"])
 
+    # The side checkout's teardown (orch.side_checkout), run in the checkout
+    # it names, as bash's `git -C "$main_root" worktree remove`.
+
+    def worktree_remove(self, checkout: str, path: str) -> Optional[str]:
+        """`git -C <checkout> worktree remove <path>`, never with force -
+        bash side_checkout_remove_worktree's run: None when the worktree is
+        gone, else the first line of what git printed refusing it."""
+        run = self._run(["-C", checkout, "worktree", "remove", path])
+        if run.returncode == 0:
+            return None
+        return run.stderr.decode("utf-8", "surrogateescape").split("\n", 1)[0]
+
 
     # The git exclude writer's operation, run where the adapter runs, as the
     # bash writer's `git rev-parse` is.
@@ -680,6 +694,9 @@ class FakeGit:
 
     def absolute_git_dir_at(self, path: str) -> Optional[str]:
         return self._answer("absolute_git_dir_at", path)
+
+    def worktree_remove(self, checkout: str, path: str) -> Optional[str]:
+        return self._answer("worktree_remove", checkout, path)
 
     def git_common_dir(self) -> Optional[str]:
         return self._answer("git_common_dir")

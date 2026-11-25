@@ -593,6 +593,31 @@ def test_outside_a_repository_there_is_no_current_branch(tmp_path):
     assert fails_alike(Git(cwd=str(tmp_path)), "current_branch") is None
 
 
+# --- the side checkout's worktree removal ------------------------------------------
+
+
+def test_a_clean_worktree_is_removed_the_same_from_a_real_repo_and_the_fake(worked, tmp_path):
+    wt = tmp_path / "wt"
+    run_git(worked, "worktree", "add", "-q", str(wt), "-b", "side")
+
+    assert alike(Git(cwd=str(tmp_path)), "worktree_remove", str(worked), str(wt)) is None
+    assert not wt.exists()
+
+
+def test_a_dirty_worktree_is_kept_with_git_s_first_error_line(worked, tmp_path):
+    wt = tmp_path / "wt"
+    run_git(worked, "worktree", "add", "-q", str(wt), "-b", "side")
+    (wt / "wip.txt").write_text("wip\n")
+
+    assert alike(Git(cwd=str(tmp_path)), "worktree_remove", str(worked), str(wt)) == (
+        "fatal: '%s' contains modified or untracked files, use --force to delete it" % wt)
+    assert (wt / "wip.txt").exists()
+
+
+def test_an_unseeded_worktree_removal_on_the_fake_fails_with_no_reason():
+    assert FakeGit().worktree_remove("/main", "/main/wt") == "git gave no reason"
+
+
 # --- the claim delete's push ------------------------------------------------------
 
 
