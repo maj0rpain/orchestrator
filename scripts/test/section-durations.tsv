@@ -163,7 +163,6 @@
 4	5	label casing (#1943)	7e3b89c80227bd15583b493104e3fd6e36ff9f1c
 78	49	gh rate limits (#2577)	d271a3eb8cd5a9f98fb8f5f6538b7be3f1c9002c
 14	15	gh rate limits: the GitHub pause and the hit file (#2577)	81ab2bc578eeeaacb0cab9ae3ddf537247cf6e64
-9	11	archive	ab01c77d6d8c6c3784c7e3244adedb382528bdd9
 0	1	mp-skill	42a828d6f818ccb7afe36031ee93138e2a7dfc35
 2	4	bash version guard	e62fe631ce5eb2d4dc1040aa81ae0eb6d24dc370
 1	1	outside a checkout (#931)	fb1af0dbb49fb7114e01ab80e594110f67d370ae

@@ -99,6 +99,12 @@ def _status(argv: List[str]) -> int:
     return run(argv)
 
 
+def _archive(argv: List[str]) -> int:
+    from orch.archive import run
+
+    return run(argv)
+
+
 def _help(argv: List[str]) -> int:
     from orch.help import run
 
@@ -122,6 +128,7 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "agent": _agent,
     "slug": _slug,
     "status": _status,
+    "archive": _archive,
     "help": _help,
 }
 

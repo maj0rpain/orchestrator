@@ -4,13 +4,14 @@ each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>`,
 `orch.sh verification <verb>`, `orch.sh audit <verb>`, `orch.sh review-pass
 <verb>`, `orch.sh spec-review <verb>`, `orch.sh breakdown <verb>`, `orch.sh
 spec <verb>`, `orch.sh glossary <verb>`, `orch.sh parallel show`, `orch.sh
-route show`, `orch.sh agent <verb>`, `orch.sh slug <text>`, `orch.sh status`
-or `orch.sh help` (and its spellings) as a command, in a checkout under
-tmp_path, against a fake store seeded in the layout the bash suite's fake_*
+route show`, `orch.sh agent <verb>`, `orch.sh slug <text>`, `orch.sh status`,
+`orch.sh archive` or `orch.sh help` (and its spellings) as a command, in a
+checkout under tmp_path, against a fake store seeded in the layout the bash suite's fake_*
 helpers write, with ORCH_GH_FAKE_STORE set as fake_github sets it."""
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -951,7 +952,7 @@ def test_agent_refuses_when_python3_is_missing_or_below_3_9(tmp_path, repo, seed
     )
 
 
-# --- slug, status and help ---------------------------------------------------
+# --- slug, status, archive and help ------------------------------------------
 
 HELP_GOLDEN = Path(__file__).resolve().parent / "help" / "golden.txt"
 
@@ -980,6 +981,18 @@ def test_status_prints_the_flow_lines_through_the_python_noun(tmp_path, repo, se
         "\n"
         "handoffs:\n"
         "  .orchestrator/handoff/01-plan.md\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_archive_moves_the_flow_into_the_archive_through_the_python_noun(tmp_path, repo, seed):
+    flow_state(repo, "done", 12)
+
+    out, err, code = orch_sh(tmp_path, repo, seed, "archive", path=python3_shim(tmp_path))
+
+    assert (err, code) == ("", 0)
+    assert re.fullmatch(r"\.orchestrator/archive/[0-9]{8}-[0-9]{6}-x\n", out)
+    assert (repo / out.strip() / "state.json").is_file()
+    assert not (repo / ".orchestrator" / "state.json").exists()
     assert (tmp_path / "shim.log").read_text() == "ran\n"
 
 
