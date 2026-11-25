@@ -50,8 +50,8 @@ helper a converted noun needs is copied into the package module of the concept
 it serves, under its bash name, and its bash copy stays while a bash caller
 remains. `orch.sh` stays the one entry point: main's one case naming the
 converted nouns calls `orch_python`, which runs the package as `python3 -m orch
-<noun> <arg>...` would, in place of orch.sh, so stdin, stdout, stderr and the exit
-code are the noun's own. It runs it through a `-c` bootstrap rather than
+<noun> <arg>...` would, in place of orch.sh, so stdin, stdout, stderr and the
+exit code are the noun's own. It runs it through a `-c` bootstrap rather than
 `-m`: `-m` puts the caller's directory ahead of `PYTHONPATH` and the standard
 library, so a `json.py` or `orch.py` there would shadow the package or its
 imports, and Python 3.9 has no `-P`. The bootstrap drops that directory from
