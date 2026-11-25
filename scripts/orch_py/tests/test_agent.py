@@ -965,6 +965,103 @@ def test_sync_refuses_all_unmarked_conflicts_before_mutating_disk_or_exclude(
             ufile.chmod(0o644)
 
 
+UNREADABLE = [
+    pytest.param("file", marks=pytest.mark.skipif(os.geteuid() == 0, reason="root reads any file")),
+    "dir",
+]
+
+
+def unreadable_agent(plugin, name, how):
+    """Makes <plugin>'s agents/<name>.md unreadable - a file with no read
+    permission when <how> is "file", a directory in its place when "dir" -
+    and returns its path."""
+    path = plugin / "agents" / (name + ".md")
+    if how == "file":
+        path.chmod(0)
+    else:
+        path.unlink()
+        path.mkdir()
+    return path
+
+
+@pytest.mark.parametrize("how", UNREADABLE)
+def test_sync_set_and_clear_refuse_an_unreadable_plugin_agent_before_touching_copies_or_exclude(
+    root, tmp_path, capsys, how
+):
+    plugin = fake_plugin(tmp_path)
+    unreadable = unreadable_agent(plugin, "orch-implementer", how)
+    git, common = git_with_exclude(
+        root,
+        local_config={
+            "orchestrator.junie.model.implementer": "gpt-5",
+            "orchestrator.junie.model.closer": "gpt-5",
+        },
+    )
+    copies_dir = root / ".junie" / "agents"
+    refusal = "orch: agent sync: cannot read %s\n" % unreadable
+
+    assert orch_agent(git, "sync", plugin_root=str(plugin)) == 1
+    assert capsys.readouterr() == ("", refusal)
+    assert not copies_dir.exists()
+    assert not (common / "info" / "exclude").exists()
+
+    assert orch_agent(
+        git, "set", "fixer", "--host", "junie", "--model", "gpt-5", plugin_root=str(plugin)
+    ) == 1
+    assert capsys.readouterr() == ("", refusal)
+    assert git.config_regexp("local", r"^orchestrator\.junie\.model\.fixer$") == {
+        "orchestrator.junie.model.fixer": "gpt-5",
+    }
+    assert not copies_dir.exists()
+
+    assert orch_agent(git, "clear", "fixer", "--host", "junie", plugin_root=str(plugin)) == 1
+    assert capsys.readouterr() == ("", refusal)
+    assert git.config_regexp("local", r"^orchestrator\.junie\.model\.fixer$") == {}
+    assert not copies_dir.exists()
+    assert not (common / "info" / "exclude").exists()
+
+
+@pytest.mark.parametrize("how", UNREADABLE)
+def test_sync_refuses_an_unreadable_plugin_agent_before_an_unmarked_file_in_the_way(
+    root, tmp_path, capsys, how
+):
+    plugin = fake_plugin(tmp_path)
+    unreadable = unreadable_agent(plugin, "orch-implementer", how)
+    git, _ = git_with_exclude(
+        root,
+        local_config={
+            "orchestrator.junie.model.implementer": "gpt-5",
+            "orchestrator.junie.model.closer": "gpt-5",
+        },
+    )
+    copies_dir = root / ".junie" / "agents"
+    copies_dir.mkdir(parents=True)
+    (copies_dir / "orch-closer.md").write_text("hand made\n", encoding="utf-8")
+
+    assert orch_agent(git, "sync", plugin_root=str(plugin)) == 1
+    assert capsys.readouterr() == ("", "orch: agent sync: cannot read %s\n" % unreadable)
+    assert (copies_dir / "orch-closer.md").read_text(encoding="utf-8") == "hand made\n"
+
+
+@pytest.mark.parametrize("how", UNREADABLE)
+def test_sync_names_the_first_unreadable_plugin_agent_in_listing_order(
+    root, tmp_path, capsys, how
+):
+    plugin = fake_plugin(tmp_path)
+    unreadable_agent(plugin, "orch-fixer", how)
+    first = unreadable_agent(plugin, "orch-closer", how)
+    git, _ = git_with_exclude(
+        root,
+        local_config={
+            "orchestrator.junie.model.fixer": "gpt-5",
+            "orchestrator.junie.model.closer": "gpt-5",
+        },
+    )
+
+    assert orch_agent(git, "sync", plugin_root=str(plugin)) == 1
+    assert capsys.readouterr() == ("", "orch: agent sync: cannot read %s\n" % first)
+
+
 def test_set_and_clear_skip_trailing_sync_on_config_error(root, tmp_path, capsys):
     plugin = fake_plugin(tmp_path)
     # Even with a valid Junie key already present (which would normally trigger a copy write),
@@ -1649,3 +1746,74 @@ def test_check_settings_junie_copy_drift_warns_via_shared_sync_plan(root, tmp_pa
         % copies_dir,
     ) in records
     assert ("remedy", "orch.sh agent sync") in records
+
+
+@pytest.mark.parametrize("how", UNREADABLE)
+def test_unreadable_plugin_agent_keeps_its_marked_copy_and_doctor_names_it_with_its_remedy(
+    root, tmp_path, capsys, how
+):
+    plugin = fake_plugin(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    git, _ = git_with_exclude(
+        root, local_config={"orchestrator.junie.model.implementer": "gpt-5"}
+    )
+    copies_dir = root / ".junie" / "agents"
+    assert orch_agent(git, "sync", plugin_root=str(plugin)) == 0
+    copy_text = (copies_dir / "orch-implementer.md").read_text(encoding="utf-8")
+    unreadable = unreadable_agent(plugin, "orch-implementer", how)
+
+    assert orch_agent(git, "sync", plugin_root=str(plugin)) == 1
+    capsys.readouterr()
+    assert (copies_dir / "orch-implementer.md").read_text(encoding="utf-8") == copy_text
+
+    records = doctor_records(capsys, git, home, plugin)
+    junie_auditor_idx = records.index(
+        ("ok", "agent junie auditor: model inherit (inherit), effort inherit (inherit)")
+    )
+    assert records[junie_auditor_idx + 1:] == [
+        (
+            "warn",
+            "Junie agent copies in %s are not what agent sync would leave: cannot read %s"
+            % (copies_dir, unreadable),
+        ),
+        (
+            "remedy",
+            "make %s readable or reinstall the plugin, then run orch.sh agent sync" % unreadable,
+        ),
+    ]
+
+
+@pytest.mark.parametrize("how", UNREADABLE)
+def test_doctor_adds_a_cannot_read_part_per_unreadable_plugin_agent_after_other_drift(
+    root, tmp_path, capsys, how
+):
+    plugin = fake_plugin(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    git, _ = git_with_exclude(
+        root,
+        local_config={
+            "orchestrator.junie.model.implementer": "gpt-5",
+            "orchestrator.junie.model.fixer": "gpt-5",
+            "orchestrator.junie.model.closer": "gpt-5",
+        },
+    )
+    copies_dir = root / ".junie" / "agents"
+    unreadable_agent(plugin, "orch-fixer", how)
+    first = unreadable_agent(plugin, "orch-closer", how)
+    second = plugin / "agents" / "orch-fixer.md"
+
+    records = doctor_records(capsys, git, home, plugin)
+    assert records[-2:] == [
+        (
+            "warn",
+            "Junie agent copies in %s are not what agent sync would leave:"
+            " missing orch-implementer.md; cannot read %s; cannot read %s"
+            % (copies_dir, first, second),
+        ),
+        (
+            "remedy",
+            "make %s readable or reinstall the plugin, then run orch.sh agent sync" % first,
+        ),
+    ]

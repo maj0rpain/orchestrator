@@ -16,6 +16,7 @@ from orch.common import (
     die,
     exclude_line,
     file_lines,
+    lines_of,
     mkdir_p_or_die,
     read_raw,
     rm_f_or_die,
@@ -332,11 +333,11 @@ def agent_copy_marked(path: str) -> bool:
     return first == b"---" and second == AGENT_COPY_MARKER.encode("utf-8")
 
 
-def agent_copy_content(agent_file: str, model: str, effort: str) -> str:
-    """What agent sync writes for a plugin agent: the file with the marker,
-    then model: and reasoningLevel: (each only when not inherit) right after
-    its opening ---."""
-    lines = file_lines(agent_file)
+def agent_copy_content(agent_text: str, model: str, effort: str) -> str:
+    """What agent sync writes for a plugin agent whose file holds
+    <agent_text>: that text with the marker, then model: and reasoningLevel:
+    (each only when not inherit) right after its opening ---."""
+    lines = lines_of(agent_text)
     if not lines:
         return ""
     header = [lines[0], AGENT_COPY_MARKER]
@@ -366,6 +367,7 @@ class SyncPlan:
     directory: str
     want: Tuple[str, ...]
     refused: Tuple[str, ...]
+    unreadable: Tuple[str, ...]
     writes: Tuple[PlannedWrite, ...]
     deletes: Tuple[str, ...]
 
@@ -394,13 +396,16 @@ def agent_sync_plan(
 ) -> SyncPlan:
     """Plans copy writes, stale deletes and unmarked-file refusals under
     <root>/.junie/agents for <host>, from <cache>'s settings, without mutating
-    disk or git exclude."""
+    disk or git exclude. A wanted plugin agent file that cannot be read is
+    listed, by full path, in unreadable: it stays wanted, so a marked copy of
+    it is not deleted, and no write is planned for it."""
     resolved_plugin = default_plugin_root() if plugin_root is None else plugin_root
     plan_dir = os.path.join(root, ".junie", "agents")
     agents_dir = os.path.join(resolved_plugin, "agents")
 
     want: List[str] = []
     refused: List[str] = []
+    unreadable: List[str] = []
     writes: List[PlannedWrite] = []
     deletes: List[str] = []
 
@@ -416,8 +421,13 @@ def agent_sync_plan(
         if copy_model == "inherit" and copy_effort == "inherit":
             continue
         want.append(name)
+        agent_file = os.path.join(agents_dir, filename)
+        agent_text = read_raw(agent_file)
+        if agent_text is None:
+            unreadable.append(agent_file)
+            continue
         target = os.path.join(plan_dir, filename)
-        content = agent_copy_content(os.path.join(agents_dir, filename), copy_model, copy_effort)
+        content = agent_copy_content(agent_text, copy_model, copy_effort)
         state = "missing"
         if os.path.exists(target):
             if not agent_copy_marked(target):
@@ -441,6 +451,7 @@ def agent_sync_plan(
         directory=plan_dir,
         want=tuple(want),
         refused=tuple(refused),
+        unreadable=tuple(unreadable),
         writes=tuple(writes),
         deletes=tuple(deletes),
     )
@@ -448,6 +459,8 @@ def agent_sync_plan(
 
 def _apply_sync(cache: ConfigCache, root: str, plugin_root: Optional[str], host: str) -> None:
     plan = agent_sync_plan(root, cache, host, plugin_root)
+    if plan.unreadable:
+        die("agent sync: cannot read %s" % plan.unreadable[0])
     if plan.refused:
         files = " ".join(name + ".md" for name in plan.refused)
         die(
@@ -887,13 +900,14 @@ def _check_sync_drift(
     records: List[Tuple[str, str]],
 ) -> None:
     """Warns when this checkout's copy directory for <host> differs from what
-    agent_sync_plan would leave (missing, stale, extra, or unmarked in the way)."""
+    agent_sync_plan would leave (missing, stale, extra, unmarked in the way,
+    or a plugin agent file it cannot read)."""
     plan = agent_sync_plan(root, cache, host, plugin_root)
     missing = [w.name + ".md" for w in plan.writes if w.state == "missing"]
     stale = [w.name + ".md" for w in plan.writes if w.state != "missing"]
     extra = [name + ".md" for name in plan.deletes]
     refused = [name + ".md" for name in plan.refused]
-    if not (missing or stale or extra or refused):
+    if not (missing or stale or extra or refused or plan.unreadable):
         return
     parts: List[str] = []
     if missing:
@@ -904,12 +918,20 @@ def _check_sync_drift(
         parts.append("extra " + " ".join(extra))
     if refused:
         parts.append(" ".join(refused) + " carries no sync marker and is in the way")
+    parts.extend("cannot read " + path for path in plan.unreadable)
     records.append((
         "warn",
         "%s agent copies in %s are not what agent sync would leave: %s"
         % (host.capitalize(), plan.directory, "; ".join(parts)),
     ))
-    records.append(("remedy", "orch.sh agent sync"))
+    if plan.unreadable:
+        records.append((
+            "remedy",
+            "make %s readable or reinstall the plugin, then run orch.sh agent sync"
+            % plan.unreadable[0],
+        ))
+    else:
+        records.append(("remedy", "orch.sh agent sync"))
 
 
 def check_settings(
