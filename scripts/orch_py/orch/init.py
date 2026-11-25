@@ -156,8 +156,8 @@ def run(
     env = os.environ if env is None else env
     git = Git() if git is None else git
     root = checkout_root(git, env)
-    slug, issue = parse_args(argv)
-    slug = normalize_slug(slug)
+    raw_slug, issue = parse_args(argv)
+    slug = normalize_slug(raw_slug)
     # A busy checkout - a flow mid-pipeline, or a branch the plugin made with
     # no PR yet, as a quick implementation still running here leaves -
     # refuses with exit 3. Dirty paths are not a busy signal here: they get

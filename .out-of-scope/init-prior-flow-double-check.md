@@ -1,14 +1,19 @@
 # Collapsing init's two checks for a prior flow
 
-`cmd_init` in `scripts/orch.sh` looks at `$STATE` twice: once up front to
-refuse when an unfinished flow is still active, and again further down to
-archive a done one. This project keeps those as two separate checks rather
-than folding them into one.
+`init` looks at the prior flow's state twice (bash `cmd_init` in
+`scripts/orch.sh` looking at `$STATE` when this was decided, Python init's
+`run` in `scripts/orch_py/orch/init.py` now, through `refuse_busy_checkout`
+and then `os.path.isfile(state_file)`): once up front to refuse when an
+unfinished flow is still active, and again further down to archive a done
+one. This project keeps those as two separate checks rather than folding them
+into one.
 
 ## Why this is out of scope
 
 The two checks sit at two different points in init's precondition order, and
-that order is deliberate:
+that order is deliberate. Bash `cmd_init`'s order, when this was decided, read
+as below; Python init's `run` keeps the same order, with `archive_flow` in
+place of `cmd_archive`:
 
 ```bash
 if [ -f "$STATE" ] && [ "$(jq -r .phase "$STATE")" != "done" ]; then
