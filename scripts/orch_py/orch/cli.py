@@ -6,9 +6,10 @@ NOUNS dies as orch.sh dies on an unknown command; `-h` and `--help`, help's
 option spellings, run help, through ALIASES rather than NOUNS, since call_func
 finds a noun's module by its name.
 
-Both main and call_func end a run whose stdout pipe is closed before it is all
-written as SIGPIPE ended bash's printf and cat: silently, with no Python
-traceback or flush warning.
+main ends a run of a noun in SIGPIPE_NOUNS whose stdout pipe is closed before
+it is all written as SIGPIPE ended bash's printf and cat: silently, with no
+Python traceback or flush warning. Every other noun, and every call_func
+bridge, ends such a run as it did before those nouns were converted.
 """
 from __future__ import annotations
 
@@ -149,6 +150,11 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
 # The option spellings main runs as a noun: orch.sh hands them on as given.
 ALIASES: Dict[str, str] = {"-h": "help", "--help": "help"}
 
+# The nouns converted with init, each keeping its bash noun's silent SIGPIPE
+# death on a closed stdout pipe; a noun converted before them keeps its flush
+# failure there, as it always ended.
+SIGPIPE_NOUNS = frozenset({"init", "slug", "status", "archive", "help"})
+
 
 def _sigpipe_as_bash(run: Callable[[List[str]], int], argv: List[str]) -> int:
     """run(<argv>) and its exit code, stdout flushed before it returns. Python
@@ -167,10 +173,13 @@ def _sigpipe_as_bash(run: Callable[[List[str]], int], argv: List[str]) -> int:
 
 def main(argv: List[str]) -> int:
     noun = argv[0] if argv else ""
-    run = NOUNS.get(ALIASES.get(noun, noun))
+    name = ALIASES.get(noun, noun)
+    run = NOUNS.get(name)
     if run is None:
         die("unknown command: %s (run 'orch.sh help')" % noun)
-    return _sigpipe_as_bash(run, argv[1:])
+    if name in SIGPIPE_NOUNS:
+        return _sigpipe_as_bash(run, argv[1:])
+    return run(argv[1:])
 
 
 def call_func(argv: List[str]) -> int:
@@ -190,5 +199,5 @@ def call_func(argv: List[str]) -> int:
     fn = getattr(mod, name, None)
     if not callable(fn):
         die("unknown %s function: %s" % (noun, name))
-    result = _sigpipe_as_bash(fn, args)
+    result = fn(args)
     return 0 if result is None else result

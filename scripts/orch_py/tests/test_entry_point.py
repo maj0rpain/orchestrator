@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import PACKAGE_BOOTSTRAP, died_of
+from conftest import PACKAGE_BOOTSTRAP, died_of, git_repo
 from orch.__main__ import main
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
@@ -65,23 +65,42 @@ def test_every_module_imports_with_site_packages_disabled():
     assert (run.returncode, run.stdout, run.stderr) == (0, "imported\n", "")
 
 
-@pytest.mark.parametrize("call", [["slug", "Some Text"], ["--call", "slug", "run", "Some Text"]],
-                         ids=["noun", "call-mode"])
-def test_a_noun_writing_into_a_closed_pipe_dies_of_sigpipe_silently(call):
-    """bash's printf died of SIGPIPE on a pipe whose reader is gone: so does
-    the noun, with no traceback and no flush warning on stderr."""
+def into_a_closed_pipe(cwd, *call):
+    """The entry point run with <call> in <cwd>, its stdout a pipe whose
+    reader is already gone: the completed process."""
     reader, writer = os.pipe()
     os.close(reader)
     try:
-        run = subprocess.run(
+        return subprocess.run(
             [sys.executable, "-c", PACKAGE_BOOTSTRAP, str(PACKAGE_ROOT), *call],
+            cwd=str(cwd), env=dict(os.environ, HOME=str(cwd)),
             stdin=subprocess.DEVNULL, stdout=writer, stderr=subprocess.PIPE,
             universal_newlines=True, timeout=30,
         )
     finally:
         os.close(writer)
 
+
+def test_a_noun_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_path):
+    """bash's printf died of SIGPIPE on a pipe whose reader is gone: so does
+    a noun this change converts, with no traceback and no flush warning on
+    stderr."""
+    run = into_a_closed_pipe(tmp_path, "slug", "Some Text")
+
     assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
+
+
+@pytest.mark.parametrize("call", [["route", "show"], ["--call", "route", "run", "show"]],
+                         ids=["noun", "call-mode"])
+def test_a_noun_converted_earlier_keeps_its_flush_failure_on_a_closed_pipe(tmp_path, call):
+    """A noun converted before init, slug, status, archive and help, and an
+    orch_python_call bridge, end a closed stdout pipe as they always did:
+    Python's failed flush at exit, status 120, never SIGPIPE."""
+    git_repo(tmp_path)
+
+    run = into_a_closed_pipe(tmp_path, *call)
+
+    assert (run.returncode, "BrokenPipeError" in run.stderr) == (120, True)
 
 
 def test_the_issue_noun_is_converted(capsys):
