@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.12.1
+
+`orch.sh agent` now runs as Python (`scripts/orch_py/orch/agent.py`), moving the agent noun and its tests out of bash. Its CLI verbs (`set`, `show`, `clear`, `get`, `sync`, `roles`), arguments, output, exit codes and `orch:` messages stay the same, with three small differences: doctor reads Junie session index JSON in Python without needing `jq`, marker checks on unreadable paths stay quiet without `sed:` stderr, and doctor's agent-settings check reports a `FAIL` when `python3` 3.9+ is absent. Doctor, autopilot and `docs_lint.sh` now call named Python bridge functions through `orch_python_call` / `orch.agent`, and `scripts/orch/agent.sh` and `scripts/test/orch/agent.sh` are removed.
+
 ## 6.12.0
 
 Antigravity CLI native plugin manifest, host detection, capability table, and doctor support (#4055): added `.antigravity-plugin/plugin.json` bumped in lockstep with `.claude-plugin/plugin.json` by `version-bump.sh` and checked by `docs_lint.sh`; added `antigravity` host detection (`ANTIGRAVITY_AGENT` / `ANTIGRAVITY_CONVERSATION_ID`), `next_phase_cmd` wording, and autopilot host gating across Bash and Python; taught `orch.sh doctor` to report Antigravity CLI capabilities, handle unset `CLAUDE_PLUGIN_ROOT`, scan `~/.gemini/config/skills`, and print the `agy plugin install` remedy; reordered cross-host `ORCH=` resolution to check the skill's relative path before the Junie `ls` lookup, added the Antigravity hint to skills-only stop text, removed hardcoded host ask-tool names from `skills/`, added the `Antigravity CLI` column to `docs/host-capabilities.md`, and added `docs/antigravity/README.md`.
