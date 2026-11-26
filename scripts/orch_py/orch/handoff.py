@@ -1,7 +1,11 @@
 """The handoff concept's module (scripts/orch/handoff.sh), kept to what the
 review-pass noun reads a record's text with - the lines under a heading, and
-how many times a heading stands outside any code fence - and to `handoff
-path`, which the spec-review noun's prompt takes the plan handoff from.
+how many times a heading stands outside any code fence - to `handoff path`,
+which the spec-review noun's prompt takes the plan handoff from, and to
+handoff validation (handoff_required, host_fallbacks_required,
+handoff_report, handoff_check), the Python copy of the bash validator the
+handoff noun keeps, pinned to it by tests/test_handoff_report.py's golden
+handoffs.
 
 A line inside a code fence (orch.common.fenced), its delimiters included, is
 never a heading: it neither opens nor closes a section, and inside an open
@@ -21,8 +25,9 @@ import os
 from typing import List, Mapping, Optional, Tuple
 
 from orch.autopilot import autopilot_active
-from orch.common import ORCH_DIR_NAME, die, fenced, file_write_atomic, lines_of, rm_f, warn
-from orch.flow_state import flow_state_file, require_issue
+from orch.common import (ORCH_DIR_NAME, die, fenced, file_write_atomic, lines_of, read_raw, rm_f,
+                         stdout_write, trim, warn)
+from orch.flow_state import flow_state_file, flow_state_get_many, require_issue
 from orch.issue_timeline import Entry, timeline_body, timeline_die, timeline_handoff, timeline_read
 
 # The phase table, row by row: the phase, the handoff it consumes, the writer
@@ -102,6 +107,97 @@ def handoff_file_for(phase: str) -> str:
     if handoff is None:
         die("no handoff defined for phase: " + phase)
     return handoff
+
+
+def host_fallbacks_required(state_file: str) -> bool:
+    """Whether a handoff must carry `## Host fallbacks`: with no state file
+    at <state_file> there is no older flow to spare, and a flow started
+    before 1.0.0, its state with no host_fallbacks true, keeps validating
+    without it, as bash host_fallbacks_required."""
+    if not os.path.isfile(state_file):
+        return True
+    state = flow_state_get_many(state_file, ("host_fallbacks",))
+    return state is not None and state["host_fallbacks"] == "true"
+
+
+def _required_sections(name: str, state_file: str) -> Optional[List[str]]:
+    """The headings the handoff file <name> must hold - its phase table
+    row's sections, then `## Host fallbacks` where host_fallbacks_required -
+    or None when no row consumes <name>."""
+    for _, handoff, _, sections in PHASE_TABLE:
+        if handoff and handoff == name:
+            required = ["## " + section for section in sections]
+            if host_fallbacks_required(state_file):
+                required.append("## Host fallbacks")
+            return required
+    return None
+
+
+def handoff_required(name: str, state_file: str) -> List[str]:
+    """The headings the handoff file <name> must hold, in order, as bash
+    handoff_required prints them; dies on a name no phase table row
+    consumes."""
+    required = _required_sections(name, state_file)
+    if required is None:
+        die("unknown handoff file: " + name)
+    return required
+
+
+def handoff_report(path: str, state_file: str, env: Mapping[str, str], name: str = "",
+                   autopilot: str = "") -> Tuple[List[str], int]:
+    """The single statement of what a valid handoff is, bash handoff_report:
+    one line per required section of the handoff at <path>, each `ok
+    <heading>` or `FAIL <problem>`, and status 1 when any failed, else 0.
+    <name> is the handoff file name the sections are looked up by, the
+    file's own basename unless given: an autopilot scratch file is not named
+    as its handoff. The plan's `## Autopilot` block (autopilot_block_report)
+    is checked, and required, in an autopilot session or when <autopilot> is
+    `autopilot`. A name no row consumes is no lines and status 1, after bash's
+    `orch: unknown handoff file` line on stderr - never a death. The file is
+    read once; one that cannot be read reads as empty."""
+    # Imported here: the autopilot module reads this one's section helpers.
+    from orch.autopilot import autopilot_block_report
+
+    base = name or os.path.basename(path)
+    required = _required_sections(base, state_file)
+    if required is None:
+        warn("unknown handoff file: " + base)
+        return [], 1
+    text = read_raw(path) or ""
+    lines = []
+    for heading in required:
+        if section_count(text, heading) == 0:
+            lines.append("FAIL missing section: " + heading)
+        elif not trim("".join(section_body(text, heading))):
+            lines.append("FAIL empty section: " + heading)
+        else:
+            lines.append("ok " + heading)
+    failed = any(line.startswith("FAIL ") for line in lines)
+    if base == "01-plan.md" and (autopilot_active(env) or autopilot == "autopilot"):
+        block, block_failed = autopilot_block_report(text)
+        lines += block
+        failed = failed or block_failed == 1
+    return lines, 1 if failed else 0
+
+
+def handoff_check(path: str, state_file: str, env: Mapping[str, str], show_ok: str = "",
+                  name: str = "", autopilot: str = "") -> int:
+    """Checks the handoff at <path> and relays the verdict on stdout in the
+    aligned `ok    ` / `FAIL  ` form, bash handoff_check: every FAIL line,
+    and the ok lines too when <show_ok> is `ok`. A missing file is one FAIL
+    line and status 2, an invalid one status 1, a valid one 0. It never dies
+    - the status is the verdict. <name> and <autopilot> are
+    handoff_report's."""
+    if not os.path.isfile(path):
+        stdout_write("FAIL  handoff not found: %s\n" % path)
+        return 2
+    lines, status = handoff_report(path, state_file, env, name, autopilot)
+    for line in lines:
+        if line.startswith("ok ") and show_ok == "ok":
+            stdout_write("ok    %s\n" % line[3:])
+        elif line.startswith("FAIL "):
+            stdout_write("FAIL  %s\n" % line[5:])
+    return status
 
 
 def handoff_store(env: Mapping[str, str]) -> str:

@@ -1,0 +1,8 @@
+ok ## Decisions
+ok ## Rejected alternatives
+ok ## Constraints
+ok ## Open assumptions
+ok ## Host fallbacks
+FAIL ## Autopilot has no Rounds line (want "Rounds: <n>")
+FAIL ## Autopilot has no Budget line (want "Budget: <n>")
+status 1
