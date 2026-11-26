@@ -1,14 +1,17 @@
 """The branch concept module: the branch keys the busy checkout's branch
 signal reads, through FakeGit's config answers, as bash's branch.sh reads
-them from git config, and branch retire's arms, on FakeGit's local branches
-and seeded origin answers."""
+them from git config, the branch kinds and names, branch retire's arms, on
+FakeGit's local branches and seeded origin answers, and the discard rule's
+own-branch proof, its discards in a real repository."""
 from __future__ import annotations
 
 import pytest
 
-from conftest import died_of, git_repo, run_git
-from orch.branch import branch_is_retired, branch_pr_get, branch_records_base, branch_retire
-from orch.git import FakeGit
+from conftest import committed, died_of, git_repo, run_git
+from orch.branch import (branch_is_retired, branch_issue_of, branch_kind, branch_name_ticket,
+                         branch_pr_get, branch_records_base, branch_retire,
+                         discard_own_branch_work, forked_from_branch, forked_from_set)
+from orch.git import FakeGit, Git
 
 B = "orch/12-foo"
 
@@ -45,6 +48,96 @@ def test_a_branch_is_retired_only_when_its_retired_key_is_true(value, retired):
 ], ids=["flow-or-quick", "foreign", "ticket-with-base", "ticket"])
 def test_only_a_flow_or_quick_branch_records_a_base(keys, records):
     assert branch_records_base(configured(**keys), B) is records
+
+
+# --- branch kinds and names ------------------------------------------------------------
+
+
+@pytest.mark.parametrize("name, keys, kind", [
+    (B, {"ticket_parent": "orch/12-foo", "base": "main"}, "ticket"),
+    (B, {"base": "main"}, "flow"),
+    (B + "-redo-2", {"base": "main"}, "flow"),
+    ("orch/x-foo", {"base": "main"}, "quick"),
+    ("quick/12-foo", {"base": "main"}, "quick"),
+    ("feature", {"base": "main"}, "quick"),
+    (B, {}, "foreign"),
+], ids=["ticket", "flow", "redo", "orch-not-a-flow-name", "quick", "any-name", "foreign"])
+def test_a_branch_s_kind_is_read_from_its_config_and_its_name(name, keys, kind):
+    git = FakeGit()
+    for suffix, value in keys.items():
+        git.seed("config_value", "branch.%s.orchestrator-%s" % (name, suffix.replace("_", "-")),
+                 answer=value)
+
+    assert branch_kind(git, name) == kind
+
+
+@pytest.mark.parametrize("name, issue", [
+    ("orch/12-foo", "12"), ("quick/7-bar-baz", "7"), ("orch/12-foo-redo-1", "12"),
+    ("orch/12", None), ("orch/12-", None), ("orch/-foo", None), ("orch/1x-foo", None),
+    ("quick/", None), ("feature/12-foo", None), ("12-foo", None),
+])
+def test_a_flow_or_quick_branch_name_gives_its_issue(name, issue):
+    assert branch_issue_of(name) == issue
+
+
+def test_a_ticket_branch_is_named_for_its_forked_from_branch_and_its_ticket():
+    assert branch_name_ticket(B, "5") == B + "--t5"
+
+
+def test_a_ticket_branch_s_forked_from_branch_is_recorded_under_its_key_and_read_back():
+    git = FakeGit()
+
+    assert forked_from_set(git, B + "--t5", B) is True
+    assert git.config_regexp("local", "orchestrator-ticket-parent$") == {
+        "branch.%s--t5.orchestrator-ticket-parent" % B: B}
+    assert forked_from_branch(git, B + "--t5") == B
+
+
+def test_a_forked_from_branch_that_cannot_be_recorded_says_so():
+    assert forked_from_set(FakeGit(config_write_fails=["local"]), B + "--t5", B) is False
+
+
+# --- the own-branch discard -----------------------------------------------------------
+
+AUTOPILOT = {"ORCH_AUTOPILOT": "1"}
+QUICK = "quick/12-foo"
+
+
+@pytest.fixture
+def dirty(tmp_path):
+    """A repository on QUICK, recording a base, with a stray untracked file:
+    its root, resolved."""
+    root = tmp_path.resolve() / "repo"
+    git_repo(root)
+    committed(root, {"a.txt": "a\n"}, "first")
+    run_git(root, "checkout", "-qb", QUICK)
+    run_git(root, "config", "branch.%s.orchestrator-base" % QUICK, "main")
+    (root / "stray.py").write_text("x\n")
+    return root
+
+
+@pytest.mark.parametrize("recorded, active", [(QUICK, True), (QUICK, False), ("", False)],
+                         ids=["the-flow-s-active", "the-flow-s-done", "a-quick-branch"])
+def test_the_caller_s_own_branch_is_discarded_on(dirty, recorded, active):
+    git = Git(cwd=str(dirty))
+
+    discard_own_branch_work(git, str(dirty), AUTOPILOT, "ticket reclaim", QUICK, recorded, active)
+
+    assert git.status_at(str(dirty)) == ""
+
+
+def test_with_an_active_flow_another_branch_is_refused_by_the_flow_branch_proof(capsys):
+    assert died_of(capsys, lambda: discard_own_branch_work(
+        FakeGit(), "/repo", AUTOPILOT, "ticket reclaim", QUICK, B, True)) == (
+        1, "", "orch: ticket reclaim: the current branch %s is not the flow's branch %s"
+        " - nothing was discarded\n" % (QUICK, B))
+
+
+def test_with_no_active_flow_a_branch_not_a_quick_one_is_refused(capsys):
+    assert died_of(capsys, lambda: discard_own_branch_work(
+        configured(base="main"), "/repo", AUTOPILOT, "ticket reclaim", B, "", False)) == (
+        1, "", "orch: ticket reclaim: no active flow, and %s is not a quick implementation's"
+        " branch - nothing was discarded\n" % B)
 
 
 # --- branch retire -------------------------------------------------------------------

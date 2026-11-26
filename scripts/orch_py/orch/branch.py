@@ -1,16 +1,20 @@
 """The branch concept's module, as far as the busy checkout's branch signal,
-the review loop's terminal-state read and redo need it: the PR and retired
-keys bash's branch.sh records on a branch, read through the git adapter's
-config_value, whether a branch is a plugin-made branch that records a base,
-by bash branch_kind's rule, the flow's branch name and its redo form (bash
-branch_name_flow_into and branch_name_redo), and branch_retire, every arm of
-bash `branch retire <old> <new>`. A later `branch` noun grows it rather than
-moving it, as the base module was grown for `base`.
+the review loop's terminal-state read, redo and the ticket nouns need it:
+the PR, retired and forked-from keys bash's branch.sh records on a branch,
+read through the git adapter's config_value and the forked-from one written
+through its config_set, the branch kinds (bash branch_kind) and whether a
+branch is a plugin-made branch that records a base, the flow's branch name
+and its redo form (bash branch_name_flow_into and branch_name_redo), a
+ticket branch's name, the issue a flow or quick branch name gives, the
+discard rule's own-branch proof and discard (bash discard_own_branch_work),
+and branch_retire, every arm of bash `branch retire <old> <new>`. A later
+`branch` noun grows it rather than moving it, as the base module was grown
+for `base`.
 """
 from __future__ import annotations
 
 import sys
-from typing import Optional
+from typing import Mapping, Optional
 
 from orch.base import branch_base_get
 from orch.common import die, stderr_write, stdout_write
@@ -26,6 +30,26 @@ def branch_name_redo(issue: str, slug: str, redo_count: str) -> str:
     """The flow's branch name with <redo_count>'s redo suffix: the name a
     redo's branch retire gives the branch it retires."""
     return "%s-redo-%s" % (branch_name_flow(issue, slug), redo_count)
+
+
+def branch_name_ticket(parent: str, n: str) -> str:
+    """Ticket <n>'s ticket branch, forked from <parent>: bash
+    branch_name_ticket's `<parent>--t<n>`."""
+    return "%s--t%s" % (parent, n)
+
+
+def branch_issue_of(name: str) -> Optional[str]:
+    """The issue number of a flow or quick branch name - bash
+    branch_issue_of: the digits after orch/ or quick/ up to the first `-`.
+    None unless that run is non-empty, all digits and followed by a
+    non-empty slug."""
+    for prefix in ("orch/", "quick/"):
+        if name.startswith(prefix):
+            issue, dash, slug = name[len(prefix):].partition("-")
+            if dash and slug and issue and all(c in "0123456789" for c in issue):
+                return issue
+            return None
+    return None
 
 
 def branch_pr_key(branch: str) -> str:
@@ -62,14 +86,56 @@ def forked_from_branch(git, branch: str) -> Optional[str]:
     return git.config_value(forked_from_key(branch))
 
 
+def forked_from_set(git, branch: str, parent: str) -> bool:
+    """Records <parent> as ticket branch <branch>'s forked-from branch, in
+    the repository's own config: whether the write succeeded."""
+    return git.config_set("local", forked_from_key(branch), parent)
+
+
+def branch_kind(git, branch: str) -> str:
+    """What kind of branch <branch> is - bash branch_kind, the one
+    definition of branch kinds - read from git config, through the git
+    adapter <git>, and the name only. A plugin-made branch is a `ticket` (a
+    ticket parent is recorded), a `flow` (a base is recorded and the name is
+    orch/<issue>-<slug>, redo form included) or a `quick` (a base is
+    recorded and the name is anything else); every other branch is
+    `foreign`."""
+    if forked_from_branch(git, branch) is not None:
+        return "ticket"
+    if branch_base_get(git, branch) is None:
+        return "foreign"
+    if branch.startswith("orch/") and branch_issue_of(branch) is not None:
+        return "flow"
+    return "quick"
+
+
 def branch_records_base(git, branch: str) -> bool:
     """Whether <branch> is a plugin-made branch that records a base - a
-    flow's or a quick implementation's branch, never a ticket branch - by
-    bash branch_kind's rule: a branch recording a forked-from parent is a
-    ticket branch, checked before its base key is read."""
-    if forked_from_branch(git, branch) is not None:
-        return False
-    return branch_base_get(git, branch) is not None
+    flow's or a quick implementation's branch, never a ticket branch - as
+    branch_kind tells them."""
+    return branch_kind(git, branch) in ("flow", "quick")
+
+
+def discard_own_branch_work(git, root: str, env: Mapping[str, str], who: str, branch: str,
+                            recorded: str, active: bool) -> None:
+    """The discard rule's prelude and the discard in one - bash
+    discard_own_branch_work: proves <branch> is the caller's own, then runs
+    the flow-branch discard in the checkout at <root>, the git adapter
+    <git>'s own, <env> telling an autopilot session. <recorded> is the
+    flow's recorded branch (empty for none) and <active> whether a flow is
+    active, both from the caller's one read of flow state; this reads none.
+    Own is the branch the flow records, in any phase; else, with an active
+    flow, the flow-branch proof dies on it; with none, a `quick` branch."""
+    # Imported here: the checkout module reads this one at its own import.
+    from orch.checkout import discard_flow_branch_work, require_flow_branch
+
+    if recorded != branch:
+        if active:
+            require_flow_branch(who, branch, recorded)
+        elif branch_kind(git, branch) != "quick":
+            die("%s: no active flow, and %s is not a quick implementation's branch - nothing"
+                " was discarded" % (who, branch))
+    discard_flow_branch_work(git, root, env)
 
 
 def branch_retired_set(git, branch: str) -> bool:

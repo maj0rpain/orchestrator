@@ -12,9 +12,9 @@ a state read as in a line, the orchestrator's directory name, the UTC stamp
 a run directory is named with, the git exclude writer, the copy bash's cp
 makes, the directory bash's mkdir -p makes, the removals bash's rm -f and
 rm -rf make, the move of named files aside into a folder, every name
-checked before the first move, as bash's move_files_aside makes it, and the
-capture of a call's stderr and death that bash's capture
-and err_line make.
+checked before the first move, as bash's move_files_aside makes it, the
+clean-tree refusal bash's require_clean_tree makes, and the capture of a
+call's stderr and death that bash's capture and err_line make.
 
 Every `orch: ` message goes through die or warn, as in the bash side's
 common.sh: die(message, 2) is the bash die2, for a command that reserves exit
@@ -478,6 +478,20 @@ def exclude_missing(lines: Sequence[str], git) -> List[str]:
     text = read_raw(_exclude_file(git))
     present = set() if text is None else set(text.split("\n"))
     return [line for line in lines if line and line not in present]
+
+
+def require_clean_tree(git, path: str, dirty: str) -> None:
+    """bash require_clean_tree: returns when the working tree at <path> is
+    clean, read through the git adapter <git>'s status_at. Dies with
+    <dirty> when it is dirty, and naming git's first error line when git
+    status cannot run, as bash tree_status words it: that must refuse,
+    never read as a clean tree."""
+    status = git.status_at(path)
+    if not isinstance(status, str):
+        die("git status failed - cannot check the working tree: "
+            + status.stderr.split("\n", 1)[0])
+    if status:
+        die(dirty)
 
 
 def capture(call: Callable[[], Any]) -> Tuple[Any, str, int]:
