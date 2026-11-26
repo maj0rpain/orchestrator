@@ -97,7 +97,7 @@
 1	2	branch: unknown op	b15fb1408270a67d229e9d7726e8e8a4cdb269f8
 3	4	branch retire beside a same-named tag (#2337)	27ea505f06ab975bf836aa086bbb8b5978e1ae6f
 12	7	branch create and branch off beside a same-named tag (#2337)	b9cddf693b7b045437cf1ca59080f6c447101f12
-21	17	checkout (#1078)	85b65822bd5ebac5cdac093e84c0a28d92c25cc0
+14	15	checkout (#1078)	fcf77c433fd8f107550a2cadbac96af60bcf2952
 6	6	checkout current branch (#1079)	8ed29994be0d37ea761c6fba66a7f1594d5332d1
 24	13	checkout busy, redo-retired branch (#1981)	0608e4d5c7b58927eb7859c5d847edb713e43621
 14	13	comments module	bbd8dd8d448e627f5c855c4a453ae228cf85d6d3
@@ -156,7 +156,6 @@
 2	3	gh_reason and capture_err (#846)	f9c18a62a21b2dc4b2601a5fbcd362360d7331ca
 1	2	label_listed	e07e938e166e6f817cc46bd749dcf14bf7646588
 19	21	gh failure verb and readers (#1022)	59e275aa948b82e6339d435f134b180879e1c5dc
-3	4	verify_twice (#2658)	160f187f3d1be71ad66a34c66f20c948b7e22dc0
 16	21	gh fake (#280)	6feab6abb16da09a9903acf84204176e1f8386ea
 131	145	gh adapter contract (#280)	801ad28ae18f41082df69b2c0a7cfbfd2d930ed0
 17	19	claim adapter operations (#1454)	ecbcb2331eb93fc57985ad451c388bbdcbab3b25

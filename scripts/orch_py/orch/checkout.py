@@ -16,7 +16,7 @@ from typing import List, Mapping, NamedTuple, Optional, Tuple
 
 from orch.autopilot import autopilot_active
 from orch.branch import branch_is_retired, branch_pr_get, branch_records_base
-from orch.common import ORCH_DIR_NAME, die, list_join, plain_number
+from orch.common import ORCH_DIR_NAME, die, list_join, plain_positive_number
 from orch.flow_state import flow_state_file, flow_state_get_many
 from orch.git import Worktree
 from orch.host import flow_cmd
@@ -76,23 +76,24 @@ def checkout_branch(git, path: Optional[str] = None) -> Optional[str]:
 
 
 def branch_checkout(git, branch: str) -> Optional[str]:
-    """The checkout that has <branch> checked out - bash branch_checkout:
-    the first the worktree list names on it, a worktree whose directory is
+    """The checkout that has <branch> checked out: the first the worktree list names on it, a worktree whose directory is
     gone included - or None. Dies when the checkouts cannot be read."""
     worktrees = worktree_list_or_die(git)
     return next((worktree.path for worktree in worktrees if worktree.branch == branch), None)
 
 
+def ticket_worktree_path(checkout: str, n: str) -> str:
+    """The path of ticket #<n>'s worktree under <checkout>: t<n> directly
+    under its .orchestrator/worktrees - the one place the layout is spelled."""
+    return os.path.join(checkout, ORCH_DIR_NAME, "worktrees", "t%s" % n)
+
+
 def ticket_path(path: str, checkout: str) -> bool:
-    """Whether <path> is a ticket worktree's path: t<n>, n a positive integer
-    with no leading zero, directly under <checkout>'s .orchestrator/worktrees.
-    """
-    parent, name = os.path.split(path)
-    number = name[1:]
-    return (
-        name.startswith("t") and number[:1] in "123456789" and plain_number(number)
-        and parent == os.path.join(checkout, ORCH_DIR_NAME, "worktrees")
-    )
+    """Whether <path> is a ticket worktree's path: ticket_worktree_path of a
+    positive integer with no leading zero under <checkout>."""
+    name = os.path.basename(path)
+    return (name.startswith("t") and plain_positive_number(name[1:])
+            and path == ticket_worktree_path(checkout, name[1:]))
 
 
 def checkouts(git) -> Optional[List[Checkout]]:

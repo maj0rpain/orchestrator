@@ -162,19 +162,6 @@ $(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)
      Remove each with orch.sh ticket-worktree remove <n> first."
 }
 
-# The checkout that has <branch> checked out, or nothing: the first checkout
-# git worktree list prints on <branch>, read through checkout_parse, a worktree
-# whose directory is gone included.
-# Dies when the checkouts cannot be read; called in a substitution, so its
-# caller carries that status out.
-branch_checkout() {
-  local i paths=() branches=()
-  checkout_parse || checkouts_unreadable
-  for i in "${!paths[@]}"; do
-    if [ "${branches[i]}" = "$1" ]; then note "${paths[i]}"; return 0; fi
-  done
-}
-
 # Whether the checkout at <path> holds a flow.
 checkout_has_flow() { [ -f "$(flow_state_file "$1")" ]; }
 

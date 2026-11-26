@@ -17,7 +17,7 @@ import sys
 from typing import Mapping, Optional
 
 from orch.base import branch_base_get
-from orch.common import die, stderr_write, stdout_write
+from orch.common import die, plain_number, stderr_write, stdout_write
 
 
 def branch_name_flow(issue: str, slug: str) -> str:
@@ -33,8 +33,7 @@ def branch_name_redo(issue: str, slug: str, redo_count: str) -> str:
 
 
 def branch_name_ticket(parent: str, n: str) -> str:
-    """Ticket <n>'s ticket branch, forked from <parent>: bash
-    branch_name_ticket's `<parent>--t<n>`."""
+    """Ticket <n>'s ticket branch, forked from <parent>: `<parent>--t<n>`."""
     return "%s--t%s" % (parent, n)
 
 
@@ -46,7 +45,7 @@ def branch_issue_of(name: str) -> Optional[str]:
     for prefix in ("orch/", "quick/"):
         if name.startswith(prefix):
             issue, dash, slug = name[len(prefix):].partition("-")
-            if dash and slug and issue and all(c in "0123456789" for c in issue):
+            if dash and slug and plain_number(issue):
                 return issue
             return None
     return None

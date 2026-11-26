@@ -531,7 +531,9 @@ module's own tests.
   tested against a real repository in `tmp_path` and against the fake,
   asserting the same answers. The operations `orch.git.COULD_NOT` names answer
   what `seed(<operation>, <args>..., answer=...)` set for their arguments, and
-  their "could not" value for a call nothing was seeded for.
+  their "could not" value for a call nothing was seeded for - but for
+  `config_value`, which falls back to the fake's stored local, then global,
+  config before giving None, so what `config_set` writes reads back.
 - In `conftest.py`: `clean_env`, autouse, clears the variables that would
   change what a test resolves, sets `GIT_TERMINAL_PROMPT=0` so git never
   blocks prompting on a PTY, and puts the real-gh guard first on `PATH`,
