@@ -398,12 +398,13 @@ work_to_discard() {
 
 # discard_flow_branch_work: the flow-branch case of the discard rule (ADR-0054),
 # the one primitive every site meeting uncommitted or in-progress work a dead
-# session left on the flow's own branch - or, for ticket reclaim, a quick
+# session left on the flow's own branch - or, for review resume, a quick
 # implementation's own branch, or, for branch create, a detached HEAD (a side
 # checkout's, with no rebase in progress) - applies: branch create (through
 # discard_create_work, which proves the current branch is the flow's or
-# detached; on any other branch it discards nothing), ticket reclaim and
-# review resume. Each caller first settles that the branch is the one to
+# detached; on any other branch it discards nothing) and review resume
+# (through discard_own_branch_work); ticket reclaim runs orch.checkout's
+# Python copy. Each caller first settles that the branch is the one to
 # discard on; this primitive checks no ownership. In the current checkout
 # ($ROOT): a merge or rebase in progress is aborted, and a tree dirty outside
 # the planning allowlist is reset and cleaned. Nothing to discard changes

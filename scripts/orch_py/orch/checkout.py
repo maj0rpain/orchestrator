@@ -82,18 +82,19 @@ def branch_checkout(git, branch: str) -> Optional[str]:
     return next((worktree.path for worktree in worktrees if worktree.branch == branch), None)
 
 
-def ticket_worktree_path(checkout: str, n: str) -> str:
-    """The path of ticket #<n>'s worktree under <checkout>: t<n> directly
-    under its .orchestrator/worktrees - the one place the layout is spelled."""
-    return os.path.join(checkout, ORCH_DIR_NAME, "worktrees", "t%s" % n)
+def ticket_worktrees_dir(checkout: str) -> str:
+    """The directory holding <checkout>'s ticket worktrees, each t<n>
+    directly in it - the one place that directory is spelled, which
+    orch.ticket_worktree's ticket_worktree_path builds on."""
+    return os.path.join(checkout, ORCH_DIR_NAME, "worktrees")
 
 
 def ticket_path(path: str, checkout: str) -> bool:
-    """Whether <path> is a ticket worktree's path: ticket_worktree_path of a
-    positive integer with no leading zero under <checkout>."""
-    name = os.path.basename(path)
+    """Whether <path> is a ticket worktree's path: t<n>, n a positive integer
+    with no leading zero, directly in <checkout>'s ticket_worktrees_dir."""
+    parent, name = os.path.split(path)
     return (name.startswith("t") and plain_positive_number(name[1:])
-            and path == ticket_worktree_path(checkout, name[1:]))
+            and parent == ticket_worktrees_dir(checkout))
 
 
 def checkouts(git) -> Optional[List[Checkout]]:

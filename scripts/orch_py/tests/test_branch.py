@@ -274,7 +274,10 @@ def test_a_failed_delete_origin_still_has_or_cannot_answer_for_dies_unrecorded(
     assert after(git) == (False, True, None)
 
 
-def test_a_retirement_that_cannot_be_recorded_dies_naming_its_key_and_the_rerun(capsys):
+def test_a_retirement_record_git_refuses_dies_with_only_its_own_line_naming_key_and_rerun(
+        capsys):
+    # The fake's blocked write answers git's lock refusal; bash's branch
+    # retire silenced it, so only the orch: line reaches stderr.
     git = retiring(B, upstream=None, config_write_fails=[("local", RETIRED_KEY)])
 
     assert died_of(capsys, lambda: branch_retire(git, B, NEW)) == (1, "", (

@@ -34,7 +34,7 @@ from typing import List, Mapping, NamedTuple, Optional, Tuple
 
 from orch.branch import branch_name_ticket, forked_from_branch, forked_from_set
 from orch.checkout import (current_branch_or_die, discard_work_in, rebase_in_progress,
-                           ticket_worktree_path, ticket_worktrees_under, worktree_list_or_die)
+                           ticket_worktrees_dir, ticket_worktrees_under, worktree_list_or_die)
 from orch.common import (die, exclude_orch_dirs, plain_positive_number, require_clean_tree,
                          stdout_write, warn)
 from orch.git import Git, git_failed
@@ -75,6 +75,12 @@ def ticket_worktree_number(text: str) -> str:
     if not plain_positive_number(text):
         die("not a ticket number: %s (want a positive integer)" % (text or "<none>"))
     return text
+
+
+def ticket_worktree_path(checkout: str, n: str) -> str:
+    """The path of ticket #<n>'s worktree under <checkout>: t<n> directly in
+    its ticket_worktrees_dir."""
+    return os.path.join(ticket_worktrees_dir(checkout), "t%s" % n)
 
 
 def ticket_facts(git, root: str, n: str) -> TicketFacts:

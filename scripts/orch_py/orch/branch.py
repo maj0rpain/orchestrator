@@ -198,7 +198,8 @@ def branch_retire(git, old: str, new: str) -> None:
                 die("could not confirm origin/%s is gone: could not ask origin whether it is"
                     " still there after its delete failed (%s); %s is pushed but its"
                     " retirement is not recorded; %s" % (old, why, new, rerun))
-    if git_failed(branch_retired_set(git, new)):
+    # Bash silenced the record's write, so git's own refusal stays unprinted.
+    if branch_retired_set(git, new) is not None:
         die("could not record %s - %s is retired; %s to record it"
             % (branch_retired_key(new), new, rerun))
     stdout_write(new + "\n")

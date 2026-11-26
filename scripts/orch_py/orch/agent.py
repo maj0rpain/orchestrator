@@ -23,7 +23,7 @@ from orch.common import (
     stdout_write,
     text_file_write,
 )
-from orch.git import Git, git_failed
+from orch.git import Git
 from orch.root import checkout_root
 
 # The verbs, in the unknown-op message's order. docs_lint.sh reads this line
@@ -242,11 +242,11 @@ class ConfigCache:
             die("cannot clear %s at %s scope" % (key, scope))
 
     def write(self, scope: str, key: str, value: str) -> None:
-        """Drops the cache and writes <key> = <value> at <scope>; on failure
-        hands git's stderr on, as bash let it through, and dies naming key
-        and scope."""
+        """Drops the cache and writes <key> = <value> at <scope>; dies naming
+        key and scope on failure, git's own stderr unprinted, as bash's
+        silenced write."""
         self.drop()
-        if git_failed(self.git.config_set(scope, key, value)):
+        if self.git.config_set(scope, key, value) is not None:
             die("cannot set %s at %s scope" % (key, scope))
 
 

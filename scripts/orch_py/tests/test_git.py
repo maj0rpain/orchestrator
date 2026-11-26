@@ -7,8 +7,8 @@ import subprocess
 
 import pytest
 
-from conftest import (GLOBAL_CONFIG, committed, git_repo, origin_clone, run_git, worktree_add,
-                      write_staged)
+from conftest import (GLOBAL_CONFIG, committed, git_repo, origin_clone, run_git, tip,
+                      worktree_add, write_staged)
 from orch.git import FakeGit, Git, GitFailure, Worktree, git_push_reason
 
 ORIGIN = "https://github.com/fork/widgets.git"
@@ -937,7 +937,9 @@ def test_config_set_and_unset_fail_on_lock_errors_even_for_absent_keys(config_en
 
     try:
         for git in (real, fake):
-            assert git.config_set(scope, "orchestrator.model.closer", "opus").code == 255
+            failed = git.config_set(scope, "orchestrator.model.closer", "opus")
+            assert (failed.code, failed.stderr.startswith("error: could not lock config file ")) \
+                == (255, True)
             assert git.config_unset(scope, "orchestrator.model.closer") is False
             assert git.config_unset(scope, "orchestrator.model.absent") is False
             assert git.config_regexp(scope, r"^orchestrator\.") == {
@@ -1081,11 +1083,6 @@ def test_a_locked_worktree_git_refuses_to_delete_gives_its_status_and_whole_stde
 
 def test_an_unseeded_worktree_delete_on_the_fake_fails_with_no_stderr():
     assert FakeGit().worktree_delete("/main/.orchestrator/worktrees/t5") == GitFailure(1, "")
-
-
-def tip(root, branch):
-    """The commit local branch <branch> of the repository at <root> names."""
-    return run_git(root, "rev-parse", "refs/heads/" + branch)
 
 
 @pytest.fixture

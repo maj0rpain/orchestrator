@@ -729,6 +729,12 @@ class FakeStore:
         self.fail(operation, stderr)
         _write(_store_path(self.store, "fail", operation + ".after"), "%d\n" % after)
 
+    def fail_times_after(self, operation: str, after: int, times: int, stderr: str = "") -> None:
+        """fail_times, but only once <after> calls of the operation have
+        answered."""
+        self.fail_times(operation, times, stderr)
+        _write(_store_path(self.store, "fail", operation + ".after"), "%d\n" % after)
+
     def lag(self, operation: str, times: int, stale: Optional[str] = None) -> None:
         """The next <times> reads of the operation answer <stale>, in the
         shape gh prints it - nothing where none is given - then current."""

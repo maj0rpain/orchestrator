@@ -298,6 +298,12 @@ def has_branch(root, branch):
     return git_of(root, "rev-parse", "--verify", "--quiet", "refs/heads/" + branch) != ""
 
 
+def tip(root, branch):
+    """The commit local branch <branch> of the repository at <root> is at,
+    named in full so a same-named tag is never read."""
+    return run_git(root, "rev-parse", "refs/heads/" + branch)
+
+
 def lock_ref(repo, branch):
     """A lock file on local branch <branch>'s ref, as a git run holding it
     leaves one, so no git can delete the branch."""

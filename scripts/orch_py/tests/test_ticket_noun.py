@@ -350,14 +350,6 @@ def test_a_failed_pre_link_listing_leaves_the_ticket_created_and_unlinked(root, 
 # answer stale (empty) for its count.
 
 
-def fail_times_after(seed, operation, after, times, stderr):
-    """The store's <operation> failing <times> times with <stderr>, but only
-    once <after> calls of it have answered."""
-    seed.fail_times(operation, times, stderr)
-    with open(os.path.join(seed.store, "fail", operation + ".after"), "w") as f:
-        f.write("%d\n" % after)
-
-
 def blocker(seed):
     """Open #99, a sibling under #50 the tickets publish blocked by."""
     seed.issue(99, "open")
@@ -366,8 +358,8 @@ def blocker(seed):
 
 @pytest.mark.parametrize("arm", [
     lambda seed: seed.lag("adapter_sub_issues", 2),
-    lambda seed: fail_times_after(seed, "adapter_sub_issues", 1, 1, GH_502),
-    lambda seed: (blocker(seed), fail_times_after(seed, "adapter_blockers", 1, 1, GH_502)),
+    lambda seed: seed.fail_times_after("adapter_sub_issues", 1, 1, GH_502),
+    lambda seed: (blocker(seed), seed.fail_times_after("adapter_blockers", 1, 1, GH_502)),
 ], ids=["stale-once", "sub-issues-failed-once", "blockers-failed-once"])
 def test_a_link_read_back_wrong_once_is_retried_and_publishes(root, seed, store, capsys, body,
                                                               parent, arm):
@@ -397,7 +389,7 @@ NOT_VERIFIED = ("ticket #100's sub-issue/blocked-by links did not verify - check
     (lambda seed: seed.fail_after("adapter_sub_issues", 1, ""), (),
      "gh could not read ticket #100's links: gh gave no reason"),
     # A failed read, then a mismatch: the mismatch decides.
-    (lambda seed: (fail_times_after(seed, "adapter_sub_issues", 1, 1, GH_502),
+    (lambda seed: (seed.fail_times_after("adapter_sub_issues", 1, 1, GH_502),
                    seed.lag("adapter_sub_issues", 2)), (), NOT_VERIFIED),
     # A mismatch, then a failed read: the failed read decides.
     (lambda seed: (seed.lag("adapter_sub_issues", 2),

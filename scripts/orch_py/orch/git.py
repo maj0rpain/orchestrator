@@ -740,8 +740,9 @@ class FakeGit:
     git config entries (dict or sequence of (key, value|None) pairs, None
     for a valueless key); <config_write_fails> names scopes ('local',
     'global') or (scope, key) pairs whose config_set and config_unset calls
-    fail, as a locked or unwritable config file does; <branches> maps each
-    local branch's name to the full ref it tracks, None for none:
+    fail, as a locked config file does, config_set answering git's lock
+    refusal; <branches> maps each local branch's name to the full ref it
+    tracks, None for none:
     branch_rename moves an entry as git moves a branch and its upstream,
     branch_create adds one tracking nothing, and branch_delete drops one with
     its branch.<name>. config section, as -D does.
@@ -999,7 +1000,8 @@ class FakeGit:
     def config_set(self, scope: str, key: str, value: str) -> Optional[GitFailure]:
         _check_config_scope(scope)
         if self._config_write_blocked(scope, key):
-            return GitFailure(255, "")
+            return GitFailure(255, "error: could not lock config file %s: File exists\n"
+                              % _FAKE_CONFIG_FILES[scope])
         entries = self._config[scope]
         matches = [i for i, (k, _) in enumerate(entries) if k == key]
         if len(matches) > 1:
@@ -1017,6 +1019,9 @@ class FakeGit:
         self._config[scope] = [(k, v) for k, v in self._config[scope] if k != key]
         return True
 
+
+# The config file FakeGit's blocked write names in git's lock refusal, per scope.
+_FAKE_CONFIG_FILES = {"local": ".git/config", "global": "~/.gitconfig"}
 
 # What FakeGit's seeded answers give for a call nothing was seeded for, told
 # apart from a seeded None.
