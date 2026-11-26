@@ -24,12 +24,12 @@ from typing import Callable, List, Mapping, Optional, Sequence, Tuple
 
 from orch.branch import branch_name_redo, branch_retire
 from orch.checkout import refuse_ticket_worktrees
-from orch.common import die, dir_stamp, int_as_test_reads, move_files_aside, stdout_write
+from orch.common import die, dir_stamp, int_as_test_reads, stdout_write
 from orch.flow_state import (flow_state_file, phase_write, require_state_read, require_value,
                              review_budget_fallback, state_write_many)
 from orch.gh import adapter_of, gh_or_die
 from orch.git import Git
-from orch.handoff import handoff_dir, handoff_retire, handoffs_written_from
+from orch.handoff import handoff_file_retire, handoff_retire, handoffs_written_from
 from orch.host import flow_cmd
 from orch.repo import RepoPin
 from orch.root import checkout_root
@@ -262,9 +262,7 @@ def spec(args: List[str], root: str, git, gh_of, env: Mapping[str, str],
     # same reason: left behind, it would carry the redone spec review past
     # round 1. The round directories stay, since round 1's round-dir clears
     # them.
-    directory = handoff_dir(root)
-    move_files_aside(directory, os.path.join(directory, label), "a retired handoff",
-                     [SPEC_PAUSED_MARKER, SPEC_ROUND_MARKER])
+    handoff_file_retire(label, [SPEC_PAUSED_MARKER, SPEC_ROUND_MARKER], root)
     redo_step_back(state_file, "spec", [("issue", "null")] if new_issue else [], clock)
 
 

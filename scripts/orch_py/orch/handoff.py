@@ -141,7 +141,7 @@ def handoffs_due(phase: str) -> List[str]:
 def handoffs_written_from(phase: str) -> List[str]:
     """The handoffs whose writer is <phase> or a phase after it, in table
     order - the ones a step back to <phase> makes stale, as bash's
-    handoffs_written_from. plan, a writer though no row, gives every
+    handoffs_written_from was. plan, a writer though no row, gives every
     handoff; none for a name the writer column does not hold."""
     stale = []
     found = False
@@ -386,11 +386,12 @@ def handoff_path(phase: str, gh, env: Mapping[str, str], root: str) -> Tuple[str
     return path, True
 
 
-def _handoff_file_retire(label: str, names: Sequence[str], root: str) -> None:
+def handoff_file_retire(label: str, names: Sequence[str], root: str) -> None:
     """Moves each of the handoffs <names> that exists into the handoff
     directory's <label> folder, made only when there is something to move;
     a folder already holding one of them is refused before any move, one
-    that merely exists is fine - bash's handoff_file_retire."""
+    that merely exists is fine - as bash's handoff_file_retire was. The redo
+    spec's late move of the spec markers goes through it too."""
     directory = handoff_dir(root)
     move_files_aside(directory, "%s/%s" % (directory, label), "a retired handoff", names)
 
@@ -399,13 +400,13 @@ def handoff_retire(label: str, names: Sequence[str], gh_of, env: Mapping[str, st
                    root: str) -> None:
     """Sets the handoffs <names> of the checkout at <root> aside, as a redo
     does, through this session's adapter (handoff_store), as bash's
-    handoff_retire. The file adapter moves each existing one into the
+    handoff_retire was. The file adapter moves each existing one into the
     handoff directory's <label> folder. The comment adapter ignores the
     label: it requires the recorded issue - with no handoff named too - then
     retires each handoff on it, through the gh adapter <gh_of> makes only
     when one is named (_handoff_comment_retire)."""
     if handoff_store(env) == "file":
-        _handoff_file_retire(label, names, root)
+        handoff_file_retire(label, names, root)
         return
     issue = require_issue(flow_state_file(root), env)["issue"]
     if names:
@@ -414,7 +415,7 @@ def handoff_retire(label: str, names: Sequence[str], gh_of, env: Mapping[str, st
 
 def _handoff_comment_retire(gh, issue: str, names: Sequence[str]) -> None:
     """Retires each of the handoffs <names> by posting a newer comment
-    tagged retired on issue #<issue>, bash's handoff_comment_retire. The
+    tagged retired on issue #<issue>, as bash's handoff_comment_retire was. The
     comments are read once, before any post - a failed read dies with gh's
     reason - and every handoff is decided from that read: one with no
     comment, or whose newest is already retired, posts nothing, so a redo

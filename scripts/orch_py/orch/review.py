@@ -47,10 +47,7 @@ def review_record_path(root: str, i: str) -> str:
     # Flat, and numbered on across every loop the flow runs: one flow, one
     # trail, and nothing is ever moved aside for a loop that comes later.
     directory = review_dir(root)
-    try:
-        os.makedirs(directory, exist_ok=True)
-    except OSError:
-        die("cannot create the review directory %s" % directory)
+    mkdir_p_or_die(directory, "cannot create the review directory %s" % directory)
     return "%s/iteration-%02d.md" % (directory, int(i, 10))
 
 

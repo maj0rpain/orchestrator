@@ -135,9 +135,8 @@ def test_a_stopped_loop_redoes_back_to_implement_retiring_the_attempt(root, seed
 def untouched(root, store):
     """What a refused or failed redo must leave as it was: the state file,
     the files under .orchestrator/ and the store."""
-    files = sorted(p.relative_to(root).as_posix() for p in orch(root).rglob("*") if p.is_file())
-    return state_json(root).read_text() if state_json(root).exists() else None, files, \
-        snapshot(store)
+    return state_json(root).read_text() if state_json(root).exists() else None, \
+        files_under(orch(root)), snapshot(store)
 
 
 NO_FLOW = ("orch: no active flow (.orchestrator/state.json not found). Run /orchestrator:start"
@@ -282,8 +281,10 @@ def test_a_second_redo_numbers_on_beside_the_first_s_records(root, seed, store, 
     assert orch(root, "review", "pre-redo-2", "iteration-05.md").exists()
 
 
-def test_a_pr_that_will_not_close_fails_the_redo_and_a_retry_finishes_it(
+def test_a_pr_that_will_not_close_fails_the_redo_and_leaves_the_flow_as_it_was(
         root, seed, store, capsys):
+    # The retry that finishes it is the pr-close case of
+    # test_redo_review_resumed_after_a_death_at_any_step_finishes_once.
     reviewing(root, seed, iteration=1, budget=1)
     flat = record(root, 1)
     git = checkout(root, BRANCH)
@@ -296,13 +297,6 @@ def test_a_pr_that_will_not_close_fails_the_redo_and_a_retry_finishes_it(
     assert state_json(root).read_text() == state_before
     assert (git.branch_exists(BRANCH), git.branch_exists(redone(1)), flat.exists()) == (
         True, False, True)
-
-    seed.unfail()
-    assert orch_redo(root, seed, git, "review") == 0
-    assert capsys.readouterr().out == "1\n"
-    assert comments_of(store, PR, "prs") == [pr_closed_note(1)]
-    assert (git.branch_exists(redone(1)), git.branch_exists(redone(2))) == (True, False)
-    assert [state_of(root)[k] for k in ("branch", "pr", "base_sha")] == [None, None, None]
 
 
 @pytest.mark.parametrize("terminal", ["stop - base sync failed.", "stop"])
