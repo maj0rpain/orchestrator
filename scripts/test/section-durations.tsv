@@ -100,7 +100,7 @@
 14	15	checkout (#1078)	fcf77c433fd8f107550a2cadbac96af60bcf2952
 6	6	checkout current branch (#1079)	8ed29994be0d37ea761c6fba66a7f1594d5332d1
 24	13	checkout busy, redo-retired branch (#1981)	0608e4d5c7b58927eb7859c5d847edb713e43621
-14	13	comments module	bbd8dd8d448e627f5c855c4a453ae228cf85d6d3
+6	7	comments module	ab28cc40a5a06628f8ab117b0dd520e62c879e85
 8	10	common.sh is the bottom layer	04f7eed4e1b745bc381196f09f7ddd3c7337cc02
 0	1	orch_dirs_unexcluded	12a7c2c452ab0556c398c46950d20b677e85748f
 5	5	exclude_line	b6acb7e0c1f3b1c7398f701f5050c66553304c1a
@@ -184,30 +184,30 @@
 29	25	marked-comment module	f6f5c1a7f89a0d4a6d8a53403309d4f68d4fe0c2
 9	10	repo show	03b579d082d6e4e5353a860b91cb90f1006013d0
 8	9	default-branch	2ab1b9bd03b98654ef71dcf00efa0fd1f0f07c16
-10	10	review ready's pointer to /orchestrator:finish (#727)	20ba126229c95cb8e7c1a35d373bf630fea8d422
-8	9	review begin	2becd977648af5d034b8dde242a1963ab82e7af0
-3	4	review path	5dbd9a617ce73ee1a3b09d8a1a87cd1b0e2bd615
-4	4	the multi-loop machinery is gone	1f1127a46d2a6b8b4c50d102a6eaca09392bd6c2
-51	60	review file	9e00eb6ff7abd3d0eabac6884b83ac49c2d5707e
-11	12	review ready	08f267c45924199fcdf45f1d262cd49b01cbbffc
-182	120	review ci	920e1503340b49019fa5915a3f1827066b730e50
-16	16	the grace counts from the push (issue #475)	bd4b26df44b190ba4f12b1a539e3ea01904a1a5e
-21	21	review ci --no-wait	9019b1bd4c5dcc87edc69818eeec9f2c79a83663
-69	61	the grace is skipped on no evidence of CI (issue #476)	fcd219ed054639af2bd9ae6094475ab079054637
-14	16	review rerun	3b4fc5df1c1e01a30976fa7d3de3a70fdd3f6ba0
-9	10	review ci-log	93c123ae14d48e2543147cbe2a8d5e6ff041a32c
-18	20	review terminal	87d4c5b55a46420beb45d0a5d7d274382ac72983
-23	24	review resume	d1a5b81398ecb0ea0e84a9a46bb34c6aa738f8f7
-4	5	review retire	e2d51d02b56cf86006dc66973376a36c952706c8
-10	12	review known-items	8ea32cd7a8eb290baff55b2b51494cb1c38a2a62
-8	9	review ready in an autopilot flow (#1457)	0f840b84f259989abb70790629d4f38d1c3b0c18
-8	9	review known-items in an autopilot flow (#1457)	8ddaba8a2447f7ce7d4e35ea2ca9bcffc7af0d02
-20	25	review standards (#1532)	503e916a6baef7088c359c32597c4bb9c42600bb
-78	81	review ready with a failed phase write (#1931)	b3ed97691cd4736b0370417b7ee69f9195bdaf6d
-8	9	review reads its Flow state once	c2d62261488a8c8cf8aa9886a6517b85c2c5d9d3
-4	4	review_terminal_record fallback reads once	8b590b351aa464a03321ec73f9b52f9a89b0cd7c
-7	8	review terminal mid-redo (#2569)	ec8e49111dad6bd09d985c5c06654fdc052ab173
-14	11	review ci <pr>	4de9c6c7b8b2f68a224b4380759f3b74e71723ec
+10	11	review ready's pointer to /orchestrator:finish (#727)	115340a40e381431178120078b97a3ad283e620b
+7	8	review begin	6af350a92795d9993701a07a4c2dc7d28b4cca64
+3	4	review path	7aedaa864235d8230d7a0ed8d2ca405445035a6c
+4	5	the multi-loop machinery is gone	2abdf290a612c2206253179c9445eeef4a0856dc
+50	58	review file	899dcfe07a3efa0ee24a4f109ab6a317aa8cd33a
+11	12	review ready	8712c12d9c385b4d7d1b773d824588ffbd044f9b
+148	93	review ci	c743ea7679c2d035b24cda7dfbf289dd93ea2ef4
+17	16	the grace counts from the push (issue #475)	5392664110acf7349bbbb41221acb92927c14596
+17	19	review ci --no-wait	419b66e50cc5f9942bf3fcdd79b1be44a65d8b3a
+6	58	the grace is skipped on no evidence of CI (issue #476)	09967d800b56e1188df2ae8d61d28f607d7a1ad7
+15	16	review rerun	50c7b9f5d2355d5daa3b098ec61d42aeb477cd52
+8	9	review ci-log	b5ed5f55bd744265c82a1669a78542cb90e7d829
+1	20	review terminal	56a013e8e9eff3f66ccdbd5c99a8a0e877b3d8a6
+22	23	review resume	4a965ee6cc16e49060669e3dd1d0ce298d33d023
+4	5	review retire	5fcd3acf2bb05c3cfbe7edb119d82c1fb5da9d5f
+10	12	review known-items	07cb4ca427633fe6cb5b00772ebd2e61c08f8c26
+7	8	review ready in an autopilot flow (#1457)	477cd12dd2192294615884b374b91ea61211927e
+7	8	review known-items in an autopilot flow (#1457)	c801b0daa3d8e2789edd6e88ee6b1387479333c3
+20	24	review standards (#1532)	1723efbdc7e11664f29783c6319556feca737ccf
+74	77	review ready with a failed phase write (#1931)	b1f5212516369d62226ca7bda628fa68d248c86d
+7	8	review reads its Flow state once	2a34f39ab7250bb5fda94d709e828e0392758e7f
+4	5	review_terminal_record fallback reads once	3fd265f265845eb0c02bdc4660c63f2e9ef0be2d
+7	7	review terminal mid-redo (#2569)	fb2d7c04533ca2a7a4f24b62a8b1f860a6d97890
+14	11	review ci <pr>	9f2ac1ea5d25271ae033e287a23d02c99fd9cfff
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
 65	50	side-checkout (#722)	3ed9cd6604e4ae1b8e5f4287b54c5144ee8ebea3
 73	62	side-checkout archive and remove (#724)	da15c6a82f6693c86359f8b5334b077f90dcc2ae
@@ -234,7 +234,7 @@
 4	4	commands on a truncated state.json (#1929)	d432015660f7951036578b4d1b574a2557e0aa8b
 6	5	the shared and own-checkout readers on a truncated state.json	846c5bc308df9afc9b7fcaa99252bc3119fe0f58
 6	5	state set with a failed write (#1931)	f303871559a3140030c8709a2c17427c0ceb1d8d
-17	15	the entry read and the required-field helpers	64322b5c725e3eed1386b9bde9c53cbc4500ba7b
+11	13	the entry read and the required-field helpers	e74a48bce1228a68d88a641a9a8382349f20577c
 19	21	trust module	fa9ddfe15cdbea37ab5523493c97f1e967397961
 89	19	wait: a call's block is wall time	90d20fdb4b55a5964e512640526d36f24c6b6f96
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594

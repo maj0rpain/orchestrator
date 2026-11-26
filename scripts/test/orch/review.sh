@@ -156,6 +156,23 @@ fake_checks_clear() { rm -rf "$ORCH_GH_FAKE_STORE/checks"; }
 # scope or not; 0 when never read.
 fake_checks_reads() { log_count "$ORCH_GH_FAKE_STORE/checks/$1/reads"; }
 
+# assert_gh_dies <label> <op> <seed> <status> <message> <command...>: gh fails
+# at <op>, and the command (2>&1, into out and st) exits <status> printing
+# exactly <message>.
+assert_gh_dies() {
+  local label="$1" op="$2" seed="$3" status="$4" message="$5"
+  shift 5
+  fake_fail "$op" "$seed"
+  out="$("$@" 2>&1)"; st=$?
+  assert_status "$label" "$st" "$status"
+  if [ -n "$seed" ]; then
+    assert_eq "carrying only gh's first line" "$out" "$message"
+  else
+    assert_eq "saying gh gave no reason" "$out" "$message"
+  fi
+  fake_unfail
+}
+
 # --- review ready's pointer to /orchestrator:finish (#727) --------------------
 # review ready's stdout stays the PR number alone everywhere; in a side
 # checkout it points the human at /orchestrator:finish on stderr, for after the

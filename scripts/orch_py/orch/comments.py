@@ -103,7 +103,7 @@ def render(comments: List[dict]) -> str:
 
 
 def rendered(gh, what: str, n: str, kind: str, code: int = 1) -> str:
-    """trusted's comments rendered, as bash's comments_rendered assigns them:
+    """trusted's comments rendered, as bash's comments_rendered assigned them:
     the trailing newlines dropped, as a `$(...)` capture drops them. Its
     failures are trusted's, exit <code>."""
     return render(trusted(gh, what, n, kind=kind, code=code)).rstrip("\n")
