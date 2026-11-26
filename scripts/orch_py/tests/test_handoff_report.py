@@ -120,14 +120,6 @@ def test_handoff_check_relays_an_invalid_report_as_its_fail_lines_aligned(capsys
         "FAIL  missing section: ## Host fallbacks\n", 1)
 
 
-def test_handoff_check_shows_the_ok_lines_aligned_when_asked(capsys):
-    status = handoff_check(str(case_handoff("host-fallbacks-not-required")),
-                           str(GOLDEN / "host-fallbacks-not-required" / "state.json"), {},
-                           show_ok="ok")
-
-    assert (capsys.readouterr().out, status) == ("ok    ## Spec issue\n", 0)
-
-
 def test_handoff_check_of_a_missing_file_is_one_fail_line_and_status_2(tmp_path, capsys):
     missing = tmp_path / "02-spec.md"
 

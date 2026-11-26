@@ -122,10 +122,9 @@ def phase_write_try(path: str, phase: str, clock: Callable[[], float] = time.tim
     when it is absent, is not exactly one JSON object, or cannot be written,
     for a caller that words its own failure."""
     # Imported here: the handoff module reads this one at its own import.
-    from orch.handoff import PHASE_TABLE
-    phases = " ".join(row[0] for row in PHASE_TABLE)
-    if phase not in phases.split():
-        die("not a flow phase: %s (want one of: %s)" % (phase, phases))
+    from orch.handoff import PHASES
+    if phase not in PHASES:
+        die("not a flow phase: %s (want one of: %s)" % (phase, " ".join(PHASES)))
     state = _state_object(path)
     return state is not None and flow_state_create(
         path, dict(state, updated=now(clock), phase=phase))

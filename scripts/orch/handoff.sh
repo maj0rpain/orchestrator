@@ -155,9 +155,12 @@ section_count() {
     END { print n + 0 }' "$1"
 }
 
-# The single statement of what a valid handoff is: one line per required
+# The bash statement of what a valid handoff is: one line per required
 # section, each `ok <heading>` or `FAIL <problem>`. doctor's flow-state check
 # reads the same answer rather than writing a second one that can drift from it.
+# The Python package's copy, handoff_report in scripts/orch_py/orch/handoff.py,
+# which phase advance runs, is pinned to this one by the golden handoffs of
+# scripts/orch_py/tests/handoff_report/, run through both.
 # <name> is the handoff file name the sections are looked up by, the file's own
 # basename unless given: an autopilot scratch file is not named as its handoff.
 # The plan's `## Autopilot` block is checked, and required, in an autopilot

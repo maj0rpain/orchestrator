@@ -417,14 +417,18 @@ def autopilot_spec(root, seed):
     seed.claim(7)
 
 
+@pytest.fixture
+def posted_spec(root, seed, autopilot_spec):
+    """autopilot_spec, with a valid 02-spec handoff posted on issue #7."""
+    spec_comment(seed, complete(handoff(root, "02-spec.md")).read_text())
+
+
 def autopilot_advance(root, seed):
     return orch_phase(root, seed, "advance", env=CLAUDE_AUTOPILOT)
 
 
 def test_autopilot_advance_moves_the_label_records_the_phase_releases_the_claim_and_notes(
-        root, seed, store, capsys, autopilot_spec):
-    spec_comment(seed, complete(handoff(root, "02-spec.md")).read_text())
-
+        root, seed, store, capsys, posted_spec):
     assert autopilot_advance(root, seed) == 0
     assert capsys.readouterr() == (
         "Phase spec complete. Handoff posted on issue #7; the watcher starts the implement"
@@ -459,9 +463,8 @@ def test_autopilot_advance_with_an_invalid_posted_handoff_dies_naming_the_commen
 
 
 def test_autopilot_advance_with_a_failed_comments_read_dies_with_gh_s_reason(
-        root, seed, store, capsys, autopilot_spec):
+        root, seed, store, capsys, posted_spec):
     """#2538: a failed read is a read failure, never a missing handoff."""
-    spec_comment(seed, complete(handoff(root, "02-spec.md")).read_text())
     seed.fail("adapter_issue_comments", "HTTP 503 read")
 
     assert died_of(capsys, lambda: autopilot_advance(root, seed)) == (
@@ -471,8 +474,7 @@ def test_autopilot_advance_with_a_failed_comments_read_dies_with_gh_s_reason(
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root writes into a read-only directory")
 def test_autopilot_advance_with_an_unwritable_scratch_copy_dies_saying_so(
-        root, seed, store, capsys, autopilot_spec):
-    spec_comment(seed, complete(handoff(root, "02-spec.md")).read_text())
+        root, seed, store, capsys, posted_spec):
     scratch = root / ".orchestrator" / "scratch"
     scratch.mkdir()
     os.chmod(str(scratch), 0o555)
@@ -485,8 +487,7 @@ def test_autopilot_advance_with_an_unwritable_scratch_copy_dies_saying_so(
 
 
 def test_autopilot_advance_failing_partway_dies_with_the_writes_that_landed(
-        root, seed, capsys, autopilot_spec):
-    spec_comment(seed, complete(handoff(root, "02-spec.md")).read_text())
+        root, seed, capsys, posted_spec):
     seed.fail("adapter_claim_delete", "HTTP 500")
 
     assert died_of(capsys, lambda: autopilot_advance(root, seed)) == (

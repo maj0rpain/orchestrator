@@ -9,9 +9,9 @@ cutovers, while standing_release and standing_chain_start stay in bash for
 the other transitions.
 
 A phase label, `orch:<phase>`, records an autopilot flow's phase on its
-issue. PHASES is the flow's phases in order: the first column of the handoff
-module's phase table (orch/handoff.py's PHASE_TABLE), the one Python copy of
-the bash side's.
+issue. PHASES is the flow's phases in order, read from the handoff module
+(orch/handoff.py's PHASES, its phase table's first column), the one Python
+copy of the bash side's.
 
 The release is a chain, as bash's is: orch:running removed, then, last, the
 claim ref deleted, so a chain that fails partway leaves the claim held and
@@ -30,9 +30,8 @@ from typing import Callable, List, NoReturn, Sequence
 from orch.common import die
 from orch.flow_state import phase_write_try
 from orch.gh import GhFailed, gh_reason, label_listed
-from orch.handoff import PHASE_TABLE
+from orch.handoff import PHASES
 
-PHASES = tuple(row[0] for row in PHASE_TABLE)
 # The label an autopilot flow's issue carries while a session holds its claim.
 STANDING_RUNNING_LABEL = "orch:running"
 

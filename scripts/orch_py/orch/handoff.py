@@ -17,7 +17,7 @@ one it is part of the body.
 
 The phase table is the one Python copy of the bash side's (PHASE_TABLE),
 which Python does not read, pinned to it by tests/test_handoff.py's drift
-test; orch/standing.py's PHASES is its first column, and phase_writer and
+test; PHASES is its first column, and phase_writer and
 phase_next read it as bash's phase_cell writer did and its phase_next did. `handoff
 path` resolves through the Handoff store's adapter handoff_store chooses per
 call: the file adapter, the handoff directory's files, and in an autopilot
@@ -29,7 +29,7 @@ from __future__ import annotations
 import os
 from typing import List, Mapping, NoReturn, Optional, Tuple
 
-from orch.autopilot import autopilot_active
+from orch.autopilot import autopilot_active, autopilot_block_report
 from orch.common import (ORCH_DIR_NAME, die, fenced, file_write_atomic, lines_of, read_raw, rm_f,
                          stdout_write, trim, warn)
 from orch.flow_state import flow_state_file, flow_state_get_many, require_issue
@@ -46,6 +46,8 @@ PHASE_TABLE = (
                                                 "Verification")),
     ("done", "", "", ()),
 )
+# The flow's phases in order, the table's first column.
+PHASES = tuple(row[0] for row in PHASE_TABLE)
 
 
 def section_body(text: str, heading: str) -> List[str]:
@@ -105,10 +107,9 @@ def phase_writer(phase: str) -> Optional[str]:
 def phase_next(phase: str) -> Optional[str]:
     """The phase after <phase> in the table, as bash phase_next was; None for the
     last phase and for one the table does not hold."""
-    phases = [row[0] for row in PHASE_TABLE]
-    if phase not in phases[:-1]:
+    if phase not in PHASES[:-1]:
         return None
-    return phases[phases.index(phase) + 1]
+    return PHASES[PHASES.index(phase) + 1]
 
 
 def handoffs_due(phase: str) -> List[str]:
@@ -178,9 +179,6 @@ def handoff_report(path: str, state_file: str, env: Mapping[str, str], name: str
     `autopilot`. A name no row consumes is no lines and status 1, after bash's
     `orch: unknown handoff file` line on stderr - never a death. The file is
     read once; one that cannot be read reads as empty."""
-    # Imported here: the autopilot module reads this one's section helpers.
-    from orch.autopilot import autopilot_block_report
-
     base = name or os.path.basename(path)
     required = _required_sections(base, state_file)
     if required is None:
