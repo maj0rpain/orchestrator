@@ -9,12 +9,10 @@ import os
 
 import pytest
 
-from orch import pr
 from orch.flow_state import STATE_UNREADABLE_MSG
-from orch.gh_fake import FakeGh
 from orch.git import FakeGit
-from orch.repo import REPO_REMEDY, RepoPin
-from conftest import GH_502, SESSIONS, hold_flow, snapshot, state_json
+from orch.repo import REPO_REMEDY
+from conftest import GH_502, SESSIONS, hold_flow, orch_pr, snapshot, state_json
 
 ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
 BRANCH = "quick/12-foo"
@@ -46,18 +44,6 @@ def mine(seed):
         seed.pr_draft(n)
     seed.pr(57, "open", BRANCH, "main")
     return 57
-
-
-def orch_pr(seed, git, *argv, env=None):
-    """`orch.sh pr <argv>` in-process, in the checkout of <git>, under <env>
-    (empty when None), with the gh fake on <seed>'s store pinned to <git>'s
-    origin: its exit code, a SystemExit's included."""
-    env = {} if env is None else env
-    gh = FakeGh(seed.store, env, pin=RepoPin(env, git), sleep=lambda _: None)
-    try:
-        return pr.run(list(argv), gh=gh, git=git, env=env)
-    except SystemExit as died:
-        return died.code
 
 
 def is_draft(seed, n):

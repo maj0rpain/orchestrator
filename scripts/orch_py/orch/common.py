@@ -126,6 +126,12 @@ def plain_positive_number(text: str) -> bool:
     return plain_number(text) and not text.startswith("0")
 
 
+def is_positive_int(text: str) -> bool:
+    """Whether <text> is a plain number (plain_number) above zero, leading
+    zeros allowed - bash's is_positive_int."""
+    return plain_number(text) and int(text) > 0
+
+
 # bash's [:space:], the characters trim drops.
 _SPACE = " \t\n\r\v\f"
 

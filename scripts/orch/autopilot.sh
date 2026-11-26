@@ -1187,9 +1187,10 @@ autopilot_sync_detect() {
 # once and not at all when every issue carries it, and closes each issue not
 # carrying it whose newest merged PR from `orch/<issue>-` should have closed
 # it. orch:sync and needs-human do not stop it. Writes into the caller-named
-# <table-var> the table minus every issue it closed. A failed read or close,
-# or a bridge that cannot run (python3 missing included), warns through the
-# bridge's own stderr and leaves the whole table, never stopping the tick.
+# <table-var> the table minus every issue it closed. Every failure warns
+# through the bridge's own stderr and never stops the tick: a failed close
+# keeps just that issue in the table, and a failed read or a bridge that cannot
+# run (python3 missing included) leaves the whole table.
 autopilot_close_missed() {
   local _acm_kept
   printf -v "$2" '%s' "$1"

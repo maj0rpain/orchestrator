@@ -604,19 +604,9 @@ class FakeGh:
         first, each `<number><TAB><flag>`, the flag the stored
         cross_repository file as stored, false where unset."""
         self._failing("adapter_prs_open")
-        rows = []
-        for name in reversed(_numbered(_store_path(self.store, "prs"))):
-            if not os.path.isdir(_pr_path(self.store, name)):
-                continue
-            if read_text(_pr_path(self.store, name, "state")) != "OPEN":
-                continue
-            if read_text(_pr_path(self.store, name, "head")) != head:
-                continue
-            if base and read_text(_pr_path(self.store, name, "base")) != base:
-                continue
-            cross = read_text(_pr_path(self.store, name, "cross_repository"))
-            rows.append("%s\t%s" % (name, "false" if cross is None else cross))
-        return rows
+        return ["%s\t%s" % (name, self._cross(d)) for name, d in self._prs("OPEN")
+                if read_text(os.path.join(d, "head")) == head
+                and (not base or read_text(os.path.join(d, "base")) == base)]
 
     def _prs(self, state: str):
         """The stored PRs in <state>, newest first: each number and

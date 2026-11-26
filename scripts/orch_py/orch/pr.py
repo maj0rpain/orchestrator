@@ -52,12 +52,13 @@ from orch import comments
 from orch.base import base_branch_into, default_branch, recorded_base_into
 from orch.branch import branch_name_flow, branch_pr_set
 from orch.checkout import checkout_branch, current_branch_or_die
-from orch.common import (die, fenced, file_write_atomic, lines_of, plain_number, read_raw, rm_f,
-                         stdout_write, temp_text_file, warn, without_cr)
+from orch.common import (die, fenced, file_write_atomic, is_positive_int, lines_of, plain_number,
+                         read_raw, rm_f, stdout_write, temp_text_file, warn, without_cr)
 from orch.flow_state import (STATE_UNREADABLE_MSG, StateUnreadable, flow_base_fallback_into,
                              flow_holding_phase, flow_state_file, require_state_read,
                              require_value, state_write_many)
-from orch.gh import GhFailed, Unparsed, adapter_of, gh_or_die, gh_reason, label_listed
+from orch.gh import (GhFailed, Unparsed, adapter_of, gh_or_die, gh_reason, jq_text,
+                     label_listed)
 from orch.git import Git, git_failed
 from orch.repo import REPO_REMEDY, RepoPin
 from orch.review import ci_ready_gate
@@ -76,8 +77,8 @@ PUBLISH_USAGE = ("usage: orch.sh pr publish <issue> <title> <body-file> [--draft
 # publish, written once: both require all of them, and pr_body_check's Door
 # and Blast Radius rules key on the Merge Danger one. pr release meets a
 # smaller standard, Summary alone.
-MERGE_DANGER_HEADING = "Merge Danger"
-BODY_HEADINGS = ("Summary", "Evidence", MERGE_DANGER_HEADING)
+PR_MERGE_DANGER_HEADING = "Merge Danger"
+PR_BODY_HEADINGS = ("Summary", "Evidence", PR_MERGE_DANGER_HEADING)
 
 DOOR = "**Door:**"
 BLAST_RADIUS = "**Blast Radius:**"
@@ -223,7 +224,7 @@ def newest_merge(lines: Sequence[str]) -> Optional[Tuple[str, str, str]]:
     return None if best is None else (best[0], best[2], best[3])
 
 
-def close_newest(gh, issue: str, default: str, lines: Sequence[str],
+def pr_close_newest(gh, issue: str, default: str, lines: Sequence[str],
                  now: float) -> Tuple[int, str]:
     """pr_close_missed's status on the newest merge among <lines> - the
     caller's pick of the merged-PR read's lines, the ones that may close
@@ -236,7 +237,7 @@ def close_newest(gh, issue: str, default: str, lines: Sequence[str],
     return pr_close_missed(gh, issue, number, merged_at, closing, default, now), number
 
 
-def merged_closing_read(run: _Run, skip: str, issue: str) -> Optional[Tuple[str, List[str]]]:
+def pr_merged_closing_read(run: _Run, skip: str, issue: str) -> Optional[Tuple[str, List[str]]]:
     """The backstop's one read: the default branch, then the PRs merged
     into it since <issue> - the oldest the caller may close - was created,
     fork PRs dropped (trust_filter_prs), as the merged-PR read's lines less
@@ -261,7 +262,7 @@ def merged_closing_read(run: _Run, skip: str, issue: str) -> Optional[Tuple[str,
         return None
 
 
-def lines_by_prefix(lines: Sequence[str], prefix: str) -> List[str]:
+def pr_lines_by_prefix(lines: Sequence[str], prefix: str) -> List[str]:
     """The lines of <lines> whose head branch, the second tab-separated
     field, starts with <prefix>, in their order; a line with no second
     field never matches."""
@@ -274,13 +275,15 @@ TICK_USAGE = "usage: orch_python_call pr close_missed_tick <table>"
 def _done_rows(table: str) -> List[List[str]]:
     """The done table's rows, `<issue> <running> <sync> <human>` each, as
     their four fields, blank lines skipped; dies with TICK_USAGE on a row
-    of another shape."""
+    of another shape: not four fields, an issue that is no plain number, or
+    a flag other than 0 or 1."""
     rows = []
     for text in table.split("\n"):
         fields = text.split()
         if not fields:
             continue
-        if len(fields) != 4 or not plain_number(fields[0]):
+        if len(fields) != 4 or not plain_number(fields[0]) \
+                or any(flag not in ("0", "1") for flag in fields[1:]):
             die(TICK_USAGE)
         rows.append(fields)
     return rows
@@ -312,15 +315,15 @@ def close_missed_tick(
     bound = next((row[0] for row in rows if row[1] == "0"), None)
     if bound is not None:
         run = _Run(gh, Git() if git is None else git, os.environ if env is None else env)
-        read = merged_closing_read(run, "no merged-PR close this tick", bound)
+        read = pr_merged_closing_read(run, "no merged-PR close this tick", bound)
         if read is not None:
             default, prs = read
             at = now()
             kept = []
             for row in rows:
                 if row[1] == "0":
-                    picked = lines_by_prefix(prs, branch_name_flow(row[0], ""))
-                    if close_newest(run.gh(), row[0], default, picked, at)[0] == 0:
+                    picked = pr_lines_by_prefix(prs, branch_name_flow(row[0], ""))
+                    if pr_close_newest(run.gh(), row[0], default, picked, at)[0] == 0:
                         continue
                 kept.append(row)
     stdout_write("".join(" ".join(row) + "\n" for row in kept))
@@ -349,13 +352,13 @@ def close_missed_finish(
         die(FINISH_USAGE)
     issue, number, branch = args
     run = _Run(gh, Git() if git is None else git, os.environ if env is None else env)
-    read = merged_closing_read(run, "no merged-PR close for issue #" + issue, issue)
+    read = pr_merged_closing_read(run, "no merged-PR close for issue #" + issue, issue)
     if read is None:
         return
     default, prs = read
     field, wanted = (0, number) if number else (1, branch)
     picked = [text for text in prs if (text.split("\t") + [""])[field] == wanted]
-    status, closed = close_newest(run.gh(), issue, default, picked, now())
+    status, closed = pr_close_newest(run.gh(), issue, default, picked, now())
     if status == 3:
         warn("issue #%s is still open: PR #%s merged less than %d minutes ago - GitHub may yet"
              " close it, and no later sweep will check" % (issue, closed, PR_CLOSE_GRACE // 60))
@@ -416,7 +419,7 @@ def pr_body_problems(text: str, required: Sequence[str]) -> List[str]:
             section = line[3:]
             seen.add(section)
             continue
-        if section != MERGE_DANGER_HEADING:
+        if section != PR_MERGE_DANGER_HEADING:
             continue
         if line.startswith(DOOR):
             doors += 1
@@ -430,11 +433,11 @@ def pr_body_problems(text: str, required: Sequence[str]) -> List[str]:
             if line[len(BLAST_RADIUS):].lstrip(" \t") == "":
                 empty_blast = True
     problems: List[str] = []
-    under = " under ## " + MERGE_DANGER_HEADING
+    under = " under ## " + PR_MERGE_DANGER_HEADING
     for heading in required:
         if heading not in seen:
             problems.append("no ## %s heading" % heading)
-        if heading != MERGE_DANGER_HEADING:
+        if heading != PR_MERGE_DANGER_HEADING:
             continue
         if not doors:
             problems.append("no %s line%s" % (DOOR, under))
@@ -592,7 +595,7 @@ def pr_open(args: List[str], run: _Run, root: str) -> None:
     require_value("issue", issue)
     require_value("branch", branch)
     base = flow_base_fallback_into(state["base"], run.gh, run.git, run.pin)
-    pr_body_check(body_file, BODY_HEADINGS)
+    pr_body_check(body_file, PR_BODY_HEADINGS)
     require_no_open_tickets(run.gh(), issue, "pr open")
     if recorded:
         update_pr(run, recorded, branch, base, issue, title, body_file, labels)
@@ -621,7 +624,7 @@ def pr_publish(args: List[str], run: _Run, _root: str) -> None:
         die("issue must be a plain issue number, got: " + issue)
     branch = current_branch_or_die(run.git)
     base = recorded_base_into(run.gh(), run.git, run.pin, branch)
-    pr_body_check(body_file, BODY_HEADINGS)
+    pr_body_check(body_file, PR_BODY_HEADINGS)
     require_no_open_tickets(run.gh(), issue, "pr publish")
     number = open_pr(run, branch, base, issue, title, body_file, draft, labels)
     pr_labels_check(run.gh(), number, labels)
@@ -806,12 +809,6 @@ def pr_update(args: List[str], run: _Run, _root: str) -> Optional[int]:
     return None
 
 
-def positive_number(text: str) -> bool:
-    """Whether <text> is a plain number above zero, leading zeros allowed -
-    bash's is_positive_int."""
-    return plain_number(text) and int(text) > 0
-
-
 def listed_body(encoded: str) -> str:
     """A PR body as the open-PR listing carries it, a JSON string, decoded
     as `jq -r .` decodes it under a `$(...)` capture: every trailing newline
@@ -820,9 +817,7 @@ def listed_body(encoded: str) -> str:
         value = json.loads(encoded)
     except ValueError:
         raise Unparsed("a body that is no JSON") from None
-    if not isinstance(value, str):
-        value = "null" if value is None else json.dumps(value)
-    return value.rstrip("\n")
+    return jq_text(value).rstrip("\n")
 
 
 def pr_read(args: List[str], run: _Run, _root: str) -> Optional[int]:
@@ -836,7 +831,7 @@ def pr_read(args: List[str], run: _Run, _root: str) -> Optional[int]:
     if len(args) != 2:
         die("usage: orch.sh pr read <issue> <file>")
     issue_text, path = args
-    if not positive_number(issue_text):
+    if not is_positive_int(issue_text):
         die("not an issue number: " + issue_text)
     # The number without its leading zeros: 012 is issue 12, never octal.
     issue = int(issue_text)
@@ -852,7 +847,7 @@ def pr_read(args: List[str], run: _Run, _root: str) -> Optional[int]:
         number, encoded, flag = fields[:3]
         if not number:
             continue
-        if not positive_number(number) or flag not in ("true", "false"):
+        if not is_positive_int(number) or flag not in ("true", "false"):
             die(unread)
         try:
             body = listed_body(encoded)

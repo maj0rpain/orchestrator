@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 from typing import List, Mapping, Optional
 
-from orch.common import die, plain_number
+from orch.common import die, is_positive_int
 from orch.git import Git
 from orch.root import checkout_root
 
@@ -34,7 +34,7 @@ def show(argv: List[str], git) -> int:
     if argv:
         die("usage: orch.sh parallel show")
     value = git.config_value("orchestrator.parallel") or str(PARALLEL_DEFAULT)
-    if not plain_number(value) or int(value) == 0:
+    if not is_positive_int(value):
         die("orchestrator.parallel is %s - it must be a positive integer"
             " (git config orchestrator.parallel <n>)" % value)
     print(int(value))

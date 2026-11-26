@@ -16,7 +16,7 @@ import subprocess
 
 import pytest
 
-from conftest import CLAUDE, GH_502, SESSIONS, died_of, fake, hold_flow, read, state_json
+from conftest import CLAUDE, GH_502, SESSIONS, died_of, fake, hold_flow, prs_of, read, state_json
 from orch import pr
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit
@@ -78,12 +78,6 @@ def body_file(tmp_path, text=COMPLETE_BODY, name="body.md"):
     path = tmp_path / name
     path.write_text(text)
     return str(path)
-
-
-def prs_of(store):
-    """Every PR number the store holds, in order."""
-    directory = store / "prs"
-    return sorted(int(name) for name in os.listdir(str(directory))) if directory.is_dir() else []
 
 
 def pr_file(store, n, name):

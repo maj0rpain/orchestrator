@@ -13,8 +13,7 @@ import tempfile
 
 import pytest
 
-from conftest import CLAUDE, GH_502, SESSIONS, comments_of, read, snapshot
-from orch import pr
+from conftest import CLAUDE, GH_502, SESSIONS, comments_of, orch_pr, prs_of, read, snapshot
 from orch.gh import Unparsed
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit
@@ -38,20 +37,6 @@ def checkout_git(root, branch=BRANCH, base=None, origin=True):
         git.seed("current_branch", answer=branch)
     git.seed("is_branch_name", "main", answer=True)
     return git
-
-
-def orch_pr(seed, git, *argv, env=None, gh=None):
-    """`orch.sh pr <argv>` in-process in the checkout of <git>, under <env>
-    (Claude Code's plain session when None), with <gh> - the gh fake on
-    <seed>'s store, pinned to <git>'s origin, when None: its exit code, a
-    SystemExit's included."""
-    env = CLAUDE if env is None else env
-    if gh is None:
-        gh = FakeGh(seed.store, env, pin=RepoPin(env, git), sleep=lambda _: None)
-    try:
-        return pr.run(list(argv), gh=gh, git=git, env=env)
-    except SystemExit as died:
-        return died.code
 
 
 # --- the dispatch ------------------------------------------------------------------
@@ -104,12 +89,6 @@ def test_release_reads_the_default_branch_once_with_no_base_set(root, seed, caps
 
     assert orch_pr(seed, git, "release", "Release", release_body, env=env, gh=gh) == 1
     assert reads == ["acme/widgets"]
-
-
-def prs_of(store):
-    """The numbers of the PRs the store holds, in order."""
-    directory = os.path.join(str(store), "prs")
-    return sorted(int(n) for n in os.listdir(directory)) if os.path.isdir(directory) else []
 
 
 @pytest.fixture

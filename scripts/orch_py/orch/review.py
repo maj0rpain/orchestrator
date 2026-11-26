@@ -24,8 +24,8 @@ import fnmatch
 import os
 from typing import List, Optional, Tuple
 
-from orch.common import (ORCH_DIR_NAME, capture, die, int_as_test_reads, mkdir_p_or_die,
-                         move_files_aside, plain_number, read_raw, trim, warn)
+from orch.common import (ORCH_DIR_NAME, capture, die, int_as_test_reads, is_positive_int,
+                         mkdir_p_or_die, move_files_aside, plain_number, read_raw, trim, warn)
 from orch.flow_state import flow_state_file, flow_state_get_many
 from orch.gh import Check, GhFailed, gh_reason
 from orch.handoff import section_body
@@ -92,7 +92,7 @@ def review_flat_record_gone(root: str, i: str) -> bool:
     """Whether iteration <i> is an integer above 0 and its flat
     iteration-NN.md is gone - the one state in which review_terminal_record
     looks past it (redo_midway)."""
-    if not plain_number(i) or int(i, 10) == 0:
+    if not is_positive_int(i):
         return False
     flat, _, died = capture(lambda: review_record_path(root, i))
     return not died and not os.path.exists(flat)

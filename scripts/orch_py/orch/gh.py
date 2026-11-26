@@ -367,7 +367,7 @@ def parse_comments(text: str) -> List[dict]:
     return answer["comments"]
 
 
-def _jq_text(value) -> str:
+def jq_text(value) -> str:
     """<value> as jq's string interpolation writes it: a string as it is,
     null as "null", anything else as its JSON."""
     if isinstance(value, str):
@@ -384,8 +384,8 @@ def parse_checks(text: str) -> List[Check]:
     answer = _json(text)
     if not isinstance(answer, list) or not all(isinstance(c, dict) for c in answer):
         raise Unparsed("no check list")
-    return [Check(_jq_text(c.get("bucket")), _jq_text(c.get("name")),
-                  _jq_text(c.get("link") or "")) for c in answer]
+    return [Check(jq_text(c.get("bucket")), jq_text(c.get("name")),
+                  jq_text(c.get("link") or "")) for c in answer]
 
 
 def _json(text: str):

@@ -273,8 +273,8 @@ def test_a_failed_close_keeps_its_issue_while_the_others_close(github, capsys):
 
 
 @pytest.mark.parametrize("args", [(), ("50 0 0 0\n", "51 0 0 0\n"), ("x 0 0 0\n",),
-                                  ("50 0 0\n",)],
-                         ids=["none", "two", "issue", "short"])
+                                  ("50 0 0\n",), ("50 x y z\n",), ("50 0 0 0\n51 0 2 0\n",)],
+                         ids=["none", "two", "issue", "short", "flag", "flag-not-0-or-1"])
 def test_the_tick_bridge_dies_with_its_usage_line_on_bad_arguments(github, capsys, args):
     assert died_of(capsys, lambda: tick(github, *args)) == (1, "", TICK_USAGE)
 
