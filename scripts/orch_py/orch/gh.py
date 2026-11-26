@@ -707,6 +707,10 @@ class Gh:
         # leave the comment, and a rerun would post it twice.
         self._gh(args, compound=bool(comment))
 
+    def issue_reopen(self, n: int) -> None:
+        """Reopens the issue."""
+        self._gh(["issue", "reopen", str(n)])
+
     # --- claim operations ---
 
     def claim_delete(self, n: int) -> None:
@@ -744,6 +748,12 @@ class Gh:
         """The PR's comments as gh answers them, as issue_comments answers an
         issue's. Unparsed when gh's answer is no comment list."""
         return parse_comments(self._gh(["pr", "view", str(n), "--json", "comments"]))
+
+    def pr_close(self, n: int, comment: str) -> None:
+        """Closes the PR, posting <comment> on it."""
+        # gh posts the comment first and closes second, so a failed close can
+        # leave the comment, and a rerun would post it twice.
+        self._gh(["pr", "close", str(n), "--comment", comment], compound=True)
 
     # --- label operations ---
 

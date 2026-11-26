@@ -242,9 +242,9 @@ require_field() {
 require_issue() { require_field "$1" issue "${2:-die}"; }
 
 # The bash writer of state.phase: phase_write, which dies on a failed write.
-# Every bash write of state.phase goes through it, the redos' closing write
-# included (redo_step_back, redo.sh); phase advance, review ready's finish and
-# Python init record the phase through the Python copies, phase_write and
+# Every bash write of state.phase goes through it; phase advance, review
+# ready's finish, the redos' closing write and Python init record the phase
+# through the Python copies, phase_write and
 # phase_write_try in orch_py/orch/flow_state.py, which check it against
 # handoff.py's copy of the phase table (ADR-0067). It knows only which phases
 # exist: every caller keeps its own guard on which transition it may make, so

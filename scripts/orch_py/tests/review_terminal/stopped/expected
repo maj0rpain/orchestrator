@@ -1,0 +1,3 @@
+malformed
+expected: first line 'ready', or 'stop' with its reason after a separator (-, –, —, :) or on the lines below
+status 1

@@ -14,6 +14,7 @@ from conftest import (
     git_repo,
     hold_flow,
     mark_side,
+    orch_files,
     run_git,
     worktree_add,
 )
@@ -24,14 +25,6 @@ from orch.repo import RepoPin
 
 ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
 CLAUDE = {"CLAUDECODE": "1"}
-
-
-def handoffs(root, *names):
-    """Writes an empty handoff named each of <names> in <root>'s flow."""
-    folder = root / ".orchestrator" / "handoff"
-    folder.mkdir(parents=True, exist_ok=True)
-    for name in names:
-        (folder / name).write_text("")
 
 
 def alone(root):
@@ -53,7 +46,7 @@ def orch_status(seed, git, env=CLAUDE):
 def test_status_prints_every_flow_line_a_flow_records(root, seed, capsys):
     hold_flow(root, slug="my-feature", phase="implement", issue=42, base="develop",
               branch="orch/42-my-feature", pr=7, budget=3, iteration=2, redo_count=1)
-    handoffs(root, "02-spec.md", "01-plan.md")
+    orch_files(root, "handoff", "02-spec.md", "01-plan.md")
 
     assert orch_status(seed, alone(root)) == 0
     assert capsys.readouterr() == (

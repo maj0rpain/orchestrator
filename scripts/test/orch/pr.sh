@@ -5,6 +5,10 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# pr_marker_of <branch>: the PR number pr open or pr publish recorded on
+# <branch>'s git config (#1200), empty when none was.
+pr_marker_of() { git config --get "branch.$1.orchestrator-pr" 2>/dev/null; }
+
 # fake_pull <n>: seeds #n as an open pull request, which gh's issue reads
 # answer for too.
 fake_pull() { fake_issue "$1" open; : >"$ORCH_GH_FAKE_STORE/issues/$1/pull"; }

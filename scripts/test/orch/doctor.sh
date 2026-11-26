@@ -1828,7 +1828,6 @@ assert_status "a stop record is healthy too" "$st" 0
 assert_contains "names the terminal state and its reason" \
   "$out" "review loop at a terminal state: stop (CI failed twice.)"
 assert_trace_loads_once "doctor --flow at review with a PR and a stopped loop" "$rv_load"
-assert_trace_names_no "doctor --flow with its flat review record present" "$rv_load" redo
 rm -f "$rv_load"
 
 writeln '## Terminal state' '**stop**' 'CI failed twice.' >.orchestrator/review/iteration-05.md
@@ -1862,6 +1861,28 @@ assert_trace_loads_once "doctor --flow with report files and the flat review rec
 rm -f "$rv_load"
 mv .orchestrator/review/stop.saved .orchestrator/review/iteration-05.md
 rm .orchestrator/review/iteration-05-standards.md .orchestrator/review/iteration-05-spec.md
+
+# Mid-redo (#2569), the flat record moved into pre-redo-1/: the stopped loop's
+# end is read there, and branch, through which redo_midway names the -redo-<n>
+# branch, is loaded once.
+"$ORCH" state set issue 21
+state_fixture branch orch/21-doctorterm-redo-1
+state_fixture redo_count 1
+mkdir -p .orchestrator/review/pre-redo-1
+mv .orchestrator/review/iteration-05.md .orchestrator/review/pre-redo-1/iteration-05.md
+out="$("$ORCH" doctor --flow 2>&1)" || true
+assert_contains "mid-redo, the retired stop is read" \
+  "$out" "review loop at a terminal state: stop (CI failed twice.)"
+assert_not_contains "never calling the loop interrupted" "$out" "looks interrupted"
+writeln '## Terminal state' 'stopped here' >.orchestrator/review/pre-redo-1/iteration-05.md
+rd_load="$(mktemp)"
+out="$(ORCH_LOAD_TRACE="$rd_load" "$ORCH" doctor --flow 2>&1)" || true
+assert_contains "a malformed retired record fails" "$out" "has a malformed terminal state"
+assert_contains "the remedy naming the retired record" "$out" \
+  ".orchestrator/review/pre-redo-1/iteration-05.md"
+assert_trace_loads_once "doctor --flow with the flat record gone mid-redo" "$rd_load"
+assert_eq "loading branch" "$(grep -c '^branch ' "$rd_load")" "1"
+rm -f "$rd_load"
 restore_suite_env
 
 # --- doctor: review budget check -----------------------------------------

@@ -8,6 +8,7 @@ teardown fails the test naming each logged call.
 """
 from __future__ import annotations
 
+import builtins
 import calendar
 import json
 import os
@@ -103,14 +104,31 @@ def labels_of(store, n):
     return (read(store, "issues", n, "labels") or "").split("\n")[:-1]
 
 
-def comments_of(store, n):
-    """The bodies of issue #n's comments, in order."""
+def comments_of(store, n, kind="issues"):
+    """The bodies of issue #n's comments, in order - PR #n's with <kind>
+    "prs"."""
     bodies = []
     k = 1
-    while read(store, "issues", n, "comments", k, "body") is not None:
-        bodies.append(read(store, "issues", n, "comments", k, "body"))
+    while read(store, kind, n, "comments", k, "body") is not None:
+        bodies.append(read(store, kind, n, "comments", k, "body"))
         k += 1
     return bodies
+
+
+def files_under(path):
+    """Every file under <path>, a Path, by its POSIX path relative to it,
+    sorted."""
+    return sorted(p.relative_to(path).as_posix() for p in path.rglob("*") if p.is_file())
+
+
+def orch_files(root, folder, *names):
+    """Writes each of <names> into <root>'s .orchestrator/<folder>, holding
+    its own name: the folder, a Path."""
+    directory = root / ".orchestrator" / folder
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (directory / name).write_text(name)
+    return directory
 
 
 def state_json(root):
@@ -356,6 +374,32 @@ def path_without(tmp_path, command):
                 (links / name).symlink_to(os.path.join(directory, name))
         kept.append(str(links))
     return os.pathsep.join(kept)
+
+
+class Opens:
+    """Counts the opens of one file, by any route: builtins.open and
+    os.open."""
+
+    def __init__(self, monkeypatch, path):
+        self.path = os.path.realpath(str(path))
+        self.count = 0
+        real_open, real_os_open = builtins.open, os.open
+
+        def counted(file, *args, **kwargs):
+            self._seen(file)
+            return real_open(file, *args, **kwargs)
+
+        def os_counted(file, *args, **kwargs):
+            self._seen(file)
+            return real_os_open(file, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", counted)
+        monkeypatch.setattr(os, "open", os_counted)
+
+    def _seen(self, file):
+        if isinstance(file, (str, bytes, os.PathLike)) \
+                and os.path.realpath(os.fsdecode(file)) == self.path:
+            self.count += 1
 
 
 def fake(seed):

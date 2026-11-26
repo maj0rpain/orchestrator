@@ -2294,6 +2294,42 @@ out="$(sourced_orch review_terminal_record 2 2>&1)"
 assert_eq "beside a truncated state file it answers as with no redo" "$out" "$(pwd -P)/.orchestrator/review/iteration-02.md"
 restore_suite_env
 
+# --- review terminal mid-redo (#2569) -----------------------------------------
+# A redo review that died after moving the loop's records is half-finished:
+# redo_count 1 and state.branch the -redo-1 name (redo_midway). The stopped
+# loop's end stays readable under review/pre-redo-1/ until the redo's closing
+# write; a flow whose redo completed reads its flat record as before.
+echo
+echo "review terminal mid-redo"
+fake_flow rtmid
+state_fixture phase review
+"$ORCH" state set issue 21
+state_fixture branch orch/21-rtmid-redo-1
+state_fixture redo_count 1
+state_fixture iteration 1
+"$ORCH" state set budget 1
+mkdir -p .orchestrator/review/pre-redo-1
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/pre-redo-1/iteration-01.md
+out="$("$ORCH" review terminal 2>&1)"
+assert_first_line "review terminal reads the retired stop" "$out" "stop"
+out="$("$ORCH" review resume 2>&1)"; st=$?
+assert_status "review resume refuses" "$st" 1
+assert_contains "saying there is nothing to resume" "$out" "nothing to resume"
+rm -rf .orchestrator/review/pre-redo-1
+out="$("$ORCH" review terminal 2>&1)"
+assert_first_line "no record anywhere answers interrupted" "$out" "interrupted"
+mkdir -p .orchestrator/review/pre-redo-1
+writeln '## Terminal state' 'stopped here' >.orchestrator/review/pre-redo-1/iteration-01.md
+out="$("$ORCH" review terminal 2>&1)"
+assert_first_line "a malformed retired record answers malformed" "$out" "malformed"
+git checkout -q -b orch/21-rtmid
+state_fixture branch orch/21-rtmid
+writeln '## Terminal state' 'stop' 'old.' >.orchestrator/review/pre-redo-1/iteration-01.md
+out="$("$ORCH" review terminal 2>&1)"
+assert_first_line "after a completed redo the plain flow branch is not mid-redo" "$out" "interrupted"
+assert_contains "and review resume reruns the iteration" "$("$ORCH" review resume 2>&1)" "rerun 1"
+restore_suite_env
+
 # --- review ci <pr> -----------------------------------------------------------
 # The PR-number form reads that PR with no flow state, and keeps its total in
 # the same wait store the flow form uses, keyed by PR and head commit.

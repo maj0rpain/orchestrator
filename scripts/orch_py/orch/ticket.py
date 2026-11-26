@@ -1,11 +1,12 @@
-"""The ticket concept's Python copies, kept to what the spec-review and
-breakdown nouns reach so far: a breakdown's sub-issue listing
+"""The ticket concept's Python copies, kept to what the spec-review,
+breakdown and redo nouns reach so far: a breakdown's sub-issue listing
 (ticket_sub_issues) and the state of one ticket in it; the reads and rewrites
 of a body's markdown - the numbers a ticket's `## Blocked by` section lists,
 that section rewritten, and the `## Ticket` heading a collapsed breakdown sits
 under (ADR-0012), detected and cut; the commands spec-review apply runs on a
 breakdown, `ticket exists`, `ticket block`, `ticket unblock` and `ticket
-retire`, with the helpers they reach; and the create and link breakdown
+retire`, with the helpers they reach; the reopen redo runs on a breakdown,
+`ticket reset`; and the create and link breakdown
 publish runs on each ticket, ticket_create and ticket_link, with
 ticket_links_verified, ticket_edges_verified and blockers_set; and the
 open-tickets refusal phase advance makes before it leaves implement,
@@ -368,6 +369,23 @@ def ticket_report_remove(root: str, n: str) -> None:
     has one."""
     rm_f_or_die("%s/%s/reports/%s.md" % (root, ORCH_DIR_NAME, n),
                 "could not remove ticket #%s's saved report" % n)
+
+
+def ticket_reset(gh, parent: str, root: str) -> None:
+    """`ticket reset <parent>`: every sub-issue of <parent> that is closed,
+    and only those, reopened after its saved report is dropped, then the
+    parent's own saved report dropped - a collapsed breakdown's one ticket
+    saves its report under the parent's number, and a left-over one would read
+    as landed to `ticket reclaim`. Any GitHub failure dies."""
+    for row in ticket_sub_issues(gh, parent):
+        if row.state != "CLOSED":
+            continue
+        n = str(row.number)
+        # The report goes first: once the ticket is open again no rerun
+        # removes it, so a death between the two would strand it.
+        ticket_report_remove(root, n)
+        gh_or_die("reopen ticket #" + n, gh.issue_reopen, row.number)
+    ticket_report_remove(root, parent)
 
 
 # The comment a retire leaves on each ticket, and the wording a retire posted

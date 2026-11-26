@@ -1093,9 +1093,10 @@ check_flow_review_terminal() {
   local i budget terminal word detail
   i="$D_FLOW_ITERATION"
   budget="$D_FLOW_BUDGET"
-  # redo is read only when the flat record is gone (review_terminal_record).
+  # branch is read only when the flat record is gone: review_terminal_record
+  # then asks redo_midway, which names the -redo-<n> branch through it.
   if review_flat_record_gone "$i"; then
-    orch_load redo
+    orch_load branch
   fi
   terminal="$(review_terminal_state "$i" "$budget")" || true
   lines_split "$terminal" word detail

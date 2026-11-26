@@ -12,7 +12,9 @@ writer (orch.common) appends under, the current branch a review pass
 starts on, the worktree list, another checkout's branch and its git folder
 the checkout scan (orch.checkout) reads, the worktree removal a side
 checkout's teardown (orch.side_checkout) makes, the push the gh adapter's claim
-delete makes, the dirty paths the planning allowlist's flow-start scan
+delete makes, branch retire's
+local branch reads and rename, origin probe, tracking push and remote
+delete (orch.branch), the dirty paths the planning allowlist's flow-start scan
 judges, and the scoped git config reads, writes and unsets
 (`config_regexp`, `config_set`, `config_unset`) the agent noun uses. There is no generic run: each later
 noun adds the operations it
@@ -36,6 +38,14 @@ class Worktree(NamedTuple):
 
     path: str
     branch: Optional[str]
+
+
+class GitFailure(NamedTuple):
+    """A `git` run that failed: its exit status, and what it printed on
+    stderr, for a caller that hands both on as bash's `set -e` did."""
+
+    code: int
+    stderr: str
 
 
 class FileDiff(NamedTuple):
@@ -74,6 +84,9 @@ COULD_NOT: Dict[str, Any] = {
     "git_common_dir": None,
     "current_branch": None,
     "push": "git gave no reason",
+    "origin_has_branch": None,
+    "push_set_upstream": "git gave no reason",
+    "remote_delete": "git gave no reason",
     "worktree_remove": "git gave no reason",
     "dirty_paths": "git gave no reason",
 }
@@ -499,7 +512,52 @@ class Git:
     def push(self, remote: str, refspec: str) -> Optional[str]:
         """`git push <remote> <refspec>` - bash git_push: None when it
         landed, else the reason its stderr gives (git_push_reason)."""
-        run = self._run(["push", remote, refspec])
+        return self._push([remote, refspec])
+
+    # Branch retire's operations (orch.branch), run where the adapter runs, as
+    # bash's `branch retire` runs its git.
+
+    def branch_exists(self, name: str) -> bool:
+        """Whether local branch <name> exists: `rev-parse --verify --quiet
+        refs/heads/<name>`."""
+        return self._run(["rev-parse", "--verify", "--quiet", "refs/heads/" + name]).returncode == 0
+
+    def branch_upstream(self, name: str) -> Optional[str]:
+        """The full ref branch <name> tracks - bash branch_upstream; None when
+        it tracks none, or there is no such branch."""
+        return self._output(
+            ["rev-parse", "--symbolic-full-name", "--verify", "--quiet", name + "@{upstream}"]
+        ) or None
+
+    def branch_rename(self, old: str, new: str) -> Optional[GitFailure]:
+        """`git branch -m <old> <new>`, its upstream moving with it: None when
+        it renamed, else git's status and stderr."""
+        run = self._run(["branch", "-m", old, new])
+        if run.returncode == 0:
+            return None
+        return GitFailure(run.returncode, run.stderr.decode("utf-8", "surrogateescape"))
+
+    def origin_has_branch(self, name: str) -> Optional[bool]:
+        """Whether origin has branch <name> - bash origin_has_branch, on
+        ls-remote's own exit codes: True yes, False origin answered and it
+        does not, None origin could not be asked."""
+        code = self._run(
+            ["ls-remote", "--quiet", "--exit-code", "origin", "refs/heads/" + name]
+        ).returncode
+        return {0: True, 2: False}.get(code)
+
+    def push_set_upstream(self, remote: str, refspec: str) -> Optional[str]:
+        """`git push -q -u <remote> <refspec>`: None when it landed and the
+        branch tracks what it pushed, else its reason (git_push_reason)."""
+        return self._push(["-q", "-u", remote, refspec])
+
+    def remote_delete(self, remote: str, ref: str) -> Optional[str]:
+        """`git push -q <remote> --delete <ref>`: None when <remote> no longer
+        holds <ref>, else its reason (git_push_reason)."""
+        return self._push(["-q", remote, "--delete", ref])
+
+    def _push(self, args: List[str]) -> Optional[str]:
+        run = self._run(["push", *args])
         if run.returncode == 0:
             return None
         return git_push_reason(run.stderr.decode("utf-8", "surrogateescape"))
@@ -554,7 +612,9 @@ class FakeGit:
     git config entries (dict or sequence of (key, value|None) pairs, None
     for a valueless key); <config_write_fails> names scopes ('local',
     'global') or (scope, key) pairs whose config_set and config_unset calls
-    fail, as a locked or unwritable config file does.
+    fail, as a locked or unwritable config file does; <branches> maps each
+    local branch's name to the full ref it tracks, None for none, and
+    branch_rename moves an entry as git moves a branch and its upstream.
 
     The operations COULD_NOT names answer what seed() set for their
     arguments, and their "could not" value for a call nothing was seeded
@@ -575,6 +635,7 @@ class FakeGit:
             Union[Dict[str, Optional[str]], Sequence[Tuple[str, Optional[str]]]]
         ] = None,
         config_write_fails: Optional[Iterable[Union[str, Tuple[str, str]]]] = None,
+        branches: Optional[Dict[str, Optional[str]]] = None,
     ) -> None:
         self.remotes = dict(remotes or {})
         self.root = toplevel
@@ -589,6 +650,7 @@ class FakeGit:
         self.config_write_fails: Set[Union[str, Tuple[str, str]]] = set(
             config_write_fails or ()
         )
+        self.branches: Dict[str, Optional[str]] = dict(branches or {})
         self._answers: Dict[Tuple[Any, ...], Any] = {}
 
     def seed(self, name: str, *args: Any, answer: Any) -> None:
@@ -707,6 +769,29 @@ class FakeGit:
 
     def push(self, remote: str, refspec: str) -> Optional[str]:
         return self._answer("push", remote, refspec)
+
+    def branch_exists(self, name: str) -> bool:
+        return name in self.branches
+
+    def branch_upstream(self, name: str) -> Optional[str]:
+        return self.branches.get(name)
+
+    def branch_rename(self, old: str, new: str) -> Optional[GitFailure]:
+        if old not in self.branches:
+            return GitFailure(128, "fatal: no branch named '%s'\n" % old)
+        if new in self.branches:
+            return GitFailure(128, "fatal: a branch named '%s' already exists\n" % new)
+        self.branches[new] = self.branches.pop(old)
+        return None
+
+    def origin_has_branch(self, name: str) -> Optional[bool]:
+        return self._answer("origin_has_branch", name)
+
+    def push_set_upstream(self, remote: str, refspec: str) -> Optional[str]:
+        return self._answer("push_set_upstream", remote, refspec)
+
+    def remote_delete(self, remote: str, ref: str) -> Optional[str]:
+        return self._answer("remote_delete", remote, ref)
 
     def config_regexp(self, scope: str, pattern: str) -> Dict[str, str]:
         _check_config_scope(scope)

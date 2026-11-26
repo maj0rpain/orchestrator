@@ -5,8 +5,8 @@ each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>`,
 <verb>`, `orch.sh spec-review <verb>`, `orch.sh breakdown <verb>`, `orch.sh
 spec <verb>`, `orch.sh glossary <verb>`, `orch.sh parallel show`, `orch.sh
 route show`, `orch.sh agent <verb>`, `orch.sh slug <text>`, `orch.sh status`,
-`orch.sh init <slug>`, `orch.sh archive`, `orch.sh phase <verb>` or `orch.sh
-help` (and its spellings)
+`orch.sh init <slug>`, `orch.sh archive`, `orch.sh phase <verb>`, `orch.sh
+redo <op>` or `orch.sh help` (and its spellings)
 as a command, in a checkout under tmp_path, against a fake store seeded in the
 layout the bash suite's fake_* helpers write, with ORCH_GH_FAKE_STORE set as
 fake_github sets it."""
@@ -33,6 +33,7 @@ from conftest import (
     flow_state,
     git_repo,
     gone,
+    hold_flow,
     labels_of,
     origin_clone,
     path_without,
@@ -1069,6 +1070,37 @@ def test_phase_dies_pointing_at_doctor_without_python3(tmp_path, repo, seed):
 
     assert orch_sh(tmp_path, repo, seed, "phase", "boundary", path=path_without(tmp_path, "python3")) \
         == ("", "orch: orch.sh phase needs python3 3.9 or newer (found none)"
+                " - run orch.sh doctor\n", 1)
+
+
+# --- redo ------------------------------------------------------------------
+
+
+def test_redo_review_steps_the_flow_back_through_the_python_noun(tmp_path, repo, seed):
+    committed(repo, {"a.txt": "a\n"}, "first")
+    run_git(repo, "checkout", "-q", "-b", "orch/21-redo")
+    hold_flow(repo, slug="redo", phase="review", issue=21, branch="orch/21-redo", pr=30,
+              iteration=1, budget=1, redo_count=0)
+    record = repo / ".orchestrator" / "review" / "iteration-01.md"
+    record.parent.mkdir()
+    record.write_text("## Terminal state\nstop\nCI failed twice.\n")
+    seed.issue(21, "open")
+    seed.pr(30, "open", "orch/21-redo", "main")
+
+    assert orch_sh(tmp_path, repo, seed, "redo", "review", path=python3_shim(tmp_path)) == (
+        "1\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+    assert run_git(repo, "branch", "--show-current") == "orch/21-redo-redo-1"
+    assert json.loads((repo / ".orchestrator" / "state.json").read_text())["phase"] == "implement"
+    assert read(seed.store, "prs", 30, "state") == "CLOSED\n"
+
+
+@pytest.mark.parametrize("op", ["review", "spec"])
+def test_redo_dies_pointing_at_doctor_without_python3(tmp_path, repo, seed, op):
+    flow_state(repo, "review", 12)
+
+    assert orch_sh(tmp_path, repo, seed, "redo", op, path=path_without(tmp_path, "python3")) \
+        == ("", "orch: orch.sh redo needs python3 3.9 or newer (found none)"
                 " - run orch.sh doctor\n", 1)
 
 

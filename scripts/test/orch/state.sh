@@ -5,6 +5,11 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# state_write_fails_bin: a fails_bin for mktemp that fails a state.json.*
+# template - the temp file every state write makes - and nothing else. Unlike
+# chmod a-w, it also fails as root.
+state_write_fails_bin() { fails_bin mktemp '*state.json.*'; }
+
 # --- state ------------------------------------------------------------------
 echo
 echo "state"

@@ -28,7 +28,7 @@ BASH_HELPERS = {
         "fake_unfail", "fake_offline", "fake_online", "fake_quota", "fake_lag",
         "fake_state_of", "fake_reason_of",
         "fake_title_of", "fake_body_of", "fake_labels_of", "fake_comments_of",
-        "fake_pr", "fake_pr_comment", "fake_pr_cross", "fake_labels",
+        "fake_pr", "fake_pr_comment", "fake_pr_comments_of", "fake_pr_cross", "fake_labels",
         "fake_default_branch", "fake_claim_seed", "fake_claim_held",
     ],
     SCRIPTS / "test" / "orch" / "gh.sh": ["fake_ratelimit", "fake_duplicate_of"],
@@ -361,6 +361,8 @@ def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
     ("adapter_blocker_add", lambda gh: gh.blocker_add(5, 7)),
     ("adapter_blocker_remove", lambda gh: gh.blocker_remove(5, 7)),
     ("adapter_claim_delete", lambda gh: gh.claim_delete(5)),
+    ("adapter_issue_reopen", lambda gh: gh.issue_reopen(5)),
+    ("adapter_pr_close", lambda gh: gh.pr_close(6, "Closed.")),
 ])
 def test_the_added_operations_fail_under_the_bash_operation_names(store, operation, call):
     bash(store, "fake_issue 5 open review:nit; fake_issue 7 open; fake_default_branch trunk; "
@@ -532,6 +534,43 @@ fake_next_issue_after=$(cat "$ORCH_GH_FAKE_STORE/next_issue"); echo "next $fake_
         "CLOSED||||||\n"
         "next 41\n"
     )
+
+
+def test_a_python_reopen_reads_back_open_with_no_close_reason_through_the_bash_helpers(store):
+    bash(store, "fake_issue 5 open; fake_issue 6 open; adapter_issue_close 6 --reason 'not planned'")
+    gh = fake(store)
+    gh.issue_close(5, comment="Dup.", duplicate_of=6)
+
+    gh.issue_reopen(5)
+    gh.issue_reopen(6)
+
+    assert bash(store, r"""
+for n in 5 6; do printf '%s|%s|%s\n' "$(fake_state_of $n)" "$(fake_reason_of $n)" \
+  "$(fake_duplicate_of $n)"; done
+""") == "OPEN||\nOPEN||\n"
+
+
+def test_a_python_pr_close_comments_an_open_pr_and_leaves_a_closed_one_as_it_is(store):
+    bash(store, "fake_pr 4 open topic main; fake_pr 5 closed old main; "
+                "fake_pr_comment 5 ann 2026-02-01T00:00:00Z 'Earlier.'")
+    gh = fake(store)
+
+    gh.pr_close(4, "Closed by a redo.\n\nSee `orch/7-x-redo-1`.\n")
+    gh.pr_close(4, "Closed again.")
+    gh.pr_close(5, "Never posted.")
+
+    assert bash(store, r"""
+for n in 4 5; do cat "$ORCH_GH_FAKE_STORE/prs/$n/state"; fake_pr_comments_of $n; echo '|'; done
+""") == "CLOSED\nClosed by a redo.\n\nSee `orch/7-x-redo-1`.\n|\nCLOSED\nEarlier.|\n"
+
+
+def test_a_pr_close_gives_up_at_a_first_secondary_limit(store):
+    bash(store, "fake_pr 4 open topic main; fake_fail_times adapter_pr_close 1 '%s'" % SECONDARY)
+
+    with pytest.raises(GhFailed):
+        fake(store).pr_close(4, "Closed.")
+
+    assert bash(store, 'cat "$ORCH_GH_FAKE_STORE/prs/4/state"; fake_pr_comments_of 4') == "OPEN\n"
 
 
 def test_python_unlinks_and_edge_writes_read_back_through_the_bash_fake(store):

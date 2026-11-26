@@ -13,10 +13,10 @@ ones, `phase_write` and `phase_write_try` in
 `scripts/orch_py/orch/flow_state.py`, serve `init`, now a Python noun, which
 stamps its seed's phase through `phase_write`, and the Python `phase` noun:
 `phase advance`, and `review ready`'s finish through `phase_finish` and,
-under autopilot, `standing_finish`. The bash `phase_write`, kept while bash
-callers remain (ADR-0067), serves the redos' closing write (`redo_step_back`
-goes through it). Both make the same membership check, the Python one
-against the Python copy of the phase table. Every way the phase gets set therefore goes
+under autopilot, `standing_finish`, and the Python `redo` noun, whose
+closing write (`redo_step_back`) goes through it. The bash `phase_write`
+in `scripts/orch/state.sh` makes the same membership check against the bash
+phase table, the Python one against the Python copy of it. Every way the phase gets set therefore goes
 through that check. If the seed wrote the phase inline, a
 further writer would exist that skips that check, and anyone adding a phase
 or renaming one would have to remember the seed object as well.

@@ -8,12 +8,11 @@ flow, each checked by its stdout, its exit code, its `orch:` message, the
 markers and round directories it leaves and the store afterwards."""
 from __future__ import annotations
 
-import builtins
 import os
 
 import pytest
 
-from conftest import GH_502, comments_of, died_of, flow_state, labels_of, read, snapshot
+from conftest import GH_502, Opens, comments_of, died_of, flow_state, labels_of, read, snapshot
 from orch import cli, spec
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit
@@ -101,32 +100,6 @@ def test_a_truncated_state_file_is_refused_as_unreadable_before_any_write(root, 
     assert snapshot(store) == before
     assert not (root / ".orchestrator" / "handoff").exists()
     assert not (root / ".orchestrator" / "spec-rounds").exists()
-
-
-class Opens:
-    """Counts the opens of one file, by any route: builtins.open and
-    os.open."""
-
-    def __init__(self, monkeypatch, path):
-        self.path = os.path.realpath(str(path))
-        self.count = 0
-        real_open, real_os_open = builtins.open, os.open
-
-        def counted(file, *args, **kwargs):
-            self._seen(file)
-            return real_open(file, *args, **kwargs)
-
-        def os_counted(file, *args, **kwargs):
-            self._seen(file)
-            return real_os_open(file, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "open", counted)
-        monkeypatch.setattr(os, "open", os_counted)
-
-    def _seen(self, file):
-        if isinstance(file, (str, bytes, os.PathLike)) \
-                and os.path.realpath(os.fsdecode(file)) == self.path:
-            self.count += 1
 
 
 @pytest.mark.parametrize("phase", ["spec", "implement", "done"])

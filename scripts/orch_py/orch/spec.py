@@ -22,8 +22,8 @@ phase.
 
 The two markers sit in the handoff folder, and neither is a handoff - no
 phase table entry names it, so handoff validate and doctor never look at it -
-nor a state.json field (ADR-0005). Bash redo spec moves both aside with the
-stale handoffs, under the names its own module keeps beside these.
+nor a state.json field (ADR-0005). The redo noun's redo spec (orch/redo.py)
+moves both aside with the stale handoffs, by the names kept here.
 
 This module owns the round directory: its spec_round_* functions keep the
 bash names they had and bash's messages and the order of its local steps.

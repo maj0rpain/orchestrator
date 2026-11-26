@@ -5,6 +5,42 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# flat_text: stdin on one line with every whitespace run collapsed to one
+# space.
+flat_text() { tr -s ' \t\n' '   '; }
+
+# handoff_orch <mode> <orch args>...: runs orch.sh as that handoff mode's
+# session: autopilot for "comment", interactive for "file".
+handoff_orch() {
+  local mode="$1"
+  shift
+  if [ "$mode" = comment ]; then ORCH_AUTOPILOT=1 "$ORCH" "$@"; else env -u ORCH_AUTOPILOT "$ORCH" "$@"; fi
+}
+
+# put_handoff <mode> <issue> <ts> <name> <body>: keeps the handoff <name> (no
+# .md) as the mode does - a live tagged comment on issue #<issue> made at <ts>,
+# or a file in the handoff directory.
+put_handoff() {
+  if [ "$1" = comment ]; then
+    fake_comment "$2" someone "$3" "$(marker_of handoff "$4"; printf '%s\n' "$5")"
+  else
+    mkdir -p .orchestrator/handoff
+    printf '%s\n' "$5" >".orchestrator/handoff/$4.md"
+  fi
+}
+
+# retire_handoff <mode> <issue> <ts> <name> <folder>: sets the handoff <name>
+# aside as the mode does - a newer retired comment on issue #<issue> made at
+# <ts>, or the file moved into the pre-redo folder <folder>.
+retire_handoff() {
+  if [ "$1" = comment ]; then
+    fake_comment "$2" someone "$3" "$(marker_of handoff "$4" retired)"
+  else
+    mkdir -p "$5"
+    mv ".orchestrator/handoff/$4.md" "$5/"
+  fi
+}
+
 # literal_handoff <phase>: the pinned literal body of the handoff <phase> reads
 # (spec, implement or review), complete but for Host fallbacks.
 literal_handoff() {
@@ -58,20 +94,6 @@ done
 out="$(sourced_orch handoffs_due bogus)"; st=$?
 assert_eq "handoffs_due prints nothing for a phase outside the table" "$out" ""
 assert_status "and succeeds" "$st" 0
-
-out="$(sourced_orch handoffs_written_from plan)"
-assert_eq "handoffs_written_from plan prints all three handoffs" "$out" \
-  "$(writeln 01-plan.md 02-spec.md 03-implement.md)"
-out="$(sourced_orch handoffs_written_from spec)"
-assert_eq "handoffs_written_from spec prints the spec and implement handoffs" "$out" \
-  "$(writeln 02-spec.md 03-implement.md)"
-out="$(sourced_orch handoffs_written_from implement)"
-assert_eq "handoffs_written_from implement prints the implement handoff alone" "$out" "03-implement.md"
-for p in review "done" bogus; do
-  out="$(sourced_orch handoffs_written_from "$p")"; st=$?
-  assert_eq "handoffs_written_from $p prints nothing" "$out" ""
-  assert_status "handoffs_written_from $p succeeds" "$st" 0
-done
 
 for pair in "spec|$(writeln spec implement review "done")" \
             "implement|$(writeln implement review "done")" \
@@ -555,7 +577,8 @@ restore_suite_env
 # One function, run once per adapter, at the orch.sh CLI over the gh fake: a
 # handoff is a file in the handoff directory (file adapter, interactive) or a
 # tagged comment on the issue (comment adapter, ORCH_AUTOPILOT=1). The reads
-# behave alike whichever adapter keeps the handoff, and so does retire.
+# behave alike whichever adapter keeps the handoff. The retire a redo makes is
+# the Python redo noun's, tested in scripts/orch_py/tests/test_redo.py.
 
 handoff_store_contract() {
   local adapter="$1" out st p
@@ -603,27 +626,6 @@ handoff_store_contract() {
   out="$(handoff_orch "$adapter" doctor --flow 2>&1)"; st=$?
   assert_status "$adapter: doctor --flow fails on a missing handoff" "$st" 1
   assert_contains "$adapter: with the adapter's finding" "$out" "$(handoff_doctor_missing_msg "$adapter" 7 01-plan)"
-
-  # retire, through redo spec: both handoffs are set aside before a failing
-  # ticket retire, and the re-run retires nothing twice
-  put_handoff "$adapter" 7 2030-01-01T00:00:00Z 02-spec "$(literal_handoff implement)"
-  put_handoff "$adapter" 7 2030-01-01T00:00:00Z 03-implement "implement text"
-  state_fixture phase implement
-  fake_issue_body 7 "$(printf 'Spec.\n\n## Ticket\nBuild.\n')"
-  fake_fail adapter_issue_body_edit
-  out="$(handoff_orch "$adapter" redo spec 2>&1)"; st=$?
-  fake_unfail
-  assert_status "$adapter: a gh failure in the ticket retire fails redo spec" "$st" 1
-  assert_eq "$adapter: leaving the phase at implement" "$("$ORCH" state get phase)" implement
-  p="$(handoff_orch "$adapter" handoff path implement 2>/dev/null)"; st=$?
-  assert_status "$adapter: the retired spec handoff reads as missing" "$st" 1
-  out="$(handoff_orch "$adapter" redo spec 2>&1)"; st=$?
-  assert_status "$adapter: the re-run finishes" "$st" 0
-  assert_eq "$adapter: the phase is spec" "$("$ORCH" state get phase)" spec
-  assert_eq "$adapter: the spec handoff is retired exactly once" \
-    "$(handoff_retired_count "$adapter" 7 02-spec '.orchestrator/handoff/pre-redo-spec-*')" 1
-  assert_eq "$adapter: and the implement handoff" \
-    "$(handoff_retired_count "$adapter" 7 03-implement '.orchestrator/handoff/pre-redo-spec-*')" 1
   restore_suite_env
 }
 
@@ -704,47 +706,6 @@ fake_flow handoff-store-ready-file
 out="$(handoff_orch file doctor --flow 2>&1)"
 assert_not_contains "file: readiness passes with no recorded issue" "$out" "no issue is recorded"
 assert_contains "file: and the missing handoff is reported" "$out" "$(handoff_doctor_missing_msg file 7 01-plan)"
-restore_suite_env
-
-# --- handoff comment retire's timeline read -----------------------------------
-# The comments are read once per retire, and not at all when no file is named.
-echo
-echo "handoff comment retire's timeline read"
-fake_flow handoff-retire-reads
-"$ORCH" state set issue 7 >/dev/null
-fake_issue 7 open
-fake_comment 7 someone 2030-01-03T00:00:00Z "$(marker_of handoff 02-spec)
-spec again"
-fake_comment 7 someone 2030-01-03T00:00:01Z "$(marker_of handoff 03-implement)
-implement again"
-retire_all() { ORCH_AUTOPILOT=1 sourced_orch handoff_comment_retire pre-redo 02-spec.md 03-implement.md; }
-reads_before="$(fake_comment_reads)"
-ORCH_AUTOPILOT=1 sourced_orch handoff_comment_retire pre-redo >/dev/null 2>&1; st=$?
-assert_status "a retire with no files succeeds" "$st" 0
-assert_eq "and makes no comment read" "$(( $(fake_comment_reads) - reads_before ))" "0"
-reads_before="$(fake_comment_reads)"
-retire_all >/dev/null 2>&1
-assert_eq "a retire of several handoffs makes exactly one comment read" "$(( $(fake_comment_reads) - reads_before ))" "1"
-
-# an unreadable read dies before any post, with each failure's wording
-fake_comment 7 someone 2030-01-04T00:00:00Z "$(marker_of handoff 02-spec)
-spec third"
-before="$(fake_comments_of 7)"
-assert_gh_dies "a failed comments read dies with gh's wording" adapter_issue_comments "$GH_502" 1 \
-  "orch: gh could not read the comments of issue #7: HTTP 502: Bad Gateway" \
-  retire_all
-assert_eq "posting nothing" "$(fake_comments_of 7)" "$before"
-fake_lag adapter_issue_comments 1 'not json'
-out="$(retire_all 2>&1)"; st=$?
-assert_status "unparseable comments die" "$st" 1
-assert_eq "posting nothing either" "$(fake_comments_of 7)" "$before"
-restore_suite_env
-
-# a retire naming no files still needs the recorded issue
-fake_flow handoff-retire-no-issue
-out="$(ORCH_AUTOPILOT=1 sourced_orch handoff_comment_retire pre-redo 2>&1)"; st=$?
-assert_status "a no-file retire with no recorded issue fails" "$st" 1
-assert_contains "naming the missing issue" "$out" "no issue recorded in state - the spec phase must publish one first"
 restore_suite_env
 
 echo
