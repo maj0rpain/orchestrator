@@ -9,7 +9,12 @@ handoffs, and to what the phase noun's advance reads a handoff with: the
 dying read (handoff_read) and the invalid-handoff refusal (handoff_invalid),
 each with its file and comment adapter, their messages as bash's;
 handoff_invalid and phase_next have no bash copy left, their one bash caller
-the phase module, gone at the phase noun's cutover.
+the phase module, gone at the phase noun's cutover. And what a redo sets
+the stale handoffs aside with: the handoffs a step back to a phase makes
+stale (handoffs_written_from), and the retire (handoff_retire), whose file
+adapter moves them into a labelled folder and whose comment adapter reads
+the issue's comments once, then posts a retired marked comment per live
+handoff, dying with the names already posted, as bash's.
 
 A line inside a code fence (orch.common.fenced), its delimiters included, is
 never a heading: it neither opens nor closes a section, and inside an open
@@ -27,13 +32,19 @@ once and copied to the scratch directory to be read as files.
 from __future__ import annotations
 
 import os
-from typing import List, Mapping, NoReturn, Optional, Tuple
+from typing import List, Mapping, NoReturn, Optional, Sequence, Tuple
 
 from orch.autopilot import autopilot_active, autopilot_block_report
-from orch.common import (ORCH_DIR_NAME, die, fenced, file_write_atomic, lines_of, read_raw, rm_f,
-                         stdout_write, trim, warn)
+from orch.common import (ORCH_DIR_NAME, die, fenced, file_write_atomic, lines_of,
+                         move_files_aside, read_raw, rm_f, stdout_write, temp_text_file, trim,
+                         warn)
 from orch.flow_state import flow_state_file, flow_state_get_many, require_issue
+from orch.gh import GhFailed, gh_reason
 from orch.issue_timeline import Entry, timeline_body, timeline_die, timeline_handoff, timeline_read
+from orch.marked_comment import marked_comment_write
+
+# The text under the marker of the comment that retires a handoff.
+RETIRED_TEXT = "Retired by an orchestrator redo: this handoff described work the redo sets aside.\n"
 
 # The phase table, row by row: the phase, the handoff it consumes, the writer
 # (the phase that wrote that handoff) and that handoff's required sections. done
@@ -371,3 +382,57 @@ def handoff_path(phase: str, gh, env: Mapping[str, str], root: str) -> Tuple[str
     path = "%s/%s" % (scratch, handoff)
     _comment_copy_or_die(status, path, issue, _stem(handoff))
     return path, True
+
+
+def _handoff_file_retire(label: str, names: Sequence[str], root: str) -> None:
+    """Moves each of the handoffs <names> that exists into the handoff
+    directory's <label> folder, made only when there is something to move;
+    a folder already holding one of them is refused before any move, one
+    that merely exists is fine - bash's handoff_file_retire."""
+    directory = handoff_dir(root)
+    move_files_aside(directory, "%s/%s" % (directory, label), "a retired handoff", names)
+
+
+def handoff_retire(label: str, names: Sequence[str], gh_of, env: Mapping[str, str],
+                   root: str) -> None:
+    """Sets the handoffs <names> of the checkout at <root> aside, as a redo
+    does, through this session's adapter (handoff_store), as bash's
+    handoff_retire. The file adapter moves each existing one into the
+    handoff directory's <label> folder. The comment adapter ignores the
+    label: it requires the recorded issue - with no handoff named too - then
+    retires each handoff on it, through the gh adapter <gh_of> makes only
+    when one is named (_handoff_comment_retire)."""
+    if handoff_store(env) == "file":
+        _handoff_file_retire(label, names, root)
+        return
+    issue = require_issue(flow_state_file(root), env)["issue"]
+    if names:
+        _handoff_comment_retire(gh_of(), issue, names)
+
+
+def _handoff_comment_retire(gh, issue: str, names: Sequence[str]) -> None:
+    """Retires each of the handoffs <names> by posting a newer comment
+    tagged retired on issue #<issue>, bash's handoff_comment_retire. The
+    comments are read once, before any post - a failed read dies with gh's
+    reason - and every handoff is decided from that read: one with no
+    comment, or whose newest is already retired, posts nothing, so a redo
+    that died partway is finished by the next. A post that fails dies naming
+    the comments already posted."""
+    entries, reason = timeline_read(gh, issue)
+    if entries is None:
+        timeline_die(issue, reason)
+    posted: List[str] = []
+    for name in names:
+        stem = _stem(name)
+        if timeline_handoff(entries, stem) is None:
+            continue
+        unmade = "could not create a temp file for the retired comment"
+        with temp_text_file(marked_comment_write("handoff", stem, "retired") + RETIRED_TEXT,
+                            unmade, unmade) as path:
+            try:
+                gh.issue_comment(int(issue), path)
+            except GhFailed as failed:
+                die("could not retire the %s handoff on issue #%s: %s - comments posted: %s;"
+                    " the recorded phase is unchanged, so a re-run retires the rest"
+                    % (stem, issue, gh_reason(failed.stderr), ", ".join(posted) or "none"))
+        posted.append(stem)

@@ -1,6 +1,8 @@
 """The Marked comment module (scripts/orch/marked-comment.sh), kept to what
-the issue, review-pass and spec-review nouns use: the first line of the spec
-review's changelog (marked_comment_write, for the spec-review kind alone);
+the issue, review-pass and spec-review nouns and the handoff module's
+comment retire use: the first line a marked comment opens with
+(marked_comment_write, every kind as bash's - the spec review's changelog
+heading, and the retired handoff marker a redo posts);
 recognising the spec review's changelogs, comments whose first line is the
 `## Spec review` heading, to drop them; the texts of the spec rulings, comments whose first
 line begins `Spec ruling:`, that a review pass reads; and every comment's
@@ -15,7 +17,7 @@ from __future__ import annotations
 import re
 from typing import List, NamedTuple, Optional
 
-from orch.common import without_cr
+from orch.common import die, without_cr
 
 SPEC_REVIEW_OPENING = "## Spec review"
 SPEC_RULING_OPENING = "Spec ruling:"
@@ -34,6 +36,8 @@ _MARKER = re.compile(
     r"<!-- orch:(?P<kind>%s) (?P<arg>[^ ]+)(?: (?P<cause>%s))?(?P<retired> retired)? -->"
     % ("|".join(MARKED_COMMENT_KINDS), "|".join(MARKED_COMMENT_CAUSES)))
 _LEGACY = re.compile(r"(?P<p>[^ ]+) phase")
+# What bash's [[:space:]] matches.
+_WHITESPACE = re.compile(r"[ \t\n\v\f\r]")
 
 
 class MarkedInfo(NamedTuple):
@@ -50,14 +54,29 @@ class NotText(ValueError):
     """A comment body that is neither text nor absent."""
 
 
-def marked_comment_write(kind: str) -> str:
+def marked_comment_write(kind: str, arg: Optional[str] = None, tag: str = "") -> str:
     """The first line a marked comment of <kind> opens with, newline
-    included, as bash's marked_comment_write prints it - so far only the
-    spec-review kind, whose line is its heading; any other kind is a
-    programming error, a ValueError."""
-    if kind != "spec-review":
-        raise ValueError("marked comment: kind not copied to Python: " + kind)
-    return SPEC_REVIEW_OPENING + "\n"
+    included, as bash's marked_comment_write prints it: the spec-review and
+    spec-ruling kinds' openings, which take no <arg>, and every other
+    registered kind's hidden marker, naming <arg> - which must hold no
+    whitespace - and <tag>: `retired` on a handoff, or a cause on the caused
+    kind. Dies, as bash's does, on an unknown kind or tag and on an argument
+    or tag the kind does not take."""
+    if kind in ("spec-review", "spec-ruling"):
+        if arg is not None:
+            die("marked comment: %s takes no argument" % kind)
+        return (SPEC_REVIEW_OPENING if kind == "spec-review" else SPEC_RULING_OPENING) + "\n"
+    if kind not in MARKED_COMMENT_KINDS:
+        die("marked comment: unknown kind: %s" % kind)
+    if not arg or _WHITESPACE.search(arg):
+        die("marked comment: %s needs an argument without whitespace" % kind)
+    if tag == "retired" and kind != MARKED_COMMENT_RETIRABLE:
+        die("marked comment: only a handoff can be retired")
+    if tag in MARKED_COMMENT_CAUSES and kind != MARKED_COMMENT_CAUSED:
+        die("marked comment: only a %s comment takes a cause" % MARKED_COMMENT_CAUSED)
+    if tag and tag != "retired" and tag not in MARKED_COMMENT_CAUSES:
+        die("marked comment: unknown tag: %s" % tag)
+    return "<!-- orch:%s %s%s -->\n" % (kind, arg, " " + tag if tag else "")
 
 
 def is_spec_review(comment: dict) -> bool:
