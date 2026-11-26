@@ -1,16 +1,21 @@
-"""The checkout concept module's scan, holdings, ticket-worktree refusal and
-busy-checkout refusal, against real repositories under tmp_path: git's
-worktree semantics are git's, so no fake models them. Each failure message
-is bash checkout.sh's or ticket-worktree.sh's, verbatim."""
+"""The checkout concept module's scan, holdings, branch reads, in-progress
+probes, ticket-worktree refusal, busy-checkout refusal and discard sequence,
+against real repositories under tmp_path: git's worktree semantics are git's,
+so no fake models them - FakeGit stands in only for a git step that fails.
+Each failure message is bash checkout.sh's, or the deleted bash
+ticket-worktree.sh's, verbatim."""
 from __future__ import annotations
 
 import shutil
+import subprocess
 
 import pytest
 
 from conftest import (
     committed,
     died_of,
+    exclude_orchestrator,
+    git_identity,
     git_repo,
     hold_flow,
     mark_side,
@@ -19,15 +24,22 @@ from conftest import (
 )
 from orch.checkout import (
     Checkout,
+    branch_checkout,
+    checkout_branch,
     checkout_gitdir_into,
     checkout_holding,
     checkouts,
     checkouts_or_die,
+    discard_flow_branch_work,
+    discard_work_in,
+    merge_in_progress,
+    rebase_in_progress,
     refuse_busy_checkout,
     refuse_ticket_worktrees,
+    require_flow_branch,
     ticket_worktrees_under,
 )
-from orch.git import Git
+from orch.git import FakeGit, Git
 
 UNREADABLE = "orch: could not read the checkouts - git worktree list failed\n"
 ENV = {"CLAUDECODE": "1"}
@@ -324,3 +336,226 @@ def test_a_busy_and_dirty_checkout_is_refused_busy_exit_3(main, capsys):
 def test_an_unknown_signal_is_a_programming_error(main):
     with pytest.raises(ValueError, match="tree"):
         refuse_busy_checkout(Git(cwd=str(main)), str(main), ENV, "tree")
+
+
+# --- the branch reads -----------------------------------------------------------------
+
+
+def test_a_checkout_s_branch_is_read_here_or_at_a_path(walked):
+    main, made = walked
+    git = Git(cwd=str(main))
+
+    assert checkout_branch(git) == "orch/1-feature"
+    assert checkout_branch(git, str(made["t7"])) == "orch/1-feature--t7"
+    assert checkout_branch(git, str(made["detached"])) is None
+
+
+def test_a_branch_s_checkout_is_the_first_holding_it_a_gone_one_included(walked):
+    main, made = walked
+    git = Git(cwd=str(main))
+
+    assert [branch_checkout(git, name) for name in (
+        "orch/1-feature", "orch/1-feature--t7", "gone", "nope")] == [
+        str(main), str(made["t7"]), str(made["gone"]), None]
+
+
+def test_a_branch_s_checkout_dies_when_the_checkouts_cannot_be_read(tmp_path, capsys):
+    assert died_of(capsys, lambda: branch_checkout(Git(cwd=str(tmp_path)), "x")) == (
+        1, "", UNREADABLE)
+
+
+# --- the in-progress probes and the discard sequence ---------------------------------
+
+TICKET = "orch/1-feature--t5"
+
+
+@pytest.fixture
+def stuck(main):
+    """<main> with ticket worktree t5 on TICKET, a.txt edited one way there
+    and another way in <main>, and an identity git commits with: (main, t5).
+    .orchestrator/ is kept out of git status, as the plugin keeps it."""
+    git_identity(main)
+    exclude_orchestrator(main)
+    wt = worktree_add(main, main / ".orchestrator" / "worktrees" / "t5", "-b", TICKET)
+    committed(wt, {"a.txt": "ticket\n"}, "ticket edit")
+    committed(main, {"a.txt": "parent\n"}, "parent edit")
+    return main, wt
+
+
+def failing(*args):
+    """git <args> run where it is expected to fail, its output dropped."""
+    subprocess.run(["git", *args], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL)
+
+
+def rebasing(wt):
+    """Starts a rebase of the worktree <wt>'s branch onto orch/1-feature,
+    stopping on its conflict."""
+    failing("-C", str(wt), "rebase", "-q", "refs/heads/orch/1-feature")
+
+
+def merging(main):
+    """Starts a merge of TICKET into <main>'s branch, stopping on its
+    conflict."""
+    failing("-C", str(main), "merge", "-q", TICKET)
+
+
+def test_a_rebase_in_progress_is_seen_in_its_own_checkout_only(stuck, tmp_path):
+    main, wt = stuck
+    git = Git(cwd=str(main))
+    rebasing(wt)
+
+    assert [rebase_in_progress(git, str(path)) for path in (wt, main, tmp_path)] == [
+        True, False, False]
+
+
+def test_a_merge_in_progress_is_seen_in_its_own_checkout_only(stuck):
+    main, wt = stuck
+    git = Git(cwd=str(main))
+    merging(main)
+
+    assert (merge_in_progress(git, str(main)), merge_in_progress(git, str(wt))) == (True, False)
+
+
+def test_the_discard_sequence_aborts_a_rebase_then_resets_and_cleans(stuck):
+    main, wt = stuck
+    git = Git(cwd=str(main))
+    before = run_git(main, "rev-parse", TICKET)
+    rebasing(wt)
+    (wt / "stray.txt").write_text("stray\n")
+
+    discard_work_in(git, str(wt), "ticket #5")
+
+    assert (rebase_in_progress(git, str(wt)), git.status_at(str(wt))) == (False, "")
+    assert run_git(wt, "rev-parse", "HEAD") == before
+
+
+def test_the_discard_sequence_aborts_a_merge(stuck):
+    main, _ = stuck
+    git = Git(cwd=str(main))
+    merging(main)
+
+    discard_work_in(git, str(main), "ticket #5")
+
+    assert (merge_in_progress(git, str(main)), git.status_at(str(main))) == (False, "")
+
+
+def test_nothing_to_discard_changes_nothing(stuck):
+    main, wt = stuck
+
+    discard_work_in(Git(cwd=str(main)), str(wt), "ticket #5")
+
+    assert run_git(wt, "log", "-1", "--format=%s") == "ticket edit"
+
+
+@pytest.mark.parametrize("seeds, step", [
+    ({"merge_in_progress_at": True}, "git merge --abort"),
+    ({"reset_hard_at": False}, "git reset --hard"),
+    ({"reset_hard_at": True}, "git clean"),
+], ids=["merge-abort", "reset", "clean"])
+def test_a_failed_discard_step_dies_naming_it_and_the_checkout(capsys, seeds, step):
+    git = FakeGit()
+    for name, answer in seeds.items():
+        git.seed(name, "/wt", answer=answer)
+
+    assert died_of(capsys, lambda: discard_work_in(git, "/wt", "ticket #5")) == (
+        1, "", "orch: ticket #5: %s failed in /wt\n" % step)
+
+
+def test_a_failed_rebase_abort_dies_naming_it_and_the_checkout(tmp_path, capsys):
+    # A git folder holding a rebase's record, read from the file system; the
+    # FakeGit's abort, unseeded, fails.
+    (tmp_path / ".git" / "rebase-merge").mkdir(parents=True)
+    (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/x\n")
+
+    assert died_of(capsys, lambda: discard_work_in(FakeGit(), str(tmp_path), "ticket #5")) == (
+        1, "", "orch: ticket #5: git rebase --abort failed in %s\n" % tmp_path)
+
+
+# --- the flow-branch proof -------------------------------------------------------------
+
+
+@pytest.mark.parametrize("recorded, message", [
+    ("", "ticket reclaim: on orch/1-feature, the active flow records no branch yet"
+         " - nothing was discarded"),
+    ("orch/2-other", "ticket reclaim: the current branch orch/1-feature is not the flow's"
+                     " branch orch/2-other - nothing was discarded"),
+], ids=["unrecorded", "another"])
+def test_a_branch_not_the_flow_s_recorded_one_is_refused(capsys, recorded, message):
+    assert died_of(capsys, lambda: require_flow_branch(
+        "ticket reclaim", "orch/1-feature", recorded)) == (1, "", "orch: %s\n" % message)
+
+
+def test_the_flow_s_recorded_branch_passes_the_proof(capsys):
+    require_flow_branch("ticket reclaim", "orch/1-feature", "orch/1-feature")
+
+    assert capsys.readouterr() == ("", "")
+
+
+# --- the flow-branch discard -----------------------------------------------------------
+
+AUTOPILOT = {"ORCH_AUTOPILOT": "1"}
+
+
+def test_the_flow_branch_discard_in_an_autopilot_main_checkout_discards(stuck):
+    main, _ = stuck
+    merging(main)
+    (main / "stray.py").write_text("x\n")
+    git = Git(cwd=str(main))
+
+    discard_flow_branch_work(git, str(main), AUTOPILOT)
+
+    assert (merge_in_progress(git, str(main)), git.status_at(str(main))) == (False, "")
+
+
+def test_the_flow_branch_discard_in_an_interactive_main_checkout_names_the_commands(
+        stuck, capsys):
+    main, _ = stuck
+    merging(main)
+    (main / "stray.py").write_text("x\n")
+
+    assert died_of(capsys, lambda: discard_flow_branch_work(Git(cwd=str(main)), str(main), {})) == (
+        1, "", "orch: uncommitted or in-progress work on the flow's branch in the main checkout"
+        " - discard it yourself (a.txt, stray.py merge in progress): git -C \"%s\" merge --abort;"
+        " git -C \"%s\" reset --hard && git -C \"%s\" clean -fd\n" % (main, main, main))
+    assert merge_in_progress(Git(cwd=str(main)), str(main)) is True
+
+
+def test_the_flow_branch_discard_in_an_interactive_ticket_worktree_discards(stuck):
+    main, wt = stuck
+    rebasing(wt)
+    git = Git(cwd=str(wt))
+
+    discard_flow_branch_work(git, str(wt), {})
+
+    assert (rebase_in_progress(git, str(wt)), git.status_at(str(wt))) == (False, "")
+
+
+def test_the_flow_branch_discard_names_a_rebase_s_abort_in_an_interactive_main_checkout(
+        stuck, capsys):
+    main, _ = stuck
+    run_git(main, "checkout", "-qb", "work", "HEAD~1")
+    committed(main, {"a.txt": "work\n"}, "work edit")
+    failing("-C", str(main), "rebase", "-q", "refs/heads/orch/1-feature")
+
+    assert died_of(capsys, lambda: discard_flow_branch_work(Git(cwd=str(main)), str(main), {})) == (
+        1, "", "orch: uncommitted or in-progress work on the flow's branch in the main checkout"
+        " - discard it yourself (a.txt): git -C \"%s\" rebase --abort;"
+        " git -C \"%s\" reset --hard && git -C \"%s\" clean -fd\n" % (main, main, main))
+
+
+def test_the_flow_branch_discard_with_nothing_to_discard_reads_no_checkout(main):
+    # FakeGit answers no checkout kind: reading one would die.
+    git = FakeGit(toplevel=str(main))
+    git.seed("dirty_paths", answer=[])
+
+    assert discard_flow_branch_work(git, str(main), {}) is None
+
+
+def test_the_flow_branch_discard_dies_when_it_cannot_tell_the_main_checkout(main, capsys):
+    git = FakeGit(toplevel=str(main))
+    git.seed("dirty_paths", answer=["stray.py"])
+
+    assert died_of(capsys, lambda: discard_flow_branch_work(git, str(main), {})) == (
+        1, "", "orch: could not tell whether %s is the main checkout - nothing was discarded\n"
+        % main)

@@ -2,7 +2,10 @@
 # checkout.sh - the Checkout module: a concept module with no orch.sh noun of
 # its own, holding the facts about the repo's checkouts - the main checkout,
 # side checkouts, ticket worktrees and hand-made worktrees - that every other
-# module reads. Its tests: scripts/test/orch/checkout.sh.
+# module reads, and the ticket-worktree listing and refusal
+# (ticket_worktrees_under, refuse_ticket_worktrees) that side-checkout's
+# per-checkout walk and archive run in bash, starting no Python process.
+# Its tests: scripts/test/orch/checkout.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 # checkouts: the one walk over git worktree list, the composition of
@@ -131,17 +134,32 @@ main_checkout_or_die() {
   main_checkout || checkouts_unreadable
 }
 
-# The checkout that has <branch> checked out, or nothing: the first checkout
-# git worktree list prints on <branch>, read through checkout_parse, a worktree
-# whose directory is gone included.
-# Dies when the checkouts cannot be read; called in a substitution, so its
-# caller carries that status out.
-branch_checkout() {
-  local i paths=() branches=()
+# Prints <n> <path> for every ticket worktree under the checkout at <root>;
+# dies when the checkouts cannot be read, never reading that as none.
+ticket_worktrees_under() {
+  local path name paths=()
+  # shellcheck disable=SC2034 # checkout_parse fills it
+  local branches=()
   checkout_parse || checkouts_unreadable
-  for i in "${!paths[@]}"; do
-    if [ "${branches[i]}" = "$1" ]; then note "${paths[i]}"; return 0; fi
+  for path in "${paths[@]}"; do
+    checkout_ticket_path "$path" "$1" || continue
+    name="${path##*/}"
+    note "${name#t} $path"
   done
+}
+
+# refuse_ticket_worktrees <root> <reason>: dies, naming every ticket worktree
+# under the checkout at <root> and the command that removes each, when any is
+# left. <reason>, required, is the clause after the dash: why the caller
+# cannot proceed.
+refuse_ticket_worktrees() {
+  local left reason="$2"
+  # Its die exits only the substitution, so its status is carried out here.
+  left="$(ticket_worktrees_under "$1")" || exit $?
+  [ -n "$left" ] || return 0
+  die "ticket worktrees are left under $1 - $reason:
+$(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)\n' "$path" "$n"; done <<<"$left")
+     Remove each with orch.sh ticket-worktree remove <n> first."
 }
 
 # Whether the checkout at <path> holds a flow.
@@ -380,12 +398,13 @@ work_to_discard() {
 
 # discard_flow_branch_work: the flow-branch case of the discard rule (ADR-0054),
 # the one primitive every site meeting uncommitted or in-progress work a dead
-# session left on the flow's own branch - or, for ticket reclaim, a quick
+# session left on the flow's own branch - or, for review resume, a quick
 # implementation's own branch, or, for branch create, a detached HEAD (a side
 # checkout's, with no rebase in progress) - applies: branch create (through
 # discard_create_work, which proves the current branch is the flow's or
-# detached; on any other branch it discards nothing), ticket reclaim and
-# review resume. Each caller first settles that the branch is the one to
+# detached; on any other branch it discards nothing) and review resume
+# (through discard_own_branch_work); ticket reclaim runs orch.checkout's
+# Python copy. Each caller first settles that the branch is the one to
 # discard on; this primitive checks no ownership. In the current checkout
 # ($ROOT): a merge or rebase in progress is aborted, and a tree dirty outside
 # the planning allowlist is reset and cleaned. Nothing to discard changes

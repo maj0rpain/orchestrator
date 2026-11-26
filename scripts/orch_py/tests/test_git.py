@@ -7,8 +7,8 @@ import subprocess
 
 import pytest
 
-from conftest import (GLOBAL_CONFIG, committed, git_repo, origin_clone, run_git, worktree_add,
-                      write_staged)
+from conftest import (GLOBAL_CONFIG, committed, exclude_orchestrator, git_identity, git_repo,
+                      origin_clone, run_git, tip, worktree_add, write_staged)
 from orch.git import FakeGit, Git, GitFailure, Worktree, git_push_reason
 
 ORIGIN = "https://github.com/fork/widgets.git"
@@ -869,9 +869,9 @@ def test_config_set_writes_overwrites_and_isolates_scopes_the_same(config_env):
     fake = FakeGit()
 
     for git in (real, fake):
-        assert git.config_set("local", "orchestrator.model.implementer", "opus") is True
-        assert git.config_set("local", "orchestrator.model.implementer", "  sonnet  ") is True
-        assert git.config_set("global", "orchestrator.model.implementer", "-custom") is True
+        assert git.config_set("local", "orchestrator.model.implementer", "opus") is None
+        assert git.config_set("local", "orchestrator.model.implementer", "  sonnet  ") is None
+        assert git.config_set("global", "orchestrator.model.implementer", "-custom") is None
         assert git.config_regexp("local", r"^orchestrator\.") == {
             "orchestrator.model.implementer": "  sonnet  ",
         }
@@ -892,7 +892,7 @@ def test_config_set_fails_on_duplicate_keys_the_same(config_env):
     )
 
     for git in (real, fake):
-        assert git.config_set("local", "orchestrator.model.dup", "third") is False
+        assert git.config_set("local", "orchestrator.model.dup", "third").code == 5
         assert git.config_regexp("local", r"^orchestrator\.") == {
             "orchestrator.model.dup": "second",
         }
@@ -926,7 +926,7 @@ def test_config_unset_removes_present_and_duplicate_keys_and_accepts_absent_keys
 @pytest.mark.parametrize("scope", ["local", "global"])
 def test_config_set_and_unset_fail_on_lock_errors_even_for_absent_keys(config_env, scope):
     root, home, real = config_env
-    assert real.config_set(scope, "orchestrator.model.closer", "haiku") is True
+    assert real.config_set(scope, "orchestrator.model.closer", "haiku") is None
     lock = (root / ".git" / "config.lock") if scope == "local" else (home / ".gitconfig.lock")
     lock.write_text("")
     fake = FakeGit(
@@ -937,7 +937,9 @@ def test_config_set_and_unset_fail_on_lock_errors_even_for_absent_keys(config_en
 
     try:
         for git in (real, fake):
-            assert git.config_set(scope, "orchestrator.model.closer", "opus") is False
+            failed = git.config_set(scope, "orchestrator.model.closer", "opus")
+            assert (failed.code, failed.stderr.startswith("error: could not lock config file ")) \
+                == (255, True)
             assert git.config_unset(scope, "orchestrator.model.closer") is False
             assert git.config_unset(scope, "orchestrator.model.absent") is False
             assert git.config_regexp(scope, r"^orchestrator\.") == {
@@ -953,8 +955,8 @@ def test_fake_git_can_fail_a_single_scoped_key_write():
         config_write_fails={("local", "orchestrator.effort.implementer")},
     )
 
-    assert fake.config_set("local", "orchestrator.model.implementer", "opus") is True
-    assert fake.config_set("local", "orchestrator.effort.implementer", "high") is False
+    assert fake.config_set("local", "orchestrator.model.implementer", "opus") is None
+    assert fake.config_set("local", "orchestrator.effort.implementer", "high") is not None
     assert fake.config_unset("local", "orchestrator.effort.implementer") is False
     assert fake.config_regexp("local", r"^orchestrator\.") == {
         "orchestrator.model.implementer": "opus",
@@ -971,3 +973,259 @@ def test_config_set_and_unset_reject_invalid_scope():
             git.config_set("system", "orchestrator.model.implementer", "opus")
         with pytest.raises(ValueError, match="scope"):
             git.config_unset("system", "orchestrator.model.implementer")
+
+
+# --- the ticket nouns' operations: a ticket branch's life, from its fork to its
+# --- fast-forward, in its ticket worktree --------------------------------------
+
+PARENT = "orch/4-feature"
+TICKET = PARENT + "--t5"
+FORKED_KEY = "branch.%s.orchestrator-ticket-parent" % TICKET
+
+
+@pytest.fixture
+def forking(tmp_path):
+    """A clone of a bare origin under tmp_path on PARENT, one commit pushed
+    and tracking origin's PARENT, with branch.autoSetupMerge always, so only
+    an explicit --no-track keeps a new branch from tracking: its root,
+    resolved."""
+    origin, root = tmp_path / "origin.git", tmp_path.resolve() / "forking"
+    origin_clone(origin, root, PARENT)
+    run_git(root, "checkout", "-qb", PARENT)
+    committed(root, {"a.txt": "a\n"}, "one")
+    run_git(root, "push", "-q", "-u", "origin", PARENT)
+    run_git(root, "config", "branch.autoSetupMerge", "always")
+    return root
+
+
+def test_a_branch_is_created_at_its_start_tracking_nothing_the_same_from_both(forking):
+    git, fake = Git(cwd=str(forking)), FakeGit(branches={PARENT: "refs/remotes/origin/" + PARENT})
+
+    for adapter_ in (git, fake):
+        assert adapter_.branch_create(TICKET, "HEAD") is None
+        assert (adapter_.branch_exists(TICKET), adapter_.branch_upstream(TICKET)) == (True, None)
+    assert run_git(forking, "rev-parse", TICKET) == run_git(forking, "rev-parse", PARENT)
+
+
+def test_a_branch_git_refuses_to_create_gives_its_status_and_stderr_the_same_from_both(forking):
+    git, fake = Git(cwd=str(forking)), FakeGit(branches={PARENT: None})
+    real = git.branch_create(PARENT, "HEAD")
+
+    # As for a refused rename: the real run is held to its status and the
+    # branch its refusal names, the fake to today's wording exactly.
+    assert fake.branch_create(PARENT, "HEAD") == GitFailure(
+        128, "fatal: a branch named '%s' already exists\n" % PARENT)
+    assert real.code == 128
+    assert real.stderr.startswith("fatal: ") and "'%s'" % PARENT in real.stderr
+
+
+def test_a_deleted_branch_takes_its_config_section_with_it_merged_or_not_the_same_from_both(
+        forking):
+    run_git(forking, "checkout", "-qb", TICKET)
+    committed(forking, {"b.txt": "b\n"}, "unmerged")
+    run_git(forking, "checkout", "-q", PARENT)
+    run_git(forking, "config", FORKED_KEY, PARENT)
+    git = Git(cwd=str(forking))
+    fake = FakeGit(branches={PARENT: None, TICKET: None}, local_config={FORKED_KEY: PARENT})
+
+    for adapter_ in (git, fake):
+        assert adapter_.config_value(FORKED_KEY) == PARENT
+        assert adapter_.branch_delete(TICKET) is None
+        assert (adapter_.branch_exists(TICKET), adapter_.config_value(FORKED_KEY)) == (False, None)
+
+
+def test_a_branch_git_cannot_delete_gives_its_status_and_stderr_the_same_from_both(forking):
+    real = Git(cwd=str(forking)).branch_delete("nope")
+
+    assert FakeGit().branch_delete("nope") == GitFailure(1, "error: branch 'nope' not found\n")
+    assert real.code == 1
+    assert real.stderr.startswith("error: ") and "'nope'" in real.stderr
+
+
+def test_a_worktree_is_added_on_an_existing_branch_the_same_from_a_real_repo_and_the_fake(
+        forking):
+    run_git(forking, "branch", TICKET)
+    path = forking / ".orchestrator" / "worktrees" / "t5"
+
+    assert alike(Git(cwd=str(forking)), "worktree_add", str(path), TICKET) is None
+    assert run_git(path, "symbolic-ref", "HEAD") == "refs/heads/" + TICKET
+
+
+def test_a_worktree_git_refuses_to_add_gives_its_status_and_stderr(forking):
+    path = forking / ".orchestrator" / "worktrees" / "t5"
+    failed = Git(cwd=str(forking)).worktree_add(str(path), "nope")
+
+    assert failed.code == 128 and failed.stderr.startswith("fatal: ")
+    assert not path.exists()
+
+
+def test_an_unseeded_worktree_add_on_the_fake_fails_with_no_stderr():
+    assert FakeGit().worktree_add("/main/.orchestrator/worktrees/t5", TICKET) == GitFailure(1, "")
+
+
+def test_a_ticket_worktree_is_deleted_the_same_from_a_real_repo_and_the_fake(forking):
+    path = worktree_add(forking, forking / ".orchestrator" / "worktrees" / "t5", "-b", TICKET)
+
+    assert alike(Git(cwd=str(forking)), "worktree_delete", str(path)) is None
+    assert not path.exists()
+    assert run_git(forking, "rev-parse", "--verify", "refs/heads/" + TICKET)
+
+
+def test_a_locked_worktree_git_refuses_to_delete_gives_its_status_and_whole_stderr(forking):
+    path = worktree_add(forking, forking / ".orchestrator" / "worktrees" / "t5", "-b", TICKET)
+    run_git(forking, "worktree", "lock", str(path))
+
+    failed = Git(cwd=str(forking)).worktree_delete(str(path))
+
+    assert failed.code == 128 and failed.stderr.startswith("fatal: ")
+    assert failed.stderr.endswith("\n") and path.exists()
+
+
+def test_an_unseeded_worktree_delete_on_the_fake_fails_with_no_stderr():
+    assert FakeGit().worktree_delete("/main/.orchestrator/worktrees/t5") == GitFailure(1, "")
+
+
+@pytest.fixture
+def landing(forking):
+    """<forking> with TICKET forked from PARENT and checked out in its ticket
+    worktree, one commit on each since, an identity a rebase commits with,
+    and .orchestrator/ kept out of git status as the plugin keeps it: (the
+    main checkout, the ticket worktree)."""
+    git_identity(forking)
+    exclude_orchestrator(forking)
+    wt = worktree_add(forking, forking / ".orchestrator" / "worktrees" / "t5", "-b", TICKET)
+    committed(wt, {"b.txt": "b\n"}, "ticket")
+    committed(forking, {"c.txt": "c\n"}, "parent")
+    return forking, wt
+
+
+def conflicted(landing):
+    """<landing>'s two branches, each with its own edit of a.txt since the
+    fork: the ticket branch's tip."""
+    main, wt = landing
+    committed(wt, {"a.txt": "ticket\n"}, "ticket edit")
+    committed(main, {"a.txt": "parent\n"}, "parent edit")
+    return tip(main, TICKET)
+
+
+def test_a_ticket_branch_rebases_onto_its_parent_in_its_worktree_the_same_from_both(landing):
+    main, wt = landing
+
+    assert alike(Git(cwd=str(main)), "rebase_at", str(wt), "refs/heads/" + PARENT) is None
+    assert run_git(wt, "rev-parse", "HEAD~1") == tip(main, PARENT)
+
+
+def test_a_conflicting_rebase_stops_on_its_unmerged_paths_and_its_abort_restores_the_tip(
+        landing):
+    main, wt = landing
+    before = conflicted(landing)
+    git = Git(cwd=str(main))
+    stopped = git.rebase_at(str(wt), "refs/heads/" + PARENT)
+
+    assert stopped.code == 1 and stopped.stderr.startswith("error: could not apply ")
+    assert alike(git, "unmerged_paths_at", str(wt)) == ["a.txt"]
+    assert alike(git, "rebase_abort_at", str(wt)) is None
+    assert (tip(main, TICKET), git.unmerged_paths_at(str(wt))) == (before, [])
+
+
+def test_an_unmerged_path_listing_that_cannot_run_reads_as_none_the_same_from_both(tmp_path):
+    assert fails_alike(Git(cwd=str(tmp_path)), "unmerged_paths_at", str(tmp_path)) == []
+
+
+def test_aborting_no_rebase_gives_git_s_status_and_stderr(landing):
+    failed = Git().rebase_abort_at(str(landing[1]))
+
+    assert failed.code == 128 and failed.stderr.startswith("fatal: ")
+    assert FakeGit().rebase_abort_at(str(landing[1])) == GitFailure(1, "")
+
+
+def test_the_parent_fast_forwards_to_its_rebased_ticket_branch_in_its_checkout(landing):
+    main, wt = landing
+    git = Git(cwd=str(wt))
+    git.rebase_at(str(wt), "refs/heads/" + PARENT)
+
+    assert alike(git, "merge_ff_only_at", str(main), "refs/heads/" + TICKET) is None
+    assert (tip(main, PARENT), run_git(main, "rev-parse", "HEAD")) == (tip(main, TICKET),) * 2
+
+
+def test_a_parent_that_cannot_fast_forward_is_left_at_its_tip(landing):
+    main, _ = landing
+    before = tip(main, PARENT)
+    failed = Git().merge_ff_only_at(str(main), "refs/heads/" + TICKET)
+
+    # git's hint lines ahead of its fatal: line come and go between versions.
+    assert failed.code == 128 and "\nfatal: " in "\n" + failed.stderr
+    assert tip(main, PARENT) == before
+    assert FakeGit().merge_ff_only_at(str(main), "refs/heads/" + TICKET) == GitFailure(1, "")
+
+
+def test_a_branch_is_resolved_as_a_branch_never_as_a_tag_of_its_name(landing):
+    # #2337: a tag named as each branch, at the fork point, which is an
+    # ancestor of both - only refs/heads/ keeps the branches apart from it.
+    main, wt = landing
+    fork = run_git(main, "rev-parse", "HEAD~1")
+    for name in (PARENT, TICKET, "tag-only"):
+        run_git(main, "tag", name, fork)
+    git = Git(cwd=str(main))
+
+    assert alike(git, "is_ancestor", "refs/heads/" + TICKET, "refs/heads/" + PARENT) is False
+    assert git.branch_exists("tag-only") is False
+    assert git.rebase_at(str(wt), "refs/heads/" + PARENT) is None
+    assert run_git(wt, "rev-parse", "HEAD~1") == tip(main, PARENT)
+    assert git.merge_ff_only_at(str(main), "refs/heads/" + TICKET) is None
+    assert alike(git, "is_ancestor", "refs/heads/" + TICKET, "refs/heads/" + PARENT) is True
+
+
+# --- the clean-tree check's and the discard sequence's operations ---------------
+
+
+def test_a_checkout_s_status_reads_the_same_from_a_real_repo_and_the_fake(landing, tmp_path):
+    main, wt = landing
+    (wt / "b.txt").write_text("edited\n")
+    (wt / "new.txt").write_text("new\n")
+    git = Git(cwd=str(tmp_path))
+
+    assert alike(git, "status_at", str(main)) == ""
+    assert alike(git, "status_at", str(wt)) == " M b.txt\n?? new.txt\n"
+
+
+def test_a_status_that_cannot_run_gives_git_s_status_and_stderr(tmp_path):
+    failed = Git().status_at(str(tmp_path))
+
+    assert failed.code == 128 and failed.stderr.startswith("fatal: not a git repository")
+    assert FakeGit().status_at(str(tmp_path)) == GitFailure(1, "")
+
+
+def test_a_merge_in_progress_is_seen_and_aborted_the_same_from_a_real_repo_and_the_fake(
+        landing):
+    main, _ = landing
+    conflicted(landing)
+    subprocess.run(["git", "-C", str(main), "merge", "-q", TICKET], stdin=subprocess.DEVNULL,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    git = Git()
+
+    assert alike(git, "merge_in_progress_at", str(main)) is True
+    assert alike(git, "merge_abort_at", str(main)) is True
+    assert fails_alike(git, "merge_in_progress_at", str(main)) is False
+    assert fails_alike(git, "merge_abort_at", str(main)) is False
+
+
+def test_a_hard_reset_and_a_clean_discard_tracked_then_untracked_work_the_same_from_both(
+        landing):
+    _, wt = landing
+    (wt / "b.txt").write_text("edited\n")
+    (wt / "sub").mkdir()
+    (wt / "sub" / "new.txt").write_text("new\n")
+    git = Git()
+
+    assert alike(git, "reset_hard_at", str(wt)) is True
+    assert git.status_at(str(wt)) == "?? sub/\n"
+    assert alike(git, "clean_at", str(wt)) is True
+    assert git.status_at(str(wt)) == ""
+
+
+def test_a_reset_or_clean_that_cannot_run_fails_the_same_from_both(tmp_path):
+    git = Git()
+
+    assert fails_alike(git, "reset_hard_at", str(tmp_path)) is False
+    assert fails_alike(git, "clean_at", str(tmp_path)) is False

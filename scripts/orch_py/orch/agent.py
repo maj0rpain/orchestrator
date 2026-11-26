@@ -243,9 +243,10 @@ class ConfigCache:
 
     def write(self, scope: str, key: str, value: str) -> None:
         """Drops the cache and writes <key> = <value> at <scope>; dies naming
-        key and scope on failure."""
+        key and scope on failure, git's own stderr unprinted, as bash's
+        silenced write."""
         self.drop()
-        if not self.git.config_set(scope, key, value):
+        if self.git.config_set(scope, key, value) is not None:
             die("cannot set %s at %s scope" % (key, scope))
 
 

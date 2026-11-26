@@ -12,7 +12,8 @@ import os
 
 import pytest
 
-from conftest import GH_502, Opens, comments_of, died_of, flow_state, labels_of, read, snapshot
+from conftest import (AUTOPILOT, CLAUDE, GH_502, Opens, comments_of, died_of, flow_state, labels_of,
+                      read, snapshot)
 from orch import cli, spec
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit
@@ -743,7 +744,6 @@ def test_round_exits_2_on_a_truncated_state_file(root, seed, capsys):
 ROUND_BLOCK = ("Spec review round %d of %d applied. Round %d runs in a fresh session.\n\n"
                "  Next: %s\n")
 CLAUDE_NEXT = "/clear, then /orchestrator:next"
-AUTOPILOT = {"ORCHESTRATOR_HOST": "claude", "ORCH_AUTOPILOT": "1"}
 PAUSE_USAGE = "orch: usage: orch.sh spec pause [--round <k>/<n>]\n"
 
 
@@ -908,7 +908,7 @@ def test_a_failed_claim_delete_dies_with_the_relabel_landed_and_the_claim_held(
     assert seed.claim_held(21) is True
 
 
-@pytest.mark.parametrize("env", [AUTOPILOT, {"ORCHESTRATOR_HOST": "claude"}],
+@pytest.mark.parametrize("env", [AUTOPILOT, CLAUDE],
                          ids=["autopilot", "not-autopilot"])
 def test_a_round_marker_that_cannot_be_written_dies_releasing_nothing(
         root, seed, store, capsys, autopilot_flow, env):

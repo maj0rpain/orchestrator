@@ -236,8 +236,9 @@ FN_TRACK_AWK='
 # `# ---` lines headings only - and of each other file's preamble; one defined
 # inside a section is not. A call is a name in command position: at a line's
 # start or after `;`, `&&`, `||`, `|`, `&`, `$(`, a backtick, `(`, `{`, `!`, or
-# one of then, do, else, elif, if, while, until; a case-arm pattern at a line's
-# start (`name)`, `a|name)`) is none. It reads SHELL_CODE_AWK's words view:
+# one of then, do, else, elif, if, while, until, and after any NAME=value
+# assignments it runs with; a case-arm pattern at a line's start (`name)`,
+# `a|name)`) is none. It reads SHELL_CODE_AWK's words view:
 # comments, quoted strings and
 # quoted heredocs are dropped first, but `$(...)` and backticks inside double
 # quotes and unquoted heredocs are still read; a call inside a helper's own
@@ -263,7 +264,9 @@ helper_placement() {
       for (k = 1; k <= nseg; k++) {
         w = seg[k]
         sub(/^[ \t]+/, "", w)
-        while (match(w, /^(then|do|else|elif|if|while|until)([ \t]+|$)/)) w = substr(w, RLENGTH + 1)
+        # a keyword, or a NAME=value assignment the command runs with, goes first
+        while (match(w, /^(then|do|else|elif|if|while|until)([ \t]+|$)/) \
+          || match(w, /^[A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+/)) w = substr(w, RLENGTH + 1)
         if (match(w, /^[A-Za-z_][A-Za-z0-9_]*/)) {
           name = substr(w, 1, RLENGTH); rest = substr(w, RLENGTH + 1)
           if ((rest == "" || rest ~ /^[ \t)}<>]/) && name != fn) calls[name, file] = 1
@@ -3480,7 +3483,7 @@ rm -rf "${placement_dir%/orch}"
 placement_dir="$(tree_copy scripts/test/orch)"
 printf '%s\n' 'planted_block() { :; }' 'planted_user() { planted_block; }' \
   'planted_sub() { :; }' 'planted_tick() { :; }' 'planted_and() { :; }' \
-  'planted_pipe() { :; }' >>"$placement_dir/setup.sh"
+  'planted_pipe() { :; }' 'planted_env() { :; }' >>"$placement_dir/setup.sh"
 plant_file "$placement_dir" zz-a.sh <<'PLANTED'
   # The helper only zz-a.sh's sections use.
   planted_named() { :; }
@@ -3488,6 +3491,7 @@ plant_file "$placement_dir" zz-a.sh <<'PLANTED'
   planted_user; planted_named; planted_in_section
   a_sub="$(planted_sub 1)"; a_tick=`planted_tick`
   true && planted_and; echo | planted_pipe
+  A=1 planted_env
 PLANTED
 plant_file "$placement_dir" zz-b.sh <<'PLANTED'
   # --- planted b
@@ -3498,6 +3502,7 @@ plant_file "$placement_dir" zz-b.sh <<'PLANTED'
   planted_named"
   echo "$a_sub $(planted_sub 2)" `planted_tick`
   false || true && planted_and; echo |planted_pipe
+  b_env="$(B="x y" C=$a_sub planted_env)"
 PLANTED
 out="$(helper_placement "$placement_dir")"; st=$?
 assert_status "helpers placed by the rule pass" "$st" 0
@@ -4215,11 +4220,11 @@ assert_eq "under their headers" "$(printf '%s\n' "$out" | grep '^# ')" \
 
 undescribed=""
 for name in base_branch_into base_source section_body float_add \
-  require_state ticket_worktree_path fake_online orch_gh_failing; do
+  require_state fake_online orch_gh_failing; do
   grep -qE "^$name"$'\t''[^-]' <<<"$index_default"$'\n'"$out" \
     || undescribed+=" $name"
 done
-assert_eq "each of the eight newly commented helpers prints a description" "$undescribed" ""
+assert_eq "each of the seven newly commented helpers prints a description" "$undescribed" ""
 
 index_dir="$(tree_copy scripts)"
 plant_file "$index_dir/orch" zz-planted.sh <<'PLANTED'
@@ -4738,7 +4743,7 @@ tr_init "$af"
 tr_put "$af" scripts/test/orch/branch.sh 'x=1' '# --- branch create ---' '# --- branch (x.y) retire ---'
 tr_put "$af" scripts/test/orch/state.sh '# --- state ---'
 tr_put "$af" scripts/test/orch/common.sh '# --- common one ---'
-for af_f in autopilot doctor init redo review side-checkout ticket; do
+for af_f in autopilot doctor init pr redo review side-checkout; do
   tr_put "$af" "scripts/test/orch/$af_f.sh" "# --- $af_f s ---"
 done
 for af_f in scripts/orch.sh scripts/orch/common.sh scripts/orch/branch.sh \
@@ -4852,7 +4857,7 @@ af_row "a markdown lens-bench fixture selects the lens bench suite" scripts/dev/
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
 af_row "a markdown lens-bench test fixture selects the lens bench suite" scripts/test/lens-bench/run-1/map.md \
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
-af_py_s="autopilot s,doctor s,review s,side-checkout s,ticket s"
+af_py_s="autopilot s,doctor s,pr s,review s,side-checkout s"
 af_row "a Python package module selects the sections of the nouns that run a converted noun's verb, the hooks suite and the side-checkout ones, not the full suite" \
   scripts/orch_py/orch/cli.py "$TR_GATE,$af_py_s,hooks_test.sh,docs_lint.sh"
 af_row "the pytest suite's wrapper selects the harness sections, and shellchecks itself" \

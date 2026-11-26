@@ -102,6 +102,7 @@ out="$("$ORCH" pr open "Title" "$bare_body" 2>&1)"; st=$?
 assert_status "a body with no piece at all is refused" "$st" 1
 assert_eq "naming every missing piece in one message" "$out" \
   "$PR_BODY_REFUSED no ## Summary heading; no ## Evidence heading; no ## Merge Danger heading; no **Door:** line under ## Merge Danger; no **Blast Radius:** line under ## Merge Danger"
+# shellcheck disable=SC2154 # assigned by fresh_bare_origin
 assert_eq "a refused body pushes nothing" \
   "$(origin_branch_state "$bare" orch/16-propen)" \
   "missing"
@@ -161,6 +162,13 @@ assert_contains "naming the failure" "$out" "orch: gh could not list sub-issues 
 assert_eq "and creates no PR when unreadable" "$(fake_prs)" "$prs_before"
 fake_unfail
 "$ORCH" ticket close "$ot" >/dev/null
+# The open-tickets refusal is the Python ticket noun's, reached through its
+# bridge: with no python3, pr open dies naming itself, before any PR is made.
+out="$(PATH="$(path_without python3)" "$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
+assert_status "pr open dies with python3 absent" "$st" 1
+assert_eq "naming pr open's need of python3" "$out" \
+  "orch: orch.sh pr needs python3 3.9 or newer (found none) - run orch.sh doctor"
+assert_eq "and creates no PR without python3" "$(fake_prs)" "$prs_before"
 state_fixture pr 23
 git config "branch.orch/16-propen.orchestrator-pr" 23
 out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?

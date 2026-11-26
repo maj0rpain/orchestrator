@@ -15,12 +15,12 @@ and only the primitives no concept owns in `scripts/orch/common.sh`;
 loads. A noun converted to Python (ADR-0067; `issue`, `finding-triage`,
 `verification`, `audit`, `review-pass`, `spec-review`, `spec`, `breakdown`,
 `glossary`, `parallel`, `route`, `agent`, `init`, `slug`, `status`, `archive`,
-`phase`, `redo` and `help` so far) has no bash module: `orch.sh`'s one case
-naming the converted nouns runs it as `python3 -m orch <noun> ...` would,
-through a `-c` bootstrap, from the standard-library package in
-`scripts/orch_py/orch/`, its pytest tests beside it in `scripts/orch_py/tests/`.
-See CONTRIBUTING.md's Layout for the full map. There is no top-level `tests/`,
-and `hooks/` holds only `hooks.json`.
+`phase`, `redo`, `ticket`, `ticket-worktree` and `help` so far) has no bash
+module: `orch.sh`'s one case naming the converted nouns runs it as `python3 -m
+orch <noun> ...` would, through a `-c` bootstrap, from the standard-library
+package in `scripts/orch_py/orch/`, its pytest tests beside it in
+`scripts/orch_py/tests/`. See CONTRIBUTING.md's Layout for the full map. There
+is no top-level `tests/`, and `hooks/` holds only `hooks.json`.
 
 ## Agent skills
 

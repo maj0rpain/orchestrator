@@ -44,6 +44,22 @@ merge_state() {
   git rev-parse --quiet --verify MERGE_HEAD >/dev/null && echo merging || echo none
 }
 
+# upstream_of <branch>: none when <branch> has no upstream - no
+# branch.<branch>.merge, no branch.<branch>.remote, and no <branch>@{upstream} -
+# else what it has, so a failing assertion names it.
+upstream_of() {
+  local merge remote up
+  merge="$(git config --get "branch.$1.merge")"
+  remote="$(git config --get "branch.$1.remote")"
+  up="$(git rev-parse --abbrev-ref --verify --quiet "$1@{upstream}" 2>/dev/null)"
+  if [ -z "$merge$remote$up" ]; then echo none; else echo "remote=$remote merge=$merge upstream=$up"; fi
+}
+
+# rebase_state: prints rebasing or none for the current checkout.
+rebase_state() {
+  [ -d "$(git rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none
+}
+
 # --- branch create -----------------------------------------------------------
 # Unlike branch off's caller-named branch, this one derives its own name from
 # state - slug plus the recorded issue - and records both `branch` and
@@ -216,6 +232,7 @@ assert_contains "naming the base branch" "$out" \
 assert_not_contains "never pointing at a flow's correction" "$out" "--flow"
 assert_eq "and records nothing for the branch it did not make" "$(base_key quick/8-gone)" "<unset>"
 orch_gh_failing base clear >/dev/null
+# shellcheck disable=SC2154 # assigned by fresh_bare_origin
 rm -rf "$(dirname "$bare")"
 
 # --- a quick implementation's base SHA (#243) ---------------------------------

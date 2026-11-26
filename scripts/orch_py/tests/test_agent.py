@@ -457,6 +457,16 @@ def test_set_validates_flags_and_values_in_order_without_mutating_config(root, c
         assert (git.config_regexp("local", r"."), git.config_regexp("global", r".")) == before
 
 
+def test_set_a_write_git_refuses_prints_only_its_own_line_not_git_s(root, capsys):
+    # The fake's blocked write answers git's lock refusal; bash's agent set
+    # silenced it, so only the orch: line reaches stderr.
+    git = FakeGit(toplevel=str(root), config_write_fails=["local"])
+
+    assert orch_agent(git, "set", "implementer", "--model", "opus") == 1
+    assert capsys.readouterr() == (
+        "", "orch: cannot set orchestrator.model.implementer at local scope\n")
+
+
 def test_set_applies_model_then_effort_and_aborts_on_write_or_unset_error_without_rollback(
     root, capsys
 ):

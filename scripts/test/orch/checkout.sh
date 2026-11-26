@@ -75,12 +75,6 @@ while read -r kind _flow _branch path; do
 done <<<"$out"
 assert_eq "read -r kind flow branch path keeps a spaced path whole" "$kind $path" "hand-made $spaced"
 
-assert_eq "branch_checkout still finds a deleted worktree's branch" \
-  "$(sourced_orch branch_checkout gone)" "$gone"
-assert_eq "branch_checkout finds a side checkout's branch" \
-  "$(sourced_orch branch_checkout side-branch)" "$side"
-assert_eq "branch_checkout prints nothing for a branch checked out nowhere" \
-  "$(sourced_orch branch_checkout nowhere)" ""
 assert_eq "main_checkout prints the main checkout from a side checkout" \
   "$(cd "$side" && sourced_orch main_checkout)" "$top"
 
@@ -105,10 +99,6 @@ assert_contains "checkouts_or_die names the walk failure" "$out" \
 out="$(PATH="$worktree_list_fails:$PATH" sourced_orch main_checkout_or_die 2>&1)"; st=$?
 assert_status "main_checkout_or_die dies on a failed walk" "$st" 1
 assert_contains "main_checkout_or_die names the walk failure" "$out" \
-  "orch: could not read the checkouts - git worktree list failed"
-out="$(PATH="$worktree_list_fails:$PATH" sourced_orch branch_checkout gone 2>&1)"; st=$?
-assert_status "branch_checkout dies on a failed walk" "$st" 1
-assert_contains "branch_checkout names the walk failure" "$out" \
   "orch: could not read the checkouts - git worktree list failed"
 
 # checkout_kind <path>: the kind checkout_classify gives the checkout holding

@@ -412,10 +412,13 @@ assert_contains "naming git's error" "$out" "git status failed - cannot check th
 assert_eq "its flow is not moved" "$(archived_count "$top" new-flow)" "0"
 assert_eq "nor its worktree removed" "$(on_disk "$gamma")" "present"
 # #974: a ticket worktree left under a side checkout holding a flow is refused
-# once, through the archive, before anything moves.
+# once, through the archive, before anything moves - by the Checkout module's
+# bash refusal, which starts no python3.
 (cd "$gamma" && orch_gh_failing ticket-worktree add 6 >/dev/null)
-out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
+sc_py="$(counting_bin python3)"
+out="$(PATH="$sc_py:$PATH" orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
 assert_status "remove refuses a ticket worktree under a side checkout holding a flow" "$st" 1
+assert_eq "starting no python3 for the refusal" "$(counting_starts "$sc_py" python3)" 0
 assert_contains "naming it" "$out" "$gamma/.orchestrator/worktrees/t6"
 assert_contains "with ticket-worktree remove as the remedy" "$out" "orch.sh ticket-worktree remove 6"
 assert_first_line "its refusal's first line carries one prefix (#1718)" "$out" \
@@ -435,8 +438,9 @@ zeta="$(sc_add zeta)"
 git -C "$zeta" checkout -q -b quick/6-zeta
 (cd "$zeta" && orch_gh_failing ticket-worktree add 7 >/dev/null)
 archives_before="$(ls "$top/.orchestrator/archive" 2>/dev/null | wc -l)"
-out="$(orch_gh_failing side-checkout remove zeta 2>&1)"; st=$?
+out="$(PATH="$sc_py:$PATH" orch_gh_failing side-checkout remove zeta 2>&1)"; st=$?
 assert_status "remove refuses a ticket worktree under a side checkout holding no flow" "$st" 1
+assert_eq "starting no python3 for that refusal" "$(counting_starts "$sc_py" python3)" 0
 assert_contains "naming it" "$out" "$zeta/.orchestrator/worktrees/t7"
 assert_contains "with ticket-worktree remove as the remedy" "$out" "orch.sh ticket-worktree remove 7"
 assert_eq "nothing is archived" "$(ls "$top/.orchestrator/archive" 2>/dev/null | wc -l)" "$archives_before"
@@ -447,6 +451,7 @@ assert_eq "the ticket worktree stays where git recorded it" \
   "$(git -C "$zeta/.orchestrator/worktrees/t7" rev-parse --show-toplevel)" "$zeta/.orchestrator/worktrees/t7"
 (cd "$zeta" && orch_gh_failing ticket-worktree remove 7 >/dev/null)
 orch_gh_failing side-checkout remove zeta >/dev/null 2>&1
+rm -rf "$sc_py"
 
 # remove archives the flow into the main checkout, removes the worktree, and
 # keeps the branch.
@@ -789,8 +794,11 @@ fake_pr 49 merged orch/tw-flow main
 fake_pr_head 49 "$(git rev-parse orch/tw-flow)"
 (cd "$tw" && orch_gh_failing ticket-worktree add 8 >/dev/null)
 fake_online
-out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+tw_py="$(counting_bin python3)"
+out="$(PATH="$tw_py:$PATH" orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune exits 1 when a ticket worktree blocks an archive" "$st" 1
+assert_eq "the prune walk starts no python3 for the refusal" "$(counting_starts "$tw_py" python3)" 0
+rm -rf "$tw_py"
 assert_contains "reporting the side checkout as not archived" "$out" \
   "could not archive the flow in side checkout $tw: ticket worktrees are left under $tw"
 assert_contains "and left as it stands" "$out" "- left as it stands"
@@ -1211,7 +1219,7 @@ mkdir -p "$fl_fix/orch" "$fl_fix/orch_py/orch"
 cp "$PLUGIN_ROOT/scripts/orch.sh" "$PLUGIN_ROOT/scripts/flow-state.sh" "$fl_fix/"
 cp "$PLUGIN_ROOT/scripts/orch/"*.sh "$fl_fix/orch/"
 cp "$PLUGIN_ROOT/scripts/orch_py/orch/"*.py "$fl_fix/orch_py/orch/"
-echo 'newthing_dir() { printf "%s\n" "$ORCH/brandnew"; }' >>"$fl_fix/orch/ticket.sh"
+echo 'newthing_dir() { printf "%s\n" "$ORCH/brandnew"; }' >>"$fl_fix/orch/branch.sh"
 echo 'PY_NEW = os.path.join("/", ORCH_DIR_NAME, "pynew")' >>"$fl_fix/orch_py/orch/checkout.py"
 echo 'PY_FMT = "%s/%s/pyformat/%s" % ("/", ORCH_DIR_NAME, 1)' >>"$fl_fix/orch_py/orch/checkout.py"
 out="$(fl_classify "$fl_fix")"; st=$?

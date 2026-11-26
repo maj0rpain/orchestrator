@@ -182,6 +182,7 @@ fetched_tip="$(git rev-parse HEAD)"
 out="$("$ORCH" default-branch --sha 2>&1)"; st=$?
 assert_status "--sha succeeds" "$st" 0
 assert_eq "--sha prints the remote-tracking tip's full SHA" "$out" "$fetched_tip"
+# shellcheck disable=SC2154 # assigned by fresh_bare_origin
 moved="$(git -C "$bare" -c user.email=test@example.com -c user.name=Test commit-tree "main^{tree}" -p main -m "moved on")"
 git -C "$bare" update-ref refs/heads/main "$moved"
 assert_ne "the remote's tip has moved on" "$(git -C "$bare" rev-parse main)" "$fetched_tip"

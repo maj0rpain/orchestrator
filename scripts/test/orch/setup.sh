@@ -202,17 +202,6 @@ fresh_bare_origin() {
   printf -v "$1" '%s' "$fbo_dir"
 }
 
-# upstream_of <branch>: none when <branch> has no upstream - no
-# branch.<branch>.merge, no branch.<branch>.remote, and no <branch>@{upstream} -
-# else what it has, so a failing assertion names it.
-upstream_of() {
-  local merge remote up
-  merge="$(git config --get "branch.$1.merge")"
-  remote="$(git config --get "branch.$1.remote")"
-  up="$(git rev-parse --abbrev-ref --verify --quiet "$1@{upstream}" 2>/dev/null)"
-  if [ -z "$merge$remote$up" ]; then echo none; else echo "remote=$remote merge=$merge upstream=$up"; fi
-}
-
 # pr_body_complete <file>: writes to <file> a PR body carrying every piece pr
 # open and pr publish require (#1387) - ## Summary, ## Evidence, and ## Merge
 # Danger with its **Door:** and **Blast Radius:** lines - its Summary holding
@@ -241,18 +230,6 @@ new_repo_with_origin() {
   local b="${1:-$(git branch --show-current)}"
   git update-ref "refs/remotes/origin/$b" HEAD
   git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$b"
-}
-
-# tw_repo: a fresh repo with a bare origin it has pushed to, on a feature
-# branch, cwd inside it. Used by the ticket-worktree and ticket merge
-# sections. Call it in the current shell: new_repo cd's.
-tw_repo() {
-  local bare
-  new_repo >/dev/null
-  fresh_bare_origin bare
-  git push -q origin HEAD 2>/dev/null
-  git checkout -q -b orch/5-feature
-  echo work >feature.txt && git add feature.txt && git commit -qm feature
 }
 
 # sc_clone: a fresh clone of a bare origin holding main, cwd inside it, with no
@@ -771,9 +748,6 @@ assert_no_repo_refused() {
   assert_not_contains "$label is not the remedy" "$out" "$repo_missing"
 }
 
-# fake_issue_body <n> <text>: seeds issue #n's body, byte for byte.
-fake_issue_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/body"; }
-
 # fake_comment <n> <author> <created-at> <body> [<association>]: seeds a comment
 # on issue #n, after any it has; its association is OWNER unless given.
 fake_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/$1/comments" "$2" "$3" "$4" "${5-}"; }
@@ -802,13 +776,10 @@ handoff_doctor_missing_msg() {
 # fake_next_issue <n>: the number the next issue created takes.
 fake_next_issue() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_issue"; }
 
-# Issue #n read back from the store: its state (OPEN or CLOSED), closing
-# reason, title, body, labels (sorted, space-separated, one trailing space) and
-# the bodies of its comments, in order, one blank line between.
+# Issue #n read back from the store: its state (OPEN or CLOSED), labels
+# (sorted, space-separated, one trailing space) and the bodies of its comments,
+# in order, one blank line between.
 fake_state_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/state" 2>/dev/null; }
-fake_reason_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/reason" 2>/dev/null; }
-fake_title_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/title" 2>/dev/null; }
-fake_body_of()   { cat "$ORCH_GH_FAKE_STORE/issues/$1/body" 2>/dev/null; }
 fake_labels_of() { LC_ALL=C sort "$ORCH_GH_FAKE_STORE/issues/$1/labels" 2>/dev/null | tr '\n' ' '; }
 fake_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
 
@@ -1152,11 +1123,6 @@ marked_ticket_worktree() {
   path="$("$ORCH" ticket-worktree add "$1")" || return
   printf '123\n' >"$(git -C "$path" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
   printf '%s\n' "$path"
-}
-
-# rebase_state: prints rebasing or none for the current checkout.
-rebase_state() {
-  [ -d "$(git rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none
 }
 
 # origin_branch_state <bare> <branch>: "pushed" when <branch> reached the bare

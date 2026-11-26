@@ -1,10 +1,9 @@
-"""The ticket module's listing reads, body reads and commands, as the bash
-ticket module's copies answer them: a breakdown's sub-issue listing read from
-the gh fake's store, the `## Blocked by` and `## Ticket` reads and rewrites of
-a body, code fences and CRLF ends included, and `ticket exists`, `ticket
-block`, `ticket unblock`, `ticket retire` and `ticket reset` against the
-store, each gh failure through the store's failure injection under the bash
-operation name."""
+"""The ticket module's listing reads, body reads and commands: a breakdown's
+sub-issue listing read from the gh fake's store, the `## Blocked by` and
+`## Ticket` reads and rewrites of a body, code fences and CRLF ends included,
+and `ticket exists`, `ticket block`, `ticket unblock`, `ticket retire` and
+`ticket reset` against the store, each gh failure through the store's failure
+injection under the bash operation name."""
 from __future__ import annotations
 
 import os

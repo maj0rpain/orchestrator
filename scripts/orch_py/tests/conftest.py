@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from orch import audit, issue, review_pass, spec_review, verification
+from orch import audit, issue, review_pass, spec_review, ticket_worktree, verification
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit, Git
 from orch.repo import RepoPin
@@ -215,6 +215,21 @@ def run_git(root, *args, env=None):
     ).stdout.decode().strip()
 
 
+def git_identity(root):
+    """The test author t with signing off, set in the repository at <root>'s
+    own config, for the commits git makes there outside run_git - a rebase
+    the code under test runs."""
+    for key, value in (("user.name", "t"), ("user.email", "t@t"), ("commit.gpgsign", "false")):
+        run_git(root, "config", key, value)
+
+
+def exclude_orchestrator(root):
+    """.orchestrator/ kept out of git status in the repository at <root>, as
+    init's exclude keeps it."""
+    with open(str(root / ".git" / "info" / "exclude"), "a") as exclude:
+        exclude.write(".orchestrator/\n")
+
+
 def bash_sourced(module, script, *args):
     """The stdout, decoded, of <script> run in a bash child process with the
     bash module at <module> sourced, <args> its positional parameters. A
@@ -231,6 +246,99 @@ def worktree_add(main, path, *how):
     path.parent.mkdir(parents=True, exist_ok=True)
     run_git(main, "worktree", "add", "-q", *how, str(path))
     return path
+
+
+# Claude Code's plain session, as orch.sh reads the host from its
+# environment.
+CLAUDE = {"ORCHESTRATOR_HOST": "claude"}
+# Claude Code's session under autopilot, for a case run once more as one.
+AUTOPILOT = {"ORCHESTRATOR_HOST": "claude", "ORCH_AUTOPILOT": "1"}
+# A case run in each session, plain and autopilot, its env the parameter.
+SESSIONS = pytest.mark.parametrize("env", [CLAUDE, AUTOPILOT], ids=["plain", "autopilot"])
+# The branch ticket_repo checks out, every ticket branch's forked-from branch.
+TICKET_PARENT = "orch/5-feature"
+# Ticket #7's branch, forked from TICKET_PARENT.
+TICKET7 = TICKET_PARENT + "--t7"
+
+
+@pytest.fixture
+def ticket_repo(tmp_path, monkeypatch):
+    """bash's tw_repo: a clone of a bare origin with one commit on its
+    default branch pushed, then TICKET_PARENT checked out with a feature.txt
+    commit of its own, git's identity set; the process's working directory:
+    its root, resolved."""
+    root = tmp_path.resolve() / "repo"
+    origin_clone(tmp_path / "origin.git", root)
+    git_identity(root)
+    committed(root, {"README.md": "# repo\n"}, "init")
+    run_git(root, "push", "-q", "origin", "HEAD")
+    run_git(root, "checkout", "-qb", TICKET_PARENT)
+    committed(root, {"feature.txt": "work\n"}, "feature")
+    monkeypatch.chdir(root)
+    return root
+
+
+def conflicting(repo, n):
+    """Ticket <n>'s worktree and TICKET_PARENT each with a commit changing
+    feature.txt's one line, the worktree's to "from-ticket", the parent's to
+    "from-flow"."""
+    committed(Path(wt_path(repo, n)), {"feature.txt": "from-ticket\n"},
+              "feature.txt: from-ticket")
+    committed(repo, {"feature.txt": "from-flow\n"}, "feature.txt: from-flow")
+
+
+def orch_tw(*argv, env=None):
+    """`orch.sh ticket-worktree <argv>` in-process in the working directory's
+    checkout, under <env> (Claude Code's plain session when None): its exit
+    code."""
+    return ticket_worktree.run(list(argv), env=CLAUDE if env is None else env)
+
+
+def wt_path(root, n):
+    """Where ticket <n>'s ticket worktree lives under the checkout at <root>,
+    as a str."""
+    return str(root / ".orchestrator" / "worktrees" / ("t%s" % n))
+
+
+def added(root, capsys, n=7):
+    """`ticket-worktree add <n>` run and its output drained: the path it
+    printed, a str."""
+    assert orch_tw("add", str(n)) == 0
+    return capsys.readouterr().out.rstrip("\n")
+
+
+def git_of(root, *args):
+    """git <args> in the checkout at <root>, its stdout stripped; a failure
+    reads as ""."""
+    try:
+        return run_git(root, *args)
+    except Exception:  # noqa: BLE001 - a git refusal is the answer here
+        return ""
+
+
+def has_branch(root, branch):
+    """Whether local branch <branch> exists in the repository at <root>."""
+    return git_of(root, "rev-parse", "--verify", "--quiet", "refs/heads/" + branch) != ""
+
+
+def tip(root, branch):
+    """The commit local branch <branch> of the repository at <root> is at,
+    named in full so a same-named tag is never read."""
+    return run_git(root, "rev-parse", "refs/heads/" + branch)
+
+
+def lock_ref(repo, branch):
+    """A lock file on local branch <branch>'s ref, as a git run holding it
+    leaves one, so no git can delete the branch."""
+    lock = repo / ".git" / "refs" / "heads" / (branch + ".lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text("")
+    return lock
+
+
+def rebasing(path):
+    """Whether a rebase is in progress in the checkout at <path>."""
+    return os.path.isdir(run_git(path, "rev-parse", "--absolute-git-dir") + "/rebase-merge")
 
 
 def mark_side(path):
@@ -272,8 +380,7 @@ def archive_main(tmp_path):
     root = tmp_path.resolve() / "main"
     git_repo(root)
     committed(root, {"a.txt": "a\n"}, "first")
-    with open(root / ".git" / "info" / "exclude", "a") as f:
-        f.write(".orchestrator/\n")
+    exclude_orchestrator(root)
     return root
 
 

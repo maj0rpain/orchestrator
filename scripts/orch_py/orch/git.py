@@ -15,13 +15,22 @@ checkout's teardown (orch.side_checkout) makes, the push the gh adapter's claim
 delete makes, branch retire's
 local branch reads and rename, origin probe, tracking push and remote
 delete (orch.branch), the dirty paths the planning allowlist's flow-start scan
-judges, and the scoped git config reads, writes and unsets
-(`config_regexp`, `config_set`, `config_unset`) the agent noun uses. There is no generic run: each later
-noun adds the operations it
-needs, each with a test run against a real repository and against FakeGit,
-asserting the same answers. The scan's, Lines fate's and the lookup's
-operations run at the checkout's top level, and answer their "could not"
-value, never raising, on a git failure.
+judges, the scoped git config reads, writes and unsets
+(`config_regexp`, `config_set`, `config_unset`) the agent noun uses, and what
+the ticket nouns need: a ticket branch's create with no tracking and its
+delete (-D), the worktree add that checks it out and the removal that takes
+it back out, the rebase, rebase abort, unmerged-path listing and
+fast-forward-only merge `ticket merge` runs in a given checkout, the
+status the clean-tree check (orch.common) reads there, and the
+merge-in-progress probe, merge abort, hard reset and clean of the
+discard sequence (orch.checkout). A ticket branch's ref verify is
+branch_exists, and the toplevel read at its worktree's path toplevel_at.
+There is no generic run: each later noun adds the operations it needs, each
+with a test run against a real repository and against FakeGit, asserting the
+same answers. The scan's, Lines fate's and the lookup's operations run at the
+checkout's top level, and answer their "could not" value, never raising, on a
+git failure. An operation a caller hands git's own failure on from answers a
+GitFailure, its status and stderr.
 """
 from __future__ import annotations
 
@@ -29,7 +38,7 @@ import re
 import subprocess
 from typing import Any, Dict, Iterable, List, NamedTuple, Optional, Sequence, Set, Tuple, Union
 
-from orch.common import ORCH_DIR_NAME, trim
+from orch.common import ORCH_DIR_NAME, stderr_write, trim
 
 
 class Worktree(NamedTuple):
@@ -46,6 +55,15 @@ class GitFailure(NamedTuple):
 
     code: int
     stderr: str
+
+
+def git_failed(failure: Optional[GitFailure]) -> bool:
+    """Hands a failed git run's stderr on, as bash let it through: whether
+    the run failed."""
+    if failure is None:
+        return False
+    stderr_write(failure.stderr)
+    return True
 
 
 class FileDiff(NamedTuple):
@@ -89,6 +107,17 @@ COULD_NOT: Dict[str, Any] = {
     "remote_delete": "git gave no reason",
     "worktree_remove": "git gave no reason",
     "dirty_paths": "git gave no reason",
+    "worktree_add": GitFailure(1, ""),
+    "worktree_delete": GitFailure(1, ""),
+    "rebase_at": GitFailure(1, ""),
+    "rebase_abort_at": GitFailure(1, ""),
+    "unmerged_paths_at": [],
+    "merge_ff_only_at": GitFailure(1, ""),
+    "status_at": GitFailure(1, ""),
+    "merge_in_progress_at": False,
+    "merge_abort_at": False,
+    "reset_hard_at": False,
+    "clean_at": False,
 }
 
 def git_push_reason(stderr: str) -> str:
@@ -532,7 +561,12 @@ class Git:
     def branch_rename(self, old: str, new: str) -> Optional[GitFailure]:
         """`git branch -m <old> <new>`, its upstream moving with it: None when
         it renamed, else git's status and stderr."""
-        run = self._run(["branch", "-m", old, new])
+        return self._failure(["branch", "-m", old, new])
+
+    def _failure(self, args: List[str]) -> Optional[GitFailure]:
+        """A `git` run where the adapter runs: None when it succeeded, else
+        its status and stderr. What it printed on stdout is dropped."""
+        run = self._run(args)
         if run.returncode == 0:
             return None
         return GitFailure(run.returncode, run.stderr.decode("utf-8", "surrogateescape"))
@@ -562,6 +596,100 @@ class Git:
             return None
         return git_push_reason(run.stderr.decode("utf-8", "surrogateescape"))
 
+    # The ticket nouns' operations: a ticket branch made and deleted where the
+    # adapter runs, as bash's ticket-worktree add and teardown run them.
+
+    def branch_create(self, name: str, start: str) -> Optional[GitFailure]:
+        """`git branch -q --no-track <name> <start>`: a new local branch at
+        <start> that tracks nothing, whatever branch.autoSetupMerge says. None
+        when it was made, else git's status and stderr."""
+        return self._failure(["branch", "-q", "--no-track", name, start])
+
+    def branch_delete(self, name: str) -> Optional[GitFailure]:
+        """`git branch -q -D <name>`: deletes local branch <name>, merged or
+        not, its config section with it. None when it is gone, else git's
+        status and stderr."""
+        return self._failure(["branch", "-q", "-D", name])
+
+    def worktree_add(self, path: str, branch: str) -> Optional[GitFailure]:
+        """`git worktree add -q <path> <branch>`: checks existing branch
+        <branch> out in a new worktree at <path>, its parent folders made.
+        None when it was added, else git's status and stderr."""
+        return self._failure(["worktree", "add", "-q", path, branch])
+
+    def worktree_delete(self, path: str) -> Optional[GitFailure]:
+        """`git worktree remove <path>` where the adapter runs, never with
+        force - the ticket worktree teardown's and add's back-out, which hand
+        git's whole stderr on as bash's did, where worktree_remove keeps only
+        its first line. None when the worktree is gone, else git's status and
+        stderr."""
+        return self._failure(["worktree", "remove", path])
+
+    # The ticket merge's operations, each run in the checkout it names, as
+    # bash's `git -C <path>`, a branch named in full (refs/heads/<b>) so a tag
+    # of its name is never taken for it (#2337).
+
+    def rebase_at(self, path: str, onto: str) -> Optional[GitFailure]:
+        """`git -C <path> rebase -q <onto>`: rebases the branch checked out at
+        <path> onto <onto>. None when it landed, else git's status and stderr,
+        a conflict's rebase left in progress."""
+        return self._failure(["-C", path, "rebase", "-q", onto])
+
+    def rebase_abort_at(self, path: str) -> Optional[GitFailure]:
+        """`git -C <path> rebase --abort`: None when the rebase in progress
+        at <path> was aborted, its branch back at its prior tip, else git's
+        status and stderr - a failure too when no rebase is in progress."""
+        return self._failure(["-C", path, "rebase", "--abort"])
+
+    def unmerged_paths_at(self, path: str) -> List[str]:
+        """The unmerged paths of the checkout at <path>, `git -C <path> diff
+        --name-only --diff-filter=U`'s lines: what tells a rebase stopped on a
+        conflict from one failing any other way. Empty when there are none,
+        and when the listing cannot run, as bash's `|| unmerged=""` read it."""
+        run = self._run(["-C", path, "diff", "--name-only", "--diff-filter=U"])
+        if run.returncode != 0:
+            return []
+        return run.stdout.decode("utf-8", "surrogateescape").splitlines()
+
+    def merge_ff_only_at(self, path: str, ref: str) -> Optional[GitFailure]:
+        """`git -C <path> merge -q --ff-only <ref>`: fast-forwards the branch
+        checked out at <path> to <ref>. None when it moved, else git's status
+        and stderr, the branch left at its tip."""
+        return self._failure(["-C", path, "merge", "-q", "--ff-only", ref])
+
+    # The clean-tree check's operation (orch.common) and the discard
+    # sequence's (orch.checkout), each run in the checkout it names. The
+    # sequence's steps answer only whether they ran, as bash silences them.
+
+    def status_at(self, path: str) -> Union[str, GitFailure]:
+        """`git -C <path> status --porcelain`'s text, empty for a clean
+        tree; when status cannot run, git's status and stderr instead, never
+        a str, so it cannot read as a clean tree."""
+        run = self._run(["-C", path, "status", "--porcelain"])
+        if run.returncode != 0:
+            return GitFailure(run.returncode, run.stderr.decode("utf-8", "surrogateescape"))
+        return run.stdout.decode("utf-8", "surrogateescape")
+
+    def merge_in_progress_at(self, path: str) -> bool:
+        """Whether a merge is in progress in the checkout at <path>: whether
+        its MERGE_HEAD names a commit."""
+        return self._run(
+            ["-C", path, "rev-parse", "--quiet", "--verify", "MERGE_HEAD"]).returncode == 0
+
+    def merge_abort_at(self, path: str) -> bool:
+        """`git -C <path> merge --abort`: whether it aborted."""
+        return self._run(["-C", path, "merge", "--abort"]).returncode == 0
+
+    def reset_hard_at(self, path: str) -> bool:
+        """`git -C <path> reset --hard -q`: whether the tracked files are
+        back at HEAD."""
+        return self._run(["-C", path, "reset", "--hard", "-q"]).returncode == 0
+
+    def clean_at(self, path: str) -> bool:
+        """`git -C <path> clean -fdq`: whether the untracked files and
+        folders git does not ignore are gone."""
+        return self._run(["-C", path, "clean", "-fdq"]).returncode == 0
+
     # Scoped git config operations for the agent noun, run where the adapter
     # runs, as bash's git_config_unset runs.
 
@@ -586,11 +714,11 @@ class Git:
                 out[rec] = ""
         return out
 
-    def config_set(self, scope: str, key: str, value: str) -> bool:
-        """Writes <key> = <value> at <scope> ('local' or 'global'): whether
-        the write succeeded."""
+    def config_set(self, scope: str, key: str, value: str) -> Optional[GitFailure]:
+        """Writes <key> = <value> at <scope> ('local' or 'global'): None when
+        it wrote, else git's status and stderr."""
         _check_config_scope(scope)
-        return self._run(["config", "--" + scope, "--", key, value]).returncode == 0
+        return self._failure(["config", "--" + scope, "--", key, value])
 
     def config_unset(self, scope: str, key: str) -> bool:
         """Removes every value of <key> at <scope> ('local' or 'global'):
@@ -612,13 +740,17 @@ class FakeGit:
     git config entries (dict or sequence of (key, value|None) pairs, None
     for a valueless key); <config_write_fails> names scopes ('local',
     'global') or (scope, key) pairs whose config_set and config_unset calls
-    fail, as a locked or unwritable config file does; <branches> maps each
-    local branch's name to the full ref it tracks, None for none, and
-    branch_rename moves an entry as git moves a branch and its upstream.
+    fail, as a locked config file does, config_set answering git's lock
+    refusal; <branches> maps each local branch's name to the full ref it
+    tracks, None for none:
+    branch_rename moves an entry as git moves a branch and its upstream,
+    branch_create adds one tracking nothing, and branch_delete drops one with
+    its branch.<name>. config section, as -D does.
 
     The operations COULD_NOT names answer what seed() set for their
     arguments, and their "could not" value for a call nothing was seeded
-    for."""
+    for - a GitFailure with no stderr for those answering one. config_value
+    alone reads the config entries for a key nothing was seeded for."""
 
     def __init__(
         self,
@@ -744,7 +876,18 @@ class FakeGit:
         return self._answer("text_hash", text)
 
     def config_value(self, key: str) -> Optional[str]:
-        return self._answer("config_value", key)
+        """The seeded answer for <key>; else, as `git config --get` reads it,
+        its last value in the local config, else in the global, blank read
+        as none - so what config_set writes and branch_delete drops reads
+        back."""
+        seeded = self._answers.get(_call_key("config_value", (key,)), _UNSEEDED)
+        if seeded is not _UNSEEDED:
+            return seeded
+        for scope in ("local", "global"):
+            values = [value for k, value in self._config[scope] if k == key]
+            if values:
+                return (values[-1] or "").strip() or None
+        return None
 
     def main_checkout(self) -> Optional[str]:
         return self._answer("main_checkout")
@@ -760,6 +903,39 @@ class FakeGit:
 
     def worktree_remove(self, checkout: str, path: str) -> Optional[str]:
         return self._answer("worktree_remove", checkout, path)
+
+    def worktree_add(self, path: str, branch: str) -> Optional[GitFailure]:
+        return self._answer("worktree_add", path, branch)
+
+    def worktree_delete(self, path: str) -> Optional[GitFailure]:
+        return self._answer("worktree_delete", path)
+
+    def rebase_at(self, path: str, onto: str) -> Optional[GitFailure]:
+        return self._answer("rebase_at", path, onto)
+
+    def rebase_abort_at(self, path: str) -> Optional[GitFailure]:
+        return self._answer("rebase_abort_at", path)
+
+    def unmerged_paths_at(self, path: str) -> List[str]:
+        return self._answer("unmerged_paths_at", path)
+
+    def merge_ff_only_at(self, path: str, ref: str) -> Optional[GitFailure]:
+        return self._answer("merge_ff_only_at", path, ref)
+
+    def status_at(self, path: str) -> Union[str, GitFailure]:
+        return self._answer("status_at", path)
+
+    def merge_in_progress_at(self, path: str) -> bool:
+        return self._answer("merge_in_progress_at", path)
+
+    def merge_abort_at(self, path: str) -> bool:
+        return self._answer("merge_abort_at", path)
+
+    def reset_hard_at(self, path: str) -> bool:
+        return self._answer("reset_hard_at", path)
+
+    def clean_at(self, path: str) -> bool:
+        return self._answer("clean_at", path)
 
     def git_common_dir(self) -> Optional[str]:
         return self._answer("git_common_dir")
@@ -784,6 +960,22 @@ class FakeGit:
         self.branches[new] = self.branches.pop(old)
         return None
 
+    def branch_create(self, name: str, start: str) -> Optional[GitFailure]:
+        if name in self.branches:
+            return GitFailure(128, "fatal: a branch named '%s' already exists\n" % name)
+        self.branches[name] = None
+        return None
+
+    def branch_delete(self, name: str) -> Optional[GitFailure]:
+        if name not in self.branches:
+            return GitFailure(1, "error: branch '%s' not found\n" % name)
+        del self.branches[name]
+        section = "branch.%s." % name
+        self._config["local"] = [
+            (k, v) for k, v in self._config["local"] if not k.startswith(section)
+        ]
+        return None
+
     def origin_has_branch(self, name: str) -> Optional[bool]:
         return self._answer("origin_has_branch", name)
 
@@ -805,19 +997,20 @@ class FakeGit:
     def _config_write_blocked(self, scope: str, key: str) -> bool:
         return scope in self.config_write_fails or (scope, key) in self.config_write_fails
 
-    def config_set(self, scope: str, key: str, value: str) -> bool:
+    def config_set(self, scope: str, key: str, value: str) -> Optional[GitFailure]:
         _check_config_scope(scope)
         if self._config_write_blocked(scope, key):
-            return False
+            return GitFailure(255, "error: could not lock config file %s: File exists\n"
+                              % _FAKE_CONFIG_FILES[scope])
         entries = self._config[scope]
         matches = [i for i, (k, _) in enumerate(entries) if k == key]
         if len(matches) > 1:
-            return False
+            return GitFailure(5, "")
         if matches:
             entries[matches[0]] = (key, value)
         else:
             entries.append((key, value))
-        return True
+        return None
 
     def config_unset(self, scope: str, key: str) -> bool:
         _check_config_scope(scope)
@@ -825,6 +1018,14 @@ class FakeGit:
             return False
         self._config[scope] = [(k, v) for k, v in self._config[scope] if k != key]
         return True
+
+
+# The config file FakeGit's blocked write names in git's lock refusal, per scope.
+_FAKE_CONFIG_FILES = {"local": ".git/config", "global": "~/.gitconfig"}
+
+# What FakeGit's seeded answers give for a call nothing was seeded for, told
+# apart from a seeded None.
+_UNSEEDED = object()
 
 
 def _call_key(name: str, args: Sequence[Any]) -> Tuple[Any, ...]:

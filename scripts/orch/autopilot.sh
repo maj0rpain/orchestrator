@@ -1237,7 +1237,7 @@ autopilot_housekeeping() {
   # side-checkout add; a failed sweep warns and never fails the step.
   orch_load branch
   orch_load trust
-  orch_load ticket-worktree
+  orch_load checkout
   orch_load state
   orch_load side-checkout
   ( cmd_side_checkout_prune ) >&2 \

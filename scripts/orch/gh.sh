@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # gh.sh - the gh adapter layer (ADR-0033): gh(), the guard every GitHub call
 # goes through, the failure contract its callers die by (gh_reason, gh_die,
-# gh_or_die, verify_twice, gh_capture, gh_capture_err), every adapter_*
+# gh_or_die, gh_capture, gh_capture_err), every adapter_*
 # operation, the out-variable readers over the multi-field ones, and the JQ
 # constants they read. It does not render: rendering happens in the Comments
 # module, after the Trust filter.
@@ -54,12 +54,11 @@ gh() {
 # gh_capture <out-var> <err-var> <command...> and gh_capture_err <err-var>
 # <command...>: capture and capture_err for a GitHub operation - an adapter_*
 # operation, gh itself, or a function or whole command whose first GitHub call
-# would otherwise resolve the Repo in the capture's subshell (standing_claim,
-# cmd_ticket_exists). Each runs the memoising resolver (repo_resolve) in the
-# caller's shell first, ignoring its status, so the Repo is resolved once for
-# the shell that calls it, rather than once per subshell the call runs in; a
-# failed resolution is left to the guard, which dies with the remedy as it
-# always did.
+# would otherwise resolve the Repo in the capture's subshell (standing_claim).
+# Each runs the memoising resolver (repo_resolve) in the caller's shell first,
+# ignoring its status, so the Repo is resolved once for the shell that calls
+# it, rather than once per subshell the call runs in; a failed resolution is
+# left to the guard, which dies with the remedy as it always did.
 # Defined ahead of the ORCH_GH_ADAPTER seam. A command that reaches no GitHub
 # goes through capture or capture_err.
 gh_capture() {
@@ -206,8 +205,7 @@ label_listed() {
 #
 # How a caller reacts to a failed adapter operation. gh_reason cuts gh's stderr
 # to a reason; gh_die is the one place the dying message is built; gh_or_die
-# runs an operation and dies through gh_die when it fails; verify_twice is the
-# verify-then-die runner, retrying a read-back once. A site that reacts
+# runs an operation and dies through gh_die when it fails. A site that reacts
 # another way - a warning, a doctor line, a verdict - calls gh_reason itself.
 
 # gh_reason <stderr>: the reason a failed gh call gives - the first line of
@@ -293,26 +291,6 @@ gh_or_die() {
   fi
   [ "$_gh_or_die_st" -ne 0 ] || return 0
   gh_die ${_gh_or_die_die_opts[@]+"${_gh_or_die_die_opts[@]}"} "$1" "$_gh_or_die_err"
-}
-
-# verify_twice <read-what> <unverified-msg> <verifier> [args...]: the one
-# verify-then-die runner - the one-retry policy ADR-0011 records for ticket
-# publish's links. It calls `<verifier> <err-var> [args...]` in the current
-# shell, never a subshell, so the verifier can write gh's stderr into the named
-# variable: 0 verified, 1 a mismatch, 2 a failed read. A non-zero status gets
-# one more attempt, and that attempt decides: 0 returns, 2 dies through gh_die
-# with gh's reason, anything else dies with <unverified-msg>. Either death
-# exits with status 1, and it takes no options. Locals prefixed so no
-# verifier's out-variable is shadowed.
-verify_twice() {
-  local _verify_twice_what="$1" _verify_twice_msg="$2" _verify_twice_err="" _verify_twice_st=0
-  local _verify_twice_verifier="$3"
-  shift 3
-  "$_verify_twice_verifier" _verify_twice_err "$@" \
-    || "$_verify_twice_verifier" _verify_twice_err "$@" \
-    || _verify_twice_st=$?
-  [ "$_verify_twice_st" -ne 2 ] || gh_die "$_verify_twice_what" "$_verify_twice_err"
-  [ "$_verify_twice_st" -eq 0 ] || die "$_verify_twice_msg"
 }
 
 # --- gh adapter -------------------------------------------------------------
