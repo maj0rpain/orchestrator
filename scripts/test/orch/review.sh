@@ -142,6 +142,10 @@ calls_until_delivered() {
 # fake_issues: every issue number the store holds, in order, space-separated.
 fake_issues() { ls "$ORCH_GH_FAKE_STORE/issues" 2>/dev/null | sort -n | tr '\n' ' '; }
 
+# Issue #n's title and body read back from the store.
+fake_title_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/title" 2>/dev/null; }
+fake_body_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/body" 2>/dev/null; }
+
 # --- review ready's pointer to /orchestrator:finish (#727) --------------------
 # review ready's stdout stays the PR number alone everywhere; in a side
 # checkout it points the human at /orchestrator:finish on stderr, for after the

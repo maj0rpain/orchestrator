@@ -62,6 +62,9 @@ re_issue() {
 # the file's text, as the autopilot; prints its output.
 re_run() { ORCH_AUTOPILOT=1 "$ORCH" autopilot reenter "${2:-review}" "$1" 2>&1; }
 
+# fake_reason_of <n>: issue #n's closing reason read back from the store.
+fake_reason_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/reason" 2>/dev/null; }
+
 # --- autopilot ---------------------------------------------------------------
 # The clone-scoped autopilot settings and the autopilot-session check.
 echo

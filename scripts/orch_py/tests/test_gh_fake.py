@@ -22,17 +22,18 @@ BASH_FAKE = SCRIPTS / "test" / "gh_adapter_fake.sh"
 BASH_HELPERS = {
     SCRIPTS / "test" / "orch" / "setup.sh": [
         "fake_issue", "fake_issue_authorship", "fake_issue_relabel", "fake_issue_title",
-        "fake_issue_body",
         "fake_comment_seed", "fake_comment", "fake_comment_bodies", "fake_label",
         "fake_next_issue", "fake_fail", "fake_fail_after", "fake_fail_times",
         "fake_unfail", "fake_offline", "fake_online", "fake_quota", "fake_lag",
-        "fake_state_of", "fake_reason_of",
-        "fake_title_of", "fake_body_of", "fake_labels_of", "fake_comments_of",
+        "fake_state_of", "fake_labels_of", "fake_comments_of",
         "fake_pr", "fake_pr_comment", "fake_pr_comments_of", "fake_pr_cross", "fake_labels",
         "fake_default_branch", "fake_claim_seed", "fake_claim_held",
     ],
-    SCRIPTS / "test" / "orch" / "gh.sh": ["fake_ratelimit", "fake_duplicate_of"],
+    SCRIPTS / "test" / "orch" / "gh.sh": ["fake_ratelimit", "fake_duplicate_of",
+                                          "fake_issue_body"],
     SCRIPTS / "test" / "orch" / "pr.sh": ["fake_pr_body"],
+    SCRIPTS / "test" / "orch" / "autopilot.sh": ["fake_reason_of"],
+    SCRIPTS / "test" / "orch" / "review.sh": ["fake_title_of", "fake_body_of"],
 }
 SECONDARY = "You have exceeded a secondary rate limit."
 NOW = 1_900_000_000

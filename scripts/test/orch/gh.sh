@@ -47,6 +47,20 @@ GH
   chmod +x "$exists_dir/gh"
 }
 
+# tw_repo: a fresh repo with a bare origin it has pushed to, on a feature
+# branch, cwd inside it. Call it in the current shell: new_repo cd's.
+tw_repo() {
+  local bare
+  new_repo >/dev/null
+  fresh_bare_origin bare
+  git push -q origin HEAD 2>/dev/null
+  git checkout -q -b orch/5-feature
+  echo work >feature.txt && git add feature.txt && git commit -qm feature
+}
+
+# fake_issue_body <n> <text>: seeds issue #n's body, byte for byte.
+fake_issue_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/body"; }
+
 # --- every gh call pinned to the repo (#520) ----------------------------------
 # A fork whose gh default points upstream: origin is the fork, GH_REPO unset,
 # ORCH_GH_ADAPTER unset so the real adapter operations run, against the fixture

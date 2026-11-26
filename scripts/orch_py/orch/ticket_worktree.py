@@ -281,6 +281,8 @@ def remove(args: List[str], git, root: str) -> None:
 
 
 VERBS = {"add": add, "list": list_, "remove": remove}
+# Every op of the ticket-worktree noun, as its unknown-op refusal names them.
+OPS = "add|list|remove"
 
 
 def worktrees_left(args: List[str], git=None, env: Optional[Mapping[str, str]] = None) -> None:
@@ -304,6 +306,6 @@ def run(argv: List[str], git=None, env: Optional[Mapping[str, str]] = None) -> i
     op = argv[0] if argv else ""
     verb = VERBS.get(op)
     if verb is None:
-        die("unknown ticket-worktree op: %s (want add|list|remove)" % (op or "<none>"))
+        die("unknown ticket-worktree op: %s (want %s)" % (op or "<none>", OPS))
     verb(argv[1:], git, root)
     return 0
