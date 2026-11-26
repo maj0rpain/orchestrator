@@ -25,7 +25,7 @@ While iterating, run only the section you are working on, in quiet mode:
 `ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`, where
 `<section>` is an extended regex matched, ignoring case, against the `# ---`
 section titles (every top-level branch of an alternation must match a section),
-e.g. `ORCH_TEST_ONLY='^branch create$'` or `ORCH_TEST_ONLY='^pr '`. Run
+e.g. `ORCH_TEST_ONLY='^branch create$'` or `ORCH_TEST_ONLY='^autopilot '`. Run
 `scripts/test/affected.sh` before each commit. CI runs the whole suite on every
 PR through all.sh, which starts its other suites one by one, each waiting for
 a pool slot when none is free, then orch_test.sh, then the pytest suite
