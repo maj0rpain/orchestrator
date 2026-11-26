@@ -125,6 +125,22 @@ def handoffs_due(phase: str) -> List[str]:
     return []
 
 
+def handoffs_written_from(phase: str) -> List[str]:
+    """The handoffs whose writer is <phase> or a phase after it, in table
+    order - the ones a step back to <phase> makes stale, as bash's
+    handoffs_written_from. plan, a writer though no row, gives every
+    handoff; none for a name the writer column does not hold."""
+    stale = []
+    found = False
+    for _, handoff, writer, _ in PHASE_TABLE:
+        if not handoff:
+            continue
+        found = found or writer == phase
+        if found:
+            stale.append(handoff)
+    return stale
+
+
 def handoff_file_for(phase: str) -> str:
     """The handoff <phase> consumes; dies on a phase with none."""
     handoff = phase_handoff(phase)
