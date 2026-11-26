@@ -9,7 +9,7 @@ import pytest
 
 from conftest import (GLOBAL_CONFIG, committed, git_repo, origin_clone, run_git, worktree_add,
                       write_staged)
-from orch.git import FakeGit, Git, Worktree, git_push_reason
+from orch.git import FakeGit, Git, GitFailure, Worktree, git_push_reason
 
 ORIGIN = "https://github.com/fork/widgets.git"
 
@@ -661,6 +661,101 @@ def test_a_push_that_printed_nothing_gives_git_gave_no_reason(stderr):
 
 def test_an_unseeded_push_on_the_fake_fails_with_no_reason():
     assert FakeGit().push("origin", ":refs/orch/claims/5") == "git gave no reason"
+
+
+# --- branch retire's operations ----------------------------------------------------
+
+
+@pytest.fixture
+def retiring(tmp_path):
+    """A clone of a bare origin under tmp_path holding main, pushed and
+    tracking origin/main, and gone, never pushed: the clone's root."""
+    origin, root = tmp_path / "origin.git", tmp_path / "retiring"
+    origin_clone(origin, root, "main")
+    run_git(root, "checkout", "-qb", "main")
+    run_git(root, "commit", "-q", "--allow-empty", "-m", "one")
+    run_git(root, "push", "-q", "-u", "origin", "main")
+    run_git(root, "branch", "gone")
+    return root
+
+
+def retiring_fake():
+    """The FakeGit holding the local branches the retiring fixture holds."""
+    return FakeGit(branches={"main": "refs/remotes/origin/main", "gone": None})
+
+
+def test_a_local_branch_exists_the_same_from_a_real_repo_and_the_fake(retiring):
+    git, fake = Git(cwd=str(retiring)), retiring_fake()
+
+    for name, exists in (("main", True), ("gone", True), ("nope", False)):
+        assert (git.branch_exists(name), fake.branch_exists(name)) == (exists, exists)
+
+
+def test_a_branch_s_upstream_reads_the_same_from_a_real_repo_and_the_fake(retiring):
+    git, fake = Git(cwd=str(retiring)), retiring_fake()
+
+    for name, upstream in (("main", "refs/remotes/origin/main"), ("gone", None),
+                           ("nope", None)):
+        assert (git.branch_upstream(name), fake.branch_upstream(name)) == (upstream, upstream)
+
+
+def test_a_rename_moves_the_branch_and_its_upstream_the_same_from_a_real_repo_and_the_fake(
+        retiring):
+    git, fake = Git(cwd=str(retiring)), retiring_fake()
+
+    for adapter_ in (git, fake):
+        assert adapter_.branch_rename("main", "kept") is None
+        assert (adapter_.branch_exists("main"), adapter_.branch_exists("kept"),
+                adapter_.branch_upstream("kept")) == (False, True, "refs/remotes/origin/main")
+
+
+@pytest.mark.parametrize("old, new, stderr", [
+    ("nope", "kept", "fatal: no branch named 'nope'\n"),
+    ("main", "gone", "fatal: a branch named 'gone' already exists\n"),
+], ids=["missing", "taken"])
+def test_a_rename_git_refuses_gives_its_status_and_stderr_the_same_from_both(
+        retiring, old, new, stderr):
+    git, fake = Git(cwd=str(retiring)), retiring_fake()
+
+    assert git.branch_rename(old, new) == fake.branch_rename(old, new) == GitFailure(128, stderr)
+    assert fake.branch_exists(old) is (old == "main")
+
+
+def test_origin_s_answer_for_a_branch_reads_the_same_from_a_real_repo_and_the_fake(
+        retiring, tmp_path):
+    git = Git(cwd=str(retiring))
+
+    assert alike(git, "origin_has_branch", "main") is True
+    assert alike(git, "origin_has_branch", "gone") is False
+    run_git(retiring, "remote", "set-url", "origin", str(tmp_path / "nowhere"))
+    assert fails_alike(git, "origin_has_branch", "main") is None
+
+
+def test_a_tracking_push_lands_and_sets_the_upstream(retiring):
+    git = Git(cwd=str(retiring))
+
+    assert alike(git, "push_set_upstream", "origin", "refs/heads/gone:refs/heads/gone") is None
+    assert (git.origin_has_branch("gone"), git.branch_upstream("gone")) == (
+        True, "refs/remotes/origin/gone")
+
+
+def test_a_remote_delete_removes_origin_s_branch_and_a_refused_one_gives_its_reason(
+        retiring):
+    git = Git(cwd=str(retiring))
+    run_git(retiring, "push", "-q", "origin", "gone")
+
+    assert alike(git, "remote_delete", "origin", "refs/heads/gone") is None
+    assert git.origin_has_branch("gone") is False
+    assert alike(git, "remote_delete", "origin", "refs/heads/main") == (
+        "! [remote rejected] main (deletion of the current branch prohibited)")
+
+
+def test_an_unseeded_tracking_push_or_remote_delete_on_the_fake_fails_with_no_reason():
+    fake = FakeGit()
+
+    assert (fake.push_set_upstream("origin", "refs/heads/a:refs/heads/a"),
+            fake.remote_delete("origin", "refs/heads/a")) == (
+        "git gave no reason", "git gave no reason")
 
 
 # --- scoped git config -------------------------------------------------------
