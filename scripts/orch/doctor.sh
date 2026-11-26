@@ -1206,14 +1206,23 @@ check_flow_review_draft() {
 # not running (ADR-0036): the next implement phase or quick implementation
 # stops on it, and archive refuses to move it. Silent when there is none -
 # ticket-worktree list's own scope, so another checkout's in-flight tickets
-# never fail this one.
+# never fail this one. The listing comes through the Python ticket-worktree
+# module's bridge (orch_python_call ticket-worktree worktrees_left), once per
+# run. A failed call is never read as no worktrees: it reports one FAIL, the
+# call's first stderr line or a fixed cause when it gave none, and returns 0
+# so doctor goes on, as check_agent_settings does.
 check_ticket_worktrees_left() {
-  local n path
+  local n path left err="" err_msg=""
+  if ! capture left err orch_python_call ticket-worktree worktrees_left </dev/null; then
+    [ -z "$err" ] || err_msg="$(err_line "$err")"
+    d_fail "${err_msg:-ticket worktree listing failed}"
+    return 0
+  fi
   while read -r n path; do
     [ -n "$n" ] || continue
     d_fail "ticket worktree $path is left over - a ticket run did not finish."
     d_remedy "orch.sh ticket-worktree remove $n"
-  done <<<"$(cmd_ticket_worktree_list)"
+  done <<<"$left"
 }
 
 # Every phase commits and pushes its own work before it ends, so a change
@@ -1408,7 +1417,7 @@ cmd_doctor() {
   # each load a module again: load each once, here in the main shell.
   local mod
   for mod in gh branch checkout $([ "$scope" = flow ] || echo side-checkout trust) \
-    $([ "$scope" = env ] || echo handoff autopilot ticket-worktree); do
+    $([ "$scope" = env ] || echo handoff autopilot); do
     orch_load "$mod"
   done
 

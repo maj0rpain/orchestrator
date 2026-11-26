@@ -311,7 +311,7 @@ cmd_pr_open() {
   require_value branch "$branch"
   flow_base_fallback_into base "$base_raw"
   pr_body_check "$body_file" "${PR_BODY_HEADINGS[@]}"
-  require_no_open_tickets "$issue" "pr open"
+  orch_python_call --as pr ticket refuse_open_tickets "$issue" "pr open" </dev/null || exit $?
   if [ -n "$recorded" ]; then
     update_pr "$recorded" "$branch" "$base" "$issue" "$title" "$body_file" ${labels[@]+"${labels[@]}"}
     note "$recorded"
@@ -350,7 +350,7 @@ cmd_pr_publish() {
   current_branch_or_die
   recorded_base_into base "$branch"
   pr_body_check "$body_file" "${PR_BODY_HEADINGS[@]}"
-  require_no_open_tickets "$issue" "pr publish"
+  orch_python_call --as pr ticket refuse_open_tickets "$issue" "pr publish" </dev/null || exit $?
   pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" "$draft" ${labels[@]+"${labels[@]}"})"
   pr_labels_check "$pr" ${labels[@]+"${labels[@]}"}
   note "$pr"

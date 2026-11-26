@@ -77,7 +77,7 @@
 4	4	autopilot answer: no repo (#3050)	549ec1f591838ce045c060c84c0333bdaab6758d
 4	4	autopilot session ops read the issue in one jq	5dff2a00595ce9146b27602c202096548d0052d0
 63	58	autopilot tick: housekeeping prunes old session logs	269c3b634835e805dabb0c244a1bc5c1d6666e24
-50	44	autopilot tick: housekeeping sweeps finished side checkouts	51317e5e3cdc774a0173d713cc6467e3b7a427bb
+62	51	autopilot tick: housekeeping sweeps finished side checkouts	6c88c632f234a466365601a97ab9fe69ffecfff5
 10	11	base	4ca1f19cac3ef83ca996b678fba01404782aa24d
 38	31	a flow's base branch	dc1b95f862cec0114a7a0b7a3212313d50975422
 3	4	base set on a truncated state.json (#1929)	de4767097a86d163c76e27f57e97f2f368040804
@@ -118,7 +118,7 @@
 239	183	doctor	628b10784bb74bbb5a0f5e044f62c577c18a5029
 10	8	doctor: python3 check (#3912)	1edeb683b87c57ae9f0cd8f7011d828d5f574304
 56	61	doctor: host (#128)	978721e4fb1dd1e01c15c20e997aaa02755fc8df
-101	114	doctor --flow	67a761391972caf4512b5b7fab3225c288aa3727
+114	128	doctor --flow	f097bec748999080d6e58cb1367bec7d83fef5b5
 52	58	doctor --env: finished side checkouts (#727)	6c5fffe7d725910de46bf5e712c18cc5800073b6
 13	16	doctor at the review phase	3510b3a381c81866698adf3212d7c6f98ee07a04
 8	10	doctor: upstream beside an ambiguous origin/<branch> (#1331)	e22e633709e4b6b6d6a830a1f48baef119599fbb
@@ -183,7 +183,7 @@
 5	5	bash version guard	a8d2cfe5bbb32166e192820e2b3d83282e7a66ce
 1	3	outside a checkout (#931)	e5c70ed8a90ea1696b300a7a8f75e91707e1690b
 29	25	marked-comment module	f6f5c1a7f89a0d4a6d8a53403309d4f68d4fe0c2
-65	56	pr open	3c46abbf8a1ceb87e83549f4850a961b92746c38
+143	93	pr open	0e5b3af5f81a024273225d1971e2bd5e3f911b9d
 40	34	pr publish	27f8d1d9ae4f7f0cbf44add685328b5ab2539433
 17	15	pr draft (#967)	3818d607ebfde5f0688fe79264ff27fe48f7fe56
 34	31	pr ready (#967)	5e9436b62724f61ded83400bdcd4dae52868b5ba
@@ -224,9 +224,9 @@
 19	11	review ci <pr>	de3b4d1f2441533e0c12f016b42632d94e98a763
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
 65	50	side-checkout (#722)	3ed9cd6604e4ae1b8e5f4287b54c5144ee8ebea3
-62	66	side-checkout archive and remove (#724)	1fb2f3f39b0980a84392830dc2587afb5d19aa14
+73	62	side-checkout archive and remove (#724)	da15c6a82f6693c86359f8b5334b077f90dcc2ae
 61	64	side-checkout prune (#726)	2bda70fa48dd4b380007de96e4897b5b0aea9095
-68	72	side-checkout prune: edge cases (#726)	be2f05022f06b567f8644f200d31cb3fcfb831ee
+86	64	side-checkout prune: edge cases (#726)	277ca22be1d9ae955700564c30434d572674a41e
 18	19	archive keeps flow-less directories (#1247)	1cf41fafd151a6478b41bf1fd7aff5efd9847669
 43	33	side-checkout prune: a covered branch tip (#1906)	84d13b9facdae2e7a1d5bb431bca5b17046a9ace
 5	7	side-checkout prune: fork PRs are not proof (#1979)	004dd30e3e0deb54b95c8c79110e26cd2ffc4014

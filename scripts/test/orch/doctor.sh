@@ -1539,6 +1539,24 @@ assert_not_contains "nor is it reported" "$out" "$tw_linked/.orchestrator/worktr
 (cd "$tw_linked" && "$ORCH" ticket-worktree remove 13)
 git worktree remove "$tw_linked"
 git branch -q -D orch/9-other
+# A listing that cannot be read is never read as no ticket worktrees: one
+# FAIL, the call's first stderr line or, with none, a fixed cause - and doctor
+# goes on.
+tw_fail="$(fails_bin python3 '*" worktrees_left "*' 1 'orch: could not read the worktrees')"
+out="$(PATH="$tw_fail:$PATH" "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a failed ticket worktree listing fails doctor --flow" "$st" 1
+assert_eq "reported once, as the call's first stderr line" \
+  "$(printf '%s\n' "$out" | grep -c '^FAIL ')" 1
+assert_contains "naming that line" "$out" "FAIL  could not read the worktrees"
+assert_contains "and doctor goes on to its summary" "$out" ", 1 FAIL"
+rm -rf "$tw_fail"
+tw_fail="$(fails_bin python3 '*" worktrees_left "*' 1)"
+out="$(PATH="$tw_fail:$PATH" "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a listing failing silently fails doctor --flow" "$st" 1
+assert_eq "reported once" "$(printf '%s\n' "$out" | grep -c '^FAIL ')" 1
+assert_contains "as a listing that failed" "$out" "FAIL  ticket worktree listing failed"
+assert_contains "and doctor goes on" "$out" ", 1 FAIL"
+rm -rf "$tw_fail"
 
 # #721: every phase commits its own work before ending, so a change outside the
 # planning allowlist at a phase boundary is a bug in the phase that left it -
@@ -1599,18 +1617,22 @@ else
     "$out" "ticket worktree"
 fi
 
-# #673: the ticket-worktree check reads git alone, so a missing jq must not hide
-# a leftover - under --flow or bare doctor.
+# #673: the ticket-worktree check reads git alone, through the Python
+# ticket-worktree bridge and never jq, so a missing jq must not hide a leftover
+# - under --flow or bare doctor. python3 is put back on the jq-less PATH.
 if on_windows_bash; then
   skip_no_jq "doctor without jq still fails on a leftover ticket worktree"
 else
   nj_top="$(git rev-parse --show-toplevel)"
+  nj_py="$(mktemp -d)"
+  ln -s "$(command -v python3)" "$nj_py/python3"
   "$ORCH" ticket-worktree add 12 >/dev/null
   for nj_args in "" "--flow"; do
-    out="$(PATH="$nojq_path" "$ORCH" doctor $nj_args 2>&1)"; st=$?
+    out="$(PATH="$nojq_path:$nj_py" "$ORCH" doctor $nj_args 2>&1)"; st=$?
     assert_leftover_reported "doctor $nj_args without jq" "$nj_top" "$st" "$out"
   done
   "$ORCH" ticket-worktree remove 12
+  rm -rf "$nj_py"
 fi
 restore_suite_env
 

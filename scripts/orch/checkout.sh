@@ -2,7 +2,10 @@
 # checkout.sh - the Checkout module: a concept module with no orch.sh noun of
 # its own, holding the facts about the repo's checkouts - the main checkout,
 # side checkouts, ticket worktrees and hand-made worktrees - that every other
-# module reads. Its tests: scripts/test/orch/checkout.sh.
+# module reads, and the ticket-worktree listing and refusal
+# (ticket_worktrees_under, refuse_ticket_worktrees) that side-checkout's
+# per-checkout walk and archive run in bash, starting no Python process.
+# Its tests: scripts/test/orch/checkout.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 # checkouts: the one walk over git worktree list, the composition of
@@ -129,6 +132,34 @@ checkouts_or_die() {
 }
 main_checkout_or_die() {
   main_checkout || checkouts_unreadable
+}
+
+# Prints <n> <path> for every ticket worktree under the checkout at <root>;
+# dies when the checkouts cannot be read, never reading that as none.
+ticket_worktrees_under() {
+  local path name paths=()
+  # shellcheck disable=SC2034 # checkout_parse fills it
+  local branches=()
+  checkout_parse || checkouts_unreadable
+  for path in "${paths[@]}"; do
+    checkout_ticket_path "$path" "$1" || continue
+    name="${path##*/}"
+    note "${name#t} $path"
+  done
+}
+
+# refuse_ticket_worktrees <root> <reason>: dies, naming every ticket worktree
+# under the checkout at <root> and the command that removes each, when any is
+# left. <reason>, required, is the clause after the dash: why the caller
+# cannot proceed.
+refuse_ticket_worktrees() {
+  local left reason="$2"
+  # Its die exits only the substitution, so its status is carried out here.
+  left="$(ticket_worktrees_under "$1")" || exit $?
+  [ -n "$left" ] || return 0
+  die "ticket worktrees are left under $1 - $reason:
+$(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)\n' "$path" "$n"; done <<<"$left")
+     Remove each with orch.sh ticket-worktree remove <n> first."
 }
 
 # The checkout that has <branch> checked out, or nothing: the first checkout

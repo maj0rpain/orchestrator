@@ -3627,3 +3627,21 @@ assert_eq "the finished side checkout is removed" "$(on_disk "$hs_done")" absent
 assert_eq "with its branch" "$(branch_presence refs/heads/quick/9-hs-done)" gone
 assert_eq "its flow is archived into the main checkout" "$(find "$top/.orchestrator/archive" -maxdepth 1 -name "*-hs-done-flow" | wc -l | tr -d " ")" 1
 assert_eq "the unfinished one is kept" "$(on_disk "$hs_open")" present
+# The sweep's ticket-worktree refusal is the Checkout module's
+# refuse_ticket_worktrees, run in bash with no ticket-worktree module loaded:
+# a finished side checkout holding a flow with a ticket worktree under it is
+# kept, the refusal's first line in the report, as prune's warning carries it.
+(cd "$hs_open" && orch_gh_failing init hs-open-flow >/dev/null && state_fixture phase "done" && state_fixture branch quick/9-hs-open && state_fixture pr 62)
+fake_pr 62 merged quick/9-hs-open main
+fake_pr_head 62 "$(git rev-parse quick/9-hs-open)"
+(cd "$hs_open" && orch_gh_failing ticket-worktree add 4 >/dev/null)
+rm -f "$hs_stamp"
+out="$(ORCH_LOAD_TRACE="$hs_dir/loads" "$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a tick whose sweep meets a ticket worktree succeeds" "$st" 0
+assert_contains "the report carries the ticket-worktree refusal" "$out" \
+  "could not archive the flow in side checkout $hs_open: ticket worktrees are left under $hs_open - moving them would break git's record of them"
+assert_eq "the side checkout holding it is kept" "$(on_disk "$hs_open/.orchestrator/state.json")" present
+assert_eq "with its ticket worktree where git recorded it" \
+  "$(git -C "$hs_open/.orchestrator/worktrees/t4" rev-parse --show-toplevel)" "$hs_open/.orchestrator/worktrees/t4"
+assert_eq "and no ticket-worktree module is loaded for it" "$(grep -c '^ticket-worktree ' "$hs_dir/loads")" 0
+(cd "$hs_open" && orch_gh_failing ticket-worktree remove 4 >/dev/null)

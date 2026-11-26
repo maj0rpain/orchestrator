@@ -23,34 +23,6 @@ readonly TICKET_WORKTREES="$ORCH/worktrees"
 # ticket_worktree_path <n>: prints the path of ticket #<n>'s worktree.
 ticket_worktree_path() { printf '%s/t%s\n' "$TICKET_WORKTREES" "$1"; }
 
-# Prints <n> <path> for every ticket worktree under the checkout at <root>;
-# dies when the checkouts cannot be read, never reading that as none.
-ticket_worktrees_under() {
-  local path name paths=()
-  # shellcheck disable=SC2034 # checkout_parse fills it
-  local branches=()
-  checkout_parse || checkouts_unreadable
-  for path in "${paths[@]}"; do
-    checkout_ticket_path "$path" "$1" || continue
-    name="${path##*/}"
-    note "${name#t} $path"
-  done
-}
-
-# refuse_ticket_worktrees <root> <reason>: dies, naming every ticket worktree
-# under the checkout at <root> and the command that removes each, when any is
-# left. <reason>, required, is the clause after the dash: why the caller
-# cannot proceed.
-refuse_ticket_worktrees() {
-  local left reason="$2"
-  # Its die exits only the substitution, so its status is carried out here.
-  left="$(ticket_worktrees_under "$1")" || exit $?
-  [ -n "$left" ] || return 0
-  die "ticket worktrees are left under $1 - $reason:
-$(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)\n' "$path" "$n"; done <<<"$left")
-     Remove each with orch.sh ticket-worktree remove <n> first."
-}
-
 # ticket_facts <n> <array>: reads everything about ticket <n> once and only
 # reports, each fact into the caller's associative array <array> (declared
 # with `local -A`) under its fact name, and writes nothing else. A <array>
