@@ -6,7 +6,8 @@ each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>`,
 spec <verb>`, `orch.sh glossary <verb>`, `orch.sh parallel show`, `orch.sh
 route show`, `orch.sh agent <verb>`, `orch.sh slug <text>`, `orch.sh status`,
 `orch.sh init <slug>`, `orch.sh archive`, `orch.sh phase <verb>`, `orch.sh
-redo <op>` or `orch.sh help` (and its spellings)
+redo <op>`, `orch.sh ticket <verb>`, `orch.sh ticket-worktree <verb>` or
+`orch.sh help` (and its spellings)
 as a command, in a checkout under tmp_path, against a fake store seeded in the
 layout the bash suite's fake_* helpers write, with ORCH_GH_FAKE_STORE set as
 fake_github sets it."""
@@ -1102,6 +1103,42 @@ def test_redo_dies_pointing_at_doctor_without_python3(tmp_path, repo, seed, op):
     assert orch_sh(tmp_path, repo, seed, "redo", op, path=path_without(tmp_path, "python3")) \
         == ("", "orch: orch.sh redo needs python3 3.9 or newer (found none)"
                 " - run orch.sh doctor\n", 1)
+
+
+# --- ticket and ticket-worktree ---------------------------------------------
+
+
+def test_ticket_next_prints_the_open_unblocked_tickets_through_the_python_noun(
+        tmp_path, repo, seed):
+    for n in (90, 450, 451, 452):
+        seed.issue(n, "open")
+    for n in (452, 450, 451):
+        seed.sub_issue(90, n)
+    seed.blocked_by(450, 451)
+
+    assert orch_sh(tmp_path, repo, seed, "ticket", "next", "90", path=python3_shim(tmp_path)) \
+        == ("452\n451\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_ticket_worktree_add_checks_the_ticket_branch_out_through_the_python_noun(
+        tmp_path, repo, seed):
+    committed(repo, {"a.txt": "a\n"}, "first")
+    run_git(repo, "checkout", "-q", "-b", "orch/5-feature")
+    path = str(repo.resolve() / ".orchestrator" / "worktrees" / "t7")
+
+    assert orch_sh(tmp_path, repo, seed, "ticket-worktree", "add", "7",
+                   path=python3_shim(tmp_path)) == (path + "\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+    assert run_git(path, "branch", "--show-current") == "orch/5-feature--t7"
+
+
+@pytest.mark.parametrize("argv", [("ticket", "list", "90"), ("ticket-worktree", "list")],
+                         ids=["ticket", "ticket-worktree"])
+def test_ticket_nouns_die_pointing_at_doctor_without_python3(tmp_path, repo, seed, argv):
+    assert orch_sh(tmp_path, repo, seed, *argv, path=path_without(tmp_path, "python3")) \
+        == ("", "orch: orch.sh %s needs python3 3.9 or newer (found none)"
+                " - run orch.sh doctor\n" % argv[0], 1)
 
 
 # --- orch_python_call bootstrap ----------------------------------------------

@@ -33,7 +33,6 @@ BASH_HELPERS = {
     ],
     SCRIPTS / "test" / "orch" / "gh.sh": ["fake_ratelimit", "fake_duplicate_of"],
     SCRIPTS / "test" / "orch" / "pr.sh": ["fake_pr_body"],
-    SCRIPTS / "test" / "orch" / "ticket.sh": ["fake_lag_after"],
 }
 SECONDARY = "You have exceeded a secondary rate limit."
 NOW = 1_900_000_000
@@ -753,17 +752,6 @@ def test_a_relabel_naming_nothing_cannot_fail(store):
     assert fake(store).issue_relabel(5) is None
 
 
-def test_a_lagging_read_answers_stale_for_the_calls_seeded(store):
-    bash(store, r"""
-fake_issue 5 open ready; fake_issue_title 5 Current
-fake_lag_after adapter_issue_title_labels 1 1 $'Stale\nold-label'
-""")
-    gh = fake(store)
-
-    assert [gh.issue_title_labels(5) for _ in range(3)] == [
-        ("Current", ["ready"]), ("Stale", ["old-label"]), ("Current", ["ready"])]
-
-
 def test_each_comment_list_read_is_logged(store):
     bash(store, "fake_issue 5 open; fake_fail adapter_issue_comments")
     gh = fake(store)
@@ -821,6 +809,17 @@ adapter_issue_state_labels 5; echo "second $?"
         fake(store).issue_body(5)
     seed.online()
     assert fake(store).issue_body(5) == ""
+
+
+def test_a_lag_the_python_seeder_sets_after_current_reads_the_bash_fake_honours(store):
+    seed = FakeStore(str(store))
+    seed.issue(5, "open", "ready")
+    seed.title(5, "Current")
+    seed.lag_after("adapter_issue_title_labels", 1, 1, "Stale\nold-label")
+
+    assert bash(store, r"""
+for _ in 1 2 3; do adapter_issue_title_labels 5 | paste -sd ' ' -; done
+""") == "Current ready\nStale old-label\nCurrent ready\n"
 
 
 # --- the factory and the pin ---------------------------------------------------

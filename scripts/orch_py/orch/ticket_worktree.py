@@ -4,10 +4,13 @@ a ticket number's check and its worktree's path, ticket_facts - the one read
 of everything about a ticket, a TicketFacts record in place of bash's
 associative array - and the requirements on it, the merged check of a ticket
 branch, and ticket_worktree_teardown, the one site that tears a ticket
-worktree down. Each is copied from the bash ticket-worktree module under its
-bash name, with its messages and its order of steps; ticket_worktrees_under
-and refuse_ticket_worktrees are orch.checkout's. worktrees_left is the bridge
-doctor's leftover-ticket-worktree check calls through orch_python_call.
+worktree down. orch.sh runs the noun as a converted noun, and the bash
+ticket-worktree module is gone: each helper keeps the name it had there, with
+its messages and its order of steps. ticket_worktrees_under and
+refuse_ticket_worktrees are orch.checkout's, their bash copies in the bash
+Checkout module, where side-checkout's per-checkout walk runs them with no
+Python process. worktrees_left is the bridge doctor's leftover-ticket-worktree
+check calls through orch_python_call.
 
 A ticket worktree is a ticket's own worktree on its own ticket branch, so the
 ticket subagents of one breakdown can build at once without sharing a

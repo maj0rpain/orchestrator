@@ -2,8 +2,8 @@
 probes, ticket-worktree refusal, busy-checkout refusal and discard sequence,
 against real repositories under tmp_path: git's worktree semantics are git's,
 so no fake models them - FakeGit stands in only for a git step that fails.
-Each failure message is bash checkout.sh's or ticket-worktree.sh's,
-verbatim."""
+Each failure message is bash checkout.sh's, or the deleted bash
+ticket-worktree.sh's, verbatim."""
 from __future__ import annotations
 
 import shutil

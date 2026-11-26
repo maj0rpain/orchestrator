@@ -26,7 +26,7 @@
 25	26	orch_load before cross-module reads (#2868)	4a0cc2263fad370ceb2f2e56afe9bfb3e27dd8fd
 5	6	on-demand sourcing variable (#2820)	bd3eab1b398c9534492bb704bc1039c9caf320c6
 1	2	declaration substitutions (#1327)	9c0dbb68451572a48c9a20766d8153eaf05b2265
-21	29	the helper index (#1144)	4bec5050a14f98603d9ad142e552f7096142b885
+14	21	the helper index (#1144)	1fbb97be14208cb93b9a57cd090797d668f79cd0
 1	1	stand-in adapter (#2465)	083d2468f4dc10930c43ce98d227bbbab8c8df59
 2	2	git env clear (#1905)	8c9493556b5cd00e5a9aa04b69f286f5e7aea5e2
 4	5	runner git isolation (#1905)	4d5868e89b095661ef7c36fee9150a55ccbc49e8
@@ -34,7 +34,7 @@
 2	2	the suite start (#3582)	7661d78242588461a38289fb228211e159d899f8
 7	8	the pytest suite (#3912)	21deea025158b43b9892524639c0a4fbc5b9bf3c
 2	3	the counting fixture's stdin counter (#3434)	b19a94c28ffbd5db955a5f10a39d0b15791cbc4f
-116	111	affected.sh, the ticket verification (#2023)	2a5efa989c83218b21966abed89e6f74fba7b6cc
+91	111	affected.sh, the ticket verification (#2023)	0cd482e08122cbab59a029e2c18530eae07e5f42
 4	5	the row rule (#3549)	9fdb50e7e723c26a4127289109f27a68989c4579
 7	9	the shared test support, function by function (#3550)	de45838253c482219d70d5af6fd3b26e2079c3f8
 5	7	the gh fake, operation by operation (#3551)	987935a277e021eabb9c02e391ba40e84607a315
@@ -228,7 +228,7 @@
 61	64	side-checkout prune (#726)	2bda70fa48dd4b380007de96e4897b5b0aea9095
 86	64	side-checkout prune: edge cases (#726)	277ca22be1d9ae955700564c30434d572674a41e
 18	19	archive keeps flow-less directories (#1247)	1cf41fafd151a6478b41bf1fd7aff5efd9847669
-43	33	side-checkout prune: a covered branch tip (#1906)	84d13b9facdae2e7a1d5bb431bca5b17046a9ace
+30	34	side-checkout prune: a covered branch tip (#1906)	8ebe0cf87526357849fc8acf8dadda9117ca2fcc
 5	7	side-checkout prune: fork PRs are not proof (#1979)	004dd30e3e0deb54b95c8c79110e26cd2ffc4014
 49	52	side-checkout prune: the merged-PR close backstop (#2477)	69f285288eabcace9d74fa67194548b6bf7ab512
 2	3	side_checkout_marker reads the worktree's git pointer	7605e77ff7fdca5853e0a9cc368065fe764cb65e
@@ -249,29 +249,6 @@
 6	5	the shared and own-checkout readers on a truncated state.json	846c5bc308df9afc9b7fcaa99252bc3119fe0f58
 6	5	state set with a failed write (#1931)	f303871559a3140030c8709a2c17427c0ceb1d8d
 17	15	the entry read and the required-field helpers	64322b5c725e3eed1386b9bde9c53cbc4500ba7b
-46	49	ticket-worktree (#619)	c52aa57c33965d3db61a8322267ddf19f3b096a0
-1	1	a ticket branch has no upstream (#1152)	bbc5298d4013eb4f017ecb7f6c59509725053f88
-2	3	the merged check beside a same-named tag (#2337)	b3482156347488560231482575e046eb972a8f39
-1	20	ticket publish	96e892a17ab39549ce006c34a1d314053a74baeb
-31	25	ticket publish verify-then-die	100437bcc6d32c2d7441c1dfa08455f2737be66f
-11	9	ticket publish rewrites ## Blocked by	002cc35cd2ca5a1b5ba3914252cdd803239d7c98
-9	7	ticket next	d5f191a239f8c8f39d39e797523d26936620d3e3
-9	8	ticket list	57bc795400d67f0ba9691c6cbc94ee3f0fe2ddf8
-20	14	ticket close	3afed29ffc164aa1f39b6dd3cbea379d9c3bdab1
-14	12	ticket reset	b29388d315d753ccb8c5f41b4a9643233a3f7087
-19	17	ticket report	02b52bf7fc38748b706ceed0c0e3e819888a715e
-7	6	ticket parent	301a619982a688eee33c4db93bdd158951e4b7cc
-1	20	ticket exists	5eadee800aec156e1e4358ca95d7463c331ff7cb
-124	111	ticket block	8170f662dd307e84e93c4648d9bce5dfcf6d0165
-7	73	ticket unblock	f437a0e6520128cd589555d4d65bed14be2df989
-4	4	ticket retire: breakdown save point	ea3dcf9bbc130cc561b0cf47dd7ea6a09f4c779b
-7	6	ticket retire: untrusted comments	baa1a7bd8d44d1c6ebba0881d3851a49a319cc3d
-48	41	ticket retire (#334)	2bd51d596187c6ef64a1299c6654967315111469
-1	1	ticket: unknown op	6e0a1c0263dfee67a2e04403570e3c8e8df9d0db
-25	21	ticket merge (#621)	8b960a50bca280faf480d3106190eaad23f0351d
-6	5	ticket merge beside a same-named tag (#2337)	f89a007677ed8c0c7f53f849ebf468c3fb288f14
-164	128	ticket reclaim (ADR-0054)	26fbfa29784efbcec3fb43cafc53dad88f33b3c2
-2	2	ticket exists: no repo (#3050)	ef9df9673d4da34d402f5bf8af47240bd7df6cd3
 43	35	trust module	dd0183ac4380b097c6b51f9e75c4a3038ab514c5
 89	19	wait: a call's block is wall time	90d20fdb4b55a5964e512640526d36f24c6b6f96
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594

@@ -1219,7 +1219,7 @@ mkdir -p "$fl_fix/orch" "$fl_fix/orch_py/orch"
 cp "$PLUGIN_ROOT/scripts/orch.sh" "$PLUGIN_ROOT/scripts/flow-state.sh" "$fl_fix/"
 cp "$PLUGIN_ROOT/scripts/orch/"*.sh "$fl_fix/orch/"
 cp "$PLUGIN_ROOT/scripts/orch_py/orch/"*.py "$fl_fix/orch_py/orch/"
-echo 'newthing_dir() { printf "%s\n" "$ORCH/brandnew"; }' >>"$fl_fix/orch/ticket.sh"
+echo 'newthing_dir() { printf "%s\n" "$ORCH/brandnew"; }' >>"$fl_fix/orch/branch.sh"
 echo 'PY_NEW = os.path.join("/", ORCH_DIR_NAME, "pynew")' >>"$fl_fix/orch_py/orch/checkout.py"
 echo 'PY_FMT = "%s/%s/pyformat/%s" % ("/", ORCH_DIR_NAME, 1)' >>"$fl_fix/orch_py/orch/checkout.py"
 out="$(fl_classify "$fl_fix")"; st=$?

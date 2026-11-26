@@ -10,8 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from conftest import PACKAGE_BOOTSTRAP, died_of, git_repo, hold_flow, run_git
+from conftest import (CLAUDE, PACKAGE_BOOTSTRAP, TICKET_PARENT, added, committed, died_of, fake,
+                      git_repo, hold_flow, run_git, wt_path)
+from orch import ticket
+from orch.common import exclude_orch_dirs
 from orch.gh_fake import FakeStore
+from orch.git import Git
 from orch.__main__ import main
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
@@ -135,6 +139,89 @@ def test_redo_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_path, monk
 def test_the_redo_noun_is_converted(capsys):
     assert died_of(capsys, lambda: main(["redo", "wipe"]))[2] == \
         "orch: unknown redo op: wipe (want review|spec)\n"
+
+
+def spec_with_ticket(seed):
+    """Spec issue #90 with one open sub-issue, #450."""
+    for n in (90, 450):
+        seed.issue(n, "open")
+    seed.sub_issue(90, 450)
+
+
+def published_into(root, seed, capsys):
+    """A spec issue #50 and a body file to publish a ticket under it."""
+    seed.issue(50, "open")
+    seed.next_issue(100)
+    body = root / ".." / "body.md"
+    body.write_text("Build the thing.\n")
+    return ["ticket", "publish", "50", "A ticket", str(body)]
+
+
+def a_saved_report(root, seed, capsys):
+    reports = root / ".orchestrator" / "reports"
+    reports.mkdir(parents=True)
+    (reports / "7.md").write_text("Ticket: #7\n")
+    return ["ticket", "report", "show", "7"]
+
+
+def a_merged_leftover(root, seed, capsys):
+    """bash's reclaim of a reported ticket already merged: ticket #7 of spec
+    #90, its worktree holding one commit, merged into the flow's branch, so
+    reclaim prints a line for each of its close and removal."""
+    seed.issue(90, "open")
+    seed.issue(7, "open")
+    seed.sub_issue(90, 7)
+    committed(Path(added(root, capsys, 7)), {"t7.txt": "work 7\n"}, "t7.txt: work 7")
+    exclude_orch_dirs(Git())
+    hold_flow(root, phase="implement", branch=TICKET_PARENT, issue=90)
+    a_saved_report(root, seed, capsys)
+    assert ticket.run(["merge", "7"], gh=fake(seed), env=CLAUDE) == 0
+    capsys.readouterr()
+    return ["ticket", "reclaim", "90"]
+
+
+def a_listed_worktree(root, seed, capsys):
+    added(root, capsys, 7)
+    return ["ticket-worktree", "list"]
+
+
+TICKET_STDOUT_VERBS = {
+    "ticket next": lambda root, seed, capsys: (spec_with_ticket(seed),
+                                               ["ticket", "next", "90"])[1],
+    "ticket list": lambda root, seed, capsys: (spec_with_ticket(seed),
+                                               ["ticket", "list", "90"])[1],
+    "ticket parent": lambda root, seed, capsys: (spec_with_ticket(seed),
+                                                 ["ticket", "parent", "450"])[1],
+    "ticket exists": lambda root, seed, capsys: (spec_with_ticket(seed),
+                                                 ["ticket", "exists", "90"])[1],
+    "ticket report show": a_saved_report,
+    "ticket publish": published_into,
+    "ticket reclaim": a_merged_leftover,
+    "ticket-worktree list": a_listed_worktree,
+    "ticket-worktree add": lambda root, seed, capsys: ["ticket-worktree", "add", "7"],
+}
+
+
+@pytest.mark.parametrize("verb", sorted(TICKET_STDOUT_VERBS))
+def test_a_ticket_verb_writing_into_a_closed_pipe_dies_of_sigpipe_silently(
+        ticket_repo, seed, capsys, monkeypatch, verb):
+    """Every ticket and ticket-worktree verb that prints to stdout ends a
+    closed stdout pipe as bash's printf did: silently, of SIGPIPE."""
+    call = TICKET_STDOUT_VERBS[verb](ticket_repo, seed, capsys)
+    monkeypatch.setenv("ORCH_GH_FAKE_STORE", seed.store)
+    monkeypatch.setenv("GH_REPO", "acme/widgets")
+
+    run = into_a_closed_pipe(ticket_repo, *call)
+
+    assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
+
+
+def test_ticket_worktree_add_into_a_closed_pipe_still_checks_the_ticket_branch_out(
+        ticket_repo, seed):
+    run = into_a_closed_pipe(ticket_repo, "ticket-worktree", "add", "7")
+
+    assert run.returncode == -signal.SIGPIPE
+    assert run_git(wt_path(ticket_repo, 7), "branch", "--show-current") == TICKET_PARENT + "--t7"
 
 
 @pytest.mark.parametrize("call", [["route", "show"], ["--call", "route", "run", "show"]],

@@ -47,11 +47,12 @@
 #   scripts/dev/ other than the lens bench, hook-edit-width.sh, width.sh
 #                                     the harness section file's sections
 #   the Python package (scripts/orch_py/), its tests and dev files included
-#                                     the ticket, autopilot, doctor and review
+#                                     the pr, autopilot, doctor and review
 #                                     sections, which call a converted noun's
 #                                     own verbs through the dispatch (doctor's
 #                                     glossary terms) or a Python bridge via
-#                                     orch_python_call (doctor, autopilot,
+#                                     orch_python_call (pr open and publish's
+#                                     refuse_open_tickets, doctor, autopilot,
 #                                     review ready's phase_finish),
 #                                     and hooks_test.sh, whose paste guard
 #                                     rows run spec-review check through it,
@@ -471,7 +472,7 @@ classify() {
       scripts/dev/hook-edit-width.sh | scripts/dev/width.sh | scripts/test/shell_code.awk)
         want+=(hooks_test.sh); sections_of harness ;;
       scripts/dev/*) sections_of harness ;;
-      scripts/orch_py/*) want+=(hooks_test.sh); sections_of ticket autopilot doctor review side-checkout ;;
+      scripts/orch_py/*) want+=(hooks_test.sh); sections_of pr autopilot doctor review side-checkout ;;
       scripts/test/orch_py_test.sh) sections_of harness ;;
       docker/* | .dockerignore) want+=(autopilot_container_test.sh autopilot_up_test.sh) ;;
       .claude-plugin/*) want+=(version_bump_test.sh autopilot_up_test.sh) ;;

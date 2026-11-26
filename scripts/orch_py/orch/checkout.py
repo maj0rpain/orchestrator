@@ -5,8 +5,9 @@ checkout scan, one checkout's kind, what a checkout holds, whether a merge
 or a rebase is in progress, the ticket-worktree refusal, the busy-checkout
 refusal, and the discard rule's pieces (ADR-0054): the flow-branch proof,
 the work to discard, the discard sequence in a checkout and the flow-branch
-discard - as the bash side's checkout.sh and ticket-worktree.sh read them.
-Its bash copies stay while bash modules call them (ADR-0067).
+discard - as the bash side's checkout.sh reads them, and its ticket-worktree
+module did until the ticket nouns were converted. Its bash copies stay while
+bash modules call them (ADR-0067).
 """
 from __future__ import annotations
 

@@ -10,9 +10,10 @@ ticket, ticket_create and ticket_link, with ticket_links_verified,
 ticket_edges_verified and blockers_set; and the open-tickets refusal phase
 advance makes before it leaves implement, require_no_open_tickets, which
 pr.sh's `pr open` and `pr publish` reach through the refuse_open_tickets
-bridge. Each is copied from the bash ticket module under its bash name, with
-its messages and its order of steps; the bash copies stay while a bash caller
-remains.
+bridge. orch.sh runs the noun as a converted noun, and the bash ticket
+module is gone: each helper keeps the name it had there, with its messages
+and its order of steps, and no bash code calls into it but through an
+orch_python_call bridge.
 
 run(argv) takes the arguments after `ticket`, as orch.sh hands them on, and
 returns the exit code; every error dies through orch.common.die. Its verbs

@@ -181,7 +181,8 @@ ALIASES: Dict[str, str] = {"-h": "help", "--help": "help"}
 # The nouns converted with init and after it, each keeping its bash noun's
 # silent SIGPIPE death on a closed stdout pipe; a noun converted before them
 # keeps its flush failure there, as it always ended.
-SIGPIPE_NOUNS = frozenset({"init", "slug", "status", "archive", "help", "phase", "redo"})
+SIGPIPE_NOUNS = frozenset({"init", "slug", "status", "archive", "help", "phase", "redo",
+                           "ticket", "ticket-worktree"})
 
 
 def _sigpipe_as_bash(run: Callable[[List[str]], int], argv: List[str]) -> int:
