@@ -11,7 +11,9 @@ rule, the temporary file a comment is handed to gh from, the words a list and
 a state read as in a line, the orchestrator's directory name, the UTC stamp
 a run directory is named with, the git exclude writer, the copy bash's cp
 makes, the directory bash's mkdir -p makes, the removals bash's rm -f and
-rm -rf make, and the capture of a call's stderr and death that bash's capture
+rm -rf make, the move of named files aside into a folder, every name
+checked before the first move, as bash's move_files_aside makes it, and the
+capture of a call's stderr and death that bash's capture
 and err_line make.
 
 Every `orch: ` message goes through die or warn, as in the bash side's
@@ -331,6 +333,27 @@ def rm_rf_or_die(path: str, unremoved: str) -> None:
             os.remove(path)
     except OSError:
         die(unremoved)
+
+
+def move_files_aside(directory: str, dest: str, what: str, names: Sequence[str]) -> None:
+    """Moves each of <names> that exists in <directory> into exactly <dest>,
+    made only when there is something to move - bash's move_files_aside.
+    A <dest> already holding one of them is refused, naming <what>, before
+    any move; a <dest> that merely exists is fine. Dies, too, when <dest>
+    cannot be made or a file cannot be moved, where bash's mkdir or mv
+    stops it."""
+    if not any(os.path.exists(os.path.join(directory, name)) for name in names):
+        return
+    if any(os.path.exists(os.path.join(dest, name)) for name in names):
+        die("%s already holds %s - refusing to overwrite it" % (dest, what))
+    mkdir_p_or_die(dest, "could not create " + dest)
+    for name in names:
+        source = os.path.join(directory, name)
+        if os.path.exists(source):
+            try:
+                shutil.move(source, os.path.join(dest, name))
+            except OSError:
+                die("could not move %s into %s" % (source, dest))
 
 
 @contextmanager
