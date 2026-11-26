@@ -3,8 +3,12 @@
 multi-key reader (scripts/flow-state.sh's flow_state_get_many), which stays
 the state format's owner. Python init writes a new flow's seed - built from
 the key table's seed column, created, and stamped with its spec phase - the
-Python phase writers (phase_write, and phase_write_try for a caller that
-words its own failure) record a phase, and bash makes every other change.
+multi-key writer (state_write_many, and state_write_many_try for a caller
+that words its own failure) sets several keys in one write as bash's
+state_write_many does, each value coerced as bash's flow_state_json coerces
+it unless its pair is marked a string, the Python phase writers (phase_write
+and phase_write_try) record a phase, with any further keys in the same
+write, and bash makes every other change.
 The golden state.json files of tests/flow_state/ pin the two sides to each
 other (ADR-0067): those under read/ and refused/ the readers, and those
 under seed/ the seed Python writes to the bytes bash init wrote.
@@ -24,8 +28,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
-from typing import Any, Callable, Dict, Mapping, NamedTuple, Optional, Sequence
+from typing import (Any, Callable, Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple,
+                    Union)
 
 from orch.base import default_branch
 from orch.common import ORCH_DIR_NAME, die, file_write_atomic, plain_number
@@ -112,29 +118,90 @@ def flow_state_create(path: str, state: Mapping[str, Any]) -> bool:
     return file_write_atomic(path, _state_text(state), make_directory=False)
 
 
-def phase_write_try(path: str, phase: str, clock: Callable[[], float] = time.time) -> bool:
-    """Records <phase> in the state file at <path>, ported from the deleted
-    bash phase_write_try:
-    updated stamped with the time <clock> reads, then phase set, both in
-    place in the file's key order, the file rewritten as flow_state_create
-    writes it. Dies unless <phase> is a flow phase; whether the write
-    succeeded otherwise, printing nothing and leaving the file untouched
-    when it is absent, is not exactly one JSON object, or cannot be written,
-    for a caller that words its own failure."""
+# A state write's pairs: each (key, value), value a string coerced as bash's
+# flow_state_json coerces it, or (key, value, True) to store the value as a
+# JSON string, as bash's --string before a pair marks it.
+Pair = Union[Tuple[str, str], Tuple[str, str, bool]]
+
+_ALL_DIGITS = re.compile(r"[0-9]+")
+# The words flow_state_json stores as JSON literals.
+_JSON_WORDS = {"null": None, "true": True, "false": False}
+
+
+def flow_state_json(value: str) -> Any:
+    """<value> as bash's flow_state_json stores it: null, true and false
+    literally, an all-digit value as a number, anything else as a string."""
+    if value in _JSON_WORDS:
+        return _JSON_WORDS[value]
+    return int(value) if _ALL_DIGITS.fullmatch(value) else value
+
+
+def state_pairs_json(pairs: Sequence[Pair]) -> Dict[str, Any]:
+    """<pairs> as one object, bash's flow_state_pairs_json: each value
+    coerced by flow_state_json, or kept a string where its pair is marked;
+    a key given twice keeps its first place and its last value."""
+    obj: Dict[str, Any] = {}
+    for key, value, *string in pairs:
+        obj[key] = value if string and string[0] else flow_state_json(value)
+    return obj
+
+
+def state_write_many_try(path: str, pairs: Sequence[Pair],
+                         clock: Callable[[], float] = time.time) -> bool:
+    """Sets every one of <pairs> (state_pairs_json) in the state file at
+    <path> in one write, bash's flow_state_write_many: updated stamped with
+    the time <clock> reads, then the keys set, each in place in the file's
+    key order and a new one last, the file rewritten as flow_state_create
+    writes it. Whether it succeeded, printing nothing and leaving the file
+    untouched when it is absent, is not exactly one JSON object, or cannot
+    be written."""
+    state = _state_object(path)
+    if state is None:
+        return False
+    state = dict(state, updated=now(clock))
+    state.update(state_pairs_json(pairs))
+    return flow_state_create(path, state)
+
+
+def state_write_many(path: str, pairs: Sequence[Pair],
+                     clock: Callable[[], float] = time.time) -> None:
+    """state_write_many_try, dying "could not record <keys> in <path> - the
+    flow is unchanged" where the write fails, each key named once, in order,
+    as bash's state_write_many dies."""
+    if not state_write_many_try(path, pairs, clock):
+        die("could not record %s in %s - the flow is unchanged"
+            % (", ".join(state_pairs_json(pairs)), path))
+
+
+def _phase_pairs(phase: str, pairs: Sequence[Pair]) -> List[Pair]:
+    """The pairs a phase write records: phase first, then <pairs>. Dies
+    unless <phase> is a flow phase, bash's require_flow_phase."""
     # Imported here: the handoff module reads this one at its own import.
     from orch.handoff import PHASES
     if phase not in PHASES:
         die("not a flow phase: %s (want one of: %s)" % (phase, " ".join(PHASES)))
-    state = _state_object(path)
-    return state is not None and flow_state_create(
-        path, dict(state, updated=now(clock), phase=phase))
+    return [("phase", phase, True)] + list(pairs)
 
 
-def phase_write(path: str, phase: str, clock: Callable[[], float] = time.time) -> None:
+def phase_write_try(path: str, phase: str, clock: Callable[[], float] = time.time,
+                    pairs: Sequence[Pair] = ()) -> bool:
+    """Records <phase> in the state file at <path>, ported from the deleted
+    bash phase_write_try, with <pairs> written with it in one write, as bash
+    phase_write <phase> <key> <value>... writes them (state_write_many_try):
+    the phase and the keys are recorded together or not at all. Dies unless
+    <phase> is a flow phase, writing nothing; whether the write succeeded
+    otherwise, printing nothing and leaving the file untouched when it is
+    absent, is not exactly one JSON object, or cannot be written, for a
+    caller that words its own failure."""
+    return state_write_many_try(path, _phase_pairs(phase, pairs), clock)
+
+
+def phase_write(path: str, phase: str, clock: Callable[[], float] = time.time,
+                pairs: Sequence[Pair] = ()) -> None:
     """phase_write_try, dying "could not record phase in <path> - the flow
-    is unchanged" where the write fails - bash phase_write."""
-    if not phase_write_try(path, phase, clock):
-        die("could not record phase in %s - the flow is unchanged" % path)
+    is unchanged" where the write fails, phase followed by each key of
+    <pairs> once, in order, as bash phase_write dies (state_write_many)."""
+    state_write_many(path, _phase_pairs(phase, pairs), clock)
 
 
 def _refuse_constant(name: str) -> Any:

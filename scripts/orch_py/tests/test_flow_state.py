@@ -14,7 +14,8 @@ from pathlib import Path
 import pytest
 
 from orch.flow_state import (STATE_KEYS, flow_state_create, flow_state_get_many,
-                             flow_state_seed, phase_write, phase_write_try, require_value)
+                             flow_state_seed, phase_write, phase_write_try, require_value,
+                             state_write_many)
 from conftest import bash_sourced, died_of
 
 GOLDEN = Path(__file__).resolve().parent / "flow_state"
@@ -186,3 +187,72 @@ def test_the_create_fails_making_nothing_when_the_state_directory_is_gone(tmp_pa
 
     assert not flow_state_create(str(state), flow_state_seed("s", "", "main"))
     assert not state.parent.exists()
+
+
+MANY_STATE = '{"phase":"implement","branch":"orch/7-x","pr":12,"redo_count":0,"updated":"x"}'
+
+
+def test_a_multi_key_write_records_every_key_in_one_write_as_bash_s_does(tmp_path):
+    """Python's write and bash flow_state_write_many, on the same state and
+    the same pairs - a null, an integer, a word, and a number marked a
+    string - leave the same bytes."""
+    python, bash = tmp_path / "python.json", tmp_path / "bash.json"
+    python.write_text(MANY_STATE)
+    bash.write_text(MANY_STATE)
+
+    state_write_many(str(python), [("pr", "null"), ("redo_count", "2"), ("budget", "7"),
+                                   ("branch", "123", True), ("slug", "word")],
+                     lambda: SEED_CLOCK)
+    bash_sourced(BASH_MODULE, 'now() { printf "%s\\n" 2026-01-02T03:04:05Z; }\n'
+                 'flow_state_write_many "$1" pr null redo_count 2 budget 7 --string branch 123 '
+                 'slug word', bash)
+
+    assert python.read_bytes() == bash.read_bytes()
+    assert python.read_text() == (
+        '{\n  "phase": "implement",\n  "branch": "123",\n  "pr": null,\n  "redo_count": 2,\n'
+        '  "updated": "2026-01-02T03:04:05Z",\n  "budget": 7,\n  "slug": "word"\n}\n')
+
+
+@pytest.mark.parametrize("text", [None, "not json"])
+def test_a_failed_multi_key_write_dies_naming_each_key_once_leaving_the_file(
+        tmp_path, capsys, text):
+    state = tmp_path / "state.json"
+    if text is not None:
+        state.write_text(text)
+
+    assert died_of(capsys, lambda: state_write_many(
+        str(state), [("branch", "b", True), ("redo_count", "1"), ("branch", "c", True)])) == (
+        1, "", "orch: could not record branch, redo_count in %s - the flow is unchanged\n" % state)
+    assert (state.read_text() if text is not None else state.exists()) == (text or False)
+
+
+def test_a_phase_write_records_its_keys_with_the_phase_in_one_write(tmp_path):
+    state = tmp_path / "state.json"
+    state.write_text(MANY_STATE)
+
+    phase_write(str(state), "spec", lambda: SEED_CLOCK,
+                [("issue", "null"), ("branch", "null"), ("iteration", "0")])
+
+    assert state.read_text() == (
+        '{\n  "phase": "spec",\n  "branch": null,\n  "pr": 12,\n  "redo_count": 0,\n'
+        '  "updated": "2026-01-02T03:04:05Z",\n  "issue": null,\n  "iteration": 0\n}\n')
+
+
+def test_a_failed_phase_write_with_keys_records_neither_the_phase_nor_any_key(tmp_path, capsys):
+    state = tmp_path / "state.json"
+    state.write_text("[1]")
+
+    assert died_of(capsys, lambda: phase_write(
+        str(state), "spec", pairs=[("issue", "null"), ("branch", "null")])) == (
+        1, "", "orch: could not record phase, issue, branch in %s - the flow is unchanged\n"
+        % state)
+    assert phase_write_try(str(state), "spec", pairs=[("issue", "null")]) is False
+    assert state.read_text() == "[1]"
+
+
+def test_a_phase_write_outside_the_phase_table_writes_none_of_its_keys(tmp_path, capsys):
+    state = tmp_path / "state.json"
+    state.write_text(MANY_STATE)
+
+    assert died_of(capsys, lambda: phase_write(str(state), "plan", pairs=[("pr", "null")]))[0] == 1
+    assert state.read_text() == MANY_STATE
