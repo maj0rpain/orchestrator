@@ -32,9 +32,9 @@ ticket_sub_issues() {
 }
 
 # require_no_open_tickets <spec> <command>: dies unless <spec> has no open
-# sub-issue, blocked or not - what phase advance requires before it leaves
-# implement, and pr open and pr publish before they touch a PR. <command> is
-# the refusing command, named in the message ("phase advance", "pr open").
+# sub-issue, blocked or not - what pr open and pr publish require before they
+# touch a PR (phase advance runs the Python copy in orch/ticket.py). <command>
+# is the refusing command, named in the message ("pr open", "pr publish").
 # A collapsed breakdown or an issue with no sub-issues has none, so it passes.
 # A GitHub that cannot be read dies too, in ticket_sub_issues' grammar.
 require_no_open_tickets() {

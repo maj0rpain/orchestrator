@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 
 import pytest
 
@@ -39,10 +38,6 @@ def state_of(root, key="phase"):
     return json.loads(state_json(root).read_text())[key]
 
 
-def phase_of(root):
-    return state_of(root)
-
-
 @pytest.fixture
 def reviewing(root, seed):
     """A flow at phase review on issue #7, which carries orch:review and
@@ -58,7 +53,7 @@ def test_a_plain_session_records_the_next_phase_and_touches_nothing_on_github(
 
     assert phase_finish(root, seed, "done", "marked PR #9 ready", "7") is None
     assert capsys.readouterr() == ("", "")
-    assert phase_of(root) == "done"
+    assert state_of(root) == "done"
     assert snapshot(store) == before
 
 
@@ -76,7 +71,7 @@ def test_an_autopilot_session_moves_the_label_records_the_phase_and_releases_the
     assert phase_finish(root, seed, "done", "marked PR #9 ready", "7", env=AUTOPILOT) is None
     assert capsys.readouterr() == ("", "")
     assert labels_of(store, 7) == ["ready-for-agent", "orch:done"]
-    assert phase_of(root) == "done"
+    assert state_of(root) == "done"
     assert seed.claim_held(7) is False
 
 
@@ -98,7 +93,7 @@ def test_an_autopilot_session_with_no_issue_dies_before_any_write(
 
     assert died_of(capsys, lambda: phase_finish(root, seed, "done", "r", "", env=AUTOPILOT)) == (
         1, "", "orch: no issue recorded in state - the spec phase must publish one first\n")
-    assert phase_of(root) == "review"
+    assert state_of(root) == "review"
     assert snapshot(store) == before
 
 
@@ -108,18 +103,9 @@ def test_phase_finish_refuses_any_count_of_arguments_but_three(root, seed, capsy
         1, "", "orch: usage: orch_python_call phase phase_finish <next> <reason> <issue>\n")
 
 
-def test_orch_python_call_reaches_phase_finish_naming_the_command_given_by_as(capsys):
+def test_call_mode_reaches_the_phase_module_s_phase_finish(capsys):
     assert died_of(capsys, lambda: main(["--call", "--as", "review", "phase", "phase_finish"])) \
         == (1, "", "orch: usage: orch_python_call phase phase_finish <next> <reason> <issue>\n")
-
-
-def test_orch_python_call_below_python_3_9_refuses_naming_orch_sh_review(monkeypatch, capsys):
-    monkeypatch.setattr(sys, "version_info", (3, 8, 10, "final", 0))
-
-    assert died_of(capsys, lambda: main(
-        ["--call", "--as", "review", "phase", "phase_finish", "done", "r", "7"])) == (
-        1, "", "orch: orch.sh review needs python3 3.9 or newer (found 3.8.10)"
-               " - run orch.sh doctor\n")
 
 
 # --- the noun: phase advance and phase boundary --------------------------
@@ -233,7 +219,7 @@ def test_advance_leaves_spec_for_implement_on_a_valid_spec_handoff(root, seed, c
     assert capsys.readouterr() == (
         "Phase spec complete. Handoff written to %s.\n\n  Next: /clear, then /orchestrator:next\n"
         % handoff(root, "02-spec.md"), "")
-    assert phase_of(root) == "implement"
+    assert state_of(root) == "implement"
 
 
 def test_advance_refuses_at_spec_with_no_spec_handoff_leaving_the_phase(root, seed, capsys):
@@ -242,7 +228,7 @@ def test_advance_refuses_at_spec_with_no_spec_handoff_leaving_the_phase(root, se
     assert died_of(capsys, lambda: orch_phase(root, seed, "advance")) == (
         1, "", "orch: handoff not found: %s - write it before leaving the spec phase\n"
                % handoff(root, "02-spec.md"))
-    assert phase_of(root) == "spec"
+    assert state_of(root) == "spec"
 
 
 def test_advance_refuses_an_invalid_handoff_printing_its_fail_lines(root, seed, capsys):
@@ -255,12 +241,12 @@ def test_advance_refuses_an_invalid_handoff_printing_its_fail_lines(root, seed, 
         1, "FAIL  empty section: ## Spec issue\n",
         "orch: %s is not valid - fix it, then run phase advance again; the flow stays at spec\n"
         % path)
-    assert phase_of(root) == "spec"
+    assert state_of(root) == "spec"
     path.write_text("## Host fallbacks\nNone.\n")
 
     assert died_of(capsys, lambda: orch_phase(root, seed, "advance"))[1] == \
         "FAIL  missing section: ## Spec issue\n"
-    assert phase_of(root) == "spec"
+    assert state_of(root) == "spec"
 
 
 @pytest.mark.parametrize("seams, changelog", [("", "Not reviewed."), ("At handoff validate.", "")],
@@ -276,7 +262,7 @@ def test_advance_passes_a_spec_handoff_still_carrying_the_sections_before_1601(
                     "## Host fallbacks\nNone.\n" % (seams, changelog))
 
     assert orch_phase(root, seed, "advance") == 0
-    assert phase_of(root) == "implement"
+    assert state_of(root) == "implement"
 
 
 def test_advance_refuses_to_leave_spec_with_no_issue_recorded(root, seed, capsys):
@@ -285,7 +271,7 @@ def test_advance_refuses_to_leave_spec_with_no_issue_recorded(root, seed, capsys
 
     assert died_of(capsys, lambda: orch_phase(root, seed, "advance")) == (
         1, "", "orch: no issue recorded in state - the spec phase must publish one first\n")
-    assert phase_of(root) == "spec"
+    assert state_of(root) == "spec"
 
 
 @pytest.fixture
@@ -303,7 +289,7 @@ def test_advance_refuses_at_implement_with_no_implement_handoff(root, seed, caps
     assert died_of(capsys, lambda: orch_phase(root, seed, "advance")) == (
         1, "", "orch: handoff not found: %s - write it before leaving the implement phase\n"
                % handoff(root, "03-implement.md"))
-    assert phase_of(root) == "implement"
+    assert state_of(root) == "implement"
 
 
 @pytest.mark.parametrize("key, message", [
@@ -319,7 +305,7 @@ def test_advance_refuses_to_leave_implement_without_each_field_review_needs(
 
     assert died_of(capsys, lambda: orch_phase(root, seed, "advance")) == (
         1, "", "orch: %s\n" % message)
-    assert phase_of(root) == "implement"
+    assert state_of(root) == "implement"
     assert snapshot(store) == before
 
 
@@ -342,7 +328,7 @@ def test_advance_refuses_to_leave_implement_while_a_ticket_is_open(
     assert died_of(capsys, lambda: orch_phase(root, seed, "advance")) == (
         1, "", "orch: #7 still has open tickets: #701 #702 - run the driver loop"
                " (orch.sh ticket next 7) or close them, then run phase advance again\n")
-    assert phase_of(root) == "implement"
+    assert state_of(root) == "implement"
     seed.issue(701, "closed")
 
     assert "open tickets: #702 - run" in died_of(capsys, lambda: orch_phase(root, seed, "advance"))[2]
@@ -354,7 +340,7 @@ def test_advance_refuses_to_leave_implement_when_github_cannot_list_the_tickets(
 
     assert died_of(capsys, lambda: orch_phase(root, seed, "advance")) == (
         1, "", "orch: gh could not list sub-issues of #7: HTTP 502\n")
-    assert phase_of(root) == "implement"
+    assert state_of(root) == "implement"
 
 
 @pytest.mark.parametrize("body", ["## Ticket\n\nx\n", "Just a spec.\n"],
@@ -367,7 +353,7 @@ def test_advance_leaves_implement_for_review_with_no_sub_issue(
     assert capsys.readouterr() == (
         "Phase implement complete. Handoff written to %s.\n\n"
         "  Next: /clear, then /orchestrator:next\n" % handoff(root, "03-implement.md"), "")
-    assert phase_of(root) == "review"
+    assert state_of(root) == "review"
 
 
 def test_advance_leaves_implement_once_every_ticket_is_closed(root, seed, capsys, implementing):
@@ -375,7 +361,7 @@ def test_advance_leaves_implement_once_every_ticket_is_closed(root, seed, capsys
     seed.sub_issue(7, 701)
 
     assert orch_phase(root, seed, "advance") == 0
-    assert phase_of(root) == "review"
+    assert state_of(root) == "review"
 
 
 @pytest.mark.parametrize("phase_name, message", [
@@ -408,10 +394,10 @@ def test_advance_with_a_failed_phase_write_prints_no_boundary_then_re_runs(root,
                    % state_json(root))
     finally:
         os.chmod(directory, 0o755)
-    assert phase_of(root) == "spec"
+    assert state_of(root) == "spec"
 
     assert orch_phase(root, seed, "advance") == 0
-    assert phase_of(root) == "implement"
+    assert state_of(root) == "implement"
 
 
 # --- phase advance in an autopilot flow (#1457) ----------------------------
@@ -444,12 +430,12 @@ def test_autopilot_advance_moves_the_label_records_the_phase_releases_the_claim_
         "Phase spec complete. Handoff posted on issue #7; the watcher starts the implement"
         " phase.\n", "")
     assert labels_of(store, 7) == ["ready-for-agent", "orch:implement"]
-    assert phase_of(root) == "implement"
+    assert state_of(root) == "implement"
     assert seed.claim_held(7) is False
 
 
 def assert_unmoved(root, seed, store):
-    assert phase_of(root) == "spec"
+    assert state_of(root) == "spec"
     assert labels_of(store, 7) == ["ready-for-agent", "orch:spec", "orch:running"]
     assert seed.claim_held(7) is True
 
@@ -515,5 +501,5 @@ def test_a_plain_advance_touches_no_label_and_no_claim(root, seed, store, capsys
     before = snapshot(store)
 
     assert orch_phase(root, seed, "advance") == 0
-    assert phase_of(root) == "implement"
+    assert state_of(root) == "implement"
     assert snapshot(store) == before

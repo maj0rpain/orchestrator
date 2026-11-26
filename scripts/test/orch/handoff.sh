@@ -86,17 +86,6 @@ out="$(sourced_orch phases_from bogus)"; st=$?
 assert_eq "phases_from prints nothing for a phase outside the table" "$out" ""
 assert_ne "and fails" "$st" 0
 
-for pair in spec:implement implement:review review:done; do
-  out="$(sourced_orch phase_next "${pair%%:*}")"; st=$?
-  assert_eq "phase_next ${pair%%:*} prints ${pair#*:}" "$out" "${pair#*:}"
-  assert_status "phase_next ${pair%%:*} succeeds" "$st" 0
-done
-for p in "done" bogus; do
-  out="$(sourced_orch phase_next "$p")"; st=$?
-  assert_eq "phase_next $p prints nothing" "$out" ""
-  assert_ne "phase_next $p fails" "$st" 0
-done
-
 for cell in "handoff|spec|01-plan.md" "handoff|implement|02-spec.md" \
             "handoff|review|03-implement.md" \
             "writer|spec|plan" "writer|implement|spec" "writer|review|implement" \

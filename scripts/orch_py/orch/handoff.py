@@ -7,7 +7,9 @@ handoff_report, handoff_check), the Python copy of the bash validator the
 handoff noun keeps, pinned to it by tests/test_handoff_report.py's golden
 handoffs, and to what the phase noun's advance reads a handoff with: the
 dying read (handoff_read) and the invalid-handoff refusal (handoff_invalid),
-each with its file and comment adapter, their messages as bash's.
+each with its file and comment adapter, their messages as bash's;
+handoff_invalid and phase_next have no bash copy left, their one bash caller
+the phase module, gone at the phase noun's cutover.
 
 A line inside a code fence (orch.common.fenced), its delimiters included, is
 never a heading: it neither opens nor closes a section, and inside an open
@@ -16,7 +18,7 @@ one it is part of the body.
 The phase table is the one Python copy of the bash side's (PHASE_TABLE),
 which Python does not read, pinned to it by tests/test_handoff.py's drift
 test; orch/standing.py's PHASES is its first column, and phase_writer and
-phase_next read it as bash's phase_cell writer and phase_next do. `handoff
+phase_next read it as bash's phase_cell writer did and its phase_next did. `handoff
 path` resolves through the Handoff store's adapter handoff_store chooses per
 call: the file adapter, the handoff directory's files, and in an autopilot
 session the comment adapter, marked comments on the recorded issue, read
@@ -101,7 +103,7 @@ def phase_writer(phase: str) -> Optional[str]:
 
 
 def phase_next(phase: str) -> Optional[str]:
-    """The phase after <phase> in the table, bash phase_next; None for the
+    """The phase after <phase> in the table, as bash phase_next was; None for the
     last phase and for one the table does not hold."""
     phases = [row[0] for row in PHASE_TABLE]
     if phase not in phases[:-1]:
@@ -257,7 +259,7 @@ def handoff_comment_fetch_due(gh, issue: str, phase: str, scratch: str) -> Tuple
         return 1, reason
     status = 0
     for handoff in due:
-        if handoff_comment_write(entries, handoff[:-3], "%s/%s" % (scratch, handoff)) == 2:
+        if handoff_comment_write(entries, _stem(handoff), "%s/%s" % (scratch, handoff)) == 2:
             status = 2
     return status, ""
 
@@ -317,7 +319,7 @@ def handoff_read(name: str, hint: str, gh_of, env: Mapping[str, str], root: str)
 def handoff_invalid(name: str, hint: str, env: Mapping[str, str], root: str,
                     issue: str) -> NoReturn:
     """Dies saying the handoff <name> is not valid, the adapter's message,
-    bash handoff_invalid: the file adapter's names the file in the checkout
+    as bash handoff_invalid was: the file adapter's names the file in the checkout
     at <root>, with a fix to make; the comment adapter's names the comment
     on issue #<issue>, the flow's issue the caller holds, with a fix to
     post. Either ends `, <hint>`."""

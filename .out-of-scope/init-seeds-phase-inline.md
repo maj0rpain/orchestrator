@@ -8,14 +8,15 @@ even though that costs a second state write and a second `updated` stamp.
 
 ## Why this is out of scope
 
-The bash `phase_write` and `phase_write_try` are the internal writers of
-`state.phase` for every bash caller: `phase_write` for `advance`, `review
-ready` and the redos' closing write (`redo_step_back` goes through
-`phase_write`), and `phase_write_try` for `standing_finish`. `init`, now a
-Python noun, stamps its seed's phase through the Python copy,
-`phase_write` in `scripts/orch_py/orch/flow_state.py`, kept beside the bash
-one while bash callers remain (ADR-0067), which makes the same membership
-check against the Python copy of the phase table. Every way the phase gets set therefore goes
+The phase writers are the internal writers of `state.phase`. The Python
+ones, `phase_write` and `phase_write_try` in
+`scripts/orch_py/orch/flow_state.py`, serve `init`, now a Python noun, which
+stamps its seed's phase through `phase_write`, and the Python `phase` noun:
+`phase advance`, and `review ready`'s finish through `phase_finish` and,
+under autopilot, `standing_finish`. The bash `phase_write`, kept while bash
+callers remain (ADR-0067), serves the redos' closing write (`redo_step_back`
+goes through it). Both make the same membership check, the Python one
+against the Python copy of the phase table. Every way the phase gets set therefore goes
 through that check. If the seed wrote the phase inline, a
 further writer would exist that skips that check, and anyone adding a phase
 or renaming one would have to remember the seed object as well.

@@ -164,7 +164,7 @@
 78	49	gh rate limits (#2577)	d271a3eb8cd5a9f98fb8f5f6538b7be3f1c9002c
 14	15	gh rate limits: the GitHub pause and the hit file (#2577)	81ab2bc578eeeaacb0cab9ae3ddf537247cf6e64
 2	3	handoff path	08b72398d3efd891b74fabceebbc287e57597a16
-15	17	phase table	b86a1ec68d10558d7454229c58975c60ba748791
+22	19	phase table	a959597a682a76f155ad3ad41f7b5d88626b42e6
 14	15	handoff validate	979e62e48edf8946440a03aa27d2e16f209320f9
 7	8	handoff section	d9e6e93eeafb9da287b79b78378d791303977029
 6	7	spec handoff	6b93452214034aa4b2ea9625372114a827595133

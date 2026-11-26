@@ -1064,11 +1064,10 @@ def test_phase_advance_records_the_next_phase_and_prints_the_boundary_through_th
     assert json.loads((repo / ".orchestrator" / "state.json").read_text())["phase"] == "implement"
 
 
-@pytest.mark.parametrize("verb", ["advance", "boundary"])
-def test_phase_dies_pointing_at_doctor_without_python3(tmp_path, repo, seed, verb):
+def test_phase_dies_pointing_at_doctor_without_python3(tmp_path, repo, seed):
     flow_state(repo, "spec", 12)
 
-    assert orch_sh(tmp_path, repo, seed, "phase", verb, path=path_without(tmp_path, "python3")) \
+    assert orch_sh(tmp_path, repo, seed, "phase", "boundary", path=path_without(tmp_path, "python3")) \
         == ("", "orch: orch.sh phase needs python3 3.9 or newer (found none)"
                 " - run orch.sh doctor\n", 1)
 

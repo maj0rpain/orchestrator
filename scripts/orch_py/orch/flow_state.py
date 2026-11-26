@@ -273,8 +273,7 @@ def require_issue(state_file: str, env: Mapping[str, str],
     start command from <env>), when it cannot be read, and when no issue is
     recorded."""
     state = require_state_read(state_file, env, ("issue",) + tuple(keys), 1)
-    if not state["issue"]:
-        die(NO_ISSUE_MSG)
+    require_value("issue", state["issue"])
     return state
 
 
