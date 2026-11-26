@@ -22,6 +22,7 @@ do, for a test that runs orch.sh on it.
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import socket
@@ -30,13 +31,39 @@ from typing import Callable, List, Mapping, Optional, Sequence, Tuple
 
 from orch import gh as real
 from orch.common import file_lines, plain_number, read_raw, read_text
-from orch.gh import GhFailed, IssueRow, LabelledBody, Limits
+from orch.gh import Check, GhFailed, IssueRow, LabelledBody, Limits
 
 # The author and timestamp of every comment the fake's own operations write.
 COMMENT_AUTHOR = "fake-gh"
 COMMENT_CREATED = "2026-01-01T00:00:00Z"
 OFFLINE = "dial tcp: lookup api.github.com: no such host\n"
 NOAUTH = "HTTP 401: Bad credentials (https://api.github.com/graphql)\n"
+# What the store answers for an issue's creation or a PR's merge time it does
+# not hold, and for a PR's head SHA.
+EPOCH = "1970-01-01T00:00:00Z"
+NO_HEAD_OID = "0" * 40
+_RUNS = "https://github.com/acme/widgets/actions/runs"
+_EXT_CI = "https://ci.example.com/build/9"
+# The checks each scripted answer stands for, as fake_checks_answer prints
+# them; boom is a connection error, and none and empty no checks at all.
+CHECKS_ANSWERS = {
+    "green": [Check("pass", "build", _RUNS + "/1/job/1")],
+    "failing": [Check("fail", "build", _RUNS + "/4242/job/77"),
+                Check("pass", "lint", _RUNS + "/1/job/1")],
+    "cancel": [Check("cancel", "build", _RUNS + "/5150/job/9")],
+    "external": [Check("pass", "lint", _RUNS + "/1/job/1"), Check("fail", "ext-ci", _EXT_CI),
+                 Check("fail", "build", _RUNS + "/4242/job/77")],
+    "tworuns": [Check("fail", "build", _RUNS + "/4242/job/77"),
+                Check("fail", "test", _RUNS + "/4343/job/78")],
+    "onerun": [Check("fail", "build", _RUNS + "/4242/job/77"),
+               Check("fail", "test", _RUNS + "/4242/job/78")],
+    "mixed": [Check("fail", "build", _RUNS + "/4242/job/77"), Check("fail", "ext-ci", _EXT_CI)],
+    "badrunid": [Check("fail", "build", _RUNS + "/12abc")],
+    "comma": [Check("fail", "build (linux, x64)", _RUNS + "/4242/job/77")],
+    "pending": [Check("pending", "build", "")],
+    "none": [],
+    "empty": [],
+}
 
 
 def _write(path: str, text: str, mode: str = "wb") -> None:
@@ -268,10 +295,11 @@ class FakeGh:
         return [n for n in self._open_numbers()
                 if all(real.label_listed(self._labels(n), label) for label in labels)][:limit]
 
-    def _next_number(self) -> int:
-        """The number a new issue takes - next_issue's, or one past the
-        highest issue or PR number the store holds - the counter advanced."""
-        counter = _store_path(self.store, "next_issue")
+    def _next_number(self, counter_name: str = "next_issue") -> int:
+        """The number a new issue takes - or a new PR, under next_pr - the
+        counter's, or one past the highest issue or PR number the store
+        holds, the two sharing GitHub's numbering; the counter advanced."""
+        counter = _store_path(self.store, counter_name)
         seeded = read_text(counter)
         if seeded:
             n = real.number_of(seeded)
@@ -331,6 +359,13 @@ class FakeGh:
         if os.path.exists(_issue_path(self.store, n, "pull")):
             return "PULL"
         return read_text(_issue_path(self.store, n, "state")) or ""
+
+    def issue_created_at(self, n: int) -> str:
+        """The stored created_at; the epoch where unset."""
+        self._failing("adapter_issue_created_at")
+        self._known(n)
+        created = read_text(_issue_path(self.store, n, "created_at"))
+        return EPOCH if created is None else created
 
     def issue_state_labels(self, n: int) -> Tuple[str, List[str]]:
         self._failing("adapter_issue_state_labels")
@@ -583,6 +618,162 @@ class FakeGh:
             rows.append("%s\t%s" % (name, "false" if cross is None else cross))
         return rows
 
+    def _prs(self, state: str):
+        """The stored PRs in <state>, newest first: each number and
+        directory."""
+        for name in reversed(_numbered(_store_path(self.store, "prs"))):
+            directory = _pr_path(self.store, name)
+            if os.path.isdir(directory) and read_text(os.path.join(directory, "state")) == state:
+                yield name, directory
+
+    def _cross(self, directory: str) -> str:
+        """The PR's cross_repository flag as stored; false where unset."""
+        cross = read_text(os.path.join(directory, "cross_repository"))
+        return "false" if cross is None else cross
+
+    def prs_open_bodies(self) -> List[str]:
+        """Every open PR, newest first, each `<number><TAB><body><TAB><flag>`,
+        the stored body JSON-encoded as jq -Rs encodes it (an empty string
+        where unset), the flag as prs_open answers it."""
+        self._failing("adapter_prs_open_bodies")
+        return ["%s\t%s\t%s" % (name, json.dumps(read_raw(os.path.join(d, "body")) or "",
+                                                 ensure_ascii=False), self._cross(d))
+                for name, d in self._prs("OPEN")]
+
+    def prs_merged_closing(self, base: str, since: str) -> List[str]:
+        """The merged PRs into <base> merged at or after <since>, newest
+        first, each `<number><TAB><head><TAB><mergedAt><TAB><closing><TAB>
+        <flag>` - the stored merged_at (the epoch where unset), the stored
+        closing numbers comma-joined, the flag as prs_open answers it."""
+        self._failing("adapter_prs_merged_closing")
+        rows = []
+        for name, d in self._prs("MERGED"):
+            if read_text(os.path.join(d, "base")) != base:
+                continue
+            merged_at = read_text(os.path.join(d, "merged_at"))
+            merged_at = EPOCH if merged_at is None else merged_at
+            if merged_at < since:
+                continue
+            rows.append("\t".join([name, read_text(os.path.join(d, "head")) or "", merged_at,
+                                   ",".join(file_lines(os.path.join(d, "closing"))),
+                                   self._cross(d)]))
+        return rows
+
+    def prs_merged_bodies(self, base: str) -> str:
+        """The stored body of every merged PR into <base>, newest first,
+        each followed by a newline."""
+        self._failing("adapter_prs_merged_bodies")
+        return "".join((read_raw(os.path.join(d, "body")) or "") + "\n"
+                       for _, d in self._prs("MERGED")
+                       if read_text(os.path.join(d, "base")) == base)
+
+    def pr_create(self, base: str, head: str, title: str, body_file: str,
+                  draft: bool = False, labels: Sequence[str] = ()) -> int:
+        """A new open PR, numbered as next_pr sets (else one past the
+        highest issue or PR number held), a draft under <draft>, carrying
+        each label named in the repo's casing but those pr_label_drops
+        lists - as a gh whose label mutation did not land."""
+        self._failing("adapter_pr_create", compound=bool(labels))
+        n = self._next_number("next_pr")
+        for name, value in (("state", "OPEN"), ("base", base), ("head", head), ("title", title)):
+            _write(_pr_path(self.store, n, name), value + "\n")
+        _write(_pr_path(self.store, n, "body"), read_raw(body_file) or "")
+        if draft:
+            _write(_pr_path(self.store, n, "draft"), "")
+        drops = _lines(_store_path(self.store, "pr_label_drops"))
+        kept: List[str] = []
+        for label in labels:
+            if not real.label_listed(drops, label) and not real.label_listed(kept, label):
+                kept.append(self._label_canon(label))
+        _write(_pr_path(self.store, n, "labels"), "".join(label + "\n" for label in kept))
+        return n
+
+    def pr_labels(self, n: int) -> List[str]:
+        self._failing("adapter_pr_labels")
+        self._pr_known(n)
+        return _lines(_pr_path(self.store, n, "labels"))
+
+    def pr_refs(self, n: int) -> Tuple[str, str, str]:
+        """The stored head SHA - its head_oid as stored, empty included
+        (GitHub's null head), forty zeros where absent - head and base."""
+        self._failing("adapter_pr_refs")
+        self._pr_known(n)
+        oid = read_text(_pr_path(self.store, n, "head_oid"))
+        return (NO_HEAD_OID if oid is None else oid,
+                read_text(_pr_path(self.store, n, "head")) or "",
+                read_text(_pr_path(self.store, n, "base")) or "")
+
+    def pr_state_draft(self, n: int) -> Tuple[str, bool]:
+        self._failing("adapter_pr_state_draft")
+        self._pr_known(n)
+        return (read_text(_pr_path(self.store, n, "state")) or "",
+                os.path.isfile(_pr_path(self.store, n, "draft")))
+
+    def pr_ready(self, n: int) -> None:
+        """The stored PR no longer a draft."""
+        self._failing("adapter_pr_ready")
+        self._pr_known(n)
+        if os.path.lexists(_pr_path(self.store, n, "draft")):
+            os.remove(_pr_path(self.store, n, "draft"))
+
+    def pr_draft(self, n: int) -> None:
+        """The stored PR a draft."""
+        self._failing("adapter_pr_draft")
+        self._pr_known(n)
+        _write(_pr_path(self.store, n, "draft"), "")
+
+    def pr_comment(self, n: int, body_file: str) -> None:
+        self._failing("adapter_pr_comment")
+        self._pr_known(n)
+        self._comment_append(_pr_path(self.store, n, "comments"), read_raw(body_file) or "")
+
+    def pr_body_edit(self, n: int, body_file: str) -> None:
+        self._failing("adapter_pr_body_edit")
+        self._pr_known(n)
+        _write(_pr_path(self.store, n, "body"), read_raw(body_file) or "")
+
+    def pr_title_edit(self, n: int, title: str) -> None:
+        self._failing("adapter_pr_title_edit")
+        self._pr_known(n)
+        _write(_pr_path(self.store, n, "title"), title + "\n")
+
+    def pr_label_add(self, n: int, label: str) -> None:
+        """The label appended to the stored ones in the repo's casing,
+        unless the PR carries it in any casing."""
+        self._failing("adapter_pr_label_add")
+        self._pr_known(n)
+        labels = _lines(_pr_path(self.store, n, "labels"))
+        if not real.label_listed(labels, label):
+            _write(_pr_path(self.store, n, "labels"), self._label_canon(label) + "\n", "ab")
+
+    def pr_diff(self, n: int) -> str:
+        self._failing("adapter_pr_diff")
+        self._pr_known(n)
+        return read_raw(_pr_path(self.store, n, "diff")) or ""
+
+    def pr_checks(self, n: int, scope: str) -> List[Check]:
+        """The next answer of the script fake_checks seeded for the PR and
+        scope - one per call, the last repeating once the script runs out -
+        each read logged in checks/<n>/reads. An unscripted scope has no
+        checks."""
+        self._failing("adapter_pr_checks")
+        directory = _store_path(self.store, "checks", n)
+        _write(os.path.join(directory, "reads"), "read\n", "ab")
+        script = os.path.join(directory, scope)
+        if not os.path.isfile(script):
+            return []
+        answers = file_lines(script)
+        i = real.number_of(read_raw(script + ".n") or "") + 1
+        _write(script + ".n", "%d\n" % i)
+        answer = answers[i - 1] if i <= len(answers) else ""
+        if not answer:
+            answer = answers[-1] if answers else ""
+        if answer == "boom":
+            raise GhFailed(OFFLINE)
+        if answer not in CHECKS_ANSWERS:
+            raise GhFailed("gh fake: no checks answer named '%s'\n" % answer)
+        return list(CHECKS_ANSWERS[answer])
+
     def pr_body(self, n: int) -> str:
         self._failing("adapter_pr_body")
         self._pr_known(n)
@@ -681,6 +872,43 @@ class FakeStore:
 
     def pr_body(self, n: int, body: str) -> None:
         _write(_pr_path(self.store, n, "body"), body)
+
+    def pr_draft(self, n: int) -> None:
+        """PR #n a draft."""
+        _write(_pr_path(self.store, n, "draft"), "")
+
+    def pr_labels(self, n: int, *labels: str) -> None:
+        """PR #n's labels: exactly <labels>, one a line, in order."""
+        _write(_pr_path(self.store, n, "labels"), "".join(label + "\n" for label in labels))
+
+    def pr_head(self, n: int, oid: str) -> None:
+        """PR #n's head SHA, as fake_pr_head seeds it with no commits."""
+        _write(_pr_path(self.store, n, "head_oid"), oid + "\n")
+
+    def pr_diff(self, n: int, diff: str) -> None:
+        _write(_pr_path(self.store, n, "diff"), diff)
+
+    def pr_merged(self, n: int, merged_at: str, *closing: int) -> None:
+        """PR #n merged at the UTC timestamp <merged_at>, its
+        closingIssuesReferences the issues given, as fake_pr_merged seeds
+        them."""
+        _write(_pr_path(self.store, n, "merged_at"), merged_at + "\n")
+        _write(_pr_path(self.store, n, "closing"), "".join("%d\n" % i for i in closing))
+
+    def issue_created(self, n: int, created_at: str) -> None:
+        """Issue #n created at the UTC timestamp <created_at>."""
+        _write(_issue_path(self.store, n, "created_at"), created_at + "\n")
+
+    def checks(self, n: int, scope: str, *answers: str) -> None:
+        """PR #n's checks for <scope>, required or all, scripted as
+        fake_checks scripts them: one answer a call, the last repeating."""
+        script = _store_path(self.store, "checks", n, scope)
+        _write(script, "".join(answer + "\n" for answer in answers))
+        if os.path.lexists(script + ".n"):
+            os.remove(script + ".n")
+
+    def next_pr(self, n: int) -> None:
+        _write(_store_path(self.store, "next_pr"), "%d\n" % n)
 
     def pr_comment(self, n: int, author: str, created: str, body: str,
                    association: str = "") -> None:

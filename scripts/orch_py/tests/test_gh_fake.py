@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from orch.gh import Gh, GhFailed, IssueRow, LabelledBody, SubIssue, adapter
+from orch.gh import Check, Gh, GhFailed, IssueRow, LabelledBody, SubIssue, adapter
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit
 from orch.repo import RepoPin
@@ -28,6 +28,9 @@ BASH_HELPERS = {
         "fake_state_of", "fake_labels_of", "fake_comments_of",
         "fake_pr", "fake_pr_comment", "fake_pr_comments_of", "fake_pr_cross", "fake_labels",
         "fake_default_branch", "fake_claim_seed", "fake_claim_held",
+        "fake_pr_draft", "fake_pr_head", "fake_pr_merged", "fake_issue_created", "iso_of",
+        "iso_ago", "fake_next_pr", "fake_checks", "fake_pr_base_of", "fake_pr_body_of",
+        "fake_pr_draft_of",
     ],
     SCRIPTS / "test" / "orch" / "gh.sh": ["fake_ratelimit", "fake_duplicate_of",
                                           "fake_issue_body"],
@@ -363,6 +366,23 @@ def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
     ("adapter_claim_delete", lambda gh: gh.claim_delete(5)),
     ("adapter_issue_reopen", lambda gh: gh.issue_reopen(5)),
     ("adapter_pr_close", lambda gh: gh.pr_close(6, "Closed.")),
+    ("adapter_issue_created_at", lambda gh: gh.issue_created_at(5)),
+    ("adapter_pr_create", lambda gh: gh.pr_create("main", "topic", "T", "/dev/null")),
+    ("adapter_pr_labels", lambda gh: gh.pr_labels(6)),
+    ("adapter_pr_refs", lambda gh: gh.pr_refs(6)),
+    ("adapter_pr_state_draft", lambda gh: gh.pr_state_draft(6)),
+    ("adapter_pr_ready", lambda gh: gh.pr_ready(6)),
+    ("adapter_pr_draft", lambda gh: gh.pr_draft(6)),
+    ("adapter_pr_comment", lambda gh: gh.pr_comment(6, "/dev/null")),
+    ("adapter_pr_body_edit", lambda gh: gh.pr_body_edit(6, "/dev/null")),
+    ("adapter_pr_title_edit", lambda gh: gh.pr_title_edit(6, "T")),
+    ("adapter_pr_label_add", lambda gh: gh.pr_label_add(6, "bug")),
+    ("adapter_pr_diff", lambda gh: gh.pr_diff(6)),
+    ("adapter_pr_checks", lambda gh: gh.pr_checks(6, "all")),
+    ("adapter_prs_open_bodies", lambda gh: gh.prs_open_bodies()),
+    ("adapter_prs_merged_closing",
+     lambda gh: gh.prs_merged_closing("main", "2026-01-01T00:00:00Z")),
+    ("adapter_prs_merged_bodies", lambda gh: gh.prs_merged_bodies("main")),
 ])
 def test_the_added_operations_fail_under_the_bash_operation_names(store, operation, call):
     bash(store, "fake_issue 5 open review:nit; fake_issue 7 open; fake_default_branch trunk; "
@@ -821,6 +841,201 @@ def test_a_lag_the_python_seeder_sets_after_current_reads_the_bash_fake_honours(
     assert bash(store, r"""
 for _ in 1 2 3; do adapter_issue_title_labels 5 | paste -sd ' ' -; done
 """) == "Current ready\nStale old-label\nCurrent ready\n"
+
+
+# --- the operations the pr noun adds ------------------------------------------
+
+
+def test_the_pr_reads_of_a_bash_seeded_store_read_as_the_bash_fake_answers_them(store):
+    bash_answer = bash(store, r"""
+fake_pr 4 open topic main; fake_pr_draft 4; fake_pr_head 4 abc123
+printf 'bug\nNeeds Human\n' >"$ORCH_GH_FAKE_STORE/prs/4/labels"
+printf 'diff --git a/x b/x\n+y\n' >"$ORCH_GH_FAKE_STORE/prs/4/diff"
+fake_pr 5 merged other next
+fake_issue 7 open; fake_issue_created 7 0
+printf '2026-03-01T12:00:00Z\n' >"$ORCH_GH_FAKE_STORE/issues/7/created_at"
+fake_issue 8 open
+adapter_pr_labels 4; echo '|'
+adapter_pr_labels 5; echo '|'
+adapter_pr_refs 4; adapter_pr_refs 5; echo '|'
+adapter_pr_state_draft 4; adapter_pr_state_draft 5; echo '|'
+adapter_pr_diff 4; adapter_pr_diff 5; echo '|'
+adapter_issue_created_at 7; adapter_issue_created_at 8
+""")
+    gh = fake(store)
+
+    assert gh.pr_labels(4) == ["bug", "Needs Human"]
+    assert gh.pr_labels(5) == []
+    assert gh.pr_refs(4) == ("abc123", "topic", "main")
+    assert gh.pr_refs(5) == ("0" * 40, "other", "next")
+    assert gh.pr_state_draft(4) == ("OPEN", True)
+    assert gh.pr_state_draft(5) == ("MERGED", False)
+    assert gh.pr_diff(4) == "diff --git a/x b/x\n+y\n"
+    assert gh.pr_diff(5) == ""
+    assert gh.issue_created_at(7) == "2026-03-01T12:00:00Z"
+    assert gh.issue_created_at(8) == "1970-01-01T00:00:00Z"
+    assert bash_answer == (
+        "bug\nNeeds Human\n|\n|\n"
+        "abc123\ntopic\nmain\n%s\nother\nnext\n|\n"
+        "OPEN\ntrue\nMERGED\nfalse\n|\n"
+        "diff --git a/x b/x\n+y\n|\n"
+        "2026-03-01T12:00:00Z\n1970-01-01T00:00:00Z\n" % ("0" * 40))
+
+
+def test_the_pr_listings_of_a_bash_seeded_store_read_as_the_bash_fake_lists_them(store):
+    bash_answer = bash(store, r"""
+fake_pr 4 open topic main; printf 'Refs #3\r\n\nBody\t"q"' >"$ORCH_GH_FAKE_STORE/prs/4/body"
+fake_pr 9 open fork main; fake_pr_cross 9
+fake_pr 6 closed old main
+fake_pr 10 merged orch/5-x main; fake_pr_merged 10 0 5 7
+printf '2026-03-02T00:00:00Z\n' >"$ORCH_GH_FAKE_STORE/prs/10/merged_at"
+printf 'Closes #5' >"$ORCH_GH_FAKE_STORE/prs/10/body"
+fake_pr 11 merged quick/6-y main; fake_pr_cross 11
+printf '2026-03-01T00:00:00Z\n' >"$ORCH_GH_FAKE_STORE/prs/11/merged_at"
+fake_pr 12 merged orch/8-z main
+printf '2026-02-28T23:59:59Z\n' >"$ORCH_GH_FAKE_STORE/prs/12/merged_at"
+printf 'Refs #8' >"$ORCH_GH_FAKE_STORE/prs/12/body"
+fake_pr 13 merged orch/9-w next
+adapter_prs_open_bodies; echo '|'
+adapter_prs_merged_closing main 2026-03-01T00:00:00Z; echo '|'
+adapter_prs_merged_bodies main
+""")
+    gh = fake(store)
+
+    open_bodies = ['9\t""\ttrue', '4\t"Refs #3\\r\\n\\nBody\\t\\"q\\""\tfalse']
+    merged = ["11\tquick/6-y\t2026-03-01T00:00:00Z\t\ttrue",
+              "10\torch/5-x\t2026-03-02T00:00:00Z\t5,7\tfalse"]
+    assert gh.prs_open_bodies() == open_bodies
+    assert gh.prs_merged_closing("main", "2026-03-01T00:00:00Z") == merged
+    assert gh.prs_merged_bodies("main") == "Refs #8\n\nCloses #5\n"
+    assert bash_answer == "\n".join(
+        open_bodies + ["|"] + merged + ["|", "Refs #8", "", "Closes #5", ""])
+
+
+@pytest.mark.parametrize("answer", [
+    "green", "failing", "cancel", "external", "tworuns", "onerun", "mixed", "badrunid",
+    "comma", "pending", "none", "empty"])
+def test_each_scripted_checks_answer_reads_as_the_bash_fake_answers_it(store, answer):
+    bash_answer = bash(store, "fake_checks 4 all %s; adapter_pr_checks 4 all 2>/dev/null" % answer)
+
+    assert "".join("\t".join(check) + "\n" for check in fake(store).pr_checks(4, "all")) == (
+        bash_answer)
+
+
+def test_a_checks_script_answers_one_per_call_the_last_repeating_an_unscripted_scope_none(store):
+    bash(store, "fake_checks 4 required pending green")
+    gh = fake(store)
+    runs = "https://github.com/acme/widgets/actions/runs"
+
+    answers = [gh.pr_checks(4, "required") for _ in range(3)]
+
+    green = [Check("pass", "build", runs + "/1/job/1")]
+    assert answers == [[Check("pending", "build", "")], green, green]
+    assert gh.pr_checks(4, "all") == []
+    assert (store / "checks" / "4" / "reads").read_text() == "read\n" * 4
+
+
+def test_a_boom_or_unknown_checks_answer_fails(store):
+    bash(store, "fake_checks 4 all boom; fake_checks 5 all bogus")
+
+    with pytest.raises(GhFailed) as boom:
+        fake(store).pr_checks(4, "all")
+    with pytest.raises(GhFailed) as bogus:
+        fake(store).pr_checks(5, "all")
+
+    assert boom.value.stderr == "dial tcp: lookup api.github.com: no such host\n"
+    assert bogus.value.stderr == "gh fake: no checks answer named 'bogus'\n"
+
+
+def test_python_pr_writes_read_back_through_the_bash_helpers(store, tmp_path):
+    bash(store, r"""
+fake_label Needs-Human 0e8a16 ''
+fake_pr 4 open topic main; fake_pr_draft 4
+printf 'bug\n' >"$ORCH_GH_FAKE_STORE/prs/4/labels"
+fake_pr 5 open other main
+fake_next_pr 40
+printf 'Dropped\n' >"$ORCH_GH_FAKE_STORE/pr_label_drops"
+""")
+    body = tmp_path / "body.md"
+    body.write_bytes(b"Closes #3\r\n")
+    note = tmp_path / "note.md"
+    note.write_text("A note.")
+    gh = fake(store)
+
+    created = gh.pr_create("main", "orch/3-x", "New PR", str(body), draft=True,
+                           labels=["needs-human", "dropped", "bug"])
+    plain = gh.pr_create("next", "quick/4-y", "Plain", str(note))
+    gh.pr_ready(4)
+    gh.pr_draft(5)
+    gh.pr_comment(4, str(note))
+    gh.pr_body_edit(4, str(body))
+    gh.pr_title_edit(4, "Retitled")
+    gh.pr_label_add(4, "BUG")
+    gh.pr_label_add(4, "needs-human")
+
+    assert (created, plain) == (40, 41)
+    assert bash(store, r"""
+for n in 40 41 4 5; do
+  d="$ORCH_GH_FAKE_STORE/prs/$n"
+  printf '%s|%s|%s|%s|%s|' "$(cat "$d/state")" "$(cat "$d/head")" "$(fake_pr_base_of $n)" \
+    "$(cat "$d/title" 2>/dev/null)" "$(fake_pr_draft_of $n)"
+  printf '%s|%s|%s\n' "$(fake_pr_body_of $n | od -An -c | tr -s ' ')" \
+    "$(paste -sd ' ' "$d/labels" 2>/dev/null)" "$(fake_pr_comments_of $n)"
+done
+adapter_pr_state_draft 40 | paste -sd ' ' -
+""") == (
+        "OPEN|orch/3-x|main|New PR|yes| C l o s e s # 3 \\r \\n|Needs-Human bug|\n"
+        "OPEN|quick/4-y|next|Plain|no| A n o t e .||\n"
+        "OPEN|topic|main|Retitled|no| C l o s e s # 3 \\r \\n|bug Needs-Human|A note.\n"
+        "OPEN|other|main||yes|||\n"
+        "OPEN true\n"
+    )
+
+
+def test_python_seeded_prs_checks_and_creation_times_read_back_through_the_bash_fake(store):
+    seed = FakeStore(str(store))
+    seed.issue(7, "open")
+    seed.issue_created(7, "2026-03-01T12:00:00Z")
+    seed.pr(4, "open", "topic", "main")
+    seed.pr_draft(4)
+    seed.pr_labels(4, "bug", "wip")
+    seed.pr_head(4, "abc123")
+    seed.pr_diff(4, "+y\n")
+    seed.pr(10, "merged", "orch/7-x", "main")
+    seed.pr_merged(10, "2026-03-02T00:00:00Z", 7, 9)
+    seed.checks(4, "required", "failing", "green")
+    seed.next_pr(50)
+
+    assert bash(store, r"""
+adapter_issue_created_at 7
+adapter_pr_state_draft 4 | paste -sd ' ' -
+adapter_pr_labels 4 | paste -sd ' ' -
+adapter_pr_refs 4 | paste -sd ' ' -
+adapter_pr_diff 4
+adapter_prs_merged_closing main 2026-03-01T00:00:00Z
+adapter_pr_checks 4 required; adapter_pr_checks 4 required; adapter_pr_checks 4 required
+cat "$ORCH_GH_FAKE_STORE/next_pr"
+""") == (
+        "2026-03-01T12:00:00Z\nOPEN true\nbug wip\nabc123 topic main\n+y\n"
+        "10\torch/7-x\t2026-03-02T00:00:00Z\t7,9\tfalse\n"
+        "fail\tbuild\thttps://github.com/acme/widgets/actions/runs/4242/job/77\n"
+        "pass\tlint\thttps://github.com/acme/widgets/actions/runs/1/job/1\n"
+        + "pass\tbuild\thttps://github.com/acme/widgets/actions/runs/1/job/1\n" * 2
+        + "50\n"
+    )
+
+
+def test_a_pr_create_carrying_a_label_gives_up_at_a_first_secondary_limit(store, tmp_path):
+    bash(store, "fake_fail_times adapter_pr_create 1 '%s'" % SECONDARY)
+    body = tmp_path / "body.md"
+    body.write_text("Body")
+    sleeps = []
+
+    with pytest.raises(GhFailed):
+        fake(store, sleeps=sleeps).pr_create("main", "topic", "T", str(body), labels=["bug"])
+
+    assert sleeps == []
+    assert not (store / "prs").exists()
 
 
 # --- the factory and the pin ---------------------------------------------------

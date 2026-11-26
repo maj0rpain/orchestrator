@@ -1,8 +1,8 @@
 """The branch concept's module, as far as the busy checkout's branch signal,
-the review loop's terminal-state read, redo and the ticket nouns need it:
-the PR, retired and forked-from keys bash's branch.sh records on a branch,
-read through the git adapter's config_value and the forked-from one written
-through its config_set, the branch kinds (bash branch_kind) and whether a
+the review loop's terminal-state read, redo, the ticket nouns and pr need
+it: the PR, retired and forked-from keys bash's branch.sh records on a
+branch, read through the git adapter's config_value and the PR and
+forked-from ones written through its config_set, the branch kinds (bash branch_kind) and whether a
 branch is a plugin-made branch that records a base, the flow's branch name
 and its redo form (bash branch_name_flow_into and branch_name_redo), a
 ticket branch's name, the issue a flow or quick branch name gives, the
@@ -73,6 +73,13 @@ def branch_pr_get(git, branch: str) -> Optional[str]:
     """The PR recorded for <branch>, read through the git adapter <git>;
     None when none is recorded."""
     return git.config_value(branch_pr_key(branch))
+
+
+def branch_pr_set(git, branch: str, pr: str) -> Optional[GitFailure]:
+    """Records PR <pr> as the one opened for <branch> (#1200), in the
+    repository's own config, so a busy check tells the branch's work is
+    handed off: None when it wrote, else git's status and stderr."""
+    return git.config_set("local", branch_pr_key(branch), pr)
 
 
 def branch_is_retired(git, branch: str) -> bool:
