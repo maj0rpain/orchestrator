@@ -50,6 +50,7 @@ GH
 # tw_repo: a fresh repo with a bare origin it has pushed to, on a feature
 # branch, cwd inside it. Call it in the current shell: new_repo cd's.
 tw_repo() {
+  # shellcheck disable=SC2034 # assigned by fresh_bare_origin
   local bare
   new_repo >/dev/null
   fresh_bare_origin bare

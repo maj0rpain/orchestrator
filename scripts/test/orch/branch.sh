@@ -232,6 +232,7 @@ assert_contains "naming the base branch" "$out" \
 assert_not_contains "never pointing at a flow's correction" "$out" "--flow"
 assert_eq "and records nothing for the branch it did not make" "$(base_key quick/8-gone)" "<unset>"
 orch_gh_failing base clear >/dev/null
+# shellcheck disable=SC2154 # assigned by fresh_bare_origin
 rm -rf "$(dirname "$bare")"
 
 # --- a quick implementation's base SHA (#243) ---------------------------------
