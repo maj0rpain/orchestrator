@@ -1,8 +1,10 @@
 """The pr noun (scripts/orch/pr.sh), as far as it is ported: `pr open` and
 `pr publish`, with the helpers they share - the push-then-issue-line step
 (pr_push_and_body), open_pr, update_pr, pr_label_value, pr_labels_check and
-the PR-writing standard's body check (pr_body_check) - and the current
-branch's open PR, current_open_pr, which the review-pass noun uses.
+the PR-writing standard's body check (pr_body_check) - the verbs that need no
+flow state, `pr release`, `pr comment`, `pr comments`, `pr fetch`, `pr read`
+and `pr update`, and the current branch's open PR, current_open_pr, which the
+review-pass noun uses.
 
 run(argv) takes the arguments after `pr`, as orch.sh would hand them on, and
 returns the exit code; every error dies through orch.common.die, with bash's
@@ -11,22 +13,26 @@ run dies with bash's "unknown pr op" refusal, every op bash has named in it.
 The bash noun still serves the CLI: nothing dispatches here yet.
 
 Bash caches the default branch for its process, so pr open's base fallback
-and its issue-line check - and pr publish's recorded base and its check -
-share one ask of GitHub; one run here shares it the same way (_DefaultOnce).
-The open-tickets refusal is orch.ticket's require_no_open_tickets, called
-directly.
+and its issue-line check - and pr publish's recorded base and its check, and
+pr release's base and default branch - share one ask of GitHub; one run here
+shares it the same way (_DefaultOnce). The open-tickets refusal is
+orch.ticket's require_no_open_tickets, called directly.
 """
 from __future__ import annotations
 
+import json
 import os
+import re
+import tempfile
 from contextlib import contextmanager
-from typing import Iterator, List, Mapping, Optional, Sequence, Tuple
+from typing import Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
-from orch.base import default_branch, recorded_base_into
+from orch import comments
+from orch.base import base_branch_into, default_branch, recorded_base_into
 from orch.branch import branch_pr_set
-from orch.checkout import current_branch_or_die
-from orch.common import (die, fenced, lines_of, plain_number, read_raw, stdout_write,
-                         temp_text_file, warn)
+from orch.checkout import checkout_branch, current_branch_or_die
+from orch.common import (die, fenced, file_write_atomic, lines_of, plain_number, read_raw, rm_f,
+                         stdout_write, temp_text_file, warn, without_cr)
 from orch.flow_state import (flow_base_fallback_into, flow_state_file, require_state_read,
                              require_value, state_write_many)
 from orch.gh import GhFailed, Unparsed, adapter_of, gh_or_die, label_listed
@@ -52,6 +58,12 @@ BODY_HEADINGS = ("Summary", "Evidence", MERGE_DANGER_HEADING)
 
 DOOR = "**Door:**"
 BLAST_RADIUS = "**Blast Radius:**"
+
+# An issue reference pr release counts in a merged PR's body: Refs, Closes,
+# Fixes or Resolves, in any case and anywhere on a line, not inside a word -
+# not every closing form GitHub knows, so prose such as "a quick fix #12" is
+# never mistaken for one.
+_REFERENCE = re.compile(r"(?:^|[^\w])(?:refs|closes|fixes|resolves):?\s+#([0-9]+)", re.IGNORECASE)
 
 
 def current_open_pr(gh, git, code: int) -> Optional[int]:
@@ -390,9 +402,261 @@ def pr_publish(args: List[str], run: _Run, _root: str) -> None:
     stdout_write("%d\n" % number)
 
 
+def referenced_issues(bodies: str) -> List[str]:
+    """The issue numbers <bodies> refers to (_REFERENCE), each as written,
+    in numeric order and once each - the first of equal numbers kept."""
+    found: Dict[int, str] = {}
+    for line in bodies.split("\n"):
+        for match in _REFERENCE.finditer(line):
+            found.setdefault(int(match.group(1)), match.group(1))
+    return [found[n] for n in sorted(found)]
+
+
+def pr_release(args: List[str], run: _Run, _root: str) -> Optional[int]:
+    """The release PR: carries the base branch in effect back into the
+    default branch. Stateless like pr publish, and pushes nothing - the base
+    branch is already on origin."""
+    usage = "usage: orch.sh pr release [--force] <title> <body-file>"
+    force = bool(args) and args[0] == "--force"
+    if force:
+        args = args[1:]
+    if len(args) != 2:
+        die(usage)
+    title, body_file = args
+    if not title:
+        die("the title is empty")
+    if not os.path.isfile(body_file):
+        die("body file not found: " + body_file)
+    base = base_branch_into(run.gh(), run.git, run.pin)
+    default = run.default()
+    if base == default:
+        die("the base branch is the default branch (%s) - there is nothing to release;"
+            " set another with base set" % default)
+    open_prs = gh_or_die("list the open PRs from %s into %s" % (base, default),
+                         run.gh().prs_open, base, default)
+    try:
+        kept = trust_filter_prs(base, open_prs)
+    except Unparsed:
+        die("the open PRs from %s into %s could not be read" % (base, default))
+    if kept:
+        die("a release PR from %s into %s is already open: #%s" % (base, default, kept[0]))
+    # Read from the merged PRs' bodies rather than GitHub's closing-issue
+    # links: GitHub only links closing keywords on PRs into the default
+    # branch, and a Refs line never links at all.
+    bodies = gh_or_die("list the PRs merged into " + base, run.gh().prs_merged_bodies, base)
+    refs = referenced_issues(bodies)
+    issues: List[str] = []
+    # The listing of open issues leaves pull requests out, so a reference to
+    # a PR, a closed issue or an unknown number gets no Closes line. It is
+    # read only when something is referenced, and even under --force.
+    if refs:
+        listed = gh_or_die("list the open issues", run.gh().issues_open_titles)
+        open_issues = {str(n) for n, _ in listed}
+        issues = [n for n in refs if n in open_issues]
+    if not issues and not force:
+        die("nothing to close: no PR merged into %s refers to a still-open issue"
+            " - pass --force to release anyway" % base)
+    # Only Summary: a release PR carries PRs already reviewed (#1387).
+    pr_body_check(body_file, ("Summary",))
+    head = "".join("Closes #%s\n" % n for n in issues) + ("\n" if issues else "")
+    text = head + (read_raw(body_file) or "")
+    with temp_text_file(text, "could not create a temp file for the release PR body",
+                        "could not write the release PR body") as tmp:
+        # Not a draft: nothing after this would ever mark it ready.
+        number = gh_or_die("open the release PR from %s into %s" % (base, default),
+                           run.gh().pr_create, default, base, title, tmp)
+    stdout_write("%d\n" % number)
+    return None
+
+
+def pr_comment(args: List[str], run: _Run, _root: str) -> Optional[int]:
+    """A stateless post on the current branch's open PR, the PR counterpart
+    of issue comment - for a standalone review pass, which records its
+    declines there. Three outcomes: 0 posted (printing the PR number), 1 only
+    when the branch has no open PR, and 2 for everything else - GitHub
+    unreadable, a failed post, a usage error, a missing file, a detached
+    HEAD, no repo - so a caller reading 1 never takes a failure for "no
+    PR"."""
+    if len(args) != 1:
+        die("usage: orch.sh pr comment <file>", 2)
+    path = args[0]
+    if not os.path.isfile(path):
+        die("body file not found: " + path, 2)
+    number = current_open_pr(run.gh(), run.git, 2)
+    if number is None:
+        return 1
+    gh_or_die("comment on PR #%d" % number, run.gh().pr_comment, number, path, code=2)
+    stdout_write("%d\n" % number)
+    return None
+
+
+def pr_comments(args: List[str], run: _Run, _root: str) -> Optional[int]:
+    """The PR counterpart of issue comments (#418), so a standalone review
+    pass reads earlier passes' declines: the trusted comments of the current
+    branch's open PR written to the file in issue comments' format. Exits as
+    pr comment does: 1, writing nothing, only when the branch has no open
+    PR, and 2 for everything else, with the file untouched."""
+    if len(args) != 1:
+        die("usage: orch.sh pr comments <file>", 2)
+    path = args[0]
+    number = current_open_pr(run.gh(), run.git, 2)
+    if number is None:
+        return 1
+    text = comments.rendered(run.gh(), "read the comments of PR #%d" % number, str(number), "pr",
+                             code=2)
+    if not file_write_atomic(path, text + "\n" if text else ""):
+        die("could not write " + path, 2)
+    return None
+
+
+def required_open_pr(run: _Run) -> int:
+    """The PR pr fetch and pr update work on: the current branch's open PR.
+    Unlike pr comment, no open PR is an ordinary failure here, since both run
+    where a PR is known to exist: every failure dies with exit 1."""
+    number = current_open_pr(run.gh(), run.git, 1)
+    if number is None:
+        die("no open PR for branch %s" % checkout_branch(run.git))
+    return number
+
+
+def first_line(text: str) -> str:
+    """<text>'s first line, its trailing CR dropped; "" for empty text."""
+    return without_cr(text.split("\n", 1)[0])
+
+
+def pr_fetch(args: List[str], run: _Run, _root: str) -> Optional[int]:
+    """The PR counterpart of issue fetch: the current branch's open PR's
+    body written to the file, every carriage return removed, so GitHub's
+    web-UI CRLF lines reach agents as LF, and gh's one newline kept. The
+    temporary file beside the target is made before the read, so a failed
+    read leaves the target as it was and no temporary file behind."""
+    if len(args) != 1:
+        die("usage: orch.sh pr fetch <file>")
+    path = args[0]
+    number = required_open_pr(run)
+    directory = os.path.dirname(path) or "."
+    try:
+        os.makedirs(directory, exist_ok=True)
+    except OSError:
+        pass
+    try:
+        fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".", dir=directory)
+    except OSError:
+        die("could not create a temp file beside " + path)
+    try:
+        body = gh_or_die("read the body of PR #%d" % number, run.gh().pr_body, number)
+        with os.fdopen(fd, "wb") as out:
+            out.write((body.replace("\r", "") + "\n").encode("utf-8", "surrogateescape"))
+        os.replace(tmp, path)
+    except OSError:
+        rm_f(tmp)
+        die("could not write " + path)
+    except BaseException:
+        rm_f(tmp)
+        raise
+    return None
+
+
+def pr_update(args: List[str], run: _Run, _root: str) -> Optional[int]:
+    """The PR counterpart of issue update, with one guard issue update has
+    no need for: the body's first line is the Closes/Refs line pr open wrote,
+    and a correction must never drop or change it, so a file that does not
+    open with exactly that line is refused and the body left as it was."""
+    if len(args) != 1:
+        die("usage: orch.sh pr update <file>")
+    path = args[0]
+    if not os.path.isfile(path):
+        die("body file not found: " + path)
+    number = required_open_pr(run)
+    current = gh_or_die("read the body of PR #%d" % number, run.gh().pr_body, number)
+    line = first_line(current)
+    if not re.fullmatch(r"(Closes|Refs) #[0-9]+", line):
+        die("PR #%d's body does not open with a Closes/Refs #<issue> line, so there is no issue"
+            " line to keep - refusing to replace it" % number)
+    if first_line(read_raw(path) or "") != line:
+        die("%s must open with PR #%d's issue line, '%s' - refusing to replace the body"
+            % (path, number, line))
+    gh_or_die("replace the body of PR #%d" % number, run.gh().pr_body_edit, number, path)
+    return None
+
+
+def positive_number(text: str) -> bool:
+    """Whether <text> is a plain number above zero, leading zeros allowed -
+    bash's is_positive_int."""
+    return plain_number(text) and int(text) > 0
+
+
+def listed_body(encoded: str) -> str:
+    """A PR body as the open-PR listing carries it, a JSON string, decoded
+    as `jq -r .` decodes it under a `$(...)` capture: every trailing newline
+    dropped. Unparsed when it is no JSON."""
+    try:
+        value = json.loads(encoded)
+    except ValueError:
+        raise Unparsed("a body that is no JSON") from None
+    if not isinstance(value, str):
+        value = "null" if value is None else json.dumps(value)
+    return value.rstrip("\n")
+
+
+def pr_read(args: List[str], run: _Run, _root: str) -> Optional[int]:
+    """`pr read <issue> <file>`: writes the body of the open PR whose body
+    opens with the issue line `Closes #<issue>` or `Refs #<issue>` (the
+    newest, where several do), a `---` line, then its diff, to <file>. One
+    listing carries every body; only the winner's diff is read apart. Every
+    listed line must read, whichever issue its body names. A fork PR is
+    ignored, with one stderr line, as the Trust module's PR filter words
+    it."""
+    if len(args) != 2:
+        die("usage: orch.sh pr read <issue> <file>")
+    issue_text, path = args
+    if not positive_number(issue_text):
+        die("not an issue number: " + issue_text)
+    # The number without its leading zeros: 012 is issue 12, never octal.
+    issue = int(issue_text)
+    unread = "the open PRs for issue #%d could not be read" % issue
+    lines = gh_or_die("list the open PRs", run.gh().prs_open_bodies)
+    named: List[str] = []
+    bodies: Dict[int, str] = {}
+    wanted = ("Closes #%d" % issue, "Refs #%d" % issue)
+    for line in lines:
+        # As bash's `IFS=$'\t' read -r pr enc flag` splits it: a run of tabs
+        # is one separator, the last field takes the rest.
+        fields = re.split(r"\t+", line.strip("\t"), maxsplit=2) + ["", ""]
+        number, encoded, flag = fields[:3]
+        if not number:
+            continue
+        if not positive_number(number) or flag not in ("true", "false"):
+            die(unread)
+        try:
+            body = listed_body(encoded)
+        except Unparsed:
+            die(unread)
+        if first_line(body) in wanted:
+            named.append("%d\t%s" % (int(number), flag))
+            bodies[int(number)] = body
+    kept = trust_filter_prs("#%d" % issue, named)
+    if not kept:
+        die("no open PR closes or refers to issue #%d" % issue)
+    found = int(kept[0])
+    diff = gh_or_die("read the diff of PR #%d" % found, run.gh().pr_diff, found)
+    text = (bodies[found] + "\n\n---\n" + diff).rstrip("\n") + "\n"
+    if not file_write_atomic(path, text):
+        die("could not write " + path)
+    return None
+
+
+# The ops this noun runs, each taking the arguments after the op, the run's
+# adapters and the checkout's root, and returning its exit code (None for 0).
 VERBS = {
     "open": pr_open,
     "publish": pr_publish,
+    "release": pr_release,
+    "comment": pr_comment,
+    "comments": pr_comments,
+    "fetch": pr_fetch,
+    "read": pr_read,
+    "update": pr_update,
 }
 
 
@@ -412,5 +676,5 @@ def run(
     verb = VERBS.get(op)
     if verb is None:
         die("unknown pr op: %s (want %s)" % (op or "<none>", OPS))
-    verb(argv[1:], _Run(gh, git, env), root)
-    return 0
+    code = verb(argv[1:], _Run(gh, git, env), root)
+    return 0 if code is None else code
