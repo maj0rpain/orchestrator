@@ -34,69 +34,69 @@
 2	2	the suite start (#3582)	7062792d92a3fa8e7cb13a3b6c659decba11bcb2
 9	9	the pytest suite (#3912)	e10144970bc8899df7dd1b32b55938620ed22d6e
 2	4	the counting fixture's stdin counter (#3434)	21a707c7252e5d08c3fb69c1f90106d891bc8af3
-88	107	affected.sh, the ticket verification (#2023)	474ebeb9318adfab479b7c01d63d00cb3fcb519e
+93	114	affected.sh, the ticket verification (#2023)	0bdfd60b173fd196626ff1de1748b41dd2381705
 6	7	the row rule (#3549)	3a9e272b0e2b6c484f15940108bdb9b29d4d21e6
 8	11	the shared test support, function by function (#3550)	9f661c6adeddcd7137ddf468b62e5615c3c46f7e
 6	9	the gh fake, operation by operation (#3551)	768bae24ec1dc488ce67466f90bb55eacb5b7fc6
-84	87	autopilot	a5db073e2cee33dbb72336d7e5f59b65be61aeed
-17	20	autopilot rounds, budget and start	8f41ec90c7e8eebb73aae433051b2ced0c2d6952
-22	25	autopilot ask and answer	02cda5b41d74d184fc7768719c5c5999edff259e
-21	24	autopilot reenter	b01b1769eb065732aa28e26188150a435807f8a4
-71	71	autopilot tick and run	76ec9c64156ce2370ffb90cfb93df84bd4aaa61e
-12	14	autopilot tick: started by a relative path (#3055)	b538ae0572a1d408c5790c85db9a0e2e54439d44
-28	32	autopilot tick: the flow-issue read at the issue-list limit	3d69375f1c134bf1b17a8328945ffa72873fb83f
-33	39	autopilot tick: the direct read before each claim	d22abf84b0a300f40591bf7bab2683ac7e4cf775
-143	163	autopilot tick: the cap, lost claims and the order	8157212f0d2e893023299a6b1554ab8b8fb4c191
-108	125	autopilot tick: side checkouts, refusals and failed steps	3d1131b9058975584ca041dac411bb6020173ede
-20	10	autopilot watch	a9a5a864f800a2d8cac281ed25d238f2ceccb6dc
-31	35	autopilot tick: the usage limit	940a26b1447e0a7517b722e94c8c2caef507d03a
-82	94	autopilot tick: limited issues	38ea3480c3176fb249a2874ec2e2b223a9d1de32
-52	59	autopilot questions, reply and resume	bd63280f4faf6b2f40257d3b3b051d831c0063dd
-1	2	autopilot_phase_arg refuses two adjacent phases (#1546)	b9951bf32b426d2adb1197666cf735c1d6070f9b
-3	3	autopilot pause store	09ce7dacf615aec080a342df1d5b9cc60fc88b2d
-88	99	autopilot session end	900b07cdabbc8b24002052c1e39012764256af37
-30	35	autopilot tick: the trust check	29da09f5de54d94b7b5208a5cde09eb8f9200433
-59	64	autopilot run: the budget and the final reply (#2004)	666eded205893af192fc2c805b808a7ead030ea5
-2	3	autopilot answer on a truncated state.json (#1929)	1f3a05242c40bc075cf25b17f9b50e0b45d7d629
-21	25	autopilot: labels in the repo's casing (#1943)	25fc89c098c46e61f69e0dfe796bdffc781bcf78
-14	16	autopilot tick: the label check writes only drift (#2691)	1fcddf207b92fd0134538a03f041402aed6e3cd8
-91	104	autopilot tick and run: sync requests	f5b66192fff1898a90d6e8f780df87e6e3a418f3
-129	146	autopilot tick: pickup rank and sync slots	53dadc6f886ffff2ebd55bb54bf7a5dfb8c4bc05
-50	57	autopilot tick: sync request auto-detection (#2325)	b0bad54f10614e8512df328f8ce3299d73a11f22
-84	89	autopilot tick: the merged-PR close backstop (#2478)	9c5e9499463925e5c8bc77b02f87cbc727953157
-42	51	autopilot tick: one read of the done issues (#2559)	6d8cccde2c8222e53dc7c8b2602bfc49b4050d9f
-11	13	autopilot sync-finish, sync-dropped and sync-fail	9c0b0a556ac9520fe0f475496ed41002c707d11c
-18	21	autopilot tick: the GitHub limit pause (#2577)	3994210f43823581c396675c4421bdcfe9c9be86
-29	34	autopilot tick: a pickup that meets a GitHub limit (#2577)	f9ef20d8cce00ea3ccb8963b1411ecdf5f0819c4
-93	105	autopilot tick: stops that cannot land are contained (#3052)	53d4f892aad0097ceaa55b2d838c7e1a8f089109
-15	17	autopilot tick: one read of the claims on origin (#3062)	36492c24b50d516483f44e5d8af2d84c07bbbc03
-23	25	autopilot run: a start-up read that meets a GitHub limit (#2577)	362ac4d56a69a42d2df4a3147dc874f9e6827b2a
-37	41	autopilot tick: the early GitHub pause (#2577)	6b0c6af3182e505ab1b367deb80fbc5e5df02bd6
-21	23	autopilot run: the session log's GitHub usage line (#2577)	38962af840a70a91e161e699bd98a99f81523aaa
-27	32	autopilot candidates	3fdc26582f71e2ac412c64d391b6d02a0fc25193
-4	5	autopilot answer: no repo (#3050)	88925c21f385411582552b0c9458e93157984638
-4	4	autopilot session ops read the issue in one jq	bd6f005f9ef905a0713e98a08d20fb7562039347
-50	59	autopilot tick: housekeeping prunes old session logs	4b693568425e195ca624485fbe1b3f748db9a03b
-45	50	autopilot tick: housekeeping sweeps finished side checkouts	1030e691361d8c4690f2b8d6355d30d6ec8a2d76
+92	94	autopilot	646765a3ac0b2dbb30b56aae8d131b311088b8de
+18	21	autopilot rounds, budget and start	4bf188e50b694a0173cd96cfac049088185707a5
+24	27	autopilot ask and answer	87016fa65f52cd0d02cff1705e656ffc138978ba
+22	25	autopilot reenter	5d26874d44173af16a70cea2349b194fcac255f1
+75	75	autopilot tick and run	1021a3c7dadaad797da46a9cd55a69ae05da3bec
+11	13	autopilot tick: started by a relative path (#3055)	cd113131d6368a40178235db5ebfc3ee3f17cd02
+30	33	autopilot tick: the flow-issue read at the issue-list limit	87916256bf29ebca26f60dd3b186700519b1af47
+35	41	autopilot tick: the direct read before each claim	f505a2eb0164ba62aaaec371acde744715b3812a
+152	172	autopilot tick: the cap, lost claims and the order	19932826e17be68db3354669d7af180866bf9a3e
+10	133	autopilot tick: side checkouts, refusals and failed steps	4c3b6c39081190b544d664d50704b4a27d7f7c1b
+21	10	autopilot watch	1ccc4205a6e53edef04d0af42fc23104d31d6878
+32	36	autopilot tick: the usage limit	b42ebc919c06d876077c1075c7960df742d5d518
+90	101	autopilot tick: limited issues	b72305ebf1411f51101797f7e7f2cffa7c0da312
+53	61	autopilot questions, reply and resume	57a071f8800037c0c13bf707143ac399d95d9cfd
+1	2	autopilot_phase_arg refuses two adjacent phases (#1546)	49dcec76333c7160f69b24ed3eec300950183a8f
+3	3	autopilot pause store	bb870ccae6e15c283f9122bf0a85002066131f6e
+92	103	autopilot session end	1e5b3c53a63994e47f3baf79e736617c21d362b8
+31	36	autopilot tick: the trust check	0c10a1e1268bb33b2a6eae7329427a1309d3ac49
+63	68	autopilot run: the budget and the final reply (#2004)	ec38a1814ab82bbd184c3ab57fc506c28a94ef50
+3	3	autopilot answer on a truncated state.json (#1929)	ce29e8f265d67102f770a882d7525d7fc5a6e824
+22	26	autopilot: labels in the repo's casing (#1943)	28fc35cc74eb2879476f6c9553790a5ed63e24ce
+13	16	autopilot tick: the label check writes only drift (#2691)	b47094ea5b04d9eeca7f08c0d8398f283a709a3d
+109	123	autopilot tick and run: sync requests	cf1dcfba63dd0be3f5c50ee8d97a9abe056f2754
+137	154	autopilot tick: pickup rank and sync slots	9ea92f736810362b33acad8c065a46da8e06f8dc
+52	60	autopilot tick: sync request auto-detection (#2325)	40e14dedc9813dff3b4fbe754951e757cfcb443d
+97	102	autopilot tick: the merged-PR close backstop (#2478)	7e366a66236f0a085b8f1cebbbb6a8eedcd6e04c
+45	52	autopilot tick: one read of the done issues (#2559)	57a0a987937726a5a836d9084448e5f76185ab72
+11	12	autopilot sync-finish, sync-dropped and sync-fail	8a4a44fe6743a84d3f2b9781806b417759f26578
+19	22	autopilot tick: the GitHub limit pause (#2577)	0e290fe56e8fe12d466f7f8fd7a0c397b78fbadc
+35	39	autopilot tick: a pickup that meets a GitHub limit (#2577)	9770a2ca0b9600b28092285a509a5174f1916303
+97	111	autopilot tick: stops that cannot land are contained (#3052)	a8ee296b716ee8d0c0ad28f8c6df686fea457f11
+15	18	autopilot tick: one read of the claims on origin (#3062)	ad3127dd202eb3bb1a398f2897a34f8a590af0e2
+24	27	autopilot run: a start-up read that meets a GitHub limit (#2577)	4eb72cbafe8c09ae83edeb3382869fabd2834f0a
+3	43	autopilot tick: the early GitHub pause (#2577)	332a53dc13981ea1ea0d27c486631e82e26c697f
+23	25	autopilot run: the session log's GitHub usage line (#2577)	87f42febaf86fbc9e178c464df85b34dfddfc5d9
+28	33	autopilot candidates	4d8e1e3ebbf9d1cb258862e8d982234927cbc297
+4	5	autopilot answer: no repo (#3050)	028f142d58d42a8fddb92066046bcffa209b9c7d
+4	4	autopilot session ops read the issue in one jq	824a44f3b6f36c5f8c00e242e7655dc4b42cb3fd
+51	60	autopilot tick: housekeeping prunes old session logs	09b5c1e726559bb7aac34c6dc6ff076967015c6b
+48	53	autopilot tick: housekeeping sweeps finished side checkouts	d373bcdd34d507cf48d33a9baf983e739cd97cb9
 14	15	base	07ff5508f721d1922536c4537214f701c52d53dd
 38	31	a flow's base branch	dc1b95f862cec0114a7a0b7a3212313d50975422
 3	4	base set on a truncated state.json (#1929)	de4767097a86d163c76e27f57e97f2f368040804
-15	12	branch create	7b83cb325482f27dcd57ce5fd139fef5136f3cc1
-15	12	branch off	63a18927d6b80dcf4b0715d592b25dbecfc13b67
-9	10	a quick implementation's base branch	a5fc2444c1d627a8ba5b6888ece09b45b2f39c78
-6	7	a quick implementation's base SHA (#243)	f3ddf83bd97028b12d43f603c92656dfa3e410e9
-13	8	plugin-made branches have no upstream (#1152)	edc2918dd9794d4ac777e2d7db7674ebfcc58bbc
-12	13	branch retire	fdb14f142c72a5d837639bc0b97eb9976b0b9f01
-2	2	branch_records_base (#1713)	f65639d07b098ee4fbf65fcbc96fc8dd2def6461
-32	35	branch sync (#792)	a51d126294d384cb8d7bfb4093b8c06f2a6dd481
-16	14	branch busy (#1201)	3911e806ea8d1f12e570e2077d3f45b319f66144
-19	11	branch off and branch create refuse a busy checkout (#1202)	fdd100ed3dc05a55085aa7921b9bda11792bdbd9
-20	18	branch create on a restart (ADR-0054)	60b3e103d46f100588d7630ee965d2f37c92bc41
-41	26	branch create off the flow's branch (#1911)	57bb3b1e43097b27af94a8eea0e1222679224e32
-13	12	the fork start point is decided where origin is asked (#1930)	76143e344f3effecef3dea3551e70309cf4cff01
-1	2	branch: unknown op	b15fb1408270a67d229e9d7726e8e8a4cdb269f8
-3	4	branch retire beside a same-named tag (#2337)	27ea505f06ab975bf836aa086bbb8b5978e1ae6f
-12	7	branch create and branch off beside a same-named tag (#2337)	b9cddf693b7b045437cf1ca59080f6c447101f12
+15	11	branch create	b7221d66f04927e991b13b130cd1c81993375451
+15	11	branch off	b1f54dad6aa911a1959b09c1b11ab0dda7467623
+8	9	a quick implementation's base branch	071c11e9c1b0b7aa128f85f544348e5d412f09ed
+6	7	a quick implementation's base SHA (#243)	359bf44d38cc6e4c99d92dd7d8a55d2d1563ea83
+12	8	plugin-made branches have no upstream (#1152)	39dc7d399c2b04130bc132b9316d76bc8c3a3aa6
+11	12	branch retire	af60b35c67e6303919fb354a9c7d74369b536835
+2	2	branch_records_base (#1713)	c09c10645d92e2b14d600b7d317df74a9f46e8ab
+34	36	branch sync (#792)	ca51760297b001871483b0ac989250af914485a5
+17	15	branch busy (#1201)	e67c95910e4be6d84770d9bbb6e591a0d5e5f759
+20	11	branch off and branch create refuse a busy checkout (#1202)	f3fe34fb5d29ee9c90c2a053381aca0dda78fd7d
+21	19	branch create on a restart (ADR-0054)	0a52779bad77123597b85aa85a918b91caf0eaa0
+43	27	branch create off the flow's branch (#1911)	19767585136b3fe0f9be2410a5523d2ec87a66cd
+11	11	the fork start point is decided where origin is asked (#1930)	70dd514017b5080654504f79f9824d4d7fa7ecf3
+1	1	branch: unknown op	5d401f7811640cc890f262296a8249ead5f5aadc
+3	4	branch retire beside a same-named tag (#2337)	cd9f5a31a32394329c96cd0210dfbf06ce2adc7e
+10	7	branch create and branch off beside a same-named tag (#2337)	5d2e10dafd695db147cc55e68378f5f8ea7ab583
 14	15	checkout (#1078)	fcf77c433fd8f107550a2cadbac96af60bcf2952
 6	6	checkout current branch (#1079)	8ed29994be0d37ea761c6fba66a7f1594d5332d1
 24	13	checkout busy, redo-retired branch (#1981)	0608e4d5c7b58927eb7859c5d847edb713e43621
@@ -152,16 +152,16 @@
 3	3	category table	4ddf897afb91fdb5736b0ac6486b6b06637af785
 1	2	axis table	e40740a4628929a0916a63a510c2590c3efae4a6
 9	10	finding body	5696eec5199d748658645aa3edd3f64bf40a7c35
-21	23	every gh call pinned to the repo (#520)	10afb36ddb43aa4709e2e4b4859eb975105478b1
-2	3	gh_reason and capture_err (#846)	f9c18a62a21b2dc4b2601a5fbcd362360d7331ca
-1	2	label_listed	e07e938e166e6f817cc46bd749dcf14bf7646588
-19	21	gh failure verb and readers (#1022)	59e275aa948b82e6339d435f134b180879e1c5dc
-16	21	gh fake (#280)	6feab6abb16da09a9903acf84204176e1f8386ea
-131	145	gh adapter contract (#280)	801ad28ae18f41082df69b2c0a7cfbfd2d930ed0
-17	19	claim adapter operations (#1454)	ecbcb2331eb93fc57985ad451c388bbdcbab3b25
-4	5	label casing (#1943)	3e3ac4ac5eb478a5f84db0257198f6847da926df
-59	43	gh rate limits (#2577)	b470000c2b3a39aa80bad5241b48c704e78c4b05
-15	17	gh rate limits: the GitHub pause and the hit file (#2577)	f8d14dd278c5a9cf15007d31f5fc2a516864c2c0
+21	23	every gh call pinned to the repo (#520)	305e92344dd4df8c4900c5e523cfcbee99933591
+2	2	gh_reason and capture_err (#846)	0d96f6f7bde2b654bb58a1c98b53fdeb12283ad9
+1	2	label_listed	a4944cc37004a436b3273b1e242a8617a5e2cc1c
+18	19	gh failure verb and readers (#1022)	8ec16b064e87fc5ede895234c3fba4f8ca36407b
+16	20	gh fake (#280)	99998e2be14ba3761b93117737ac1a5afba0d7b5
+150	165	gh adapter contract (#280)	182f216bbdae9256f73b183fde310fdcd9d93a4c
+16	18	claim adapter operations (#1454)	faa35fc415d08eda21b71812e5e6e5c46b39b2d4
+4	5	label casing (#1943)	77c8ad3cb673e3990c493ea2d27e62d875a97b65
+59	44	gh rate limits (#2577)	6b3262dea293ac5a7afef69cac530ad4d3f2c2f7
+14	15	gh rate limits: the GitHub pause and the hit file (#2577)	b4b9c15807b83d1efd54e8267a594d247da1655d
 2	4	handoff path	f53a3d84f5d17aa6675f4f58c4cf7689b1d9a208
 17	15	phase table	47cf92716733cb5a3f071c96f9de05f62b8c99b9
 14	13	handoff validate	335409e290a33359dfc2b47505e248dd9958dabc
@@ -182,44 +182,32 @@
 5	5	bash version guard	a8d2cfe5bbb32166e192820e2b3d83282e7a66ce
 1	3	outside a checkout (#931)	e5c70ed8a90ea1696b300a7a8f75e91707e1690b
 29	25	marked-comment module	f6f5c1a7f89a0d4a6d8a53403309d4f68d4fe0c2
-109	115	pr open	ef473dabfe0d96f0aa91d32084ce19051f5f8327
-40	34	pr publish	27f8d1d9ae4f7f0cbf44add685328b5ab2539433
-17	15	pr draft (#967)	3818d607ebfde5f0688fe79264ff27fe48f7fe56
-34	31	pr ready (#967)	5e9436b62724f61ded83400bdcd4dae52868b5ba
-1	1	pr: unknown op	fea1f84b49604ee0bb556f55667897857c6022b2
-43	41	pr release	1c53cba52092e3c0b0ee2fa740f916c52a1fce72
-14	13	pr comment (#343)	a887b9530c5eb6b32e68dba4610d331d9c351365
-27	25	pr fetch / pr update (#444)	a19134fb2737b3cac81e862761b262f5431f9e17
-15	14	pr comments (#418)	da4e1dc81309f853adbd4fe66f826a765d0d4fad
-22	19	pr read (#1573)	31062dd3f970514759a241f0fe732323e1f36225
-24	19	pr: fork PRs (#1977)	47746a5a1b973eb25d45c23f5c10abc2bcd888b0
-7	8	pr: no repo (#3050)	c88a7fb02c44aa44f5cfdd5c601bb8eb0a5e9cc4
 9	10	repo show	03b579d082d6e4e5353a860b91cb90f1006013d0
 8	9	default-branch	2ab1b9bd03b98654ef71dcf00efa0fd1f0f07c16
-10	11	review ready's pointer to /orchestrator:finish (#727)	6911df97b10ec9bcdd6245ae4ae4de61db8779c1
-8	9	review begin	9adce4fc48c12ffc574af72bfef8ca7adeade847
-3	4	review path	da37f5f0df535a1afa275dc99f0128ea0766315d
-4	4	the multi-loop machinery is gone	1fc61533a58515ab890163d754b82273dc2e7892
-49	57	review file	91d133231708c7bff542c6f71338ab01180a7259
-12	13	review ready	f064d0090cda55e5ad8fd9d7735d578fc0b0df49
-157	103	review ci	d83762601a0439c15974ac375cdbaffa79a4289d
-16	15	the grace counts from the push (issue #475)	237ad8a9cd32d00a96f230b8ae1ca2441cbe2946
-18	19	review ci --no-wait	e78e4bc2dacde5a0dda4d20f28d6d6ac9cc06cf7
-63	56	the grace is skipped on no evidence of CI (issue #476)	5fd0888ffadc5b3f7056ea830236462073b58c57
-14	16	review rerun	0bbe3ffbba22e1ff4366544355c233502376863c
-9	10	review ci-log	a423337446903f1de81d26efc15d363989bc8ca0
-16	17	review terminal	a560471f60d88850c06bf7ea72530a4b4d50ad9a
-22	23	review resume	1c4c0e5d1f112f8beb2e905d369ca956a4021446
-4	5	review retire	83f89d3b37c666c53027d77133635e4c7a0e8726
-11	13	review known-items	39e4d1a8a871180416d1a7296dbd085b9f652826
-8	9	review ready in an autopilot flow (#1457)	29afda1f98c11f835feb405a4ffc747c405557ff
-8	9	review known-items in an autopilot flow (#1457)	b3e7164100f692cb831ac2565846b262c6ca3bbe
-19	24	review standards (#1532)	2445ca9caef5c20a14dc20d49740a148a4f51946
-72	75	review ready with a failed phase write (#1931)	29487d528413e4c13da0592c167d969b25c2e6b5
-8	9	review reads its Flow state once	ce1ade1954e2d71b59fc77e21d0e1621fe8da26e
-4	4	review_terminal_record fallback reads once	eea247d571b02dde770ec149b36845b2d14f55eb
-7	8	review terminal mid-redo (#2569)	551fe345ed526fcd945b266bf89aa8ea0111243a
-14	12	review ci <pr>	73865a03b6594091cab751d5f89a321f61973cda
+10	10	review ready's pointer to /orchestrator:finish (#727)	20ba126229c95cb8e7c1a35d373bf630fea8d422
+8	9	review begin	2becd977648af5d034b8dde242a1963ab82e7af0
+3	4	review path	5dbd9a617ce73ee1a3b09d8a1a87cd1b0e2bd615
+4	4	the multi-loop machinery is gone	1f1127a46d2a6b8b4c50d102a6eaca09392bd6c2
+51	60	review file	9e00eb6ff7abd3d0eabac6884b83ac49c2d5707e
+11	12	review ready	08f267c45924199fcdf45f1d262cd49b01cbbffc
+182	120	review ci	920e1503340b49019fa5915a3f1827066b730e50
+16	16	the grace counts from the push (issue #475)	bd4b26df44b190ba4f12b1a539e3ea01904a1a5e
+21	21	review ci --no-wait	9019b1bd4c5dcc87edc69818eeec9f2c79a83663
+69	61	the grace is skipped on no evidence of CI (issue #476)	fcd219ed054639af2bd9ae6094475ab079054637
+14	16	review rerun	3b4fc5df1c1e01a30976fa7d3de3a70fdd3f6ba0
+9	10	review ci-log	93c123ae14d48e2543147cbe2a8d5e6ff041a32c
+18	20	review terminal	87d4c5b55a46420beb45d0a5d7d274382ac72983
+23	24	review resume	d1a5b81398ecb0ea0e84a9a46bb34c6aa738f8f7
+4	5	review retire	e2d51d02b56cf86006dc66973376a36c952706c8
+10	12	review known-items	8ea32cd7a8eb290baff55b2b51494cb1c38a2a62
+8	9	review ready in an autopilot flow (#1457)	0f840b84f259989abb70790629d4f38d1c3b0c18
+8	9	review known-items in an autopilot flow (#1457)	8ddaba8a2447f7ce7d4e35ea2ca9bcffc7af0d02
+20	25	review standards (#1532)	503e916a6baef7088c359c32597c4bb9c42600bb
+78	81	review ready with a failed phase write (#1931)	b3ed97691cd4736b0370417b7ee69f9195bdaf6d
+8	9	review reads its Flow state once	c2d62261488a8c8cf8aa9886a6517b85c2c5d9d3
+4	4	review_terminal_record fallback reads once	8b590b351aa464a03321ec73f9b52f9a89b0cd7c
+7	8	review terminal mid-redo (#2569)	ec8e49111dad6bd09d985c5c06654fdc052ab173
+14	11	review ci <pr>	4de9c6c7b8b2f68a224b4380759f3b74e71723ec
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
 65	50	side-checkout (#722)	3ed9cd6604e4ae1b8e5f4287b54c5144ee8ebea3
 73	62	side-checkout archive and remove (#724)	da15c6a82f6693c86359f8b5334b077f90dcc2ae
@@ -247,7 +235,7 @@
 6	5	the shared and own-checkout readers on a truncated state.json	846c5bc308df9afc9b7fcaa99252bc3119fe0f58
 6	5	state set with a failed write (#1931)	f303871559a3140030c8709a2c17427c0ceb1d8d
 17	15	the entry read and the required-field helpers	64322b5c725e3eed1386b9bde9c53cbc4500ba7b
-43	35	trust module	dd0183ac4380b097c6b51f9e75c4a3038ab514c5
+19	21	trust module	fa9ddfe15cdbea37ab5523493c97f1e967397961
 89	19	wait: a call's block is wall time	90d20fdb4b55a5964e512640526d36f24c6b6f96
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594
 360	129	docs_lint.sh	3a555f16c8b87725b5c60b4e049073f0234541fe

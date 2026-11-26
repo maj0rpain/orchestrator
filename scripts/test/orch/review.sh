@@ -146,6 +146,16 @@ fake_issues() { ls "$ORCH_GH_FAKE_STORE/issues" 2>/dev/null | sort -n | tr '\n' 
 fake_title_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/title" 2>/dev/null; }
 fake_body_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/body" 2>/dev/null; }
 
+# fake_next_issue <n>: the number the next issue created takes.
+fake_next_issue() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_issue"; }
+
+# fake_checks_clear: no scripted checks for any PR, read counter included.
+fake_checks_clear() { rm -rf "$ORCH_GH_FAKE_STORE/checks"; }
+
+# fake_checks_reads <n>: how many times PR #n's checks were read, scripted
+# scope or not; 0 when never read.
+fake_checks_reads() { log_count "$ORCH_GH_FAKE_STORE/checks/$1/reads"; }
+
 # --- review ready's pointer to /orchestrator:finish (#727) --------------------
 # review ready's stdout stays the PR number alone everywhere; in a side
 # checkout it points the human at /orchestrator:finish on stderr, for after the

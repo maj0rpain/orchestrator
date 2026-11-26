@@ -1,17 +1,18 @@
-"""The pr noun (scripts/orch/pr.sh), as far as it is ported: `pr open` and
-`pr publish`, with the helpers they share - the push-then-issue-line step
-(pr_push_and_body), open_pr, update_pr, pr_label_value, pr_labels_check and
-the PR-writing standard's body check (pr_body_check) - the verbs that need no
-flow state, `pr release`, `pr comment`, `pr comments`, `pr fetch`, `pr read`
-and `pr update`, the verbs that act on the branch's open PR's draft state,
-`pr draft` and `pr ready`, and the current branch's open PR, current_open_pr,
-which the review-pass noun uses.
+"""orch.sh's pr noun (ADR-0067): `pr open` and `pr publish`, with the
+helpers they share - the push-then-issue-line step (pr_push_and_body),
+open_pr, update_pr, pr_label_value, pr_labels_check and the PR-writing
+standard's body check (pr_body_check) - the verbs that need no flow state,
+`pr release`, `pr comment`, `pr comments`, `pr fetch`, `pr read` and `pr
+update`, the verbs that act on the branch's open PR's draft state, `pr
+draft` and `pr ready`, and the current branch's open PR, current_open_pr,
+which the review-pass noun uses too. orch.sh runs the noun as a converted
+noun, and the bash pr module is gone: each helper keeps the name it had
+there, with its messages and its order of steps.
 
-run(argv) takes the arguments after `pr`, as orch.sh would hand them on, and
+run(argv) takes the arguments after `pr`, as orch.sh hands them on, and
 returns the exit code; every error dies through orch.common.die, with bash's
 messages and in bash's order of guards and side effects. An op it does not
-run dies with bash's "unknown pr op" refusal, every op bash has named in it.
-The bash noun still serves the CLI: nothing dispatches here yet.
+run dies with bash's "unknown pr op" refusal, naming every op.
 
 The merged-PR backstop (#2477, #2478) lives here alone: PR_CLOSE_GRACE,
 pr_close_missed, the merged-closing read and the newest-merge pick, behind
@@ -20,7 +21,7 @@ close_missed_tick for autopilot's tick and close_missed_finish for
 side-checkout's sweep. Each exits 0 whatever its reads and closes did, after
 their warnings; only a usage error dies.
 
-Bash caches the default branch for its process, so pr open's base fallback
+Bash cached the default branch for its process, so pr open's base fallback
 and its issue-line check - and pr publish's recorded base and its check, and
 pr release's base and default branch - share one ask of GitHub; one run here
 shares it the same way (_DefaultOnce). The open-tickets refusal is

@@ -65,6 +65,32 @@ re_run() { ORCH_AUTOPILOT=1 "$ORCH" autopilot reenter "${2:-review}" "$1" 2>&1; 
 # fake_reason_of <n>: issue #n's closing reason read back from the store.
 fake_reason_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/reason" 2>/dev/null; }
 
+# assert_no_repo_exit2 <label> <args>...: orch_no_repo <args> exits 2, prints
+# nothing, writes the repo remedy alone to stderr and calls no gh.
+assert_no_repo_exit2() {
+  local label="$1" err out st
+  shift
+  err="$(mktemp)"
+  out="$(orch_no_repo "$@" 2>"$err")"; st=$?
+  assert_status "$label with no repo exits 2" "$st" 2
+  assert_eq "$label prints nothing" "$out" ""
+  assert_eq "$label stderr is the remedy alone" "$(cat "$err")" "orch: $repo_remedy"
+  assert_eq "$label makes no gh call" "$(gh_calls)" "0"
+  rm -f "$err"
+}
+
+# assert_no_repo_refused <label> <message> <args>...: a refusal wins over the
+# missing Repo (#3139): orch_no_repo <args>, stdout and stderr together, exits 2
+# with <message> in its output and without the repo remedy.
+assert_no_repo_refused() {
+  local label="$1" msg="$2" out st
+  shift 2
+  out="$(orch_no_repo "$@" 2>&1)"; st=$?
+  assert_status "$label with no repo exits 2" "$st" 2
+  assert_contains "$label names its refusal" "$out" "$msg"
+  assert_not_contains "$label is not the remedy" "$out" "$repo_missing"
+}
+
 # --- autopilot ---------------------------------------------------------------
 # The clone-scoped autopilot settings and the autopilot-session check.
 echo

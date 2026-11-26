@@ -9,33 +9,37 @@
 # The Trust module's own rules: which associations its comment filter keeps,
 # the issue check by the author's association, and the attended reads'
 # warning. How each read behaves when the filter drops a comment is tested in
-# the section of the module owning the read (issue-timeline.sh, pr.sh, ...).
-# The rules are read through nouns that stay in bash: the comment filter
-# through `pr comments`, which reads the current branch's open PR's comments
-# through it (comments_rendered pr), and the issue check and its warning
-# through `init --issue`.
+# the section of the module owning the read (issue-timeline.sh, ...). The
+# comment filter is read directly, through the Comments module's read of a
+# PR's comments (comments_trusted_read pr), and the issue check and its
+# warning through `init --issue`.
 echo
 echo "trust module"
 tick_fixture
 fake_issue 7 open ready-for-agent orch:spec
-tr_branch="$(git branch --show-current)"
+# tr_comments_read: PR #9's comments as the comment filter keeps them, the
+# array comments_trusted_read pr assigns, on stdout; the filter's stderr line
+# left as it is.
+tr_comments_read() {
+  # shellcheck disable=SC2016
+  sourced_orch eval 'comments_trusted_read pr 9 tr_kept tr_why; printf "%s" "$tr_kept"'
+}
 
 tr_assocs_trusted="OWNER MEMBER COLLABORATOR"
 tr_assocs_untrusted="CONTRIBUTOR FIRST_TIME_CONTRIBUTOR FIRST_TIMER MANNEQUIN NONE"
 
-# The comment filter's associations, through `pr comments`: one comment per
-# association on the current branch's open PR, read once; a kept one is in the
-# file it writes. The Issue timeline's section covers how timeline_read uses
-# the filter.
-fake_pr 9 open "$tr_branch" main
+# The comment filter's associations: one comment per association on PR #9,
+# read once; a kept one is in the array the read assigns. The Issue timeline's
+# section covers how timeline_read uses the filter.
+fake_pr 9 open topic main
 tr_i=0
 for assoc in $tr_assocs_trusted $tr_assocs_untrusted; do
   tr_i=$((tr_i + 1))
   fake_pr_comment 9 "user$tr_i" "2026-09-0${tr_i}T10:00:00Z" "written by $assoc" "$assoc"
 done
 tr_file="$(mktemp)"
-tr_err="$({ "$ORCH" pr comments "$tr_file" >/dev/null; } 2>&1)"
-tr_text="$(cat "$tr_file")"
+tr_text="$(tr_comments_read 2>"$tr_file")"
+tr_err="$(cat "$tr_file")"
 for assoc in $tr_assocs_trusted; do
   assert_contains "a $assoc comment is kept" "$tr_text" "written by $assoc"
 done
@@ -70,12 +74,11 @@ assert_eq "the array is built at load, with no process on PATH" "$tr_json" '["OW
 
 # The comment filter and the issue check agree on a lower-case association and
 # an empty one (the trusted ones and NONE are asserted above).
-fake_pr 9 open "$tr_branch" main
+fake_pr 9 open topic main
 fake_pr_comment 9 someone "2026-09-01T10:00:00Z" "said by owner" owner
 fake_pr_comment 9 someone "2026-09-02T10:00:00Z" "said by empty" ""
 printf '\n' >"$ORCH_GH_FAKE_STORE/prs/9/comments/2/association"
-"$ORCH" pr comments "$tr_file" >/dev/null 2>&1
-tr_case_text="$(cat "$tr_file")"
+tr_case_text="$(tr_comments_read 2>/dev/null)"
 for tr_a in owner ""; do
   tr_label="${tr_a:-empty}"
   tr_kept=no; [[ "$tr_case_text" != *"said by $tr_label"* ]] || tr_kept=yes
@@ -110,8 +113,8 @@ assert_contains "and still returns 0" "$tr_failed" "rc=0"
 fake_unfail
 
 # The PR filter's own rules (trust_filter_prs), on lines as the adapter gives
-# them. The commands using it (pr.sh, side-checkout.sh) test only their own
-# exit codes and verdicts.
+# them. The commands using it (side-checkout.sh, autopilot.sh) test only their
+# own exit codes and verdicts.
 tr_pf() { printf '%b' "$1" | sourced_orch trust_filter_prs "$2" 2>"$tr_file"; }
 assert_eq "a same-repo PR is kept, without its flag" "$(tr_pf '5\tfalse\n' x)" "5"
 assert_eq "a fork PR is dropped" "$(tr_pf '5\ttrue\n' x)" ""

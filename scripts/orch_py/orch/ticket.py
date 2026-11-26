@@ -9,11 +9,10 @@ helpers they reach; the create and link breakdown publish runs on each
 ticket, ticket_create and ticket_link, with ticket_links_verified,
 ticket_edges_verified and blockers_set; and the open-tickets refusal phase
 advance makes before it leaves implement, require_no_open_tickets, which
-pr.sh's `pr open` and `pr publish` reach through the refuse_open_tickets
-bridge. orch.sh runs the noun as a converted noun, and the bash ticket
-module is gone: each helper keeps the name it had there, with its messages
-and its order of steps, and no bash code calls into it but through an
-orch_python_call bridge.
+the pr noun's `pr open` and `pr publish` call too. orch.sh runs the noun as
+a converted noun, and the bash ticket module is gone: each helper keeps the
+name it had there, with its messages and its order of steps, and no bash
+code calls into it but through an orch_python_call bridge.
 
 run(argv) takes the arguments after `ticket`, as orch.sh hands them on, and
 returns the exit code; every error dies through orch.common.die. Its verbs
@@ -55,7 +54,7 @@ from orch.common import (ORCH_DIR_NAME, die, fenced, file_write_atomic, lines_of
                          plain_number, read_raw, require_clean_tree, rm_f_or_die, rm_rf_or_die,
                          state_word, stdout_write, subshell, temp_text_file, without_cr)
 from orch.flow_state import flow_state_file, require_state_read
-from orch.gh import (GhFailed, SubIssue, adapter, adapter_of, gh_die, gh_or_die,
+from orch.gh import (GhFailed, SubIssue, adapter_of, gh_die, gh_or_die,
                      verify_twice)
 from orch.git import Git, git_failed
 from orch.repo import REPO_REMEDY, RepoPin
@@ -106,21 +105,6 @@ def require_no_open_tickets(gh, spec: str, command: str) -> None:
     if still_open:
         die("#%s still has open tickets: %s - run the driver loop (orch.sh ticket next %s) or"
             " close them, then run %s again" % (spec, " ".join(still_open), spec, command))
-
-
-def refuse_open_tickets(
-    args: List[str],
-    gh=None,
-    env: Optional[Mapping[str, str]] = None,
-) -> None:
-    """Bridge for pr.sh's `pr open` and `pr publish`, once per command:
-    `refuse_open_tickets <issue> <command>` runs require_no_open_tickets on
-    <issue>, <command> the refusing command its message names. The real gh
-    adapter and the process's environment unless a test hands in others."""
-    if len(args) != 2:
-        die("usage: orch_python_call ticket refuse_open_tickets <issue> <command>")
-    gh = adapter(os.environ if env is None else env) if gh is None else gh
-    require_no_open_tickets(gh, args[0], args[1])
 
 
 def ticket_listing_state(listing: Sequence[SubIssue], n: str) -> str:

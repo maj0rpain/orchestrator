@@ -23,20 +23,20 @@ BASH_HELPERS = {
     SCRIPTS / "test" / "orch" / "setup.sh": [
         "fake_issue", "fake_issue_authorship", "fake_issue_relabel", "fake_issue_title",
         "fake_comment_seed", "fake_comment", "fake_comment_bodies", "fake_label",
-        "fake_next_issue", "fake_fail", "fake_fail_after", "fake_fail_times",
+        "fake_fail", "fake_fail_after", "fake_fail_times",
         "fake_unfail", "fake_offline", "fake_online", "fake_quota", "fake_lag",
         "fake_state_of", "fake_labels_of", "fake_comments_of",
-        "fake_pr", "fake_pr_comment", "fake_pr_comments_of", "fake_pr_cross", "fake_labels",
+        "fake_pr", "fake_pr_comment", "fake_pr_cross", "fake_labels",
         "fake_default_branch", "fake_claim_seed", "fake_claim_held",
         "fake_pr_draft", "fake_pr_head", "fake_pr_merged", "fake_issue_created", "iso_of",
         "iso_ago", "fake_next_pr", "fake_checks", "fake_pr_base_of", "fake_pr_body_of",
         "fake_pr_draft_of",
     ],
     SCRIPTS / "test" / "orch" / "gh.sh": ["fake_ratelimit", "fake_duplicate_of",
-                                          "fake_issue_body"],
-    SCRIPTS / "test" / "orch" / "pr.sh": ["fake_pr_body"],
+                                          "fake_issue_body", "fake_pr_comments_of"],
     SCRIPTS / "test" / "orch" / "autopilot.sh": ["fake_reason_of"],
-    SCRIPTS / "test" / "orch" / "review.sh": ["fake_title_of", "fake_body_of"],
+    SCRIPTS / "test" / "orch" / "review.sh": ["fake_title_of", "fake_body_of",
+                                              "fake_next_issue"],
 }
 SECONDARY = "You have exceeded a secondary rate limit."
 NOW = 1_900_000_000
@@ -455,7 +455,7 @@ fake_pr 9 open topic trunk; fake_pr_cross 9
 fake_pr 12 open topic main; fake_pr_cross 12 maybe
 fake_pr 7 closed topic main
 fake_pr 8 open other main
-fake_pr_body 4 $'Body\r\nline\n'
+printf '%s' $'Body\r\nline\n' >"$ORCH_GH_FAKE_STORE/prs/4/body"
 fake_pr_comment 4 ann 2026-03-01T00:00:00Z 'First.'
 fake_pr_comment 4 bob 2026-03-02T00:00:00Z $'Second\n' NONE
 adapter_prs_open topic; echo

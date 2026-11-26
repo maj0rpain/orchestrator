@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from conftest import (CLAUDE, PACKAGE_BOOTSTRAP, TICKET_PARENT, added, committed, died_of, fake,
-                      git_repo, hold_flow, run_git, wt_path)
+from conftest import (CLAUDE, PACKAGE_BOOTSTRAP, TICKET_PARENT, added, comments_of, committed,
+                      died_of, fake, git_repo, hold_flow, run_git, wt_path)
 from orch import ticket
 from orch.common import exclude_orch_dirs
 from orch.gh_fake import FakeStore
@@ -222,6 +222,22 @@ def test_ticket_worktree_add_into_a_closed_pipe_still_checks_the_ticket_branch_o
 
     assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
     assert run_git(wt_path(ticket_repo, 7), "branch", "--show-current") == TICKET_PARENT + "--t7"
+
+
+def test_pr_comment_writing_into_a_closed_pipe_dies_of_sigpipe_silently(
+        ticket_repo, seed, monkeypatch):
+    """pr comment prints the PR number it posted on, as bash's printf did, so
+    a closed stdout pipe ends it silently - once the comment is posted."""
+    seed.pr(57, "open", TICKET_PARENT, "main")
+    note = ticket_repo / ".." / "note.md"
+    note.write_text("A note.\n")
+    monkeypatch.setenv("ORCH_GH_FAKE_STORE", seed.store)
+    monkeypatch.setenv("GH_REPO", "acme/widgets")
+
+    run = into_a_closed_pipe(ticket_repo, "pr", "comment", str(note))
+
+    assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
+    assert comments_of(seed.store, 57, "prs") == ["A note.\n"]
 
 
 @pytest.mark.parametrize("call", [["route", "show"], ["--call", "route", "run", "show"]],

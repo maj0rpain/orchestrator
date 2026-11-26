@@ -232,10 +232,10 @@ main() {
   case "$cmd" in
     # The nouns converted to Python, the one place naming them: each runs
     # through orch_python, and has no module of its own here. Among them
-    # init, phase, redo, ticket and ticket-worktree, and the bare global
+    # init, phase, redo, ticket, ticket-worktree and pr, and the bare global
     # commands slug, status, archive and help, help with its option spellings,
     # which the Python entry point runs as help; a bare orch.sh is help too.
-    issue|finding-triage|verification|audit|review-pass|spec-review|spec|breakdown|glossary|parallel|route|agent|slug|status|archive|help|-h|--help|init|phase|redo|ticket|ticket-worktree)
+    issue|finding-triage|verification|audit|review-pass|spec-review|spec|breakdown|glossary|parallel|route|agent|slug|status|archive|help|-h|--help|init|phase|redo|ticket|ticket-worktree|pr)
       orch_python "$cmd" "$@" ;;
     doctor|health) cmd_doctor "$@" ;;
     default-branch) cmd_default_branch "$@" ;;
@@ -245,7 +245,6 @@ main() {
     state)         cmd_state "$@" ;;
     handoff)       cmd_handoff "$@" ;;
     branch)        cmd_branch "$@" ;;
-    pr)            cmd_pr "$@" ;;
     side-checkout) cmd_side_checkout "$@" ;;
     review)        cmd_review "$@" ;;
     *) die "unknown command: $cmd (run 'orch.sh help')" ;;
