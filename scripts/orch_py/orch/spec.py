@@ -51,7 +51,7 @@ from orch.autopilot import autopilot_active
 from orch.common import (ORCH_DIR_NAME, copy_or_die, die, mkdir_p_or_die, plain_number,
                          plain_positive_number, read_raw, read_words, rm_f_or_die,
                          rm_rf_or_die, text_file_append, text_file_write)
-from orch.flow_state import NO_ISSUE_MSG, flow_state_file, require_state_read
+from orch.flow_state import flow_state_file, require_state_read, require_value
 from orch.gh import adapter_of
 from orch.git import Git
 from orch.handoff import handoff_dir
@@ -338,8 +338,7 @@ def spec_phase_guard(op: str, issue: str, phase: str, code: int) -> None:
     caller holds the flow's <issue> and <phase> from its entry read - no
     recorded issue, a done flow, a phase other than spec - each dying with
     exit <code>; it reads nothing."""
-    if not issue:
-        die(NO_ISSUE_MSG, code)
+    require_value("issue", issue, code)
     if phase == "done":
         die("the flow on issue #%s is done - spec %s acts only on an active flow" % (issue, op),
             code)
@@ -367,8 +366,7 @@ def issue_op(op: str, args: List[str], issue: str, phase: str, gh_of, git,
     it and points at the stateless issue op."""
     if len(args) != 1:
         die("usage: orch.sh spec <fetch|update|comment|comments> <file>")
-    if not issue:
-        die(NO_ISSUE_MSG)
+    require_value("issue", issue)
     if phase == "done":
         die("the flow on issue #%s is done - spec %s acts only on an active flow's issue;"
             " for another issue use orch.sh issue %s <n> <file>" % (issue, op, op))

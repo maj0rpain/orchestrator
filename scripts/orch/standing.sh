@@ -4,9 +4,10 @@
 # orch:running, needs-human, orch:limited), the phase-label helpers, the label
 # table a tick upserts, the host id, the read of an issue's Standing, the
 # claim record's parsing, the claim transition and every other write to it
-# (begin, sync request, start, finish, ask, stop, reenter, sync finish, sync
-# dropped, limit-stop, resume); the pause lives in the Python Standing module,
-# scripts/orch_py/orch/standing.py. Its tests: scripts/test/orch/standing.sh.
+# (begin, sync request, start, ask, stop, reenter, sync finish, sync dropped,
+# limit-stop, resume); the pause and a finished phase's close (finish) live in
+# the Python Standing module, scripts/orch_py/orch/standing.py. Its tests:
+# scripts/test/orch/standing.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 STANDING_RUNNING_LABEL="orch:running"
@@ -233,9 +234,9 @@ standing_resume() {
 # --- transitions ------------------------------------------------------------
 #
 # Every write to Standing goes through one transition: begin, sync request,
-# start, finish, ask, stop, reenter, sync finish, sync dropped, limit-stop,
-# claim release, claim drop and resume (the pause is the Python Standing
-# module's, orch/standing.py). Begin, sync request, claim
+# start, ask, stop, reenter, sync finish, sync dropped, limit-stop, claim
+# release, claim drop and resume (the pause and the finish are the Python
+# Standing module's, orch/standing.py). Begin, sync request, claim
 # drop and resume are single writes; the others are chains. A chain of writes a
 # session makes under its claim ends in the release - deletes orch:running and
 # then, last, the claim ref - which is internal to this module: a chain that
@@ -245,9 +246,8 @@ standing_resume() {
 # STANDING_LANDED accumulates those writes. Every chain transition begins
 # through standing_chain_start, so no chain inherits an earlier chain's writes;
 # start holds no claim and does not. Every adapter write of a chain goes through
-# standing_chain_step. Outside it stay finish's write of the phase to flow
-# state, start, begin, the single writes through standing_relabel_one (sync
-# request, resume) and the claim drop.
+# standing_chain_step. Outside it stay start, begin, the single writes through
+# standing_relabel_one (sync request, resume) and the claim drop.
 
 STANDING_LANDED=""
 # The temp body file of a comment in flight, so a death removes it too; cleared
@@ -289,9 +289,8 @@ standing_timeline_read_or_die() {
 # (STANDING_DONE) and skips them; with no state file nothing is recorded.
 # standing_chain_step is the one place an adapter write is run, skipped and
 # noted, apart from standing_chain_comment, which skips a comment already landed
-# and notes one its look finds (and finish's own phase record, which is no
-# adapter write); standing_chain_comment is also the one place a try is
-# recorded.
+# and notes one its look finds; standing_chain_comment is also the one place a
+# try is recorded.
 STANDING_STATE_FILE=""
 STANDING_DONE=()
 
@@ -312,14 +311,12 @@ standing_state_get() {
   return "$rc"
 }
 
-# standing_chain_start [<seed>]: begins every chain transition. It clears
-# STANDING_LANDED, the skip list (STANDING_DONE) and STANDING_BODY_FILE, puts a
-# non-empty <seed> first on STANDING_LANDED, then, when STANDING_STATE_FILE is
-# set, takes up the writes earlier attempts landed. The seed is a reason, not a
-# write: it is not skipped and not recorded in the state file.
+# standing_chain_start: begins every chain transition. It clears
+# STANDING_LANDED, the skip list (STANDING_DONE) and STANDING_BODY_FILE, then,
+# when STANDING_STATE_FILE is set, takes up the writes earlier attempts landed.
 standing_chain_start() {
   local key value
-  STANDING_LANDED="${1:-}" STANDING_DONE=() STANDING_BODY_FILE=""
+  STANDING_LANDED="" STANDING_DONE=() STANDING_BODY_FILE=""
   [ -s "${STANDING_STATE_FILE:-}" ] || return 0
   while IFS=$'\t' read -r key value; do
     [ "$key" = landed ] || continue
@@ -446,24 +443,6 @@ standing_claim_drop() {
   adapter_claim_delete "$1"
 }
 
-# standing_move_label <issue> <phase>: <issue>'s phase label made the one for
-# <phase> - the other phase labels removed - in one edit, through the step: an
-# edit an earlier attempt landed is skipped, and a landed one is noted as
-# "moved the phase label to <label>".
-standing_move_label() {
-  # state is the read's throwaway half.
-  # shellcheck disable=SC2034
-  local issue="$1" phase="$2" state labels gh_err p label args=()
-  issue_state_labels_read "$issue" state labels gh_err ||
-    standing_chain_die "$issue" "read the labels" "$gh_err"
-  for p in $(standing_phase_labels_in "$labels"); do
-    [ "$p" = "$phase" ] || args+=(--remove "$(standing_phase_label "$p")")
-  done
-  label="$(standing_phase_label "$phase")"
-  standing_chain_step "moved the phase label to $label" "move the phase label to $label" "$issue" \
-    adapter_issue_relabel "$issue" --add "$label" ${args[@]+"${args[@]}"}
-}
-
 # standing_start <issue> <plan-file>: the planning close's last step. Before
 # any write it refuses an issue without the ready-for-agent label (checked as
 # issue ready checks it) and one that already carries a phase label, then
@@ -517,20 +496,6 @@ standing_begin() {
     STANDING_REASON="step adding $STANDING_RUNNING_LABEL failed: $(gh_reason "$gh_err")"
     return 1
   }
-}
-
-# standing_finish <issue> <phase> <reason>: a finished phase's close under its
-# claim - the phase label moved to <phase>, then the recorded phase, then the
-# claim released. <reason> names what was done, and seeds the writes that
-# landed. The label moves before state.json records the phase, so a failure
-# between the two leaves the label one step ahead, never behind.
-standing_finish() {
-  standing_chain_start "${3:-}"
-  standing_move_label "$1" "$2"
-  phase_write_try "$2" ||
-    standing_landed_die "could not record phase $2 in $STATE"
-  standing_landed_add "recorded phase $2"
-  standing_release "$1"
 }
 
 # standing_ask <phase> <text>: reads the issue from flow state, posts <text> as

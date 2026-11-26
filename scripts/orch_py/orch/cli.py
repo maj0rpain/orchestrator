@@ -119,6 +119,12 @@ def _init(argv: List[str]) -> int:
     return run(argv)
 
 
+def _phase(argv: List[str]) -> int:
+    from orch.phase import run
+
+    return run(argv)
+
+
 def _help(argv: List[str]) -> int:
     from orch.help import run
 
@@ -144,16 +150,17 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "status": _status,
     "archive": _archive,
     "init": _init,
+    "phase": _phase,
     "help": _help,
 }
 
 # The option spellings main runs as a noun: orch.sh hands them on as given.
 ALIASES: Dict[str, str] = {"-h": "help", "--help": "help"}
 
-# The nouns converted with init, each keeping its bash noun's silent SIGPIPE
-# death on a closed stdout pipe; a noun converted before them keeps its flush
-# failure there, as it always ended.
-SIGPIPE_NOUNS = frozenset({"init", "slug", "status", "archive", "help"})
+# The nouns converted with init and after it, each keeping its bash noun's
+# silent SIGPIPE death on a closed stdout pipe; a noun converted before them
+# keeps its flush failure there, as it always ended.
+SIGPIPE_NOUNS = frozenset({"init", "slug", "status", "archive", "help", "phase"})
 
 
 def _sigpipe_as_bash(run: Callable[[List[str]], int], argv: List[str]) -> int:
@@ -186,8 +193,8 @@ def call_func(argv: List[str]) -> int:
     """`orch_python_call [--as <command>] <noun> <func> [<arg>...]`, its
     `--as <command>` already taken off by orch.__main__: runs the named
     function of a converted noun's module with `<arg>...`, returning its exit
-    code (0 when it returns None). Refuses an unknown noun or a missing or
-    private function."""
+    code (0 when it returns None). The noun is a converted one. Refuses an
+    unknown noun or a missing or private function."""
     if len(argv) < 2:
         die("usage: orch_python_call [--as <command>] <noun> <func> [<arg>...]")
     noun, name, args = argv[0], argv[1], argv[2:]

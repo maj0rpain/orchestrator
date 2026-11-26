@@ -7,7 +7,9 @@ under (ADR-0012), detected and cut; the commands spec-review apply runs on a
 breakdown, `ticket exists`, `ticket block`, `ticket unblock` and `ticket
 retire`, with the helpers they reach; and the create and link breakdown
 publish runs on each ticket, ticket_create and ticket_link, with
-ticket_links_verified, ticket_edges_verified and blockers_set. Each is copied
+ticket_links_verified, ticket_edges_verified and blockers_set; and the
+open-tickets refusal phase advance makes before it leaves implement,
+require_no_open_tickets. Each is copied
 from the bash ticket module under its bash name, with its messages and its
 order of steps; the bash copies stay while a bash caller remains (ADR-0067).
 The commands' usage refusals stay in the bash `ticket` noun: apply never
@@ -57,6 +59,19 @@ def ticket_sub_issues(gh, parent: str, code: int = 1) -> List[SubIssue]:
     if not plain_number(parent):
         die(PARENT_NOT_PLAIN + parent)
     return gh_or_die("list sub-issues of #" + parent, gh.sub_issues, int(parent), code=code)
+
+
+def require_no_open_tickets(gh, spec: str, command: str) -> None:
+    """Dies unless <spec> has no open sub-issue, blocked or not, bash
+    require_no_open_tickets - what phase advance requires before it leaves
+    implement. <command> is the refusing command, named in the message. A
+    collapsed breakdown or an issue with no sub-issues has none, so it
+    passes; a GitHub that cannot be read dies in ticket_sub_issues'
+    grammar."""
+    still_open = ["#%d" % row.number for row in ticket_sub_issues(gh, spec) if row.state == "OPEN"]
+    if still_open:
+        die("#%s still has open tickets: %s - run the driver loop (orch.sh ticket next %s) or"
+            " close them, then run %s again" % (spec, " ".join(still_open), spec, command))
 
 
 def ticket_listing_state(listing: Sequence[SubIssue], n: str) -> str:

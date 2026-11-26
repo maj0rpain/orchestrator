@@ -1,31 +1,37 @@
 """The Standing module (scripts/orch/standing.sh), kept to what the Python
-nouns use: the Phase label test, and the claim release a spec review round's
-pause makes in an autopilot flow. standing_pause has no bash copy left: its
-one bash caller was the spec module, gone at the spec noun's cutover, while
-standing_release and standing_chain_start stay in bash for the other
-transitions.
+nouns use: the Phase label test, the claim release a spec review round's
+pause makes in an autopilot flow, and a finished phase's close under its
+claim (standing_finish, with its label move, standing_move_label), which the
+phase noun's phase_finish runs for phase advance and for bash review ready.
+standing_pause, standing_finish and standing_move_label have no bash copy
+left: their bash callers, the spec and phase modules, went at those nouns'
+cutovers, while standing_release and standing_chain_start stay in bash for
+the other transitions.
 
 A phase label, `orch:<phase>`, records an autopilot flow's phase on its
-issue. PHASES is the flow's phases in order: the first column of the handoff
-module's phase table (orch/handoff.py's PHASE_TABLE), the one Python copy of
-the bash side's.
+issue. PHASES is the flow's phases in order, read from the handoff module
+(orch/handoff.py's PHASES, its phase table's first column), the one Python
+copy of the bash side's.
 
 The release is a chain, as bash's is: orch:running removed, then, last, the
 claim ref deleted, so a chain that fails partway leaves the claim held and
-dies naming the writes that landed. Not ported: the resumable chain. Its
-state file (STANDING_STATE_FILE) is set only inside autopilot.sh's own
-session wrapper, never for a skill's orch.sh run, so the copy keeps only the
-landed list, seeded with the caller's reason, and the two writes.
+dies naming the writes that landed; a finish moves the phase label and
+records the phase ahead of it, on the same landed list. Not ported: the
+resumable chain. Its state file (STANDING_STATE_FILE) is set only inside
+autopilot.sh's own session wrapper, never for a skill's orch.sh run, so the
+copy keeps only the landed list, seeded with the caller's reason, and the
+writes.
 """
 from __future__ import annotations
 
+import time
 from typing import Callable, List, NoReturn, Sequence
 
 from orch.common import die
+from orch.flow_state import phase_write_try
 from orch.gh import GhFailed, gh_reason, label_listed
-from orch.handoff import PHASE_TABLE
+from orch.handoff import PHASES
 
-PHASES = tuple(row[0] for row in PHASE_TABLE)
 # The label an autopilot flow's issue carries while a session holds its claim.
 STANDING_RUNNING_LABEL = "orch:running"
 
@@ -75,3 +81,37 @@ def standing_pause(gh, issue: str, reason: str) -> None:
     #<issue> released, nothing else. <reason> seeds the writes that
     landed."""
     standing_release(gh, issue, [reason] if reason else [])
+
+
+def standing_move_label(gh, issue: str, phase: str, landed: List[str]) -> None:
+    """Makes issue #<issue>'s phase label the one for <phase> - every other
+    phase label it carries removed - in one edit, a step of the chain whose
+    writes <landed> holds, noted as "moved the phase label to <label>". A
+    failed read of its labels dies with the writes that landed."""
+    n = int(issue)
+    try:
+        _, labels = gh.issue_state_labels(n)
+    except GhFailed as failed:
+        standing_landed_die("could not read the labels on issue #%s: %s"
+                            % (issue, gh_reason(failed.stderr)), landed)
+    label = phase_label(phase)
+    remove = [phase_label(p) for p in phase_labels_in(labels) if p != phase]
+    standing_chain_step(landed, "moved the phase label to " + label,
+                        "move the phase label to " + label, issue,
+                        lambda: gh.issue_relabel(n, add=[label], remove=remove))
+
+
+def standing_finish(gh, issue: str, phase: str, reason: str, state_file: str,
+                    clock: Callable[[], float] = time.time) -> None:
+    """A finished phase's close under its claim on issue #<issue>: the phase
+    label moved to <phase>, then <phase> recorded in the state file at
+    <state_file> (updated stamped with the time <clock> reads), then the
+    claim released. <reason> names what was done, and seeds the writes that
+    landed. The label moves before the phase is recorded, so a failure
+    between the two leaves the label one step ahead, never behind."""
+    landed = [reason] if reason else []
+    standing_move_label(gh, issue, phase, landed)
+    if not phase_write_try(state_file, phase, clock):
+        standing_landed_die("could not record phase %s in %s" % (phase, state_file), landed)
+    landed.append("recorded phase " + phase)
+    standing_release(gh, issue, landed)

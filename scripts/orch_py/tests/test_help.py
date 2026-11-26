@@ -6,6 +6,8 @@ checked here by name too, so a regenerated golden file cannot drop one
 unnoticed."""
 from __future__ import annotations
 
+import itertools
+import re
 from pathlib import Path
 
 import pytest
@@ -64,3 +66,16 @@ def test_help_gives_review_file_the_finding_s_parts_as_flags(capsys):
 
 def test_help_names_none_of_the_retired_loop_machinery(capsys):
     assert "loop-next" not in help_text(capsys)
+
+
+def test_the_phase_advance_entry_names_its_handoffs_by_role(capsys):
+    """#1066: the entry names each handoff by its role and points at handoff
+    path for the file, so renaming a handoff file never leaves it stale."""
+    lines = help_text(capsys).splitlines()
+    first = next(i for i, line in enumerate(lines) if line.startswith("  phase advance "))
+    entry = [lines[first]] + list(itertools.takewhile(
+        lambda line: line.startswith(" " * 30), lines[first + 1:]))
+    text = " ".join(" ".join(entry).split())
+
+    assert re.findall(r"[0-9]{2}-[a-z-]+\.md", text) == []
+    assert "orch.sh handoff path" in text

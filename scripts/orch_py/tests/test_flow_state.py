@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from orch.flow_state import (STATE_KEYS, flow_state_create, flow_state_get_many,
-                             flow_state_seed, phase_write)
+                             flow_state_seed, phase_write, phase_write_try, require_value)
 from conftest import bash_sourced, died_of
 
 GOLDEN = Path(__file__).resolve().parent / "flow_state"
@@ -116,11 +116,12 @@ def test_the_seed_and_its_spec_phase_write_reproduce_bash_init_s_state_file_byte
     assert state.read_bytes() == (GOLDEN / "seed" / (name + ".json")).read_bytes()
 
 
-def test_the_phase_write_refuses_a_phase_outside_the_phase_table(tmp_path, capsys):
+@pytest.mark.parametrize("write", [phase_write, phase_write_try])
+def test_the_phase_writers_refuse_a_phase_outside_the_phase_table(tmp_path, capsys, write):
     state = tmp_path / "state.json"
     state.write_text('{"phase":"spec"}')
 
-    assert died_of(capsys, lambda: phase_write(str(state), "plan")) == (
+    assert died_of(capsys, lambda: write(str(state), "plan")) == (
         1, "", "orch: not a flow phase: plan (want one of: spec implement review done)\n")
     assert state.read_text() == '{"phase":"spec"}'
 
@@ -136,6 +137,48 @@ def test_the_phase_write_dies_leaving_the_file_as_it_was_when_it_is_absent_or_no
         1, "", "orch: could not record phase in %s - the flow is unchanged\n" % state)
     assert (state.read_text() if text is not None else state.exists()) == (text or False)
     assert sorted(p.name for p in tmp_path.iterdir()) == ([] if text is None else ["state.json"])
+
+
+@pytest.mark.parametrize("text", [None, "not json", "[1]"])
+def test_the_phase_write_try_fails_printing_nothing_leaving_the_file_as_it_was(
+        tmp_path, capsys, text):
+    state = tmp_path / "state.json"
+    if text is not None:
+        state.write_text(text)
+
+    assert phase_write_try(str(state), "spec") is False
+    assert capsys.readouterr() == ("", "")
+    assert (state.read_text() if text is not None else state.exists()) == (text or False)
+
+
+def test_the_phase_write_try_records_the_phase_and_succeeds(tmp_path):
+    state = tmp_path / "state.json"
+    state.write_text('{"phase":"spec","updated":"x"}')
+
+    assert phase_write_try(str(state), "implement", lambda: SEED_CLOCK) is True
+    assert state.read_text() == (
+        '{\n  "phase": "implement",\n  "updated": "2026-01-02T03:04:05Z"\n}\n')
+
+
+@pytest.mark.parametrize("key, message", [
+    ("issue", "no issue recorded in state - the spec phase must publish one first"),
+    ("branch", "no branch recorded in state"),
+    ("pr", "no PR recorded in state - the implement phase opens it"),
+    ("base_sha", "no base SHA recorded in state - branch create records it"),
+])
+def test_a_required_value_left_empty_dies_with_its_key_s_message(capsys, key, message):
+    assert died_of(capsys, lambda: require_value(key, "")) == (1, "", "orch: %s\n" % message)
+    assert require_value(key, "7") is None
+
+
+def test_a_required_value_dies_through_the_code_it_is_given(capsys):
+    assert died_of(capsys, lambda: require_value("pr", "", 2)) == (
+        2, "", "orch: no PR recorded in state - the implement phase opens it\n")
+
+
+def test_a_required_value_whose_key_has_no_message_exits_2_whatever_its_value(capsys):
+    assert died_of(capsys, lambda: require_value("slug", "x")) == (
+        2, "", "orch: no required-field message for state key: slug\n")
 
 
 def test_the_create_fails_making_nothing_when_the_state_directory_is_gone(tmp_path):

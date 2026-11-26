@@ -88,20 +88,6 @@ handoffs_written_from() {
   done
 }
 
-# phase_next <phase>: the phase after <phase>. Nothing, and non-zero, at the
-# last row or for a phase the table does not hold.
-phase_next() {
-  local phase found=0
-  for phase in $(phase_list); do
-    if [ "$found" = 1 ]; then
-      printf '%s\n' "$phase"
-      return 0
-    fi
-    [ "$phase" != "$1" ] || found=1
-  done
-  return 1
-}
-
 # phases_from <phase>: <phase> and every phase after it, one per line, in
 # table order. Nothing, and non-zero, for a phase the table does not hold.
 phases_from() {
@@ -169,9 +155,12 @@ section_count() {
     END { print n + 0 }' "$1"
 }
 
-# The single statement of what a valid handoff is: one line per required
+# The bash statement of what a valid handoff is: one line per required
 # section, each `ok <heading>` or `FAIL <problem>`. doctor's flow-state check
 # reads the same answer rather than writing a second one that can drift from it.
+# The Python package's copy, handoff_report in scripts/orch_py/orch/handoff.py,
+# which phase advance runs, is pinned to this one by the golden handoffs of
+# scripts/orch_py/tests/handoff_report/, run through both.
 # <name> is the handoff file name the sections are looked up by, the file's own
 # basename unless given: an autopilot scratch file is not named as its handoff.
 # The plan's `## Autopilot` block is checked, and required, in an autopilot
@@ -322,23 +311,6 @@ handoff_comment_status() {
     *) exit 1 ;;
   esac
 }
-
-# handoff_file_invalid <file> <hint>: dies saying the handoff file is not
-# valid, with a fix to make, then ", <hint>".
-handoff_file_invalid() {
-  die "$HANDOFF_DIR/$1 is not valid - fix it${2:+, $2}"
-}
-
-# handoff_comment_invalid <file> <hint>: dies saying the handoff's comment on
-# the recorded issue is not valid, with a fix to post, then ", <hint>".
-handoff_comment_invalid() {
-  local issue
-  issue="$(state_get issue)"
-  die "the ${1%.md} comment on issue #$issue is not valid - post a fixed one${2:+, $2}"
-}
-
-# handoff_invalid <file> <hint>: the store's invalid message, the adapter's.
-handoff_invalid() { "handoff_$(handoff_store)_invalid" "$@"; }
 
 # handoff_file_doctor_missing <file>: prints doctor's finding for a missing
 # handoff.

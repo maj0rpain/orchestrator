@@ -1,0 +1,8 @@
+ok ## Decisions
+ok ## Rejected alternatives
+ok ## Constraints
+ok ## Open assumptions
+ok ## Host fallbacks
+FAIL ## Autopilot repeats its Rounds line
+FAIL ## Autopilot repeats its Budget line
+status 1

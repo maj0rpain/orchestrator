@@ -352,6 +352,25 @@ state_write_fails_after_first_bin() {
 # worktree_list_fails_bin: a git_fails_bin where git worktree list fails and
 # nothing else does, so it fails every checkout_parse reader.
 worktree_list_fails_bin() { git_fails_bin '" worktree list "*'; }
+# path_without <cmd>: PATH with no <cmd> on it, printed: each directory holding
+# one is replaced by a new directory linking every other command there.
+path_without() {
+  local dir links k=0 kept="" f
+  local -a dirs
+  IFS=: read -r -a dirs <<<"$PATH"
+  for dir in "${dirs[@]}"; do
+    k=$((k + 1))
+    if [ -e "$dir/$1" ]; then
+      links="$(mktemp -d)"
+      for f in "$dir"/*; do
+        [ "${f##*/}" = "$1" ] || ln -s "$f" "$links/${f##*/}"
+      done
+      dir="$links"
+    fi
+    kept="${kept:+$kept:}$dir"
+  done
+  printf '%s\n' "$kept"
+}
 # break_index / restore_index [<checkout>]: make a checkout's working tree
 # (default: the current directory) unreadable - git status fails on a garbage
 # index - and put the index back. They return non-zero, touching no file, when
@@ -421,27 +440,6 @@ live_stop() { kill "$LIVE_PID" 2>/dev/null; wait "$LIVE_PID" 2>/dev/null; return
 # marker_of <kind> [<arg>] [retired]: the marked-comment module's first line for
 # the kind, so a seeded comment is written as the module writes it.
 marker_of() { sourced_orch marked_comment_write "$@"; }
-# help_entry <command>: orch.sh help's entry for <command> - its first line
-# and the indented continuation lines under it.
-help_entry() {
-  "$ORCH" help 2>&1 | awk -v cmd="  $1" '
-    found && /^                              / { print; next }
-    found { exit }
-    index($0, cmd) == 1 { found = 1; print }'
-}
-# assert_help_names_handoffs_by_role <entry>:
-# asserts orch.sh help has an <entry> entry that names no NN-name.md handoff
-# file and points at handoff path, so renaming a handoff file never leaves the
-# help stale.
-assert_help_names_handoffs_by_role() {
-  local entry="$1" text
-  text="$(help_entry "$entry")"
-  assert_ne "help has a $entry entry" "$text" ""
-  assert_eq "the $entry entry names no handoff file" \
-    "$(printf '%s\n' "$text" | grep -oE '[0-9]{2}-[a-z-]+\.md')" ""
-  assert_contains "the $entry entry points at handoff path" \
-    "$(printf '%s\n' "$text" | flat_text)" "orch.sh handoff path"
-}
 
 # The Flow state module, sourced so state_fixture writes through orch.sh's own
 # writer: a fixture can then never store a value orch.sh would not write.

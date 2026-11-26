@@ -241,30 +241,23 @@ require_field() {
 # require_field.
 require_issue() { require_field "$1" issue "${2:-die}"; }
 
-# The writers of state.phase: phase_write, which dies on a failed write, and
-# phase_write_try, which returns the writer's status for a caller that words
-# its own failure. Every bash write of state.phase goes through one of them,
-# the redos' closing write included (redo_step_back, redo.sh, calls
-# phase_write); Python init stamps its seed's phase through the Python copy,
-# phase_write in orch_py/orch/flow_state.py, which checks it against
-# handoff.py's copy of the phase table (ADR-0067). They know only which phases
-# exist: every caller - advance and review ready - keeps its own guard on which
-# transition it may make, so a step back needs no handoff check here.
-# Optional trailing <key> <value> pairs are written with the phase in one
-# write, after require_flow_phase: the phase and the keys are recorded
-# together or not at all. phase_write dies as state_write_many does (a
-# malformed pair list "malformed state write: <args>", a failed write naming
-# phase and each key once); phase_write_try returns
-# flow_state_write_many's status.
+# The bash writer of state.phase: phase_write, which dies on a failed write.
+# Every bash write of state.phase goes through it, the redos' closing write
+# included (redo_step_back, redo.sh); phase advance, review ready's finish and
+# Python init record the phase through the Python copies, phase_write and
+# phase_write_try in orch_py/orch/flow_state.py, which check it against
+# handoff.py's copy of the phase table (ADR-0067). It knows only which phases
+# exist: every caller keeps its own guard on which transition it may make, so
+# a step back needs no handoff check here. Optional trailing <key> <value>
+# pairs are written with the phase in one write, after require_flow_phase: the
+# phase and the keys are recorded together or not at all. It dies as
+# state_write_many does (a malformed pair list "malformed state write:
+# <args>", a failed write naming phase and each key once).
 phase_write() {
   require_flow_phase "$1"
   state_write_many phase "$@"
 }
-phase_write_try() {
-  require_flow_phase "$1"
-  flow_state_write_many "$STATE" phase "$@"
-}
-# The PHASES guard both writers share: dies unless <phase> is a flow phase.
+# phase_write's PHASES guard: dies unless <phase> is a flow phase.
 require_flow_phase() {
   orch_load handoff
   word_listed "$PHASES" "$1" || die "not a flow phase: $1 (want one of: $PHASES)"
