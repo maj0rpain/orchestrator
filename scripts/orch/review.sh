@@ -1057,7 +1057,11 @@ cmd_review() {
       # phase left to retry it from.
       gh_or_die --hint "the flow stays in review" "mark PR #$pr ready" \
         adapter_pr_ready "$pr"
-      phase_finish "done" "marked PR #$pr ready" "$issue"
+      # The finish is the Python phase module's (ADR-0067): a failure - python3
+      # missing or too old included - exits here with the PR ready and the
+      # phase still review, so a re-run finishes the flow.
+      orch_python_call --as review phase phase_finish "done" "marked PR #$pr ready" "$issue" \
+        </dev/null || exit
       note "$pr"
       # stdout stays the PR number alone; the pointer goes to stderr. A side
       # checkout outlives its PR, so the human is told how to clear it once

@@ -25,26 +25,6 @@ vrun_live() {
   kill -0 -- "-$pid" 2>/dev/null
 }
 
-# path_without <cmd>: PATH with no <cmd> on it, printed: each directory holding
-# one is replaced by a new directory linking every other command there.
-path_without() {
-  local dir links k=0 kept="" f
-  local -a dirs
-  IFS=: read -r -a dirs <<<"$PATH"
-  for dir in "${dirs[@]}"; do
-    k=$((k + 1))
-    if [ -e "$dir/$1" ]; then
-      links="$(mktemp -d)"
-      for f in "$dir"/*; do
-        [ "${f##*/}" = "$1" ] || ln -s "$f" "$links/${f##*/}"
-      done
-      dir="$links"
-    fi
-    kept="${kept:+$kept:}$dir"
-  done
-  printf '%s\n' "$kept"
-}
-
 # tick_calls: how many sessions the launcher has been asked for.
 tick_calls() { local n; n="$(grep -c '^argv:' "$launcher_dir/calls" 2>/dev/null)"; printf '%s\n' "${n:-0}"; }
 # picked: the side checkouts the launcher started sessions in, in order, one

@@ -2180,8 +2180,11 @@ rm -rf "$out_dir"
 restore_suite_env
 
 # --- review ready with a failed phase write (#1931) ---------------------------
-# The PR is marked ready first; a phase write that cannot land then stops
-# review ready with no PR number, and the re-run records done.
+# The PR is marked ready first; a finish that then cannot run - the bridge to
+# the Python phase_finish broken by a failing python3 - stops review ready with
+# no PR number, and the re-run records done. The failed phase write itself is
+# a pytest case of phase_finish. Without python3 the bridge refuses naming
+# orch.sh review, an autopilot flow's label and claim left as they were.
 echo
 echo "review ready with a failed phase write"
 review_flow failedready
@@ -2189,19 +2192,32 @@ state_fixture pr 7
 fake_github
 fake_pr 7 open orch/1-failedready main
 fake_pr_draft 7
-err_file="$(mktemp)"
-out="$(PATH="$(state_write_fails_bin):$PATH" "$ORCH" review ready 2>"$err_file")"; st=$?
-err="$(cat "$err_file")"
-assert_ne "a failed phase write exits non-zero" "$st" 0
-assert_contains "naming the key and the state file" "$err" \
-  "orch: could not record phase in $PWD/.orchestrator/state.json - the flow is unchanged"
+out="$(PATH="$(fails_bin python3 '*'):$PATH" "$ORCH" review ready 2>/dev/null)"; st=$?
+assert_ne "a broken bridge exits non-zero" "$st" 0
 assert_eq "printing no PR number" "$out" ""
 assert_eq "the phase stays review" "$("$ORCH" state get phase)" review
+assert_eq "the PR already ready" "$(fake_pr_draft_of 7)" "no"
 out="$("$ORCH" review ready 2>/dev/null)"; st=$?
 assert_status "the re-run succeeds" "$st" 0
 assert_eq "printing the PR number" "$out" "7"
 assert_eq "recording done" "$("$ORCH" state get phase)" "done"
 assert_eq "the PR is ready" "$(fake_pr_draft_of 7)" "no"
+state_fixture phase review
+state_fixture issue 8
+fake_pr_draft 7
+fake_issue 8 open ready-for-agent orch:review orch:running
+fake_claim_seed 8
+labels="$(fake_labels_of 8)"
+err_file="$(mktemp)"
+out="$(ORCH_AUTOPILOT=1 PATH="$(path_without python3)" "$ORCH" review ready 2>"$err_file")"; st=$?
+assert_status "without python3 the bridge refuses" "$st" 1
+assert_eq "naming orch.sh review and pointing at orch.sh doctor" "$(has_line "$(cat "$err_file")" \
+  "orch: orch.sh review needs python3 3.9 or newer (found none) - run orch.sh doctor")" yes
+assert_eq "printing no PR number there either" "$out" ""
+assert_eq "the PR left ready" "$(fake_pr_draft_of 7)" "no"
+assert_eq "the phase left at review" "$("$ORCH" state get phase)" review
+assert_eq "the label left as it was" "$(fake_labels_of 8)" "$labels"
+assert_eq "and the claim held" "$(fake_claim_held 8)" held
 restore_suite_env
 
 

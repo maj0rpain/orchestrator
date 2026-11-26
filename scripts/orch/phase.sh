@@ -40,7 +40,8 @@ print_boundary() {
 # claim, <reason> naming what was done. It reads no state. It reports success
 # only, never its mode - a caller asks autopilot_active for that - so it is
 # called as a plain statement, never in a condition, where set -e would be
-# suspended.
+# suspended. Its one caller is phase advance: review ready runs the Python copy
+# (orch_py/orch/phase.py) through orch_python_call.
 phase_finish() {
   if autopilot_active; then
     require_value issue "$3"

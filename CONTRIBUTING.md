@@ -83,15 +83,16 @@ result as a suite's FAIL lines and summary, and prints `not installed - skipped`
 without pytest, which fails only under CI. The pytest suite is in neither
 all.sh's suites list nor the durations file, and has no durations file of its
 own. In affected.sh a change under `scripts/orch_py/` selects the redo, ticket,
-autopilot and doctor sections, which call a converted noun's own verbs through
-CLI dispatch (the `redo spec` sections run `spec round` through it, doctor's
-glossary check `glossary terms`) or call a Python bridge directly via
-`orch_python_call` (doctor's agent settings check and autopilot's model/effort
-validation), hooks_test.sh, whose paste guard rows run `spec-review check`
-through it, and the side-checkout sections, whose `.orchestrator` entry
-classification scans the package. That is not every section that reaches the
-package: most start a flow through `fake_flow`, whose `init` runs through the
-dispatch, and some run `status` or `help`; CI's whole run covers those.
+autopilot, doctor and review sections, which call a converted noun's own verbs
+through CLI dispatch (the `redo spec` sections run `spec round` through it,
+doctor's glossary check `glossary terms`) or call a Python bridge directly via
+`orch_python_call` (doctor's agent settings check, autopilot's model/effort
+validation and `review ready`'s `phase_finish`), hooks_test.sh, whose paste
+guard rows run `spec-review check` through it, and the side-checkout sections,
+whose `.orchestrator` entry classification scans the package. That is not
+every section that reaches the package: most start a flow through `fake_flow`,
+whose `init` runs through the dispatch, and some run `status` or `help`; CI's
+whole run covers those.
 
 orch_test.sh is the suite's runner and holds no test. Its `# ---` sections live
 under `scripts/test/orch/`: `<noun>.sh` holds the sections for one orch.sh noun

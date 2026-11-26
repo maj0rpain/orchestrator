@@ -2,21 +2,23 @@
 .orchestrator/state.json, read by the rules of the bash Flow state module's
 multi-key reader (scripts/flow-state.sh's flow_state_get_many), which stays
 the state format's owner. Python init writes a new flow's seed - built from
-the key table's seed column, created, and stamped with its spec phase - and
-bash every later change. The golden state.json files of tests/flow_state/ pin
-the two sides to each other (ADR-0067): those under read/ and refused/ the
-readers, and those under seed/ the seed Python writes to the bytes bash init
-wrote.
+the key table's seed column, created, and stamped with its spec phase - the
+Python phase writers (phase_write, and phase_write_try for a caller that
+words its own failure) record a phase, and bash makes every other change.
+The golden state.json files of tests/flow_state/ pin the two sides to each
+other (ADR-0067): those under read/ and refused/ the readers, and those
+under seed/ the seed Python writes to the bytes bash init wrote.
 
 Beside the reader sit the pieces of bash's state module that only read
 state.json: flow_holding_phase, the guard a branch or issue an active flow
 holds answers to (ADR-0029), STATE_UNREADABLE_MSG, the refusal an unreadable
 state.json earns, require_state_exists, the refusal when there is no flow,
-require_state_read, a command's entry read of the keys it needs, and
+require_state_read, a command's entry read of the keys it needs,
+require_value, the refusal of a required field left empty, and
 require_issue, the entry read of the flow's issue a command that needs one
 makes; then what two keys read as when a flow never recorded them,
-review_budget_fallback and flow_base_fallback_into, whose bash copies stay for
-the bash nouns that read them.
+review_budget_fallback and flow_base_fallback_into, whose bash copies stay
+for the bash nouns that read them.
 """
 from __future__ import annotations
 
@@ -110,21 +112,28 @@ def flow_state_create(path: str, state: Mapping[str, Any]) -> bool:
     return file_write_atomic(path, _state_text(state), make_directory=False)
 
 
-def phase_write(path: str, phase: str, clock: Callable[[], float] = time.time) -> None:
-    """Records <phase> in the state file at <path>, bash phase_write: updated
-    stamped with the time <clock> reads, then phase set, both in place in the
-    file's key order, the file rewritten as flow_state_create writes it.
-    Dies unless <phase> is a flow phase, and, leaving the file untouched,
-    when it is absent, is not exactly one JSON object, or cannot be
-    written."""
+def phase_write_try(path: str, phase: str, clock: Callable[[], float] = time.time) -> bool:
+    """Records <phase> in the state file at <path>, bash phase_write_try:
+    updated stamped with the time <clock> reads, then phase set, both in
+    place in the file's key order, the file rewritten as flow_state_create
+    writes it. Dies unless <phase> is a flow phase; whether the write
+    succeeded otherwise, printing nothing and leaving the file untouched
+    when it is absent, is not exactly one JSON object, or cannot be written,
+    for a caller that words its own failure."""
     # Imported here: the handoff module reads this one at its own import.
     from orch.handoff import PHASE_TABLE
     phases = " ".join(row[0] for row in PHASE_TABLE)
     if phase not in phases.split():
         die("not a flow phase: %s (want one of: %s)" % (phase, phases))
     state = _state_object(path)
-    if state is None or not flow_state_create(
-            path, dict(state, updated=now(clock), phase=phase)):
+    return state is not None and flow_state_create(
+        path, dict(state, updated=now(clock), phase=phase))
+
+
+def phase_write(path: str, phase: str, clock: Callable[[], float] = time.time) -> None:
+    """phase_write_try, dying "could not record phase in <path> - the flow
+    is unchanged" where the write fails - bash phase_write."""
+    if not phase_write_try(path, phase, clock):
         die("could not record phase in %s - the flow is unchanged" % path)
 
 
@@ -232,6 +241,27 @@ def require_state_read(state_file: str, env: Mapping[str, str], keys: Sequence[s
     if state is None:
         die(STATE_UNREADABLE_MSG, code)
     return state
+
+
+# The one spelling of each required field's message, by key: bash
+# state_required_msg.
+REQUIRED_MSGS = {
+    "issue": NO_ISSUE_MSG,
+    "branch": "no branch recorded in state",
+    "pr": "no PR recorded in state - the implement phase opens it",
+    "base_sha": "no base SHA recorded in state - branch create records it",
+}
+
+
+def require_value(key: str, value: str, code: int = 1) -> None:
+    """Dies, exit <code>, with <key>'s required-field message when <value>
+    is empty - bash require_value. It reads nothing. A key with no message
+    exits 2, whatever the value: a programming error."""
+    message = REQUIRED_MSGS.get(key)
+    if message is None:
+        die("no required-field message for state key: %s" % key, 2)
+    if not value:
+        die(message, code)
 
 
 def require_issue(state_file: str, env: Mapping[str, str],

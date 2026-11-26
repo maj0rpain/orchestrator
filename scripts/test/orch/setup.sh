@@ -352,6 +352,25 @@ state_write_fails_after_first_bin() {
 # worktree_list_fails_bin: a git_fails_bin where git worktree list fails and
 # nothing else does, so it fails every checkout_parse reader.
 worktree_list_fails_bin() { git_fails_bin '" worktree list "*'; }
+# path_without <cmd>: PATH with no <cmd> on it, printed: each directory holding
+# one is replaced by a new directory linking every other command there.
+path_without() {
+  local dir links k=0 kept="" f
+  local -a dirs
+  IFS=: read -r -a dirs <<<"$PATH"
+  for dir in "${dirs[@]}"; do
+    k=$((k + 1))
+    if [ -e "$dir/$1" ]; then
+      links="$(mktemp -d)"
+      for f in "$dir"/*; do
+        [ "${f##*/}" = "$1" ] || ln -s "$f" "$links/${f##*/}"
+      done
+      dir="$links"
+    fi
+    kept="${kept:+$kept:}$dir"
+  done
+  printf '%s\n' "$kept"
+}
 # break_index / restore_index [<checkout>]: make a checkout's working tree
 # (default: the current directory) unreadable - git status fails on a garbage
 # index - and put the index back. They return non-zero, touching no file, when
