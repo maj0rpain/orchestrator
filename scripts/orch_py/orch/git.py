@@ -18,10 +18,11 @@ delete (orch.branch), the dirty paths the planning allowlist's flow-start scan
 judges, the scoped git config reads, writes and unsets
 (`config_regexp`, `config_set`, `config_unset`) the agent noun uses, and what
 the ticket nouns need: a ticket branch's create with no tracking and its
-delete (-D), the worktree add that checks it out, the rebase, rebase abort,
-unmerged-path listing and fast-forward-only merge `ticket merge` runs in a
-given checkout, the status the clean-tree check (orch.common) reads there,
-and the merge-in-progress probe, merge abort, hard reset and clean of the
+delete (-D), the worktree add that checks it out and the removal that takes
+it back out, the rebase, rebase abort, unmerged-path listing and
+fast-forward-only merge `ticket merge` runs in a given checkout, the
+status the clean-tree check (orch.common) reads there, and the
+merge-in-progress probe, merge abort, hard reset and clean of the
 discard sequence (orch.checkout). A ticket branch's ref verify is
 branch_exists, and the toplevel read at its worktree's path toplevel_at.
 There is no generic run: each later noun adds the operations it needs, each
@@ -98,6 +99,7 @@ COULD_NOT: Dict[str, Any] = {
     "worktree_remove": "git gave no reason",
     "dirty_paths": "git gave no reason",
     "worktree_add": GitFailure(1, ""),
+    "worktree_delete": GitFailure(1, ""),
     "rebase_at": GitFailure(1, ""),
     "rebase_abort_at": GitFailure(1, ""),
     "unmerged_paths_at": [],
@@ -606,6 +608,14 @@ class Git:
         None when it was added, else git's status and stderr."""
         return self._failure(["worktree", "add", "-q", path, branch])
 
+    def worktree_delete(self, path: str) -> Optional[GitFailure]:
+        """`git worktree remove <path>` where the adapter runs, never with
+        force - the ticket worktree teardown's and add's back-out, which hand
+        git's whole stderr on as bash's did, where worktree_remove keeps only
+        its first line. None when the worktree is gone, else git's status and
+        stderr."""
+        return self._failure(["worktree", "remove", path])
+
     # The ticket merge's operations, each run in the checkout it names, as
     # bash's `git -C <path>`, a branch named in full (refs/heads/<b>) so a tag
     # of its name is never taken for it (#2337).
@@ -886,6 +896,9 @@ class FakeGit:
 
     def worktree_add(self, path: str, branch: str) -> Optional[GitFailure]:
         return self._answer("worktree_add", path, branch)
+
+    def worktree_delete(self, path: str) -> Optional[GitFailure]:
+        return self._answer("worktree_delete", path)
 
     def rebase_at(self, path: str, onto: str) -> Optional[GitFailure]:
         return self._answer("rebase_at", path, onto)

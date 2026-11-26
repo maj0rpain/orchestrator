@@ -1061,6 +1061,28 @@ def test_an_unseeded_worktree_add_on_the_fake_fails_with_no_stderr():
     assert FakeGit().worktree_add("/main/.orchestrator/worktrees/t5", TICKET) == GitFailure(1, "")
 
 
+def test_a_ticket_worktree_is_deleted_the_same_from_a_real_repo_and_the_fake(forking):
+    path = worktree_add(forking, forking / ".orchestrator" / "worktrees" / "t5", "-b", TICKET)
+
+    assert alike(Git(cwd=str(forking)), "worktree_delete", str(path)) is None
+    assert not path.exists()
+    assert run_git(forking, "rev-parse", "--verify", "refs/heads/" + TICKET)
+
+
+def test_a_locked_worktree_git_refuses_to_delete_gives_its_status_and_whole_stderr(forking):
+    path = worktree_add(forking, forking / ".orchestrator" / "worktrees" / "t5", "-b", TICKET)
+    run_git(forking, "worktree", "lock", str(path))
+
+    failed = Git(cwd=str(forking)).worktree_delete(str(path))
+
+    assert failed.code == 128 and failed.stderr.startswith("fatal: ")
+    assert failed.stderr.endswith("\n") and path.exists()
+
+
+def test_an_unseeded_worktree_delete_on_the_fake_fails_with_no_stderr():
+    assert FakeGit().worktree_delete("/main/.orchestrator/worktrees/t5") == GitFailure(1, "")
+
+
 def tip(root, branch):
     """The commit local branch <branch> of the repository at <root> names."""
     return run_git(root, "rev-parse", "refs/heads/" + branch)

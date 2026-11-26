@@ -137,6 +137,12 @@ def _ticket(argv: List[str]) -> int:
     return run(argv)
 
 
+def _ticket_worktree(argv: List[str]) -> int:
+    from orch.ticket_worktree import run
+
+    return run(argv)
+
+
 def _help(argv: List[str]) -> int:
     from orch.help import run
 
@@ -165,6 +171,7 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "phase": _phase,
     "redo": _redo,
     "ticket": _ticket,
+    "ticket-worktree": _ticket_worktree,
     "help": _help,
 }
 
