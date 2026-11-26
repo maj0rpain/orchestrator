@@ -15,9 +15,16 @@ its messages and its order of steps; the bash copies stay while a bash caller
 remains.
 
 run(argv) takes the arguments after `ticket`, as orch.sh hands them on, and
-returns the exit code; every error dies through orch.common.die. Its verbs so
-far are `publish`, `next`, `list`, `parent`, `report` (`save`, `show`) and the
-five above, each behind bash's usage line and guard order, and an op it does
+returns the exit code; every error dies through orch.common.die. Its verbs
+are `publish`, `next`, `list`, `parent`, `report` (`save`, `show`), the five
+above, and the three that land a ticket on the ticket worktree concept
+(orch.ticket_worktree): `close`, which refuses a ticket whose ticket branch
+is not merged into its forked-from branch before any gh call (#1146);
+`merge`, which rebases the ticket branch onto its forked-from branch inside
+the ticket worktree and fast-forwards that branch in whichever checkout has
+it, a conflict aborted with exit 3; and `reclaim` (ADR-0054), its guard, the
+discard rule, then each leftover ticket's first matching case, one line per
+action. Each is behind bash's usage line and guard order, and an op it does
 not run dies with bash's "unknown ticket op" refusal, every op bash has named
 in it. A saved report keeps bash's layout, .orchestrator/reports/<n>.md, so
 one a bash session saved reads back here.
@@ -36,17 +43,28 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from typing import Callable, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from orch import comments
+from orch.branch import branch_issue_of, branch_kind, discard_own_branch_work, forked_from_branch
+from orch.checkout import (branch_checkout, checkout_branch, discard_work_in, rebase_in_progress,
+                           require_flow_branch, ticket_worktrees_under)
 from orch.common import (ORCH_DIR_NAME, copy_or_die, die, fenced, lines_of, mkdir_p_or_die,
-                         plain_number, read_raw, rm_f_or_die, rm_rf_or_die, state_word,
-                         stdout_write, temp_text_file, without_cr)
+                         plain_number, read_raw, require_clean_tree, rm_f_or_die, rm_rf_or_die,
+                         state_word, stdout_write, subshell, temp_text_file, without_cr)
+from orch.flow_state import flow_state_file, require_state_read
 from orch.gh import (GhFailed, SubIssue, adapter, adapter_of, gh_die, gh_or_die,
                      verify_twice)
 from orch.git import Git
 from orch.repo import REPO_REMEDY, RepoPin
 from orch.root import checkout_root
+from orch.ticket_worktree import (NONE, TICKET_TEARDOWN_BRANCH_FAILED, WORKTREE, TicketFacts,
+                                  git_failed, ticket_branch_merged,
+                                  ticket_branch_merged_or_die, ticket_facts,
+                                  ticket_facts_require_worktree,
+                                  ticket_facts_require_wt_branch, ticket_worktree_number,
+                                  ticket_worktree_teardown)
 from orch.triage_labels import TriageLabels
 
 # Every op of the ticket noun, as its unknown-op refusal names them.
@@ -654,6 +672,231 @@ def _reset(args: List[str], gh_of, root: str) -> None:
     ticket_reset(gh_of(), parent, root)
 
 
+CLOSE_USAGE = "usage: orch.sh ticket close <n> [--unmerged]"
+
+
+def ticket_close(args: List[str], gh_of, git, root: str, _env: Mapping[str, str]) -> None:
+    """`ticket close <n> [--unmerged]`: closes ticket <n>. Without
+    --unmerged, a ticket worktree for <n> under the checkout at <root> - a
+    worktree at that path itself, never a leftover t<n> directory - must be
+    on a ticket branch merged into its forked-from branch, so work that has
+    not landed is never closed (#1146). With no ticket worktree, no check
+    runs. Every refusal comes before any gh call, leaving the issue open."""
+    n, unmerged = "", False
+    for arg in args:
+        if arg == "--unmerged":
+            unmerged = True
+        elif arg.startswith("-"):
+            die("unknown flag: %s (%s)" % (arg, CLOSE_USAGE))
+        elif n:
+            die(CLOSE_USAGE)
+        else:
+            n = arg
+    if not n:
+        die(CLOSE_USAGE)
+    if not plain_number(n):
+        die("not a plain issue number: " + n)
+    if not unmerged:
+        facts = ticket_facts(git, root, n)
+        if facts.worktree == WORKTREE:
+            ticket_facts_require_wt_branch(facts)
+            ticket_branch_merged_or_die(git, facts.wt_branch, "close it anyway")
+    gh_or_die("close ticket #" + n, gh_of().issue_close, int(n))
+
+
+def ticket_merge(git, root: str, text: str) -> None:
+    """Lands the branch checked out in ticket <text>'s worktree, under the
+    checkout at <root>, on the branch it was forked from: rebases it onto
+    that branch's tip inside the ticket worktree, then fast-forwards that
+    branch in whichever checkout has it - so history stays linear. Every
+    refusal (exit 1) comes before anything moves. Exit 3 means a rebase
+    conflict only: it is aborted, leaving both branches at their prior tips.
+    A rebase that fails any other way is aborted too and exits 1, naming
+    git's first line; so does an abort that fails, which leaves the ticket
+    worktree mid-rebase. A failed fast-forward hands git's stderr on and
+    dies, the ticket branch left rebased."""
+    n = ticket_worktree_number(text)
+    facts = ticket_facts(git, root, n)
+    ticket_facts_require_worktree(facts, WORKTREE)
+    ticket_facts_require_wt_branch(facts)
+    path, wt_branch = facts.path, facts.wt_branch
+    parent = forked_from_branch(git, wt_branch)
+    if parent is None:
+        die("branch %s records no forked-from branch" % wt_branch)
+    require_clean_tree(git, path,
+                       "ticket worktree %s is dirty - commit or discard its changes first" % path)
+    parent_checkout = branch_checkout(git, parent)
+    if parent_checkout is None:
+        die("%s, the branch %s was forked from, is checked out nowhere - check it out first"
+            % (parent, wt_branch))
+    require_clean_tree(git, parent_checkout,
+                       "%s, the checkout of %s, is dirty - commit or discard its changes first"
+                       % (parent_checkout, parent))
+    failed = git.rebase_at(path, "refs/heads/" + parent)
+    if failed is not None:
+        # A conflict is a rebase stopped with unmerged paths; anything else -
+        # a refusing hook, say - is a plain failure, named by git's first
+        # line.
+        unmerged = git.unmerged_paths_at(path)
+        if rebase_in_progress(git, path) and git.rebase_abort_at(path) is not None:
+            die("could not abort the rebase in ticket worktree %s - it is left mid-rebase" % path)
+        if unmerged:
+            die("rebasing %s onto %s hit a conflict - aborted; both branches are as they were"
+                % (wt_branch, parent), 3)
+        said = failed.stderr.split("\n", 1)[0]
+        die("rebasing %s onto %s failed: %s" % (wt_branch, parent, said or "git gave no reason"))
+    if git_failed(git.merge_ff_only_at(parent_checkout, "refs/heads/" + wt_branch)):
+        die("could not fast-forward %s to %s in %s" % (parent, wt_branch, parent_checkout))
+
+
+def _merge(args: List[str], _gh_of, git, root: str, _env: Mapping[str, str]) -> None:
+    ticket_merge(git, root, _one_arg(args, "usage: orch.sh ticket merge <n>"))
+
+
+def ticket_reclaim_close(gh, n: str, parent: str) -> None:
+    """Closes ticket <n> if it is still open and is not <parent> itself - a
+    collapsed breakdown's spec issue is never closed - and says so."""
+    if n == parent:
+        return
+    if gh_or_die("read ticket #" + n, gh.issue_state, int(n)) != "OPEN":
+        return
+    gh_or_die("close ticket #" + n, gh.issue_close, int(n))
+    stdout_write("closed ticket #%s\n" % n)
+
+
+def ticket_reclaim_remove(git, facts: TicketFacts) -> None:
+    """Tears down the ticket worktree and branch in <facts>, discarding the
+    work in the worktree first, when either exists. The facts are the
+    caller's one read, so its lines follow from them and nothing is probed
+    afterwards. A death in the teardown does not end this command before the
+    line below is printed; its status says which step failed. A failure dies
+    naming the ticket and the step."""
+    had_wt, had_branch = facts.worktree != NONE, facts.own_exists
+    if not had_wt and not had_branch:
+        return
+    status = subshell(lambda: ticket_worktree_teardown(git, facts, unmerged=True, discard=True))
+    # A failed branch step means the worktree step passed; any other failure
+    # is the worktree's when the facts show any worktree state, else the
+    # branch's.
+    if status not in (0, TICKET_TEARDOWN_BRANCH_FAILED) and had_wt:
+        die("ticket #%s: could not remove its worktree %s" % (facts.n, facts.path))
+    if had_wt:
+        stdout_write("removed the worktree of ticket #%s\n" % facts.n)
+    if status != 0:
+        die("ticket #%s: could not delete branch %s" % (facts.n, facts.own_branch))
+    if had_branch:
+        stdout_write("deleted the branch of ticket #%s\n" % facts.n)
+
+
+def ticket_reclaim_guard(git, parent: str, branch: str, active: bool, recorded: str,
+                         flow_issue: str) -> None:
+    """Proves <branch> is the recovered run's own branch for <parent>, or
+    dies (exit 1, "nothing was discarded"). <active> says whether a flow is
+    active, and <recorded> and <flow_issue> are the flow's branch and issue,
+    all from the caller's one read of flow state; it reads none. With an
+    active flow it must be the flow's recorded branch and <parent> its issue;
+    with none, a `branch off`-made quick/<parent>-<slug> branch."""
+    if active:
+        require_flow_branch("ticket reclaim", branch, recorded)
+        if not flow_issue:
+            die("ticket reclaim: on %s, the active flow records no issue yet - nothing was"
+                " discarded" % branch)
+        if parent != flow_issue:
+            die("ticket reclaim: on %s, #%s is not the flow's issue #%s - nothing was discarded"
+                % (branch, parent, flow_issue))
+        return
+    if branch_kind(git, branch) == "quick" and branch_issue_of(branch) == parent:
+        return
+    die("ticket reclaim: no active flow, and %s is not a quick implementation's branch for #%s"
+        " (quick/%s-<slug>, made by branch off) - nothing was discarded" % (branch, parent, parent))
+
+
+def ticket_reclaim(args: List[str], gh_of, git, root: str, env: Mapping[str, str]) -> None:
+    """`ticket reclaim <parent>`: recovers what a dead implement run left
+    (ADR-0054). It first refuses, discarding and reading nothing, unless the
+    current branch is the run's own for <parent> (ticket_reclaim_guard). The
+    discard rule then runs on that branch, before anything else is touched.
+    Then each leftover ticket - a ticket worktree under the checkout at
+    <root>, or an open sub-issue of <parent> with a saved report - takes the
+    first case that matches: reported and merged, close it, reset its
+    worktree and remove it; reported and unmerged, reset the tree, `ticket
+    merge` it, close it and remove the worktree (a conflict prints `conflict
+    <n>` and exits 3, both branches at their prior tips, later leftovers
+    untouched); anything else, discard it so it is rebuilt. One line per
+    action; a failed write dies naming the ticket."""
+    parent = _one_arg(args, "usage: orch.sh ticket reclaim <parent>")
+    if not plain_number(parent):
+        die(PARENT_NOT_PLAIN + parent)
+    branch = checkout_branch(git, root)
+    if branch is None:
+        die("the current checkout is on no branch - nothing to reclaim onto")
+    recorded = flow_issue = ""
+    active = False
+    state_file = flow_state_file(root)
+    if os.path.isfile(state_file):
+        state = require_state_read(state_file, env, ("branch", "issue", "phase"), 1)
+        recorded, flow_issue = state["branch"], state["issue"]
+        active = state["phase"] != "done"
+    ticket_reclaim_guard(git, parent, branch, active, recorded, flow_issue)
+    discard_own_branch_work(git, root, env, "ticket reclaim", branch, recorded, active)
+    gh = gh_of()
+    reports = ticket_reports_dir(root)
+
+    def reported(n: str) -> bool:
+        return os.path.isfile("%s/%s.md" % (reports, n))
+
+    subs = ticket_sub_issues(gh, parent)
+    leftovers = [str(row.number) for row in subs
+                 if row.state == "OPEN" and reported(str(row.number))]
+    # A collapsed breakdown has no sub-issues; its one ticket is the parent,
+    # whose saved report is the record that it landed even once its worktree
+    # is gone.
+    if not subs and reported(parent):
+        leftovers.append(parent)
+    leftovers += [n for n, _ in ticket_worktrees_under(git, root)]
+    # Numerically, each once, as bash's sort -un keeps the first of a run.
+    first: Dict[int, str] = {}
+    for n in leftovers:
+        first.setdefault(int(n), n)
+    for number in sorted(first):
+        n = first[number]
+        facts = ticket_facts(git, root, n)
+        is_reported = reported(n)
+        merged = ticket_branch_merged(git, facts.own_branch) if facts.own_exists \
+            else is_reported
+        if is_reported and merged:
+            if n == parent:
+                stdout_write("ticket #%s already landed\n" % n)
+            ticket_reclaim_close(gh, n, parent)
+            ticket_reclaim_remove(git, facts)
+        elif is_reported and facts.worktree == WORKTREE:
+            discard_work_in(git, facts.path, "ticket #" + n)
+            status = subshell(lambda: ticket_merge(git, root, n))
+            if status == 3:
+                stdout_write("conflict %s\n" % n)
+                sys.exit(3)
+            if status != 0:
+                die("ticket #%s: could not merge its branch" % n)
+            stdout_write("merged ticket #%s\n" % n)
+            ticket_reclaim_close(gh, n, parent)
+            ticket_reclaim_remove(git, facts)
+        else:
+            ticket_reclaim_remove(git, facts)
+            ticket_report_remove(root, n)
+            stdout_write("discarded ticket #%s\n" % n)
+
+
+# The ops this noun runs that read the checkout's git, each taking the
+# arguments after the op, the gh adapter's maker, the git adapter, the
+# checkout's root and the environment, and returning nothing.
+GIT_VERBS: Dict[str, Callable[[List[str], Callable[[], object], object, str,
+                               Mapping[str, str]], None]] = {
+    "close": ticket_close,
+    "merge": _merge,
+    "reclaim": ticket_reclaim,
+}
+
+
 # The ops this noun runs, each taking the arguments after the op, the gh
 # adapter's maker and the checkout's root, and returning its exit code (None
 # for 0).
@@ -687,6 +930,10 @@ def run(
     # the adapter itself is made at the op's first GitHub call.
     gh_of = adapter_of(gh, env, pin=RepoPin(env, git))
     op = argv[0] if argv else ""
+    git_verb = GIT_VERBS.get(op)
+    if git_verb is not None:
+        git_verb(argv[1:], gh_of, git, root, env)
+        return 0
     verb = VERBS.get(op)
     if verb is None:
         die("unknown ticket op: %s (want %s)" % (op or "<none>", OPS))

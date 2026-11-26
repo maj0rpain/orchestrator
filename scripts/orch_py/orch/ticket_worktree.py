@@ -21,7 +21,7 @@ branch.<ticket branch>.orchestrator-ticket-parent.
 run(argv) takes the arguments after `ticket-worktree`, as orch.sh hands them
 on, and returns the exit code; every error dies through orch.common.die. A
 git command whose stderr bash let through hands it on here too, before the
-`orch:` line.
+`orch:` line, through git_failed, which ticket merge's fast-forward shares.
 """
 from __future__ import annotations
 
@@ -142,7 +142,7 @@ def ticket_branch_merged_or_die(git, branch: str, what: str) -> None:
             % (branch, parent, what))
 
 
-def _git_failed(failure) -> bool:
+def git_failed(failure) -> bool:
     """Hands a failed git run's stderr on, as bash let it through: whether
     the run failed."""
     if failure is None:
@@ -168,9 +168,9 @@ def add(args: List[str], git, root: str) -> None:
     if facts.own_exists:
         die("branch %s already exists" % own_branch)
     exclude_orch_dirs(git)
-    if _git_failed(git.branch_create(own_branch, "HEAD")):
+    if git_failed(git.branch_create(own_branch, "HEAD")):
         die("could not create branch %s" % own_branch)
-    if _git_failed(git.worktree_add(path, own_branch)) \
+    if git_failed(git.worktree_add(path, own_branch)) \
             or not forked_from_set(git, own_branch, facts.parent):
         # A freshly added worktree holds nothing of anyone's, so no force is
         # needed to take it back out; -D deletes the branch's config section
@@ -217,7 +217,7 @@ def ticket_worktree_teardown(git, facts: TicketFacts, unmerged: bool = False,
         if discard:
             discard_work_in(git, path, "ticket #" + facts.n)
         if unmerged and rebase_in_progress(git, path) \
-                and _git_failed(git.rebase_abort_at(path)):
+                and git_failed(git.rebase_abort_at(path)):
             die("could not abort the rebase in progress in ticket worktree %s" % path)
         require_clean_tree(git, path, "ticket worktree %s is dirty - commit or discard its"
                                       " changes first; it is never removed with force" % path)
@@ -225,10 +225,10 @@ def ticket_worktree_teardown(git, facts: TicketFacts, unmerged: bool = False,
         die("no ticket worktree or branch for ticket %s at %s" % (facts.n, path))
     if not unmerged:
         ticket_branch_merged_or_die(git, facts.own_branch, "discard it")
-    if facts.worktree != NONE and _git_failed(git.worktree_delete(path)):
+    if facts.worktree != NONE and git_failed(git.worktree_delete(path)):
         warn("could not remove ticket worktree %s" % path)
         return TICKET_TEARDOWN_WORKTREE_FAILED
-    if facts.own_exists and _git_failed(git.branch_delete(facts.own_branch)):
+    if facts.own_exists and git_failed(git.branch_delete(facts.own_branch)):
         warn("could not delete branch %s" % facts.own_branch)
         return TICKET_TEARDOWN_BRANCH_FAILED
     return 0

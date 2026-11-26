@@ -14,66 +14,21 @@ from pathlib import Path
 
 import pytest
 
-from conftest import committed, died_of, origin_clone, run_git
+from conftest import (CLAUDE, TICKET_PARENT, added, committed, died_of, git_of, has_branch,
+                      lock_ref, orch_tw, rebasing, run_git, wt_path)
 from orch import ticket_worktree
 from orch.git import Git, GitFailure
 
-CLAUDE = {"ORCHESTRATOR_HOST": "claude"}
 AUTOPILOT = {"ORCHESTRATOR_HOST": "claude", "ORCH_AUTOPILOT": "1"}
 
-PARENT = "orch/5-feature"
+PARENT = TICKET_PARENT
 TICKET7 = PARENT + "--t7"
 
 
 @pytest.fixture
-def repo(tmp_path, monkeypatch):
-    """bash's tw_repo: a clone of a bare origin with one commit on its
-    default branch pushed, then PARENT checked out with a feature.txt commit
-    of its own, git's identity set; the process's working directory: its
-    root, resolved."""
-    root = tmp_path.resolve() / "repo"
-    origin_clone(tmp_path / "origin.git", root)
-    for key, value in (("user.name", "t"), ("user.email", "t@t"), ("commit.gpgsign", "false")):
-        run_git(root, "config", key, value)
-    committed(root, {"README.md": "# repo\n"}, "init")
-    run_git(root, "push", "-q", "origin", "HEAD")
-    run_git(root, "checkout", "-qb", PARENT)
-    committed(root, {"feature.txt": "work\n"}, "feature")
-    monkeypatch.chdir(root)
-    return root
-
-
-def orch_tw(*argv, env=None):
-    """`orch.sh ticket-worktree <argv>` in-process in the working directory's
-    checkout, under <env> (Claude Code's plain session when None): its exit
-    code."""
-    return ticket_worktree.run(list(argv), env=CLAUDE if env is None else env)
-
-
-def wt_path(root, n):
-    """Where ticket <n>'s ticket worktree lives under the checkout at <root>,
-    as a str."""
-    return str(root / ".orchestrator" / "worktrees" / ("t%s" % n))
-
-
-def added(root, capsys, n=7):
-    """`ticket-worktree add <n>` run and its output drained: the path it
-    printed, a str."""
-    assert orch_tw("add", str(n)) == 0
-    return capsys.readouterr().out.rstrip("\n")
-
-
-def git_of(root, *args):
-    """git <args> in the checkout at <root>, its stdout stripped; a failure
-    reads as ""."""
-    try:
-        return run_git(root, *args)
-    except Exception:  # noqa: BLE001 - a git refusal is the answer here
-        return ""
-
-
-def has_branch(root, branch):
-    return git_of(root, "rev-parse", "--verify", "--quiet", "refs/heads/" + branch) != ""
+def repo(ticket_repo):
+    """conftest's ticket_repo, under the name this file's cases use."""
+    return ticket_repo
 
 
 def exclude_count(root, line):
@@ -403,10 +358,6 @@ def listed(capsys):
     return capsys.readouterr().out
 
 
-def rebasing(path):
-    return os.path.isdir(run_git(path, "rev-parse", "--absolute-git-dir") + "/rebase-merge")
-
-
 def worked(wt, message="ticket work"):
     """An empty commit on the branch checked out at <wt>: its SHA."""
     run_git(wt, "commit", "-q", "--allow-empty", "-m", message)
@@ -553,15 +504,6 @@ def test_a_worktree_that_cannot_be_removed_returns_the_worktree_step_s_status(re
     assert err.startswith("fatal: ")
     assert err.endswith("orch: could not remove ticket worktree %s\n" % wt)
     assert os.path.exists(wt) and has_branch(repo, TICKET7)
-
-
-def lock_ref(repo, branch):
-    """A lock file on local branch <branch>'s ref, as a git run holding it
-    leaves one, so no git can delete the branch."""
-    lock = repo / ".git" / "refs" / "heads" / (branch + ".lock")
-    lock.parent.mkdir(parents=True, exist_ok=True)
-    lock.write_text("")
-    return lock
 
 
 def test_a_branch_that_cannot_be_deleted_returns_the_branch_step_s_status(repo, capsys):

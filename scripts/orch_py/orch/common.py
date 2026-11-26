@@ -13,8 +13,9 @@ a run directory is named with, the git exclude writer, the copy bash's cp
 makes, the directory bash's mkdir -p makes, the removals bash's rm -f and
 rm -rf make, the move of named files aside into a folder, every name
 checked before the first move, as bash's move_files_aside makes it, the
-clean-tree refusal bash's require_clean_tree makes, and the capture of a
-call's stderr and death that bash's capture and err_line make.
+clean-tree refusal bash's require_clean_tree makes, the capture of a
+call's stderr and death that bash's capture and err_line make, and the
+status a call ends with that bash's subshell gives (subshell).
 
 Every `orch: ` message goes through die or warn, as in the bash side's
 common.sh: die(message, 2) is the bash die2, for a command that reserves exit
@@ -507,6 +508,19 @@ def capture(call: Callable[[], Any]) -> Tuple[Any, str, int]:
         code = died.code if isinstance(died.code, int) else 1
         return None, err.getvalue(), code
     return answer, err.getvalue(), 0
+
+
+def subshell(call: Callable[[], Optional[int]]) -> int:
+    """bash's `(<call>) || st=$?`: runs <call>, its output let through, and
+    gives the status it ended with - what it returned (None read as 0), or
+    the exit it died with - so a death in it never ends the caller."""
+    try:
+        answer = call()
+    except SystemExit as died:
+        if died.code is None:
+            return 0
+        return died.code if isinstance(died.code, int) else 1
+    return 0 if answer is None else answer
 
 
 def err_line(err: str) -> str:
