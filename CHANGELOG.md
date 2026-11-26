@@ -1,5 +1,21 @@
 # Changelog
 
+## 6.12.5
+
+`orch.sh redo review` and `redo spec [--new-issue]` now run as a Python
+converted noun, from `scripts/orch_py/orch/redo.py`. Their arguments, output,
+exit codes, comment texts and `orch:` messages are unchanged, in plain and
+autopilot sessions, and a closed stdout pipe ends them silently. Without
+python3 both now die pointing at `orch.sh doctor`, as every converted noun
+does. The steps a redo takes - branch retire, ticket reset and retire, review
+retire, handoff retire and the one closing state write - run through Python
+copies; the bash `branch retire`, `ticket reset` and `review retire` verbs are
+unchanged. The Python copy of the review loop's terminal-state read is pinned
+to the bash one by golden review records both are tested against. The bash
+`redo` module and its tests are removed, with `handoff_retire` and
+`handoffs_written_from`, which had no other caller; `redo_midway` moves into
+`review.sh`.
+
 ## 6.12.4
 
 `orch.sh phase advance` and `phase boundary` now run as a Python converted
