@@ -16,10 +16,11 @@ run dies with bash's "unknown pr op" refusal, naming every op.
 
 The merged-PR backstop (#2477, #2478) lives here alone: PR_CLOSE_GRACE,
 pr_close_missed, the merged-closing read and the newest-merge pick, behind
-two bridges bash calls once per caller site, never once per issue -
-close_missed_tick for autopilot's tick and close_missed_finish for
-side-checkout's sweep. Each exits 0 whatever its reads and closes did, after
-their warnings; only a usage error dies.
+two bridges: close_missed_tick, which autopilot's tick calls at most once a
+tick, never once per issue, and close_missed_finish, which side-checkout's
+sweep calls once per finished checkout, each call carrying that checkout's
+one issue. Each exits 0 whatever its reads and closes did, after their
+warnings; only a usage error dies.
 
 Bash cached the default branch for its process, so pr open's base fallback
 and its issue-line check - and pr publish's recorded base and its check, and
