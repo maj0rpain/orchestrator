@@ -1777,6 +1777,7 @@ assert_contains "a pushed branch beside a local origin/<branch> reports its upst
   "$out" "ok    upstream: origin/$amb_branch"
 assert_not_contains "with no unpushed warning" "$out" "not on origin yet"
 assert_not_contains "and no push remedy" "$out" "git push -u origin"
+# shellcheck disable=SC2154 # assigned by fresh_bare_origin
 rm -rf "$(dirname "$bare")"
 restore_suite_env
 

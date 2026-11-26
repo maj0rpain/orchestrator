@@ -64,8 +64,8 @@ from orch.ticket_worktree import (NONE, TICKET_TEARDOWN_BRANCH_FAILED, WORKTREE,
                                   git_failed, ticket_branch_merged,
                                   ticket_branch_merged_or_die, ticket_facts,
                                   ticket_facts_require_worktree,
-                                  ticket_facts_require_wt_branch, ticket_worktree_number,
-                                  ticket_worktree_teardown)
+                                  ticket_facts_require_wt_branch, ticket_unmerged_args,
+                                  ticket_worktree_number, ticket_worktree_teardown)
 from orch.triage_labels import TriageLabels
 
 # Every op of the ticket noun, as its unknown-op refusal names them.
@@ -683,16 +683,7 @@ def ticket_close(args: List[str], gh_of, git, root: str, _env: Mapping[str, str]
     on a ticket branch merged into its forked-from branch, so work that has
     not landed is never closed (#1146). With no ticket worktree, no check
     runs. Every refusal comes before any gh call, leaving the issue open."""
-    n, unmerged = "", False
-    for arg in args:
-        if arg == "--unmerged":
-            unmerged = True
-        elif arg.startswith("-"):
-            die("unknown flag: %s (%s)" % (arg, CLOSE_USAGE))
-        elif n:
-            die(CLOSE_USAGE)
-        else:
-            n = arg
+    n, unmerged = ticket_unmerged_args(args, CLOSE_USAGE)
     if not n:
         die(CLOSE_USAGE)
     if not plain_number(n):

@@ -54,12 +54,11 @@ gh() {
 # gh_capture <out-var> <err-var> <command...> and gh_capture_err <err-var>
 # <command...>: capture and capture_err for a GitHub operation - an adapter_*
 # operation, gh itself, or a function or whole command whose first GitHub call
-# would otherwise resolve the Repo in the capture's subshell (standing_claim,
-# cmd_ticket_exists). Each runs the memoising resolver (repo_resolve) in the
-# caller's shell first, ignoring its status, so the Repo is resolved once for
-# the shell that calls it, rather than once per subshell the call runs in; a
-# failed resolution is left to the guard, which dies with the remedy as it
-# always did.
+# would otherwise resolve the Repo in the capture's subshell (standing_claim).
+# Each runs the memoising resolver (repo_resolve) in the caller's shell first,
+# ignoring its status, so the Repo is resolved once for the shell that calls
+# it, rather than once per subshell the call runs in; a failed resolution is
+# left to the guard, which dies with the remedy as it always did.
 # Defined ahead of the ORCH_GH_ADAPTER seam. A command that reaches no GitHub
 # goes through capture or capture_err.
 gh_capture() {

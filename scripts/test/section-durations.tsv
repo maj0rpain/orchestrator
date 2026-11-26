@@ -77,8 +77,8 @@
 4	5	autopilot answer: no repo (#3050)	88925c21f385411582552b0c9458e93157984638
 4	4	autopilot session ops read the issue in one jq	bd6f005f9ef905a0713e98a08d20fb7562039347
 50	59	autopilot tick: housekeeping prunes old session logs	4b693568425e195ca624485fbe1b3f748db9a03b
-46	52	autopilot tick: housekeeping sweeps finished side checkouts	26e9f41c5a75a105b056b8b57b6ff6e716491a70
-10	11	base	4ca1f19cac3ef83ca996b678fba01404782aa24d
+45	50	autopilot tick: housekeeping sweeps finished side checkouts	1030e691361d8c4690f2b8d6355d30d6ec8a2d76
+14	15	base	07ff5508f721d1922536c4537214f701c52d53dd
 38	31	a flow's base branch	dc1b95f862cec0114a7a0b7a3212313d50975422
 3	4	base set on a truncated state.json (#1929)	de4767097a86d163c76e27f57e97f2f368040804
 15	12	branch create	7b83cb325482f27dcd57ce5fd139fef5136f3cc1
@@ -121,7 +121,7 @@
 114	128	doctor --flow	f097bec748999080d6e58cb1367bec7d83fef5b5
 52	58	doctor --env: finished side checkouts (#727)	6c5fffe7d725910de46bf5e712c18cc5800073b6
 13	16	doctor at the review phase	3510b3a381c81866698adf3212d7c6f98ee07a04
-8	10	doctor: upstream beside an ambiguous origin/<branch> (#1331)	e22e633709e4b6b6d6a830a1f48baef119599fbb
+8	9	doctor: upstream beside an ambiguous origin/<branch> (#1331)	b3dc4364f1c0cff88a7920ccac55184fd86bab8e
 58	49	doctor: review terminal check	754c92de9dbcb88f6fefb5d2ddd2cb161534aa2d
 12	14	doctor: review budget check	6c9474b53b64b286d26c1634b4114e508e0d52ba
 27	32	doctor: review ci check	7961e080062a591804d0685fed4615ef159173d1
@@ -183,7 +183,7 @@
 5	5	bash version guard	a8d2cfe5bbb32166e192820e2b3d83282e7a66ce
 1	3	outside a checkout (#931)	e5c70ed8a90ea1696b300a7a8f75e91707e1690b
 29	25	marked-comment module	f6f5c1a7f89a0d4a6d8a53403309d4f68d4fe0c2
-143	93	pr open	0e5b3af5f81a024273225d1971e2bd5e3f911b9d
+109	115	pr open	ef473dabfe0d96f0aa91d32084ce19051f5f8327
 40	34	pr publish	27f8d1d9ae4f7f0cbf44add685328b5ab2539433
 17	15	pr draft (#967)	3818d607ebfde5f0688fe79264ff27fe48f7fe56
 34	31	pr ready (#967)	5e9436b62724f61ded83400bdcd4dae52868b5ba
@@ -197,7 +197,7 @@
 8	7	pr: no repo (#3050)	0010f87ac2cc1f67bb8dbeeceb28821dc55227ca
 1	1	pr: PR-line pick and newest merge (#3074)	27c7643cf363333c311c7e99d5ab335427cecb7b
 9	10	repo show	03b579d082d6e4e5353a860b91cb90f1006013d0
-7	8	default-branch	0177d6e5817d4d0befacac87fc2b2a0f621ad11b
+8	9	default-branch	2ab1b9bd03b98654ef71dcf00efa0fd1f0f07c16
 10	11	review ready's pointer to /orchestrator:finish (#727)	6911df97b10ec9bcdd6245ae4ae4de61db8779c1
 8	9	review begin	9adce4fc48c12ffc574af72bfef8ca7adeade847
 3	4	review path	da37f5f0df535a1afa275dc99f0128ea0766315d

@@ -30,11 +30,11 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import List, Mapping, NamedTuple, Optional
+from typing import List, Mapping, NamedTuple, Optional, Tuple
 
 from orch.branch import branch_name_ticket, forked_from_branch, forked_from_set
-from orch.checkout import (checkouts_unreadable, current_branch_or_die, discard_work_in,
-                           rebase_in_progress, ticket_worktrees_under)
+from orch.checkout import (current_branch_or_die, discard_work_in, rebase_in_progress,
+                           ticket_worktrees_under, worktree_list_or_die)
 from orch.common import (ORCH_DIR_NAME, die, exclude_orch_dirs, plain_number, require_clean_tree,
                          stderr_write, stdout_write, warn)
 from orch.git import Git
@@ -88,9 +88,7 @@ def ticket_facts(git, root: str, n: str) -> TicketFacts:
     Reads git's record of the checkouts on every call and dies, exit 1, only
     when it cannot be read, never reading that as none."""
     path = ticket_worktree_path(root, n)
-    worktrees = git.worktree_list()
-    if worktrees is None:
-        checkouts_unreadable()
+    worktrees = worktree_list_or_die(git)
     entry = next((worktree for worktree in worktrees if worktree.path == path), None)
     state, wt_branch = NONE, ""
     if git.toplevel_at(path) == path:
@@ -252,6 +250,24 @@ def list_(args: List[str], git, root: str) -> None:
     _listing(git, root)
 
 
+def ticket_unmerged_args(args: List[str], usage: str) -> Tuple[str, bool]:
+    """`<n> [--unmerged]`'s ticket number and whether --unmerged was given,
+    the flag anywhere among them: dies with <usage> on a second number or any
+    other flag. <n> is "" when none was given; the caller decides what that
+    means."""
+    n, unmerged = "", False
+    for arg in args:
+        if arg == "--unmerged":
+            unmerged = True
+        elif arg.startswith("-"):
+            die("unknown flag: %s (%s)" % (arg, usage))
+        elif n:
+            die(usage)
+        else:
+            n = arg
+    return n, unmerged
+
+
 REMOVE_USAGE = "usage: orch.sh ticket-worktree remove <n> [--unmerged]"
 
 
@@ -259,16 +275,7 @@ def remove(args: List[str], git, root: str) -> None:
     """Removes ticket <n>'s worktree and deletes its branch, never with
     force: argument parsing over ticket_worktree_teardown, dying when there
     is no worktree and exiting 1 when either removal step fails."""
-    n, unmerged = "", False
-    for arg in args:
-        if arg == "--unmerged":
-            unmerged = True
-        elif arg.startswith("-"):
-            die("unknown flag: %s (%s)" % (arg, REMOVE_USAGE))
-        elif n:
-            die(REMOVE_USAGE)
-        else:
-            n = arg
+    n, unmerged = ticket_unmerged_args(args, REMOVE_USAGE)
     # Only that a worktree or git's record of one exists is required here:
     # its branch cannot be read, while a rebase leaves HEAD detached, until
     # the teardown has aborted the rebase. A record with something else at

@@ -540,7 +540,7 @@ require_clean_tree() {
 # otherwise. A caller uses the result to gate its own tests - headings,
 # sections, paragraph breaks - and decides itself what to do with a fence's
 # lines, delimiters included. State is fence_-prefixed.
-# shellcheck disable=SC2034 # used by the pr, review and ticket modules
+# shellcheck disable=SC2034 # used by the doctor, handoff, known-items, pr and review modules
 FENCE_AWK='
   function fence_run(s, c,   n) { n = 0; while (substr(s, n + 1, 1) == c) n++; return n }
   function fenced(line,   s, c, n) {

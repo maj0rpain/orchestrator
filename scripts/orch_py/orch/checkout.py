@@ -18,6 +18,7 @@ from orch.autopilot import autopilot_active
 from orch.branch import branch_is_retired, branch_pr_get, branch_records_base
 from orch.common import ORCH_DIR_NAME, die, list_join, plain_number
 from orch.flow_state import flow_state_file, flow_state_get_many
+from orch.git import Worktree
 from orch.host import flow_cmd
 from orch.planning_allowlist import dirty_outside_allowlist
 
@@ -48,6 +49,15 @@ def main_checkout_or_die(git) -> str:
     return main
 
 
+def worktree_list_or_die(git) -> List[Worktree]:
+    """The git adapter <git>'s worktree list; dies when the checkouts cannot
+    be read, never reading that as none."""
+    worktrees = git.worktree_list()
+    if worktrees is None:
+        checkouts_unreadable()
+    return worktrees
+
+
 def current_branch_or_die(git, code: int = 1) -> str:
     """The current branch, through the git adapter <git>; dies on a detached
     HEAD, exit <code> - 2 where the bash caller dies through die2."""
@@ -69,9 +79,7 @@ def branch_checkout(git, branch: str) -> Optional[str]:
     """The checkout that has <branch> checked out - bash branch_checkout:
     the first the worktree list names on it, a worktree whose directory is
     gone included - or None. Dies when the checkouts cannot be read."""
-    worktrees = git.worktree_list()
-    if worktrees is None:
-        checkouts_unreadable()
+    worktrees = worktree_list_or_die(git)
     return next((worktree.path for worktree in worktrees if worktree.branch == branch), None)
 
 
@@ -306,9 +314,7 @@ def ticket_worktrees_under(git, root: str) -> List[Tuple[str, str]]:
     """(<n>, <path>) for every ticket worktree under the checkout at <root>,
     in the worktree list's order, read through the git adapter <git>; dies
     when the checkouts cannot be read, never reading that as none."""
-    worktrees = git.worktree_list()
-    if worktrees is None:
-        checkouts_unreadable()
+    worktrees = worktree_list_or_die(git)
     return [
         (os.path.basename(worktree.path)[1:], worktree.path)
         for worktree in worktrees if ticket_path(worktree.path, root)

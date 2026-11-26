@@ -236,8 +236,12 @@ def worktree_add(main, path, *how):
 # Claude Code's plain session, as orch.sh reads the host from its
 # environment.
 CLAUDE = {"ORCHESTRATOR_HOST": "claude"}
+# Claude Code's session under autopilot, for a case run once more as one.
+AUTOPILOT = {"ORCHESTRATOR_HOST": "claude", "ORCH_AUTOPILOT": "1"}
 # The branch ticket_repo checks out, every ticket branch's forked-from branch.
 TICKET_PARENT = "orch/5-feature"
+# Ticket #7's branch, forked from TICKET_PARENT.
+TICKET7 = TICKET_PARENT + "--t7"
 
 
 @pytest.fixture

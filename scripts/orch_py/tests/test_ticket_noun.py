@@ -16,14 +16,11 @@ from pathlib import Path
 
 import pytest
 
-from conftest import (GH_502, blockers_of, comments_of, died_of, fake, labels_of, read,
-                      snapshot)
+from conftest import (AUTOPILOT, CLAUDE, GH_502, blockers_of, comments_of, died_of, fake,
+                      labels_of, read, snapshot)
 from orch import ticket
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY
-
-CLAUDE = {"ORCHESTRATOR_HOST": "claude"}
-AUTOPILOT = {"ORCHESTRATOR_HOST": "claude", "ORCH_AUTOPILOT": "1"}
 
 # A report as bash's `ticket report save 4152` wrote it, byte for byte - a
 # non-UTF-8 byte included - copied verbatim from .orchestrator/reports/.

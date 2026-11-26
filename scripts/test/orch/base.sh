@@ -47,6 +47,7 @@ git worktree add -q "$wt" -b base-wt
 assert_eq "every worktree of the clone shares the setting" "$(cd "$wt" && orch_gh_failing base show)" "uat (set)"
 git worktree remove --force "$wt"
 
+# shellcheck disable=SC2154 # assigned by fresh_bare_origin
 git remote set-url origin "$(dirname "$bare")/unreachable.git"
 out="$(orch_gh_failing base set main 2>&1)"; st=$?
 assert_status "set refuses when origin cannot be reached to verify" "$st" 1

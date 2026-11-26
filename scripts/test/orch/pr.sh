@@ -102,6 +102,7 @@ out="$("$ORCH" pr open "Title" "$bare_body" 2>&1)"; st=$?
 assert_status "a body with no piece at all is refused" "$st" 1
 assert_eq "naming every missing piece in one message" "$out" \
   "$PR_BODY_REFUSED no ## Summary heading; no ## Evidence heading; no ## Merge Danger heading; no **Door:** line under ## Merge Danger; no **Blast Radius:** line under ## Merge Danger"
+# shellcheck disable=SC2154 # assigned by fresh_bare_origin
 assert_eq "a refused body pushes nothing" \
   "$(origin_branch_state "$bare" orch/16-propen)" \
   "missing"
