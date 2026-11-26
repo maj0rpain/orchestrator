@@ -14,6 +14,8 @@
 # outside it (ADR-0013). Both use the records list to choose the redirect
 # message. Both source this file so they can never disagree, and
 # hook-grilling.sh prints the allowlist into the planning message on both hosts.
+# Its Python copy, scripts/orch_py/orch/planning_allowlist.py, is pinned to it
+# by scripts/orch_py/tests/test_planning_allowlist.py: change both together.
 # Sourced, not executed on its own.
 
 # Entries ending in "/" are directory prefixes; the rest are exact paths.

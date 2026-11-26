@@ -4901,8 +4901,8 @@ assert_eq "the common module's section file selects its own sections alone" "$(t
 
 # The new rows (#3548).
 af_hooks_s="hooks_test.sh,docs_lint.sh"
-af_row "flow-state.sh selects the core set and the state, init and side-checkout sections" scripts/flow-state.sh \
-  "$TR_GATE,$TR_HARNESS,init s,loader one,side-checkout s,state,$af_core_s,scripts/flow-state.sh"
+af_row "flow-state.sh selects the core set and the state and side-checkout sections" scripts/flow-state.sh \
+  "$TR_GATE,$TR_HARNESS,loader one,side-checkout s,state,$af_core_s,scripts/flow-state.sh"
 af_row "host.sh selects the core set and the doctor sections" scripts/host.sh \
   "$TR_GATE,doctor s,$TR_HARNESS,loader one,$af_core_s,scripts/host.sh"
 af_row "bash-walk.sh selects the hooks suite" scripts/bash-walk.sh "$TR_GATE,$af_hooks_s,scripts/bash-walk.sh"

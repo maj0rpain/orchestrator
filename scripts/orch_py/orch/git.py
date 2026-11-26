@@ -9,9 +9,12 @@ line histories finding triage's scan, Lines fate and the default-branch
 lookup read, the working-tree state, object names, config value and main
 checkout the verification noun reads, the common directory the git exclude
 writer (orch.common) appends under, the current branch a review pass
-starts on, the push the gh adapter's claim delete makes, and the scoped git
-config reads, writes and unsets (`config_regexp`, `config_set`,
-`config_unset`) the agent noun uses. There is no generic run: each later
+starts on, the worktree list, another checkout's branch and its git folder
+the checkout scan (orch.checkout) reads, the worktree removal a side
+checkout's teardown (orch.side_checkout) makes, the push the gh adapter's claim
+delete makes, the dirty paths the planning allowlist's flow-start scan
+judges, and the scoped git config reads, writes and unsets
+(`config_regexp`, `config_set`, `config_unset`) the agent noun uses. There is no generic run: each later
 noun adds the operations it
 needs, each with a test run against a real repository and against FakeGit,
 asserting the same answers. The scan's, Lines fate's and the lookup's
@@ -25,6 +28,14 @@ import subprocess
 from typing import Any, Dict, Iterable, List, NamedTuple, Optional, Sequence, Set, Tuple, Union
 
 from orch.common import ORCH_DIR_NAME, trim
+
+
+class Worktree(NamedTuple):
+    """One entry of `git worktree list`: its path, and git's own record of
+    the branch checked out there, None on a detached HEAD."""
+
+    path: str
+    branch: Optional[str]
 
 
 class FileDiff(NamedTuple):
@@ -57,9 +68,14 @@ COULD_NOT: Dict[str, Any] = {
     "text_hash": None,
     "config_value": None,
     "main_checkout": None,
+    "worktree_list": None,
+    "branch_at": None,
+    "absolute_git_dir_at": None,
     "git_common_dir": None,
     "current_branch": None,
     "push": "git gave no reason",
+    "worktree_remove": "git gave no reason",
+    "dirty_paths": "git gave no reason",
 }
 
 def git_push_reason(stderr: str) -> str:
@@ -323,6 +339,31 @@ class Git:
         --branch` takes it: False for an empty one."""
         return self._run_at_top(["check-ref-format", "--branch", name]).returncode == 0
 
+    # The planning allowlist's dirty-path scan's operation, run at the top
+    # level as bash's `git -C "$ROOT" status` is.
+
+    def dirty_paths(self) -> Union[List[str], str]:
+        """Every path with tracked changes, staged or not, or an untracked
+        file, from the top level, in `status --porcelain=v1 -z -uall`'s
+        order: each untracked file named on its own, and both sides of a
+        rename or copy, since the source is gone from where it was. When
+        status cannot run, git's own error line, its stderr's first, instead:
+        a str, never a list, so it cannot read as a clean tree."""
+        run = self._run_at_top(["status", "--porcelain=v1", "-z", "-uall"])
+        if run.returncode != 0:
+            line = run.stderr.decode("utf-8", "surrogateescape").split("\n", 1)[0]
+            return line or COULD_NOT["dirty_paths"]
+        paths: List[str] = []
+        want_source = False
+        for rec in run.stdout.decode("utf-8", "surrogateescape").split("\0")[:-1]:
+            if want_source:
+                paths.append(rec)
+                want_source = False
+                continue
+            paths.append(rec[3:])
+            want_source = "R" in rec[:2] or "C" in rec[:2]
+        return paths
+
     # The verification noun's operations, each run at the top level, each None
     # on a git failure.
 
@@ -372,14 +413,61 @@ class Git:
         """The value git config holds for <key>; None when it holds none."""
         return self._line_at_top(["config", "--get", key])
 
+    # The checkout scan's operations (orch.checkout), the list, and the main
+    # checkout read from it, run where the adapter runs, as bash's
+    # checkout_parse runs, the others in the checkout they name, as bash's
+    # `git -C <path>`.
+
+    def worktree_list(self) -> Optional[List[Worktree]]:
+        """Every checkout of the clone, the main checkout first, read from
+        `git worktree list --porcelain` - bash checkout_parse, the one place
+        the porcelain is read: a Worktree for each `worktree` line, its branch
+        the `branch refs/heads/` line after it. A worktree whose directory is
+        gone is listed too. None when the list fails."""
+        run = self._run(["worktree", "list", "--porcelain"])
+        if run.returncode != 0:
+            return None
+        worktrees: List[Worktree] = []
+        for line in run.stdout.decode("utf-8", "surrogateescape").split("\n"):
+            if line.startswith("worktree "):
+                worktrees.append(Worktree(line[len("worktree "):], None))
+            elif line.startswith("branch refs/heads/") and worktrees:
+                worktrees[-1] = worktrees[-1]._replace(branch=line[len("branch refs/heads/"):])
+        return worktrees
+
     def main_checkout(self) -> Optional[str]:
         """The main checkout's root: the first entry `git worktree list`
         prints. None when the list fails or is empty."""
-        text = self._text_at_top(["worktree", "list", "--porcelain"])
-        for line in (text or "").splitlines():
-            if line.startswith("worktree "):
-                return line[len("worktree "):]
-        return None
+        worktrees = self.worktree_list()
+        return worktrees[0].path if worktrees else None
+
+    def branch_at(self, path: str) -> Optional[str]:
+        """The branch checked out in the checkout at <path> - bash
+        checkout_branch <path>, its refs/heads/ taken off: None on a
+        detached HEAD, or where <path> is no checkout."""
+        ref = self._output(["-C", path, "symbolic-ref", "--quiet", "HEAD"])
+        if ref is None:
+            return None
+        prefix = "refs/heads/"
+        return ref[len(prefix):] if ref.startswith(prefix) else ref
+
+    def absolute_git_dir_at(self, path: str) -> Optional[str]:
+        """The git folder of the checkout holding <path>, as `git -C <path>
+        rev-parse --absolute-git-dir` prints it; None where <path> is in no
+        checkout."""
+        return self._output(["-C", path, "rev-parse", "--absolute-git-dir"])
+
+    # The side checkout's teardown (orch.side_checkout), run in the checkout
+    # it names, as bash's `git -C "$main_root" worktree remove`.
+
+    def worktree_remove(self, checkout: str, path: str) -> Optional[str]:
+        """`git -C <checkout> worktree remove <path>`, never with force -
+        bash side_checkout_remove_worktree's run: None when the worktree is
+        gone, else the first line of what git printed refusing it."""
+        run = self._run(["-C", checkout, "worktree", "remove", path])
+        if run.returncode == 0:
+            return None
+        return run.stderr.decode("utf-8", "surrogateescape").split("\n", 1)[0]
 
 
     # The git exclude writer's operation, run where the adapter runs, as the
@@ -584,6 +672,9 @@ class FakeGit:
     def is_branch_name(self, name: str) -> bool:
         return self._answer("is_branch_name", name)
 
+    def dirty_paths(self) -> Union[List[str], str]:
+        return self._answer("dirty_paths")
+
     def tree_state(self) -> Optional[str]:
         return self._answer("tree_state")
 
@@ -595,6 +686,18 @@ class FakeGit:
 
     def main_checkout(self) -> Optional[str]:
         return self._answer("main_checkout")
+
+    def worktree_list(self) -> Optional[List[Worktree]]:
+        return self._answer("worktree_list")
+
+    def branch_at(self, path: str) -> Optional[str]:
+        return self._answer("branch_at", path)
+
+    def absolute_git_dir_at(self, path: str) -> Optional[str]:
+        return self._answer("absolute_git_dir_at", path)
+
+    def worktree_remove(self, checkout: str, path: str) -> Optional[str]:
+        return self._answer("worktree_remove", checkout, path)
 
     def git_common_dir(self) -> Optional[str]:
         return self._answer("git_common_dir")

@@ -3,11 +3,14 @@ standard-library-only runtime."""
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
 
-from conftest import died_of
+import pytest
+
+from conftest import PACKAGE_BOOTSTRAP, died_of, git_repo
 from orch.__main__ import main
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
@@ -40,15 +43,17 @@ def test_an_unconverted_noun_is_an_unknown_command(capsys):
 
 def test_every_module_imports_with_site_packages_disabled():
     script = (
+        "import sys\n"
+        "sys.path.insert(0, sys.argv.pop(1))\n"
         "import importlib, pkgutil, orch\n"
         "for m in pkgutil.walk_packages(orch.__path__, 'orch.'):\n"
         "    importlib.import_module(m.name)\n"
         "print('imported')\n"
     )
-    env = dict(os.environ, PYTHONPATH=str(PACKAGE_ROOT), PYTHONDONTWRITEBYTECODE="1")
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
 
     run = subprocess.run(
-        [sys.executable, "-S", "-c", script],
+        [sys.executable, "-S", "-c", script, str(PACKAGE_ROOT)],
         env=env,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
@@ -58,6 +63,44 @@ def test_every_module_imports_with_site_packages_disabled():
     )
 
     assert (run.returncode, run.stdout, run.stderr) == (0, "imported\n", "")
+
+
+def into_a_closed_pipe(cwd, *call):
+    """The entry point run with <call> in <cwd>, its stdout a pipe whose
+    reader is already gone: the completed process."""
+    reader, writer = os.pipe()
+    os.close(reader)
+    try:
+        return subprocess.run(
+            [sys.executable, "-c", PACKAGE_BOOTSTRAP, str(PACKAGE_ROOT), *call],
+            cwd=str(cwd), env=dict(os.environ, HOME=str(cwd)),
+            stdin=subprocess.DEVNULL, stdout=writer, stderr=subprocess.PIPE,
+            universal_newlines=True, timeout=30,
+        )
+    finally:
+        os.close(writer)
+
+
+def test_a_noun_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_path):
+    """bash's printf died of SIGPIPE on a pipe whose reader is gone: so does
+    a noun this change converts, with no traceback and no flush warning on
+    stderr."""
+    run = into_a_closed_pipe(tmp_path, "slug", "Some Text")
+
+    assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
+
+
+@pytest.mark.parametrize("call", [["route", "show"], ["--call", "route", "run", "show"]],
+                         ids=["noun", "call-mode"])
+def test_a_noun_converted_earlier_keeps_its_flush_failure_on_a_closed_pipe(tmp_path, call):
+    """A noun converted before init, slug, status, archive and help, and an
+    orch_python_call bridge, end a closed stdout pipe as they always did:
+    Python's failed flush at exit, status 120, never SIGPIPE."""
+    git_repo(tmp_path)
+
+    run = into_a_closed_pipe(tmp_path, *call)
+
+    assert (run.returncode, "BrokenPipeError" in run.stderr) == (120, True)
 
 
 def test_the_issue_noun_is_converted(capsys):

@@ -5,6 +5,22 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# branch_and_config: the current branch and the local git config, the facts a
+# refusal on an unreadable tree must leave as they were (git status cannot run
+# there, so these are what can be read).
+branch_and_config() { git branch --show-current; git config --local --list; }
+
+# assert_busy_unreadable <label> <out> <st>: asserts a busy-checkout question
+# on a truncated state.json (see state_truncate) exited 3, printed the busy
+# line naming the unreadable state.json in <out>, and leaked no jq parse error.
+# The one place tests spell that line; a remedy is the caller's own assertion.
+assert_busy_unreadable() {
+  assert_status "$1 exits 3" "$3" 3
+  assert_contains "$1 names the unreadable state.json" "$2" \
+    "busy: a flow's state.json cannot be read"
+  assert_not_contains "$1 leaks no jq text" "$2" "parse error"
+}
+
 # base_key <branch>: the base branch recorded on <branch> (its
 # orchestrator-base git config key), or <unset>.
 base_key() { git config --get "branch.$1.orchestrator-base" || echo "<unset>"; }

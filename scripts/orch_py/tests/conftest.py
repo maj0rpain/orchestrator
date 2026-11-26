@@ -33,6 +33,18 @@ CHECKOUT = "/nonexistent/checkout"
 # The variables naming a git config file other than $HOME's, unset so a test's
 # HOME holds the only global config git reads or writes.
 GLOBAL_CONFIG = ("GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME")
+# orch.sh's -c bootstrap, as `python3 -c PACKAGE_BOOTSTRAP <package dir>
+# <noun> ...`: the package directory, argv[1], goes first on sys.path - never
+# on PYTHONPATH, which splits a path holding a colon - and orch's __main__ runs
+# as `python3 -m orch` would.
+PACKAGE_BOOTSTRAP = (
+    "import sys\n"
+    "if sys.path and sys.path[0] == '':\n"
+    "    del sys.path[0]\n"
+    "sys.path.insert(0, sys.argv.pop(1))\n"
+    "import runpy\n"
+    "runpy.run_module('orch', run_name='__main__', alter_sys=True)\n"
+)
 
 
 @pytest.fixture
@@ -109,11 +121,7 @@ def state_json(root):
 def flow_state(root, phase, issue, branch=None):
     """<root>'s state.json, written to record a flow at <phase> on <issue>
     and <branch>, each as a JSON value (None for null); its path."""
-    state = state_json(root)
-    state.parent.mkdir(parents=True, exist_ok=True)
-    state.write_text(
-        json.dumps({"slug": "x", "phase": phase, "issue": issue, "branch": branch}) + "\n")
-    return state
+    return hold_flow(root, slug="x", phase=phase, issue=issue, branch=branch)
 
 
 def write_labels_doc(root, text):
@@ -187,6 +195,85 @@ def run_git(root, *args, env=None):
          "-c", "commit.gpgsign=false", *args],
         check=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, env=env,
     ).stdout.decode().strip()
+
+
+def bash_sourced(module, script, *args):
+    """The stdout, decoded, of <script> run in a bash child process with the
+    bash module at <module> sourced, <args> its positional parameters. A
+    failure raises."""
+    return subprocess.run(
+        ["bash", "-c", 'source "$1"; shift\n' + script, "_", str(module), *map(str, args)],
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, timeout=30, check=True,
+    ).stdout.decode()
+
+
+def worktree_add(main, path, *how):
+    """`git worktree add <how> <path>` in the repository at <main>, <path>'s
+    parent made first: <path>."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    run_git(main, "worktree", "add", "-q", *how, str(path))
+    return path
+
+
+def mark_side(path):
+    """Writes the side-checkout ownership marker into the git folder of the
+    worktree at <path>."""
+    gitdir = run_git(path, "rev-parse", "--absolute-git-dir")
+    with open(os.path.join(gitdir, "orchestrator-side-checkout"), "w"):
+        pass
+
+
+def hold_flow(path, **state):
+    """Writes <state> as the state.json of the checkout at <path>: its
+    path."""
+    state_file = state_json(path)
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(json.dumps(state) + "\n")
+    return state_file
+
+
+def done_flow(path, slug):
+    """A done flow named <slug> in the checkout at <path>, with a spec
+    handoff."""
+    hold_flow(path, slug=slug, phase="done", issue=None)
+    (path / ".orchestrator" / "handoff").mkdir(exist_ok=True)
+    (path / ".orchestrator" / "handoff" / "spec.md").write_text("spec\n")
+
+
+def side_checkout(main, name):
+    """A side checkout <name> of the repository at <main>, on a new branch
+    <name>, carrying the ownership marker: its path."""
+    path = worktree_add(main, main / ".orchestrator" / "checkouts" / name, "-b", name)
+    mark_side(path)
+    return path
+
+
+def archive_main(tmp_path):
+    """A repository at tmp_path/main with one commit, whose .orchestrator/
+    git ignores, as init's exclude makes it: its root, resolved."""
+    root = tmp_path.resolve() / "main"
+    git_repo(root)
+    committed(root, {"a.txt": "a\n"}, "first")
+    with open(root / ".git" / "info" / "exclude", "a") as f:
+        f.write(".orchestrator/\n")
+    return root
+
+
+# The stamp of an archive directory made at archive_clock's time,
+# 2026-01-02 03:04:05 UTC.
+ARCHIVE_STAMP = "20260102-030405"
+
+
+def archive_clock():
+    """The clock an archive reads, pinned so an archive directory's name is
+    known: <ARCHIVE_STAMP>-<slug>."""
+    return 1767323045.0
+
+
+def archived(main, slug):
+    """The directory <slug>'s flow is archived to under the archive of the
+    main checkout at <main>, at archive_clock's time."""
+    return main / ".orchestrator" / "archive" / ("%s-%s" % (ARCHIVE_STAMP, slug))
 
 
 def write_staged(root, files):

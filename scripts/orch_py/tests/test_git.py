@@ -7,8 +7,9 @@ import subprocess
 
 import pytest
 
-from conftest import GLOBAL_CONFIG, committed, git_repo, origin_clone, run_git, write_staged
-from orch.git import FakeGit, Git, git_push_reason
+from conftest import (GLOBAL_CONFIG, committed, git_repo, origin_clone, run_git, worktree_add,
+                      write_staged)
+from orch.git import FakeGit, Git, Worktree, git_push_reason
 
 ORIGIN = "https://github.com/fork/widgets.git"
 
@@ -474,11 +475,72 @@ def test_a_config_value_reads_the_same_from_a_real_repo_and_the_fake(worked):
 
 
 def test_the_main_checkout_reads_the_same_from_a_worktree_and_the_fake(worked, tmp_path):
-    wt = tmp_path / "wt"
-    run_git(worked, "worktree", "add", "-q", str(wt), "-b", "side")
+    wt = worktree_add(worked, tmp_path / "wt", "-b", "side")
 
     assert alike(Git(cwd=str(wt)), "main_checkout") == str(worked.resolve())
     assert fails_alike(Git(cwd=str(tmp_path)), "main_checkout") is None
+
+
+# --- the planning allowlist's dirty-path scan's operation -----------------------
+
+
+def test_the_dirty_paths_read_the_same_from_a_real_repo_and_the_fake(worked, where):
+    assert alike(adapter(worked, where), "dirty_paths") == [
+        "a.txt", "b.txt", ".orchestrator/x", "bin.dat", "sub/new.txt",
+    ]
+
+
+def test_outside_a_repository_the_dirty_paths_are_git_s_error_line(tmp_path):
+    answer = Git(cwd=str(tmp_path)).dirty_paths()
+
+    assert answer.startswith("fatal: not a git repository")
+
+
+def test_an_unseeded_fake_answers_the_dirty_paths_with_no_reason():
+    assert FakeGit().dirty_paths() == "git gave no reason"
+
+
+# --- the checkout scan's operations ---------------------------------------------
+
+
+def test_the_worktree_list_reads_the_same_from_a_worktree_and_the_fake(worked, tmp_path):
+    run_git(worked, "checkout", "-qb", "trunk")
+    wt = worktree_add(worked, tmp_path / "wt", "-b", "side")
+    detached = worktree_add(worked, tmp_path / "detached", "--detach")
+
+    assert alike(Git(cwd=str(wt)), "worktree_list") == [
+        Worktree(str(worked.resolve()), "trunk"),
+        Worktree(str(detached.resolve()), None),
+        Worktree(str(wt.resolve()), "side"),
+    ]
+
+
+def test_outside_a_repository_there_is_no_worktree_list(tmp_path):
+    assert fails_alike(Git(cwd=str(tmp_path)), "worktree_list") is None
+
+
+def test_a_branch_at_another_checkout_reads_the_same_from_a_real_repo_and_the_fake(
+        worked, tmp_path):
+    wt = worktree_add(worked, tmp_path / "wt", "-b", "quick/7-bar")
+
+    assert alike(Git(cwd=str(worked)), "branch_at", str(wt)) == "quick/7-bar"
+
+
+def test_a_detached_or_missing_checkout_has_no_branch_at(worked, tmp_path):
+    run_git(worked, "checkout", "-q", "--detach")
+    git = Git(cwd=str(tmp_path))
+
+    assert fails_alike(git, "branch_at", str(worked)) is None
+    assert fails_alike(git, "branch_at", str(tmp_path / "gone")) is None
+
+
+def test_the_absolute_git_dir_at_a_worktree_reads_the_same_from_a_real_repo_and_the_fake(
+        worked, tmp_path):
+    wt = worktree_add(worked, tmp_path / "wt", "-b", "side")
+
+    assert alike(Git(cwd=str(tmp_path)), "absolute_git_dir_at", str(wt)) == \
+        str((worked / ".git" / "worktrees" / "wt").resolve())
+    assert fails_alike(Git(cwd=str(tmp_path)), "absolute_git_dir_at", str(tmp_path)) is None
 
 
 # --- the exclude writer's operation -------------------------------------------
@@ -491,8 +553,7 @@ def test_the_common_dir_reads_the_same_from_a_real_repo_and_the_fake(worked, whe
 
 
 def test_a_worktree_s_common_dir_is_its_main_checkout_s_git_directory(worked, tmp_path):
-    wt = tmp_path / "wt"
-    run_git(worked, "worktree", "add", "-q", str(wt), "-b", "common")
+    wt = worktree_add(worked, tmp_path / "wt", "-b", "common")
 
     assert alike(Git(cwd=str(wt)), "git_common_dir") == str((worked / ".git").resolve())
 
@@ -525,6 +586,29 @@ def test_a_detached_head_has_no_current_branch(worked):
 
 def test_outside_a_repository_there_is_no_current_branch(tmp_path):
     assert fails_alike(Git(cwd=str(tmp_path)), "current_branch") is None
+
+
+# --- the side checkout's worktree removal ------------------------------------------
+
+
+def test_a_clean_worktree_is_removed_the_same_from_a_real_repo_and_the_fake(worked, tmp_path):
+    wt = worktree_add(worked, tmp_path / "wt", "-b", "side")
+
+    assert alike(Git(cwd=str(tmp_path)), "worktree_remove", str(worked), str(wt)) is None
+    assert not wt.exists()
+
+
+def test_a_dirty_worktree_is_kept_with_git_s_first_error_line(worked, tmp_path):
+    wt = worktree_add(worked, tmp_path / "wt", "-b", "side")
+    (wt / "wip.txt").write_text("wip\n")
+
+    assert alike(Git(cwd=str(tmp_path)), "worktree_remove", str(worked), str(wt)) == (
+        "fatal: '%s' contains modified or untracked files, use --force to delete it" % wt)
+    assert (wt / "wip.txt").exists()
+
+
+def test_an_unseeded_worktree_removal_on_the_fake_fails_with_no_reason():
+    assert FakeGit().worktree_remove("/main", "/main/wt") == "git gave no reason"
 
 
 # --- the claim delete's push ------------------------------------------------------

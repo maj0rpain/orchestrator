@@ -1,20 +1,25 @@
-"""The Flow state reader, read-only, pinned to the bash Flow state module
+"""The Flow state module's Python side, pinned to the bash Flow state module
 (scripts/flow-state.sh) by the golden state.json files in flow_state/: each
 file under read/ reads, key for key, as its .expected file says - the same
 files and expected values the bash state section reads through
-flow_state_get_many - and each under refused/ is a failed read. Its key table
-is checked against the bash state key table's keys and defaults."""
+flow_state_get_many - each under refused/ is a failed read, and each under
+seed/, which only these tests read, is the state.json bash init wrote, which
+Python's seed, create and phase write reproduce byte for byte. Its key table
+is checked against the bash state key table's keys, defaults and seed
+column, read through a bash child process."""
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
 
-from orch.flow_state import STATE_KEYS, flow_state_get_many
+from orch.flow_state import (STATE_KEYS, flow_state_create, flow_state_get_many,
+                             flow_state_seed, phase_write)
+from conftest import bash_sourced, died_of
 
 GOLDEN = Path(__file__).resolve().parent / "flow_state"
 BASH_MODULE = Path(__file__).resolve().parents[2] / "flow-state.sh"
-KEYS = [key for key, _ in STATE_KEYS]
+KEYS = [key for key, _, _ in STATE_KEYS]
 
 
 def expected_values(path):
@@ -61,21 +66,80 @@ def test_a_nul_inside_a_value_is_dropped(tmp_path):
     assert flow_state_get_many(str(state), ["slug", "issue"]) == {"slug": "xy", "issue": "z"}
 
 
-def bash_state_keys():
-    """The key and default columns of the bash state key table, STATE_KEYS in
-    scripts/flow-state.sh, its comment and blank lines skipped as state_rows
-    skips them."""
-    text = BASH_MODULE.read_text(encoding="utf-8")
-    table = text.split("\nSTATE_KEYS='", 1)[1].split("'\n", 1)[0]
-    rows = []
-    for line in table.split("\n"):
-        if not line or line.startswith("#"):
-            continue
-        key, default = line.split("|")[:2]
-        rows.append((key, default))
-    return rows
+def bash_state_rows():
+    """The data rows of the bash state key table, STATE_KEYS in
+    scripts/flow-state.sh, as its one reader state_rows prints them in a bash
+    child process: (key, default, seed, owner) each, in table order."""
+    return [tuple(line.split("|", 3))
+            for line in bash_sourced(BASH_MODULE, "state_rows").splitlines()]
 
 
 @pytest.mark.skipif(not BASH_MODULE.exists(), reason="the bash Flow state module is gone")
 def test_the_key_table_s_keys_and_defaults_equal_the_bash_state_key_table_s():
-    assert list(STATE_KEYS) == bash_state_keys()
+    assert [(key, default) for key, default, _ in STATE_KEYS] == \
+        [row[:2] for row in bash_state_rows()]
+
+
+@pytest.mark.skipif(not BASH_MODULE.exists(), reason="the bash Flow state module is gone")
+def test_the_key_table_s_seed_column_equals_the_bash_state_key_table_s():
+    assert [(key, seed) for key, _, seed in STATE_KEYS] == \
+        [(row[0], row[2]) for row in bash_state_rows()]
+
+
+# The clock the seed golden files were made with: 2026-01-02T03:04:05Z.
+SEED_CLOCK = 1767323045.0
+
+
+@pytest.mark.parametrize("name, issue", [("no-issue", ""), ("issue", "42")])
+def test_the_seed_and_its_spec_phase_write_reproduce_bash_init_s_state_file_byte_for_byte(
+        tmp_path, name, issue):
+    r"""The golden files in seed/ are the state.json bash init left for slug
+    seed-golden, base rélease/2.0 and the clock above, an empty and a
+    numeric issue, made once from the bash path by this script, run in a
+    fresh git repository with ORCH the bash orch.sh and G the seed/ directory:
+
+        source "$ORCH"
+        now() { printf "%s\n" 2026-01-02T03:04:05Z; }
+        for issue in "" 42; do
+          mkdir -p "$ORCH_DIR_NAME"
+          flow_state_create "$STATE" "$(flow_state_seed seed-golden "$issue" "rélease/2.0")"
+          phase_write spec
+          cp "$STATE" "$G/$([ -n "$issue" ] && echo issue || echo no-issue).json"
+        done
+    """
+    state = tmp_path / "state.json"
+
+    assert flow_state_create(
+        str(state), flow_state_seed("seed-golden", issue, "rélease/2.0", lambda: SEED_CLOCK))
+    phase_write(str(state), "spec", lambda: SEED_CLOCK)
+
+    assert state.read_bytes() == (GOLDEN / "seed" / (name + ".json")).read_bytes()
+
+
+def test_the_phase_write_refuses_a_phase_outside_the_phase_table(tmp_path, capsys):
+    state = tmp_path / "state.json"
+    state.write_text('{"phase":"spec"}')
+
+    assert died_of(capsys, lambda: phase_write(str(state), "plan")) == (
+        1, "", "orch: not a flow phase: plan (want one of: spec implement review done)\n")
+    assert state.read_text() == '{"phase":"spec"}'
+
+
+@pytest.mark.parametrize("text", [None, "not json", "[1]"])
+def test_the_phase_write_dies_leaving_the_file_as_it_was_when_it_is_absent_or_not_an_object(
+        tmp_path, capsys, text):
+    state = tmp_path / "state.json"
+    if text is not None:
+        state.write_text(text)
+
+    assert died_of(capsys, lambda: phase_write(str(state), "spec")) == (
+        1, "", "orch: could not record phase in %s - the flow is unchanged\n" % state)
+    assert (state.read_text() if text is not None else state.exists()) == (text or False)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ([] if text is None else ["state.json"])
+
+
+def test_the_create_fails_making_nothing_when_the_state_directory_is_gone(tmp_path):
+    state = tmp_path / ".orchestrator" / "state.json"
+
+    assert not flow_state_create(str(state), flow_state_seed("s", "", "main"))
+    assert not state.parent.exists()

@@ -690,7 +690,7 @@ assert_contains "an escaped pipe in the meaning column does not corrupt the labe
   "$out" 'gh label create "needs-triage"'
 
 # triage_label_for shares the same row-splitting bug: an escape in the
-# repo's local label corrupts the very value validate_adopted_issue compares
+# repo's local label corrupts the very value init's adoption gate compares
 # against a real issue's labels.
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \

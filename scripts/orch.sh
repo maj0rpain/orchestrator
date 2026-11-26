@@ -173,18 +173,16 @@ source "$ORCH_SCRIPTS/planning-allowlist.sh"
 
 # The -c bootstrap shared by orch_python and orch_python_call: drops the empty
 # entry -c puts first on sys.path (the caller's directory) before importing
-# anything, restores the caller's PYTHONPATH from argv[1] (given after `=`, or
-# empty when it was unset), and runs the orch package's __main__ through runpy
-# so require_python stays the single Python 3.9+ version gate.
+# anything, puts the package directory, argv[1], first in its place, and runs
+# the orch package's __main__ through runpy so require_python stays the single
+# Python 3.9+ version gate. The directory goes on sys.path, never PYTHONPATH,
+# which splits a plugin path holding a colon and would hand the directory on
+# to every command the noun starts; the caller's PYTHONPATH is left as given.
 readonly ORCH_PYTHON_BOOTSTRAP='
-import os, sys
+import sys
 if sys.path and sys.path[0] == "":
     del sys.path[0]
-given = sys.argv.pop(1)
-if given:
-    os.environ["PYTHONPATH"] = given[1:]
-else:
-    os.environ.pop("PYTHONPATH", None)
+sys.path.insert(0, sys.argv.pop(1))
 import runpy
 runpy.run_module("orch", run_name="__main__", alter_sys=True)
 '
@@ -207,9 +205,7 @@ orch_python_require() {
 # package or its imports, and Python 3.9 has no -P to stop it.
 orch_python() {
   orch_python_require "${1:-}" || exit 1
-  local given="${PYTHONPATH+=$PYTHONPATH}"
-  PYTHONPATH="$ORCH_PLUGIN/scripts/orch_py${PYTHONPATH:+:$PYTHONPATH}" \
-    exec python3 -c "$ORCH_PYTHON_BOOTSTRAP" "$given" "$@"
+  exec python3 -c "$ORCH_PYTHON_BOOTSTRAP" "$ORCH_PLUGIN/scripts/orch_py" "$@"
 }
 
 # orch_python_call [--as <command>] <noun> <func> [<arg>...]: runs a named
@@ -227,9 +223,7 @@ orch_python_call() {
   fi
   [ $# -ge 2 ] || { warn "$usage"; return 1; }
   orch_python_require "$as" || return 1
-  local given="${PYTHONPATH+=$PYTHONPATH}"
-  PYTHONPATH="$ORCH_PLUGIN/scripts/orch_py${PYTHONPATH:+:$PYTHONPATH}" \
-    python3 -c "$ORCH_PYTHON_BOOTSTRAP" "$given" --call --as "$as" "$@"
+  python3 -c "$ORCH_PYTHON_BOOTSTRAP" "$ORCH_PLUGIN/scripts/orch_py" --call --as "$as" "$@"
 }
 
 main() {
@@ -237,16 +231,17 @@ main() {
   shift || true
   case "$cmd" in
     # The nouns converted to Python, the one place naming them: each runs
-    # through orch_python, and has no module of its own here.
-    issue|finding-triage|verification|audit|review-pass|spec-review|spec|breakdown|glossary|parallel|route|agent)
+    # through orch_python, and has no module of its own here. Among them
+    # init, and the bare global commands slug, status, archive and help, help
+    # with its option spellings, which the Python entry point runs as help; a
+    # bare orch.sh is help too.
+    issue|finding-triage|verification|audit|review-pass|spec-review|spec|breakdown|glossary|parallel|route|agent|slug|status|archive|help|-h|--help|init)
       orch_python "$cmd" "$@" ;;
     doctor|health) cmd_doctor "$@" ;;
     default-branch) cmd_default_branch "$@" ;;
     base)          cmd_base "$@" ;;
     autopilot)     cmd_autopilot "$@" ;;
     repo)          cmd_repo "$@" ;;
-    init)          cmd_init "$@" ;;
-    slug)          cmd_slug "$@" ;;
     state)         cmd_state "$@" ;;
     handoff)       cmd_handoff "$@" ;;
     phase)         cmd_phase "$@" ;;
@@ -257,9 +252,6 @@ main() {
     side-checkout) cmd_side_checkout "$@" ;;
     review)        cmd_review "$@" ;;
     redo)          cmd_redo "$@" ;;
-    status)        cmd_status "$@" ;;
-    archive)       cmd_archive "$@" ;;
-    help|-h|--help) cmd_help ;;
     *) die "unknown command: $cmd (run 'orch.sh help')" ;;
   esac
 }

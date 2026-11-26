@@ -515,26 +515,6 @@ gh_issue_not_found() {
   [[ "$1" == *"Could not resolve to an issue or pull request with the number of"* ]]
 }
 
-# open_issue_read [--hint <h>] <n> <not-open message> <labels_var>: reads
-# issue <n> once through the gh adapter and writes its labels (one per line,
-# possibly none) into the caller-named variable. A failed read dies through
-# gh_die "read issue #<n>", with --hint passed on as given; an issue that is not
-# OPEN dies with <not-open message>, verbatim, since the callers' messages are
-# not one shape. It checks no label: each caller keeps its own label test.
-# Out-params through `printf -v`, its locals prefixed so no caller's variable
-# name is shadowed.
-open_issue_read() {
-  local __oir_hint=() __oir_state __oir_labels __oir_err
-  if [ "${1-}" = --hint ]; then
-    die_opt_check open_issue_read $# "$@"
-    __oir_hint=(--hint "$2"); shift 2
-  fi
-  issue_state_labels_read "$1" __oir_state __oir_labels __oir_err \
-    || gh_die ${__oir_hint[@]+"${__oir_hint[@]}"} "read issue #$1" "$__oir_err"
-  [ "$__oir_state" = OPEN ] || die "$2"
-  printf -v "$3" '%s' "$__oir_labels"
-}
-
 # adapter_issue_title_labels <n>: the title on the first line, then one label
 # per line.
 adapter_issue_title_labels() {

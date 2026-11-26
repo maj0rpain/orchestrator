@@ -4,12 +4,16 @@ each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>`,
 `orch.sh verification <verb>`, `orch.sh audit <verb>`, `orch.sh review-pass
 <verb>`, `orch.sh spec-review <verb>`, `orch.sh breakdown <verb>`, `orch.sh
 spec <verb>`, `orch.sh glossary <verb>`, `orch.sh parallel show`, `orch.sh
-route show` or `orch.sh agent <verb>` as a command, in a checkout under
-tmp_path, against a fake store seeded in the layout the bash suite's fake_*
-helpers write, with ORCH_GH_FAKE_STORE set as fake_github sets it."""
+route show`, `orch.sh agent <verb>`, `orch.sh slug <text>`, `orch.sh status`,
+`orch.sh init <slug>`, `orch.sh archive` or `orch.sh help` (and its spellings)
+as a command, in a checkout under tmp_path, against a fake store seeded in the
+layout the bash suite's fake_* helpers write, with ORCH_GH_FAKE_STORE set as
+fake_github sets it."""
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -21,6 +25,7 @@ import pytest
 from conftest import (
     AUDIT_FIXTURES,
     GLOBAL_CONFIG,
+    PACKAGE_BOOTSTRAP,
     VERIFICATION_KNOBS,
     comments_of,
     committed,
@@ -164,8 +169,7 @@ def test_the_noun_run_outside_a_checkout_dies_as_orch_sh_does(tmp_path, repo, ca
     (repo / "sub").mkdir()
     outside = tmp_path / "outside"
     outside.mkdir()
-    env = dict(os.environ, HOME=str(tmp_path), PYTHONDONTWRITEBYTECODE="1",
-               PYTHONPATH=str(SCRIPTS / "orch_py"))
+    env = dict(os.environ, HOME=str(tmp_path), PYTHONDONTWRITEBYTECODE="1")
     env.pop("OLDPWD", None)
     if came_from is not None:
         env["OLDPWD"] = str(repo / came_from)
@@ -178,7 +182,7 @@ def test_the_noun_run_outside_a_checkout_dies_as_orch_sh_does(tmp_path, repo, ca
 
     bash = run("/bin/bash", str(SCRIPTS / "orch.sh"))
     assert bash[2] == 1 and "not inside a git repository" in bash[1]
-    assert run(sys.executable, "-m", "orch") == bash
+    assert run(sys.executable, "-c", PACKAGE_BOOTSTRAP, str(SCRIPTS / "orch_py")) == bash
 
 
 # --- finding-triage ----------------------------------------------------------
@@ -255,6 +259,34 @@ def test_verification_run_hands_the_command_the_pythonpath_orch_sh_was_given(
                      unset=["PYTHONPATH"] if given is None else [])
 
     assert answer == ("%s\n" % ("unset" if given is None else given), "", 0)
+
+
+def colon_install(tmp_path):
+    """orch.sh at a plugin root whose path holds a colon, the separator
+    PYTHONPATH splits on: a symlink to this plugin, kept unresolved as the
+    plugin root orch.sh works out."""
+    root = tmp_path / "plugins" / "c:olon"
+    root.parent.mkdir()
+    root.symlink_to(SCRIPTS.parent)
+    return root / "scripts" / "orch.sh"
+
+
+def test_a_converted_noun_runs_from_a_plugin_root_holding_a_colon(tmp_path, repo, seed):
+    out, err, code = orch_sh(tmp_path, repo, seed, "help", script=colon_install(tmp_path))
+
+    assert (out.encode("utf-8"), err, code) == (
+        HELP_GOLDEN.read_bytes(), "", 0)
+
+
+def test_verification_run_starts_its_runner_from_a_plugin_root_holding_a_colon(
+        tmp_path, repo, seed):
+    committed(repo, {"README.md": "readme\n"}, "first")
+
+    answer = orch_sh(tmp_path, repo, seed, "verification", "run",
+                     'echo "${PYTHONPATH-unset}"', knobs=VERIFICATION_KNOBS,
+                     unset=["PYTHONPATH"], script=colon_install(tmp_path))
+
+    assert answer == ("unset\n", "", 0)
 
 
 def test_verification_stop_stops_a_live_run_through_the_dispatch(tmp_path, repo, seed):
@@ -920,6 +952,97 @@ def test_agent_refuses_when_python3_is_missing_or_below_3_9(tmp_path, repo, seed
         "orch: orch.sh agent needs python3 3.9 or newer (found 3.8.10) - run orch.sh doctor\n",
         1,
     )
+
+
+# --- slug, status, init, archive and help --------------------------------
+
+HELP_GOLDEN = Path(__file__).resolve().parent / "help" / "golden.txt"
+
+
+def test_slug_prints_the_normalized_slug_through_the_python_noun(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "slug", "My Feature!!", path=python3_shim(tmp_path)) == (
+        "my-feature\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_status_prints_the_flow_lines_through_the_python_noun(tmp_path, repo, seed):
+    flow_state(repo, "spec", 12, "orch/12-x")
+    (repo / ".orchestrator" / "handoff").mkdir()
+    (repo / ".orchestrator" / "handoff" / "01-plan.md").write_text("")
+
+    assert orch_sh(tmp_path, repo, seed, "status", path=python3_shim(tmp_path),
+                   knobs={"CLAUDECODE": "1"}) == (
+        "flow:      x\n"
+        "phase:     spec\n"
+        "issue:     12\n"
+        "base:      main\n"
+        "branch:    orch/12-x\n"
+        "PR:        -\n"
+        "review:    iteration 0 of 5\n"
+        "redo:      0\n"
+        "\n"
+        "handoffs:\n"
+        "  .orchestrator/handoff/01-plan.md\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_archive_moves_the_flow_into_the_archive_through_the_python_noun(tmp_path, repo, seed):
+    flow_state(repo, "done", 12)
+
+    out, err, code = orch_sh(tmp_path, repo, seed, "archive", path=python3_shim(tmp_path))
+
+    assert (err, code) == ("", 0)
+    assert re.fullmatch(r"\.orchestrator/archive/[0-9]{8}-[0-9]{6}-x\n", out)
+    assert (repo / out.strip() / "state.json").is_file()
+    assert not (repo / ".orchestrator" / "state.json").exists()
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_init_starts_a_flow_on_an_adopted_issue_through_the_python_noun(tmp_path, repo, seed):
+    seed.issue(12, "open", "ready-for-agent")
+    run_git(repo, "config", "orchestrator.base", "main")
+
+    assert orch_sh(tmp_path, repo, seed, "init", "My Feature!!", "--issue", "12",
+                   path=python3_shim(tmp_path)) == ("my-feature\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+    state = json.loads((repo / ".orchestrator" / "state.json").read_text())
+    assert (state["slug"], state["phase"], state["issue"], state["base"]) == \
+        ("my-feature", "spec", 12, "main")
+
+
+@pytest.mark.parametrize("argv", [("help",), ("-h",), ("--help",), ()],
+                         ids=["help", "-h", "--help", "bare"])
+def test_every_help_spelling_prints_the_golden_text_through_the_python_noun(
+        tmp_path, repo, seed, argv):
+    out, err, code = orch_sh(tmp_path, repo, seed, *argv, path=python3_shim(tmp_path))
+
+    assert (out.encode("utf-8"), err, code) == (HELP_GOLDEN.read_bytes(), "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_help_dies_pointing_at_doctor_without_python3(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "help", path=path_without(tmp_path, "python3")) == (
+        "", "orch: orch.sh help needs python3 3.9 or newer (found none) - run orch.sh doctor\n", 1)
+
+
+def test_help_in_an_empty_home_still_builds_the_stub_cache(tmp_path, repo, seed):
+    """The test runner seeds every section's stub cache by running orch.sh help
+    in an empty HOME: orch.sh builds the cache before its dispatch hands help
+    to Python."""
+    assert not (tmp_path / ".cache").exists()
+
+    assert orch_sh(tmp_path, repo, seed, "help")[1:] == ("", 0)
+    assert list((tmp_path / ".cache" / "orchestrator").iterdir())
+
+
+def test_help_into_a_pipe_closed_unread_dies_of_sigpipe_as_cat_did(tmp_path, repo, seed):
+    """The text is longer than a pipe holds, so a reader that reads none of it
+    stops the writer, silently, with the status SIGPIPE gives."""
+    answer = bash_run(tmp_path, repo, ["-c", 'set -o pipefail; "$1" help | true', "_",
+                                       str(SCRIPTS / "orch.sh")],
+                      knobs={"ORCH_GH_FAKE_STORE": seed.store})
+
+    assert answer == ("", "", 141)
 
 
 # --- orch_python_call bootstrap ----------------------------------------------

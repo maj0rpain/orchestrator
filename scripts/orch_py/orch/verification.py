@@ -152,19 +152,15 @@ ENDED = "the run ended without a status - run the same command again"
 
 # The runner's start: orch.sh's orch_python bootstrap, running this module as
 # __main__ in place of the package. It drops the empty entry -c puts first on
-# sys.path, so nothing in the runner's directory shadows the package. Its
-# first argument is the call's PYTHONPATH after an `=`, or empty when the call
-# had none, put back in the environment once sys.path is built, so the
-# command sees the call's own PYTHONPATH (given_pythonpath).
+# sys.path, so nothing in the runner's directory shadows the package, and puts
+# its first argument, the package directory (package_dir), first in its
+# place: on sys.path, never PYTHONPATH, which splits a path holding a colon,
+# so the command sees the call's own PYTHONPATH, as given.
 RUNNER_BOOTSTRAP = '''
-import os, sys
+import sys
 if sys.path and sys.path[0] == "":
     del sys.path[0]
-given = sys.argv.pop(1)
-if given:
-    os.environ["PYTHONPATH"] = given[1:]
-else:
-    os.environ.pop("PYTHONPATH", None)
+sys.path.insert(0, sys.argv.pop(1))
 import runpy
 runpy.run_module("orch.verification", run_name="__main__", alter_sys=True)
 '''
@@ -175,14 +171,8 @@ RUNNERS: List[Popen] = []
 
 def package_dir() -> str:
     """The directory holding the orch package this module was imported from,
-    first on the runner's PYTHONPATH."""
+    first on the runner's sys.path."""
     return os.path.dirname(os.path.dirname(os.path.abspath(orch.__file__)))
-
-
-def given_pythonpath(env: Mapping[str, str]) -> str:
-    """The bootstrap argument naming <env>'s PYTHONPATH: the value after an
-    `=`, or empty when <env> has none."""
-    return "=" + env["PYTHONPATH"] if "PYTHONPATH" in env else ""
 
 
 def reap_runners() -> None:
@@ -465,15 +455,12 @@ class Verification:
         could stop it later; when its record is already gone (its runner
         removed it, its checkout gone), the call goes on to wait, and so dies
         saying the run ended."""
-        env = dict(self.env)
-        inherited = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = package_dir() + (os.pathsep + inherited if inherited else "")
         try:
             runner = Popen(
-                [sys.executable, "-c", RUNNER_BOOTSTRAP, given_pythonpath(self.env), d,
+                [sys.executable, "-c", RUNNER_BOOTSTRAP, package_dir(), d,
                  command, ceiling, self.grace_text, self.watch_text],
                 stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL, start_new_session=True,
-                env=env, cwd="/",
+                env=dict(self.env), cwd="/",
             )
         except (OSError, subprocess.SubprocessError) as failed:
             record_remove(d)

@@ -148,6 +148,13 @@ git worktree remove "$top/.orchestrator/checkouts/epsilon"
 # Each checkout is walked in a subshell, yet every module loads once.
 assert_trace_loads_once "list with four side checkouts" "$lload"
 rm -f "$lload"
+# A side checkout whose state.json is truncated is listed plainly, with no jq
+# text.
+(cd "$delta" && state_truncate 10)
+out="$(orch_gh_failing side-checkout list 2>&1)"
+assert_contains "list shows an unreadable side checkout plainly" "$out" \
+  "delta $delta flow (state.json cannot be read)"
+assert_not_contains "list prints no jq text" "$out" "parse error"
 orch_gh_failing ticket-worktree remove 4 --unmerged
 assert_eq "git status in the main checkout still shows nothing new" "$(git status --porcelain)" ""
 
@@ -254,94 +261,6 @@ assert_eq "docs/how-it-works.md names side-checkout add --issue" \
   "$(grep -c 'side-checkout add <slug> --issue' "$PLUGIN_ROOT/docs/how-it-works.md" | tr -d ' ')" "1"
 assert_eq "docs/how-it-works.md names side-checkout issue" \
   "$(grep -c 'orch.sh side-checkout issue' "$PLUGIN_ROOT/docs/how-it-works.md" | tr -d ' ')" "1"
-restore_suite_env
-
-# --- status lists every checkout (#725) ---------------------------------------
-# status keeps its full detail on this checkout's flow, then lists one line
-# for every other checkout holding a flow, and every side checkout without
-# one. Checked through status's output against real worktrees of a clone.
-echo
-echo "status lists every checkout"
-# st_others: the lines status prints under "other checkouts:", sorted - git
-# lists linked worktrees in no fixed order.
-st_others() { sed -n '/^other checkouts:$/,$p' | sed 1d | sort; }
-
-sc_clone
-top="$(git rev-parse --show-toplevel)"
-out="$(orch_gh_failing status)"
-assert_eq "with no flow and no other checkout, status prints only the no-flow line" \
-  "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "1"
-assert_contains "and that line is the no-flow line" "$out" "No active flow."
-orch_gh_failing init main-flow >/dev/null
-orch_gh_failing state set issue 7
-alone="$(orch_gh_failing status)"
-assert_not_contains "with no other checkout, status lists none" "$alone" "other checkouts"
-# Ticket worktrees hold no flow and carry no marker.
-orch_gh_failing ticket-worktree add 4 >/dev/null
-assert_eq "a ticket worktree never appears" "$(orch_gh_failing status)" "$alone"
-
-alpha="$(sc_add alpha)"
-beta="$(sc_add beta)"
-git -C "$beta" checkout -q -b quick/3-beta
-gamma="$(sc_add gamma)"
-(cd "$gamma" && orch_gh_failing init gamma-flow >/dev/null && orch_gh_failing state set issue 12)
-hand="$(mktemp -d)/hand"
-git worktree add -q -b hand "$hand"
-(cd "$hand" && orch_gh_failing init hand-flow >/dev/null)
-# A hand-made worktree with no flow is not the plugin's to list.
-bare_hand="$(mktemp -d)/bare-hand"
-git worktree add -q -b bare-hand "$bare_hand"
-
-sload="$(mktemp)"
-out="$(ORCH_LOAD_TRACE="$sload" orch_gh_failing status)"; st=$?
-assert_status "status in the main checkout succeeds" "$st" 0
-assert_eq "it keeps its full detail on this checkout's flow" \
-  "$(printf '%s\n' "$out" | sed '/^other checkouts:$/,$d')" "$alone"
-assert_eq "it lists each side checkout and each hand-made worktree holding a flow" \
-  "$(printf '%s\n' "$out" | st_others)" \
-  "$(writeln "  $alpha (no branch)" \
-             "  $beta branch quick/3-beta" \
-             "  $gamma flow gamma-flow spec #12" \
-             "  $hand flow hand-flow spec (no issue)" | sort)"
-assert_not_contains "never a hand-made worktree without a flow" "$out" "$bare_hand"
-assert_not_contains "never a ticket worktree" "$out" "worktrees/t4"
-# Each checkout is classified in a subshell, yet every module loads once.
-assert_trace_loads_once "status with three side checkouts" "$sload"
-rm -f "$sload"
-
-out="$(cd "$gamma" && orch_gh_failing status)"
-assert_contains "status in a side checkout shows its own flow in full" "$out" "flow:      gamma-flow"
-assert_contains "with its own issue" "$out" "issue:     12"
-assert_eq "and lists the others, the main checkout's flow among them" \
-  "$(printf '%s\n' "$out" | st_others)" \
-  "$(writeln "  $top flow main-flow spec #7" \
-             "  $alpha (no branch)" \
-             "  $beta branch quick/3-beta" \
-             "  $hand flow hand-flow spec (no issue)" | sort)"
-
-orch_gh_failing ticket-worktree remove 4 --unmerged
-orch_gh_failing archive >/dev/null
-out="$(orch_gh_failing status)"
-assert_eq "with no flow here, status prints No active flow. first" \
-  "$(printf '%s\n' "$out" | sed -n 1p | cut -c1-15)" "No active flow."
-assert_eq "and still lists the others" "$(printf '%s\n' "$out" | st_others | wc -l | tr -d ' ')" "4"
-
-# A quick implementation in the main checkout keeps no state and carries no
-# marker, so it never appears.
-git checkout -q -b quick/9-main
-out="$(cd "$beta" && orch_gh_failing status)"
-assert_not_contains "a quick implementation in the main checkout never appears" "$out" "$top "
-assert_not_contains "nor its branch" "$out" "quick/9-main"
-
-# A side checkout whose state.json is truncated is listed plainly, by status
-# and by side-checkout list, with no jq text.
-(cd "$gamma" && state_truncate 10)
-out="$(orch_gh_failing status 2>&1)"
-assert_contains "status lists an unreadable side checkout plainly" "$out" "$gamma flow (state.json cannot be read)"
-assert_not_contains "status prints no jq text" "$out" "parse error"
-out="$(orch_gh_failing side-checkout list 2>&1)"
-assert_contains "side-checkout list says the same" "$out" "gamma $gamma flow (state.json cannot be read)"
-assert_not_contains "list prints no jq text" "$out" "parse error"
 restore_suite_env
 
 # --- side-checkout archive and remove (#724) ----------------------------------
@@ -1279,7 +1198,7 @@ fl_classify() {
   out="$(comm -23 <(printf '%s\n' "$found") <(printf '%s\n' "$listed") | sed 's|.*|.orchestrator/& is built by orch.sh but is on neither FLOW_LESS_ENTRIES nor the flow'"'"'s own entries|'
     comm -13 <(printf '%s\n' "$found") <(printf '%s\n' "$listed") | sed 's|.*|listed entry & was never found in the scan|')"
   [ -z "$out" ] && return 0
-  printf '%s\nThe rule: an entry a command creates for work that belongs to no flow goes on FLOW_LESS_ENTRIES (scripts/orch/side-checkout.sh); every other entry is the flow'"'"'s and goes on the test'"'"'s list of the flow'"'"'s own entries.\n' "$out"
+  printf '%s\nThe rule: an entry a command creates for work that belongs to no flow goes on FLOW_LESS_ENTRIES (scripts/orch/side-checkout.sh) and on its Python copy (scripts/orch_py/orch/side_checkout.py); every other entry is the flow'"'"'s and goes on the test'"'"'s list of the flow'"'"'s own entries.\n' "$out"
   return 1
 }
 

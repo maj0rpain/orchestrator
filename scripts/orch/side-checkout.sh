@@ -135,20 +135,6 @@ side_checkout_finished() {
   tip_covered "$path" "$branch" "$prs"
 }
 
-# archive_root <root>: prints the checkout whose .orchestrator/archive/
-# receives the flow in the checkout at <root> - the one computation of the
-# rule. A side checkout's flow goes to the main checkout's archive; any other
-# checkout, a ticket or hand-made worktree included, archives in place. Reads
-# the kind checkout_classify gives, through checkout_kind, itself, so it fails,
-# printing nothing, when git worktree list fails or
-# when <root> is a side checkout and the main checkout cannot be read - never
-# archiving a side checkout's flow in place.
-archive_root() {
-  local kind
-  kind="$(checkout_kind "$1")" || return 1
-  if [ "$kind" = side ]; then main_checkout; else printf '%s\n' "$1"; fi
-}
-
 # FLOW_LESS_ENTRIES: the top-level entries under .orchestrator/ that belong
 # to no flow, which archive_flow leaves in place: the archive itself, the side
 # checkouts, the working directories of a standalone spec review
@@ -165,7 +151,7 @@ archive_root() {
 # to no flow goes on this list; every other entry is the flow's, a spec phase's
 # freely named round directories and a flow's spec review round directories
 # (spec-rounds/<k>/) included. The round marker lives in the handoff folder, so
-# it goes with it.
+# it goes with it. The Python side_checkout module holds a copy of this list.
 FLOW_LESS_ENTRIES=(archive checkouts spec-review review-pass audit autopilot breakdown reports verification wait)
 
 # side_checkout_refuse_ticket_worktrees <root>: refuses while ticket worktrees
@@ -179,7 +165,8 @@ side_checkout_refuse_ticket_worktrees() {
 # that directory - relative to this checkout when inside it, else in full.
 # <archive-root> is the caller's: a side checkout's flow goes to the main
 # checkout's archive; any other checkout, a hand-made worktree included,
-# archives in place (see archive_root).
+# archives in place (the archive noun's rule, in orch/side_checkout.py's
+# archive_root).
 #
 # Every step checks its own status, since its callers run it where errexit is
 # off: a failed archive-directory creation or move dies naming the

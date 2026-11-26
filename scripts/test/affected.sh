@@ -38,7 +38,7 @@
 #   the lens bench's fixture directories (scripts/dev/lens-bench/,
 #   scripts/test/lens-bench/), markdown files included
 #                                     lens_bench_test.sh (wins over *.md)
-#   flow-state.sh                     the core set, plus the state, init and
+#   flow-state.sh                     the core set, plus the state and
 #                                     side-checkout sections
 #   host.sh                           the core set, plus the doctor sections
 #   bash-walk.sh, paste-guard.sh      hooks_test.sh
@@ -48,15 +48,20 @@
 #                                     the harness section file's sections
 #   the Python package (scripts/orch_py/), its tests and dev files included
 #                                     the redo, ticket, autopilot and doctor
-#                                     sections, the bash nouns whose sections
-#                                     run a converted noun's verb through the
-#                                     dispatch (doctor and autopilot also call
-#                                     Python bridges via orch_python_call),
+#                                     sections, which call a converted noun's
+#                                     own verbs through the dispatch (redo
+#                                     spec's spec round, doctor's glossary
+#                                     terms) or a Python bridge via
+#                                     orch_python_call (doctor, autopilot),
 #                                     and hooks_test.sh, whose paste guard
 #                                     rows run spec-review check through it,
 #                                     plus the side-checkout sections, whose
 #                                     entry classification scans the package
-#                                     (the pytest suite runs on every call)
+#                                     (the pytest suite runs on every call);
+#                                     not every section that reaches the
+#                                     package - fake_flow's init and the
+#                                     status and help calls reach it from
+#                                     most - which CI's whole run covers
 #   the pytest suite's wrapper (scripts/test/orch_py_test.sh)
 #                                     the harness section file's sections
 #   hook-edit-width.sh, width.sh, shell_code.awk
@@ -442,7 +447,7 @@ classify() {
     [ "$row" -eq 1 ] || support_select "$f" "$state"
   elif ! listed "$f" "${CORE_FILES[@]}"; then
     case "$f" in
-      scripts/flow-state.sh) core=1; sections_of state init side-checkout ;;
+      scripts/flow-state.sh) core=1; sections_of state side-checkout ;;
       scripts/host.sh) core=1; sections_of doctor ;;
       scripts/bash-walk.sh | scripts/paste-guard.sh) want+=(hooks_test.sh) ;;
       scripts/planning-allowlist.sh) want+=(hooks_test.sh); sections_of doctor ;;

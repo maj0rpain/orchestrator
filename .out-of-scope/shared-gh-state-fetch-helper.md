@@ -2,21 +2,25 @@
 
 This project does not extract a shared helper for the `gh issue view
 --json state` / `gh pr view --json state` fetch-and-branch shape, even where
-it repeats across call sites in `scripts/orch.sh`, when those call sites
-report failure differently.
+it repeats across call sites (in `scripts/orch.sh` when this was decided),
+when those call sites report failure differently.
 
 ## Why this is out of scope
 
 The shape looks identical at a glance — fetch a resource's state, branch on
 it — but the call sites don't agree on what happens when it's missing or
-wrong. `validate_adopted_issue` (adoption's one-time precondition check)
-calls `die` to abort the whole command immediately; `check_flow_issue` (a
+wrong. `validate_adopted_issue` (adoption's one-time precondition check;
+bash `validate_adopted_issue` when this was decided, Python init's now, in
+`scripts/orch_py/orch/init.py`, reading through `open_issue_read`) calls
+`die` to abort the whole command immediately; `check_flow_issue` (a
 `doctor` check) calls `d_fail` to record a non-fatal finding and keep
 checking everything else. A shared helper general enough to cover both either
 takes a callback/mode argument for how to report failure, or leaves one
 caller still open-coding its own version — in both cases the indirection
 costs more to read than the two or three lines of duplication it would
 remove.
+
+The two call sites, as bash read when this was decided:
 
 ```sh
 # validate_adopted_issue: fatal, aborts the command

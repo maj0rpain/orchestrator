@@ -63,8 +63,8 @@ default_branch_seed() {
 # GitHub is asked only when the repo resolves - adapter_repo_default_branch
 # takes it positionally, since `gh repo view` ignores GH_REPO - and a checkout
 # with none falls through to the local pointer rather than dying: the answer
-# has always been best-effort, and init and base show ask it before anything
-# needs GitHub.
+# has always been best-effort, and base show asks it - as Python init asks its
+# copy, orch/base.py's default_branch - before anything needs GitHub.
 default_branch_resolve() {
   local b=""
   [ -z "${DEFAULT_BRANCH_SOURCE:-}" ] || return 0

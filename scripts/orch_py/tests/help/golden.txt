@@ -1,0 +1,1062 @@
+orch.sh - deterministic operations for the orchestrator flow
+
+  doctor [--env|--flow]       diagnose the machine, the repo, and the active flow;
+                              also `health`; what it reads from the repo is
+                              listed in docs/repo-setup.md
+  default-branch [--sha]      resolve the repo's default branch, as GitHub
+                              reports it; --sha prints the default SHA instead,
+                              origin/<default>'s tip as it stands, unfetched
+  base set <branch>           set this checkout's base branch - the branch
+                              flows and quick implementations fork from and
+                              open PRs against; refuses a branch origin does
+                              not have. Shared by every worktree, never
+                              committed; the default branch's name clears it,
+                              when GitHub or origin's HEAD named that default.
+                              An active flow keeps the base it started with
+  base set <branch> --flow    correct the active flow's own base branch
+                              instead, leaving the checkout setting alone;
+                              only while the flow has no branch (before
+                              branch create, or after a redo). Stores
+                              the name as given; refuses a name that is not
+                              a valid branch or that origin does not have
+  base show                   print the base branch in effect and its source:
+                              set, or default
+  base clear                  remove the setting, falling back to the default
+                              branch; succeeds when nothing was set
+  parallel show               print the parallel cap, how many ticket
+                              subagents a frontier runs at once: git config
+                              orchestrator.parallel, else 3; 1 is sequential.
+                              Dies naming the key and value when it is not a
+                              positive integer
+  route show                  print the default route, flow, quick, blueprint
+                              or autopilot: git config orchestrator.route,
+                              the clone's value before the user's global one,
+                              or none when unset or empty. Dies naming the key
+                              and value when it is none of the four
+  autopilot settings          print the autopilot setting names, one per
+                              line, in the order autopilot show lists them;
+                              reads no config and validates nothing
+  autopilot show              print the autopilot settings, each with its
+                              source: orchestrator.autopilot.permission-mode
+                              (no default), .cap (3), .handle (the repo's
+                              owner), .rounds (2), .budget (3), .model and
+                              .effort (no default; the agent setting's Claude
+                              Code values or inherit), .auto-sync (true) and
+                              .github-reserve (20).
+                              Dies naming the key and value when one is out
+                              of range
+  autopilot active            exit 0 in an autopilot session (ORCH_AUTOPILOT=1),
+                              1 otherwise
+  autopilot rounds            print the Rounds line of the flow's issue's
+  autopilot budget            plan comment (budget: its Budget line)
+  autopilot start <issue> <plan-file>
+                              the planning close's last step: refuse an issue
+                              without ready-for-agent or with a phase label,
+                              validate the plan (## Autopilot block included),
+                              post it as the plan handoff comment, then add
+                              orch:spec. On success prints two lines: the
+                              posted comment's URL line and the label
+                              added; a failure prints nothing on stdout
+  autopilot candidates [<n>... | --all | --limit <k>]
+                              one line per issue, `<n> eligible none|move|
+                              override` or `<n> skip <reason>`: whether a
+                              quick autopilot may send it; writes nothing
+  autopilot sync <issue>      add orch:sync to an orch:done issue, asking the
+                              next tick to merge the base branch into its PR
+  autopilot sync-finish       close a sync: remove orch:sync, release the claim
+  autopilot sync-dropped <file>
+                              stop a sync whose resolver dropped the intents
+                              in <file>: needs-human, not orch:sync
+  autopilot sync-fail <reason>
+                              stop a failed sync, keeping orch:sync
+  autopilot tick              one watcher pass: while a GitHub API rate-limit
+                              pause holds, the tick does nothing. Otherwise it
+                              reads the GitHub quota for the early pause,
+                              ensures the eight labels, cleans up this host's
+                              stale claims and closes the issues of merged
+                              PRs. Then, unless a usage limit pause or an
+                              early GitHub pause holds the tick, it runs the
+                              hourly housekeeping (deletes session logs older
+                              than 14 days, then the finished sweep removes
+                              side checkouts and their branches; a GitHub rate
+                              limit hit there ends the tick before pickup),
+                              detects
+                              done issues whose PR needs a sync (when
+                              auto-sync is on) and labels them orch:sync, then
+                              claims each open
+                              phase-labelled or orch:sync issue (oldest first,
+                              below the cap), makes or reuses its side checkout
+                              (a phase issue only) and starts `autopilot run`
+                              detached. Claude Code only;
+                              needs orchestrator.autopilot.permission-mode
+  autopilot watch [--every <seconds>]
+                              repeat tick (default 60 s) until interrupted;
+                              one live watch per clone (a pidfile under the
+                              git common directory), a failed tick reported
+                              on stderr and the loop carried on
+  autopilot run <issue>       the session wrapper a tick starts: runs claude -p
+                              in the issue's side checkout, logging under
+                              .orchestrator/autopilot/logs/; stops the issue as
+                              limited on a usage or GitHub limit, else fails it
+                              when the claim is still held at its exit (a
+                              GitHub limit met before the session starts only releases it)
+  autopilot ask <phase> <file>
+                              post <file> as the phase's question comment
+                              (@mentioning the handle), add needs-human, then
+                              release the claim
+  autopilot answer <phase> <file>
+                              write the newest question and every later
+                              comment to <file>; exit 1 when none follows or the
+                              phase was re-entered after its question (or
+                              re-entered with no question), 2 on any other
+                              failure
+  autopilot reenter review <file>
+                              post <file> as a re-entry comment (no @mention,
+                              no label change) and release the claim, so the
+                              watcher starts another review loop; the third in
+                              a row asks instead
+  autopilot questions         list each open needs-human issue of an autopilot
+                              flow, no flow state needed: a tab-separated
+                              line of issue, kind (question, replied or
+                              stop), phase and comment URL; one line saying
+                              so when nothing is pending
+  autopilot reply <issue> <file>
+                              post <file> as a comment, then remove
+                              needs-human; refused unless the label is still
+                              on and no reply follows the newest question (a
+                              re-entry comment is no reply)
+  autopilot resume <issue>    remove needs-human from the issue, nothing else
+  agent set <role> [--model <m>] [--effort <e>] [--global] [--host junie]
+                              set a role's agent setting in local config,
+                              or global with --global. agent show lists the
+                              roles; a refused value names the allowed ones;
+                              inherit clears the key at that scope. Validates
+                              everything before writing; refuses a call with
+                              neither flag. --host junie sets the Junie keys
+                              instead
+  agent show                  print each role's model and effort with each
+                              one's source: local, global or inherit; a
+                              disallowed hand-set value is marked invalid;
+                              then the same for Junie, each line prefixed
+                              junie
+  agent clear <role> [--model] [--effort] [--global] [--host junie]
+                              clear both keys, or only the one named, in
+                              local config, or global with --global;
+                              succeeds silently when nothing was set
+  agent get <role> [--host junie]
+                              print exactly `model <alias|inherit>` and
+                              `effort <level|inherit>`, each looked up local,
+                              then global, else inherit; refuses a
+                              disallowed value, naming its key
+  agent roles                 print the agent setting's roles, one per line
+  agent sync                  write, refresh and delete this checkout's
+                              .junie/agents/ copies of the plugin's agents
+                              to match the Junie agent setting; refuses an
+                              unmarked orch-*.md in the way, changing nothing
+  repo show [--name|--host]   print the GitHub repo orch.sh works on and its
+                              source: GH_REPO when set, else the checkout's
+                              origin - never gh's default repo. --name prints
+                              the bare [HOST/]OWNER/REPO alone, for gh -R;
+                              --host its host alone, github.com for an
+                              OWNER/REPO repo, for gh api --hostname.
+                              Exits 1, naming GH_REPO, when neither resolves
+  init <slug> [--issue N]     start a flow (refuses with exit 3 in a busy
+                              checkout: a flow mid-pipeline - a done flow is
+                              archived, unless a ticket worktree is left, and
+                              the new one starts over it - or a branch the
+                              plugin made with no PR yet and not retired
+                              by a redo; refuses with exit 1
+                              if the working tree has changes outside the
+                              planning allowlist);
+                              --issue adopts an already-open,
+                              ready-for-agent issue N as the flow's spec
+                              instead of leaving it unset. Records the base
+                              branch in effect as the flow's own
+  slug <text>                 normalise text to the kebab-case slug init would
+                              store - lowercase, non-alphanumeric runs collapsed
+                              to a hyphen, trimmed
+  state get [key]             print state.json, or one key
+  state set <key> <value>     update one of issue, budget, flake_rerun_used
+                              (all digits store a number). Any other key is
+                              refused, naming the command that owns it -
+                              phase moves only through phase advance,
+                              review ready, and redo
+  phase advance               leave the current phase: validate the handoff
+                              it writes for the next one (the spec handoff
+                              from spec, the implement handoff from
+                              implement; orch.sh handoff path <next phase>
+                              prints its file) and the state the next one
+                              needs (issue; branch, base_sha, pr), then record
+                              the next phase and print the boundary. Leaving
+                              implement is refused while the spec issue has
+                              an open sub-issue, or when GitHub cannot be
+                              read. On a
+                              FAIL the phase stays. Refuses at review (use
+                              review ready) and done
+  phase boundary              print the block that ends a phase - the
+                              handoff the current phase reads, and the
+                              host's Next line
+  handoff path <phase>        print the handoff path for a phase (in an
+                              autopilot flow: fetch the handoff comment into a
+                              scratch file under .orchestrator/ and print it)
+  handoff post <name> <file>  in an autopilot flow: validate <file> and post
+                              it as the issue comment tagged
+                              `<!-- orch:handoff <name> -->` (01-plan,
+                              02-spec, 03-implement); the newest wins, and a
+                              failed post posts nothing
+  handoff fetch <name> <file> in an autopilot flow: write the newest such
+                              comment's body, marker stripped, to <file>; a
+                              newest one tagged retired is no handoff
+  handoff validate <file>     check required sections exist and are non-empty
+  handoff section <file> <heading>
+                              print the body of the section headed
+                              `## <heading>`, blank lines trimmed; a missing
+                              file, a missing heading, or a repeated heading
+                              is an error
+  glossary terms              print every term name in the root GLOSSARY.md,
+                              one per line, in glossary order
+  glossary show <term>...     print the named entries exactly as written, in
+                              the order asked, each once. A term matches its
+                              name, case ignored, else an avoided alias
+                              (scoped ones included), with # alias of <Term>
+                              on stderr. Exits 1 naming each term with no
+                              entry, every found entry still printed
+  glossary match <file>...    print every entry whose term or unscoped avoided
+                              alias the files mention - case ignored, from a
+                              word boundary, any ending, any whitespace run
+                              for a space - in glossary order, each once.
+                              Exits 2 on a missing or unreadable file.
+                              show and match put one blank line between
+                              entries. An entry starts at a **<Term>**: line,
+                              optionally after a - or * bullet, alone or with
+                              its definition after it, and runs to the next
+                              entry start, the next # line or EOF; an
+                              indented _Avoid_: line gives it aliases.
+                              With no root GLOSSARY.md, terms and match print
+                              nothing; show exits 2. A root GLOSSARY.md with
+                              no entries is an error: all three exit 2
+  branch create               create orch/<issue>-<slug> off the flow's base
+                              branch, recorded at init, recording that base
+                              and its tip as the base SHA in state and in
+                              the branch's git config, as branch off does.
+                              Refuses with exit 3 in a busy checkout, its own
+                              flow aside, changing nothing. When state.branch
+                              records the branch and it exists, checks it out
+                              and prints it, base_sha untouched. A dirty tree
+                              or merge/rebase in progress is discarded, or
+                              refused with exit 1 in an interactive main
+                              checkout; any other existing branch is refused
+                              before anything is discarded
+  branch off <name>           create and check out <name> off the base branch
+                              in effect, recording that base on the branch
+                              (branch.<name>.orchestrator-base in local git
+                              config) and its tip at branching as the base
+                              SHA (branch.<name>.orchestrator-base-sha), and
+                              no state - for a quick implementation, which
+                              keeps none. Refuses with exit 3 in a busy
+                              checkout (see branch busy), changing nothing
+  branch busy                 tell whether this checkout is a busy checkout,
+                              from local git and state only: a flow
+                              mid-pipeline (a state.json that cannot be read
+                              counts as one), a branch the plugin made with no
+                              PR yet (no branch.<name>.orchestrator-pr) and
+                              not retired by a redo
+                              (branch.<name>.orchestrator-retired, as branch
+                              retire records), or
+                              changes outside the planning allowlist, checked
+                              in that order. Exit 0 printing nothing when
+                              free; exit 3 printing the first that holds; exit
+                              1 when the working tree cannot be read
+  branch base-sha             print the current branch's base SHA as branch
+                              off, branch create or branch sync recorded it;
+                              a branch without one falls
+                              back to the merge-base with its recorded base
+                              branch (else the base branch in effect), on
+                              origin if there, else local
+  branch sync [--finish]      merge origin's tip of the current plugin-made
+                              branch's base into it (never a rebase, never
+                              the local base), record that tip as its base
+                              SHA (branch config, and state when this
+                              checkout's flow holds it), and push when it
+                              has an upstream. Exit 3 on a conflict, or on
+                              a pending merge of origin's base a failed
+                              sync left (nothing fetched), the merge left
+                              in progress; exit 1 on a dirty
+                              tree, failed fetch, detached HEAD, a merge
+                              in progress that is not of the base, a branch
+                              that is its own base, or a branch the plugin
+                              did not make, nothing moved.
+                              --finish finishes a resolved conflict without
+                              fetching: the newest merge on HEAD's
+                              first-parent chain, with only single-parent fix
+                              commits above it, must have its second parent on
+                              origin's base, no merge in
+                              progress, else exit 1; it records that parent
+                              as the base SHA and pushes. Exit
+                              1 on a failed push, the merge recorded - rerun
+                              to push
+  branch retire <old> <new>   rename <old> aside to <new>, republishing it on
+                              origin and deleting the old remote ref, without
+                              force-pushing over anything; records the
+                              retirement on <new>
+                              (branch.<new>.orchestrator-retired) once the
+                              rename and its remote steps are done. A rerun
+                              after the rename resumes the remote steps only
+                              while origin still has <old>; a rerun of a
+                              completed retire changes nothing on origin or
+                              in local branches, records the retirement on
+                              <new>, and prints <new>; an unreachable origin on a rerun
+                              exits 1 with nothing changed
+  issue publish <title> <body-file>
+                              create a GitHub issue under ready-for-agent
+                              and verify its title and label by reading them
+                              back - recording no state; prints the number
+  issue fetch <n> <file> [--json]
+                              write issue <n>'s body to <file>, recording no
+                              state; for an audit-filed body, also prints one
+                              line: cited files changed since <sha>: none, or
+                              the changed files (unknown (<reason>) when not
+                              comparable); with --json, for scripts, the issue as
+                              one JSON object {number, title, body, labels:
+                              [<name>], comments: [{author, createdAt, body}]}
+  issue update <n> <file>     replace issue <n>'s body with <file>, recording
+                              no state
+  issue comment <n> <file>    post <file> as a comment on issue <n>,
+                              recording no state
+  issue comments <n> <file> [--with-spec-review]
+                              write every comment on issue <n> to <file>, in
+                              order, each opened by a line
+                              <!-- comment @<login> <createdAt> --> - recording
+                              no state; a comment whose body opens with the
+                              ## Spec review heading is left out; no comments
+                              is an empty file; with --with-spec-review,
+                              comments opening with the ## Spec review
+                              heading are kept
+  issue triage <n> [--override]
+                              move open issue <n> to ready-for-agent, removing
+                              its other triage labels, verify by reading the
+                              labels back, and post one comment saying so -
+                              recording no state. Exit 0 when moved, or when
+                              it already carries ready-for-agent (nothing
+                              changed); exit 2, printing the label, on
+                              wontfix or ready-for-human without --override;
+                              exit 1 on a closed issue, a filed finding not yet
+                              triaged (finding triage moves those) or a gh
+                              failure.
+                              A failed comment only warns
+  issue triage <n> --check    the same read and walk, writing nothing: print
+                              ready (it carries ready-for-agent), the held
+                              label (wontfix ahead of ready-for-human), or
+                              movable, exit 0; exit 1 where the write would
+                              die. Not with --override
+  issue labels <n>...         print one line per issue, in the order named: its
+                              number, open or closed, then its labels joined
+                              by ", " (no labels: only number and state); a
+                              failed read dies naming the issue after the lines already
+                              printed; 1 on a usage error - recording no state
+  issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>
+                              close issue <n> as completed, or as a duplicate
+                              of <m> (gh 2.102 or newer), with <file> as its
+                              closing comment, in one gh call - reading
+                              nothing back, labels unchanged, recording no
+                              state
+  issue ready <n>             exit 0 when issue <n> carries the repo's
+                              ready-for-agent label, 1 when it does not, 2 on
+                              a usage error or a gh failure - recording no
+                              state
+  issue next                  print the Next issue as <number><TAB><title>
+                              and exit 0: the oldest open issue carrying the
+                              repo's ready-for-agent label and no phase
+                              label, that is no sub-issue and has no open
+                              blocker; exit 1, printing nothing, when none
+                              qualifies; 2 on a usage error or a gh failure
+                              - recording no state
+  pr open <title> <body-file> [--label <name>]...
+                              push and open a draft PR against the flow's base
+                              branch, or, when a PR is already recorded,
+                              update that PR instead (dying if it is closed,
+                              merged or on another branch) - Closes its issue into the default
+                              branch, Refs it into any other. --label,
+                              repeatable, opens it carrying that label, read
+                              back once the PR is recorded: one missing, or a
+                              failed read, fails naming the PR. Refused
+                              while the spec issue has an open sub-issue, or
+                              when GitHub cannot be read
+  pr publish <issue> <title> <body-file> [--draft] [--label <name>]...
+                              push the current branch and open a non-draft PR
+                              against the base branch branch off recorded for
+                              it (else the base branch in effect) - Closes
+                              <issue> into the default branch, Refs it into any
+                              other - recording no state; prints the PR number
+                              - for a quick implementation whose review pass
+                              already ran. --draft opens it as a draft, for a
+                              pass that met a spec question. --label as pr
+                              open's. Refused while <issue> has an open
+                              sub-issue, or when GitHub cannot be read
+  pr release [--force] <title> <body-file>
+                              open the release PR: a non-draft PR from the
+                              base branch in effect into the default branch,
+                              its body one Closes line per still-open issue
+                              any PR merged into the base branch refers to
+                              (Refs/Closes/Fixes/Resolves #N), then
+                              <body-file>. Refuses on the default branch,
+                              while a release PR is already open (printing
+                              it), and with nothing to close unless --force;
+                              pushes nothing, records no state; prints the
+                              PR number
+  pr comment <file>           post <file> as a comment on the current
+                              branch's open PR, recording no state; prints
+                              the PR number. Exits 1 printing nothing when
+                              the branch has no open PR, 2 when GitHub
+                              cannot be read, the post fails, or the call
+                              is wrong (no file, detached HEAD)
+  pr comments <file>          write every comment on the current branch's
+                              open PR to <file>, as issue comments does -
+                              recording no state; no comments is an empty
+                              file. Exits 1 writing nothing when the branch
+                              has no open PR, 2 when GitHub cannot be read
+                              or the call is wrong
+  pr read <issue> <file>      write the body of the open PR whose issue line
+                              is `Closes #<issue>` or `Refs #<issue>`, a
+                              `---` line, then its diff, to <file> -
+                              recording no state; exits 1 when no open PR
+                              names the issue or GitHub cannot be read
+  pr draft                    turn the current branch's open PR into a draft,
+                              recording no state. Exits 0 when done or the PR
+                              is already a draft (saying so), 1 when the branch
+                              has no open PR, 2 when GitHub cannot be read or
+                              the call fails (relaying gh's reason), the call
+                              is wrong, or an active flow holds the branch
+  pr ready                    mark the current branch's open PR ready, as pr
+                              draft does: 0 also when it is already ready. Refuses (2) over
+                              failed or unreadable checks
+  pr fetch <file>             write the current branch's open PR body to
+                              <file>, recording no state
+  pr update <file>            replace the current branch's open PR body with
+                              <file>, recording no state. Refuses, leaving
+                              the body unchanged, unless <file> opens with
+                              the PR's existing Closes/Refs #<issue> line
+  ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]
+                              create a ticket, link it as a sub-issue of
+                              <parent>, add a blocking edge for every
+                              --blocked-by issue, apply ready-for-agent, and
+                              verify the links it just wrote by reading them
+                              back, then rewrite its `## Blocked by` section
+                              from those edges - recording no state; prints
+                              the number
+  ticket next <parent>       print <parent>'s open sub-issues with zero open
+                              blockers, in the order they were published
+  ticket list <parent>       print every sub-issue of <parent>, open or
+                              closed, as <n> open|closed, in the order they
+                              were published
+  ticket close <n> [--unmerged]
+                              close ticket <n>; refuses while ticket <n>'s
+                              ticket worktree exists under this checkout and
+                              its ticket branch has not merged into its
+                              forked-from branch (or records none), leaving
+                              the issue open - --unmerged closes it anyway
+  ticket report save <n> <file>
+                              store ticket <n>'s returned report at
+                              .orchestrator/reports/<n>.md, replacing an
+                              earlier save; a missing or empty file is
+                              refused (exit 1) and nothing is written
+  ticket report show <n>     print ticket <n>'s saved report; exits 1 when
+                              none is saved
+  ticket reset <parent>      reopen every sub-issue of <parent> that is
+                              currently closed, and only those; also drops the
+                              saved reports of the tickets it reopens and
+                              <parent>'s own saved report
+  ticket parent <n>          print <n>'s parent issue number, or nothing
+                              when <n> is not a sub-issue
+  ticket exists <parent>      whether <parent> already has a ticket
+                              breakdown: prints sub-issues (it has any, open
+                              or closed) or collapsed (none, but its body has
+                              a line that is exactly `## Ticket` outside a
+                              code fence); exits 1 printing nothing when
+                              neither, 2 when GitHub cannot be read, on a
+                              usage error, or when <parent> is not a plain
+                              number
+  ticket retire <parent>      retire <parent>'s ticket breakdown: close each
+                              open sub-issue as not planned, comment on every
+                              one, unlink it, and cut every `## Ticket`
+                              section from the body; afterwards ticket exists
+                              exits 1, and the parent's breakdown save point is
+                              removed. A repeat changes nothing
+  breakdown publish <parent> <draft-file>
+                              save the approved ticket draft (the first run
+                              only; a saved draft wins), then publish every
+                              ticket not yet recorded, in dependency order,
+                              linking a created-but-unlinked one and
+                              rewriting each ticket's `## Blocked by`
+                              section from its blocking edges; the
+                              published marker is written last. Prints the
+                              numbers in publishing order
+  breakdown state <parent>    print complete, partial or none; with no draft
+                              saved, ticket exists decides; exits 2 on a
+                              failed read
+  ticket block <n> --by N,N,...
+                              add a blocking edge on open ticket <n> for every
+                              --by sibling (a sub-issue of <n>'s parent; a
+                              closed one is fine) it lacks, verify the edges
+                              by reading them back, and rewrite <n>'s body's
+                              `## Blocked by` section to match. A repeat
+                              writes no edge; re-running a failed run
+                              finishes it
+  ticket unblock <n> --by N,N,...
+                              remove the blocking edge on open ticket <n> for
+                              every --by sibling it has, verify the rest by
+                              reading them back, and rewrite <n>'s body's
+                              `## Blocked by` section to match (`None (can
+                              start immediately)` once none is left). A repeat
+                              removes no edge; re-running a failed run
+                              finishes it
+  ticket reclaim <parent>    recover what a dead implement run left: refuse
+                              unless the branch is the run's own (the flow's,
+                              or a quick/<parent>-<slug> made by branch off),
+                              then discard its stray work, then per leftover
+                              ticket - reported and merged: close it, remove
+                              its worktree; reported, unmerged: ticket merge
+                              it (conflict <n>, exit 3), close, remove;
+                              otherwise discard it so it is rebuilt. One line
+                              per action; a failed write exits 1 naming the
+                              ticket
+  ticket merge <n>            land ticket <n>'s branch on the branch it was
+                              forked from: rebase it onto that branch's tip
+                              inside its ticket worktree, then fast-forward
+                              that branch in whichever checkout has it - no
+                              merge commit. Exits 1, changing nothing, when
+                              the ticket worktree or that checkout is dirty,
+                              or the branch is checked out nowhere; on a
+                              rebase conflict aborts the rebase and exits 3,
+                              both branches at their prior tips. A rebase
+                              that fails any other way is aborted and exits
+                              1, naming git's first line; an abort that fails
+                              exits 1, leaving the worktree mid-rebase
+  ticket-worktree add <n>     fork <current-branch>--t<n> from the current
+                              branch's tip, record the forked-from branch on
+                              it in local git config, check it out at
+                              .orchestrator/worktrees/t<n> under this
+                              checkout's top level, git-exclude .orchestrator/
+                              in the clone's shared info/exclude, and print
+                              the worktree's absolute path. Refuses when that
+                              worktree or branch already exists; a failure
+                              after the branch is made leaves nothing behind
+  ticket-worktree list        print <n> <path> for each ticket worktree under
+                              this checkout's .orchestrator/worktrees/ only;
+                              nothing, exit 0, when there are none
+  ticket-worktree remove <n> [--unmerged]
+                              remove ticket <n>'s worktree and delete its
+                              ticket branch, never with --force. Refuses a
+                              dirty worktree and, without
+                              --unmerged, a branch not merged into its
+                              forked-from branch, before removing anything;
+                              --unmerged first aborts a rebase in progress
+                              there, then deletes a clean worktree's
+                              unmerged branch. A worktree whose directory
+                              was deleted outside git is cleared the same
+                              way: git's record of it is removed (never a
+                              prune) and the branch deleted under the same
+                              merged rule; something else at its path is
+                              refused, naming the path
+  side-checkout add <slug> [--issue N]
+                              run side-checkout prune first (its report on
+                              stderr; a failed sweep is reported and add
+                              carries on), then fetch the base branch in
+                              effect, add a worktree
+                              on no branch at origin/<base> under the main
+                              checkout's .orchestrator/checkouts/<slug>, mark
+                              it as a side checkout, git-exclude .orchestrator/
+                              in the clone's shared info/exclude, and print its
+                              path. --issue N records N, a quick
+                              implementation's issue, in the marker; without
+                              it the marker is empty. Refuses a missing or
+                              non-numeric --issue before the sweep, and a path
+                              that already exists; a failed fetch or marker
+                              write leaves no worktree
+  side-checkout list          print <slug> <path> and then its flow
+                              (flow <slug> <phase> #<issue>), its branch
+                              (branch <name>), or (no branch), for each side
+                              checkout of the clone - marked worktrees only -
+                              followed by quick #<N> when it records an issue
+  side-checkout issue         print the issue this side checkout records
+                              (side-checkout add --issue); exits 1,
+                              printing nothing, in a checkout that is no
+                              side checkout, or records
+                              no plain issue number, and 2 on a usage error
+  side-checkout remove <slug> remove side checkout <slug>, never with --force.
+                              Refuses an unknown slug, a worktree without the
+                              side-checkout marker, uncommitted changes or
+                              untracked files, and a ticket worktree inside it,
+                              before anything moves; then archives any flow
+                              into the main checkout's .orchestrator/archive/
+                              and removes the worktree, leaving its branch.
+                              Exits 1, the archive standing, when the removal
+                              still fails
+  side-checkout prune         the finished sweep:
+                              for each side checkout whose PR GitHub reports
+                              merged into its base, its tree clean and any
+                              flow at done, archive the flow into the main
+                              checkout, remove the worktree (never --force)
+                              and delete its branch with -D; archive the main
+                              checkout's finished flow in place, its branch
+                              left checked out. Reports every skip with its
+                              reason, and a hand-made worktree holding a flow
+                              as left alone. Removes nothing, exiting 1, when
+                              GitHub cannot be read; exits 1 after a failed
+                              step, which leaves that checkout as it stands
+  audit begin <code|docs|tests>
+                              make an audit run's working directory,
+                              .orchestrator/audit/<kind>-<UTC timestamp>/,
+                              git-excluded, recording the kind and the HEAD
+                              commit in it; prints its absolute path and
+                              nothing else. Never reuses a directory, removes
+                              the one it made when a later write fails, and
+                              reads and writes no flow state
+  audit report <dir> <out.html>
+                              render the audit run <dir>'s HTML report from
+                              its ranked.md and area files into <out.html>,
+                              printing its path. Refused, writing nothing and
+                              leaving an earlier report as it was, when the
+                              ranked file does not hold together; the page
+                              goes through a temporary file beside <out.html>
+  audit file --run <dir> <numbers>
+                              file the audit run <dir>'s ranked findings
+                              <numbers> (comma-separated) as issues, in number
+                              order, each checked through the ranked file's
+                              reader before any GitHub call. The body is the
+                              finding's resolved fields as bold-labelled
+                              paragraphs, a **Location:** line per location
+                              and an **Audited at:** line with the commit
+                              audit begin recorded; labelled needs-triage and
+                              the category. An open issue with the title
+                              files nothing. Then a **Related:** #a #b
+                              paragraph is written into each issue whose
+                              finding overlaps another picked one (an
+                              already-open issue only while its body is still
+                              the rendering, with or without a Related
+                              paragraph, whose numbers are kept, else a
+                              warning). Prints one line
+                              per finding: number, issue, filed|open,
+                              tab-separated; a rerun finishes a failed batch
+  audit file <title> --category <c> --finding-file <f> --location <<file>:<line>>...
+                              file one audit finding as a GitHub issue
+                              labelled the repo's needs-triage and the
+                              --category label, creating either if missing;
+                              prints the number. The body is the finding file,
+                              then one **Location:** line per --location (each
+                              <file>:<line> or <file>:<start>-<end>) and an
+                              **Audited at:** line with HEAD's SHA, refused
+                              before any write unless it parses back to them,
+                              and refused when the title or the finding file
+                              refers to a report's numbering (finding 3,
+                              this report).
+                              An open issue with exactly this title files
+                              nothing: its number is printed, with an
+                              already-open line on stderr, exiting 0
+  review begin                claim the next iteration, refusing once the
+                              flow's budget is spent (5 when none is set)
+  review path [n]             record path, .orchestrator/review/iteration-NN.md,
+                              creating the directory if it is not there yet
+  review file <major|nit> <title> --axis <spec|standards>
+              --finding-file <f> --severity-reason <r>
+              --location <<file>:<line>> --why <reason>
+              [--spec-question <q>]
+                              file a finding as a GitHub issue labelled
+                              review:<severity>, the repo's needs-triage, and
+                              bug (spec axis) or enhancement (standards
+                              axis),
+                              creating the labels if missing; prints the number.
+                              The body is rendered from the parts - the finding
+                              file, then one labelled line per flag - and
+                              refused before any write unless it parses back
+                              to them. <line> is N or N-M
+  review known-items <path> <loop boundary>
+                              write the loop's known-items file to <path>,
+                              overwriting it: ## Deviations from the implement
+                              handoff, then ## Known items - Waiting to be
+                              filed from each record above the boundary, Filed
+                              from each at or below it, and the plan's
+                              Rejected alternatives, each tagged with its
+                              source; an empty heading reads None. Refused,
+                              writing nothing, without either handoff
+  review standards            print the reviewers' Standards: line - root
+                              CLAUDE.md and AGENTS.md (with neither,
+                              CODING_STANDARDS.md and CONTRIBUTING.md), then
+                              the .md paths they mention in backticks or
+                              Markdown links, then those mentioned there: two
+                              hops, each path once, only paths that exist,
+                              joined by ", "; Standards: none when none do.
+                              A Standards: paragraph in a root agent file
+                              replaces the crawl: its backticked entries are
+                              printed as declared, path#Heading too; an
+                              entry that does not resolve, or a declaration
+                              with no entries, fails with an orch: message
+  review ci [--no-wait] [<pr>]
+                              classify the PR's checks - the flow's PR, or <pr>
+                              with no flow state: green, failing, none, or
+                              unreachable (pending too with --no-wait); exits
+                              non-zero on failing and unreachable
+                              Blocks at most ORCH_WAIT_BLOCK seconds (default
+                              570; a value that is not a positive number is
+                              refused): still waiting, it prints nothing,
+                              says "orch: still running" on stderr and exits
+                              75 - run it again; the 900 s total counts from
+                              the first call, per PR and head commit, and is
+                              forgotten once an outcome is delivered.
+                              --no-wait makes one pass: it prints pending
+                              where the waiting form would wait, never sleeps,
+                              reads no total and writes no state, wait file
+                              or guard; a GitHub rate limit prints
+                              unreachable at once. A refusal (usage, knob or
+                              state) exits 2
+  review rerun <pr>           rerun the failed jobs of every Actions run
+                              behind the failing checks review ci counts;
+                              prints each run id. Exits 1 when a failing check
+                              is no Actions run, 2 on any other failure
+  review ci-log <pr>          print the failed-step log of each failing Actions
+                              job behind the checks review ci counts, cut to
+                              its last 200 lines; a failing check that is no
+                              Actions run, or whose log cannot be read, gets
+                              a line saying so
+  review ready                mark the draft PR ready and set the phase to done,
+                              refusing (1) over failed or unreadable checks,
+                              printing the PR number; in a side checkout, a
+                              pointer to the finish command on stderr
+  review terminal             classify the last iteration: none, pending,
+                              interrupted, malformed, ready, or stop; exits
+                              non-zero on the first four. A half-finished
+                              redo review's retired record counts
+  review resume               resume a review loop whose session died
+                              mid-iteration, spending no budget: discard the
+                              flow branch's stray work first (refused in an
+                              interactive main checkout, exit 1), then print
+                              rerun <i> after clearing the dead run's
+                              reviewer reports, next, or terminate. Exits 1
+                              when review terminal says anything but pending
+                              or interrupted
+  review retire <n>           move every iteration-*.md into pre-redo-<n>/,
+                              resuming into an existing one; refuses (moving
+                              nothing) a name already in it
+  spec fetch <file>           write the spec issue's body to <file>
+  spec update <file>          replace the spec issue's body with <file>
+  spec comment <file>         post <file> as a comment on the spec issue
+  spec comments <file>        write every comment on the spec issue to
+                              <file>, as issue comments does
+                              all four act on the active flow's issue,
+                              refusing once the flow is done; for any other
+                              issue use issue <op> <n> <file>
+  spec pause                  stop the spec phase's session once the spec is
+                              written: write handoff/spec-paused naming the
+                              flow's issue, then print the stop block naming
+                              the host's way to start a fresh session; the
+                              phase stays spec. Refuses without a recorded
+                              issue, outside the spec phase, or once the flow
+                              is done
+  spec pause --round <k>/<n>  stop a flow's spec review session after round k
+                              of n, k < n, has applied: write handoff/
+                              spec-round naming the flow's issue, k+1 and n,
+                              then print the stop block - a failed write
+                              prints no block. The last round never pauses.
+                              Refuses a malformed <k>/<n>, k not below n, and
+                              as spec pause does
+  spec round-dir <k>/<n>      make a flow's spec review round k of n ready
+                              and print its directory, .orchestrator/
+                              spec-rounds/<k>/: emptied (created when
+                              missing); on round 1 every other round's
+                              directory deleted; on a later round round
+                              k-1's agent-lens (round 1's lens setting),
+                              map-implementability.md and settled.md
+                              copied in, each when it exists. Then write
+                              handoff/spec-round naming the flow's issue, k
+                              and n - a failed write prints no path.
+                              Idempotent. Refuses a malformed <k>/<n>, k past
+                              n, and as spec pause does
+  spec round                  print the round a resumed spec review runs
+                              next, from handoff/spec-round: "<k> <n>" - k+1
+                              once round k's directory holds round-complete -
+                              or "done <n>" once round n's does; "<k> <n>
+                              applying" while round k's directory holds a
+                              saved apply answer (an apply died: run
+                              spec-review apply --resume), "<k> <n> waiting"
+                              while it holds fundamental.md. Exits 1,
+                              printing nothing, with no marker or one naming
+                              another issue; 2 on a malformed marker and on
+                              every refusal spec pause makes
+  spec-review begin <n> [--carry]
+                              start a standalone spec review of issue <n>:
+                              refuse while an active flow holds <n> - at spec
+                              (pointing at next) or at implement or review
+                              (pointing at redo) - and otherwise empty
+                              .orchestrator/spec-review/<n>/ and print its
+                              path. --carry, on rounds 2 and later, keeps
+                              its map-implementability.md and settled.md
+                              through the wipe, each when it exists.
+                              Reads state.json only to compare, and never
+                              writes it
+  spec-review check <dir> [--tickets | --full <n>...]
+                              validate a round's <dir>/batch.md before the
+                              batch question: its grammar, the lens files and
+                              their citations, every anchor (each item's and
+                              each decision option's) matching exactly once,
+                              and a dry run of the all answer, against
+                              <dir>/spec.fetched.md, else <dir>/spec.md.
+                              Writes only <dir>/view.md, touches no GitHub,
+                              reads no flow state. Exit 1 with one orch:
+                              line per error, each naming its batch.md or
+                              lens-<name>.md line where it has one - every
+                              violation it can stand behind in one run; a
+                              structure violation stops it; exit
+                              0 with the batch view on stdout, the same
+                              bytes in <dir>/view.md (overwritten), and a
+                              one-line summary on stderr naming view.md by
+                              absolute path and saying to end the turn on
+                              one plain-text reply with no tool call: the
+                              view word for word, then the question.
+                              --unattended (not with --full) ends that line
+                              instead with "unattended: not a turn-final
+                              reply; go straight on to apply", so it never
+                              arms the paste guard.
+                              --tickets validates
+                              <dir>/tickets.md instead, before the ticket
+                              question, as apply --tickets would take the all
+                              answer: its grammar, each ticket item's anchor
+                              against ticket-<t>.fetched.md, else
+                              ticket-<t>.md, each ## Ticket item's against
+                              <dir>/spec.md, and each edge against its
+                              ticket's ## Blocked by - one orch: line per
+                              problem, each naming its tickets.md line, or the
+                              ticket view on stdout and in view.md - or, with
+                              no open ticket affected, the stub, with any
+                              earlier view.md removed and none named. The
+                              checks that need GitHub stay in apply.
+                              --full <n>... validates batch.md the same way,
+                              then prints only the named items, any in
+                              batch.md, each in full (findings and comments
+                              quoted, Current and Proposed whole), in the
+                              order named, that view in view.md; never with
+                              --tickets
+  spec-review wait <dir> <lens>...
+                              wait, across calls, until <dir>/lens-<lens>.md
+                              exists for every named lens (fidelity,
+                              consistency, testability, implementability),
+                              then print
+                              "lenses back: <lens> <count>, ..." in the order
+                              named, <count> the file's @@ finding lines. Run
+                              in the response that starts the lenses. Exit 1,
+                              nothing on stdout, naming the lenses still
+                              missing after ORCH_SPEC_REVIEW_WAIT_TIMEOUT
+                              seconds (default 900), polling every
+                              ORCH_SPEC_REVIEW_WAIT_INTERVAL (default 5).
+                              Blocks at most ORCH_WAIT_BLOCK seconds per call
+                              (default 570): still waiting, nothing on stdout,
+                              "orch: still running" on stderr, exit 75 - run
+                              it again; the total counts from the first call,
+                              per directory and lenses, forgotten once an
+                              outcome is delivered
+  spec-review prompt <dir> <lens>
+                              print <lens>'s whole prompt, for the session
+                              to pass unchanged: one "<label>: <path>" line
+                              per path in its lens-table row, every path
+                              absolute, the findings file last. A missing
+                              input (glossary.md, docs/adr/, settled.md, the
+                              previous map-implementability.md) prints
+                              "<label>: none"; Map file: and Findings file:
+                              are always given. <dir> is a standalone
+                              review's or a flow round's directory and must
+                              hold spec.md and comments.md. fidelity only in
+                              a directory under .orchestrator/spec-rounds/,
+                              its Plan handoff what handoff path spec prints;
+                              dies when that fails, and on an unknown lens
+  spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
+                    [--tickets <answer> [--ticket-reasons <file>]]
+                    [--issue <n>] [--unattended] [--host-fallbacks <file>]
+                              apply a spec review round's answer - recommended,
+                              all, none, or an Other list of departures from
+                              the recommendation such as 3B, -4, +2 (<n><letter>
+                              a decision's option, -<n> an item declined or a
+                              decision left undecided, +<n> a recommend-decline
+                              item applied, every item not named as
+                              recommended) - to <dir>/batch.md's items: each
+                              accepted edit by exact anchor on
+                              <dir>/spec.fetched.md (copied from spec.md on
+                              the first run) into spec.md,
+                              then the body published when it changed and
+                              <dir>/changelog.md written and posted. Every
+                              check runs before the first write: a malformed
+                              batch or lens-<name>.md file, an anchor matching
+                              no text or more than once, an unknown item or
+                              option, or a bad --reasons line refuses it all.
+                              With an applied edit and a ticket breakdown it
+                              pauses before any GitHub write, printing the
+                              breakdown kind, exit 3; the rerun's --tickets -
+                              recommended, all, none, retire, or a list such
+                              as 1, 3 - answers <dir>/tickets.md's items, each
+                              ticket text edit applied to ticket-<n>.fetched.md
+                              (copied from ticket-<n>.md on the first run that
+                              finds it) or to the body's ## Ticket section.
+                              Writes: ticket text edits, then ticket
+                              block/unblock, then the body, then any ticket
+                              retire, then the comment, then the changelog
+                              appended to <dir>/settled.md, then, last, an
+                              empty <dir>/round-complete. The issue is state's,
+                              through spec update/comment, or --issue's,
+                              through issue update/comment, never reading
+                              state.json. Each GitHub write lands in
+                              <dir>/applied.log; a failed one dies naming those
+                              landed, and a non-empty applied.log is refused
+  spec-review apply <dir> --resume --round <k>/<n>
+                              rerun an apply that died partway, with the
+                              answer it saved in <dir> before its first
+                              GitHub write, and no other argument; refuses
+                              when <dir> holds no saved answer or the answer
+                              is for another round
+  review-pass begin <issue>   start a review pass of the current branch
+                              against issue <issue>: refuse on a detached
+                              HEAD, on the base branch, and while an active
+                              flow holds <issue> or the branch (pointing at
+                              next, or at doctor --flow for an unknown phase);
+                              otherwise print the next free report prefix
+                              .orchestrator/review-pass/<branch>/iteration-NN,
+                              branch name used whole, git-excluding
+                              .orchestrator/. Never wipes; reads state.json
+                              only to compare, and never writes it
+  review-pass known-items <issue> <path> [--deviations <file>]
+                              write the pass's known-items file to <path>,
+                              overwriting it: ## Deviations from the PR body,
+                              or the --deviations file in its place, then
+                              ## Known items - the declines under Review in
+                              the PR body and in each comment with both Review
+                              and Host fallbacks, and the Spec rulings lines
+                              of the PR's comments and the issue's
+                              "Spec ruling:" comments, each tagged with its
+                              source; an empty heading reads None. With no
+                              open PR, only the rulings and --deviations are
+                              read. Refused, writing nothing, on a missing
+                              --deviations file or an unreadable GitHub
+  finding-triage scan [--all] [<issue> | --pr <n>]
+                              read-only: fetch origin/<default> and sort each
+                              open review:<severity> finding still in the
+                              repo's needs-triage - or the one <issue>, or
+                              those whose **PR:** is <n> - one line apiece:
+                              <issue> TAB <pr> TAB <file>:<line> TAB <result>
+                              TAB <detail> TAB <state>; result unchanged,
+                              changed (detail: the newest touching commit's
+                              full SHA), gone, or unknown (detail: why), an
+                              empty pr or detail printed -, fetching
+                              refs/pull/<pr>/head before calling a SHA
+                              unreachable; state: the triage-role labels the
+                              issue carries, comma-joined in role order
+                              (needs-triage, needs-info, ready-for-agent,
+                              ready-for-human, wontfix), or - for none.
+                              --all: every open review:<severity> finding
+                              whatever its triage label - the re-check - and
+                              an explicit <issue> need not be in needs-triage
+  finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>
+  finding-triage apply <issue> <ready-for-agent|ready-for-human>
+                       --category <bug|enhancement> --comment-file <file>
+                              finding triage's one write: post <file> under
+                              the AI disclaimer, remove every other
+                              triage-role label it carries, then close it as
+                              completed (close-fixed) or as not planned
+                              labelled wontfix,
+                              or label it with that state, keeping
+                              review:<severity> and leaving exactly the one
+                              category - created only where missing, never
+                              with --force. --category is required on the open
+                              outcomes and refused on the closing ones; state
+                              labels are the repo's names for the roles
+  finding-triage bundle --title <t> --body-file <f> --state <ready-for-agent|ready-for-human>
+                       --category <bug|enhancement> <member>...
+  finding-triage bundle --into <B> <member>...
+                              group already-triaged filed findings: create
+                              one bundle issue, titled <t> with <f> as its
+                              body, labelled finding-bundle (created where
+                              missing), the state and the category - never a
+                              review: label - and print its number; then
+                              comment each member "Bundled into #B" under the
+                              AI disclaimer and close it as a duplicate of the
+                              bundle (gh 2.102 or newer), keeping its labels.
+                              Every member is checked first, nothing written
+                              on a refusal: open, a filed review:<severity>,
+                              exactly one of ready-for-agent and
+                              ready-for-human, none of needs-triage,
+                              needs-info and wontfix; at least 2 for a new
+                              bundle. --state may not be ready-for-agent with
+                              a ready-for-human member, nor --category
+                              enhancement with a bug member. A member failure
+                              dies naming the members left open (or not
+                              confirmed closed, where the close may have
+                              landed) and the --into command that resumes.
+                              --into <B>: close the members into the open
+                              finding-bundle issue B, never editing it, nor
+                              commenting a member twice; a member already
+                              closed into B (a trusted "Bundled into #B"
+                              comment) is skipped, the others are checked
+                              as above (one is enough)
+  redo review                 retire the branch and PR, reopen the spec
+                              issue's closed tickets, reset the loop, retire
+                              the implement handoff (orch.sh handoff path
+                              review) into handoff/pre-redo-<n>/, and step the
+                              flow back to implement - refuses unless the
+                              review loop has reached a terminal state
+  redo spec [--new-issue]     step the flow back to spec, keeping the existing
+                              issue by default and retiring its ticket
+                              breakdown (ticket retire) so the redone spec is
+                              broken down again; --new-issue closes it and
+                              clears state.issue so orch-to-spec starts fresh;
+                              the spec handoff and any implement handoff
+                              (orch.sh handoff path implement, and review)
+                              move into handoff/pre-redo-spec-<UTC timestamp>/;
+                              the attempt's branch and PR are retired too
+                              (branch to -redo-<n>, PR closed, redo_count
+                              bumped when a branch is retired)
+  verification run <command>  run <command>, one shell command line, with
+                              bash -c detached from this call, in a process
+                              group of its own, so stopping the call stops
+                              nothing. Blocks ORCH_WAIT_BLOCK seconds
+                              (default 570; a value that is not a positive
+                              number is refused). Finished in time: prints
+                              the command's stdout and stderr whole and exits
+                              with its status; a command that itself exits 75
+                              is delivered as exit 1 with an orch: line
+                              naming its real status. Still going: stdout
+                              empty, stderr "orch: still running after <n>s -
+                              run the same command again", exit 75. The same
+                              line run again on the same checkout, HEAD and
+                              working tree attaches to the live run, never
+                              starting a second; a finished result nobody
+                              collected is delivered once, forgotten only once
+                              printed whole, and the next call starts a fresh
+                              run. Nothing about a delivered run is kept.
+                              Working tree = tracked changes and unignored
+                              untracked files, by content; ignored files never
+                              count. A result or live run whose HEAD or tree
+                              changed is stale: the result is dropped, the live
+                              run stopped by its process group (TERM, then KILL
+                              after ORCH_VERIFICATION_GRACE, default 5 s), and a
+                              fresh run starts; another command's run is left
+                              alone. orchestrator.verification.timeout (git
+                              config, default 3600 s, fractions allowed) is the
+                              ceiling: a run past it is stopped and delivered as
+                              failed with an orch: line, exit 1. Records of
+                              checkouts that no longer exist are cleared by the
+                              next call
+  verification stop <checkout>  stop every live verification run of <checkout>
+                              or a ticket worktree under it (TERM, then KILL),
+                              removing its record; exits 1 when a group
+                              survives the KILL. The autopilot wrapper runs it
+                              when a session ends
+  status                      human-readable summary of this checkout's flow,
+                              then one line for every other checkout holding
+                              a flow and every side checkout
+  archive                     move the live flow into .orchestrator/archive/,
+                              leaving the entries that belong to no flow in
+                              place: archive/, checkouts/, spec-review/, audit/,
+                              review-pass/, autopilot/, breakdown/,
+                              reports/, verification/ and wait/
+                              (refuses, naming each, while a ticket worktree
+                              is left under this checkout). In a side
+                              checkout, the flow moves to the main checkout's
+                              .orchestrator/archive/ and the worktree is then
+                              removed, never with --force: a dirty one is
+                              reported and kept, the archive still made

@@ -388,36 +388,6 @@ for pair in absent:1 done:1 review:0 invalid:0; do
   assert_eq "flow_state_active answers ${pair#*:} for a ${pair%%:*} file, printing nothing" \
     "$(fs_run "flow_state_active ${pair%%:*}.json")" "status ${pair#*:}"
 done
-# The seed: every key in table order, its literal or init's value for it.
-assert_eq "flow_state_seed prints every key in table order, a numeric issue a number" \
-  "$(fs_run 'flow_state_seed s 7 main | jq -c ".created |= type | .updated |= type"')" \
-  '{"slug":"s","phase":null,"issue":7,"base":"main","branch":null,"pr":null,"base_sha":null,"budget":null,"iteration":0,"flake_rerun_used":false,"redo_count":0,"host_fallbacks":true,"created":"string","updated":"string"}
-status 0'
-assert_eq "flow_state_seed seeds an empty issue as null" \
-  "$(fs_run 'flow_state_seed s "" main | jq -c .issue')" "null
-status 0"
-assert_contains "flow_state_seed stamps created with a UTC timestamp" \
-  "$(fs_run 'flow_state_seed s "" main | jq -r .created')" "Z"
-# An arg row with no arm in the seed's case is a programming error.
-assert_eq "flow_state_seed returns 2 for an arg row it has no value for, printing nothing" \
-  "$(fs_run 'STATE_KEYS="$STATE_KEYS
-bogus||arg|-"; flow_state_seed s "" main')" "status 2"
-assert_eq "flow_state_seed returns 1, printing nothing, when jq exits 2" \
-  "$(fs_run "PATH='$fs_jq_usage_error_bin':\$PATH; flow_state_seed s 7 main 2>&1")" "status 1"
-before_ls="$(ls -A "$fs_dir")"
-assert_eq "flow_state_create creates an absent file" \
-  "$(fs_run 'flow_state_create created.json "{\"slug\":\"c\"}" && jq -c . created.json')" \
-  '{"slug":"c"}
-status 0'
-assert_eq "flow_state_create replaces an existing file" \
-  "$(fs_run 'flow_state_create object.json "{\"slug\":\"r\"}" && jq -c . object.json')" \
-  '{"slug":"r"}
-status 0'
-rm -f "$fs_dir/created.json"
-assert_ne "flow_state_create returns non-zero on a failed write" \
-  "$(fs_run 'flow_state_create object.json "not json" 2>/dev/null' | tail -n 1)" "status 0"
-assert_eq "and leaves the target untouched" "$(jq -c . "$fs_dir/object.json")" '{"slug":"r"}'
-assert_eq "with no temp file beside it" "$(ls -A "$fs_dir")" "$before_ls"
 printf '{"slug":"m","budget":1}' >"$fs_dir/many.json"
 assert_eq "flow_state_write_many sets several keys, coerced, and stamps updated" \
   "$(fs_run 'flow_state_write_many many.json budget 5 pr null phase review flake_rerun_used true && jq -c ".updated |= type" many.json')" \
@@ -477,6 +447,36 @@ for fs_file in "$fs_golden"/refused/*.json; do
     "$(fs_run "a=keep; flow_state_get_many $(printf '%q' "$fs_file") a=slug 2>/dev/null; echo \"rc=\$? \$a\"")" "rc=1 keep
 status 0"
 done
+# A state.json Python init wrote - the seed, created, then its spec phase
+# written, by orch/flow_state.py - is one bash changes from then on:
+# flow_state_write_many rewrites it in one replace, keeping its key order and
+# leaving no temp file, and the readers the hooks use read it through jq.
+fs_py="$fs_dir/python-seeded"
+mkdir -p "$fs_py"
+python3 -c '
+import sys
+sys.path.insert(0, sys.argv.pop(1))
+from orch.flow_state import flow_state_create, flow_state_seed, phase_write
+assert flow_state_create(sys.argv[1], flow_state_seed("py-seed", "7", "rélease/2.0"))
+phase_write(sys.argv[1], "spec")
+' "${ORCH%/*}/orch_py" "$fs_py/state.json" </dev/null
+assert_eq "flow_state_write_many rewrites a Python-written state.json" \
+  "$(fs_run 'flow_state_write_many python-seeded/state.json branch feat/x iteration 2')" "status 0"
+assert_eq "keeping its keys in table order, with no temp file beside it" \
+  "$(fs_run 'jq -r "keys_unsorted | join(\" \")" python-seeded/state.json; ls -A python-seeded')" \
+  "slug phase issue base branch pr base_sha budget iteration flake_rerun_used redo_count host_fallbacks created updated
+state.json
+status 0"
+assert_eq "flow_state_get_many reads every key of the rewritten file" \
+  "$(fs_run 'flow_state_get_many python-seeded/state.json a=slug b=phase c=issue d=base e=branch f=iteration g=host_fallbacks h=pr; echo "$a|$b|$c|$d|$e|$f|$g|$h"')" \
+  "py-seed|spec|7|rélease/2.0|feat/x|2|true|
+status 0"
+assert_eq "flow_state_get reads one key of it" \
+  "$(fs_run 'flow_state_get python-seeded/state.json base')" "rélease/2.0
+status 0"
+assert_eq "flow_state_readable and flow_state_active both answer yes for it" \
+  "$(fs_run 'flow_state_readable python-seeded/state.json && flow_state_active python-seeded/state.json')" \
+  "status 0"
 restore_suite_env
 
 # --- commands on a truncated state.json (#1929) -----------------------------

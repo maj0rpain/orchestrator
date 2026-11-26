@@ -2,12 +2,11 @@
 read, and what each role's label is."""
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import pytest
 
-from conftest import LABELS_TABLE, labels_doc, write_labels_doc
+from conftest import LABELS_TABLE, bash_sourced, labels_doc, write_labels_doc
 from orch.triage_labels import TRIAGE_ROLES, TriageLabels
 
 TRIAGE_LABELS_SH = Path(__file__).resolve().parents[2] / "triage-labels.sh"
@@ -82,15 +81,11 @@ def test_every_role_reads_as_the_bash_parser_reads_it(tmp_path):
     roots = [tmp_path / str(i) for i in range(len(docs))]
     for root, doc in zip(roots, docs):
         mapping(root, doc)
-    script = (
-        'source "$1"; shift\n'
-        'for ROOT in "$@"; do for r in $TRIAGE_ROLES; do triage_label_for "$r"; done; done\n'
-    )
-    run = subprocess.run(
-        ["bash", "-c", script, "_", str(TRIAGE_LABELS_SH), *map(str, roots)],
-        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, timeout=30, check=True,
-    )
+    bash = bash_sourced(
+        TRIAGE_LABELS_SH,
+        'for ROOT in "$@"; do for r in $TRIAGE_ROLES; do triage_label_for "$r"; done; done\n',
+        *roots)
 
     python = [TriageLabels(lambda root=root: str(root)).label(role)
               for root in roots for role in TRIAGE_ROLES]
-    assert python == run.stdout.decode().split("\n")[:-1]
+    assert python == bash.split("\n")[:-1]
