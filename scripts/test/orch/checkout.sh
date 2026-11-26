@@ -218,15 +218,9 @@ assert_eq "and sets the caller's branch" "$out" "orch/2-feature"
 out="$(cd "$detached" && cbod 2>&1)"; st=$?
 assert_status "current_branch_or_die on a detached HEAD exits 1" "$st" 1
 assert_eq "with the bare message" "$out" "orch: not on a branch (detached HEAD)"
-out="$(cd "$detached" && cbod die2 2>&1)"; st=$?
-assert_status "current_branch_or_die die2 exits 2" "$st" 2
-assert_eq "with the bare message" "$out" "orch: not on a branch (detached HEAD)"
-out="$(cd "$detached" && cbod die ' - nothing was synced' 2>&1)"; st=$?
-assert_status "current_branch_or_die die <suffix> exits 1" "$st" 1
+out="$(cd "$detached" && cbod ' - nothing was synced' 2>&1)"; st=$?
+assert_status "current_branch_or_die <suffix> exits 1" "$st" 1
 assert_eq "with the suffix appended" "$out" "orch: not on a branch (detached HEAD) - nothing was synced"
-out="$(cd "$detached" && cbod ' - x' 2>&1)"; st=$?
-assert_status "a lone suffix argument exits 1" "$st" 1
-assert_eq "and is taken as the suffix" "$out" "orch: not on a branch (detached HEAD) - x"
 
 # --- checkout busy, redo-retired branch (#1981) -------------------------------
 # The branch signal ignores a current branch a redo retired - one carrying

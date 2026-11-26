@@ -12,7 +12,7 @@ import pytest
 from orch.flow_state import STATE_UNREADABLE_MSG
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY
-from conftest import GH_502, SESSIONS, hold_flow, orch_pr, snapshot, state_json
+from conftest import GH_502, SESSIONS, hold_flow, orch_pr, read, snapshot, state_json
 
 ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
 BRANCH = "quick/12-foo"
@@ -59,11 +59,7 @@ def starting(seed, verb, n):
 
 def checks_reads(seed, n):
     """How many times the PR's checks were read."""
-    path = os.path.join(seed.store, "checks", str(n), "reads")
-    if not os.path.isfile(path):
-        return 0
-    with open(path) as f:
-        return len(f.read().splitlines())
+    return len((read(seed.store, "checks", n, "reads") or "").splitlines())
 
 
 # --- pr draft ----------------------------------------------------------------

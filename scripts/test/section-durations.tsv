@@ -98,7 +98,7 @@
 3	4	branch retire beside a same-named tag (#2337)	cd9f5a31a32394329c96cd0210dfbf06ce2adc7e
 10	7	branch create and branch off beside a same-named tag (#2337)	5d2e10dafd695db147cc55e68378f5f8ea7ab583
 14	15	checkout (#1078)	fcf77c433fd8f107550a2cadbac96af60bcf2952
-6	6	checkout current branch (#1079)	8ed29994be0d37ea761c6fba66a7f1594d5332d1
+3	4	checkout current branch (#1079)	d402f627ba50a3c716ac0ac24115f71bb152fd28
 24	13	checkout busy, redo-retired branch (#1981)	0608e4d5c7b58927eb7859c5d847edb713e43621
 6	7	comments module	ab28cc40a5a06628f8ab117b0dd520e62c879e85
 8	10	common.sh is the bottom layer	04f7eed4e1b745bc381196f09f7ddd3c7337cc02

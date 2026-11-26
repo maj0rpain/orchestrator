@@ -197,15 +197,12 @@ checkout_branch() {
   printf '%s\n' "${ref#refs/heads/}"
 }
 
-# current_branch_or_die [die|die2] [<suffix>]: assigns the current branch to
-# the caller's `branch`, which bash scopes dynamically, or dies through the
-# dier (die, unless the first argument is literally die or die2) with
-# "not on a branch (detached HEAD)" and <suffix>. Called as a bare statement,
-# so the die stops the caller.
+# current_branch_or_die [<suffix>]: assigns the current branch to the caller's
+# `branch`, which bash scopes dynamically, or dies with "not on a branch
+# (detached HEAD)" and <suffix>. Called as a bare statement, so the die stops
+# the caller.
 current_branch_or_die() {
-  local dier=die
-  case "${1-}" in die|die2) dier="$1"; shift ;; esac
-  branch="$(checkout_branch)" || "$dier" "not on a branch (detached HEAD)${1-}"
+  branch="$(checkout_branch)" || die "not on a branch (detached HEAD)${1-}"
 }
 
 # checkout_busy <line-var> <remedy-var> <signal>...: assigns to <line-var> the

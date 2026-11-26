@@ -53,8 +53,8 @@ word_listed() {
 }
 
 die()  { printf 'orch: %s\n' "$*" >&2; exit 1; }
-# die for commands that reserve exit 1 for a meaningful "no" (pr comment: no
-# open PR), so their failures exit with status 2 instead.
+# die for commands that reserve exit 1 for a meaningful "no" (autopilot answer:
+# no reply to the question yet), so their failures exit with status 2 instead.
 die2() { printf 'orch: %s\n' "$*" >&2; exit 2; }
 
 # die_opt_check <caller> <argc> <option> [value]: the one rule for die_hinted's
