@@ -2,10 +2,11 @@
 nouns use: the Phase label test, the claim release a spec review round's
 pause makes in an autopilot flow, and a finished phase's close under its
 claim (standing_finish, with its label move, standing_move_label), which the
-phase module's phase_finish runs. standing_pause has no bash copy left: its
-one bash caller was the spec module, gone at the spec noun's cutover, while
-standing_release and standing_chain_start stay in bash for the other
-transitions, and bash's standing_finish for phase advance.
+phase noun's phase_finish runs for phase advance and for bash review ready.
+standing_pause, standing_finish and standing_move_label have no bash copy
+left: their bash callers, the spec and phase modules, went at those nouns'
+cutovers, while standing_release and standing_chain_start stay in bash for
+the other transitions.
 
 A phase label, `orch:<phase>`, records an autopilot flow's phase on its
 issue. PHASES is the flow's phases in order: the first column of the handoff

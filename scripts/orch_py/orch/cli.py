@@ -119,6 +119,12 @@ def _init(argv: List[str]) -> int:
     return run(argv)
 
 
+def _phase(argv: List[str]) -> int:
+    from orch.phase import run
+
+    return run(argv)
+
+
 def _help(argv: List[str]) -> int:
     from orch.help import run
 
@@ -144,21 +150,17 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "status": _status,
     "archive": _archive,
     "init": _init,
+    "phase": _phase,
     "help": _help,
 }
-
-# The nouns still run by bash whose module a bash caller reaches through
-# call_func before the noun itself is converted: phase, whose phase_finish
-# review ready calls. The noun's cutover moves it into NOUNS.
-CALL_NOUNS = frozenset({"phase"})
 
 # The option spellings main runs as a noun: orch.sh hands them on as given.
 ALIASES: Dict[str, str] = {"-h": "help", "--help": "help"}
 
-# The nouns converted with init, each keeping its bash noun's silent SIGPIPE
-# death on a closed stdout pipe; a noun converted before them keeps its flush
-# failure there, as it always ended.
-SIGPIPE_NOUNS = frozenset({"init", "slug", "status", "archive", "help"})
+# The nouns converted with init and after it, each keeping its bash noun's
+# silent SIGPIPE death on a closed stdout pipe; a noun converted before them
+# keeps its flush failure there, as it always ended.
+SIGPIPE_NOUNS = frozenset({"init", "slug", "status", "archive", "help", "phase"})
 
 
 def _sigpipe_as_bash(run: Callable[[List[str]], int], argv: List[str]) -> int:
@@ -191,12 +193,12 @@ def call_func(argv: List[str]) -> int:
     """`orch_python_call [--as <command>] <noun> <func> [<arg>...]`, its
     `--as <command>` already taken off by orch.__main__: runs the named
     function of a converted noun's module with `<arg>...`, returning its exit
-    code (0 when it returns None). The noun is a converted one or one of
-    CALL_NOUNS. Refuses an unknown noun or a missing or private function."""
+    code (0 when it returns None). The noun is a converted one. Refuses an
+    unknown noun or a missing or private function."""
     if len(argv) < 2:
         die("usage: orch_python_call [--as <command>] <noun> <func> [<arg>...]")
     noun, name, args = argv[0], argv[1], argv[2:]
-    if noun not in NOUNS and noun not in CALL_NOUNS:
+    if noun not in NOUNS:
         die("unknown command: %s (run 'orch.sh help')" % noun)
     if not name or name.startswith("_"):
         die("unknown %s function: %s" % (noun, name or "<none>"))

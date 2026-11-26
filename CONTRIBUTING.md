@@ -45,7 +45,8 @@ it falls back to the full suite.
 `scripts/orch_py/tests/` (still no top-level `tests/`). The converted nouns so
 far are `issue`, `finding-triage`, `verification`, `audit`, `review-pass`,
 `spec-review`, `spec`, `breakdown`, `glossary`, `parallel`, `route`, `agent`,
-and the bare global commands `init`, `slug`, `status`, `archive` and `help`; a
+`phase`, and the bare global commands `init`, `slug`, `status`, `archive` and
+`help`; a
 helper a converted noun needs is copied into the package module of the concept
 it serves, under its bash name, and its bash copy stays while a bash caller
 remains. `orch.sh` stays the one entry point: main's one case naming the
@@ -85,8 +86,9 @@ all.sh's suites list nor the durations file, and has no durations file of its
 own. In affected.sh a change under `scripts/orch_py/` selects the redo, ticket,
 autopilot, doctor and review sections, which call a converted noun's own verbs
 through CLI dispatch (the `redo spec` sections run `spec round` through it,
-doctor's glossary check `glossary terms`) or call a Python bridge directly via
-`orch_python_call` (doctor's agent settings check, autopilot's model/effort
+the redo sections `phase advance`, doctor's glossary check `glossary terms`)
+or call a Python bridge directly via `orch_python_call` (doctor's agent
+settings check, autopilot's model/effort
 validation and `review ready`'s `phase_finish`), hooks_test.sh, whose paste
 guard rows run `spec-review check` through it, and the side-checkout sections,
 whose `.orchestrator` entry classification scans the package. That is not

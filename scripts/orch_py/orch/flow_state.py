@@ -113,7 +113,8 @@ def flow_state_create(path: str, state: Mapping[str, Any]) -> bool:
 
 
 def phase_write_try(path: str, phase: str, clock: Callable[[], float] = time.time) -> bool:
-    """Records <phase> in the state file at <path>, bash phase_write_try:
+    """Records <phase> in the state file at <path>, ported from the deleted
+    bash phase_write_try:
     updated stamped with the time <clock> reads, then phase set, both in
     place in the file's key order, the file rewritten as flow_state_create
     writes it. Dies unless <phase> is a flow phase; whether the write

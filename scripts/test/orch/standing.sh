@@ -200,40 +200,17 @@ out="$(sourced_rc 'standing_sync_dropped 145 x false')"
 assert_contains "the dropped-intent stop failing on its relabel says it was also removing orch:sync" "$out" "could not add needs-human, remove orch:sync on issue #145: HTTP 500"
 fake_unfail
 
-# finish
-tr_seed 50 orch:spec orch:running
-out="$(sourced_rc 'standing_finish 50 implement "wrote the spec"')"
-assert_eq "finish moves the phase label, drops running and releases the claim" "$(tr_standing 50)|$(fake_claim_held 50)" "implement|0|0|0|free"
-assert_eq "finish records the phase in state.json" "$("$ORCH" state get phase)" implement
-tr_seed 51 orch:spec orch:running
-fake_fail_after adapter_issue_relabel 1 "HTTP 500"
-out="$(sourced_rc 'standing_finish 51 review "wrote the spec"')"
-assert_contains "finish failing on the running removal names the reason's writes" "$out" "could not remove orch:running on issue #51: HTTP 500 - writes that landed: wrote the spec, moved the phase label to orch:review, recorded phase review; the claim stays held"
-assert_eq "and the claim stays held" "$(fake_claim_held 51)" held
-fake_unfail
-tr_seed 52 orch:spec orch:running
-fake_fail adapter_claim_delete "HTTP 500"
-out="$(sourced_rc 'standing_finish 52 implement ""')"
-assert_contains "finish failing on the claim delete names every write before it" "$out" "could not delete the claim ref on issue #52: HTTP 500 - writes that landed: moved the phase label to orch:implement, recorded phase implement, removed orch:running; the claim stays held"
-assert_eq "and the claim stays held" "$(fake_claim_held 52)" held
-fake_unfail
-tr_seed 53 orch:spec orch:running
-fake_fail adapter_issue_state_labels "HTTP 502"
-out="$(sourced_rc 'standing_finish 53 implement "wrote the spec"')"
-assert_contains "finish failing on the label read names the seed alone" "$out" "could not read the labels on issue #53: HTTP 502 - writes that landed: wrote the spec; the claim stays held"
-fake_unfail
-
 # a failing transition names only its own landed writes
 tr_seed 55 orch:spec orch:running
 tr_seed 54 orch:spec orch:running
 fake_fail_after adapter_claim_delete 1 "HTTP 500"
-out="$(sourced_rc 'standing_finish 54 implement "wrote the spec"; standing_stop 55 failure spec boom')"
-assert_contains "a stop failing in the same shell as an earlier succeeding finish names only its own writes" "$out" "writes that landed: added needs-human, removed orch:limited, posted the failure comment, removed orch:running; the claim stays held"
+out="$(sourced_rc 'standing_limit_stop 54 spec "" 2026-01-01T01:00:00Z 1 log; standing_stop 55 failure spec boom')"
+assert_contains "a stop failing in the same shell as an earlier succeeding limit-stop names only its own writes" "$out" "could not delete the claim ref on issue #55: HTTP 500 - writes that landed: added needs-human, removed orch:limited, posted the failure comment, removed orch:running; the claim stays held"
 fake_unfail
 tr_seed 94 orch:spec orch:running
 tr_seed 95 orch:spec orch:running
-sourced_rc 'standing_stop 95 refusal spec "no plan"; standing_finish 94 implement "wrote the spec"' >/dev/null
-assert_eq "a finish run after a stop in the same shell moves its own label, removes its own orch:running and releases" "$(fake_labels_of 94)|$(fake_claim_held 94)" "orch:implement |free"
+sourced_rc 'standing_stop 95 refusal spec "no plan"; standing_limit_stop 94 spec "" 2026-01-01T01:00:00Z 1 log' >/dev/null
+assert_eq "a limit-stop run after a stop in the same shell adds its own label, removes its own orch:running and releases" "$(fake_labels_of 94)|$(fake_claim_held 94)" "orch:limited orch:spec |free"
 out="$(sourced_rc 'STANDING_STATE_FILE="$(mktemp)"; printf "landed\tearlier write\n" >"$STANDING_STATE_FILE"
 standing_chain_start "the seed"; echo "landed=$STANDING_LANDED"; echo "lines=$(wc -l <"$STANDING_STATE_FILE")"; standing_landed_has "the seed" && echo skip-seed')"
 assert_contains "a seeded start puts the seed first and takes up earlier landed writes" "$out" "landed=the seed, earlier write"
@@ -272,14 +249,6 @@ assert_eq "and writes nothing, the claim still held" "$(tr_standing 59)|$(fake_c
 
 # the chain points a command section no longer asserts: each transition's own
 # writes, and the claim held when one fails
-state_fixture phase spec
-tr_seed 90 orch:spec orch:running
-fake_fail adapter_issue_relabel "HTTP 500"
-out="$(sourced_rc 'standing_finish 90 implement ""')"
-assert_contains "finish failing on the label move names the reason and none landed" "$out" "could not move the phase label to orch:implement on issue #90: HTTP 500 - writes that landed: none; the claim stays held"
-assert_eq "the phase stays unrecorded" "$("$ORCH" state get phase)" spec
-assert_eq "and the claim stays held" "$(fake_claim_held 90)" held
-fake_unfail
 tr_seed 92 orch:spec orch:running
 fake_fail_after adapter_issue_relabel 1 "HTTP 500"
 out="$(sourced_rc 'standing_stop 92 failure spec boom')"
@@ -292,17 +261,6 @@ out="$(sourced_rc 'standing_stop 93 refusal spec "no plan"')"
 assert_contains "a refusal stop failing on the claim delete names every write before it" "$out" "could not delete the claim ref on issue #93: HTTP 500 - writes that landed: added needs-human, removed orch:limited, posted the refusal comment, removed orch:running; the claim stays held"
 assert_eq "and the claim stays held" "$(fake_claim_held 93)" held
 fake_unfail
-tr_seed 94 orch:spec orch:running
-state_fixture phase spec
-out="$(PATH="$(state_write_fails_bin):$PATH" sourced_rc 'standing_finish 94 implement "wrote the spec"')"
-assert_contains "finish failing on its phase write names the chain" "$out" "could not record phase implement in $PWD/.orchestrator/state.json - writes that landed: wrote the spec, moved the phase label to orch:implement; the claim stays held"
-assert_eq "the label is one step ahead, running kept" "$(fake_labels_of 94)" "orch:implement orch:running "
-assert_eq "the claim stays held" "$(fake_claim_held 94)" held
-assert_eq "the phase stays unrecorded" "$("$ORCH" state get phase)" spec
-sourced_rc 'standing_finish 94 implement "wrote the spec"' >/dev/null
-assert_eq "the re-run leaves the label at the phase, running removed" "$(fake_labels_of 94)" "orch:implement "
-assert_eq "and releases the claim" "$(fake_claim_held 94)" free
-assert_eq "and records the phase" "$("$ORCH" state get phase)" implement
 
 # limit-stop
 tr_seed 60 orch:spec orch:running

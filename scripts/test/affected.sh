@@ -50,7 +50,8 @@
 #                                     the redo, ticket, autopilot, doctor and
 #                                     review sections, which call a converted
 #                                     noun's own verbs through the dispatch
-#                                     (redo spec's spec round, doctor's
+#                                     (redo spec's spec round, the redo
+#                                     sections' phase advance, doctor's
 #                                     glossary terms) or a Python bridge via
 #                                     orch_python_call (doctor, autopilot,
 #                                     review ready's phase_finish),

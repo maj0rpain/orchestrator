@@ -134,8 +134,8 @@ done
 restore_suite_env
 
 # --- the state writer accepts exactly the table's phases --------------------
-# phase_write and phase_write_try, the writers of state.phase, accept the phase
-# table's phases and refuse any other, leaving the recorded phase as it was.
+# phase_write, the bash writer of state.phase, accepts the phase table's phases
+# and refuses any other, leaving the recorded phase as it was.
 # Optional trailing key/value pairs are written with the phase, or not at all.
 echo
 echo "state phase writer"
@@ -175,11 +175,6 @@ out="$(PATH="$phase_write_fails_bin:$PATH" sourced_orch phase_write 'done' 2>&1)
 assert_contains "phase_write with no pairs names phase alone" "$out" "orch: could not record phase in $PWD/.orchestrator/state.json - the flow is unchanged"
 assert_status "phase_write with no pairs exits 1 on a failed write" "$st" 1
 assert_eq "a failed no-pairs write leaves state.json unchanged" "$(cat .orchestrator/state.json)" "$before"
-out="$(PATH="$phase_write_fails_bin:$PATH" sourced_orch phase_write_try 'done' budget 1 2>&1)"; st=$?
-assert_ne "phase_write_try returns non-zero on a failed write" "$st" 0
-assert_eq "without dying" "$out" ""
-out="$(sourced_orch phase_write_try plan 2>&1)"; st=$?
-assert_eq "phase_write_try refuses a phase outside the table" "$out" "orch: not a flow phase: plan (want one of: spec implement review done)"
 out="$(sourced_orch phase_write 'done' budget 2>&1)"; st=$?
 assert_status "phase_write with a key and no value exits 1" "$st" 1
 assert_eq "naming the malformed write" "$out" "orch: malformed state write: phase done budget"

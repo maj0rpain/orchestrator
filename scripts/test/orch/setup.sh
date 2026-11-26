@@ -440,27 +440,6 @@ live_stop() { kill "$LIVE_PID" 2>/dev/null; wait "$LIVE_PID" 2>/dev/null; return
 # marker_of <kind> [<arg>] [retired]: the marked-comment module's first line for
 # the kind, so a seeded comment is written as the module writes it.
 marker_of() { sourced_orch marked_comment_write "$@"; }
-# help_entry <command>: orch.sh help's entry for <command> - its first line
-# and the indented continuation lines under it.
-help_entry() {
-  "$ORCH" help 2>&1 | awk -v cmd="  $1" '
-    found && /^                              / { print; next }
-    found { exit }
-    index($0, cmd) == 1 { found = 1; print }'
-}
-# assert_help_names_handoffs_by_role <entry>:
-# asserts orch.sh help has an <entry> entry that names no NN-name.md handoff
-# file and points at handoff path, so renaming a handoff file never leaves the
-# help stale.
-assert_help_names_handoffs_by_role() {
-  local entry="$1" text
-  text="$(help_entry "$entry")"
-  assert_ne "help has a $entry entry" "$text" ""
-  assert_eq "the $entry entry names no handoff file" \
-    "$(printf '%s\n' "$text" | grep -oE '[0-9]{2}-[a-z-]+\.md')" ""
-  assert_contains "the $entry entry points at handoff path" \
-    "$(printf '%s\n' "$text" | flat_text)" "orch.sh handoff path"
-}
 
 # The Flow state module, sourced so state_fixture writes through orch.sh's own
 # writer: a fixture can then never store a value orch.sh would not write.

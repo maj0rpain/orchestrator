@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import PACKAGE_BOOTSTRAP, died_of, git_repo
+from conftest import PACKAGE_BOOTSTRAP, died_of, git_repo, hold_flow
 from orch.__main__ import main
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
@@ -88,6 +88,22 @@ def test_a_noun_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_path):
     run = into_a_closed_pipe(tmp_path, "slug", "Some Text")
 
     assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
+
+
+def test_phase_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_path):
+    """phase, converted after init, keeps bash printf's silent SIGPIPE death
+    too."""
+    git_repo(tmp_path)
+    hold_flow(tmp_path, slug="x", phase="spec", issue=7)
+
+    run = into_a_closed_pipe(tmp_path, "phase", "boundary")
+
+    assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
+
+
+def test_the_phase_noun_is_converted(capsys):
+    assert died_of(capsys, lambda: main(["phase", "wipe"]))[2] == \
+        "orch: unknown phase op: wipe (want advance|boundary)\n"
 
 
 @pytest.mark.parametrize("call", [["route", "show"], ["--call", "route", "run", "show"]],

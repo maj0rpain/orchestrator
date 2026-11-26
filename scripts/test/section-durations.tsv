@@ -184,11 +184,6 @@
 5	5	bash version guard	a8d2cfe5bbb32166e192820e2b3d83282e7a66ce
 1	3	outside a checkout (#931)	e5c70ed8a90ea1696b300a7a8f75e91707e1690b
 29	25	marked-comment module	f6f5c1a7f89a0d4a6d8a53403309d4f68d4fe0c2
-54	42	phase advance / phase boundary	53643e8f5205e719060ccafbba68352b2f848db6
-0	1	phase advance help names handoffs by role (#1066)	fb4e9c6b059ec9f7d1aed9b47f5b974a48096e04
-31	35	phase advance in an autopilot flow (#1457)	3f11f48e53c11f24a0c5683139056f0b493b1fe0
-7	8	phase advance with a failed phase write (#1931)	c82e166171de5000ca89ef4f8614cc5c24820382
-8	9	phase advance and boundary read the flow's state once (#3063)	77bfab77e7199983dcb02b7ba2f7e0f59aa1636e
 69	56	pr open	d9e007d3c480063307746cb0d73014ab7453d134
 45	38	pr publish	45af0b92c1455f1911f2daa73f5f8d03c9e5adb4
 17	15	pr draft (#967)	13ea96875dc38f4a1da2d0f8c4a3daf1f61b7f51
@@ -202,17 +197,17 @@
 2	30	pr: fork PRs (#1977)	fe6ded54e75b246aacfe0668a731e2d9e206e8a2
 9	9	pr: no repo (#3050)	c9d51d377fbe3e137b80431202c6d625b41119de
 1	2	pr: PR-line pick and newest merge (#3074)	37c4d9ac64b64eb5a46348880835b74ebd1e59f0
-78	81	redo review	b62654b38632ca3b2c5f4b61a4abeb2acb82faff
-8	9	redo review refuses a taken handoff destination	3fa122ad40f6cf338d95a10c114170d1f36c2318
-46	40	redo review rerun after review retire (#2569)	cd4da3ad670722945bb9f2dd3e2c8ec23e9b4fab
-14	16	redo review reopens tickets	a825a765be427f3eea40918180e75388603b2448
-25	26	redo spec	c3c99366aaf392c1a0aceae9df6059c962657a8f
-62	67	redo spec retires the ticket breakdown (#334)	62dad2db481aef5b093ba16bc2cf38d7a6563320
-78	81	redo spec retires the implement attempt (#1910)	c9efe1b9a35db6f09cfcf9abcf8a880dc91f9210
-63	68	redo spec and redo review, per handoff mode (#1820)	fd60b55527c4c3cf900127166f7f2c3b6de8811a
-51	53	redo ends in one closing state write	a8f36bd90e5b931197055a13e27cb683238c0259
-0	1	redo help names handoffs by role (#1066)	1e05ce1c63905c761faa9ce2a95aec8c7ccd236d
-10	11	redo reads its Flow state once, before its first write	c7e066d3d2068aae6549bf1324679159fbde39fd
+64	52	redo review	3b5772aefa2e50a9b1fac7561b031816bbf9562e
+7	6	redo review refuses a taken handoff destination	58713c1e71e7cfc60579f945b987c121245255f0
+27	22	redo review rerun after review retire (#2569)	15216b3e98138ebb7e7d1b7786410dde815fa708
+15	13	redo review reopens tickets	7e0f021350c58928bcd71c4f1527f87077d7e787
+23	19	redo spec	f4824916b0f8c82fa73a1fadc308e2116975bf80
+74	58	redo spec retires the ticket breakdown (#334)	f9491c02af1bb7515a797df14358105f5be82bd0
+64	53	redo spec retires the implement attempt (#1910)	26626a9121a639e4fd4c4e026dabcdba4f4d93fe
+50	41	redo spec and redo review, per handoff mode (#1820)	8179f79367043dad7f8691c8d5fbd1049d9dcbca
+37	31	redo ends in one closing state write	6980edea8366d7721da6d97cbe6a21e858a76818
+2	2	redo help names handoffs by role (#1066)	1aae8388799b35617729d3c5455e1518d4f348d5
+10	8	redo reads its Flow state once, before its first write	64cd883b003605c0bd1ac63ee435093f0e9d232d
 9	10	repo show	03b579d082d6e4e5353a860b91cb90f1006013d0
 7	8	default-branch	0177d6e5817d4d0befacac87fc2b2a0f621ad11b
 14	11	review ready's pointer to /orchestrator:finish (#727)	dc0acdcd10c097e7fb1b03532c91fa00016c66c5
@@ -252,12 +247,12 @@
 5	6	archive reads the flow's slug once	d1e47a75531129e6123579f59802dd69c84d1d76
 6	7	side-checkout: the default branch is asked for only when needed	5f8f132611fabd4e0dede5d1e6b3db76ceff3111
 30	26	Standing module	7360efe83df71e2983783f4ce7fefa500261a7d4
-115	87	Standing transitions	b4245e2815b85588cc2938ae650bfc9cc37bfc5d
+98	75	Standing transitions	fb66a467e70a5d2cbdf05daf9ffc2929aa66dae0
 2	3	standing_ask reads the issue in one jq	323242a91458cfdc0852ce80bf275f3a21daf5f0
 19	21	state	8f8a6d0c9ed66193eb8616169bbf206ccea0a741
 21	20	a flow from before the budget shipped	74a733a87311a08cfe7a1e7bd6abe7956bdb2975
 9	10	state get reads every key with its default	9b5f35731357e21c5e7825d8e14c347e0e4bedbd
-16	17	the state writer accepts exactly the table's phases	8483d2441e21e1e5f965968522b0c3e00737359d
+10	9	the state writer accepts exactly the table's phases	f73b3b25a7569f4af55e3d5b6f008905d45d7fb4
 7	8	state.json schema	425162b3d7cb59537674814f30ff0da8c11d57c4
 4	5	state set on a corrupt state.json	0813b93dd6fb8875d3936903ca0134a8792b0b9e
 19	14	the Flow state module, sourced alone	076b1bc9e33f20e696bb81f978542d79d81077c4

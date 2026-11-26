@@ -5,7 +5,9 @@ which the spec-review noun's prompt takes the plan handoff from, and to
 handoff validation (handoff_required, host_fallbacks_required,
 handoff_report, handoff_check), the Python copy of the bash validator the
 handoff noun keeps, pinned to it by tests/test_handoff_report.py's golden
-handoffs.
+handoffs, and to what the phase noun's advance reads a handoff with: the
+dying read (handoff_read) and the invalid-handoff refusal (handoff_invalid),
+each with its file and comment adapter, their messages as bash's.
 
 A line inside a code fence (orch.common.fenced), its delimiters included, is
 never a heading: it neither opens nor closes a section, and inside an open
@@ -13,7 +15,8 @@ one it is part of the body.
 
 The phase table is the one Python copy of the bash side's (PHASE_TABLE),
 which Python does not read, pinned to it by tests/test_handoff.py's drift
-test; orch/standing.py's PHASES is its first column. `handoff
+test; orch/standing.py's PHASES is its first column, and phase_writer and
+phase_next read it as bash's phase_cell writer and phase_next do. `handoff
 path` resolves through the Handoff store's adapter handoff_store chooses per
 call: the file adapter, the handoff directory's files, and in an autopilot
 session the comment adapter, marked comments on the recorded issue, read
@@ -22,7 +25,7 @@ once and copied to the scratch directory to be read as files.
 from __future__ import annotations
 
 import os
-from typing import List, Mapping, Optional, Tuple
+from typing import List, Mapping, NoReturn, Optional, Tuple
 
 from orch.autopilot import autopilot_active
 from orch.common import (ORCH_DIR_NAME, die, fenced, file_write_atomic, lines_of, read_raw, rm_f,
@@ -86,6 +89,24 @@ def phase_handoff(phase: str) -> Optional[str]:
         if row_phase == phase:
             return handoff or None
     return None
+
+
+def phase_writer(phase: str) -> Optional[str]:
+    """phase_cell writer <phase>: the phase that wrote the handoff <phase>
+    consumes; None when it consumes none or the table does not hold it."""
+    for row_phase, _, writer, _ in PHASE_TABLE:
+        if row_phase == phase:
+            return writer or None
+    return None
+
+
+def phase_next(phase: str) -> Optional[str]:
+    """The phase after <phase> in the table, bash phase_next; None for the
+    last phase and for one the table does not hold."""
+    phases = [row[0] for row in PHASE_TABLE]
+    if phase not in phases[:-1]:
+        return None
+    return phases[phases.index(phase) + 1]
 
 
 def handoffs_due(phase: str) -> List[str]:
@@ -241,6 +262,71 @@ def handoff_comment_fetch_due(gh, issue: str, phase: str, scratch: str) -> Tuple
     return status, ""
 
 
+def _stem(name: str) -> str:
+    """The handoff file <name> without its `.md`, as bash's ${name%.md}."""
+    return name[:-3] if name.endswith(".md") else name
+
+
+def handoff_comment_missing(issue: str, stem: str, hint: str = "") -> NoReturn:
+    """Dies naming the handoff <stem> (its file name without the `.md`)
+    missing from issue #<issue>'s comments, bash handoff_comment_missing; a
+    <hint> follows ` - post it with handoff post `."""
+    die("issue #%s has no %s handoff comment%s"
+        % (issue, stem, " - post it with handoff post " + hint if hint else ""))
+
+
+def _handoff_file_read(name: str, hint: str, root: str) -> str:
+    path = "%s/%s" % (handoff_dir(root), name)
+    if not os.path.isfile(path):
+        die("handoff not found: %s/%s.md%s"
+            % (handoff_dir(root), _stem(name), " - write it " + hint if hint else ""))
+    return path
+
+
+def _handoff_comment_read(name: str, hint: str, gh_of, env: Mapping[str, str], root: str) -> str:
+    issue = require_issue(flow_state_file(root), env)["issue"]
+    path = "%s/%s" % (handoff_scratch_dir(root), name)
+    rm_f(path)
+    entries, reason = timeline_read(gh_of(), issue)
+    if entries is None:
+        timeline_die(issue, reason)
+    status = handoff_comment_write(entries, _stem(name), path)
+    if status == 2:
+        raise SystemExit(1)
+    if status == 1 or not os.path.isfile(path):
+        handoff_comment_missing(issue, _stem(name), hint)
+    return path
+
+
+def handoff_read(name: str, hint: str, gh_of, env: Mapping[str, str], root: str) -> str:
+    """The dying read, bash handoff_read: the readable path of the handoff
+    file <name> in the checkout at <root>, as this session's adapter
+    (handoff_store) finds it, <hint> naming the caller's situation in the
+    missing message. The file adapter dies `handoff not found: <path> -
+    write it <hint>` on a missing file. The comment adapter requires the
+    recorded issue, reads its comments once through the gh adapter <gh_of>
+    makes and copies the live one to the scratch directory: a failed read
+    dies with gh's reason, a copy not written exits 1 after its line, and
+    no live comment dies `issue #<n> has no <stem> handoff comment - post it
+    with handoff post <hint>`."""
+    if handoff_store(env) == "file":
+        return _handoff_file_read(name, hint, root)
+    return _handoff_comment_read(name, hint, gh_of, env, root)
+
+
+def handoff_invalid(name: str, hint: str, env: Mapping[str, str], root: str,
+                    issue: str) -> NoReturn:
+    """Dies saying the handoff <name> is not valid, the adapter's message,
+    bash handoff_invalid: the file adapter's names the file in the checkout
+    at <root>, with a fix to make; the comment adapter's names the comment
+    on issue #<issue>, the flow's issue the caller holds, with a fix to
+    post. Either ends `, <hint>`."""
+    tail = ", " + hint if hint else ""
+    if handoff_store(env) == "file":
+        die("%s/%s is not valid - fix it%s" % (handoff_dir(root), name, tail))
+    die("the %s comment on issue #%s is not valid - post a fixed one%s" % (_stem(name), issue, tail))
+
+
 def handoff_path(phase: str, gh, env: Mapping[str, str], root: str) -> Tuple[str, bool]:
     """`handoff path <phase>`: the path of the handoff <phase> consumes, as
     the adapter resolves it, and whether it is there. The file adapter
@@ -262,5 +348,5 @@ def handoff_path(phase: str, gh, env: Mapping[str, str], root: str) -> Tuple[str
         raise SystemExit(1)
     path = "%s/%s" % (scratch, handoff)
     if not os.path.isfile(path):
-        die("issue #%s has no %s handoff comment" % (issue, handoff[:-3]))
+        handoff_comment_missing(issue, _stem(handoff))
     return path, True

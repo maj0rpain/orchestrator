@@ -2,9 +2,9 @@
 to what the Python nouns use: the plugin commands a message names for it
 (common.sh's plugin_cmd), a flow command's among them (common.sh's
 flow_cmd), and the block that ends a session naming the fresh one to start
-in the host's own words (phase.sh's next_phase_cmd and print_next_block),
-which the spec noun's pause and pause --round print. The bash copies stay,
-for phase.sh's own stops.
+in the host's own words (next_phase_cmd and print_next_block, whose bash
+copies went with the bash phase noun), which the phase noun's boundary and
+the spec noun's pause and pause --round print.
 """
 from __future__ import annotations
 

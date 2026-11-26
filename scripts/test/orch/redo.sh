@@ -5,6 +5,28 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# help_entry <command>: orch.sh help's entry for <command> - its first line
+# and the indented continuation lines under it.
+help_entry() {
+  "$ORCH" help 2>&1 | awk -v cmd="  $1" '
+    found && /^                              / { print; next }
+    found { exit }
+    index($0, cmd) == 1 { found = 1; print }'
+}
+# assert_help_names_handoffs_by_role <entry>:
+# asserts orch.sh help has an <entry> entry that names no NN-name.md handoff
+# file and points at handoff path, so renaming a handoff file never leaves the
+# help stale.
+assert_help_names_handoffs_by_role() {
+  local entry="$1" text
+  text="$(help_entry "$entry")"
+  assert_ne "help has a $entry entry" "$text" ""
+  assert_eq "the $entry entry names no handoff file" \
+    "$(printf '%s\n' "$text" | grep -oE '[0-9]{2}-[a-z-]+\.md')" ""
+  assert_contains "the $entry entry points at handoff path" \
+    "$(printf '%s\n' "$text" | flat_text)" "orch.sh handoff path"
+}
+
 # fake_pr_state_of <n>: PR #n's state read back from the store - OPEN, CLOSED
 # or MERGED.
 fake_pr_state_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/state" 2>/dev/null; }

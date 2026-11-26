@@ -5,7 +5,8 @@ each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>`,
 <verb>`, `orch.sh spec-review <verb>`, `orch.sh breakdown <verb>`, `orch.sh
 spec <verb>`, `orch.sh glossary <verb>`, `orch.sh parallel show`, `orch.sh
 route show`, `orch.sh agent <verb>`, `orch.sh slug <text>`, `orch.sh status`,
-`orch.sh init <slug>`, `orch.sh archive` or `orch.sh help` (and its spellings)
+`orch.sh init <slug>`, `orch.sh archive`, `orch.sh phase <verb>` or `orch.sh
+help` (and its spellings)
 as a command, in a checkout under tmp_path, against a fake store seeded in the
 layout the bash suite's fake_* helpers write, with ORCH_GH_FAKE_STORE set as
 fake_github sets it."""
@@ -1043,6 +1044,33 @@ def test_help_into_a_pipe_closed_unread_dies_of_sigpipe_as_cat_did(tmp_path, rep
                       knobs={"ORCH_GH_FAKE_STORE": seed.store})
 
     assert answer == ("", "", 141)
+
+
+# --- phase -----------------------------------------------------------------
+
+
+def test_phase_advance_records_the_next_phase_and_prints_the_boundary_through_the_python_noun(
+        tmp_path, repo, seed):
+    flow_state(repo, "spec", 12)
+    spec = repo / ".orchestrator" / "handoff" / "02-spec.md"
+    spec.parent.mkdir()
+    spec.write_text("## Spec issue\n#12.\n")
+
+    assert orch_sh(tmp_path, repo, seed, "phase", "advance", path=python3_shim(tmp_path),
+                   knobs={"ORCHESTRATOR_HOST": "junie"}) == (
+        "Phase spec complete. Handoff written to %s.\n\n"
+        "  Next: /new, then ask for the next phase with /orch-flow\n" % spec, "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+    assert json.loads((repo / ".orchestrator" / "state.json").read_text())["phase"] == "implement"
+
+
+@pytest.mark.parametrize("verb", ["advance", "boundary"])
+def test_phase_dies_pointing_at_doctor_without_python3(tmp_path, repo, seed, verb):
+    flow_state(repo, "spec", 12)
+
+    assert orch_sh(tmp_path, repo, seed, "phase", verb, path=path_without(tmp_path, "python3")) \
+        == ("", "orch: orch.sh phase needs python3 3.9 or newer (found none)"
+                " - run orch.sh doctor\n", 1)
 
 
 # --- orch_python_call bootstrap ----------------------------------------------
