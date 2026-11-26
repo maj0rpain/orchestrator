@@ -1,15 +1,28 @@
 """The branch concept's module, as far as the busy checkout's branch signal
-needs it: the PR and retired keys bash's branch.sh records on a branch, read
-through the git adapter's config_value, and whether a branch is a
-plugin-made branch that records a base, by bash branch_kind's rule. A later
-`branch` noun grows it rather than moving it, as the base module was grown
-for `base`.
+and the review loop's terminal-state read need it: the PR and retired keys
+bash's branch.sh records on a branch, read through the git adapter's
+config_value, whether a branch is a plugin-made branch that records a base,
+by bash branch_kind's rule, and the flow's branch name and its redo form
+(bash branch_name_flow_into and branch_name_redo). A later `branch` noun
+grows it rather than moving it, as the base module was grown for `base`.
 """
 from __future__ import annotations
 
 from typing import Optional
 
 from orch.base import branch_base_get
+
+
+def branch_name_flow(issue: str, slug: str) -> str:
+    """The flow's branch name for <issue> and <slug>: the one place the
+    `orch/<issue>-<slug>` format lives, as bash branch_name_flow_into."""
+    return "orch/%s-%s" % (issue, slug)
+
+
+def branch_name_redo(issue: str, slug: str, redo_count: str) -> str:
+    """The flow's branch name with <redo_count>'s redo suffix: the name a
+    redo's branch retire gives the branch it retires."""
+    return "%s-redo-%s" % (branch_name_flow(issue, slug), redo_count)
 
 
 def branch_pr_key(branch: str) -> str:
