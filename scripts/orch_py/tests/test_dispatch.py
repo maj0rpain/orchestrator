@@ -44,6 +44,7 @@ from conftest import (
     until,
     verification_records,
     verification_store,
+    wt_path,
 )
 
 SCRIPTS = Path(__file__).resolve().parents[2]
@@ -1123,7 +1124,7 @@ def test_ticket_worktree_add_checks_the_ticket_branch_out_through_the_python_nou
         tmp_path, repo, seed):
     committed(repo, {"a.txt": "a\n"}, "first")
     run_git(repo, "checkout", "-q", "-b", "orch/5-feature")
-    path = str(repo.resolve() / ".orchestrator" / "worktrees" / "t7")
+    path = wt_path(repo.resolve(), 7)
 
     assert orch_sh(tmp_path, repo, seed, "ticket-worktree", "add", "7",
                    path=python3_shim(tmp_path)) == (path + "\n", "", 0)
