@@ -278,6 +278,15 @@ def ticket_repo(tmp_path, monkeypatch):
     return root
 
 
+def conflicting(repo, n):
+    """Ticket <n>'s worktree and TICKET_PARENT each with a commit changing
+    feature.txt's one line, the worktree's to "from-ticket", the parent's to
+    "from-flow"."""
+    committed(Path(wt_path(repo, n)), {"feature.txt": "from-ticket\n"},
+              "feature.txt: from-ticket")
+    committed(repo, {"feature.txt": "from-flow\n"}, "feature.txt: from-flow")
+
+
 def orch_tw(*argv, env=None):
     """`orch.sh ticket-worktree <argv>` in-process in the working directory's
     checkout, under <env> (Claude Code's plain session when None): its exit

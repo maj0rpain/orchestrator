@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from conftest import (SESSIONS, TICKET7, TICKET_PARENT, added, committed, died_of, git_of,
-                      has_branch, lock_ref, orch_tw, rebasing, run_git, wt_path)
+from conftest import (SESSIONS, TICKET7, TICKET_PARENT, added, committed, conflicting, died_of,
+                      git_of, has_branch, lock_ref, orch_tw, rebasing, run_git, wt_path)
 from orch import ticket_worktree
 from orch.git import Git, GitFailure
 
@@ -240,10 +240,10 @@ def facts_of(repo, n="7"):
 
 
 def mid_rebase(repo, wt):
-    """The ticket worktree at <wt> left stopped on a conflict, rebasing onto
-    TICKET_PARENT, which gains a conflicting commit of its own."""
-    committed(Path(wt), {"feature.txt": "ticket\n"}, "ticket edit")
-    committed(repo, {"feature.txt": "parent\n"}, "parent edit")
+    """The ticket worktree at <wt>, ticket #7's, left stopped on a conflict,
+    rebasing onto TICKET_PARENT, which gains a conflicting commit of its
+    own."""
+    conflicting(repo, 7)
     with pytest.raises(Exception):  # noqa: B017 - the conflict is the point
         run_git(wt, "rebase", "-q", TICKET_PARENT)
     assert rebasing(wt)

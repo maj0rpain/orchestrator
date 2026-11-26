@@ -18,8 +18,8 @@ from pathlib import Path
 import pytest
 
 from conftest import (AUTOPILOT, CLAUDE, GH_502, SESSIONS, TICKET7, TICKET_PARENT, added, committed,
-                      died_of, fake, has_branch, hold_flow, lock_ref, orch_tw, read, rebasing,
-                      run_git, state_json, tip, wt_path)
+                      conflicting, died_of, fake, has_branch, hold_flow, lock_ref, orch_tw, read,
+                      rebasing, run_git, state_json, tip, wt_path)
 from orch import ticket
 from orch.common import exclude_orch_dirs
 from orch.git import Git, GitFailure
@@ -243,8 +243,7 @@ def test_merge_rebases_the_ticket_branch_and_fast_forwards_its_parent(ticket_rep
 def test_a_conflict_exits_3_leaving_both_branches_at_their_prior_tips(ticket_repo, seed, capsys,
                                                                       env):
     wt = added(ticket_repo, capsys)
-    work(wt, "feature.txt", "from-ticket")
-    work(ticket_repo, "feature.txt", "from-flow")
+    conflicting(ticket_repo, 7)
     before = tips(ticket_repo)
 
     assert died_of(capsys, lambda: orch_ticket(seed, "merge", "7", env=env)) == (
@@ -260,8 +259,7 @@ def test_a_conflict_exits_3_leaving_both_branches_at_their_prior_tips(ticket_rep
 def test_a_rebase_already_in_progress_is_refused_and_left_for_its_owner(ticket_repo, seed, capsys,
                                                                         env):
     wt = added(ticket_repo, capsys)
-    work(wt, "feature.txt", "from-ticket")
-    work(ticket_repo, "feature.txt", "from-flow")
+    conflicting(ticket_repo, 7)
     before = tips(ticket_repo)
     with pytest.raises(Exception):  # noqa: B017 - the conflict is the point
         run_git(wt, "rebase", "-q", TICKET_PARENT)
@@ -560,13 +558,6 @@ def test_a_reported_unmerged_dirty_ticket_is_reset_merged_closed_and_removed(tic
     assert (ticket_repo / "t7.txt").read_text() == "work 7\n"
     assert subjects(ticket_repo, TICKET_PARENT, 1) == ["t7.txt: work 7"]
     assert not has_worktree(ticket_repo, 7)
-
-
-def conflicting(repo, n):
-    """Ticket <n>'s worktree and TICKET_PARENT each with a commit changing
-    feature.txt's one line."""
-    work(wt_path(repo, n), "feature.txt", "from-ticket")
-    work(repo, "feature.txt", "from-flow")
 
 
 CONFLICT = ("orch: rebasing %s onto %s hit a conflict - aborted; both branches are as they"
