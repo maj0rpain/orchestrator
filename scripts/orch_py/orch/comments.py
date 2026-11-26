@@ -1,5 +1,5 @@
 """The Comments module (scripts/orch/comments.sh), kept to what the issue,
-finding-triage and review-pass nouns, the issue timeline and the ticket
+finding-triage, review-pass and pr nouns, the issue timeline and the ticket
 module's `ticket retire` (run by spec-review apply) use: the one
 reader of an issue's or a PR's trusted comments, in a dying form and one that
 hands its failure back, the rendered shape every comments read writes, the
@@ -67,16 +67,17 @@ def trusted_read(gh, n: str, kind: str = "issue") -> Tuple[Optional[List[dict]],
     return kept, ""
 
 
-def trusted(gh, what: str, n: str, hint: str = "", kind: str = "issue") -> List[dict]:
-    """trusted_read's comments, dying where it fails: a gh failure as "gh
-    could not <what>", then " - <hint>" when a hint is given; an answer that
-    is no comment list as "could not <what>: its comments did not parse",
-    never hinted."""
+def trusted(gh, what: str, n: str, hint: str = "", kind: str = "issue",
+            code: int = 1) -> List[dict]:
+    """trusted_read's comments, dying where it fails, exit <code>: a gh
+    failure as "gh could not <what>", then " - <hint>" when a hint is given;
+    an answer that is no comment list as "could not <what>: its comments did
+    not parse", never hinted."""
     kept, reason = trusted_read(gh, n, kind)
     if kept is None:
         if reason:
-            gh_die(what, reason, hint)
-        die("could not %s: its comments did not parse" % what)
+            gh_die(what, reason, hint, code)
+        die("could not %s: its comments did not parse" % what, code)
     return kept
 
 
@@ -101,11 +102,11 @@ def render(comments: List[dict]) -> str:
     )
 
 
-def rendered(gh, what: str, n: str, kind: str) -> str:
-    """trusted's comments rendered, as bash's comments_rendered assigns them:
+def rendered(gh, what: str, n: str, kind: str, code: int = 1) -> str:
+    """trusted's comments rendered, as bash's comments_rendered assigned them:
     the trailing newlines dropped, as a `$(...)` capture drops them. Its
-    failures are trusted's."""
-    return render(trusted(gh, what, n, kind=kind)).rstrip("\n")
+    failures are trusted's, exit <code>."""
+    return render(trusted(gh, what, n, kind=kind, code=code)).rstrip("\n")
 
 
 def split(text: str) -> List[str]:

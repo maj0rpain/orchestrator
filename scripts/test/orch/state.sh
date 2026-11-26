@@ -641,20 +641,6 @@ for f in null trailing empty two; do
   assert_eq "state_get_in on a $f file prints nothing" "$out" ""
 done
 rm -rf "$rs_gi_dir"
-out="$(sourced_orch flow_holding_phase nobranch 2>&1)"; st=$?
-assert_status "flow_holding_phase of a branch the flow does not hold returns 1" "$st" 1
-: >"$rs_jq/jq.log"
-out="$(PATH="$rs_jq:$PATH" sourced_orch flow_holding_phase nobranch 7 2>&1)"; st=$?
-assert_eq "flow_holding_phase of a held issue prints the phase" "$out" "spec"
-assert_eq "flow_holding_phase starts exactly one jq" "$(counting_starts "$rs_jq" jq)" "1"
-state_fixture branch orch/held-branch
-: >"$rs_jq/jq.log"
-out="$(PATH="$rs_jq:$PATH" sourced_orch flow_holding_phase orch/held-branch 2>&1)"; st=$?
-assert_eq "flow_holding_phase of the held branch prints the phase" "$out" "spec"
-assert_eq "with one jq" "$(counting_starts "$rs_jq" jq)" "1"
-state_fixture phase "done"
-out="$(sourced_orch flow_holding_phase nobranch 7 2>&1)"; st=$?
-assert_status "flow_holding_phase of a done flow returns 1" "$st" 1
 rm -f "$rs_file"
 out="$(sourced_orch require_state_read a=phase 2>&1)"; st=$?
 assert_status "require_state_read with no state file dies" "$st" 1
@@ -680,6 +666,4 @@ assert_state_unreadable "require_issue through die2" 2 "$out" "$st"
 out="$(sourced_orch state_get_in "$PWD/.orchestrator/state.json" nonsense 2>&1)"; st=$?
 assert_status "state_get_in of a key outside the table on a truncated file returns 2" "$st" 2
 assert_eq "printing nothing" "$out" ""
-out="$(sourced_orch flow_holding_phase b 2>&1)"; st=$?
-assert_status "flow_holding_phase on a truncated file returns 2" "$st" 2
 restore_suite_env

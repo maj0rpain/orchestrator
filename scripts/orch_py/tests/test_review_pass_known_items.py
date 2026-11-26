@@ -8,11 +8,9 @@ import os
 
 import pytest
 
-from orch.gh import Unparsed
-from orch.gh_fake import FakeGh
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY, RepoPin
-from conftest import GH_502, orch_review_pass
+from conftest import GH_502, UnparsedPrComments, orch_review_pass
 
 ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
 BRANCH = "quick/21-foo"
@@ -278,13 +276,6 @@ def test_a_gh_failure_at_each_read_stops_the_run(seed, git, pr, kept, capsys, op
     assert known_items(seed, git, "21", str(kept)) == 1
     assert capsys.readouterr() == ("", "orch: %s: HTTP 502: Bad Gateway\n" % message)
     assert_left_as_it_was(kept)
-
-
-class UnparsedPrComments(FakeGh):
-    """The gh fake, its PR comments an answer that is no comment list."""
-
-    def pr_comments(self, n):
-        raise Unparsed("no comment list")
 
 
 def test_pr_comments_that_do_not_parse_stop_the_run(seed, git, pr, kept, capsys):

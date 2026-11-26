@@ -6,8 +6,8 @@ each check runs `orch.sh issue <verb>`, `orch.sh finding-triage <verb>`,
 spec <verb>`, `orch.sh glossary <verb>`, `orch.sh parallel show`, `orch.sh
 route show`, `orch.sh agent <verb>`, `orch.sh slug <text>`, `orch.sh status`,
 `orch.sh init <slug>`, `orch.sh archive`, `orch.sh phase <verb>`, `orch.sh
-redo <op>`, `orch.sh ticket <verb>`, `orch.sh ticket-worktree <verb>` or
-`orch.sh help` (and its spellings)
+redo <op>`, `orch.sh ticket <verb>`, `orch.sh ticket-worktree <verb>`,
+`orch.sh pr <verb>` or `orch.sh help` (and its spellings)
 as a command, in a checkout under tmp_path, against a fake store seeded in the
 layout the bash suite's fake_* helpers write, with ORCH_GH_FAKE_STORE set as
 fake_github sets it."""
@@ -1138,6 +1138,29 @@ def test_ticket_nouns_die_pointing_at_doctor_without_python3(tmp_path, repo, see
     assert orch_sh(tmp_path, repo, seed, *argv, path=path_without(tmp_path, "python3")) \
         == ("", "orch: orch.sh %s needs python3 3.9 or newer (found none)"
                 " - run orch.sh doctor\n" % argv[0], 1)
+
+
+# --- pr ----------------------------------------------------------------------
+
+
+def test_pr_comments_with_no_open_pr_exits_1_through_the_python_noun(tmp_path, repo, seed):
+    committed(repo, {"a.txt": "a\n"}, "first")
+    run_git(repo, "checkout", "-q", "-b", "quick/12-foo")
+    seed.pr(50, "open", "quick/99-other", "main")
+    out = tmp_path / "comments.md"
+    out.write_text("known content\n")
+
+    assert orch_sh(tmp_path, repo, seed, "pr", "comments", str(out),
+                   path=python3_shim(tmp_path)) == ("", "", 1)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+    assert out.read_text() == "known content\n"
+
+
+def test_pr_dies_pointing_at_doctor_without_python3(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "pr", "comments", str(tmp_path / "c.md"),
+                   path=path_without(tmp_path, "python3")) \
+        == ("", "orch: orch.sh pr needs python3 3.9 or newer (found none)"
+                " - run orch.sh doctor\n", 1)
 
 
 # --- orch_python_call bootstrap ----------------------------------------------

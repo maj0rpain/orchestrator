@@ -8,7 +8,7 @@ and `report show` in bash's layout, `parent`, and the verbs already in
 Python - `exists` (the no-repo exit 2, #3050), `block`, `unblock`, `retire`
 (the save point and the untrusted comments, #334) and `reset` - through the
 entry, where test_ticket.py's function-level cases do not already reach
-them; and the refuse_open_tickets bridge pr open and pr publish call."""
+them."""
 from __future__ import annotations
 
 import os
@@ -620,57 +620,6 @@ def test_each_verb_refuses_a_wrong_argument_count_with_its_usage_line(root, seed
 
     assert died_of(capsys, lambda: orch_ticket(root, seed, *argv)) == (
         1, "", "orch: %s\n" % usage)
-
-
-# --- the refuse_open_tickets bridge -----------------------------------------------------
-
-
-@pytest.fixture
-def spec_with_tickets(seed):
-    """Spec #40's breakdown: open #41, closed #42 and open #43, blocked by
-    #41."""
-    seed.issue(40, "open")
-    for n, state in ((41, "open"), (42, "closed"), (43, "open")):
-        seed.issue(n, state)
-        seed.sub_issue(40, n)
-    seed.blocked_by(43, 41)
-
-
-def bridge(monkeypatch, seed, *args):
-    """`orch_python_call --as pr ticket refuse_open_tickets <args>` as
-    orch.__main__ hands it to call_func, on <seed>'s store pinned to
-    acme/widgets: its exit code."""
-    from orch import cli
-
-    monkeypatch.setenv("ORCH_GH_FAKE_STORE", seed.store)
-    monkeypatch.setenv("GH_REPO", "acme/widgets")
-    return cli.call_func(["ticket", "refuse_open_tickets", *args])
-
-
-def test_the_bridge_refuses_a_spec_with_open_tickets_naming_them(monkeypatch, seed, capsys,
-                                                                 spec_with_tickets):
-    assert died_of(capsys, lambda: bridge(monkeypatch, seed, "40", "pr open")) == (
-        1, "", "orch: #40 still has open tickets: #41 #43 - run the driver loop (orch.sh ticket"
-               " next 40) or close them, then run pr open again\n")
-
-
-def test_the_bridge_passes_a_spec_whose_tickets_are_all_closed(monkeypatch, seed, capsys,
-                                                               spec_with_tickets):
-    seed.issue(41, "closed")
-    seed.issue(43, "closed")
-
-    assert bridge(monkeypatch, seed, "40", "pr publish") == 0
-
-    assert capsys.readouterr() == ("", "")
-
-
-@pytest.mark.parametrize("args", [(), ("40",), ("40", "pr open", "x")])
-def test_the_bridge_refuses_an_argument_count_but_two_with_its_usage(monkeypatch, seed, capsys,
-                                                                     args):
-    seed.offline()
-
-    assert died_of(capsys, lambda: bridge(monkeypatch, seed, *args)) == (
-        1, "", "orch: usage: orch_python_call ticket refuse_open_tickets <issue> <command>\n")
 
 
 def test_next_never_reads_a_ticket_with_no_dependency_summary_as_unblocked(root, seed, capsys,

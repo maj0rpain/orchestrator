@@ -146,6 +146,33 @@ fake_issues() { ls "$ORCH_GH_FAKE_STORE/issues" 2>/dev/null | sort -n | tr '\n' 
 fake_title_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/title" 2>/dev/null; }
 fake_body_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/body" 2>/dev/null; }
 
+# fake_next_issue <n>: the number the next issue created takes.
+fake_next_issue() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_issue"; }
+
+# fake_checks_clear: no scripted checks for any PR, read counter included.
+fake_checks_clear() { rm -rf "$ORCH_GH_FAKE_STORE/checks"; }
+
+# fake_checks_reads <n>: how many times PR #n's checks were read, scripted
+# scope or not; 0 when never read.
+fake_checks_reads() { log_count "$ORCH_GH_FAKE_STORE/checks/$1/reads"; }
+
+# assert_gh_dies <label> <op> <seed> <status> <message> <command...>: gh fails
+# at <op>, and the command (2>&1, into out and st) exits <status> printing
+# exactly <message>.
+assert_gh_dies() {
+  local label="$1" op="$2" seed="$3" status="$4" message="$5"
+  shift 5
+  fake_fail "$op" "$seed"
+  out="$("$@" 2>&1)"; st=$?
+  assert_status "$label" "$st" "$status"
+  if [ -n "$seed" ]; then
+    assert_eq "carrying only gh's first line" "$out" "$message"
+  else
+    assert_eq "saying gh gave no reason" "$out" "$message"
+  fi
+  fake_unfail
+}
+
 # --- review ready's pointer to /orchestrator:finish (#727) --------------------
 # review ready's stdout stays the PR number alone everywhere; in a side
 # checkout it points the human at /orchestrator:finish on stderr, for after the
@@ -665,11 +692,6 @@ assert_contains "naming the check and the hint" "$out" "orch: PR #7 has failed c
 assert_eq "the phase stays review after a failed check" "$("$ORCH" state get phase)" "review"
 assert_eq "the PR stays a draft after a failed check" "$(fake_pr_draft_of 7)" "yes"
 fake_checks_clear
-fake_checks 7 required failing
-out="$(sourced_orch ci_ready_gate --exit 3 7 2>&1)"; st=$?
-assert_status "ci_ready_gate refuses an --exit other than 2" "$st" 1
-assert_contains "naming the caller and the option" "$out" "orch: ci_ready_gate: --exit takes 2, not '3'"
-assert_eq "before any check is read" "$(fake_checks_reads 7)" "0"
 fake_checks 7 required pending
 out="$("$ORCH" review ready 2>&1)"; st=$?
 assert_status "a pending check proceeds" "$st" 0

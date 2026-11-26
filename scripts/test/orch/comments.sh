@@ -6,9 +6,8 @@
 (( 0 )) && source setup.sh
 
 # --- comments module --------------------------------------------------------
-# The Comments module: the trusted reader, the two dying wrappers over it and
-# the rendered shape, called through a sourced orch.sh over comments seeded in
-# the gh fake.
+# The Comments module: the trusted reader, called through a sourced orch.sh
+# over comments seeded in the gh fake.
 echo
 echo "comments module"
 tick_fixture
@@ -74,37 +73,3 @@ no_repo_dir="$(mktemp -d)"
   assert_not_contains "and never returning" "$out" "returned"
 )
 rm -rf "$no_repo_dir"
-
-# The wrappers, keyed by issue or pr.
-assert_eq "comments_trusted issue assigns the trusted array" \
-  "$(sourced_orch_script 'comments_trusted issue "read #7" 7 got 2>/dev/null; jq -r "map(.body)|join(\",\")" <<<"$got"')" \
-  "an issue comment"
-assert_eq "comments_rendered pr assigns the rendered text" \
-  "$(sourced_orch_script 'comments_rendered pr "read PR #9" 9 got; printf "%s" "$got"')" \
-  "$(printf '<!-- comment @sam 2026-10-01T09:00:00Z -->\na PR comment')"
-assert_gh_dies "comments_trusted pr under --exit 2 dies with status 2" adapter_pr_comments "" 2 \
-  "orch: gh could not read PR #9: gh gave no reason" \
-  sourced_orch_script 'comments_trusted --exit 2 pr "read PR #9" 9 got'
-assert_eq "an answer that is not a comment list dies as its comments did not parse, status 2 under --exit 2" \
-  "$(sourced_orch_script 'adapter_pr_comments() { echo "not json"; }; rc=0; (comments_rendered --exit 2 pr "read PR #9" 9 got) || rc=$?; echo "rc=$rc"' 2>&1)" \
-  "orch: could not read PR #9: its comments did not parse
-rc=2"
-
-# A kind other than issue or pr is a misuse: it dies, status 1 even under
-# --exit 2, and no gh call is made.
-cm_misuse="orch: comments_trusted: unknown kind: repo (want issue|pr)
-rc=1"
-assert_eq "comments_trusted and comments_rendered on kind repo die as a misuse, status 1 even under --exit 2" \
-  "$(cm_run 'for cm_call in "comments_trusted" "comments_rendered" "comments_trusted --exit 2"; do rc=0; ($cm_call repo "read repo #7" 7 got) || rc=$?; echo "rc=$rc"; done')" \
-  "$(printf '%s\n%s\n%s' "$cm_misuse" "$cm_misuse" "$cm_misuse")
-rc=1"
-
-# The rendered shape (COMMENTS_RENDER_JQ), run on normalised comments.
-cm_json='[{"author":"triage-bot","createdAt":"2026-09-01T10:00:00Z","body":"## Agent brief\n\nDo the `$HOME` thing in #6."},{"author":"pat","createdAt":"2026-09-02T11:30:00Z","body":"Also: the second line\n\\\\ stays unescaped."}]'
-assert_eq "the render step opens each comment with its author-and-date marker, one blank line between" \
-  "$(sourced_orch_script 'comments_render <<<"$1"' "$cm_json")" \
-  "$(writeln '<!-- comment @triage-bot 2026-09-01T10:00:00Z -->' \
-    '## Agent brief' '' 'Do the `$HOME` thing in #6.' '' \
-    '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'Also: the second line' '\\ stays unescaped.')"
-assert_eq "and prints nothing at all for no comments" \
-  "$(sourced_orch_script 'comments_render <<<"[]"' | wc -c | tr -d ' ')" "0"

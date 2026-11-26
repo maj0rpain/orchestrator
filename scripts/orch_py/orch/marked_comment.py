@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from typing import List, NamedTuple, Optional
 
-from orch.common import die, without_cr
+from orch.common import die, first_line
 
 SPEC_REVIEW_OPENING = "## Spec review"
 SPEC_RULING_OPENING = "Spec ruling:"
@@ -88,7 +88,7 @@ def is_spec_review(comment: dict) -> bool:
         body = ""
     if not isinstance(body, str):
         raise NotText("a comment body is no text")
-    first = without_cr(body.split("\n", 1)[0])
+    first = first_line(body)
     return _SPEC_REVIEW_LINE.fullmatch(first) is not None
 
 
@@ -129,7 +129,7 @@ def marked_comment_info(comment: dict) -> MarkedInfo:
     limited comment, else the spec review's heading, else a spec ruling's
     opening, else a legacy stop's opening. NotText for a body that is no
     text."""
-    line = without_cr(_body_text(comment).split("\n", 1)[0])
+    line = first_line(_body_text(comment))
     marker = _MARKER.fullmatch(line)
     if marker is not None:
         kind, cause = marker.group("kind"), marker.group("cause") or ""

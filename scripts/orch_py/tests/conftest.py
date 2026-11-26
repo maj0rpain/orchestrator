@@ -20,7 +20,8 @@ from pathlib import Path
 
 import pytest
 
-from orch import audit, issue, review_pass, spec_review, ticket_worktree, verification
+from orch import audit, issue, pr, review_pass, spec_review, ticket_worktree, verification
+from orch.gh import Unparsed
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit, Git
 from orch.repo import RepoPin
@@ -514,6 +515,26 @@ def fake(seed):
     return FakeGh(seed.store, {}, sleep=lambda _: None)
 
 
+class CountingGh(FakeGh):
+    """The gh fake, keeping each repo it is asked the default branch of, in
+    order, in default_asks."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.default_asks = []
+
+    def repo_default_branch(self, repo):
+        self.default_asks.append(repo)
+        return super().repo_default_branch(repo)
+
+
+class UnparsedPrComments(FakeGh):
+    """The gh fake, its PR comments an answer that is no comment list."""
+
+    def pr_comments(self, n):
+        raise Unparsed("no comment list")
+
+
 def died_of(capsys, run):
     """(exit code, stdout, stderr) of <run>, which must die."""
     with pytest.raises(SystemExit) as died:
@@ -533,6 +554,26 @@ def orch_issue(seed, *argv, gh=None, git=None, env=None, pin=None):
         return issue.run(list(argv), gh=gh, git=git or FakeGit(toplevel=CHECKOUT), env=env)
     except SystemExit as died:
         return died.code
+
+
+def orch_pr(seed, git, *argv, env=None, gh=None):
+    """`orch.sh pr <argv>` in-process, in the checkout of the git adapter
+    <git>, under <env> (Claude Code's plain session when None), with the gh
+    adapter <gh> - the gh fake on <seed>'s store pinned to <git>'s origin
+    when None: its exit code, a SystemExit's included."""
+    env = CLAUDE if env is None else env
+    if gh is None:
+        gh = FakeGh(seed.store, env, pin=RepoPin(env, git), sleep=lambda _: None)
+    try:
+        return pr.run(list(argv), gh=gh, git=git, env=env)
+    except SystemExit as died:
+        return died.code
+
+
+def prs_of(store):
+    """The numbers of the PRs the store holds, in order."""
+    directory = os.path.join(str(store), "prs")
+    return sorted(int(n) for n in os.listdir(directory)) if os.path.isdir(directory) else []
 
 
 # The audit noun's usage text, naming every form, as a refused audit prints it.

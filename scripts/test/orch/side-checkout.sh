@@ -1396,6 +1396,26 @@ assert_eq "the issue stays open" "$(fake_state_of 612)" "OPEN"
 assert_eq "the checkout is still removed" "$(sp_branch quick/612-fk)" "gone"
 fake_unfail
 
+# The close is one Python process a checkout closed, through its bridge:
+# without a usable python3 it warns with the shared line and returns 0.
+fake_offline
+bf_quick np 613 713; fake_pr_merged 713 3600 613
+fake_online
+np="$(git worktree list --porcelain | sed -n "s/^worktree //p" | grep "/np\$")"
+np_err="$(mktemp)"
+PATH="$(path_without python3)" sourced_orch side_checkout_close_missed "$np" quick/613-np \
+  2>"$np_err"; st=$?
+assert_status "with no python3 the close backstop returns 0" "$st" 0
+assert_eq "warning with exactly the shared needs-python3 line" "$(cat "$np_err")" \
+  "orch: orch.sh side-checkout needs python3 3.9 or newer (found none) - run orch.sh doctor"
+assert_eq "and closing nothing" "$(fake_state_of 613)" "OPEN"
+np_py="$(counting_bin python3)"
+PATH="$np_py:$PATH" orch_gh_failing side-checkout prune >/dev/null 2>"$np_err"; st=$?
+assert_status "prune closing one checkout's issue succeeds" "$st" 0
+assert_eq "it closes the issue" "$(fake_state_of 613)" "CLOSED"
+assert_eq "starting python3 once" "$(counting_starts "$np_py" python3)" "1"
+rm -rf "$np_py" "$np_err"
+
 # A side checkout whose state.json is truncated is skipped: the backstop
 # returns 0, prints nothing and reads nothing from GitHub.
 fake_offline

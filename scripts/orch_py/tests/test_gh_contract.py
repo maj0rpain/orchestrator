@@ -11,7 +11,7 @@ import shutil
 
 import pytest
 
-from orch.gh import (Gh, GhFailed, IssueRow, LabelledBody, SubIssue, Unparsed, gh_die,
+from orch.gh import (Check, Gh, GhFailed, IssueRow, LabelledBody, SubIssue, Unparsed, gh_die,
                      gh_or_die)
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY, RepoPin
@@ -657,6 +657,225 @@ def test_pr_comments_that_are_no_comment_list_are_unparsed(fixture_gh, answer):
 
     with pytest.raises(Unparsed):
         real_gh(fixture_gh).pr_comments(4)
+
+
+PR_CREATE_TAIL = ["--base", "main", "--head", "topic", "--title", "T", "--body-file", "b.md"]
+
+
+def test_pr_create_opens_a_draft_carrying_each_label_and_answers_the_number(fixture_gh):
+    fixture_gh.reply(["pr", "create", "--draft", "--label", "bug", "--label", "ready",
+                      *PR_CREATE_TAIL],
+                     "Creating pull request\nhttps://github.com/fork/widgets/pull/17\n")
+    fixture_gh.reply(["pr", "create", *PR_CREATE_TAIL], "https://github.com/fork/widgets/pull/18\n")
+    gh = real_gh(fixture_gh)
+
+    assert gh.pr_create("main", "topic", "T", "b.md", draft=True, labels=["bug", "ready"]) == 17
+    assert gh.pr_create("main", "topic", "T", "b.md") == 18
+
+
+def test_a_pr_create_that_prints_no_pr_url_fails(fixture_gh):
+    fixture_gh.reply(["pr", "create", *PR_CREATE_TAIL],
+                     "https://github.com/fork/widgets/issues/17\n")
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).pr_create("main", "topic", "T", "b.md")
+    assert failed.value.stderr == (
+        "gh pr create printed no PR URL: https://github.com/fork/widgets/issues/17\n")
+
+
+def test_a_pr_create_carrying_a_label_is_a_compound_write_given_up_at_once(fixture_gh):
+    labelled = ["pr", "create", "--label", "bug", *PR_CREATE_TAIL]
+    bare = ["pr", "create", *PR_CREATE_TAIL]
+    fixture_gh.reply(labelled, stderr=SECONDARY + "\n", exit=1)
+    fixture_gh.reply(bare, stderr=SECONDARY + "\n", exit=1,
+                     then=[("https://github.com/fork/widgets/pull/18\n", "", 0)])
+    fixture_gh.reply(RATE_LIMIT, pools(0, 5))
+    sleeps = []
+    gh = real_gh(fixture_gh, sleeps=sleeps)
+
+    with pytest.raises(GhFailed) as failed:
+        gh.pr_create("main", "topic", "T", "b.md", labels=["bug"])
+    assert gh.pr_create("main", "topic", "T", "b.md") == 18
+
+    assert failed.value.stderr.startswith("orch: GitHub API rate limit reached")
+    assert fixture_gh.argvs() == [labelled, RATE_LIMIT, bare, bare]
+    assert sleeps == [60.0]
+
+
+def test_pr_labels_lists_each_label_name(fixture_gh):
+    fixture_gh.reply(["pr", "view", "4", "--json", "labels", "--jq", ".labels[].name"],
+                     "bug\nNeeds Human\n")
+    fixture_gh.reply(["pr", "view", "5", "--json", "labels", "--jq", ".labels[].name"], "")
+    gh = real_gh(fixture_gh)
+
+    assert gh.pr_labels(4) == ["bug", "Needs Human"]
+    assert gh.pr_labels(5) == []
+
+
+def refs_argv(number):
+    return ["pr", "view", str(number), "--json", "headRefOid,headRefName,baseRefName",
+            "--jq", '(.headRefOid // ""), (.headRefName // ""), (.baseRefName // "")']
+
+
+def test_pr_refs_reads_the_head_sha_head_branch_and_base_each_empty_where_unset(fixture_gh):
+    fixture_gh.reply(refs_argv(4), "abc123\ntopic\nmain\n")
+    fixture_gh.reply(refs_argv(5), "\ntopic\n\n")
+    gh = real_gh(fixture_gh)
+
+    assert gh.pr_refs(4) == ("abc123", "topic", "main")
+    assert gh.pr_refs(5) == ("", "topic", "")
+
+
+def state_draft_argv(number):
+    return ["pr", "view", str(number), "--json", "state,isDraft", "--jq", ".state, .isDraft"]
+
+
+def test_pr_state_draft_reads_the_state_and_whether_it_is_a_draft(fixture_gh):
+    fixture_gh.reply(state_draft_argv(4), "OPEN\ntrue\n")
+    fixture_gh.reply(state_draft_argv(5), "MERGED\nfalse\n")
+    fixture_gh.reply(state_draft_argv(6), "CLOSED\nnull\n")
+    gh = real_gh(fixture_gh)
+
+    assert gh.pr_state_draft(4) == ("OPEN", True)
+    assert gh.pr_state_draft(5) == ("MERGED", False)
+    assert gh.pr_state_draft(6) == ("CLOSED", False)
+
+
+def test_pr_diff_is_the_diff_as_gh_prints_it(fixture_gh):
+    fixture_gh.reply(["pr", "diff", "4"], "diff --git a/x b/x\r\n+y\n\n")
+
+    assert real_gh(fixture_gh).pr_diff(4) == "diff --git a/x b/x\r\n+y\n\n"
+
+
+@pytest.mark.parametrize("call, write", [
+    (lambda gh: gh.pr_ready(4), ["pr", "ready", "4"]),
+    (lambda gh: gh.pr_draft(4), ["pr", "ready", "4", "--undo"]),
+    (lambda gh: gh.pr_comment(4, "c.md"), ["pr", "comment", "4", "--body-file", "c.md"]),
+    (lambda gh: gh.pr_body_edit(4, "b.md"), ["pr", "edit", "4", "--body-file", "b.md"]),
+    (lambda gh: gh.pr_title_edit(4, "A title"), ["pr", "edit", "4", "--title", "A title"]),
+    (lambda gh: gh.pr_label_add(4, "Needs Human"),
+     ["pr", "edit", "4", "--add-label", "Needs Human"]),
+], ids=["ready", "draft", "comment", "body-edit", "title-edit", "label-add"])
+def test_a_pr_write_hands_gh_its_one_argv_and_answers_nothing(fixture_gh, call, write):
+    fixture_gh.reply(write, "https://github.com/fork/widgets/pull/4\n")
+
+    assert call(real_gh(fixture_gh)) is None
+    assert fixture_gh.argvs() == [write]
+
+
+def test_a_failed_pr_write_passes_gh_s_stderr_through(fixture_gh):
+    fixture_gh.reply(["pr", "ready", "4"], stderr="HTTP 502: Bad Gateway\n", exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).pr_ready(4)
+    assert failed.value.stderr == "HTTP 502: Bad Gateway\n"
+
+
+def open_bodies_argv(limit="1000"):
+    return ["pr", "list", "--state", "open", "--limit", limit,
+            "--json", "number,body,isCrossRepository",
+            "--jq", '.[] | "\\(.number)\\t\\(.body | @json)\\t\\(.isCrossRepository)"']
+
+
+def test_prs_open_bodies_lists_every_open_pr_its_body_json_encoded_unfiltered(fixture_gh):
+    fixture_gh.reply(open_bodies_argv(), '12\t"Refs #3\\r\\n\\nBody"\ttrue\n4\t""\tfalse\n')
+    fixture_gh.reply(open_bodies_argv("7"), "")
+
+    assert real_gh(fixture_gh).prs_open_bodies() == ['12\t"Refs #3\\r\\n\\nBody"\ttrue',
+                                                     '4\t""\tfalse']
+    assert real_gh(fixture_gh, ORCH_ISSUE_LIST_LIMIT="7").prs_open_bodies() == []
+
+
+MERGED_CLOSING_JQ = ('.[] | "\\(.number)\\t\\(.headRefName)\\t\\(.mergedAt)\\t'
+                     '\\([.closingIssuesReferences[].number] | map(tostring) | join(","))\\t'
+                     '\\(.isCrossRepository)"')
+
+
+def test_prs_merged_closing_lists_the_prs_merged_into_the_base_since_a_time(fixture_gh):
+    argv = ["pr", "list", "--base", "main", "--state", "merged",
+            "--search", "merged:>=2026-03-01T00:00:00Z sort:created-desc", "--limit", "1000",
+            "--json", "number,headRefName,mergedAt,closingIssuesReferences,isCrossRepository",
+            "--jq", MERGED_CLOSING_JQ]
+    fixture_gh.reply(argv, "9\torch/5-x\t2026-03-02T00:00:00Z\t5,7\tfalse\n"
+                           "8\tquick/6-y\t2026-03-01T00:00:00Z\t\ttrue\n")
+
+    assert real_gh(fixture_gh).prs_merged_closing("main", "2026-03-01T00:00:00Z") == [
+        "9\torch/5-x\t2026-03-02T00:00:00Z\t5,7\tfalse",
+        "8\tquick/6-y\t2026-03-01T00:00:00Z\t\ttrue",
+    ]
+
+
+def test_prs_merged_bodies_is_every_merged_pr_s_body_each_ending_in_a_newline(fixture_gh):
+    fixture_gh.reply(["pr", "list", "--base", "next", "--state", "merged", "--limit", "1000",
+                      "--json", "body", "--jq", ".[].body"],
+                     "Closes #3\n\nOne.\nRefs #4\n")
+
+    assert real_gh(fixture_gh).prs_merged_bodies("next") == "Closes #3\n\nOne.\nRefs #4\n"
+
+
+def test_issue_created_at_is_the_creation_time_gh_answers(fixture_gh):
+    fixture_gh.reply(["issue", "view", "5", "--json", "createdAt", "--jq", ".createdAt"],
+                     "2026-03-01T12:00:00Z\n")
+
+    assert real_gh(fixture_gh).issue_created_at(5) == "2026-03-01T12:00:00Z"
+
+
+def checks_argv(number, *required):
+    return ["pr", "checks", str(number), *required, "--json", "bucket,name,link"]
+
+
+RUNS = "https://github.com/acme/widgets/actions/runs"
+
+
+def test_pr_checks_reads_the_required_or_every_check_each_bucket_name_and_link(fixture_gh):
+    fixture_gh.reply(checks_argv(4, "--required"),
+                     '[{"bucket":"fail","name":"build","link":"%s/4242/job/77"}]\n' % RUNS)
+    fixture_gh.reply(checks_argv(4),
+                     '[{"bucket":"pass","name":"lint","link":null},'
+                     '{"bucket":"pending","name":"test","link":"%s/1/job/1"}]\n' % RUNS)
+    gh = real_gh(fixture_gh)
+
+    assert gh.pr_checks(4, "required") == [Check("fail", "build", RUNS + "/4242/job/77")]
+    assert gh.pr_checks(4, "all") == [Check("pass", "lint", ""),
+                                      Check("pending", "test", RUNS + "/1/job/1")]
+
+
+@pytest.mark.parametrize("answer, checks", [
+    ('[{"bucket":"pending","name":"build","link":""}]\n', [Check("pending", "build", "")]),
+    ("[]\n", [Check("pending", "", "")]),
+    ("not json\n", [Check("pending", "", "")]),
+], ids=["readable", "empty", "unreadable"])
+def test_pr_checks_exiting_8_for_pending_checks_is_read_as_an_answer(fixture_gh, answer, checks):
+    fixture_gh.reply(checks_argv(4), answer, exit=8)
+
+    assert real_gh(fixture_gh).pr_checks(4, "all") == checks
+
+
+@pytest.mark.parametrize("stderr", [
+    "no checks reported on the 'topic' branch\n",
+    "no required checks reported on the 'topic' branch\n",
+    "\n",
+], ids=["no-checks", "no-required-checks", "empty-list"])
+def test_pr_checks_with_none_reported_answers_none(fixture_gh, stderr):
+    fixture_gh.reply(checks_argv(4, "--required"), stderr=stderr, exit=0 if stderr == "\n" else 1)
+
+    assert real_gh(fixture_gh).pr_checks(4, "required") == []
+
+
+def test_pr_checks_whose_answer_does_not_parse_fail(fixture_gh):
+    fixture_gh.reply(checks_argv(4), "<html>\n")
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).pr_checks(4, "all")
+    assert failed.value.stderr == "gh pr checks answered with something jq could not read\n"
+
+
+def test_a_failed_pr_checks_read_passes_gh_s_stderr_through(fixture_gh):
+    fixture_gh.reply(checks_argv(4), stderr="HTTP 502: Bad Gateway\n", exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).pr_checks(4, "all")
+    assert failed.value.stderr == "HTTP 502: Bad Gateway\n"
 
 
 # --- rate limits -------------------------------------------------------------

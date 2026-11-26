@@ -722,32 +722,6 @@ orch_no_repo() {
     && PATH="$GH_FIXTURE/bin:$PATH" ORCH_GH_ADAPTER='' "$ORCH" "$@")
 }
 
-# assert_no_repo_exit2 <label> <args>...: orch_no_repo <args> exits 2, prints
-# nothing, writes the repo remedy alone to stderr and calls no gh.
-assert_no_repo_exit2() {
-  local label="$1" err out st
-  shift
-  err="$(mktemp)"
-  out="$(orch_no_repo "$@" 2>"$err")"; st=$?
-  assert_status "$label with no repo exits 2" "$st" 2
-  assert_eq "$label prints nothing" "$out" ""
-  assert_eq "$label stderr is the remedy alone" "$(cat "$err")" "orch: $repo_remedy"
-  assert_eq "$label makes no gh call" "$(gh_calls)" "0"
-  rm -f "$err"
-}
-
-# assert_no_repo_refused <label> <message> <args>...: a refusal wins over the
-# missing Repo (#3139): orch_no_repo <args>, stdout and stderr together, exits 2
-# with <message> in its output and without the repo remedy.
-assert_no_repo_refused() {
-  local label="$1" msg="$2" out st
-  shift 2
-  out="$(orch_no_repo "$@" 2>&1)"; st=$?
-  assert_status "$label with no repo exits 2" "$st" 2
-  assert_contains "$label names its refusal" "$out" "$msg"
-  assert_not_contains "$label is not the remedy" "$out" "$repo_missing"
-}
-
 # fake_comment <n> <author> <created-at> <body> [<association>]: seeds a comment
 # on issue #n, after any it has; its association is OWNER unless given.
 fake_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/$1/comments" "$2" "$3" "$4" "${5-}"; }
@@ -772,9 +746,6 @@ handoff_doctor_missing_msg() {
     printf 'handoff %s.md is missing - the phase that writes it has already run.' "$3"
   fi
 }
-
-# fake_next_issue <n>: the number the next issue created takes.
-fake_next_issue() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_issue"; }
 
 # Issue #n read back from the store: its state (OPEN or CLOSED), labels
 # (sorted, space-separated, one trailing space) and the bodies of its comments,
@@ -869,13 +840,11 @@ fake_pr_cross() { printf '%s\n' "${2:-true}" >"$ORCH_GH_FAKE_STORE/prs/$1/cross_
 # fake_next_pr <n>: the number the next PR opened takes.
 fake_next_pr() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_pr"; }
 
-# PR #n read back from the store: its base branch, body, whether it is a draft
-# (yes or no), and the bodies of its comments, in order, one blank line
-# between.
+# PR #n read back from the store: its base branch, body, and whether it is a
+# draft (yes or no).
 fake_pr_base_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/base" 2>/dev/null; }
 fake_pr_body_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/body" 2>/dev/null; }
 fake_pr_draft_of() { [ -f "$ORCH_GH_FAKE_STORE/prs/$1/draft" ] && echo yes || echo no; }
-fake_pr_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/prs/$1/comments"; }
 
 # fake_label <name> <colour> <description>: seeds a label the repo already
 # has. An unseeded store has no labels.
@@ -911,23 +880,6 @@ fake_comment_reads() { log_count "$ORCH_GH_FAKE_STORE/comment_reads"; }
 
 # The seeded two-line gh stderr whose first line a death must carry.
 GH_502=$'HTTP 502: Bad Gateway\nsecond line'
-
-# assert_gh_dies <label> <op> <seed> <status> <message> <command...>: gh fails
-# at <op>, and the command (2>&1, into out and st) exits <status> printing
-# exactly <message>.
-assert_gh_dies() {
-  local label="$1" op="$2" seed="$3" status="$4" message="$5"
-  shift 5
-  fake_fail "$op" "$seed"
-  out="$("$@" 2>&1)"; st=$?
-  assert_status "$label" "$st" "$status"
-  if [ -n "$seed" ]; then
-    assert_eq "carrying only gh's first line" "$out" "$message"
-  else
-    assert_eq "saying gh gave no reason" "$out" "$message"
-  fi
-  fake_unfail
-}
 
 # fake_fail_after <operation> <n> [stderr]: fake_fail, but the next n calls of
 # the operation still succeed - a run of writes that dies part-way. The stderr
@@ -975,13 +927,6 @@ fake_checks() {
   printf '%s\n' "$@" >"$d/$scope"
   rm -f "$d/$scope.n"
 }
-
-# fake_checks_clear: no scripted checks for any PR, read counter included.
-fake_checks_clear() { rm -rf "$ORCH_GH_FAKE_STORE/checks"; }
-
-# fake_checks_reads <n>: how many times PR #n's checks were read, scripted
-# scope or not; 0 when never read.
-fake_checks_reads() { log_count "$ORCH_GH_FAKE_STORE/checks/$1/reads"; }
 
 # fake_default_branch <answer>: seeds gh's answer to the repo's default branch,
 # byte for byte, so a test can seed a polluted or empty one.
@@ -1123,12 +1068,6 @@ marked_ticket_worktree() {
   path="$("$ORCH" ticket-worktree add "$1")" || return
   printf '123\n' >"$(git -C "$path" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
   printf '%s\n' "$path"
-}
-
-# origin_branch_state <bare> <branch>: "pushed" when <branch> reached the bare
-# origin repo <bare>, else "missing".
-origin_branch_state() {
-  git -C "$1" rev-parse --quiet --verify "refs/heads/$2" >/dev/null && echo pushed || echo missing
 }
 
 # The missing-repo wording, built the way orch.sh builds REPO_MISSING,

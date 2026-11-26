@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import List, Mapping, Tuple
 
-from orch.common import plain_number, trim
+from orch.common import is_positive_int, trim
 
 # The `## Autopilot` block's keys, in the order its report checks them.
 AUTOPILOT_BLOCK_KEYS = ("Rounds", "Budget")
@@ -50,7 +50,7 @@ def autopilot_block_report(text: str) -> Tuple[List[str], int]:
             lines.append('FAIL ## Autopilot has no %s line (want "%s: <n>")' % (key, key))
         elif len(values) > 1:
             lines.append("FAIL ## Autopilot repeats its %s line" % key)
-        elif not (plain_number(values[0]) and int(values[0]) > 0):
+        elif not is_positive_int(values[0]):
             lines.append("FAIL ## Autopilot %s is %s - it must be a whole number of 1 or more"
                          % (key, values[0]))
     if lines:

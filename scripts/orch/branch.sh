@@ -98,7 +98,6 @@ branch_base_set() { git config "$(branch_base_key "$1")" "$2"; }
 branch_base_sha_get() { git config --get "$(branch_base_sha_key "$1")" 2>/dev/null; }
 branch_base_sha_set() { git config "$(branch_base_sha_key "$1")" "$2"; }
 branch_pr_get() { git config --get "$(branch_pr_key "$1")" 2>/dev/null; }
-branch_pr_set() { git config "$(branch_pr_key "$1")" "$2"; }
 branch_retired_set() { git config "$(branch_retired_key "$1")" true; }
 # branch_is_retired <branch>: succeeds when a redo retired <branch>.
 branch_is_retired() { [ "$(git config --get "$(branch_retired_key "$1")" 2>/dev/null)" = true ]; }

@@ -99,6 +99,22 @@ class SubIssue(NamedTuple):
     open_blockers: Optional[int]
 
 
+class Check(NamedTuple):
+    """One check of a PR: its bucket - pass, fail, pending, skipping or
+    cancel - its name and its link, "" for a check that has none."""
+
+    bucket: str
+    name: str
+    link: str
+
+
+# gh pr checks's exit for pending checks, which still answers the JSON.
+CHECKS_PENDING_EXIT = 8
+# gh's stderr where a PR has no checks, or no required ones.
+_NO_CHECKS = re.compile(r"no checks reported|no required checks")
+CHECKS_UNPARSED = "gh pr checks answered with something jq could not read\n"
+
+
 # --- the failure contract ----------------------------------------------------
 
 
@@ -330,12 +346,13 @@ def parse_numbers(text: str, unparsed: Callable[[str], str]) -> List[int]:
     return numbers
 
 
-def urlnumber_of(out: str) -> Optional[int]:
-    """The number in the last issue URL of what gh issue create printed - the
-    URL alone on its line - or None."""
+def urlnumber_of(out: str, kind: str = "issues") -> Optional[int]:
+    """The number in the last <kind> URL - an issue's, or a PR's under
+    "pull" - of what gh issue create or gh pr create printed, the URL alone
+    on its line; or None."""
     found = None
     for line in out.split("\n"):
-        match = re.match(r"^https?://.*/issues/([0-9]+)$", line)
+        match = re.match(r"^https?://.*/%s/([0-9]+)$" % kind, line)
         if match:
             found = int(match.group(1))
     return found
@@ -348,6 +365,27 @@ def parse_comments(text: str) -> List[dict]:
     if not isinstance(answer, dict) or not isinstance(answer.get("comments"), list):
         raise Unparsed("no comment list")
     return answer["comments"]
+
+
+def jq_text(value) -> str:
+    """<value> as jq's string interpolation writes it: a string as it is,
+    null as "null", anything else as its JSON."""
+    if isinstance(value, str):
+        return value
+    return "null" if value is None else json.dumps(value)
+
+
+def parse_checks(text: str) -> List[Check]:
+    """gh pr checks's `--json bucket,name,link` list, each link "" where
+    GitHub gives none; nothing for an empty answer. Unparsed when it is no
+    list of check objects."""
+    if not text.strip():
+        return []
+    answer = _json(text)
+    if not isinstance(answer, list) or not all(isinstance(c, dict) for c in answer):
+        raise Unparsed("no check list")
+    return [Check(jq_text(c.get("bucket")), jq_text(c.get("name")),
+                  jq_text(c.get("link") or "")) for c in answer]
 
 
 def _json(text: str):
@@ -513,6 +551,11 @@ class Gh:
         """gh run once with <args>, pinned: its stdout on success; else
         GhFailed with its stderr. No repo dies with the remedy, exit 1,
         calling no gh."""
+        return self._run_status(args)[1]
+
+    def _run_status(self, args: Sequence[str], answered: Sequence[int] = (0,)) -> Tuple[int, str]:
+        """_run, taking each exit status in <answered> as an answer: that
+        status and gh's stdout."""
         env = self.repo_pin.gh_env()
         if env is None:
             die(REPO_REMEDY)
@@ -523,9 +566,9 @@ class Gh:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        if run.returncode != 0:
+        if run.returncode not in answered:
             raise GhFailed(_text(run.stderr))
-        return _text(run.stdout)
+        return run.returncode, _text(run.stdout)
 
     def _gh(self, args: Sequence[str], compound: bool = False) -> str:
         """gh.sh's guard: _run through the rate-limit handling - the stdout of
@@ -588,6 +631,12 @@ class Gh:
             ["issue", "view", str(n), "--json", "state,url",
              "--jq", 'if (.url | test("/pull/")) then "PULL" else .state end']
         ).rstrip("\n")
+
+    def issue_created_at(self, n: int) -> str:
+        """The issue's creation time, a UTC timestamp in the form a PR's
+        mergedAt has, so the two compare as strings."""
+        return self._gh(["issue", "view", str(n), "--json", "createdAt",
+                         "--jq", ".createdAt"]).rstrip("\n")
 
     def issue_state_labels(self, n: int) -> Tuple[str, List[str]]:
         """OPEN or CLOSED, and the labels."""
@@ -725,6 +774,24 @@ class Gh:
 
     # --- PR operations ---
 
+    def pr_create(self, base: str, head: str, title: str, body_file: str,
+                  draft: bool = False, labels: Sequence[str] = ()) -> int:
+        """Opens the PR from <head> into <base> - a draft under <draft>,
+        carrying each label named, in order - and answers its number. gh
+        adds the labels in a mutation after the create, so the PR can open
+        before they land: given a label the call is a compound write, never
+        retried, as a rerun would fail on a PR that did open. Fails where gh
+        succeeded but printed no PR URL."""
+        args = ["pr", "create"] + (["--draft"] if draft else [])
+        for label in labels:
+            args += ["--label", label]
+        out = self._gh(args + ["--base", base, "--head", head, "--title", title,
+                               "--body-file", body_file], compound=bool(labels)).rstrip("\n")
+        number = urlnumber_of(out, "pull")
+        if number is None:
+            raise GhFailed("gh pr create printed no PR URL: %s\n" % out)
+        return number
+
     def prs_open(self, head: str, base: str = "") -> List[str]:
         """The open PRs from the head branch - into the base branch, where one
         is named - newest first, one line each as gh prints it,
@@ -738,16 +805,130 @@ class Gh:
                     "--jq", '.[] | "\\(.number)\\t\\(.isCrossRepository)"']
         ))
 
+    def prs_open_bodies(self) -> List[str]:
+        """Every open PR, newest first and cut at the issue-list limit, one
+        line each as gh prints it, `<number><TAB><body><TAB><flag>` - the
+        body a JSON string (jq's @json), so a multi-line body stays on its
+        line, the flag isCrossRepository - unfiltered: the caller decodes the
+        body, and trust_filter_prs drops the fork PRs."""
+        return _captured_lines(self._gh(
+            ["pr", "list", "--state", "open", "--limit", str(issue_list_limit(self.env)),
+             "--json", "number,body,isCrossRepository",
+             "--jq", '.[] | "\\(.number)\\t\\(.body | @json)\\t\\(.isCrossRepository)"']
+        ))
+
+    def prs_merged_closing(self, base: str, since: str) -> List[str]:
+        """Every PR merged into <base> at or after the UTC timestamp
+        <since>, newest created first and cut at the issue-list limit, one
+        line each as gh prints it, `<number><TAB><head branch><TAB><mergedAt>
+        <TAB><closing issues><TAB><flag>` - the closing issues the numbers of
+        its closingIssuesReferences, comma-separated, empty for none -
+        unfiltered: trust_filter_prs drops the fork PRs. The merged-PR
+        backstop's one read (#2478), bounded by <since> (#3061)."""
+        return _captured_lines(self._gh(
+            ["pr", "list", "--base", base, "--state", "merged",
+             "--search", "merged:>=%s sort:created-desc" % since,
+             "--limit", str(issue_list_limit(self.env)),
+             "--json", "number,headRefName,mergedAt,closingIssuesReferences,isCrossRepository",
+             "--jq", '.[] | "\\(.number)\\t\\(.headRefName)\\t\\(.mergedAt)\\t'
+             '\\([.closingIssuesReferences[].number] | map(tostring) | join(","))\\t'
+             '\\(.isCrossRepository)"']
+        ))
+
+    def prs_merged_bodies(self, base: str) -> str:
+        """The body of every PR merged into <base>, cut at the issue-list
+        limit, each followed by a newline, as gh prints them: pr release
+        reads its issue references out of the whole text (#139)."""
+        return self._gh(["pr", "list", "--base", base, "--state", "merged",
+                         "--limit", str(issue_list_limit(self.env)),
+                         "--json", "body", "--jq", ".[].body"])
+
     def pr_body(self, n: int) -> str:
         """The PR's body as GitHub holds it."""
         return _strip_one_newline(
             self._gh(["pr", "view", str(n), "--json", "body", "--jq", ".body"])
         )
 
+    def pr_labels(self, n: int) -> List[str]:
+        """The PR's label names, in GitHub's order."""
+        return _captured_lines(self._gh(["pr", "view", str(n), "--json", "labels",
+                                         "--jq", ".labels[].name"]))
+
+    def pr_refs(self, n: int) -> Tuple[str, str, str]:
+        """The PR's head SHA, head branch and base branch, each "" where
+        GitHub leaves it unset."""
+        lines = _captured_lines(self._gh(
+            ["pr", "view", str(n), "--json", "headRefOid,headRefName,baseRefName",
+             "--jq", '(.headRefOid // ""), (.headRefName // ""), (.baseRefName // "")']
+        ))
+        lines += [""] * (3 - len(lines))
+        return lines[0], lines[1], lines[2]
+
+    def pr_state_draft(self, n: int) -> Tuple[str, bool]:
+        """The PR's state - OPEN, CLOSED or MERGED - and whether it is a
+        draft: only gh's "true" is one."""
+        lines = _captured_lines(self._gh(["pr", "view", str(n), "--json", "state,isDraft",
+                                          "--jq", ".state, .isDraft"]))
+        lines += [""] * (2 - len(lines))
+        return lines[0], lines[1] == "true"
+
+    def pr_diff(self, n: int) -> str:
+        """The PR's diff, as gh prints it."""
+        return self._gh(["pr", "diff", str(n)])
+
     def pr_comments(self, n: int) -> List[dict]:
         """The PR's comments as gh answers them, as issue_comments answers an
         issue's. Unparsed when gh's answer is no comment list."""
         return parse_comments(self._gh(["pr", "view", str(n), "--json", "comments"]))
+
+    def pr_ready(self, n: int) -> None:
+        """Marks the draft PR ready for review."""
+        self._gh(["pr", "ready", str(n)])
+
+    def pr_draft(self, n: int) -> None:
+        """Turns the ready PR back into a draft."""
+        self._gh(["pr", "ready", str(n), "--undo"])
+
+    def pr_comment(self, n: int, body_file: str) -> None:
+        """Posts the file's contents as a comment on the PR."""
+        self._gh(["pr", "comment", str(n), "--body-file", body_file])
+
+    def pr_body_edit(self, n: int, body_file: str) -> None:
+        """Replaces the PR's body with the file's contents."""
+        self._gh(["pr", "edit", str(n), "--body-file", body_file])
+
+    def pr_title_edit(self, n: int, title: str) -> None:
+        """Replaces the PR's title."""
+        self._gh(["pr", "edit", str(n), "--title", title])
+
+    def pr_label_add(self, n: int, label: str) -> None:
+        """Adds the label to the PR, removing none."""
+        self._gh(["pr", "edit", str(n), "--add-label", label])
+
+    def pr_checks(self, n: int, scope: str) -> List[Check]:
+        """The PR's checks - the ones branch protection requires under scope
+        "required", else every check on its head - in gh's order; none where
+        gh reports no checks, or no required ones. gh exits 8 for pending
+        checks, still answering the JSON: that is read as an answer, and
+        where it leaves nothing readable, one pending check with no name or
+        link stands for it. Fails with "gh pr checks answered with something
+        jq could not read" on any other answer that does not parse."""
+        args = ["pr", "checks", str(n)] + (["--required"] if scope == "required" else [])
+        args += ["--json", "bucket,name,link"]
+        try:
+            status, out = self.limits.run(
+                lambda: self._run_status(args, (0, CHECKS_PENDING_EXIT)))
+        except GhFailed as failed:
+            if _NO_CHECKS.search(failed.stderr):
+                return []
+            raise
+        pending = [Check("pending", "", "")] if status == CHECKS_PENDING_EXIT else []
+        try:
+            return parse_checks(out) or pending
+        except Unparsed:
+            if pending:
+                return pending
+            raise GhFailed(CHECKS_UNPARSED) from None
 
     def pr_close(self, n: int, comment: str) -> None:
         """Closes the PR, posting <comment> on it."""

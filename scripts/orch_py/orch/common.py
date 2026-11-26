@@ -59,6 +59,11 @@ def without_cr(line: str) -> str:
     return line[:-1] if line.endswith("\r") else line
 
 
+def first_line(text: str) -> str:
+    """<text>'s first line, its trailing CR dropped; "" for empty text."""
+    return without_cr(text.split("\n", 1)[0])
+
+
 def die(message: str, code: int = 1) -> NoReturn:
     """Prints `orch: <message>` on stderr and exits with <code>."""
     warn(message)
@@ -124,6 +129,12 @@ def plain_positive_number(text: str) -> bool:
     """Whether <text> is a plain number (plain_number) with no leading zero,
     as bash's `''|*[!0-9]*|0*` refusal reads one."""
     return plain_number(text) and not text.startswith("0")
+
+
+def is_positive_int(text: str) -> bool:
+    """Whether <text> is a plain number (plain_number) above zero, leading
+    zeros allowed - bash's is_positive_int."""
+    return plain_number(text) and int(text) > 0
 
 
 # bash's [:space:], the characters trim drops.

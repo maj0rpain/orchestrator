@@ -9,7 +9,7 @@ import pytest
 
 from conftest import committed, died_of, git_repo, run_git
 from orch.branch import (branch_is_retired, branch_issue_of, branch_kind, branch_name_ticket,
-                         branch_pr_get, branch_records_base, branch_retire,
+                         branch_pr_get, branch_pr_set, branch_records_base, branch_retire,
                          discard_own_branch_work, forked_from_branch, forked_from_set)
 from orch.git import FakeGit, Git
 
@@ -32,6 +32,19 @@ def test_a_branch_s_recorded_pr_is_its_pr():
 
 def test_a_branch_recording_no_pr_has_none():
     assert branch_pr_get(configured(), B) is None
+
+
+def test_a_branch_s_pr_is_recorded_under_its_key_and_read_back():
+    git = FakeGit()
+
+    assert branch_pr_set(git, B, "41") is None
+    assert git.config_regexp("local", "orchestrator-pr$") == {
+        "branch.%s.orchestrator-pr" % B: "41"}
+    assert branch_pr_get(git, B) == "41"
+
+
+def test_a_pr_that_cannot_be_recorded_on_its_branch_says_so():
+    assert branch_pr_set(FakeGit(config_write_fails=["local"]), B, "41") is not None
 
 
 @pytest.mark.parametrize("value, retired", [("true", True), ("false", False), (None, False)],

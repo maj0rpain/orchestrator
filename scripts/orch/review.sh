@@ -102,17 +102,16 @@ ci_counted_probe() {
   ci_classify "$rc" "$out" "$err"
 }
 
-# ci_ready_gate [--exit 2] [--hint <text>] <pr>: the check before a PR is
-# marked ready. One look, no grace and no polling, through ci_counted: the
-# required checks first, every check when none are required. It only refuses;
-# `review ci` keeps the waiting. Failed and unreadable checks die (through
-# die2 under --exit 2, with the hint appended); pending ones note it on stderr
-# and return; green or none return silently.
+# ci_ready_gate [--hint <text>] <pr>: the check before a PR is marked ready.
+# One look, no grace and no polling, through ci_counted: the required checks
+# first, every check when none are required. It only refuses; `review ci`
+# keeps the waiting. Failed and unreadable checks die, with the hint appended;
+# pending ones note it on stderr and return; green or none return silently.
 ci_ready_gate() {
   local opts=() pr res verdict detail checks
   while [ $# -gt 1 ]; do
     case "$1" in
-      --exit|--hint) die_opt_check ci_ready_gate $# "$@"; opts+=("$1" "$2"); shift 2 ;;
+      --hint) die_opt_check ci_ready_gate $# "$@"; opts+=("$1" "$2"); shift 2 ;;
       *) die "ci_ready_gate: unknown option $1" ;;
     esac
   done

@@ -62,6 +62,10 @@ tw_repo() {
 # fake_issue_body <n> <text>: seeds issue #n's body, byte for byte.
 fake_issue_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/body"; }
 
+# fake_pr_comments_of <n>: the bodies of PR #n's comments read back from the
+# store, in order, one blank line between.
+fake_pr_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/prs/$1/comments"; }
+
 # --- every gh call pinned to the repo (#520) ----------------------------------
 # A fork whose gh default points upstream: origin is the fork, GH_REPO unset,
 # ORCH_GH_ADAPTER unset so the real adapter operations run, against the fixture

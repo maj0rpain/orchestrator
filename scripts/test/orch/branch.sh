@@ -60,6 +60,12 @@ rebase_state() {
   [ -d "$(git rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none
 }
 
+# origin_branch_state <bare> <branch>: "pushed" when <branch> reached the bare
+# origin repo <bare>, else "missing".
+origin_branch_state() {
+  git -C "$1" rev-parse --quiet --verify "refs/heads/$2" >/dev/null && echo pushed || echo missing
+}
+
 # --- branch create -----------------------------------------------------------
 # Unlike branch off's caller-named branch, this one derives its own name from
 # state - slug plus the recorded issue - and records both `branch` and
