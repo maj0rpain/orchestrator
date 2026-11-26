@@ -3,8 +3,9 @@
 (pr_push_and_body), open_pr, update_pr, pr_label_value, pr_labels_check and
 the PR-writing standard's body check (pr_body_check) - the verbs that need no
 flow state, `pr release`, `pr comment`, `pr comments`, `pr fetch`, `pr read`
-and `pr update`, and the current branch's open PR, current_open_pr, which the
-review-pass noun uses.
+and `pr update`, the verbs that act on the branch's open PR's draft state,
+`pr draft` and `pr ready`, and the current branch's open PR, current_open_pr,
+which the review-pass noun uses.
 
 run(argv) takes the arguments after `pr`, as orch.sh would hand them on, and
 returns the exit code; every error dies through orch.common.die, with bash's
@@ -17,6 +18,16 @@ and its issue-line check - and pr publish's recorded base and its check, and
 pr release's base and default branch - share one ask of GitHub; one run here
 shares it the same way (_DefaultOnce). The open-tickets refusal is
 orch.ticket's require_no_open_tickets, called directly.
+
+pr draft and pr ready (#967) turn the current branch's open PR into a draft,
+or mark it ready, for a standalone review pass whose spec questions hold the
+PR or no longer do. Stateless, with pr comment's exit codes: 0 done, a PR
+already in that state included, saying so - so the caller reads no draft
+state; 1 only when the branch has no open PR; 2 for everything else, a
+refusal included. A branch an active flow holds is refused: its PR changes
+state only through the review loop (review ready and its Ready conditions).
+pr ready makes one look at the PR's counted checks first, through
+orch/review.py's ci_ready_gate.
 """
 from __future__ import annotations
 
@@ -33,11 +44,13 @@ from orch.branch import branch_pr_set
 from orch.checkout import checkout_branch, current_branch_or_die
 from orch.common import (die, fenced, file_write_atomic, lines_of, plain_number, read_raw, rm_f,
                          stdout_write, temp_text_file, warn, without_cr)
-from orch.flow_state import (flow_base_fallback_into, flow_state_file, require_state_read,
+from orch.flow_state import (STATE_UNREADABLE_MSG, StateUnreadable, flow_base_fallback_into,
+                             flow_holding_phase, flow_state_file, require_state_read,
                              require_value, state_write_many)
 from orch.gh import GhFailed, Unparsed, adapter_of, gh_or_die, label_listed
 from orch.git import Git, git_failed
 from orch.repo import REPO_REMEDY, RepoPin
+from orch.review import ci_ready_gate
 from orch.root import checkout_root
 from orch.ticket import require_no_open_tickets
 from orch.trust import trust_filter_prs
@@ -646,6 +659,60 @@ def pr_read(args: List[str], run: _Run, _root: str) -> Optional[int]:
     return None
 
 
+def open_pr_draft_flag(run: _Run, root: str) -> Optional[Tuple[int, bool]]:
+    """pr draft's and pr ready's shared front: refuses, exit 2, a branch an
+    active flow holds or a state.json that cannot be read, then answers the
+    current branch's open PR number and whether it is a draft; None when the
+    branch has no open PR, as current_open_pr answers."""
+    branch = current_branch_or_die(run.git, 2)
+    try:
+        hold = flow_holding_phase(flow_state_file(root), branch, "")
+    except StateUnreadable:
+        die(STATE_UNREADABLE_MSG, 2)
+    if hold is not None:
+        die("the active flow holds %s at phase %s - its PR changes state only through the"
+            " review loop" % (branch, hold.phase), 2)
+    n = current_open_pr(run.gh(), run.git, 2)
+    if n is None:
+        return None
+    _, is_draft = gh_or_die("read PR #%d" % n, run.gh().pr_state_draft, n, code=2)
+    return n, is_draft
+
+
+def pr_draft(args: List[str], run: _Run, root: str) -> int:
+    """`pr draft`: the current branch's open PR turned into a draft."""
+    if args:
+        die("usage: orch.sh pr draft", 2)
+    found = open_pr_draft_flag(run, root)
+    if found is None:
+        return 1
+    n, is_draft = found
+    if is_draft:
+        print("PR #%d is already a draft" % n)
+        return 0
+    gh_or_die("turn PR #%d into a draft" % n, run.gh().pr_draft, n, code=2)
+    print("PR #%d is now a draft" % n)
+    return 0
+
+
+def pr_ready(args: List[str], run: _Run, root: str) -> int:
+    """`pr ready`: the current branch's open draft PR marked ready, once the
+    CI gate lets it through."""
+    if args:
+        die("usage: orch.sh pr ready", 2)
+    found = open_pr_draft_flag(run, root)
+    if found is None:
+        return 1
+    n, is_draft = found
+    if not is_draft:
+        print("PR #%d is already ready" % n)
+        return 0
+    ci_ready_gate(run.gh(), n, code=2)
+    gh_or_die("mark PR #%d ready" % n, run.gh().pr_ready, n, code=2)
+    print("PR #%d is now ready" % n)
+    return 0
+
+
 # The ops this noun runs, each taking the arguments after the op, the run's
 # adapters and the checkout's root, and returning its exit code (None for 0).
 VERBS = {
@@ -657,6 +724,8 @@ VERBS = {
     "fetch": pr_fetch,
     "read": pr_read,
     "update": pr_update,
+    "draft": pr_draft,
+    "ready": pr_ready,
 }
 
 

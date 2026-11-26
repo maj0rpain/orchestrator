@@ -10,6 +10,13 @@ retire <n>`'s move of the iteration records aside into pre-redo-<n>/
 stay for `review terminal` and doctor; tests/test_review.py pins this
 classification to bash's by the golden review records of
 tests/review_terminal/, run through both.
+
+It also holds the CI gate `pr ready` runs before it marks a PR ready
+(ci_ready_gate), with the helpers under it - which checks count
+(ci_counted), one look at them (ci_counted_probe), its classification
+(ci_classify) and the unreachable verdict (ci_unreachable) - each a copy of
+bash's, messages included. The bash versions stay in review.sh for `review
+ci`, the loop and doctor until the review noun converts (ADR-0067).
 """
 from __future__ import annotations
 
@@ -18,8 +25,9 @@ import os
 from typing import List, Optional, Tuple
 
 from orch.common import (ORCH_DIR_NAME, capture, die, int_as_test_reads, mkdir_p_or_die,
-                         move_files_aside, plain_number, read_raw, trim)
+                         move_files_aside, plain_number, read_raw, trim, warn)
 from orch.flow_state import flow_state_file, flow_state_get_many
+from orch.gh import Check, GhFailed, gh_reason
 from orch.handoff import section_body
 from orch.redo import redo_midway
 
@@ -155,3 +163,71 @@ def review_retire(root: str, n: str) -> str:
                    and os.path.exists(os.path.join(directory, name)))
     move_files_aside(directory, dest, "a review record - redo_count should only increase", names)
     return dest
+
+
+# --- the CI gate ---------------------------------------------------------------
+
+# The indent of a classification's detail lines, like doctor's remedies.
+CI_DETAIL_INDENT = "      "
+
+
+def ci_unreachable(detail: str) -> List[str]:
+    """The `unreachable` verdict and its indented detail line, the one
+    spelling of both."""
+    return ["unreachable", CI_DETAIL_INDENT + detail]
+
+
+def ci_classify(checks: Optional[List[Check]], stderr: str) -> List[str]:
+    """One read of a PR's checks classified, as bash ci_classify: the
+    verdict, then any detail lines, indented. <checks> is None for a read
+    that failed, with gh's <stderr>: unreachable, naming its reason. No
+    checks is none; any failed or cancelled check with a name is failing,
+    naming each; else any pending one is pending; else green."""
+    if checks is None:
+        return ci_unreachable(gh_reason(stderr))
+    if not checks:
+        return ["none"]
+    failed = [c.name for c in checks if c.bucket in ("fail", "cancel") and c.name]
+    if failed:
+        return ["failing"] + [CI_DETAIL_INDENT + name for name in failed]
+    if any(c.bucket == "pending" for c in checks):
+        return ["pending"]
+    return ["green"]
+
+
+def ci_counted(gh, pr: int) -> List[Check]:
+    """The one owner of which checks count for a PR: the required checks
+    where any are reported, else every check. A failed read raises GhFailed,
+    so it stays apart from an empty answer. No grace: a caller that waits
+    does so before calling it."""
+    return gh.pr_checks(pr, "required") or gh.pr_checks(pr, "all")
+
+
+def ci_counted_probe(gh, pr: int) -> List[str]:
+    """ci_classify's classification of PR <pr>'s counted checks
+    (ci_counted)."""
+    try:
+        checks = ci_counted(gh, pr)
+    except GhFailed as failed:
+        return ci_classify(None, failed.stderr)
+    return ci_classify(checks, "")
+
+
+def ci_ready_gate(gh, pr: int, code: int = 1) -> None:
+    """The check before PR <pr> is marked ready: one look, no grace and no
+    polling, through ci_counted. It only refuses. Failed and unreadable
+    checks die, exit <code>; pending ones warn on stderr and return; green
+    or none return silently. bash's --hint is not copied: pr ready, its one
+    Python caller, gives none."""
+    verdict, *detail = ci_counted_probe(gh, pr)
+    # The detail lines, unindented, comma-separated, empty ones skipped.
+    checks = ", ".join(line.lstrip(" ") for line in detail if line.lstrip(" "))
+    if verdict == "failing":
+        message = "PR #%d has failed checks: %s" % (pr, checks)
+    elif verdict == "unreachable":
+        message = "PR #%d checks cannot be read: %s" % (pr, checks)
+    else:
+        if verdict == "pending":
+            warn("PR #%d checks are still pending" % pr)
+        return
+    die(message, code)
