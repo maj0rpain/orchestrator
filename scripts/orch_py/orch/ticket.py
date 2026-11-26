@@ -1,42 +1,56 @@
-"""The ticket concept's Python copies, kept to what the spec-review,
-breakdown and redo nouns reach so far: a breakdown's sub-issue listing
-(ticket_sub_issues) and the state of one ticket in it; the reads and rewrites
-of a body's markdown - the numbers a ticket's `## Blocked by` section lists,
-that section rewritten, and the `## Ticket` heading a collapsed breakdown sits
-under (ADR-0012), detected and cut; the commands spec-review apply runs on a
-breakdown, `ticket exists`, `ticket block`, `ticket unblock` and `ticket
-retire`, with the helpers they reach; the reopen redo runs on a breakdown,
-`ticket reset`; and the create and link breakdown
-publish runs on each ticket, ticket_create and ticket_link, with
-ticket_links_verified, ticket_edges_verified and blockers_set; and the
-open-tickets refusal phase advance makes before it leaves implement,
-require_no_open_tickets. Each is copied
-from the bash ticket module under its bash name, with its messages and its
-order of steps; the bash copies stay while a bash caller remains (ADR-0067).
-The commands' usage refusals stay in the bash `ticket` noun: apply never
-reaches them.
+"""orch.sh's ticket noun (ADR-0067), and the ticket concept's Python copies
+the spec-review, breakdown, phase and redo nouns reach: a breakdown's
+sub-issue listing (ticket_sub_issues) and the state of one ticket in it; the
+reads and rewrites of a body's markdown - the numbers a ticket's `## Blocked
+by` section lists, that section rewritten, and the `## Ticket` heading a
+collapsed breakdown sits under (ADR-0012), detected and cut; `ticket exists`,
+`ticket block`, `ticket unblock`, `ticket retire` and `ticket reset`, with the
+helpers they reach; the create and link breakdown publish runs on each
+ticket, ticket_create and ticket_link, with ticket_links_verified,
+ticket_edges_verified and blockers_set; and the open-tickets refusal phase
+advance makes before it leaves implement, require_no_open_tickets, which
+pr.sh's `pr open` and `pr publish` reach through the refuse_open_tickets
+bridge. Each is copied from the bash ticket module under its bash name, with
+its messages and its order of steps; the bash copies stay while a bash caller
+remains.
+
+run(argv) takes the arguments after `ticket`, as orch.sh hands them on, and
+returns the exit code; every error dies through orch.common.die. Its verbs so
+far are `publish`, `next`, `list`, `parent`, `report` (`save`, `show`) and the
+five above, each behind bash's usage line and guard order, and an op it does
+not run dies with bash's "unknown ticket op" refusal, every op bash has named
+in it. A saved report keeps bash's layout, .orchestrator/reports/<n>.md, so
+one a bash session saved reads back here.
 
 The body reads take the body as awk reads it, one line per newline, a last
 line with no newline included, and each line's trailing CR ignored, so a
 body edited on the web reads as its LF twin. A heading inside a code fence
 (orch.common's fenced) is text, never a heading.
 
-`ticket exists` keeps its exit 2 for a GitHub it cannot read, so a caller
-never reads a failed read as "no breakdown". `ticket retire` keeps both
-retirement comment wordings, so a ticket a retire already commented on, in
-either, is not commented on again.
+`ticket exists` keeps its exit 2 for a GitHub it cannot read, a repo it
+cannot pin and a usage error, so a caller never reads a failure as "no
+breakdown". `ticket retire` keeps both retirement comment wordings, so a
+ticket a retire already commented on, in either, is not commented on again.
 """
 from __future__ import annotations
 
+import os
 import re
-from typing import Callable, Iterable, List, Optional, Sequence
+from typing import Callable, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from orch import comments
-from orch.common import (ORCH_DIR_NAME, die, fenced, lines_of, plain_number, rm_f_or_die,
-                         rm_rf_or_die, temp_text_file, without_cr)
-from orch.gh import GhFailed, SubIssue, gh_die, gh_or_die, verify_twice
-from orch.repo import REPO_REMEDY
+from orch.common import (ORCH_DIR_NAME, copy_or_die, die, fenced, lines_of, mkdir_p_or_die,
+                         plain_number, read_raw, rm_f_or_die, rm_rf_or_die, state_word,
+                         stdout_write, temp_text_file, without_cr)
+from orch.gh import (GhFailed, SubIssue, adapter, adapter_of, gh_die, gh_or_die,
+                     verify_twice)
+from orch.git import Git
+from orch.repo import REPO_REMEDY, RepoPin
+from orch.root import checkout_root
 from orch.triage_labels import TriageLabels
+
+# Every op of the ticket noun, as its unknown-op refusal names them.
+OPS = "publish|next|list|close|reset|parent|exists|retire|report|block|unblock|merge|reclaim"
 
 # The fixed heading line a collapsed ticket breakdown sits under (ADR-0012).
 TICKET_HEADING = "## Ticket"
@@ -73,6 +87,21 @@ def require_no_open_tickets(gh, spec: str, command: str) -> None:
     if still_open:
         die("#%s still has open tickets: %s - run the driver loop (orch.sh ticket next %s) or"
             " close them, then run %s again" % (spec, " ".join(still_open), spec, command))
+
+
+def refuse_open_tickets(
+    args: List[str],
+    gh=None,
+    env: Optional[Mapping[str, str]] = None,
+) -> None:
+    """Bridge for pr.sh's `pr open` and `pr publish`, once per command:
+    `refuse_open_tickets <issue> <command>` runs require_no_open_tickets on
+    <issue>, <command> the refusing command its message names. The real gh
+    adapter and the process's environment unless a test hands in others."""
+    if len(args) != 2:
+        die("usage: orch_python_call ticket refuse_open_tickets <issue> <command>")
+    gh = adapter(os.environ if env is None else env) if gh is None else gh
+    require_no_open_tickets(gh, args[0], args[1])
 
 
 def ticket_listing_state(listing: Sequence[SubIssue], n: str) -> str:
@@ -364,10 +393,16 @@ def ticket_unblock(gh, n: str, by: str) -> None:
     ticket_edges_change(gh, "unblock", n, by)
 
 
+def ticket_reports_dir(root: str) -> str:
+    """The directory the driver's saved ticket reports live in, under the
+    checkout at <root>: .orchestrator/reports, one <n>.md each."""
+    return "%s/%s/reports" % (root, ORCH_DIR_NAME)
+
+
 def ticket_report_remove(root: str, n: str) -> None:
     """Ticket <n>'s saved report, under the checkout at <root>, dropped if it
     has one."""
-    rm_f_or_die("%s/%s/reports/%s.md" % (root, ORCH_DIR_NAME, n),
+    rm_f_or_die("%s/%s.md" % (ticket_reports_dir(root), n),
                 "could not remove ticket #%s's saved report" % n)
 
 
@@ -433,3 +468,227 @@ def ticket_retire(gh, parent: str, root: str) -> None:
     # breakdown as complete.
     rm_rf_or_die(breakdown_dir(root, parent),
                  "could not remove the breakdown save point of #" + parent)
+
+
+def flag_value_once(usage: str, given: bool, left: int) -> None:
+    """The rule for a flag that takes a value, shared by `ticket publish
+    --blocked-by` and `ticket block`/`unblock --by`: dies with <usage> unless
+    this is the flag's first appearance (<given> False) and a value follows
+    it (<left>, the arguments left from the flag on, at least 2)."""
+    if left < 2 or given:
+        die(usage)
+
+
+PUBLISH_USAGE = ("usage: orch.sh ticket publish <parent> <title> <body-file>"
+                 " [--blocked-by N,N,...]")
+
+
+def ticket_publish(args: List[str], gh_of, root: str) -> None:
+    """`ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]`:
+    a child issue published - ticket_create then ticket_link: a native
+    sub-issue of <parent>, a native blocking edge for every --blocked-by
+    number, this repo's ready-for-agent label, every link read back and its
+    `## Blocked by` section rewritten - its number printed. Every argument
+    check runs before the first GitHub write, and a second --blocked-by is
+    refused, never allowed to replace the first."""
+    if len(args) < 3:
+        die(PUBLISH_USAGE)
+    parent, title, body_file = args[:3]
+    rest = args[3:]
+    blocked_by: Optional[str] = None
+    while rest:
+        if rest[0] != "--blocked-by":
+            die(PUBLISH_USAGE)
+        flag_value_once(PUBLISH_USAGE, blocked_by is not None, len(rest))
+        blocked_by, rest = rest[1], rest[2:]
+    if not plain_number(parent):
+        die(PARENT_NOT_PLAIN + parent)
+    if not title:
+        die("the title is empty")
+    if not os.path.isfile(body_file):
+        die("body file not found: " + body_file)
+    # A wholly empty --blocked-by "" means no blockers. The list comes back
+    # de-duplicated: GitHub stores a blocking edge once however often it is
+    # requested, so a duplicate would leave the readback's set permanently
+    # smaller than the one wanted and fail verification for a correct link.
+    want = issue_number_list("--blocked-by", blocked_by) if blocked_by else []
+    gh = gh_of()
+    child = str(ticket_create(gh, TriageLabels(lambda: root), title, body_file))
+    ticket_link(gh, parent, child, want)
+    stdout_write(child + "\n")
+
+
+def _one_arg(args: List[str], usage: str, code: int = 1) -> str:
+    """The one argument of a verb that takes exactly one; dies with <usage>,
+    exit <code>, on any other count."""
+    if len(args) != 1:
+        die(usage, code)
+    return args[0]
+
+
+def ticket_next(args: List[str], gh_of, _root: str) -> None:
+    """`ticket next <parent>`: the parent's open sub-issues with no open
+    blocker, one number a line, in the order GitHub published them. A
+    sub-issue GitHub gave no dependency summary for is never read as
+    unblocked."""
+    parent = _one_arg(args, "usage: orch.sh ticket next <parent>")
+    stdout_write("".join("%d\n" % row.number for row in ticket_sub_issues(gh_of(), parent)
+                         if row.state == "OPEN" and row.open_blockers == 0))
+
+
+def ticket_list(args: List[str], gh_of, _root: str) -> None:
+    """`ticket list <parent>`: every sub-issue of <parent>, open or closed,
+    one `<n> open|closed` line each, in the order GitHub published them - how
+    a spec review finds the tickets its accepted edits touch without calling
+    a sub-issue endpoint."""
+    parent = _one_arg(args, "usage: orch.sh ticket list <parent>")
+    stdout_write("".join("%d %s\n" % (row.number, state_word(row.state))
+                         for row in ticket_sub_issues(gh_of(), parent)))
+
+
+def ticket_parent(args: List[str], gh_of, _root: str) -> None:
+    """`ticket parent <n>`: <n>'s parent issue number, or nothing (still exit
+    0) when <n> is not a sub-issue. Every gh failure is a real one."""
+    n = _one_arg(args, "usage: orch.sh ticket parent <n>")
+    if not plain_number(n):
+        die("not a plain issue number: " + n)
+    parent = gh_or_die("read issue #%s's parent" % n, gh_of().issue_parent, int(n))
+    if parent is not None:
+        stdout_write("%d\n" % parent)
+
+
+REPORT_USAGE = "usage: orch.sh ticket report save <n> <file> | show <n>"
+
+
+def _nonempty_file(path: str) -> bool:
+    """Whether <path> exists and is not empty, as bash's `[ -s ]` reads it."""
+    try:
+        return os.stat(path).st_size > 0
+    except OSError:
+        return False
+
+
+def ticket_report(args: List[str], _gh_of, root: str) -> None:
+    """`ticket report save <n> <file> | show <n>`: a returned ticket report
+    outlives the driver session as .orchestrator/reports/<n>.md. A save
+    replaces an earlier one, through a temporary file beside it; a missing or
+    empty file is refused with nothing written, and `show` prints the saved
+    bytes as they are, dying when no report is saved."""
+    op, rest = (args[0], args[1:]) if args else ("", [])
+    directory = ticket_reports_dir(root)
+    if op not in ("save", "show") or len(rest) != (2 if op == "save" else 1):
+        die(REPORT_USAGE)
+    n = rest[0]
+    if not plain_number(n):
+        die("not a plain issue number: " + n)
+    saved = "%s/%s.md" % (directory, n)
+    if op == "show":
+        if not os.path.isfile(saved):
+            die("no saved report for ticket #" + n)
+        text = read_raw(saved)
+        if text is None:
+            die("could not read ticket #%s's saved report" % n)
+        stdout_write(text)
+        return
+    report = rest[1]
+    if not _nonempty_file(report):
+        die("report file %s is missing or empty - nothing saved" % report)
+    mkdir_p_or_die(directory, "could not create " + directory)
+    unsaved = "could not save ticket #%s's report" % n
+    copy_or_die(report, saved + ".tmp", unsaved)
+    try:
+        os.replace(saved + ".tmp", saved)
+    except OSError:
+        die(unsaved)
+
+
+def _exists(args: List[str], gh_of, _root: str) -> int:
+    """`ticket exists <parent>`: ticket_exists's verdict printed, exit 0, or
+    nothing and exit 1 for no breakdown. A usage error exits 2, never 1."""
+    parent = _one_arg(args, "usage: orch.sh ticket exists <parent>", 2)
+    kind = ticket_exists(gh_of(), parent)
+    if kind is None:
+        return 1
+    stdout_write(kind + "\n")
+    return 0
+
+
+def _edge_args(verb: str, args: List[str]):
+    """`ticket <verb> <n> --by N,N,...`'s target and --by list, the flag
+    anywhere among them: dies with <verb>'s usage line on a missing target or
+    --by, a second of either, a --by with no value, or any other flag."""
+    usage = "usage: orch.sh ticket %s <n> --by N,N,..." % verb
+    n = ""
+    by: Optional[str] = None
+    rest = list(args)
+    while rest:
+        if rest[0] == "--by":
+            flag_value_once(usage, by is not None, len(rest))
+            by, rest = rest[1], rest[2:]
+            continue
+        if rest[0].startswith("-") or n:
+            die(usage)
+        n, rest = rest[0], rest[1:]
+    if not n or by is None:
+        die(usage)
+    return n, by
+
+
+def _block(args: List[str], gh_of, _root: str) -> None:
+    n, by = _edge_args("block", args)
+    ticket_block(gh_of(), n, by)
+
+
+def _unblock(args: List[str], gh_of, _root: str) -> None:
+    n, by = _edge_args("unblock", args)
+    ticket_unblock(gh_of(), n, by)
+
+
+def _retire(args: List[str], gh_of, root: str) -> None:
+    parent = _one_arg(args, "usage: orch.sh ticket retire <parent>")
+    ticket_retire(gh_of(), parent, root)
+
+
+def _reset(args: List[str], gh_of, root: str) -> None:
+    parent = _one_arg(args, "usage: orch.sh ticket reset <parent>")
+    ticket_reset(gh_of(), parent, root)
+
+
+# The ops this noun runs, each taking the arguments after the op, the gh
+# adapter's maker and the checkout's root, and returning its exit code (None
+# for 0).
+VERBS: Dict[str, Callable[[List[str], Callable[[], object], str], Optional[int]]] = {
+    "publish": ticket_publish,
+    "next": ticket_next,
+    "list": ticket_list,
+    "parent": ticket_parent,
+    "report": ticket_report,
+    "exists": _exists,
+    "block": _block,
+    "unblock": _unblock,
+    "retire": _retire,
+    "reset": _reset,
+}
+
+
+def run(
+    argv: List[str],
+    gh=None,
+    git=None,
+    env: Optional[Mapping[str, str]] = None,
+) -> int:
+    """`orch.sh ticket <op> ...`: the real adapters and the process's
+    environment unless a test hands in others. Outside a checkout it dies
+    first, as orch.sh does, whatever the op."""
+    env = os.environ if env is None else env
+    git = Git() if git is None else git
+    root = checkout_root(git, env)
+    # The Repo, resolved once and memoised, for every gh call the op makes;
+    # the adapter itself is made at the op's first GitHub call.
+    gh_of = adapter_of(gh, env, pin=RepoPin(env, git))
+    op = argv[0] if argv else ""
+    verb = VERBS.get(op)
+    if verb is None:
+        die("unknown ticket op: %s (want %s)" % (op or "<none>", OPS))
+    code = verb(argv[1:], gh_of, root)
+    return 0 if code is None else code

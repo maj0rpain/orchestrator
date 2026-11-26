@@ -131,6 +131,12 @@ def _redo(argv: List[str]) -> int:
     return run(argv)
 
 
+def _ticket(argv: List[str]) -> int:
+    from orch.ticket import run
+
+    return run(argv)
+
+
 def _help(argv: List[str]) -> int:
     from orch.help import run
 
@@ -158,6 +164,7 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "init": _init,
     "phase": _phase,
     "redo": _redo,
+    "ticket": _ticket,
     "help": _help,
 }
 
