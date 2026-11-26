@@ -696,10 +696,10 @@ def open_ticket(github):
 
 
 @SESSIONS
-@pytest.mark.parametrize("recorded", [None, 50], ids=["create", "update"])
+@pytest.mark.parametrize("state_pr", [None, 50], ids=["create", "update"])
 def test_open_refuses_while_the_spec_has_open_tickets_starting_no_process(
-        tmp_path, root, open_ticket, store, capsys, monkeypatch, recorded, env):
-    flow(root, pr=recorded)
+        tmp_path, root, open_ticket, store, capsys, monkeypatch, state_pr, env):
+    flow(root, pr=state_pr)
     open_ticket.pr(50, "open", FLOW_BRANCH, "main")
     open_ticket.pr_body(50, "old body")
     processes_refused(monkeypatch)
