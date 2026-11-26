@@ -53,11 +53,13 @@
 #                                     glossary terms) or a Python bridge via
 #                                     orch_python_call (pr open and publish's
 #                                     refuse_open_tickets, doctor, autopilot,
-#                                     review ready's phase_finish),
+#                                     its merged-PR close among them, review
+#                                     ready's phase_finish),
 #                                     and hooks_test.sh, whose paste guard
 #                                     rows run spec-review check through it,
 #                                     plus the side-checkout sections, whose
 #                                     entry classification scans the package
+#                                     and whose merged-PR close is a bridge
 #                                     (the pytest suite runs on every call);
 #                                     not every section that reaches the
 #                                     package - fake_flow's init and the

@@ -2536,6 +2536,25 @@ assert_contains "and the Trust module's fork warning shows" "$out" "ignored 1 PR
 assert_not_contains "no PR-less issue is warned about" "$out" "issue #38"
 assert_eq "no session starts for a sync request without a side checkout" "$(tick_calls)" "0"
 
+# The pick of an issue's PR lines by head-branch prefix stays in bash: sync
+# detection over several issues starts no Python process, and the pick
+# answers with an empty PATH.
+sd_py="$(counting_bin python3)"
+PATH="$sd_py:$PATH" sourced_orch autopilot_sync_detect \
+  $'31 0 0 0\n32 0 0 0\n38 0 0 0\n39 0 0 0\n' >/dev/null 2>&1
+assert_eq "sync detection over several issues starts no python3" \
+  "$(counting_starts "$sd_py" python3)" "0"
+rm -rf "$sd_py"
+tab=$'\t'
+sd_lines="1${tab}orch/5-a${tab}c1"$'\n'"2${tab}orch/50-b${tab}x"$'\n'
+sd_lines="${sd_lines}3${tab}orch/5-c${tab}CONFLICTING"$'\n'"nohead"$'\n'
+sd_run='PATH=
+  autopilot_lines_by_prefix "$1" orch/5- picked; printf "[%s]" "$picked"
+  autopilot_lines_by_prefix "$1" orch/9- picked; printf "[%s]" "$picked"'
+assert_eq "the prefix pick, with an empty PATH: the matching lines in order, none for another prefix" \
+  "$(sourced_orch_script "$sd_run" "$sd_lines")" \
+  "[1${tab}orch/5-a${tab}c1"$'\n'"3${tab}orch/5-c${tab}CONFLICTING][]"
+
 # several open PRs: warned about and skipped
 fake_issue 40 open orch:done; fake_pr 140 open orch/40-widget main; fake_pr_mergeable 140 CONFLICTING
 fake_pr 140 open orch/40-a main; fake_pr_mergeable 140 CONFLICTING
@@ -2674,6 +2693,35 @@ fake_merged 59 3600
 assert_eq "a tick under a usage limit still closes the issue" "$(fake_state_of 59)" "CLOSED"
 rm -f "$limit"
 
+# The backstop is one Python process a tick, through its bridge: without a
+# usable python3 it warns with the shared line, keeps the whole table and
+# returns 0, so the tick goes on.
+fake_merged 60 3600; fake_merged 61 3600; fake_merged 62 3600
+cm_table=$'60 0 0 0\n61 1 0 0\n'
+cm_run='autopilot_close_missed "$1" cm_kept; st=$?; printf "%s|st=%s" "$cm_kept" "$st"'
+cm_err="$(mktemp)"
+out="$(PATH="$(path_without python3)" sourced_orch_script "$cm_run" "$cm_table" 2>"$cm_err")"
+assert_eq "with no python3 the backstop keeps the whole table and returns 0" \
+  "$out" "$cm_table|st=0"
+assert_eq "warning with exactly the shared needs-python3 line" "$(cat "$cm_err")" \
+  "orch: orch.sh autopilot needs python3 3.9 or newer (found none) - run orch.sh doctor"
+assert_eq "and closes nothing" "$(fake_state_of 60)" "OPEN"
+cm_py="$(counting_bin python3)"
+out="$(PATH="$cm_py:$PATH" sourced_orch_script "$cm_run" \
+  $'60 0 0 0\n61 0 0 0\n62 1 0 0\n' 2>"$cm_err")"
+assert_eq "over several not-running issues python3 starts once" \
+  "$(counting_starts "$cm_py" python3)" "1"
+assert_eq "the table kept is the one issue not closed" "$out" $'62 1 0 0\n|st=0'
+assert_eq "both not-running issues are closed" \
+  "$(fake_state_of 60) $(fake_state_of 61)" "CLOSED CLOSED"
+: >"$cm_py/python3.log"
+out="$(PATH="$cm_py:$PATH" sourced_orch_script "$cm_run" "" 2>&1)"
+assert_eq "over an empty table python3 never starts" \
+  "$(counting_starts "$cm_py" python3)" "0"
+assert_eq "and the table stays empty" "$out" "|st=0"
+rm -rf "$cm_py" "$cm_err"
+fake_issue_drop 60 61 62
+
 # no open orch:done issue: no merged PRs are read
 fake_issue_drop 50 51 52 53 54 55 56 57 58 59
 fake_fail adapter_prs_merged_closing "HTTP 502"; fake_fail adapter_issue_created_at "HTTP 502"
@@ -2754,20 +2802,27 @@ fake_issue_drop 82
 
 fake_done_merged 83 $((4 * bd_day)) $((5 * bd_day))
 fake_done_merged 84 3600 $((1 * bd_day))
-bd_reads="$(mktemp)"
-bd_defs="$(writeln "$(counting_defs adapter_prs_merged_closing prs)" "$(counting_defs adapter_issue_created_at created)")"
-counted_adapter_run "$bd_reads" "$bd_defs" "$ORCH" autopilot tick >/dev/null 2>&1
+# The merged-PR close reads in Python, so a second read of either kind is
+# made to fail: the tick warns of neither.
+fake_fail_after adapter_prs_merged_closing 1 "HTTP 502"
+fake_fail_after adapter_issue_created_at 1 "HTTP 502"
+out="$("$ORCH" autopilot tick 2>&1)"
 assert_eq "two done issues of different ages are both closed in one tick (older)" "$(fake_state_of 83)" "CLOSED"
 assert_eq "and the newer" "$(fake_state_of 84)" "CLOSED"
-assert_eq "the tick makes one merged-PR listing" "$(log_count "$bd_reads" prs)" "1"
-assert_eq "and one creation-time read" "$(log_count "$bd_reads" created)" "1"
+assert_not_contains "the tick makes one merged-PR listing" "$out" "could not read the merged PRs"
+assert_not_contains "and one creation-time read" "$out" "could not read the creation time"
+fake_unfail
 fake_issue_drop 83 84
 
+# #85 is running and the oldest. A read bounded by #86's creation reads #86's
+# PR, merged before #87 was created, but never #87's, merged before #86 was.
 fake_done_merged 85 3600 $((3 * bd_day)); fake_issue_relabel 85 orch:done orch:running
-fake_done_merged 86 3600 $((2 * bd_day))
-fake_done_merged 87 3600 $((1 * bd_day))
-counted_adapter_run "$bd_reads" "$bd_defs" "$ORCH" autopilot tick >/dev/null 2>&1
-assert_eq "the creation-time read names the oldest issue not carrying orch:running" "$(grep '^created ' "$bd_reads")" "created 86"
+fake_done_merged 86 $((3 * bd_day / 2)) $((2 * bd_day))
+fake_done_merged 87 $((5 * bd_day / 2)) $((1 * bd_day))
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "the read is bounded by the oldest issue not carrying orch:running: its own PR is read" \
+  "$(fake_state_of 86)" "CLOSED"
+assert_eq "and #87's, merged before #86 was created, is not" "$(fake_state_of 87)" "OPEN"
 fake_issue_drop 85 86 87
 
 fake_done_merged 88 3600; fake_issue_relabel 88 orch:done orch:running

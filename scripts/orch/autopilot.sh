@@ -1121,6 +1121,23 @@ autopilot_done_read() {
   printf -v "$1" '%s' "$_table"
 }
 
+# autopilot_lines_by_prefix <lines> <prefix> <var>: sets the caller-named <var>
+# to the lines of <lines> - the open PRs' - whose head branch, the second
+# tab-separated field, starts with <prefix>, in their order and
+# newline-joined. Matches in bash and starts no process, since sync detection
+# calls it once per issue; a line with no second field never matches.
+autopilot_lines_by_prefix() {
+  local _line _head _picked=""
+  while IFS= read -r _line; do
+    case "$_line" in *$'\t'*) ;; *) continue ;; esac
+    tsv_split "$_line" _ _head
+    case "$_head" in
+      "$2"*) _picked="$_picked$_line"$'\n' ;;
+    esac
+  done <<<"$1"
+  printf -v "$3" '%s' "${_picked%$'\n'}"
+}
+
 # autopilot_sync_detect <table>: the sync request auto-detection, from the
 # done table autopilot_done_read took (it reads no issue itself). When the table
 # is not empty, reads the repo's open PRs once, then files a sync request,
@@ -1146,7 +1163,7 @@ autopilot_sync_detect() {
       continue
     fi
     branch_name_flow_into head_prefix "$issue" ""
-    pr_lines_by_prefix "$prs" "$head_prefix" pr_lines
+    autopilot_lines_by_prefix "$prs" "$head_prefix" pr_lines
     [ -n "$pr_lines" ] || continue
     pr_newlines="${pr_lines//[^$'\n']/}"
     count=$(( ${#pr_newlines} + 1 ))
@@ -1164,34 +1181,22 @@ autopilot_sync_detect() {
 # autopilot_close_missed <table> <table-var>: the merged-PR backstop (#2478),
 # run every tick whatever the auto-sync setting, from the done table
 # autopilot_done_read took (it reads no issue itself). When the table is not
-# empty, reads the PRs merged into the default branch since the oldest issue in
-# it not carrying orch:running was created - once, and not at all when every
-# issue carries it - and closes, through
-# pr_close_missed - each issue in it not carrying orch:running whose newest
-# merged PR from `orch/<issue>-` should have closed it. orch:sync and
-# needs-human do not stop it. A failed read or close warns and skips, never
-# stopping the tick. Writes into the caller-named <table-var> the table minus
-# every issue it closed: the whole table when the merged-PR read fails.
+# empty, runs pr.py's close_missed_tick bridge on it - one Python process a
+# tick, none for an empty table - which reads the PRs merged into the default
+# branch since the oldest issue in it not carrying orch:running was created,
+# once and not at all when every issue carries it, and closes each issue not
+# carrying it whose newest merged PR from `orch/<issue>-` should have closed
+# it. orch:sync and needs-human do not stop it. Writes into the caller-named
+# <table-var> the table minus every issue it closed. A failed read or close,
+# or a bridge that cannot run (python3 missing included), warns through the
+# bridge's own stderr and leaves the whole table, never stopping the tick.
 autopilot_close_missed() {
-  local prs issue running sync human default bound_issue="" kept="" head_prefix issue_prs
+  local _acm_kept
   printf -v "$2" '%s' "$1"
   [ -n "$1" ] || return 0
-  while read -r issue running sync human; do
-    [ -n "$issue" ] && [ "$running" = 0 ] || continue
-    bound_issue="$issue"; break
-  done <<<"$1"
-  [ -n "$bound_issue" ] || return 0
-  pr_merged_closing_read default prs "no merged-PR close this tick" "$bound_issue" || return 0
-  while read -r issue running sync human; do
-    [ -n "$issue" ] || continue
-    if [ "$running" = 0 ]; then
-      branch_name_flow_into head_prefix "$issue" ""
-      pr_lines_by_prefix "$prs" "$head_prefix" issue_prs
-      if pr_close_newest "$issue" "$default" "$issue_prs"; then continue; fi
-    fi
-    kept="$kept$issue $running $sync $human"$'\n'
-  done <<<"$1"
-  printf -v "$2" '%s' "$kept"
+  _acm_kept="$(orch_python_call --as autopilot pr close_missed_tick "$1" </dev/null)" || return 0
+  [ -z "$_acm_kept" ] || _acm_kept="$_acm_kept"$'\n'
+  printf -v "$2" '%s' "$_acm_kept"
 }
 
 # autopilot_rank <phase word>: the pickup rank of a session's phase word, lowest

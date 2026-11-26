@@ -13,6 +13,13 @@ messages and in bash's order of guards and side effects. An op it does not
 run dies with bash's "unknown pr op" refusal, every op bash has named in it.
 The bash noun still serves the CLI: nothing dispatches here yet.
 
+The merged-PR backstop (#2477, #2478) lives here alone: PR_CLOSE_GRACE,
+pr_close_missed, the merged-closing read and the newest-merge pick, behind
+two bridges bash calls once per caller site, never once per issue -
+close_missed_tick for autopilot's tick and close_missed_finish for
+side-checkout's sweep. Each exits 0 whatever its reads and closes did, after
+their warnings; only a usage error dies.
+
 Bash caches the default branch for its process, so pr open's base fallback
 and its issue-line check - and pr publish's recorded base and its check, and
 pr release's base and default branch - share one ask of GitHub; one run here
@@ -31,23 +38,25 @@ orch/review.py's ci_ready_gate.
 """
 from __future__ import annotations
 
+import calendar
 import json
 import os
 import re
 import tempfile
+import time
 from contextlib import contextmanager
-from typing import Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 from orch import comments
 from orch.base import base_branch_into, default_branch, recorded_base_into
-from orch.branch import branch_pr_set
+from orch.branch import branch_name_flow, branch_pr_set
 from orch.checkout import checkout_branch, current_branch_or_die
 from orch.common import (die, fenced, file_write_atomic, lines_of, plain_number, read_raw, rm_f,
                          stdout_write, temp_text_file, warn, without_cr)
 from orch.flow_state import (STATE_UNREADABLE_MSG, StateUnreadable, flow_base_fallback_into,
                              flow_holding_phase, flow_state_file, require_state_read,
                              require_value, state_write_many)
-from orch.gh import GhFailed, Unparsed, adapter_of, gh_or_die, label_listed
+from orch.gh import GhFailed, Unparsed, adapter_of, gh_or_die, gh_reason, label_listed
 from orch.git import Git, git_failed
 from orch.repo import REPO_REMEDY, RepoPin
 from orch.review import ci_ready_gate
@@ -146,6 +155,209 @@ class _Run:
     def default(self) -> str:
         """The default branch, as bash's default_branch_into answers it."""
         return default_branch(self.gh(), self.git, self.pin).name
+
+
+# --- the merged-PR close (#2477, #2478) ---------------------------------------
+
+# The grace period, in seconds, after a merge before the backstop closes an
+# issue GitHub left open: GitHub's own close lands within it, so the backstop
+# never races it.
+PR_CLOSE_GRACE = 300
+
+
+def iso_epoch(text: str) -> Optional[int]:
+    """The UTC timestamp <text>, YYYY-MM-DDTHH:MM:SSZ, as epoch seconds, or
+    None for a value that does not read - bash autopilot_iso_epoch, which
+    stays for autopilot's other callers."""
+    try:
+        return calendar.timegm(time.strptime(text, "%Y-%m-%dT%H:%M:%SZ"))
+    except ValueError:
+        return None
+
+
+def pr_close_missed(gh, issue: str, pr: str, merged_at: str, closing: str, default: str,
+                    now: float) -> int:
+    """The backstop for GitHub's auto-close (#2477). <issue> is open and its
+    work finished - the caller checked both - and PR <pr> merged into
+    <default>, the default branch, at <merged_at>, a UTC timestamp. Closes
+    the issue as completed, with a comment naming the PR and the default
+    branch, when the merge is at least PR_CLOSE_GRACE seconds old at <now>,
+    epoch seconds, and <closing> - its closingIssuesReferences,
+    comma-separated numbers - lists <issue>. Labels are left as they are.
+    Returns 0 when it closed the issue, 1 on a silent skip, 2 when the close
+    failed, after a warning that skips this issue only, 3 when every other
+    condition held but the merge is inside the grace period (the caller may
+    warn)."""
+    if issue not in closing.split(","):
+        return 1
+    merged = iso_epoch(merged_at)
+    if merged is None:
+        return 1
+    if int(now) - merged < PR_CLOSE_GRACE:
+        return 3
+    try:
+        gh.issue_close(int(issue), reason="completed",
+                       comment="Closed by the orchestrator: PR #%s merged into `%s` with"
+                               " `Closes #%s`, but GitHub did not close this issue."
+                               % (pr, default, issue))
+    except GhFailed as failed:
+        warn("could not close issue #%s after PR #%s merged: %s"
+             % (issue, pr, gh_reason(failed.stderr)))
+        return 2
+    return 0
+
+
+def newest_merge(lines: Sequence[str]) -> Optional[Tuple[str, str, str]]:
+    """The newest merge among <lines>, the merged-PR read's lines the
+    caller picked - its PR number, merge timestamp and closing issues - or
+    None when no line has a merge timestamp, as bash's pr_close_newest
+    picked it: the timestamps (one ISO format) compared as strings, a blank
+    line skipped, a line with no timestamp never picked, and of equal
+    timestamps the earlier line winning."""
+    best: Optional[List[str]] = None
+    for text in lines:
+        fields = text.split("\t") + ["", "", ""]
+        if fields[2] and (best is None or fields[2] > best[2]):
+            best = fields
+    return None if best is None else (best[0], best[2], best[3])
+
+
+def close_newest(gh, issue: str, default: str, lines: Sequence[str],
+                 now: float) -> Tuple[int, str]:
+    """pr_close_missed's status on the newest merge among <lines> - the
+    caller's pick of the merged-PR read's lines, the ones that may close
+    <issue> - and that merge's PR number; 1 and "" when no line has a merge
+    timestamp."""
+    newest = newest_merge(lines)
+    if newest is None:
+        return 1, ""
+    number, merged_at, closing = newest
+    return pr_close_missed(gh, issue, number, merged_at, closing, default, now), number
+
+
+def merged_closing_read(run: _Run, skip: str, issue: str) -> Optional[Tuple[str, List[str]]]:
+    """The backstop's one read: the default branch, then the PRs merged
+    into it since <issue> - the oldest the caller may close - was created,
+    fork PRs dropped (trust_filter_prs), as the merged-PR read's lines less
+    their flag. None after a warning ending in <skip>, the caller's words
+    for what it gives up, when any read fails."""
+    default = run.default()
+    try:
+        since = run.gh().issue_created_at(int(issue))
+    except GhFailed as failed:
+        warn("could not read the creation time of issue #%s: %s - %s"
+             % (issue, gh_reason(failed.stderr), skip))
+        return None
+    try:
+        raw = run.gh().prs_merged_closing(default, since)
+    except GhFailed as failed:
+        warn("could not read the merged PRs: %s - %s" % (gh_reason(failed.stderr), skip))
+        return None
+    try:
+        return default, trust_filter_prs("the merged PRs", raw)
+    except Unparsed:
+        warn("the merged PRs could not be read: a malformed line - %s" % skip)
+        return None
+
+
+def lines_by_prefix(lines: Sequence[str], prefix: str) -> List[str]:
+    """The lines of <lines> whose head branch, the second tab-separated
+    field, starts with <prefix>, in their order; a line with no second
+    field never matches."""
+    return [text for text in lines if "\t" in text and text.split("\t")[1].startswith(prefix)]
+
+
+TICK_USAGE = "usage: orch_python_call pr close_missed_tick <table>"
+
+
+def _done_rows(table: str) -> List[List[str]]:
+    """The done table's rows, `<issue> <running> <sync> <human>` each, as
+    their four fields, blank lines skipped; dies with TICK_USAGE on a row
+    of another shape."""
+    rows = []
+    for text in table.split("\n"):
+        fields = text.split()
+        if not fields:
+            continue
+        if len(fields) != 4 or not plain_number(fields[0]):
+            die(TICK_USAGE)
+        rows.append(fields)
+    return rows
+
+
+def close_missed_tick(
+    args: List[str],
+    gh=None,
+    git=None,
+    env: Optional[Mapping[str, str]] = None,
+    now: Callable[[], float] = time.time,
+) -> None:
+    """Bridge for autopilot's tick, once per tick and only on a done table
+    that is not empty: `close_missed_tick <table>`, the done table
+    autopilot_done_read took, its `<issue> <running> <sync> <human>` lines
+    oldest issue first. The merged-PR backstop (#2478): reads the PRs merged
+    into the default branch since the first issue not carrying orch:running
+    was created - once, and not at all when every issue carries it - and
+    closes each issue not carrying it whose newest merged PR from
+    `orch/<issue>-` should have closed it; orch:sync and needs-human do not
+    stop it. Prints the table less every issue it closed: the whole table
+    when the read fails. A failed read or close warns and skips, never
+    failing the bridge. The real adapters, the process's environment and
+    clock unless a test hands in others."""
+    if len(args) != 1:
+        die(TICK_USAGE)
+    rows = _done_rows(args[0])
+    kept = rows
+    bound = next((row[0] for row in rows if row[1] == "0"), None)
+    if bound is not None:
+        run = _Run(gh, Git() if git is None else git, os.environ if env is None else env)
+        read = merged_closing_read(run, "no merged-PR close this tick", bound)
+        if read is not None:
+            default, prs = read
+            at = now()
+            kept = []
+            for row in rows:
+                if row[1] == "0":
+                    picked = lines_by_prefix(prs, branch_name_flow(row[0], ""))
+                    if close_newest(run.gh(), row[0], default, picked, at)[0] == 0:
+                        continue
+                kept.append(row)
+    stdout_write("".join(" ".join(row) + "\n" for row in kept))
+
+
+FINISH_USAGE = "usage: orch_python_call pr close_missed_finish <issue> <pr> <branch>"
+
+
+def close_missed_finish(
+    args: List[str],
+    gh=None,
+    git=None,
+    env: Optional[Mapping[str, str]] = None,
+    now: Callable[[], float] = time.time,
+) -> None:
+    """Bridge for side-checkout's sweep, once per finished checkout whose
+    issue is open: `close_missed_finish <issue> <pr> <branch>`, <pr> the
+    flow's recorded PR or empty. The merged-PR backstop (#2477): reads the
+    PRs merged into the default branch since <issue> was created and closes
+    <issue> through the newest merge among them that is PR <pr>, or, with
+    no <pr>, that is from <branch>. A merge inside the grace period gets a
+    warning, since no later sweep will see it. A failed read or close warns
+    and never fails the bridge. The real adapters, the process's
+    environment and clock unless a test hands in others."""
+    if len(args) != 3 or not plain_number(args[0]) or not (args[1] == "" or plain_number(args[1])):
+        die(FINISH_USAGE)
+    issue, number, branch = args
+    run = _Run(gh, Git() if git is None else git, os.environ if env is None else env)
+    read = merged_closing_read(run, "no merged-PR close for issue #" + issue, issue)
+    if read is None:
+        return
+    default, prs = read
+    field, wanted = (0, number) if number else (1, branch)
+    picked = [text for text in prs if (text.split("\t") + [""])[field] == wanted]
+    status, closed = close_newest(run.gh(), issue, default, picked, now())
+    if status == 3:
+        warn("issue #%s is still open: PR #%s merged less than %d minutes ago - GitHub may yet"
+             " close it, and no later sweep will check" % (issue, closed, PR_CLOSE_GRACE // 60))
 
 
 # --- the shared steps ---------------------------------------------------------

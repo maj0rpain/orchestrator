@@ -424,12 +424,14 @@ cmd_side_checkout_remove() {
 # A flow's issue and PR are the ones its state records; a flow-less checkout's
 # PR is the newest merged from <branch> and its issue the one a `quick/<issue>-`
 # branch names - any other branch is skipped. Closes the issue, when open,
-# through pr_close_missed. An open issue whose PR merged inside the grace period
-# gets a warning, since no later sweep will see it. A failed read or close warns
-# and never fails the sweep: always returns 0.
+# through pr.py's close_missed_finish bridge, one Python process a checkout
+# closed, which warns when the PR merged inside the grace period, since no
+# later sweep will see it. A failed read or close, or a bridge that cannot run
+# (python3 missing included), warns and never fails the sweep: always returns
+# 0.
 side_checkout_close_missed() {
   orch_load standing
-  local path="$1" br="$2" state issue pr="" closed_pr default prs rc=0
+  local path="$1" br="$2" state issue pr=""
   if checkout_has_flow "$path"; then
     state="$(flow_state_file "$path")"
     state_get_many_in "$state" issue=issue pr=pr 2>/dev/null || return 0
@@ -440,11 +442,7 @@ side_checkout_close_missed() {
   fi
   standing_read "$issue" || { warn "could not read issue #$issue: $STANDING_REASON - the merged-PR close skips it"; return 0; }
   [ "$STANDING_STATE" = OPEN ] || return 0
-  pr_merged_closing_read default prs "no merged-PR close for issue #$issue" "$issue" || return 0
-  pr_close_newest "$issue" "$default" "$(printf '%s\n' "$prs" | awk -F'\t' -v pr="$pr" -v br="$br" '(pr != "" ? $1 == pr : $2 == br)')" closed_pr || rc=$?
-  if [ "$rc" -eq 3 ]; then
-    warn "issue #$issue is still open: PR #$closed_pr merged less than $((PR_CLOSE_GRACE / 60)) minutes ago - GitHub may yet close it, and no later sweep will check"
-  fi
+  orch_python_call --as side-checkout pr close_missed_finish "$issue" "$pr" "$br" </dev/null || :
   return 0
 }
 

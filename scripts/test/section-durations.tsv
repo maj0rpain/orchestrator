@@ -62,9 +62,9 @@
 14	16	autopilot tick: the label check writes only drift (#2691)	1fcddf207b92fd0134538a03f041402aed6e3cd8
 91	104	autopilot tick and run: sync requests	f5b66192fff1898a90d6e8f780df87e6e3a418f3
 129	146	autopilot tick: pickup rank and sync slots	53dadc6f886ffff2ebd55bb54bf7a5dfb8c4bc05
-52	61	autopilot tick: sync request auto-detection (#2325)	fc4beaa4d7cc1c4935d5765d83b882b4ca61c791
-30	35	autopilot tick: the merged-PR close backstop (#2478)	f80591d7abe77710d00a96219bf7745129565ca9
-56	65	autopilot tick: one read of the done issues (#2559)	4893caa1a8b4d8474e59f1e871ae019d27df30b9
+50	57	autopilot tick: sync request auto-detection (#2325)	b0bad54f10614e8512df328f8ce3299d73a11f22
+84	89	autopilot tick: the merged-PR close backstop (#2478)	9c5e9499463925e5c8bc77b02f87cbc727953157
+42	51	autopilot tick: one read of the done issues (#2559)	6d8cccde2c8222e53dc7c8b2602bfc49b4050d9f
 11	13	autopilot sync-finish, sync-dropped and sync-fail	9c0b0a556ac9520fe0f475496ed41002c707d11c
 18	21	autopilot tick: the GitHub limit pause (#2577)	3994210f43823581c396675c4421bdcfe9c9be86
 29	34	autopilot tick: a pickup that meets a GitHub limit (#2577)	f9ef20d8cce00ea3ccb8963b1411ecdf5f0819c4
@@ -193,8 +193,7 @@
 15	14	pr comments (#418)	da4e1dc81309f853adbd4fe66f826a765d0d4fad
 22	19	pr read (#1573)	31062dd3f970514759a241f0fe732323e1f36225
 24	19	pr: fork PRs (#1977)	47746a5a1b973eb25d45c23f5c10abc2bcd888b0
-8	7	pr: no repo (#3050)	0010f87ac2cc1f67bb8dbeeceb28821dc55227ca
-1	1	pr: PR-line pick and newest merge (#3074)	27c7643cf363333c311c7e99d5ab335427cecb7b
+7	8	pr: no repo (#3050)	c88a7fb02c44aa44f5cfdd5c601bb8eb0a5e9cc4
 9	10	repo show	03b579d082d6e4e5353a860b91cb90f1006013d0
 8	9	default-branch	2ab1b9bd03b98654ef71dcf00efa0fd1f0f07c16
 10	11	review ready's pointer to /orchestrator:finish (#727)	6911df97b10ec9bcdd6245ae4ae4de61db8779c1
@@ -229,7 +228,7 @@
 18	19	archive keeps flow-less directories (#1247)	1cf41fafd151a6478b41bf1fd7aff5efd9847669
 30	34	side-checkout prune: a covered branch tip (#1906)	8ebe0cf87526357849fc8acf8dadda9117ca2fcc
 5	7	side-checkout prune: fork PRs are not proof (#1979)	004dd30e3e0deb54b95c8c79110e26cd2ffc4014
-49	52	side-checkout prune: the merged-PR close backstop (#2477)	69f285288eabcace9d74fa67194548b6bf7ab512
+10	112	side-checkout prune: the merged-PR close backstop (#2477)	3b431472c7770655d7db67d311496872803eb87c
 2	3	side_checkout_marker reads the worktree's git pointer	7605e77ff7fdca5853e0a9cc368065fe764cb65e
 10	12	side checkout marker issue: reading without re-classifying (#3073)	4d201251bfb73c22114fdcdc86ae808fb3930ed5
 5	6	archive reads the flow's slug once	d1e47a75531129e6123579f59802dd69c84d1d76
