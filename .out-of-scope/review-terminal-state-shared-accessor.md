@@ -10,7 +10,7 @@ across two or three call sites.
 
 The classifier itself is already properly deduplicated — call sites don't
 recompute it, they each just ask "what to do with the result" differently:
-`cmd_redo_review` decides whether Redo may proceed, `check_flow_review_terminal`
+the Python `redo` noun (`_refuse_unstopped` in `orch/redo.py`) decides whether Redo may proceed, `check_flow_review_terminal`
 decides what doctor should print, and the flow skill's prose describes the
 same three cases in FAQ form for a human reader. A shared "classify and
 describe" helper generic enough to serve all three either grows a mode

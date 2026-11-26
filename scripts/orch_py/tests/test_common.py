@@ -1,14 +1,23 @@
-"""The primitives of orch.common no concept owns, each as bash common.sh's:
-so far the move of named files aside into a folder."""
+"""The primitives of orch.common no concept owns, each as bash's: so far the
+move of named files aside into a folder, and an integer as bash's test reads
+one."""
 from __future__ import annotations
 
-from conftest import died_of
-from orch.common import move_files_aside
+import pytest
+
+from conftest import died_of, files_under
+from orch.common import int_as_test_reads, move_files_aside
 
 
-def files_under(path):
-    """Every file under <path>, by its path relative to it, sorted."""
-    return sorted(str(p.relative_to(path)) for p in path.rglob("*") if p.is_file())
+# Each text and what `[ "$text" -eq ... ]` reads it as, None where test
+# refuses it with "integer expected" - each answer checked against bash.
+@pytest.mark.parametrize("text, value", [
+    ("3", 3), (" 3", 3), ("\n3", 3), ("3 ", 3), ("3\t", 3), ("3\n", 3), ("3 \n\n", 3),
+    ("3\v", 3), ("+3", 3), ("-0", 0), ("007", 7), ("", None), ("x", None), ("1_0", None),
+    ("3x", None), ("٣", None),
+])
+def test_an_integer_reads_as_bash_s_test_reads_it(text, value):
+    assert int_as_test_reads(text) == value
 
 
 def test_the_named_files_that_exist_move_aside_into_the_folder_made_for_them(tmp_path):

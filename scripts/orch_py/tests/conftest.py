@@ -104,14 +104,31 @@ def labels_of(store, n):
     return (read(store, "issues", n, "labels") or "").split("\n")[:-1]
 
 
-def comments_of(store, n):
-    """The bodies of issue #n's comments, in order."""
+def comments_of(store, n, kind="issues"):
+    """The bodies of issue #n's comments, in order - PR #n's with <kind>
+    "prs"."""
     bodies = []
     k = 1
-    while read(store, "issues", n, "comments", k, "body") is not None:
-        bodies.append(read(store, "issues", n, "comments", k, "body"))
+    while read(store, kind, n, "comments", k, "body") is not None:
+        bodies.append(read(store, kind, n, "comments", k, "body"))
         k += 1
     return bodies
+
+
+def files_under(path):
+    """Every file under <path>, a Path, by its POSIX path relative to it,
+    sorted."""
+    return sorted(p.relative_to(path).as_posix() for p in path.rglob("*") if p.is_file())
+
+
+def orch_files(root, folder, *names):
+    """Writes each of <names> into <root>'s .orchestrator/<folder>, holding
+    its own name: the folder, a Path."""
+    directory = root / ".orchestrator" / folder
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (directory / name).write_text(name)
+    return directory
 
 
 def state_json(root):

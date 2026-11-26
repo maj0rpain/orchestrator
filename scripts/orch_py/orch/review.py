@@ -17,8 +17,8 @@ import fnmatch
 import os
 from typing import List, Optional, Tuple
 
-from orch.common import (ORCH_DIR_NAME, capture, die, mkdir_p_or_die, move_files_aside,
-                         plain_number, read_raw, trim)
+from orch.common import (ORCH_DIR_NAME, capture, die, int_as_test_reads, mkdir_p_or_die,
+                         move_files_aside, plain_number, read_raw, trim)
 from orch.flow_state import flow_state_file, flow_state_get_many
 from orch.handoff import section_body
 from orch.redo import redo_midway
@@ -93,15 +93,6 @@ def review_flat_record_gone(root: str, i: str) -> bool:
     return not died and not os.path.exists(flat)
 
 
-def _test_int(text: str) -> Optional[int]:
-    """<text> as bash's test reads an integer for -eq and -lt; None where
-    test would refuse it."""
-    try:
-        return int(text.lstrip(" \t\n\v\f\r").rstrip(" \t"), 10)
-    except ValueError:
-        return None
-
-
 def review_terminal_state(root: str, i: str, budget: str) -> Tuple[List[str], int]:
     """The review loop's last iteration, <i>, classified against <budget>,
     as bash review_terminal_state: (its lines, its status). The first line is
@@ -117,7 +108,7 @@ def review_terminal_state(root: str, i: str, budget: str) -> Tuple[List[str], in
     short of the budget and interrupted once it is spent. While a redo review
     is half-finished and the flat record is gone, the record is read from
     pre-redo-<redo_count>/ (review_terminal_record)."""
-    if _test_int(i) == 0:
+    if int_as_test_reads(i) == 0:
         return ["none"], 1
     path, err, died = capture(lambda: review_terminal_record(root, i))
     if died:
@@ -128,7 +119,7 @@ def review_terminal_state(root: str, i: str, budget: str) -> Tuple[List[str], in
     # read whatever the iteration; only its absence depends on the budget.
     sec = review_record_terminal(path)
     if sec is None:
-        n, spent = _test_int(i), _test_int(budget)
+        n, spent = int_as_test_reads(i), int_as_test_reads(budget)
         pending = n is not None and spent is not None and n < spent
         return ["pending" if pending else "interrupted"], 1
     # The section from its first line holding more than spaces and tabs on.

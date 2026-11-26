@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from conftest import GH_502, comments_of, died_of, fake, flow_state, read
+from conftest import GH_502, comments_of, died_of, fake, flow_state, orch_files, read
 from orch.handoff import PHASE_TABLE, handoff_retire, handoffs_due, handoffs_written_from
 
 HANDOFF_SH = Path(__file__).resolve().parents[2] / "orch" / "handoff.sh"
@@ -39,18 +39,8 @@ def no_gh():
     raise AssertionError("the file adapter reaches no gh")
 
 
-def handoffs(root, *names):
-    """Writes each of <names> into <root>'s handoff directory, holding its
-    own name: the directory, a Path."""
-    directory = root / ".orchestrator" / "handoff"
-    directory.mkdir(parents=True, exist_ok=True)
-    for name in names:
-        (directory / name).write_text(name)
-    return directory
-
-
 def test_the_file_retire_moves_each_named_handoff_there_into_its_label_s_folder(root):
-    directory = handoffs(root, "01-plan.md", "02-spec.md")
+    directory = orch_files(root, "handoff", "01-plan.md", "02-spec.md")
 
     handoff_retire("pre-redo-1", ["02-spec.md", "03-implement.md"], no_gh, {}, str(root))
 
@@ -59,7 +49,7 @@ def test_the_file_retire_moves_each_named_handoff_there_into_its_label_s_folder(
 
 
 def test_the_file_retire_refuses_a_folder_already_holding_a_named_handoff(root, capsys):
-    directory = handoffs(root, "02-spec.md", "03-implement.md")
+    directory = orch_files(root, "handoff", "02-spec.md", "03-implement.md")
     (directory / "pre-redo-1").mkdir()
     (directory / "pre-redo-1" / "03-implement.md").write_text("an earlier attempt's")
 

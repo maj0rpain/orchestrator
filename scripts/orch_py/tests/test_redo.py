@@ -17,8 +17,8 @@ from contextlib import contextmanager
 
 import pytest
 
-from conftest import (GH_502, Opens, comments_of, died_of, fake, hold_flow, read, snapshot,
-                      state_json)
+from conftest import (GH_502, Opens, comments_of, died_of, fake, files_under, hold_flow, read,
+                      snapshot, state_json)
 from orch import redo
 from orch.git import FakeGit, Worktree
 
@@ -97,15 +97,6 @@ def reviewing(root, seed, iteration=5, budget=5, **state):
     seed.pr(PR, "open", BRANCH, "main")
 
 
-def pr_comments(store, n):
-    """The bodies of PR #n's comments, in order."""
-    bodies, k = [], 1
-    while read(store, "prs", n, "comments", k, "body") is not None:
-        bodies.append(read(store, "prs", n, "comments", k, "body"))
-        k += 1
-    return bodies
-
-
 def pr_closed_note(n):
     """The comment redo closes a PR with, naming the -redo-<n> branch."""
     return ("This PR was closed by an orchestrator redo.\n\nThe retired branch is now `%s`.\n"
@@ -135,7 +126,7 @@ def test_a_stopped_loop_redoes_back_to_implement_retiring_the_attempt(root, seed
     assert git.config_regexp("local", "orchestrator-retired$") == {
         "branch.%s.orchestrator-retired" % redone(1): "true"}
     assert read(store, "prs", PR, "state") == "CLOSED\n"
-    assert pr_comments(store, PR) == [pr_closed_note(1)]
+    assert comments_of(store, PR, "prs") == [pr_closed_note(1)]
     assert sorted(p.relative_to(orch(root)).as_posix() for p in orch(root).rglob("*.md")) == [
         "handoff/01-plan.md", "handoff/pre-redo-1/03-implement.md",
         "review/pre-redo-1/iteration-05.md"]
@@ -286,7 +277,7 @@ def test_a_second_redo_numbers_on_beside_the_first_s_records(root, seed, store, 
 
     assert capsys.readouterr().out == "2\n"
     assert git.branch_exists(redone(2))
-    assert pr_comments(store, 31) == [pr_closed_note(2)]
+    assert comments_of(store, 31, "prs") == [pr_closed_note(2)]
     assert orch(root, "review", "pre-redo-1", "iteration-05.md").read_text() == "the first loop's\n"
     assert orch(root, "review", "pre-redo-2", "iteration-05.md").exists()
 
@@ -309,7 +300,7 @@ def test_a_pr_that_will_not_close_fails_the_redo_and_a_retry_finishes_it(
     seed.unfail()
     assert orch_redo(root, seed, git, "review") == 0
     assert capsys.readouterr().out == "1\n"
-    assert pr_comments(store, PR) == [pr_closed_note(1)]
+    assert comments_of(store, PR, "prs") == [pr_closed_note(1)]
     assert (git.branch_exists(redone(1)), git.branch_exists(redone(2))) == (True, False)
     assert [state_of(root)[k] for k in ("branch", "pr", "base_sha")] == [None, None, None]
 
@@ -361,7 +352,7 @@ def test_a_rerun_after_review_retire_finds_the_stopped_record_and_completes(
         "implement", 0, None, None, 1]
     assert sorted(p.relative_to(orch(root)).as_posix() for p in orch(root).rglob("*.md")) == [
         "review/pre-redo-1/iteration-01.md"]
-    assert pr_comments(store, PR) == []
+    assert comments_of(store, PR, "prs") == []
 
 
 def test_a_refused_rerun_on_a_flow_redone_once_reads_its_flat_record(root, seed, capsys):
@@ -421,12 +412,6 @@ def spec_handoffs(root):
                       "spec_round": "40 2 3\n"})
 
 
-def files_under(root, *parts):
-    """The files under <root>'s .orchestrator/<parts>, by their paths there."""
-    base = orch(root, *parts)
-    return sorted(p.relative_to(base).as_posix() for p in base.rglob("*") if p.is_file())
-
-
 def test_redo_spec_steps_back_keeping_the_issue_and_moving_the_stale_files_aside(
         root, seed, store, capsys):
     implementing(root, seed, redo_count=2)
@@ -440,7 +425,7 @@ def test_redo_spec_steps_back_keeping_the_issue_and_moving_the_stale_files_aside
     assert [state[k] for k in ("phase", "issue", "redo_count", "branch", "pr", "base_sha")] == [
         "spec", 40, 2, None, None, None]
     assert snapshot(store) == before
-    assert files_under(root, "handoff") == ["01-plan.md"] + [
+    assert files_under(orch(root, "handoff")) == ["01-plan.md"] + [
         "%s/%s" % (SPEC_FOLDER, name)
         for name in ("02-spec.md", "03-implement.md", "spec-paused", "spec-round")]
     assert orch(root, "handoff", SPEC_FOLDER, "spec-round").read_text() == "40 2 3\n"
@@ -451,7 +436,7 @@ def test_redo_spec_with_no_marker_still_retires_the_spec_handoff(root, seed, cap
     handoffs(root, **{"02_spec__md": "# spec\n"})
 
     assert orch_redo(root, seed, checkout(root), "spec") == 0
-    assert files_under(root, "handoff") == [SPEC_FOLDER + "/02-spec.md"]
+    assert files_under(orch(root, "handoff")) == [SPEC_FOLDER + "/02-spec.md"]
 
 
 def test_new_issue_closes_the_old_issue_with_its_note_and_clears_it(root, seed, store, capsys):
@@ -464,7 +449,7 @@ def test_new_issue_closes_the_old_issue_with_its_note_and_clears_it(root, seed, 
     assert [state_of(root)[k] for k in ("phase", "issue")] == ["spec", None]
     assert read(store, "issues", 41, "state") == "CLOSED\n"
     assert comments_of(store, 41) == [ISSUE_CLOSED]
-    assert files_under(root, "handoff") == [SPEC_FOLDER + "/02-spec.md",
+    assert files_under(orch(root, "handoff")) == [SPEC_FOLDER + "/02-spec.md",
                                             SPEC_FOLDER + "/spec-paused"]
 
 
@@ -576,7 +561,7 @@ def test_a_failed_breakdown_retire_leaves_implement_and_a_rerun_finishes_it(
     assert died_of(capsys, lambda: orch_redo(root, seed, checkout(root), "spec")) == (
         1, "", "orch: gh could not unlink ticket #904 from #53: HTTP 502: Bad Gateway\n")
     assert state_of(root)["phase"] == "implement"
-    assert files_under(root, "handoff") == [SPEC_FOLDER + "/02-spec.md",
+    assert files_under(orch(root, "handoff")) == [SPEC_FOLDER + "/02-spec.md",
                                             SPEC_FOLDER + "/03-implement.md", "spec-paused"]
 
     seed.unfail()
@@ -618,7 +603,7 @@ def test_redo_spec_retires_the_branch_and_closes_the_pr_as_redo_review_does(
     assert orch_redo(root, seed, git, "spec") == 0
 
     assert (git.branch_exists(BRANCH), git.branch_exists(redone(1))) == (False, True)
-    assert pr_comments(store, PR) == [pr_closed_note(1)]
+    assert comments_of(store, PR, "prs") == [pr_closed_note(1)]
     state = state_of(root)
     assert [state[k] for k in ("branch", "pr", "base_sha", "redo_count")] == [
         None, None, None, 1]
@@ -667,7 +652,7 @@ def test_a_rejected_push_after_the_pr_close_is_finished_by_a_rerun_with_one_note
     assert orch_redo(root, seed, git, "spec") == 0
     assert git.branch_exists(redone(1)) and not git.branch_exists(redone(2))
     assert state_of(root)["redo_count"] == 1
-    assert pr_comments(store, PR) == [pr_closed_note(1)]
+    assert comments_of(store, PR, "prs") == [pr_closed_note(1)]
 
 
 @pytest.mark.parametrize("argv", [("spec",), ("spec", "--new-issue")])
@@ -689,7 +674,7 @@ def test_a_rerun_after_a_death_past_the_attempt_retire_retires_nothing_twice(
     assert orch_redo(root, seed, git, *argv) == 0
     assert state_of(root)["redo_count"] == 1
     assert not git.branch_exists(redone(2))
-    assert pr_comments(store, PR) == [pr_closed_note(1)]
+    assert comments_of(store, PR, "prs") == [pr_closed_note(1)]
     closed = 906 if argv == ("spec",) else ISSUE
     assert read(store, "issues", closed, "state") == "CLOSED\n"
 
@@ -761,7 +746,7 @@ def test_redo_spec_in_a_plain_session_refuses_a_taken_folder_then_a_rerun_finish
 
     assert orch_redo(root, seed, checkout(root), "spec", "--new-issue") == 0
     assert state_of(root)["phase"] == "spec"
-    assert files_under(root, "handoff") == [SPEC_FOLDER + "/02-spec.md",
+    assert files_under(orch(root, "handoff")) == [SPEC_FOLDER + "/02-spec.md",
                                             SPEC_FOLDER + "/03-implement.md"]
 
 
@@ -785,24 +770,6 @@ def test_redo_review_in_an_autopilot_session_retires_the_implement_comment_once(
     assert orch_redo(root, seed, git, "review", env=AUTOPILOT) == 0
     assert state_of(root)["phase"] == "implement"
     assert retired_count(store, ISSUE, "03-implement") == 1
-    assert orch(root, "review", "pre-redo-1", "iteration-01.md").exists()
-
-
-def test_redo_review_in_a_plain_session_resumes_into_its_own_handoff_folder(
-        root, seed, store, capsys):
-    reviewing(root, seed, iteration=1, budget=1)
-    handoffs(root, **{"03_implement__md": "implement text\n"})
-    record(root, 1)
-    git = checkout(root, BRANCH)
-    seed.fail("adapter_pr_close", GH_502)
-
-    assert died_of(capsys, lambda: orch_redo(root, seed, git, "review"))[0] == 1
-    assert state_of(root)["phase"] == "review"
-    seed.unfail()
-
-    assert orch_redo(root, seed, git, "review") == 0
-    assert capsys.readouterr() == ("1\n", "")
-    assert files_under(root, "handoff") == ["pre-redo-1/03-implement.md"]
     assert orch(root, "review", "pre-redo-1", "iteration-01.md").exists()
 
 
@@ -945,7 +912,7 @@ def test_redo_review_resumed_after_a_death_at_any_step_finishes_once(
     assert [state[k] for k in ("phase", "iteration", "redo_count", "branch", "pr")] == [
         "implement", 0, 1, None, None]
     assert (git.branch_exists(redone(1)), git.branch_exists(redone(2))) == (True, False)
-    assert pr_comments(store, PR) == [pr_closed_note(1)]
+    assert comments_of(store, PR, "prs") == [pr_closed_note(1)]
     assert read(store, "issues", 40, "state") == "OPEN\n"
-    assert files_under(root, "handoff") == ["pre-redo-1/03-implement.md"]
-    assert files_under(root, "review") == ["pre-redo-1/iteration-05.md"]
+    assert files_under(orch(root, "handoff")) == ["pre-redo-1/03-implement.md"]
+    assert files_under(orch(root, "review")) == ["pre-redo-1/iteration-05.md"]

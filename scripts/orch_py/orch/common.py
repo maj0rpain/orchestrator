@@ -106,6 +106,19 @@ def plain_number(text: str) -> bool:
     return text.isdigit() and text.isascii()
 
 
+# An integer as bash's test reads one for -eq, -gt and -lt: any run of
+# whitespace, a sign and ASCII digits, then any run of whitespace.
+_TEST_INTEGER = re.compile(r"[ \t\n\v\f\r]*([+-]?[0-9]+)[ \t\n\v\f\r]*")
+
+
+def int_as_test_reads(text: str) -> Optional[int]:
+    """<text> as bash's test reads an integer for -eq, -gt and -lt; None where
+    test would refuse it ("integer expected"), as for an empty text, a word or
+    a Python-only spelling such as `1_0`."""
+    match = _TEST_INTEGER.fullmatch(text)
+    return int(match.group(1), 10) if match else None
+
+
 def plain_positive_number(text: str) -> bool:
     """Whether <text> is a plain number (plain_number) with no leading zero,
     as bash's `''|*[!0-9]*|0*` refusal reads one."""

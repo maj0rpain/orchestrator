@@ -19,13 +19,12 @@ from __future__ import annotations
 import contextlib
 import io
 import os
-import re
 import time
 from typing import Callable, List, Mapping, Optional, Sequence, Tuple
 
 from orch.branch import branch_name_redo, branch_retire
 from orch.checkout import refuse_ticket_worktrees
-from orch.common import die, dir_stamp, move_files_aside, stdout_write
+from orch.common import die, dir_stamp, int_as_test_reads, move_files_aside, stdout_write
 from orch.flow_state import (flow_state_file, phase_write, require_state_read, require_value,
                              review_budget_fallback, state_write_many)
 from orch.gh import adapter_of, gh_or_die
@@ -39,9 +38,6 @@ from orch.ticket import ticket_reset, ticket_retire
 
 OPS = "review|spec"
 
-# An integer as bash's test reads one for -gt: leading whitespace, a sign and
-# digits, then trailing spaces or tabs.
-_TEST_INTEGER = re.compile(r"[ \t\n\v\f\r]*[+-]?[0-9]+[ \t]*")
 # The reason both redos refuse while ticket worktrees are left.
 STRANDED = "a redo would strand their unmerged ticket work"
 
@@ -56,7 +52,8 @@ def redo_midway(issue: str, slug: str, branch: str, redo_count: str) -> Optional
     loop's terminal-state read both make, so they never disagree on whether a
     redo is resuming; bash review.sh keeps its copy for review terminal and
     doctor."""
-    if not _TEST_INTEGER.fullmatch(redo_count) or int(redo_count) <= 0:
+    count = int_as_test_reads(redo_count)
+    if count is None or count <= 0:
         return None
     if branch != branch_name_redo(issue, slug, redo_count):
         return None
@@ -77,8 +74,8 @@ def redo_retire_plan(issue: str, slug: str, branch: str, redo_count: str) -> Tup
     if midway is not None:
         return midway, True
     # A count bash arithmetic reads as 0 - empty, or a word - counts on from 0.
-    count = int(redo_count) if _TEST_INTEGER.fullmatch(redo_count) else 0
-    return str(count + 1), False
+    count = int_as_test_reads(redo_count)
+    return str((count or 0) + 1), False
 
 
 def pr_closed_note(new_branch: str) -> str:

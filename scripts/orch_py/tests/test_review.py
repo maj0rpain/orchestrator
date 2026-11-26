@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import bash_sourced, died_of
+from conftest import bash_sourced, died_of, orch_files
 from orch.branch import branch_name_flow, branch_name_redo
 from orch.redo import redo_midway
 from orch.review import (review_flat_record_gone, review_record_path, review_record_terminal,
@@ -91,22 +91,16 @@ def python_text(root, i, budget):
 
 
 @pytest.mark.parametrize("case", CASES)
-def test_a_golden_review_record_classifies_as_its_expected_lines_and_status_in_both_languages(
+def test_a_golden_review_record_classifies_and_reads_its_flat_record_alike_in_both_languages(
         case, tmp_path):
     bash_root = checkout_of(case, tmp_path / "bash")
     python_root = checkout_of(case, tmp_path / "python")
+    bash_text, bash_gone = bash_run(case, bash_root)
 
-    assert bash_run(case, bash_root)[0] == expected(case, bash_root)
+    assert bash_text == expected(case, bash_root)
     assert python_text(python_root, *case_args(case)) == expected(case, python_root)
-
-
-@pytest.mark.parametrize("case", CASES)
-def test_the_flat_record_is_gone_for_a_golden_case_exactly_when_bash_says_so(case, tmp_path):
-    bash_gone = bash_run(case, checkout_of(case, tmp_path / "bash"))[1]
-    i = case_args(case)[0]
-
-    assert review_flat_record_gone(str(checkout_of(case, tmp_path / "python")), i) == \
-        (bash_gone == "0\n")
+    # The same bash child answers whether the flat record is gone.
+    assert review_flat_record_gone(str(python_root), case_args(case)[0]) == (bash_gone == "0\n")
 
 
 def test_an_iteration_s_record_path_is_its_zero_padded_file_in_a_made_review_directory(tmp_path):
@@ -198,18 +192,8 @@ def test_a_slug_that_merely_ends_in_a_redo_name_is_not_midway():
     assert redo_midway("12", "foo-redo-1", "orch/12-foo-redo-1", "1") is None
 
 
-def review_records(root, *names):
-    """Writes each of <names> into <root>'s review directory, holding its own
-    name: the directory, a Path."""
-    directory = root / ".orchestrator" / "review"
-    directory.mkdir(parents=True, exist_ok=True)
-    for name in names:
-        (directory / name).write_text(name)
-    return directory
-
-
 def test_a_retire_moves_every_iteration_record_into_its_redo_s_folder(tmp_path):
-    review = review_records(tmp_path, "iteration-01.md", "iteration-02.md", "notes.md")
+    review = orch_files(tmp_path, "review", "iteration-01.md", "iteration-02.md", "notes.md")
 
     assert review_retire(str(tmp_path), "3") == "%s/pre-redo-3" % review
     assert sorted(str(p.relative_to(review)) for p in review.rglob("*.md")) == [
@@ -222,7 +206,7 @@ def test_a_retire_with_no_record_makes_the_review_directory_and_no_folder(tmp_pa
 
 
 def test_a_retire_resumes_into_the_folder_a_died_run_of_the_same_redo_made(tmp_path):
-    review = review_records(tmp_path, "iteration-02.md")
+    review = orch_files(tmp_path, "review", "iteration-02.md")
     (review / "pre-redo-1").mkdir()
     (review / "pre-redo-1" / "iteration-01.md").write_text("moved before the death")
 
@@ -234,7 +218,7 @@ def test_a_retire_resumes_into_the_folder_a_died_run_of_the_same_redo_made(tmp_p
 
 @pytest.mark.parametrize("n", ["", "1a", "-1", " 2"])
 def test_a_retire_refuses_what_is_not_a_redo_number(tmp_path, capsys, n):
-    review_records(tmp_path, "iteration-01.md")
+    orch_files(tmp_path, "review", "iteration-01.md")
 
     assert died_of(capsys, lambda: review_retire(str(tmp_path), n)) == (
         1, "", "orch: not a redo number: %s\n" % n)
@@ -242,7 +226,7 @@ def test_a_retire_refuses_what_is_not_a_redo_number(tmp_path, capsys, n):
 
 
 def test_a_retire_refuses_a_folder_already_holding_one_of_its_records(tmp_path, capsys):
-    review = review_records(tmp_path, "iteration-01.md", "iteration-02.md")
+    review = orch_files(tmp_path, "review", "iteration-01.md", "iteration-02.md")
     (review / "pre-redo-1").mkdir()
     (review / "pre-redo-1" / "iteration-02.md").write_text("an earlier loop's")
 

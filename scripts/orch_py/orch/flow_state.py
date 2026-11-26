@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import time
 from typing import (Any, Callable, Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple,
                     Union)
@@ -123,7 +122,6 @@ def flow_state_create(path: str, state: Mapping[str, Any]) -> bool:
 # JSON string, as bash's --string before a pair marks it.
 Pair = Union[Tuple[str, str], Tuple[str, str, bool]]
 
-_ALL_DIGITS = re.compile(r"[0-9]+")
 # The words flow_state_json stores as JSON literals.
 _JSON_WORDS = {"null": None, "true": True, "false": False}
 
@@ -133,7 +131,7 @@ def flow_state_json(value: str) -> Any:
     literally, an all-digit value as a number, anything else as a string."""
     if value in _JSON_WORDS:
         return _JSON_WORDS[value]
-    return int(value) if _ALL_DIGITS.fullmatch(value) else value
+    return int(value) if plain_number(value) else value
 
 
 def state_pairs_json(pairs: Sequence[Pair]) -> Dict[str, Any]:
