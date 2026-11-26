@@ -68,11 +68,12 @@ def test_help_names_none_of_the_retired_loop_machinery(capsys):
     assert "loop-next" not in help_text(capsys)
 
 
-def test_the_phase_advance_entry_names_its_handoffs_by_role(capsys):
+@pytest.mark.parametrize("entry", ["phase advance", "redo review", "redo spec"])
+def test_an_entry_naming_handoffs_names_them_by_role(capsys, entry):
     """#1066: the entry names each handoff by its role and points at handoff
     path for the file, so renaming a handoff file never leaves it stale."""
     lines = help_text(capsys).splitlines()
-    first = next(i for i, line in enumerate(lines) if line.startswith("  phase advance "))
+    first = next(i for i, line in enumerate(lines) if line.startswith("  %s " % entry))
     entry = [lines[first]] + list(itertools.takewhile(
         lambda line: line.startswith(" " * 30), lines[first + 1:]))
     text = " ".join(" ".join(entry).split())

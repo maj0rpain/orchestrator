@@ -9,12 +9,14 @@ handoffs, and to what the phase noun's advance reads a handoff with: the
 dying read (handoff_read) and the invalid-handoff refusal (handoff_invalid),
 each with its file and comment adapter, their messages as bash's;
 handoff_invalid and phase_next have no bash copy left, their one bash caller
-the phase module, gone at the phase noun's cutover. And what a redo sets
-the stale handoffs aside with: the handoffs a step back to a phase makes
-stale (handoffs_written_from), and the retire (handoff_retire), whose file
-adapter moves them into a labelled folder and whose comment adapter reads
-the issue's comments once, then posts a retired marked comment per live
-handoff, dying with the names already posted, as bash's.
+the phase module, gone at the phase noun's cutover. And what the redo noun
+sets the stale handoffs aside with: the handoffs a step back to a phase
+makes stale (handoffs_written_from), and the retire (handoff_retire), whose
+file adapter moves them into a labelled folder and whose comment adapter
+reads the issue's comments once, then posts a retired marked comment per
+live handoff, dying with the names already posted, as bash's did; neither
+has a bash copy left, their one bash caller the redo module, gone at the
+redo noun's cutover.
 
 A line inside a code fence (orch.common.fenced), its delimiters included, is
 never a heading: it neither opens nor closes a section, and inside an open

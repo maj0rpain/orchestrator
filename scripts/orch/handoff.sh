@@ -75,19 +75,6 @@ handoffs_due() {
   done
 }
 
-# handoffs_written_from <phase>: the handoffs whose writer is <phase> or a
-# phase after it, one per line, in table order - the ones a step back to
-# <phase> makes stale. plan, a writer though no row, gives every handoff;
-# nothing for a name the writer column does not hold.
-handoffs_written_from() {
-  local phase handoff found=0
-  for phase in $(phase_list); do
-    handoff="$(phase_cell handoff "$phase")" || continue
-    [ "$(phase_cell writer "$phase")" != "$1" ] || found=1
-    if [ "$found" = 1 ]; then printf '%s\n' "$handoff"; fi
-  done
-}
-
 # phases_from <phase>: <phase> and every phase after it, one per line, in
 # table order. Nothing, and non-zero, for a phase the table does not hold.
 phases_from() {
@@ -276,9 +263,10 @@ handoff_comment_post_url() {
 # The Handoff store: where a flow's handoffs live, behind one interface with a
 # file adapter (interactive: files in the handoff directory) and a comment
 # adapter (autopilot: marked comments on the issue). Operations: path, read,
-# fetch_due, fetched, retire. handoff_store is the one place that chooses the
-# adapter, per
-# call, so a test toggling ORCH_AUTOPILOT between commands keeps working.
+# fetch_due and fetched; the retire a redo makes is the Python redo noun's
+# (scripts/orch_py/orch/handoff.py's handoff_retire). handoff_store is the one
+# place that chooses the adapter, per call, so a test toggling ORCH_AUTOPILOT
+# between commands keeps working.
 
 # handoff_store: prints the adapter this session's handoffs live in, `comment`
 # in an autopilot session and `file` otherwise.
@@ -386,11 +374,6 @@ handoff_fetch_due() { "handoff_$(handoff_store)_fetch_due" "$@"; }
 # handoff <phase> writes.
 handoff_path() { "handoff_$(handoff_store)_path" "$@"; }
 
-# handoff_retire <label> <file>...: sets the named handoffs aside, as a redo
-# does. The file adapter moves each existing one into the handoff directory's
-# <label> folder; the comment adapter ignores the label.
-handoff_retire() { "handoff_$(handoff_store)_retire" "$@"; }
-
 # File adapter.
 
 # handoff_file_locate <file>: prints $HANDOFF_DIR/<file>; non-zero when absent.
@@ -412,16 +395,6 @@ handoff_file_fetch_due() { return 0; }
 # handoff is missing.
 handoff_file_path() {
   handoff_file_locate "$2"
-}
-
-# handoff_file_retire <label> <file>...: moves each named handoff that exists
-# into $HANDOFF_DIR/<label>, created only when there is something to move. A
-# folder already holding one of them is refused before any moves; a folder that
-# merely exists is fine.
-handoff_file_retire() {
-  local label="$1"
-  shift
-  move_files_aside "$HANDOFF_DIR" "$HANDOFF_DIR/$label" "a retired handoff" "$@"
 }
 
 # Comment adapter.
@@ -481,33 +454,6 @@ handoff_comment_path() {
   [ "$st" -ne 1 ] || timeline_die "$issue"
   [ "$st" -eq 0 ] || exit 1
   handoff_comment_fetched "$2" || handoff_comment_missing "$issue" "${2%.md}"
-}
-
-# handoff_comment_retire <label> <file>...: the label names a folder, which
-# comments have none of, so it is ignored. Retires each named handoff by
-# posting a newer comment tagged retired on the recorded issue. The comments
-# are read once, before any post, and every file is decided from that read. A
-# handoff with no comment, or whose newest is already retired, posts nothing,
-# so a redo that died partway is finished by the next. A post that fails dies
-# naming the comments already posted.
-handoff_comment_retire() {
-  local issue file name body gh_err posted=""
-  shift
-  require_issue issue
-  [ $# -gt 0 ] || return 0
-  timeline_read_or_die "$issue"
-  for file in "$@"; do
-    name="${file%.md}"
-    timeline_handoff "$name" || continue
-    temp_file_make body || die "could not create a temp file for the retired comment"
-    { marked_comment_write handoff "$name" retired; printf 'Retired by an orchestrator redo: this handoff described work the redo sets aside.\n'; } >"$body"
-    gh_capture_err gh_err adapter_issue_comment "$issue" "$body" || {
-      rm -f "$body"
-      die "could not retire the $name handoff on issue #$issue: $(gh_reason "$gh_err") - comments posted: ${posted:-none}; the recorded phase is unchanged, so a re-run retires the rest"
-    }
-    rm -f "$body"
-    posted="${posted:+$posted, }$name"
-  done
 }
 
 # handoff_autopilot_only <op>: dies unless this is an autopilot session - the

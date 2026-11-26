@@ -8,6 +8,7 @@ teardown fails the test naming each logged call.
 """
 from __future__ import annotations
 
+import builtins
 import calendar
 import json
 import os
@@ -356,6 +357,32 @@ def path_without(tmp_path, command):
                 (links / name).symlink_to(os.path.join(directory, name))
         kept.append(str(links))
     return os.pathsep.join(kept)
+
+
+class Opens:
+    """Counts the opens of one file, by any route: builtins.open and
+    os.open."""
+
+    def __init__(self, monkeypatch, path):
+        self.path = os.path.realpath(str(path))
+        self.count = 0
+        real_open, real_os_open = builtins.open, os.open
+
+        def counted(file, *args, **kwargs):
+            self._seen(file)
+            return real_open(file, *args, **kwargs)
+
+        def os_counted(file, *args, **kwargs):
+            self._seen(file)
+            return real_os_open(file, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", counted)
+        monkeypatch.setattr(os, "open", os_counted)
+
+    def _seen(self, file):
+        if isinstance(file, (str, bytes, os.PathLike)) \
+                and os.path.realpath(os.fsdecode(file)) == self.path:
+            self.count += 1
 
 
 def fake(seed):

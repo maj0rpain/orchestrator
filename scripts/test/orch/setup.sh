@@ -213,10 +213,6 @@ upstream_of() {
   if [ -z "$merge$remote$up" ]; then echo none; else echo "remote=$remote merge=$merge upstream=$up"; fi
 }
 
-# pr_marker_of <branch>: the PR number pr open or pr publish recorded on
-# <branch>'s git config (#1200), empty when none was.
-pr_marker_of() { git config --get "branch.$1.orchestrator-pr" 2>/dev/null; }
-
 # pr_body_complete <file>: writes to <file> a PR body carrying every piece pr
 # open and pr publish require (#1387) - ## Summary, ## Evidence, and ## Merge
 # Danger with its **Door:** and **Blast Radius:** lines - its Summary holding
@@ -332,10 +328,6 @@ SSH
 
 # git_fails_bin <pattern>: a fails_bin for git.
 git_fails_bin() { fails_bin git "$1"; }
-# state_write_fails_bin: a fails_bin for mktemp that fails a state.json.*
-# template - the temp file every state write makes - and nothing else. Unlike
-# chmod a-w, it also fails as root.
-state_write_fails_bin() { fails_bin mktemp '*state.json.*'; }
 # state_write_fails_after_first_bin: a state_write_fails_bin variant that lets
 # the first state.json.* temp file through and fails every later one, so a
 # command's first state write lands and the rest fail.
@@ -385,9 +377,6 @@ restore_index() {
   idx="$(git -C "${1:-.}" rev-parse --absolute-git-dir)/index" || return 1
   mv "$idx.bak" "$idx"
 }
-# flat_text: stdin on one line with every whitespace run collapsed to one
-# space.
-flat_text() { tr -s ' \t\n' '   '; }
 # sourced_orch <function> [args...]: the function's output, called in a shell
 # that sourced orch.sh, with its status. It sets ORCH_SOURCE_LAZY=1 before the
 # source line, so the modules load on demand, as orch.sh does as a command and
@@ -789,38 +778,6 @@ fake_issue_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/body"; }
 # on issue #n, after any it has; its association is OWNER unless given.
 fake_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/$1/comments" "$2" "$3" "$4" "${5-}"; }
 
-# handoff_orch <mode> <orch args>...: runs orch.sh as that handoff mode's
-# session: autopilot for "comment", interactive for "file".
-handoff_orch() {
-  local mode="$1"
-  shift
-  if [ "$mode" = comment ]; then ORCH_AUTOPILOT=1 "$ORCH" "$@"; else env -u ORCH_AUTOPILOT "$ORCH" "$@"; fi
-}
-
-# put_handoff <mode> <issue> <ts> <name> <body>: keeps the handoff <name> (no
-# .md) as the mode does - a live tagged comment on issue #<issue> made at <ts>,
-# or a file in the handoff directory.
-put_handoff() {
-  if [ "$1" = comment ]; then
-    fake_comment "$2" someone "$3" "$(marker_of handoff "$4"; printf '%s\n' "$5")"
-  else
-    mkdir -p .orchestrator/handoff
-    printf '%s\n' "$5" >".orchestrator/handoff/$4.md"
-  fi
-}
-
-# retire_handoff <mode> <issue> <ts> <name> <folder>: sets the handoff <name>
-# aside as the mode does - a newer retired comment on issue #<issue> made at
-# <ts>, or the file moved into the pre-redo folder <folder>.
-retire_handoff() {
-  if [ "$1" = comment ]; then
-    fake_comment "$2" someone "$3" "$(marker_of handoff "$4" retired)"
-  else
-    mkdir -p "$5"
-    mv ".orchestrator/handoff/$4.md" "$5/"
-  fi
-}
-
 # handoff_missing_msg <mode> <issue> <name> [<hint>]: the mode's message for a
 # missing handoff <name>; the hint, when given, is the "post it with handoff
 # post <hint>" (comment) or "write it <hint>" (file) tail.
@@ -829,18 +786,6 @@ handoff_missing_msg() {
     printf 'orch: issue #%s has no %s handoff comment%s' "$2" "$3" "${4:+ - post it with handoff post $4}"
   else
     printf 'orch: handoff not found: %s/.orchestrator/handoff/%s.md%s' "$PWD" "$3" "${4:+ - write it $4}"
-  fi
-}
-
-# handoff_retired_count <mode> <issue> <name> <folder-glob>: how many times the
-# handoff was retired: retired comments, or copies in matching folders.
-handoff_retired_count() {
-  if [ "$1" = comment ]; then
-    fake_comments_of "$2" | grep -c "orch:handoff $3 retired"
-  else
-    # shellcheck disable=SC2086 # the glob is the point
-    # shellcheck disable=SC2010 # counts what the glob matched
-    ls $4/$3.md 2>/dev/null | grep -c .
   fi
 }
 
@@ -1034,10 +979,6 @@ fake_fail_times() {
 # fake_unfail: every operation fake_fail named succeeds again.
 fake_unfail() { rm -rf "$ORCH_GH_FAKE_STORE/fail"; }
 
-# fake_sub_issues_of <parent>: the parent's sub-issues read back from the
-# store, in link order, space-separated - nothing for none.
-fake_sub_issues_of() { paste -sd ' ' "$ORCH_GH_FAKE_STORE/subs/$1" 2>/dev/null || true; }
-
 # fake_lag <operation> <n> [stale]: the next n calls of the named operation
 # answer stale, as GitHub does for a moment after a write; the call after them
 # is current again. An operation that reads answers the stale text given, in
@@ -1046,18 +987,6 @@ fake_lag() {
   mkdir -p "$ORCH_GH_FAKE_STORE/lag"
   printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/lag/$1"
   if [ $# -ge 3 ]; then printf '%s\n' "$3" >"$ORCH_GH_FAKE_STORE/lag/$1.stale"; fi
-}
-
-# fake_body_read <n> <format> [arg...]: seeds issue #n's body so that a read
-# of it - the stored body, then a newline, as gh's --jq .body prints it -
-# answers exactly what printf prints, which ends in a newline.
-fake_body_read() {
-  local n="$1" t
-  shift
-  # shellcheck disable=SC2059 # the format string is the caller's first argument, by design
-  t="$(printf "$@"; printf x)"
-  t="${t%x}"
-  printf '%s' "${t%$'\n'}" >"$ORCH_GH_FAKE_STORE/issues/$n/body"
 }
 
 # fake_checks <n> <required|all> <answer>...: scripts PR #n's checks for the

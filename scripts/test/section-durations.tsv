@@ -34,7 +34,7 @@
 2	2	the suite start (#3582)	7661d78242588461a38289fb228211e159d899f8
 7	8	the pytest suite (#3912)	21deea025158b43b9892524639c0a4fbc5b9bf3c
 2	3	the counting fixture's stdin counter (#3434)	b19a94c28ffbd5db955a5f10a39d0b15791cbc4f
-113	110	affected.sh, the ticket verification (#2023)	39ec81b61b31eac3d76b96c208fde1231699671c
+116	111	affected.sh, the ticket verification (#2023)	2a5efa989c83218b21966abed89e6f74fba7b6cc
 4	5	the row rule (#3549)	9fdb50e7e723c26a4127289109f27a68989c4579
 7	9	the shared test support, function by function (#3550)	de45838253c482219d70d5af6fd3b26e2079c3f8
 5	7	the gh fake, operation by operation (#3551)	987935a277e021eabb9c02e391ba40e84607a315
@@ -79,7 +79,7 @@
 63	58	autopilot tick: housekeeping prunes old session logs	269c3b634835e805dabb0c244a1bc5c1d6666e24
 50	44	autopilot tick: housekeeping sweeps finished side checkouts	51317e5e3cdc774a0173d713cc6467e3b7a427bb
 10	11	base	4ca1f19cac3ef83ca996b678fba01404782aa24d
-37	38	a flow's base branch	45475caadc481a9fbcda51773787f44333982e42
+38	31	a flow's base branch	dc1b95f862cec0114a7a0b7a3212313d50975422
 3	4	base set on a truncated state.json (#1929)	de4767097a86d163c76e27f57e97f2f368040804
 20	12	branch create	fbc89613a30d9f6c699951df7b894afb1caa1dcc
 20	12	branch off	cd819d78aa02df9d8490caf34130a955c000b771
@@ -122,7 +122,7 @@
 52	58	doctor --env: finished side checkouts (#727)	6c5fffe7d725910de46bf5e712c18cc5800073b6
 13	16	doctor at the review phase	3510b3a381c81866698adf3212d7c6f98ee07a04
 8	10	doctor: upstream beside an ambiguous origin/<branch> (#1331)	e22e633709e4b6b6d6a830a1f48baef119599fbb
-3	44	doctor: review terminal check	ebbc8f4ae923054c2d940b1502c12a29af4f5086
+58	49	doctor: review terminal check	754c92de9dbcb88f6fefb5d2ddd2cb161534aa2d
 12	14	doctor: review budget check	6c9474b53b64b286d26c1634b4114e508e0d52ba
 27	32	doctor: review ci check	7961e080062a591804d0685fed4615ef159173d1
 26	31	doctor: review draft check	be90a88f29d7c5361fd9c3017505e6bb361b65c8
@@ -163,17 +163,16 @@
 4	5	label casing (#1943)	7e3b89c80227bd15583b493104e3fd6e36ff9f1c
 78	49	gh rate limits (#2577)	d271a3eb8cd5a9f98fb8f5f6538b7be3f1c9002c
 14	15	gh rate limits: the GitHub pause and the hit file (#2577)	81ab2bc578eeeaacb0cab9ae3ddf537247cf6e64
-2	3	handoff path	08b72398d3efd891b74fabceebbc287e57597a16
-22	19	phase table	a959597a682a76f155ad3ad41f7b5d88626b42e6
-14	15	handoff validate	979e62e48edf8946440a03aa27d2e16f209320f9
-7	8	handoff section	d9e6e93eeafb9da287b79b78378d791303977029
-6	7	spec handoff	6b93452214034aa4b2ea9625372114a827595133
-3	4	handoff templates	09db6d2895cc735dbdca18fb9bf1dd789e500cd4
-9	10	handoff verification	1b85bbb4f1bd9127309da35ff525c69b42478716
-33	39	handoff comments (autopilot)	e5813a01ad0062510e4926f4870dd6958d7b8803
-84	93	handoff store contract (#1820)	01d536dfd06b50f15a2c820407f74a23639edf3a
-19	22	handoff comment retire's timeline read	d96753003b7a503ecfc2cd86362d11ba3c0826a2
-2	3	handoff post and fetch with no state file	8a63c0cd1839671032a4c9f386533f0456db50dc
+2	4	handoff path	f53a3d84f5d17aa6675f4f58c4cf7689b1d9a208
+17	15	phase table	47cf92716733cb5a3f071c96f9de05f62b8c99b9
+14	13	handoff validate	335409e290a33359dfc2b47505e248dd9958dabc
+8	8	handoff section	f8c24eebb30ad8cc5bf7d4a080d6fb6fc6265052
+6	6	spec handoff	ff19855a9b6a3eb03d9474d9f4be7262de81d74b
+4	4	handoff templates	e9be279f37db4378fdd62956f7603b121438e8d1
+9	9	handoff verification	0c282ad0c446485c2deacd8deb29621a524d3206
+26	22	handoff comments (autopilot)	d3630875b1e5c9384cf75e42daa0d584b6c80a22
+65	58	handoff store contract (#1820)	15a44c1fe79a85fbbb33f9e566dbbb67c207865b
+2	4	handoff post and fetch with no state file	e672e999424344306e5f9b22f646abe3be51f41e
 185	223	issue-timeline module	c60c74521e712ce2d67cc0b5fceb0a3a9673363e
 6	6	known-items module	4cac231615b2d8d9bc5665e54130500ba44570de
 8	9	Liveness module	a3eb853321244ddc291751d37b820bf4e3a80df7
@@ -184,30 +183,19 @@
 5	5	bash version guard	a8d2cfe5bbb32166e192820e2b3d83282e7a66ce
 1	3	outside a checkout (#931)	e5c70ed8a90ea1696b300a7a8f75e91707e1690b
 29	25	marked-comment module	f6f5c1a7f89a0d4a6d8a53403309d4f68d4fe0c2
-69	56	pr open	d9e007d3c480063307746cb0d73014ab7453d134
-45	38	pr publish	45af0b92c1455f1911f2daa73f5f8d03c9e5adb4
-17	15	pr draft (#967)	13ea96875dc38f4a1da2d0f8c4a3daf1f61b7f51
-39	34	pr ready (#967)	ac2ed66fdf328eda1ef6ab7849ab695ff9f0eedd
-1	2	pr: unknown op	8a056484b5fefc8db1c037396627fe136ed29252
-47	46	pr release	20ca92d5d540b7916263a8f91dee3541b35769fe
-15	14	pr comment (#343)	a356a3b11b881bc9d7fd9f5f737219facbb5b248
-30	28	pr fetch / pr update (#444)	ccd2477fcffd0095e187c3fa695271e25dda558b
-17	16	pr comments (#418)	1028676890fdf3f78cacfab80c12e8a13608675f
-25	21	pr read (#1573)	c75cb0d183eda9ec9e53e231baeb61383ff6df06
-2	30	pr: fork PRs (#1977)	fe6ded54e75b246aacfe0668a731e2d9e206e8a2
-9	9	pr: no repo (#3050)	c9d51d377fbe3e137b80431202c6d625b41119de
-1	2	pr: PR-line pick and newest merge (#3074)	37c4d9ac64b64eb5a46348880835b74ebd1e59f0
-64	52	redo review	3b5772aefa2e50a9b1fac7561b031816bbf9562e
-7	6	redo review refuses a taken handoff destination	58713c1e71e7cfc60579f945b987c121245255f0
-27	22	redo review rerun after review retire (#2569)	15216b3e98138ebb7e7d1b7786410dde815fa708
-15	13	redo review reopens tickets	7e0f021350c58928bcd71c4f1527f87077d7e787
-23	19	redo spec	f4824916b0f8c82fa73a1fadc308e2116975bf80
-74	58	redo spec retires the ticket breakdown (#334)	f9491c02af1bb7515a797df14358105f5be82bd0
-64	53	redo spec retires the implement attempt (#1910)	26626a9121a639e4fd4c4e026dabcdba4f4d93fe
-50	41	redo spec and redo review, per handoff mode (#1820)	8179f79367043dad7f8691c8d5fbd1049d9dcbca
-37	31	redo ends in one closing state write	6980edea8366d7721da6d97cbe6a21e858a76818
-2	2	redo help names handoffs by role (#1066)	1aae8388799b35617729d3c5455e1518d4f348d5
-10	8	redo reads its Flow state once, before its first write	64cd883b003605c0bd1ac63ee435093f0e9d232d
+65	56	pr open	3c46abbf8a1ceb87e83549f4850a961b92746c38
+40	34	pr publish	27f8d1d9ae4f7f0cbf44add685328b5ab2539433
+17	15	pr draft (#967)	3818d607ebfde5f0688fe79264ff27fe48f7fe56
+34	31	pr ready (#967)	5e9436b62724f61ded83400bdcd4dae52868b5ba
+1	1	pr: unknown op	fea1f84b49604ee0bb556f55667897857c6022b2
+43	41	pr release	1c53cba52092e3c0b0ee2fa740f916c52a1fce72
+14	13	pr comment (#343)	a887b9530c5eb6b32e68dba4610d331d9c351365
+27	25	pr fetch / pr update (#444)	a19134fb2737b3cac81e862761b262f5431f9e17
+15	14	pr comments (#418)	da4e1dc81309f853adbd4fe66f826a765d0d4fad
+22	19	pr read (#1573)	31062dd3f970514759a241f0fe732323e1f36225
+24	19	pr: fork PRs (#1977)	47746a5a1b973eb25d45c23f5c10abc2bcd888b0
+8	7	pr: no repo (#3050)	0010f87ac2cc1f67bb8dbeeceb28821dc55227ca
+1	1	pr: PR-line pick and newest merge (#3074)	27c7643cf363333c311c7e99d5ab335427cecb7b
 9	10	repo show	03b579d082d6e4e5353a860b91cb90f1006013d0
 7	8	default-branch	0177d6e5817d4d0befacac87fc2b2a0f621ad11b
 14	11	review ready's pointer to /orchestrator:finish (#727)	dc0acdcd10c097e7fb1b03532c91fa00016c66c5
@@ -232,6 +220,7 @@
 75	38	review ready with a failed phase write (#1931)	2f23c3538fad2d97782fc912d398644cde98ef95
 9	8	review reads its Flow state once	d709c7a35864a331ee508151b4b6e62951770ee1
 5	5	review_terminal_record fallback reads once	950150136ed31e16ef857ccc8dc7da695501183d
+8	7	review terminal mid-redo (#2569)	41d0872347830b605b9011762671cceca481dc65
 19	11	review ci <pr>	de3b4d1f2441533e0c12f016b42632d94e98a763
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
 65	50	side-checkout (#722)	3ed9cd6604e4ae1b8e5f4287b54c5144ee8ebea3
@@ -249,39 +238,40 @@
 30	26	Standing module	7360efe83df71e2983783f4ce7fefa500261a7d4
 101	76	Standing transitions	f91fc6159d2633a39ed09251f4e53d4df65eb404
 2	3	standing_ask reads the issue in one jq	323242a91458cfdc0852ce80bf275f3a21daf5f0
-19	21	state	8f8a6d0c9ed66193eb8616169bbf206ccea0a741
-21	20	a flow from before the budget shipped	74a733a87311a08cfe7a1e7bd6abe7956bdb2975
-9	10	state get reads every key with its default	9b5f35731357e21c5e7825d8e14c347e0e4bedbd
-10	9	the state writer accepts exactly the table's phases	f73b3b25a7569f4af55e3d5b6f008905d45d7fb4
-7	8	state.json schema	425162b3d7cb59537674814f30ff0da8c11d57c4
-4	5	state set on a corrupt state.json	0813b93dd6fb8875d3936903ca0134a8792b0b9e
-19	14	the Flow state module, sourced alone	076b1bc9e33f20e696bb81f978542d79d81077c4
-4	4	commands on a truncated state.json (#1929)	13c01774543bda78ec2ac6965ee2467a5c58787b
-7	7	the shared and own-checkout readers on a truncated state.json	84f251301621e7e0eb35e16ed869c67daa50b697
-7	8	state set with a failed write (#1931)	277ecff0e3af2ccabe12e9fd2aebcc95a83b9bc3
-22	20	the entry read and the required-field helpers	c5ef422d99a8f23876bf06ac8983f5bca2b684c6
+17	15	state	fa462da9238eabb9c0f0f6ac45666e5679118e51
+20	15	a flow from before the budget shipped	cc2ff1d9c66526ce208a626b438813f3a5f40235
+9	8	state get reads every key with its default	cfb71961bbe67a8757339ab99dc00651478e38f9
+9	8	the state writer accepts exactly the table's phases	100d27fcb26efab387e765b12b1244e594e6e93f
+6	6	state.json schema	2c207fb6be571fbcf26e72bafb89f04196c0854c
+4	4	state set on a corrupt state.json	9a4b99f6a3c2c6a9792a1d53c6728bc2b764464f
+15	13	the Flow state module, sourced alone	552577db3d171425f676e2d8af1d68c0fe9e5ffe
+4	4	commands on a truncated state.json (#1929)	d432015660f7951036578b4d1b574a2557e0aa8b
+6	5	the shared and own-checkout readers on a truncated state.json	846c5bc308df9afc9b7fcaa99252bc3119fe0f58
+6	5	state set with a failed write (#1931)	f303871559a3140030c8709a2c17427c0ceb1d8d
+17	15	the entry read and the required-field helpers	64322b5c725e3eed1386b9bde9c53cbc4500ba7b
 46	49	ticket-worktree (#619)	c52aa57c33965d3db61a8322267ddf19f3b096a0
 1	1	a ticket branch has no upstream (#1152)	bbc5298d4013eb4f017ecb7f6c59509725053f88
 2	3	the merged check beside a same-named tag (#2337)	b3482156347488560231482575e046eb972a8f39
-24	21	ticket publish	a6ef6ad0815552e6112549db8499427c23511447
-31	25	ticket publish verify-then-die	d11d712ed8386a0fe98885dae6b88f7567165d54
-11	10	ticket publish rewrites ## Blocked by	083c11bc38199309a54c3cb022f8136d760d90f2
-0	10	ticket next	950cbf6a3d69b58b083ad102ce5ec22143af5477
-10	9	ticket list	bdf4da1b1d2bfed721713ec4e17eb64109950916
-1	20	ticket close	54757c69bb9d977f9f8bfe63c11bc5c2d450bae2
-15	13	ticket reset	04c6c4c8045fb3973736084b911c5f039b678ef8
-20	16	ticket report	99453e9740c3ee49b809b5cb2e85055292c66a82
-6	6	ticket parent	ada73c81388fee6ef59835fd65d4b04aa7ae5adf
-24	20	ticket exists	b5cd96b65199e7b8e5fafe0e363125d23ea84d96
-126	112	ticket block	56d4698c86dc9f2d6150b0e19150f92af69a17e2
-84	74	ticket unblock	31c1065cd20116361626586463f49edf746bb2ef
-4	4	ticket retire: breakdown save point	b7cb5fcce4b1772f1760ef7695f0e47d6a3741dd
-8	6	ticket retire: untrusted comments	6b3ba54858e20e5e035843f26bee1b56b0a2074e
-1	1	ticket: unknown op	986ed5a7ba81483f83482181d44dc02c10b80bcc
-25	20	ticket merge (#621)	f55129abb3f73061addcd663114698f8c322dbff
-6	5	ticket merge beside a same-named tag (#2337)	e653dee766ed2f30dfc20c3f9940b16cec3d61a5
-166	123	ticket reclaim (ADR-0054)	67668c46bdabcbfba42657c71d529d7c1f0787d1
-3	3	ticket exists: no repo (#3050)	857e20ecf1c3935af3a951ca0ea893db8e5435a3
+1	20	ticket publish	96e892a17ab39549ce006c34a1d314053a74baeb
+31	25	ticket publish verify-then-die	100437bcc6d32c2d7441c1dfa08455f2737be66f
+11	9	ticket publish rewrites ## Blocked by	002cc35cd2ca5a1b5ba3914252cdd803239d7c98
+9	7	ticket next	d5f191a239f8c8f39d39e797523d26936620d3e3
+9	8	ticket list	57bc795400d67f0ba9691c6cbc94ee3f0fe2ddf8
+20	14	ticket close	3afed29ffc164aa1f39b6dd3cbea379d9c3bdab1
+14	12	ticket reset	b29388d315d753ccb8c5f41b4a9643233a3f7087
+19	17	ticket report	02b52bf7fc38748b706ceed0c0e3e819888a715e
+7	6	ticket parent	301a619982a688eee33c4db93bdd158951e4b7cc
+1	20	ticket exists	5eadee800aec156e1e4358ca95d7463c331ff7cb
+124	111	ticket block	8170f662dd307e84e93c4648d9bce5dfcf6d0165
+7	73	ticket unblock	f437a0e6520128cd589555d4d65bed14be2df989
+4	4	ticket retire: breakdown save point	ea3dcf9bbc130cc561b0cf47dd7ea6a09f4c779b
+7	6	ticket retire: untrusted comments	baa1a7bd8d44d1c6ebba0881d3851a49a319cc3d
+48	41	ticket retire (#334)	2bd51d596187c6ef64a1299c6654967315111469
+1	1	ticket: unknown op	6e0a1c0263dfee67a2e04403570e3c8e8df9d0db
+25	21	ticket merge (#621)	8b960a50bca280faf480d3106190eaad23f0351d
+6	5	ticket merge beside a same-named tag (#2337)	f89a007677ed8c0c7f53f849ebf468c3fb288f14
+164	128	ticket reclaim (ADR-0054)	26fbfa29784efbcec3fb43cafc53dad88f33b3c2
+2	2	ticket exists: no repo (#3050)	ef9df9673d4da34d402f5bf8af47240bd7df6cd3
 43	35	trust module	dd0183ac4380b097c6b51f9e75c4a3038ab514c5
 89	19	wait: a call's block is wall time	90d20fdb4b55a5964e512640526d36f24c6b6f96
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594

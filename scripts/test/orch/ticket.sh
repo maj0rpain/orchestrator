@@ -5,6 +5,22 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# fake_body_read <n> <format> [arg...]: seeds issue #n's body so that a read
+# of it - the stored body, then a newline, as gh's --jq .body prints it -
+# answers exactly what printf prints, which ends in a newline.
+fake_body_read() {
+  local n="$1" t
+  shift
+  # shellcheck disable=SC2059 # the format string is the caller's first argument, by design
+  t="$(printf "$@"; printf x)"
+  t="${t%x}"
+  printf '%s' "${t%$'\n'}" >"$ORCH_GH_FAKE_STORE/issues/$n/body"
+}
+
+# fake_sub_issues_of <parent>: the parent's sub-issues read back from the
+# store, in link order, space-separated - nothing for none.
+fake_sub_issues_of() { paste -sd ' ' "$ORCH_GH_FAKE_STORE/subs/$1" 2>/dev/null || true; }
+
 # ticket_fixture: a ticket section's starting point - a healthy_repo with the
 # store-backed fake GitHub (fake_github), no issue in it yet. Leaves the global
 # body (a ticket body file reading "Build the thing.") set, and whatever
@@ -1299,6 +1315,150 @@ assert_contains "a stranger's copy of the retire comment is ignored" "$out" \
   "orch: ignored 1 comment(s) from untrusted authors on #$t70"
 "$ORCH" issue comments "$t70" "$body" >/dev/null 2>&1
 assert_contains "so the retire comment is still posted" "$(cat "$body")" "$retire_msg"
+restore_suite_env
+
+# --- ticket retire (#334) -----------------------------------------------------
+# The retire redo spec runs on the kept issue's breakdown, run here as the bash
+# verb: each ticket closed as not planned with the retirement comment and
+# unlinked, a collapsed breakdown's ## Ticket section cut, an already-retired
+# breakdown left as it is, and each gh failure's reason on orch's own line,
+# first line only (#846).
+echo
+echo "ticket retire"
+ticket_fixture
+for p in 50 51 52 53 55 56 57 58 59 60; do fake_issue "$p" open; done
+fake_next_issue 900
+rt1="$("$ORCH" ticket publish 50 "One" "$body")"
+rt2="$("$ORCH" ticket publish 50 "Two" "$body")"
+"$ORCH" ticket close "$rt2" >/dev/null
+fake_issue_body 50 'The spec of #50.'
+out="$("$ORCH" ticket retire 50 2>&1)"; st=$?
+assert_status "a sub-issue breakdown retires" "$st" 0
+assert_eq "the parent is left with no sub-issues" "$(fake_sub_issues_of 50)" ""
+retire_msg="This ticket was retired: its spec, #50, changed and will be broken down into tickets again."
+for t in "$rt1" "$rt2"; do
+  assert_eq "old ticket #$t is closed" "$(fake_state_of "$t")" "CLOSED"
+  assert_contains "old ticket #$t carries the retirement comment" "$(fake_comments_of "$t")" "$retire_msg"
+done
+assert_eq "an open old ticket is closed as not planned" "$(fake_reason_of "$rt1")" "not planned"
+out="$("$ORCH" ticket exists 50 2>&1)"; st=$?
+assert_status "ticket exists then finds no breakdown" "$st" 1
+"$ORCH" ticket reset 50 >/dev/null 2>&1
+assert_eq "a later ticket reset reopens none of the old tickets" \
+  "$(fake_state_of "$rt1") $(fake_state_of "$rt2")" "CLOSED CLOSED"
+
+# Each body below is seeded as gh's read of it answers.
+fake_body_read 51 'Intro\r\n\r\n## Ticket\r\n\r\n### What to build\r\nBuild.\r\n\r\n## After\r\nTail.\r\n'
+"$ORCH" ticket retire 51 >/dev/null 2>&1
+assert_eq "a collapsed CRLF breakdown's ## Ticket section is cut, the rest unchanged" \
+  "$(fake_body_of 51 | od -c)" "$(printf 'Intro\r\n\r\n## After\r\nTail.\r\n' | od -c)"
+fake_body_read 52 '%s\n' 'The spec.' '' '## Ticket' '' '```sh' '# not a heading' '```' 'Build it.'
+"$ORCH" ticket retire 52 >/dev/null 2>&1
+assert_eq "a section at the body's end goes with the blank line before it, a fenced # line included" \
+  "$(fake_body_of 52 | od -c)" "$(writeln 'The spec.' | od -c)"
+before="$(fake_snapshot)"
+out="$("$ORCH" ticket retire 50 2>&1)"; st=$?
+assert_status "retiring an already-retired sub-issue breakdown succeeds" "$st" 0
+out="$("$ORCH" ticket retire 52 2>&1)"; st=$?
+assert_status "retiring an already-retired collapsed breakdown succeeds" "$st" 0
+assert_eq "and writes nothing to GitHub" "$(fake_snapshot)" "$before"
+
+# A ticket the unlink failed on is retired by a rerun, commented on once.
+rt4="$("$ORCH" ticket publish 53 "Four" "$body")"
+fake_fail adapter_sub_issue_unlink
+out="$("$ORCH" ticket retire 53 2>&1)"; st=$?
+assert_status "a gh that will not unlink a ticket fails the retire" "$st" 1
+assert_contains "naming what failed" "$out" "gh could not unlink ticket #$rt4"
+fake_unfail
+"$ORCH" ticket retire 53 >/dev/null 2>&1
+assert_eq "a rerun retires it" "$(fake_sub_issues_of 53) $(fake_state_of "$rt4")" " CLOSED"
+assert_eq "without commenting on it a second time" \
+  "$(fake_comments_of "$rt4" | grep -cxF "This ticket was retired: its spec, #53, changed and will be broken down into tickets again.")" "1"
+
+# A closed, linked ticket carrying the old redo wording - what a retire that
+# died part-way under the old wording leaves - is treated as commented on.
+rt5="$("$ORCH" ticket publish 55 "Five" "$body")"
+"$ORCH" ticket close "$rt5" >/dev/null
+fake_comment "$rt5" fake-gh 2026-01-01T00:00:00Z \
+  "This ticket was retired by an orchestrator redo: its spec, #55, is being redone and will be broken down into tickets again."
+fake_fail adapter_issue_comment
+out="$("$ORCH" ticket retire 55 2>&1)"; st=$?
+assert_status "an old-wording comment: retire succeeds, posting no second comment" "$st" 0
+fake_unfail
+assert_eq "leaving its one old-wording comment alone" "$(fake_comments_of "$rt5" | grep -c .)" "1"
+assert_eq "and unlinking it" "$(fake_sub_issues_of 55)" ""
+
+fake_issue_body 56 "$(writeln 'Intro' '```md' '## Ticket' 'example' '```' '' '## Ticket' 'Build.')"
+"$ORCH" ticket retire 56 >/dev/null 2>&1
+assert_eq "only the real section is cut, the fenced example kept" \
+  "$(fake_body_of 56 | od -c)" "$(writeln 'Intro' '```md' '## Ticket' 'example' '```' | od -c)"
+out="$("$ORCH" ticket exists 56 2>&1)"; st=$?
+assert_status "ticket exists then ignores the fenced example" "$st" 1
+fake_issue_body 56 "$(writeln 'Intro' '  ```md' '## Ticket' 'example' '  ```' '' '## Ticket' 'Build.')"
+"$ORCH" ticket retire 56 >/dev/null 2>&1
+assert_eq "an example inside an indented fence is kept" \
+  "$(fake_body_of 56 | od -c)" "$(writeln 'Intro' '  ```md' '## Ticket' 'example' '  ```' | od -c)"
+fake_issue_body 57 "$(writeln 'Intro' '```md' '## Ticket' '```')"
+fake_fail adapter_issue_body_edit
+out="$("$ORCH" ticket retire 57 2>&1)"; st=$?
+assert_status "a body whose only ## Ticket is fenced: retire writes nothing" "$st" 0
+fake_unfail
+fake_body_read 58 'Spec.\n\n## Ticket\nBuild.\n\n## After\nTail.\n\n\n'
+"$ORCH" ticket retire 58 >/dev/null 2>&1
+assert_eq "trailing blank lines after the section are kept" \
+  "$(fake_body_of 58 | od -c)" "$(printf 'Spec.\n\n## After\nTail.\n\n\n' | od -c)"
+fake_body_read 58 'Spec, no ticket heading.\n'
+fake_fail adapter_issue_body_edit
+out="$("$ORCH" ticket retire 58 2>&1)"; st=$?
+assert_status "a body with no ## Ticket heading: retire writes nothing" "$st" 0
+fake_unfail
+
+fake_issue_body 58 "$(writeln 'Spec.' '' '## Ticket' 'Build.')"
+rw_tmp="$(mktemp -d)"
+assert_gh_dies "a failed ## Ticket read exits 1" adapter_issue_body "$GH_502" 1 \
+  "orch: gh could not read issue #58's body: HTTP 502: Bad Gateway" \
+  env TMPDIR="$rw_tmp" "$ORCH" ticket retire 58
+assert_eq "leaving no temp file" "$(ls -A "$rw_tmp")" ""
+assert_gh_dies "a failed ## Ticket write exits 1" adapter_issue_body_edit "$GH_502" 1 \
+  "orch: gh could not remove the ## Ticket section from #58: HTTP 502: Bad Gateway" \
+  env TMPDIR="$rw_tmp" "$ORCH" ticket retire 58
+assert_eq "leaving no temp file" "$(ls -A "$rw_tmp")" ""
+assert_gh_dies "a silent failed ## Ticket write exits 1" adapter_issue_body_edit '' 1 \
+  "orch: gh could not remove the ## Ticket section from #58: gh gave no reason" \
+  env TMPDIR="$rw_tmp" "$ORCH" ticket retire 58
+assert_eq "leaving no temp file" "$(ls -A "$rw_tmp")" ""
+rm -rf "$rw_tmp"
+
+# A body gh reads back with no final newline gets none back from the cut.
+bare_defs="$(writeln \
+        'adapter_issue_body() {' \
+        '  ! fake_failing adapter_issue_body || return 1' \
+        '  fake_issue_known "$1" || return 1' \
+        '  cat "$(fake_issue_dir "$1")/body"' \
+        '}')"
+fake_body_read 58 'Spec.\n\n## Ticket\nBuild.\n\n## After\nTail.\n'
+adapter_stood_in "$bare_defs" "$ORCH" ticket retire 58 >/dev/null 2>&1; st=$?
+assert_status "a body read with no final newline: retire succeeds" "$st" 0
+assert_eq "the cut body gets no final newline back" \
+  "$(fake_body_of 58 | od -c)" "$(printf 'Spec.\n\n## After\nTail.' | od -c)"
+
+rt6="$("$ORCH" ticket publish 59 "Six" "$body")"
+"$ORCH" ticket close "$rt6" >/dev/null
+assert_gh_dies "a failed comments read exits 1" adapter_issue_comments "$GH_502" 1 \
+  "orch: gh could not read ticket #$rt6's comments: HTTP 502: Bad Gateway" \
+  "$ORCH" ticket retire 59
+assert_gh_dies "a failed retirement comment exits 1" adapter_issue_comment "$GH_502" 1 \
+  "orch: gh could not comment on ticket #$rt6: HTTP 502: Bad Gateway" \
+  "$ORCH" ticket retire 59
+assert_gh_dies "a failed unlink exits 1" adapter_sub_issue_unlink "$GH_502" 1 \
+  "orch: gh could not unlink ticket #$rt6 from #59: HTTP 502: Bad Gateway" \
+  "$ORCH" ticket retire 59
+rt7="$("$ORCH" ticket publish 60 "Seven" "$body")"
+assert_gh_dies "a failed close exits 1" adapter_issue_close "$GH_502" 1 \
+  "orch: gh could not close ticket #$rt7: HTTP 502: Bad Gateway" \
+  "$ORCH" ticket retire 60
+out="$("$ORCH" help 2>&1)"
+assert_contains "ticket retire is in the usage text" "$out" "ticket retire <parent>"
 restore_suite_env
 
 # --- ticket: unknown op ------------------------------------------------------

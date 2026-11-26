@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from conftest import PACKAGE_BOOTSTRAP, died_of, git_repo, hold_flow
+from conftest import PACKAGE_BOOTSTRAP, died_of, git_repo, hold_flow, run_git
+from orch.gh_fake import FakeStore
 from orch.__main__ import main
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
@@ -104,6 +105,36 @@ def test_phase_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_path):
 def test_the_phase_noun_is_converted(capsys):
     assert died_of(capsys, lambda: main(["phase", "wipe"]))[2] == \
         "orch: unknown phase op: wipe (want advance|boundary)\n"
+
+
+def test_redo_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_path, monkeypatch):
+    """redo review prints the new redo number, as bash's printf did, so a
+    closed pipe ends it silently too - once the redo itself is done."""
+    store = tmp_path / "store"
+    store.mkdir()
+    seed = FakeStore(str(store))
+    seed.issue(21, "open")
+    seed.pr(30, "open", "orch/21-redo", "main")
+    root = tmp_path / "repo"
+    git_repo(root, "https://github.com/acme/widgets.git")
+    run_git(root, "commit", "-q", "--allow-empty", "-m", "first")
+    run_git(root, "checkout", "-q", "-b", "orch/21-redo")
+    hold_flow(root, slug="redo", phase="review", issue=21, branch="orch/21-redo", pr=30,
+              iteration=1, budget=1)
+    (root / ".orchestrator" / "review").mkdir()
+    (root / ".orchestrator" / "review" / "iteration-01.md").write_text(
+        "## Terminal state\nstop\n")
+    monkeypatch.setenv("ORCH_GH_FAKE_STORE", str(store))
+
+    run = into_a_closed_pipe(root, "redo", "review")
+
+    assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
+    assert run_git(root, "branch", "--show-current") == "orch/21-redo-redo-1"
+
+
+def test_the_redo_noun_is_converted(capsys):
+    assert died_of(capsys, lambda: main(["redo", "wipe"]))[2] == \
+        "orch: unknown redo op: wipe (want review|spec)\n"
 
 
 @pytest.mark.parametrize("call", [["route", "show"], ["--call", "route", "run", "show"]],

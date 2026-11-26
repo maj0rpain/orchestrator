@@ -29,8 +29,7 @@ CASES = sorted(path.name for path in GOLDEN.iterdir() if path.is_dir())
 # Each case run through the bash review_terminal_state, the modules loaded as
 # orch.sh loads them, ROOT, STATE and REVIEW_DIR the checkout's: its lines,
 # `status <n>`, then a `--` line and review_flat_record_gone's status.
-# redo_midway is loaded from wherever bash keeps it: redo.sh today, review.sh
-# once the redo noun is Python.
+# redo_midway is review.sh's, beside the read it serves.
 BASH_RUN = r'''
 set -uo pipefail
 source "$1"
@@ -42,7 +41,6 @@ orch_load state
 orch_load handoff
 orch_load branch
 orch_load review
-declare -F redo_midway >/dev/null || orch_load redo
 st=0
 review_terminal_state "$4" "$5" || st=$?
 printf 'status %s\n--\n' "$st"

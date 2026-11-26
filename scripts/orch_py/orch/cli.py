@@ -125,6 +125,12 @@ def _phase(argv: List[str]) -> int:
     return run(argv)
 
 
+def _redo(argv: List[str]) -> int:
+    from orch.redo import run
+
+    return run(argv)
+
+
 def _help(argv: List[str]) -> int:
     from orch.help import run
 
@@ -151,6 +157,7 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "archive": _archive,
     "init": _init,
     "phase": _phase,
+    "redo": _redo,
     "help": _help,
 }
 
@@ -160,7 +167,7 @@ ALIASES: Dict[str, str] = {"-h": "help", "--help": "help"}
 # The nouns converted with init and after it, each keeping its bash noun's
 # silent SIGPIPE death on a closed stdout pipe; a noun converted before them
 # keeps its flush failure there, as it always ended.
-SIGPIPE_NOUNS = frozenset({"init", "slug", "status", "archive", "help", "phase"})
+SIGPIPE_NOUNS = frozenset({"init", "slug", "status", "archive", "help", "phase", "redo"})
 
 
 def _sigpipe_as_bash(run: Callable[[List[str]], int], argv: List[str]) -> int:

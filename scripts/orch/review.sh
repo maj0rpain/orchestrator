@@ -155,6 +155,22 @@ review_record_path() {
   printf '%s/iteration-%02d.md\n' "$REVIEW_DIR" "$n"
 }
 
+# redo_midway <issue> <slug> <branch> <redo_count>: reads nothing - the caller
+# holds the Flow state's branch and redo_count. Succeeds while a redo (review
+# or spec) is half-finished, printing its redo_count. True between a redo's
+# branch retire and its closing write, which clears state.branch: redo_count is
+# above 0 and state.branch is exactly the -redo-<redo_count> name of the issue
+# and slug (the exact name, so a slug that merely ends that way does not match:
+# #2550). The predicate the terminal-state read below and the Python redo noun
+# (scripts/orch_py/orch/redo.py, whose copy tests/test_review.py pins to this
+# one) share, so `review terminal`, doctor and redo never disagree on whether a
+# redo is resuming.
+redo_midway() {
+  local branch="$3" redo_count="$4"
+  [ "$redo_count" -gt 0 ] && [ "$branch" = "$(branch_name_redo "$1" "$2" "$redo_count")" ] || return 1
+  printf '%s\n' "$redo_count"
+}
+
 # review_terminal_record <i>: prints the path of the record iteration <i>'s
 # terminal state is read from - the flat iteration-NN.md, or, when that is gone
 # while a redo review is half-finished (redo_midway), the same record under
@@ -177,7 +193,8 @@ review_terminal_record() {
 # review_flat_record_gone <i>: succeeds, silently, when iteration <i> is an
 # integer above 0 and its flat iteration-NN.md is gone - the one state in which
 # review_terminal_record looks past it (redo_midway). Callers that load a module
-# only that look reaches test it here, rather than re-deriving the condition.
+# only that look reaches - branch, whose branch_name_redo redo_midway calls -
+# test it here, rather than re-deriving the condition.
 review_flat_record_gone() {
   local flat
   is_positive_int "$1" || return 1

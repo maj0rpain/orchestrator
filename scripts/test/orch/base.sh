@@ -254,6 +254,17 @@ assert_status "base set --flow refuses once the flow has a branch" "$st" 1
 assert_contains "outside the review phase saying to abort" "$out" \
   "flow flowbase already has branch orch/7-flowbase - its base can no longer change; abort to start again on another base"
 assert_eq "leaving the flow's base unchanged" "$(orch_gh_failing state get base)" "uat"
+# At the review phase the way back is a redo, which retires the branch.
+state_fixture phase review
+out="$(ORCHESTRATOR_HOST=claude orch_gh_failing base set main --flow 2>&1)"; st=$?
+assert_status "base set --flow refuses a branched flow at the review phase" "$st" 1
+assert_contains "naming redo as the way back on Claude Code" "$out" \
+  "flow flowbase already has branch orch/7-flowbase - its base can change again once /orchestrator:redo retires it"
+out="$(ORCHESTRATOR_HOST=junie orch_gh_failing base set main --flow 2>&1)"
+assert_contains "and with the orch-flow section on another host" "$out" \
+  "its base can change again once /orchestrator:redo (or orch-flow's Redo section) retires it"
+assert_eq "leaving the flow's base unchanged at review too" "$(orch_gh_failing state get base)" "uat"
+state_fixture phase spec
 out="$(orch_gh_failing base set 'bad..name' --flow 2>&1)"
 assert_contains "a branched flow given an invalid name reports the branch refusal" "$out" \
   "flow flowbase already has branch orch/7-flowbase"
