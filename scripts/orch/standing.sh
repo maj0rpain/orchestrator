@@ -311,14 +311,12 @@ standing_state_get() {
   return "$rc"
 }
 
-# standing_chain_start [<seed>]: begins every chain transition. It clears
-# STANDING_LANDED, the skip list (STANDING_DONE) and STANDING_BODY_FILE, puts a
-# non-empty <seed> first on STANDING_LANDED, then, when STANDING_STATE_FILE is
-# set, takes up the writes earlier attempts landed. The seed is a reason, not a
-# write: it is not skipped and not recorded in the state file.
+# standing_chain_start: begins every chain transition. It clears
+# STANDING_LANDED, the skip list (STANDING_DONE) and STANDING_BODY_FILE, then,
+# when STANDING_STATE_FILE is set, takes up the writes earlier attempts landed.
 standing_chain_start() {
   local key value
-  STANDING_LANDED="${1:-}" STANDING_DONE=() STANDING_BODY_FILE=""
+  STANDING_LANDED="" STANDING_DONE=() STANDING_BODY_FILE=""
   [ -s "${STANDING_STATE_FILE:-}" ] || return 0
   while IFS=$'\t' read -r key value; do
     [ "$key" = landed ] || continue

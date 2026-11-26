@@ -212,10 +212,10 @@ tr_seed 95 orch:spec orch:running
 sourced_rc 'standing_stop 95 refusal spec "no plan"; standing_limit_stop 94 spec "" 2026-01-01T01:00:00Z 1 log' >/dev/null
 assert_eq "a limit-stop run after a stop in the same shell adds its own label, removes its own orch:running and releases" "$(fake_labels_of 94)|$(fake_claim_held 94)" "orch:limited orch:spec |free"
 out="$(sourced_rc 'STANDING_STATE_FILE="$(mktemp)"; printf "landed\tearlier write\n" >"$STANDING_STATE_FILE"
-standing_chain_start "the seed"; echo "landed=$STANDING_LANDED"; echo "lines=$(wc -l <"$STANDING_STATE_FILE")"; standing_landed_has "the seed" && echo skip-seed')"
-assert_contains "a seeded start puts the seed first and takes up earlier landed writes" "$out" "landed=the seed, earlier write"
-assert_contains "and writes no landed line for its seed" "$out" "lines=1"
-assert_eq "and does not skip its seed" "$(printf '%s' "$out" | grep -c skip-seed)" "0"
+standing_chain_start; echo "landed=$STANDING_LANDED"; echo "lines=$(wc -l <"$STANDING_STATE_FILE")"; standing_landed_has "earlier write" && echo skip-earlier')"
+assert_contains "a start takes up the writes earlier attempts landed" "$out" "landed=earlier write"
+assert_contains "and writes no landed line of its own" "$out" "lines=1"
+assert_contains "and skips each of them" "$out" "skip-earlier"
 fake_unfail
 
 # stop
