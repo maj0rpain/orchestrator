@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from orch import audit, issue, pr, review_pass, spec_review, ticket_worktree, verification
+from orch.gh import Unparsed
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit, Git
 from orch.repo import RepoPin
@@ -512,6 +513,26 @@ class Opens:
 def fake(seed):
     """The gh fake on <seed>'s store, its retries never sleeping."""
     return FakeGh(seed.store, {}, sleep=lambda _: None)
+
+
+class CountingGh(FakeGh):
+    """The gh fake, keeping each repo it is asked the default branch of, in
+    order, in default_asks."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.default_asks = []
+
+    def repo_default_branch(self, repo):
+        self.default_asks.append(repo)
+        return super().repo_default_branch(repo)
+
+
+class UnparsedPrComments(FakeGh):
+    """The gh fake, its PR comments an answer that is no comment list."""
+
+    def pr_comments(self, n):
+        raise Unparsed("no comment list")
 
 
 def died_of(capsys, run):

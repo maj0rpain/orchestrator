@@ -59,6 +59,11 @@ def without_cr(line: str) -> str:
     return line[:-1] if line.endswith("\r") else line
 
 
+def first_line(text: str) -> str:
+    """<text>'s first line, its trailing CR dropped; "" for empty text."""
+    return without_cr(text.split("\n", 1)[0])
+
+
 def die(message: str, code: int = 1) -> NoReturn:
     """Prints `orch: <message>` on stderr and exits with <code>."""
     warn(message)

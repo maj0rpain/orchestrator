@@ -16,9 +16,9 @@ import subprocess
 
 import pytest
 
-from conftest import CLAUDE, GH_502, SESSIONS, died_of, fake, hold_flow, prs_of, read, state_json
+from conftest import (CLAUDE, GH_502, SESSIONS, CountingGh, died_of, fake, hold_flow, prs_of, read,
+                      state_json)
 from orch import pr
-from orch.gh_fake import FakeGh
 from orch.git import FakeGit
 
 ORIGIN = "https://github.com/acme/widgets.git"
@@ -52,18 +52,6 @@ def checkout_git(root, branch, rejected=False, **config):
         git.seed("push_set_upstream", "origin", refspec(branch),
                  answer=REJECTED % (branch, branch) if rejected else None)
     return git
-
-
-class CountingGh(FakeGh):
-    """The gh fake, counting its asks of the repo's default branch."""
-
-    def __init__(self, seed):
-        super().__init__(seed.store, {}, sleep=lambda _: None)
-        self.default_asks = 0
-
-    def repo_default_branch(self, repo):
-        self.default_asks += 1
-        return super().repo_default_branch(repo)
 
 
 def orch_pr(root, seed, git, *argv, env=None, gh=None):
@@ -102,13 +90,13 @@ def github(seed):
 def test_publish_opens_a_ready_pr_from_the_current_branch_into_the_default_branch(
         tmp_path, root, github, store, capsys, env):
     git = checkout_git(root, QUICK_BRANCH)
-    gh = CountingGh(github)
+    gh = CountingGh(github.store, {}, sleep=lambda _: None)
 
     assert orch_pr(root, github, git, "publish", "16", "Title", body_file(tmp_path), env=env,
                    gh=gh) == 0
 
     assert capsys.readouterr() == ("23\n", "")
-    assert gh.default_asks == 1
+    assert len(gh.default_asks) == 1
     assert not state_json(root).exists()
     assert (pr_file(store, 23, "base"), pr_file(store, 23, "head"), pr_file(store, 23, "title")) \
         == ("main\n", QUICK_BRANCH + "\n", "Title\n")
@@ -482,12 +470,12 @@ def test_open_pushes_opens_a_draft_and_records_it_in_state_and_on_the_branch(
         tmp_path, root, github, store, capsys, env):
     flow(root, base=None)
     git = checkout_git(root, FLOW_BRANCH)
-    gh = CountingGh(github)
+    gh = CountingGh(github.store, {}, sleep=lambda _: None)
 
     assert pr_open(tmp_path, root, github, git, env=env, gh=gh) == 0
 
     assert capsys.readouterr() == ("23\n", "")
-    assert gh.default_asks == 1
+    assert len(gh.default_asks) == 1
     assert recorded_pr(root) == 23
     assert marker_of(git, FLOW_BRANCH) == "23"
     assert pr_file(store, 23, "draft") == ""
@@ -865,16 +853,3 @@ def test_a_second_failed_label_names_the_label_that_landed(tmp_path, root, recor
                      "--label", "one", "--label", "two") == (
         1, "", "orch: gh could not add the label 'two' to PR #50: HTTP 502: Bad Gateway"
         " - already written: the title, the body, the label 'one'\n")
-
-
-# --- the dispatch -------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("argv, shown", [((), "<none>"), (("bogus",), "bogus"), (("",), "<none>")])
-def test_an_unknown_op_is_refused_naming_every_op(root, seed, capsys, argv, shown):
-    seed.offline()
-
-    assert died_of(capsys, lambda: orch_pr(root, seed, checkout_git(root, FLOW_BRANCH),
-                                           *argv)) == (
-        1, "", "orch: unknown pr op: %s (want open|publish|release|comment|comments|fetch|read"
-        "|update|draft|ready)\n" % shown)

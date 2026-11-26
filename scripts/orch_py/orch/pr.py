@@ -52,8 +52,8 @@ from orch import comments
 from orch.base import base_branch_into, default_branch, recorded_base_into
 from orch.branch import branch_name_flow, branch_pr_set
 from orch.checkout import checkout_branch, current_branch_or_die
-from orch.common import (die, fenced, file_write_atomic, is_positive_int, lines_of, plain_number,
-                         read_raw, rm_f, stdout_write, temp_text_file, warn, without_cr)
+from orch.common import (die, fenced, file_write_atomic, first_line, is_positive_int, lines_of,
+                         plain_number, read_raw, rm_f, stdout_write, temp_text_file, warn)
 from orch.flow_state import (STATE_UNREADABLE_MSG, StateUnreadable, flow_base_fallback_into,
                              flow_holding_phase, flow_state_file, require_state_read,
                              require_value, state_write_many)
@@ -237,21 +237,21 @@ def pr_close_newest(gh, issue: str, default: str, lines: Sequence[str],
     return pr_close_missed(gh, issue, number, merged_at, closing, default, now), number
 
 
-def pr_merged_closing_read(run: _Run, skip: str, issue: str) -> Optional[Tuple[str, List[str]]]:
+def pr_merged_closing_read(cmd: _Run, skip: str, issue: str) -> Optional[Tuple[str, List[str]]]:
     """The backstop's one read: the default branch, then the PRs merged
     into it since <issue> - the oldest the caller may close - was created,
     fork PRs dropped (trust_filter_prs), as the merged-PR read's lines less
     their flag. None after a warning ending in <skip>, the caller's words
     for what it gives up, when any read fails."""
-    default = run.default()
+    default = cmd.default()
     try:
-        since = run.gh().issue_created_at(int(issue))
+        since = cmd.gh().issue_created_at(int(issue))
     except GhFailed as failed:
         warn("could not read the creation time of issue #%s: %s - %s"
              % (issue, gh_reason(failed.stderr), skip))
         return None
     try:
-        raw = run.gh().prs_merged_closing(default, since)
+        raw = cmd.gh().prs_merged_closing(default, since)
     except GhFailed as failed:
         warn("could not read the merged PRs: %s - %s" % (gh_reason(failed.stderr), skip))
         return None
@@ -314,8 +314,8 @@ def close_missed_tick(
     kept = rows
     bound = next((row[0] for row in rows if row[1] == "0"), None)
     if bound is not None:
-        run = _Run(gh, Git() if git is None else git, os.environ if env is None else env)
-        read = pr_merged_closing_read(run, "no merged-PR close this tick", bound)
+        cmd = _Run(gh, Git() if git is None else git, os.environ if env is None else env)
+        read = pr_merged_closing_read(cmd, "no merged-PR close this tick", bound)
         if read is not None:
             default, prs = read
             at = now()
@@ -323,7 +323,7 @@ def close_missed_tick(
             for row in rows:
                 if row[1] == "0":
                     picked = pr_lines_by_prefix(prs, branch_name_flow(row[0], ""))
-                    if pr_close_newest(run.gh(), row[0], default, picked, at)[0] == 0:
+                    if pr_close_newest(cmd.gh(), row[0], default, picked, at)[0] == 0:
                         continue
                 kept.append(row)
     stdout_write("".join(" ".join(row) + "\n" for row in kept))
@@ -351,14 +351,14 @@ def close_missed_finish(
     if len(args) != 3 or not plain_number(args[0]) or not (args[1] == "" or plain_number(args[1])):
         die(FINISH_USAGE)
     issue, number, branch = args
-    run = _Run(gh, Git() if git is None else git, os.environ if env is None else env)
-    read = pr_merged_closing_read(run, "no merged-PR close for issue #" + issue, issue)
+    cmd = _Run(gh, Git() if git is None else git, os.environ if env is None else env)
+    read = pr_merged_closing_read(cmd, "no merged-PR close for issue #" + issue, issue)
     if read is None:
         return
     default, prs = read
     field, wanted = (0, number) if number else (1, branch)
     picked = [text for text in prs if (text.split("\t") + [""])[field] == wanted]
-    status, closed = pr_close_newest(run.gh(), issue, default, picked, now())
+    status, closed = pr_close_newest(cmd.gh(), issue, default, picked, now())
     if status == 3:
         warn("issue #%s is still open: PR #%s merged less than %d minutes ago - GitHub may yet"
              " close it, and no later sweep will check" % (issue, closed, PR_CLOSE_GRACE // 60))
@@ -467,7 +467,7 @@ def pr_body_check(body_file: str, required: Sequence[str]) -> None:
 
 
 @contextmanager
-def pr_push_and_body(run: _Run, branch: str, base: str, issue: str, body_file: str,
+def pr_push_and_body(cmd: _Run, branch: str, base: str, issue: str, body_file: str,
                      outcome: str) -> Iterator[str]:
     """The one place the push-then-issue-line rule lives, for open_pr and
     update_pr: pushes <branch> to origin, then yields the path of a temp
@@ -477,10 +477,10 @@ def pr_push_and_body(run: _Run, branch: str, base: str, issue: str, body_file: s
     failed push or write dies naming <outcome>, what the failure leaves
     undone ("no PR was opened", "PR #7 was not updated")."""
     # Full refs: a tag named like the branch outranks a bare source (#2337).
-    why = run.git.push_set_upstream("origin", "refs/heads/%s:refs/heads/%s" % (branch, branch))
+    why = cmd.git.push_set_upstream("origin", "refs/heads/%s:refs/heads/%s" % (branch, branch))
     if why is not None:
         die("could not push branch %s to origin - %s: %s" % (branch, outcome, why))
-    keyword = "Closes" if base == run.default() else "Refs"
+    keyword = "Closes" if base == cmd.default() else "Refs"
     unwritten = "could not write the PR body from %s - %s" % (body_file, outcome)
     text = read_raw(body_file)
     if text is None:
@@ -491,7 +491,7 @@ def pr_push_and_body(run: _Run, branch: str, base: str, issue: str, body_file: s
         yield path
 
 
-def open_pr(run: _Run, branch: str, base: str, issue: str, title: str, body_file: str,
+def open_pr(cmd: _Run, branch: str, base: str, issue: str, title: str, body_file: str,
             draft: bool, labels: Sequence[str]) -> int:
     """Pushes <branch> and opens its PR into <base> under <title>, the body
     behind its issue line (pr_push_and_body) - a draft under <draft>,
@@ -500,17 +500,17 @@ def open_pr(run: _Run, branch: str, base: str, issue: str, title: str, body_file
     branch.<b>.orchestrator-pr (#1200), so a busy check tells, locally,
     that the branch's work is handed off; a failed record only warns: the PR
     is open either way, and the branch merely stays busy."""
-    with pr_push_and_body(run, branch, base, issue, body_file, "no PR was opened") as tmp:
+    with pr_push_and_body(cmd, branch, base, issue, body_file, "no PR was opened") as tmp:
         number = gh_or_die("open the PR for branch %s (issue #%s)" % (branch, issue),
-                           run.gh().pr_create, base, branch, title, tmp,
+                           cmd.gh().pr_create, base, branch, title, tmp,
                            draft=draft, labels=labels)
-    if git_failed(branch_pr_set(run.git, branch, str(number))):
+    if git_failed(branch_pr_set(cmd.git, branch, str(number))):
         warn("could not record PR #%d on branch %s - it counts as busy until you switch off it"
              % (number, branch))
     return number
 
 
-def update_pr(run: _Run, recorded: str, branch: str, base: str, issue: str, title: str,
+def update_pr(cmd: _Run, recorded: str, branch: str, base: str, issue: str, title: str,
               body_file: str, labels: Sequence[str]) -> None:
     """pr open's restart path (#1609), for a flow whose state already names
     its PR, <recorded>: the PR must be open on <branch>, else it dies naming
@@ -519,7 +519,7 @@ def update_pr(run: _Run, recorded: str, branch: str, base: str, issue: str, titl
     is not the flow's <base>) and each of <labels> the PR lacks, removing
     none. A failed push dies before any PR write; a failed write dies naming
     it and each write already landed. A rerun repeats every write."""
-    gh = run.gh()
+    gh = cmd.gh()
     # A recorded PR is a number pr open wrote; anything else goes to gh as
     # it is, which refuses it, as bash's adapter call did.
     n = int(recorded) if plain_number(recorded) else recorded
@@ -538,7 +538,7 @@ def update_pr(run: _Run, recorded: str, branch: str, base: str, issue: str, titl
         warn("PR #%s targets %s, not the flow's base %s - its issue line follows the PR's base"
              % (recorded, line_base, base))
     outcome = "PR #%s was not updated" % recorded
-    with pr_push_and_body(run, branch, line_base, issue, body_file, outcome) as tmp:
+    with pr_push_and_body(cmd, branch, line_base, issue, body_file, outcome) as tmp:
         gh_or_die("write the title of PR #%s" % recorded, gh.pr_title_edit, n, title)
         landed = ["the title"]
         gh_or_die("write the body of PR #%s" % recorded, gh.pr_body_edit, n, tmp,
@@ -577,14 +577,14 @@ def pr_labels_check(gh, pr: int, labels: Sequence[str]) -> None:
 # --- the verbs ----------------------------------------------------------------
 
 
-def pr_open(args: List[str], run: _Run, root: str) -> None:
+def pr_open(args: List[str], cmd: _Run, root: str) -> None:
     """`pr open <title> <body-file> [--label <name>]...`: the flow's own PR,
     opened from its branch into its base as a draft - the review loop has
     not run yet, so marking it ready is the loop's success condition - and
     recorded in state and on the branch; or, with a PR already recorded,
     that PR updated (update_pr). Prints the PR's number."""
     state_file = flow_state_file(root)
-    state = require_state_read(state_file, run.env, ("issue", "branch", "base", "pr"), 1)
+    state = require_state_read(state_file, cmd.env, ("issue", "branch", "base", "pr"), 1)
     if len(args) < 2:
         die(OPEN_USAGE)
     title, body_file = args[:2]
@@ -594,20 +594,20 @@ def pr_open(args: List[str], run: _Run, root: str) -> None:
     issue, branch, recorded = state["issue"], state["branch"], state["pr"]
     require_value("issue", issue)
     require_value("branch", branch)
-    base = flow_base_fallback_into(state["base"], run.gh, run.git, run.pin)
+    base = flow_base_fallback_into(state["base"], cmd.gh, cmd.git, cmd.pin)
     pr_body_check(body_file, PR_BODY_HEADINGS)
-    require_no_open_tickets(run.gh(), issue, "pr open")
+    require_no_open_tickets(cmd.gh(), issue, "pr open")
     if recorded:
-        update_pr(run, recorded, branch, base, issue, title, body_file, labels)
+        update_pr(cmd, recorded, branch, base, issue, title, body_file, labels)
         stdout_write(recorded + "\n")
         return
-    number = open_pr(run, branch, base, issue, title, body_file, True, labels)
+    number = open_pr(cmd, branch, base, issue, title, body_file, True, labels)
     state_write_many(state_file, [("pr", str(number))])
-    pr_labels_check(run.gh(), number, labels)
+    pr_labels_check(cmd.gh(), number, labels)
     stdout_write("%d\n" % number)
 
 
-def pr_publish(args: List[str], run: _Run, _root: str) -> None:
+def pr_publish(args: List[str], cmd: _Run, _root: str) -> None:
     """`pr publish <issue> <title> <body-file> [--draft] [--label <name>]...`:
     the PR-opening boundary a quick implementation calls. Stateless: it
     opens a PR on the current branch into its recorded base and records
@@ -622,12 +622,12 @@ def pr_publish(args: List[str], run: _Run, _root: str) -> None:
         die("body file not found: " + body_file)
     if not plain_number(issue):
         die("issue must be a plain issue number, got: " + issue)
-    branch = current_branch_or_die(run.git)
-    base = recorded_base_into(run.gh(), run.git, run.pin, branch)
+    branch = current_branch_or_die(cmd.git)
+    base = recorded_base_into(cmd.gh(), cmd.git, cmd.pin, branch)
     pr_body_check(body_file, PR_BODY_HEADINGS)
-    require_no_open_tickets(run.gh(), issue, "pr publish")
-    number = open_pr(run, branch, base, issue, title, body_file, draft, labels)
-    pr_labels_check(run.gh(), number, labels)
+    require_no_open_tickets(cmd.gh(), issue, "pr publish")
+    number = open_pr(cmd, branch, base, issue, title, body_file, draft, labels)
+    pr_labels_check(cmd.gh(), number, labels)
     stdout_write("%d\n" % number)
 
 
@@ -641,7 +641,7 @@ def referenced_issues(bodies: str) -> List[str]:
     return [found[n] for n in sorted(found)]
 
 
-def pr_release(args: List[str], run: _Run, _root: str) -> Optional[int]:
+def pr_release(args: List[str], cmd: _Run, _root: str) -> Optional[int]:
     """The release PR: carries the base branch in effect back into the
     default branch. Stateless like pr publish, and pushes nothing - the base
     branch is already on origin."""
@@ -656,13 +656,13 @@ def pr_release(args: List[str], run: _Run, _root: str) -> Optional[int]:
         die("the title is empty")
     if not os.path.isfile(body_file):
         die("body file not found: " + body_file)
-    base = base_branch_into(run.gh(), run.git, run.pin)
-    default = run.default()
+    base = base_branch_into(cmd.gh(), cmd.git, cmd.pin)
+    default = cmd.default()
     if base == default:
         die("the base branch is the default branch (%s) - there is nothing to release;"
             " set another with base set" % default)
     open_prs = gh_or_die("list the open PRs from %s into %s" % (base, default),
-                         run.gh().prs_open, base, default)
+                         cmd.gh().prs_open, base, default)
     try:
         kept = trust_filter_prs(base, open_prs)
     except Unparsed:
@@ -672,14 +672,14 @@ def pr_release(args: List[str], run: _Run, _root: str) -> Optional[int]:
     # Read from the merged PRs' bodies rather than GitHub's closing-issue
     # links: GitHub only links closing keywords on PRs into the default
     # branch, and a Refs line never links at all.
-    bodies = gh_or_die("list the PRs merged into " + base, run.gh().prs_merged_bodies, base)
+    bodies = gh_or_die("list the PRs merged into " + base, cmd.gh().prs_merged_bodies, base)
     refs = referenced_issues(bodies)
     issues: List[str] = []
     # The listing of open issues leaves pull requests out, so a reference to
     # a PR, a closed issue or an unknown number gets no Closes line. It is
     # read only when something is referenced, and even under --force.
     if refs:
-        listed = gh_or_die("list the open issues", run.gh().issues_open_titles)
+        listed = gh_or_die("list the open issues", cmd.gh().issues_open_titles)
         open_issues = {str(n) for n, _ in listed}
         issues = [n for n in refs if n in open_issues]
     if not issues and not force:
@@ -693,12 +693,12 @@ def pr_release(args: List[str], run: _Run, _root: str) -> Optional[int]:
                         "could not write the release PR body") as tmp:
         # Not a draft: nothing after this would ever mark it ready.
         number = gh_or_die("open the release PR from %s into %s" % (base, default),
-                           run.gh().pr_create, default, base, title, tmp)
+                           cmd.gh().pr_create, default, base, title, tmp)
     stdout_write("%d\n" % number)
     return None
 
 
-def pr_comment(args: List[str], run: _Run, _root: str) -> Optional[int]:
+def pr_comment(args: List[str], cmd: _Run, _root: str) -> Optional[int]:
     """A stateless post on the current branch's open PR, the PR counterpart
     of issue comment - for a standalone review pass, which records its
     declines there. Three outcomes: 0 posted (printing the PR number), 1 only
@@ -711,15 +711,15 @@ def pr_comment(args: List[str], run: _Run, _root: str) -> Optional[int]:
     path = args[0]
     if not os.path.isfile(path):
         die("body file not found: " + path, 2)
-    number = current_open_pr(run.gh(), run.git, 2)
+    number = current_open_pr(cmd.gh(), cmd.git, 2)
     if number is None:
         return 1
-    gh_or_die("comment on PR #%d" % number, run.gh().pr_comment, number, path, code=2)
+    gh_or_die("comment on PR #%d" % number, cmd.gh().pr_comment, number, path, code=2)
     stdout_write("%d\n" % number)
     return None
 
 
-def pr_comments(args: List[str], run: _Run, _root: str) -> Optional[int]:
+def pr_comments(args: List[str], cmd: _Run, _root: str) -> Optional[int]:
     """The PR counterpart of issue comments (#418), so a standalone review
     pass reads earlier passes' declines: the trusted comments of the current
     branch's open PR written to the file in issue comments' format. Exits as
@@ -728,32 +728,27 @@ def pr_comments(args: List[str], run: _Run, _root: str) -> Optional[int]:
     if len(args) != 1:
         die("usage: orch.sh pr comments <file>", 2)
     path = args[0]
-    number = current_open_pr(run.gh(), run.git, 2)
+    number = current_open_pr(cmd.gh(), cmd.git, 2)
     if number is None:
         return 1
-    text = comments.rendered(run.gh(), "read the comments of PR #%d" % number, str(number), "pr",
+    text = comments.rendered(cmd.gh(), "read the comments of PR #%d" % number, str(number), "pr",
                              code=2)
     if not file_write_atomic(path, text + "\n" if text else ""):
         die("could not write " + path, 2)
     return None
 
 
-def required_open_pr(run: _Run) -> int:
+def required_open_pr(cmd: _Run) -> int:
     """The PR pr fetch and pr update work on: the current branch's open PR.
     Unlike pr comment, no open PR is an ordinary failure here, since both run
     where a PR is known to exist: every failure dies with exit 1."""
-    number = current_open_pr(run.gh(), run.git, 1)
+    number = current_open_pr(cmd.gh(), cmd.git, 1)
     if number is None:
-        die("no open PR for branch %s" % checkout_branch(run.git))
+        die("no open PR for branch %s" % checkout_branch(cmd.git))
     return number
 
 
-def first_line(text: str) -> str:
-    """<text>'s first line, its trailing CR dropped; "" for empty text."""
-    return without_cr(text.split("\n", 1)[0])
-
-
-def pr_fetch(args: List[str], run: _Run, _root: str) -> Optional[int]:
+def pr_fetch(args: List[str], cmd: _Run, _root: str) -> Optional[int]:
     """The PR counterpart of issue fetch: the current branch's open PR's
     body written to the file, every carriage return removed, so GitHub's
     web-UI CRLF lines reach agents as LF, and gh's one newline kept. The
@@ -762,7 +757,7 @@ def pr_fetch(args: List[str], run: _Run, _root: str) -> Optional[int]:
     if len(args) != 1:
         die("usage: orch.sh pr fetch <file>")
     path = args[0]
-    number = required_open_pr(run)
+    number = required_open_pr(cmd)
     directory = os.path.dirname(path) or "."
     try:
         os.makedirs(directory, exist_ok=True)
@@ -773,7 +768,7 @@ def pr_fetch(args: List[str], run: _Run, _root: str) -> Optional[int]:
     except OSError:
         die("could not create a temp file beside " + path)
     try:
-        body = gh_or_die("read the body of PR #%d" % number, run.gh().pr_body, number)
+        body = gh_or_die("read the body of PR #%d" % number, cmd.gh().pr_body, number)
         with os.fdopen(fd, "wb") as out:
             out.write((body.replace("\r", "") + "\n").encode("utf-8", "surrogateescape"))
         os.replace(tmp, path)
@@ -786,7 +781,7 @@ def pr_fetch(args: List[str], run: _Run, _root: str) -> Optional[int]:
     return None
 
 
-def pr_update(args: List[str], run: _Run, _root: str) -> Optional[int]:
+def pr_update(args: List[str], cmd: _Run, _root: str) -> Optional[int]:
     """The PR counterpart of issue update, with one guard issue update has
     no need for: the body's first line is the Closes/Refs line pr open wrote,
     and a correction must never drop or change it, so a file that does not
@@ -796,8 +791,8 @@ def pr_update(args: List[str], run: _Run, _root: str) -> Optional[int]:
     path = args[0]
     if not os.path.isfile(path):
         die("body file not found: " + path)
-    number = required_open_pr(run)
-    current = gh_or_die("read the body of PR #%d" % number, run.gh().pr_body, number)
+    number = required_open_pr(cmd)
+    current = gh_or_die("read the body of PR #%d" % number, cmd.gh().pr_body, number)
     line = first_line(current)
     if not re.fullmatch(r"(Closes|Refs) #[0-9]+", line):
         die("PR #%d's body does not open with a Closes/Refs #<issue> line, so there is no issue"
@@ -805,7 +800,7 @@ def pr_update(args: List[str], run: _Run, _root: str) -> Optional[int]:
     if first_line(read_raw(path) or "") != line:
         die("%s must open with PR #%d's issue line, '%s' - refusing to replace the body"
             % (path, number, line))
-    gh_or_die("replace the body of PR #%d" % number, run.gh().pr_body_edit, number, path)
+    gh_or_die("replace the body of PR #%d" % number, cmd.gh().pr_body_edit, number, path)
     return None
 
 
@@ -820,7 +815,7 @@ def listed_body(encoded: str) -> str:
     return jq_text(value).rstrip("\n")
 
 
-def pr_read(args: List[str], run: _Run, _root: str) -> Optional[int]:
+def pr_read(args: List[str], cmd: _Run, _root: str) -> Optional[int]:
     """`pr read <issue> <file>`: writes the body of the open PR whose body
     opens with the issue line `Closes #<issue>` or `Refs #<issue>` (the
     newest, where several do), a `---` line, then its diff, to <file>. One
@@ -836,7 +831,7 @@ def pr_read(args: List[str], run: _Run, _root: str) -> Optional[int]:
     # The number without its leading zeros: 012 is issue 12, never octal.
     issue = int(issue_text)
     unread = "the open PRs for issue #%d could not be read" % issue
-    lines = gh_or_die("list the open PRs", run.gh().prs_open_bodies)
+    lines = gh_or_die("list the open PRs", cmd.gh().prs_open_bodies)
     named: List[str] = []
     bodies: Dict[int, str] = {}
     wanted = ("Closes #%d" % issue, "Refs #%d" % issue)
@@ -860,19 +855,19 @@ def pr_read(args: List[str], run: _Run, _root: str) -> Optional[int]:
     if not kept:
         die("no open PR closes or refers to issue #%d" % issue)
     found = int(kept[0])
-    diff = gh_or_die("read the diff of PR #%d" % found, run.gh().pr_diff, found)
+    diff = gh_or_die("read the diff of PR #%d" % found, cmd.gh().pr_diff, found)
     text = (bodies[found] + "\n\n---\n" + diff).rstrip("\n") + "\n"
     if not file_write_atomic(path, text):
         die("could not write " + path)
     return None
 
 
-def open_pr_draft_flag(run: _Run, root: str) -> Optional[Tuple[int, bool]]:
+def open_pr_draft_flag(cmd: _Run, root: str) -> Optional[Tuple[int, bool]]:
     """pr draft's and pr ready's shared front: refuses, exit 2, a branch an
     active flow holds or a state.json that cannot be read, then answers the
     current branch's open PR number and whether it is a draft; None when the
     branch has no open PR, as current_open_pr answers."""
-    branch = current_branch_or_die(run.git, 2)
+    branch = current_branch_or_die(cmd.git, 2)
     try:
         hold = flow_holding_phase(flow_state_file(root), branch, "")
     except StateUnreadable:
@@ -880,43 +875,43 @@ def open_pr_draft_flag(run: _Run, root: str) -> Optional[Tuple[int, bool]]:
     if hold is not None:
         die("the active flow holds %s at phase %s - its PR changes state only through the"
             " review loop" % (branch, hold.phase), 2)
-    n = current_open_pr(run.gh(), run.git, 2)
+    n = current_open_pr(cmd.gh(), cmd.git, 2)
     if n is None:
         return None
-    _, is_draft = gh_or_die("read PR #%d" % n, run.gh().pr_state_draft, n, code=2)
+    _, is_draft = gh_or_die("read PR #%d" % n, cmd.gh().pr_state_draft, n, code=2)
     return n, is_draft
 
 
-def pr_draft(args: List[str], run: _Run, root: str) -> int:
+def pr_draft(args: List[str], cmd: _Run, root: str) -> int:
     """`pr draft`: the current branch's open PR turned into a draft."""
     if args:
         die("usage: orch.sh pr draft", 2)
-    found = open_pr_draft_flag(run, root)
+    found = open_pr_draft_flag(cmd, root)
     if found is None:
         return 1
     n, is_draft = found
     if is_draft:
         print("PR #%d is already a draft" % n)
         return 0
-    gh_or_die("turn PR #%d into a draft" % n, run.gh().pr_draft, n, code=2)
+    gh_or_die("turn PR #%d into a draft" % n, cmd.gh().pr_draft, n, code=2)
     print("PR #%d is now a draft" % n)
     return 0
 
 
-def pr_ready(args: List[str], run: _Run, root: str) -> int:
+def pr_ready(args: List[str], cmd: _Run, root: str) -> int:
     """`pr ready`: the current branch's open draft PR marked ready, once the
     CI gate lets it through."""
     if args:
         die("usage: orch.sh pr ready", 2)
-    found = open_pr_draft_flag(run, root)
+    found = open_pr_draft_flag(cmd, root)
     if found is None:
         return 1
     n, is_draft = found
     if not is_draft:
         print("PR #%d is already ready" % n)
         return 0
-    ci_ready_gate(run.gh(), n, code=2)
-    gh_or_die("mark PR #%d ready" % n, run.gh().pr_ready, n, code=2)
+    ci_ready_gate(cmd.gh(), n, code=2)
+    gh_or_die("mark PR #%d ready" % n, cmd.gh().pr_ready, n, code=2)
     print("PR #%d is now ready" % n)
     return 0
 

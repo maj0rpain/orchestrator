@@ -13,8 +13,8 @@ import tempfile
 
 import pytest
 
-from conftest import CLAUDE, GH_502, SESSIONS, comments_of, orch_pr, prs_of, read, snapshot
-from orch.gh import Unparsed
+from conftest import (CLAUDE, GH_502, SESSIONS, CountingGh, UnparsedPrComments, comments_of,
+                      orch_pr, prs_of, read, snapshot)
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY, RepoPin
@@ -76,19 +76,12 @@ def test_release_refuses_when_the_base_branch_is_the_default_branch(root, seed, 
 @SESSIONS
 def test_release_reads_the_default_branch_once_with_no_base_set(root, seed, capsys, env,
                                                                 release_body):
-    reads = []
-
-    class Counted(FakeGh):
-        def repo_default_branch(self, repo):
-            reads.append(repo)
-            return super().repo_default_branch(repo)
-
     seed.default_branch("main")
     git = checkout_git(root)
-    gh = Counted(seed.store, env, pin=RepoPin(env, git), sleep=lambda _: None)
+    gh = CountingGh(seed.store, env, pin=RepoPin(env, git), sleep=lambda _: None)
 
     assert orch_pr(seed, git, "release", "Release", release_body, env=env, gh=gh) == 1
-    assert reads == ["acme/widgets"]
+    assert gh.default_asks == ["acme/widgets"]
 
 
 @pytest.fixture
@@ -471,14 +464,6 @@ def test_comments_writes_the_trusted_comments_in_issue_comments_format(
         "<!-- comment @bot 2026-10-02T10:00:00Z -->\nLGTM\n")
 
 
-class UnparsedComments(FakeGh):
-    """The gh fake, but a PR's comments answer with something that is no
-    comment list."""
-
-    def pr_comments(self, n):
-        raise Unparsed("no comment list")
-
-
 @pytest.mark.parametrize("fail, gh_class, line", [
     (("adapter_prs_open", GH_502), FakeGh,
      "gh could not list the open PRs from quick/12-foo: HTTP 502: Bad Gateway"),
@@ -486,7 +471,7 @@ class UnparsedComments(FakeGh):
      "gh could not read the comments of PR #57: HTTP 502: Bad Gateway"),
     (("adapter_pr_comments", ""), FakeGh,
      "gh could not read the comments of PR #57: gh gave no reason"),
-    (None, UnparsedComments, "could not read the comments of PR #57: its comments did not parse"),
+    (None, UnparsedPrComments, "could not read the comments of PR #57: its comments did not parse"),
 ])
 def test_comments_exits_2_when_github_cannot_be_read_leaving_the_file(
         root, seed, capsys, pr_comments, fail, gh_class, line):
