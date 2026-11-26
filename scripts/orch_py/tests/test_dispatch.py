@@ -26,6 +26,7 @@ import pytest
 
 from conftest import (
     AUDIT_FIXTURES,
+    CLAUDE,
     GLOBAL_CONFIG,
     PACKAGE_BOOTSTRAP,
     VERIFICATION_KNOBS,
@@ -568,9 +569,6 @@ def test_breakdown_state_reads_the_spec_s_tickets_through_the_python_noun(tmp_pa
 
 
 # --- spec --------------------------------------------------------------------
-
-CLAUDE = {"ORCHESTRATOR_HOST": "claude"}
-
 
 @pytest.fixture
 def spec_flow(repo, seed):

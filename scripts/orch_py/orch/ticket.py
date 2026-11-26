@@ -51,17 +51,17 @@ from orch import comments
 from orch.branch import branch_issue_of, branch_kind, discard_own_branch_work, forked_from_branch
 from orch.checkout import (branch_checkout, checkout_branch, discard_work_in, rebase_in_progress,
                            require_flow_branch, ticket_worktrees_under)
-from orch.common import (ORCH_DIR_NAME, copy_or_die, die, fenced, lines_of, mkdir_p_or_die,
+from orch.common import (ORCH_DIR_NAME, die, fenced, file_write_atomic, lines_of, mkdir_p_or_die,
                          plain_number, read_raw, require_clean_tree, rm_f_or_die, rm_rf_or_die,
                          state_word, stdout_write, subshell, temp_text_file, without_cr)
 from orch.flow_state import flow_state_file, require_state_read
 from orch.gh import (GhFailed, SubIssue, adapter, adapter_of, gh_die, gh_or_die,
                      verify_twice)
-from orch.git import Git
+from orch.git import Git, git_failed
 from orch.repo import REPO_REMEDY, RepoPin
 from orch.root import checkout_root
 from orch.ticket_worktree import (NONE, TICKET_TEARDOWN_BRANCH_FAILED, WORKTREE, TicketFacts,
-                                  git_failed, ticket_branch_merged,
+                                  ticket_branch_merged,
                                   ticket_branch_merged_or_die, ticket_facts,
                                   ticket_facts_require_worktree,
                                   ticket_facts_require_wt_branch, ticket_unmerged_args,
@@ -418,11 +418,16 @@ def ticket_reports_dir(root: str) -> str:
     return "%s/%s/reports" % (root, ORCH_DIR_NAME)
 
 
+def ticket_report_path(root: str, n: str) -> str:
+    """Where ticket <n>'s saved report lives, under the checkout at <root>,
+    in ticket_reports_dir."""
+    return "%s/%s.md" % (ticket_reports_dir(root), n)
+
+
 def ticket_report_remove(root: str, n: str) -> None:
     """Ticket <n>'s saved report, under the checkout at <root>, dropped if it
     has one."""
-    rm_f_or_die("%s/%s.md" % (ticket_reports_dir(root), n),
-                "could not remove ticket #%s's saved report" % n)
+    rm_f_or_die(ticket_report_path(root, n), "could not remove ticket #%s's saved report" % n)
 
 
 def ticket_reset(gh, parent: str, root: str) -> None:
@@ -600,7 +605,7 @@ def ticket_report(args: List[str], _gh_of, root: str) -> None:
     n = rest[0]
     if not plain_number(n):
         die("not a plain issue number: " + n)
-    saved = "%s/%s.md" % (directory, n)
+    saved = ticket_report_path(root, n)
     if op == "show":
         if not os.path.isfile(saved):
             die("no saved report for ticket #" + n)
@@ -614,10 +619,8 @@ def ticket_report(args: List[str], _gh_of, root: str) -> None:
         die("report file %s is missing or empty - nothing saved" % report)
     mkdir_p_or_die(directory, "could not create " + directory)
     unsaved = "could not save ticket #%s's report" % n
-    copy_or_die(report, saved + ".tmp", unsaved)
-    try:
-        os.replace(saved + ".tmp", saved)
-    except OSError:
+    text = read_raw(report)
+    if text is None or not file_write_atomic(saved, text, make_directory=False):
         die(unsaved)
 
 
@@ -832,10 +835,8 @@ def ticket_reclaim(args: List[str], gh_of, git, root: str, env: Mapping[str, str
     ticket_reclaim_guard(git, parent, branch, active, recorded, flow_issue)
     discard_own_branch_work(git, root, env, "ticket reclaim", branch, recorded, active)
     gh = gh_of()
-    reports = ticket_reports_dir(root)
-
     def reported(n: str) -> bool:
-        return os.path.isfile("%s/%s.md" % (reports, n))
+        return os.path.isfile(ticket_report_path(root, n))
 
     subs = ticket_sub_issues(gh, parent)
     leftovers = [str(row.number) for row in subs

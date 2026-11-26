@@ -17,14 +17,12 @@ from pathlib import Path
 
 import pytest
 
-from conftest import (AUTOPILOT, CLAUDE, GH_502, TICKET7, TICKET_PARENT, added, committed, died_of,
-                      fake, has_branch, hold_flow, lock_ref, orch_tw, read, rebasing, run_git,
-                      state_json, wt_path)
+from conftest import (AUTOPILOT, CLAUDE, GH_502, SESSIONS, TICKET7, TICKET_PARENT, added, committed,
+                      died_of, fake, has_branch, hold_flow, lock_ref, orch_tw, read, rebasing,
+                      run_git, state_json, wt_path)
 from orch import ticket
 from orch.common import exclude_orch_dirs
 from orch.git import Git, GitFailure
-
-SESSIONS = pytest.mark.parametrize("env", [CLAUDE, AUTOPILOT], ids=["plain", "autopilot"])
 
 
 def orch_ticket(seed, *argv, env=None):

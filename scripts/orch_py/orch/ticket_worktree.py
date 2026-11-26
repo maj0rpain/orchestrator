@@ -24,7 +24,7 @@ branch.<ticket branch>.orchestrator-ticket-parent.
 run(argv) takes the arguments after `ticket-worktree`, as orch.sh hands them
 on, and returns the exit code; every error dies through orch.common.die. A
 git command whose stderr bash let through hands it on here too, before the
-`orch:` line, through git_failed, which ticket merge's fast-forward shares.
+`orch:` line, through orch.git's git_failed.
 """
 from __future__ import annotations
 
@@ -36,8 +36,8 @@ from orch.branch import branch_name_ticket, forked_from_branch, forked_from_set
 from orch.checkout import (current_branch_or_die, discard_work_in, rebase_in_progress,
                            ticket_worktree_path, ticket_worktrees_under, worktree_list_or_die)
 from orch.common import (die, exclude_orch_dirs, plain_positive_number, require_clean_tree,
-                         stderr_write, stdout_write, warn)
-from orch.git import Git
+                         stdout_write, warn)
+from orch.git import Git, git_failed
 from orch.root import checkout_root
 
 # The worktree states ticket_facts reads, one word each: a worktree sits at
@@ -138,15 +138,6 @@ def ticket_branch_merged_or_die(git, branch: str, what: str) -> None:
             % (branch, parent, what))
 
 
-def git_failed(failure) -> bool:
-    """Hands a failed git run's stderr on, as bash let it through: whether
-    the run failed."""
-    if failure is None:
-        return False
-    stderr_write(failure.stderr)
-    return True
-
-
 def add(args: List[str], git, root: str) -> None:
     """Forks <current-branch>--t<n> from the current branch's tip, records
     the forked-from branch on it, checks it out at
@@ -167,7 +158,7 @@ def add(args: List[str], git, root: str) -> None:
     if git_failed(git.branch_create(own_branch, "HEAD")):
         die("could not create branch %s" % own_branch)
     if git_failed(git.worktree_add(path, own_branch)) \
-            or not forked_from_set(git, own_branch, facts.parent):
+            or git_failed(forked_from_set(git, own_branch, facts.parent)):
         # A freshly added worktree holds nothing of anyone's, so no force is
         # needed to take it back out; -D deletes the branch's config section
         # too. Both run silenced, as bash's 2>/dev/null.

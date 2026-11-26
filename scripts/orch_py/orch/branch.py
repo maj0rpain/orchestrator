@@ -18,6 +18,7 @@ from typing import Mapping, Optional
 
 from orch.base import branch_base_get
 from orch.common import die, plain_number, stderr_write, stdout_write
+from orch.git import GitFailure, git_failed
 
 
 def branch_name_flow(issue: str, slug: str) -> str:
@@ -85,9 +86,10 @@ def forked_from_branch(git, branch: str) -> Optional[str]:
     return git.config_value(forked_from_key(branch))
 
 
-def forked_from_set(git, branch: str, parent: str) -> bool:
+def forked_from_set(git, branch: str, parent: str) -> Optional[GitFailure]:
     """Records <parent> as ticket branch <branch>'s forked-from branch, in
-    the repository's own config: whether the write succeeded."""
+    the repository's own config: None when it wrote, else git's status and
+    stderr."""
     return git.config_set("local", forked_from_key(branch), parent)
 
 
@@ -137,8 +139,9 @@ def discard_own_branch_work(git, root: str, env: Mapping[str, str], who: str, br
     discard_flow_branch_work(git, root, env)
 
 
-def branch_retired_set(git, branch: str) -> bool:
-    """Records that a redo retired <branch>: whether the write succeeded."""
+def branch_retired_set(git, branch: str) -> Optional[GitFailure]:
+    """Records that a redo retired <branch>: None when it wrote, else git's
+    status and stderr."""
     return git.config_set("local", branch_retired_key(branch), "true")
 
 
@@ -181,9 +184,7 @@ def branch_retire(git, old: str, new: str) -> None:
             # The fresh arm's rename is local-only and free to undo, which
             # keeps <old> a branch a retry can find; the resume arm made none.
             if not resumed:
-                undone = git.branch_rename(new, old)
-                if undone is not None:
-                    stderr_write(undone.stderr)
+                git_failed(git.branch_rename(new, old))
             die("could not push %s to origin: %s" % (new, why))
         why = git.remote_delete("origin", "refs/heads/" + old)
         if why is not None:
@@ -197,7 +198,7 @@ def branch_retire(git, old: str, new: str) -> None:
                 die("could not confirm origin/%s is gone: could not ask origin whether it is"
                     " still there after its delete failed (%s); %s is pushed but its"
                     " retirement is not recorded; %s" % (old, why, new, rerun))
-    if not branch_retired_set(git, new):
+    if git_failed(branch_retired_set(git, new)):
         die("could not record %s - %s is retired; %s to record it"
             % (branch_retired_key(new), new, rerun))
     stdout_write(new + "\n")

@@ -17,13 +17,11 @@ from contextlib import contextmanager
 
 import pytest
 
-from conftest import (GH_502, Opens, comments_of, died_of, fake, files_under, hold_flow, read,
-                      snapshot, state_json)
+from conftest import (AUTOPILOT, CLAUDE, GH_502, Opens, comments_of, died_of, fake, files_under,
+                      hold_flow, read, snapshot, state_json)
 from orch import redo
 from orch.git import FakeGit, Worktree
 
-CLAUDE = {"ORCHESTRATOR_HOST": "claude"}
-AUTOPILOT = {"ORCHESTRATOR_HOST": "claude", "ORCH_AUTOPILOT": "1"}
 # A clock reading 2026-01-02T03:04:05Z, so redo spec's folder is known.
 CLOCK = 1767323045.0
 STAMP = "20260102-030405"

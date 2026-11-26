@@ -869,9 +869,9 @@ def test_config_set_writes_overwrites_and_isolates_scopes_the_same(config_env):
     fake = FakeGit()
 
     for git in (real, fake):
-        assert git.config_set("local", "orchestrator.model.implementer", "opus") is True
-        assert git.config_set("local", "orchestrator.model.implementer", "  sonnet  ") is True
-        assert git.config_set("global", "orchestrator.model.implementer", "-custom") is True
+        assert git.config_set("local", "orchestrator.model.implementer", "opus") is None
+        assert git.config_set("local", "orchestrator.model.implementer", "  sonnet  ") is None
+        assert git.config_set("global", "orchestrator.model.implementer", "-custom") is None
         assert git.config_regexp("local", r"^orchestrator\.") == {
             "orchestrator.model.implementer": "  sonnet  ",
         }
@@ -892,7 +892,7 @@ def test_config_set_fails_on_duplicate_keys_the_same(config_env):
     )
 
     for git in (real, fake):
-        assert git.config_set("local", "orchestrator.model.dup", "third") is False
+        assert git.config_set("local", "orchestrator.model.dup", "third").code == 5
         assert git.config_regexp("local", r"^orchestrator\.") == {
             "orchestrator.model.dup": "second",
         }
@@ -926,7 +926,7 @@ def test_config_unset_removes_present_and_duplicate_keys_and_accepts_absent_keys
 @pytest.mark.parametrize("scope", ["local", "global"])
 def test_config_set_and_unset_fail_on_lock_errors_even_for_absent_keys(config_env, scope):
     root, home, real = config_env
-    assert real.config_set(scope, "orchestrator.model.closer", "haiku") is True
+    assert real.config_set(scope, "orchestrator.model.closer", "haiku") is None
     lock = (root / ".git" / "config.lock") if scope == "local" else (home / ".gitconfig.lock")
     lock.write_text("")
     fake = FakeGit(
@@ -937,7 +937,7 @@ def test_config_set_and_unset_fail_on_lock_errors_even_for_absent_keys(config_en
 
     try:
         for git in (real, fake):
-            assert git.config_set(scope, "orchestrator.model.closer", "opus") is False
+            assert git.config_set(scope, "orchestrator.model.closer", "opus").code == 255
             assert git.config_unset(scope, "orchestrator.model.closer") is False
             assert git.config_unset(scope, "orchestrator.model.absent") is False
             assert git.config_regexp(scope, r"^orchestrator\.") == {
@@ -953,8 +953,8 @@ def test_fake_git_can_fail_a_single_scoped_key_write():
         config_write_fails={("local", "orchestrator.effort.implementer")},
     )
 
-    assert fake.config_set("local", "orchestrator.model.implementer", "opus") is True
-    assert fake.config_set("local", "orchestrator.effort.implementer", "high") is False
+    assert fake.config_set("local", "orchestrator.model.implementer", "opus") is None
+    assert fake.config_set("local", "orchestrator.effort.implementer", "high") is not None
     assert fake.config_unset("local", "orchestrator.effort.implementer") is False
     assert fake.config_regexp("local", r"^orchestrator\.") == {
         "orchestrator.model.implementer": "opus",

@@ -38,7 +38,7 @@ import re
 import subprocess
 from typing import Any, Dict, Iterable, List, NamedTuple, Optional, Sequence, Set, Tuple, Union
 
-from orch.common import ORCH_DIR_NAME, trim
+from orch.common import ORCH_DIR_NAME, stderr_write, trim
 
 
 class Worktree(NamedTuple):
@@ -55,6 +55,15 @@ class GitFailure(NamedTuple):
 
     code: int
     stderr: str
+
+
+def git_failed(failure: Optional[GitFailure]) -> bool:
+    """Hands a failed git run's stderr on, as bash let it through: whether
+    the run failed."""
+    if failure is None:
+        return False
+    stderr_write(failure.stderr)
+    return True
 
 
 class FileDiff(NamedTuple):
@@ -705,11 +714,11 @@ class Git:
                 out[rec] = ""
         return out
 
-    def config_set(self, scope: str, key: str, value: str) -> bool:
-        """Writes <key> = <value> at <scope> ('local' or 'global'): whether
-        the write succeeded."""
+    def config_set(self, scope: str, key: str, value: str) -> Optional[GitFailure]:
+        """Writes <key> = <value> at <scope> ('local' or 'global'): None when
+        it wrote, else git's status and stderr."""
         _check_config_scope(scope)
-        return self._run(["config", "--" + scope, "--", key, value]).returncode == 0
+        return self._failure(["config", "--" + scope, "--", key, value])
 
     def config_unset(self, scope: str, key: str) -> bool:
         """Removes every value of <key> at <scope> ('local' or 'global'):
@@ -987,19 +996,19 @@ class FakeGit:
     def _config_write_blocked(self, scope: str, key: str) -> bool:
         return scope in self.config_write_fails or (scope, key) in self.config_write_fails
 
-    def config_set(self, scope: str, key: str, value: str) -> bool:
+    def config_set(self, scope: str, key: str, value: str) -> Optional[GitFailure]:
         _check_config_scope(scope)
         if self._config_write_blocked(scope, key):
-            return False
+            return GitFailure(255, "")
         entries = self._config[scope]
         matches = [i for i, (k, _) in enumerate(entries) if k == key]
         if len(matches) > 1:
-            return False
+            return GitFailure(5, "")
         if matches:
             entries[matches[0]] = (key, value)
         else:
             entries.append((key, value))
-        return True
+        return None
 
     def config_unset(self, scope: str, key: str) -> bool:
         _check_config_scope(scope)

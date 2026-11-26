@@ -87,14 +87,14 @@ def test_a_ticket_branch_is_named_for_its_forked_from_branch_and_its_ticket():
 def test_a_ticket_branch_s_forked_from_branch_is_recorded_under_its_key_and_read_back():
     git = FakeGit()
 
-    assert forked_from_set(git, B + "--t5", B) is True
+    assert forked_from_set(git, B + "--t5", B) is None
     assert git.config_regexp("local", "orchestrator-ticket-parent$") == {
         "branch.%s--t5.orchestrator-ticket-parent" % B: B}
     assert forked_from_branch(git, B + "--t5") == B
 
 
 def test_a_forked_from_branch_that_cannot_be_recorded_says_so():
-    assert forked_from_set(FakeGit(config_write_fails=["local"]), B + "--t5", B) is False
+    assert forked_from_set(FakeGit(config_write_fails=["local"]), B + "--t5", B) is not None
 
 
 # --- the own-branch discard -----------------------------------------------------------

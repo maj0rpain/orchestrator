@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import (AUTOPILOT, CLAUDE, TICKET7, TICKET_PARENT, added, committed, died_of, git_of,
+from conftest import (SESSIONS, TICKET7, TICKET_PARENT, added, committed, died_of, git_of,
                       has_branch, lock_ref, orch_tw, rebasing, run_git, wt_path)
 from orch import ticket_worktree
 from orch.git import Git, GitFailure
@@ -28,7 +28,7 @@ def exclude_count(root, line):
 # --- ticket-worktree add ------------------------------------------------------------
 
 
-@pytest.mark.parametrize("env", [CLAUDE, AUTOPILOT], ids=["plain", "autopilot"])
+@SESSIONS
 def test_add_forks_the_ticket_branch_records_its_parent_and_prints_the_path(ticket_repo, capsys,
                                                                             env):
     tip = run_git(ticket_repo, "rev-parse", "HEAD")
@@ -105,12 +105,15 @@ def test_a_failed_worktree_add_takes_the_branch_back_out(ticket_repo, capsys):
     assert exclude_count(ticket_repo, ".orchestrator/") == 1
 
 
-def test_a_failed_parent_record_takes_the_worktree_and_branch_back_out(ticket_repo, capsys,
-                                                                       monkeypatch):
-    monkeypatch.setattr(Git, "config_set", lambda self, scope, key, value: False)
+def test_a_failed_parent_record_takes_the_worktree_and_branch_back_out(ticket_repo, capsys):
+    # A held config lock lets the branch and the worktree be made, and stops
+    # only the parent record's write; git's own refusal comes first, as bash
+    # let it through.
+    (ticket_repo / ".git" / "config.lock").write_text("")
 
     assert died_of(capsys, lambda: orch_tw("add", "3")) == (
-        1, "", "orch: could not add ticket worktree %s - removed branch %s again\n"
+        1, "", "error: could not lock config file .git/config: File exists\n"
+        "orch: could not add ticket worktree %s - removed branch %s again\n"
         % (wt_path(ticket_repo, 3), TICKET_PARENT + "--t3"))
     assert not os.path.exists(wt_path(ticket_repo, 3))
     assert not has_branch(ticket_repo, TICKET_PARENT + "--t3")

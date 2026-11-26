@@ -15,7 +15,7 @@ import os
 
 import pytest
 
-from conftest import died_of, fake, flow_state, hold_flow, labels_of, snapshot, state_json
+from conftest import CLAUDE, died_of, fake, flow_state, hold_flow, labels_of, snapshot, state_json
 from orch import phase
 from orch.__main__ import main
 from orch.git import FakeGit
@@ -110,7 +110,6 @@ def test_call_mode_reaches_the_phase_module_s_phase_finish(capsys):
 
 # --- the noun: phase advance and phase boundary --------------------------
 
-CLAUDE = {"ORCHESTRATOR_HOST": "claude"}
 CLAUDE_AUTOPILOT = {"ORCHESTRATOR_HOST": "claude", "ORCH_AUTOPILOT": "1"}
 
 

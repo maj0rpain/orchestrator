@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from conftest import (AUTOPILOT, CLAUDE, GH_502, blockers_of, comments_of, died_of, fake,
-                      labels_of, read, snapshot)
+from conftest import (CLAUDE, GH_502, SESSIONS, blockers_of, comments_of, died_of, fake, labels_of,
+                      read, snapshot)
 from orch import ticket
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY
@@ -66,7 +66,7 @@ def published(seed):
     seed.blocked_by(454, 453)
 
 
-@pytest.mark.parametrize("env", [CLAUDE, AUTOPILOT], ids=["plain", "autopilot"])
+@SESSIONS
 def test_next_prints_the_open_unblocked_tickets_in_publish_order(root, seed, capsys, published,
                                                                  env):
     assert orch_ticket(root, seed, "next", "90", env=env) == 0
