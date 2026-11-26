@@ -198,7 +198,6 @@ TICKET_STDOUT_VERBS = {
     "ticket publish": published_into,
     "ticket reclaim": a_merged_leftover,
     "ticket-worktree list": a_listed_worktree,
-    "ticket-worktree add": lambda root, seed, capsys: ["ticket-worktree", "add", "7"],
 }
 
 
@@ -206,7 +205,8 @@ TICKET_STDOUT_VERBS = {
 def test_a_ticket_verb_writing_into_a_closed_pipe_dies_of_sigpipe_silently(
         ticket_repo, seed, capsys, monkeypatch, verb):
     """Every ticket and ticket-worktree verb that prints to stdout ends a
-    closed stdout pipe as bash's printf did: silently, of SIGPIPE."""
+    closed stdout pipe as bash's printf did: silently, of SIGPIPE. add's own
+    test below checks it, with the checkout it still makes."""
     call = TICKET_STDOUT_VERBS[verb](ticket_repo, seed, capsys)
     monkeypatch.setenv("ORCH_GH_FAKE_STORE", seed.store)
     monkeypatch.setenv("GH_REPO", "acme/widgets")
@@ -220,7 +220,7 @@ def test_ticket_worktree_add_into_a_closed_pipe_still_checks_the_ticket_branch_o
         ticket_repo, seed):
     run = into_a_closed_pipe(ticket_repo, "ticket-worktree", "add", "7")
 
-    assert run.returncode == -signal.SIGPIPE
+    assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
     assert run_git(wt_path(ticket_repo, 7), "branch", "--show-current") == TICKET_PARENT + "--t7"
 
 

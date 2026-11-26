@@ -215,6 +215,21 @@ def run_git(root, *args, env=None):
     ).stdout.decode().strip()
 
 
+def git_identity(root):
+    """The test author t with signing off, set in the repository at <root>'s
+    own config, for the commits git makes there outside run_git - a rebase
+    the code under test runs."""
+    for key, value in (("user.name", "t"), ("user.email", "t@t"), ("commit.gpgsign", "false")):
+        run_git(root, "config", key, value)
+
+
+def exclude_orchestrator(root):
+    """.orchestrator/ kept out of git status in the repository at <root>, as
+    init's exclude keeps it."""
+    with open(str(root / ".git" / "info" / "exclude"), "a") as exclude:
+        exclude.write(".orchestrator/\n")
+
+
 def bash_sourced(module, script, *args):
     """The stdout, decoded, of <script> run in a bash child process with the
     bash module at <module> sourced, <args> its positional parameters. A
@@ -254,8 +269,7 @@ def ticket_repo(tmp_path, monkeypatch):
     its root, resolved."""
     root = tmp_path.resolve() / "repo"
     origin_clone(tmp_path / "origin.git", root)
-    for key, value in (("user.name", "t"), ("user.email", "t@t"), ("commit.gpgsign", "false")):
-        run_git(root, "config", key, value)
+    git_identity(root)
     committed(root, {"README.md": "# repo\n"}, "init")
     run_git(root, "push", "-q", "origin", "HEAD")
     run_git(root, "checkout", "-qb", TICKET_PARENT)
@@ -357,8 +371,7 @@ def archive_main(tmp_path):
     root = tmp_path.resolve() / "main"
     git_repo(root)
     committed(root, {"a.txt": "a\n"}, "first")
-    with open(root / ".git" / "info" / "exclude", "a") as f:
-        f.write(".orchestrator/\n")
+    exclude_orchestrator(root)
     return root
 
 

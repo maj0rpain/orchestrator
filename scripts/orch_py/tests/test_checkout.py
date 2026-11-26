@@ -14,6 +14,8 @@ import pytest
 from conftest import (
     committed,
     died_of,
+    exclude_orchestrator,
+    git_identity,
     git_repo,
     hold_flow,
     mark_side,
@@ -372,10 +374,8 @@ def stuck(main):
     """<main> with ticket worktree t5 on TICKET, a.txt edited one way there
     and another way in <main>, and an identity git commits with: (main, t5).
     .orchestrator/ is kept out of git status, as the plugin keeps it."""
-    for key, value in (("user.name", "t"), ("user.email", "t@t"), ("commit.gpgsign", "false")):
-        run_git(main, "config", key, value)
-    with open(str(main / ".git" / "info" / "exclude"), "a") as exclude:
-        exclude.write(".orchestrator/\n")
+    git_identity(main)
+    exclude_orchestrator(main)
     wt = worktree_add(main, main / ".orchestrator" / "worktrees" / "t5", "-b", TICKET)
     committed(wt, {"a.txt": "ticket\n"}, "ticket edit")
     committed(main, {"a.txt": "parent\n"}, "parent edit")

@@ -7,8 +7,8 @@ import subprocess
 
 import pytest
 
-from conftest import (GLOBAL_CONFIG, committed, git_repo, origin_clone, run_git, tip,
-                      worktree_add, write_staged)
+from conftest import (GLOBAL_CONFIG, committed, exclude_orchestrator, git_identity, git_repo,
+                      origin_clone, run_git, tip, worktree_add, write_staged)
 from orch.git import FakeGit, Git, GitFailure, Worktree, git_push_reason
 
 ORIGIN = "https://github.com/fork/widgets.git"
@@ -1091,10 +1091,8 @@ def landing(forking):
     worktree, one commit on each since, an identity a rebase commits with,
     and .orchestrator/ kept out of git status as the plugin keeps it: (the
     main checkout, the ticket worktree)."""
-    for key, value in (("user.name", "t"), ("user.email", "t@t"), ("commit.gpgsign", "false")):
-        run_git(forking, "config", key, value)
-    with open(str(forking / ".git" / "info" / "exclude"), "a") as exclude:
-        exclude.write(".orchestrator/\n")
+    git_identity(forking)
+    exclude_orchestrator(forking)
     wt = worktree_add(forking, forking / ".orchestrator" / "worktrees" / "t5", "-b", TICKET)
     committed(wt, {"b.txt": "b\n"}, "ticket")
     committed(forking, {"c.txt": "c\n"}, "parent")

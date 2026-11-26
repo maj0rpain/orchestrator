@@ -50,6 +50,14 @@ d_ok()   { note "ok    $1"; D_OK=$((D_OK + 1)); }
 d_warn() { note "warn  $1"; D_WARN=$((D_WARN + 1)); }
 d_fail() { note "FAIL  $1"; D_FAIL=$((D_FAIL + 1)); }
 
+# d_fail_err <err> <fallback>: the one FAIL of a failed bridge call - its
+# captured stderr's first line, or <fallback> when it gave none.
+d_fail_err() {
+  local msg=""
+  [ -z "$1" ] || msg="$(err_line "$1")"
+  d_fail "${msg:-$2}"
+}
+
 # A remedy is a runnable command, verbatim, wherever one command fixes the
 # problem. Where none does (an edit to the repo's own content, such as glossary
 # entries, a Standards paragraph or a verification line, or relabelling an
@@ -926,7 +934,7 @@ check_autopilot_claims() {
 # 0 with empty, unknown-kind or non-NUL-terminated output reports one FAIL and
 # returns 0 so doctor never aborts.
 check_agent_settings() {
-  local out_file err="" err_msg="" rec="" kind msg bad=0 i
+  local out_file err="" rec="" kind msg bad=0 i
   local fallback="agent bridge returned unexpected output"
   local -a kinds=() msgs=()
   if ! temp_file_make out_file; then
@@ -935,8 +943,7 @@ check_agent_settings() {
   fi
   if ! capture_err err orch_python_call agent check_settings </dev/null >"$out_file"; then
     rm -f "$out_file"
-    [ -z "$err" ] || err_msg="$(err_line "$err")"
-    d_fail "${err_msg:-$fallback}"
+    d_fail_err "$err" "$fallback"
     return 0
   fi
   while IFS= read -r -d '' rec; do
@@ -952,8 +959,7 @@ check_agent_settings() {
   done <"$out_file"
   rm -f "$out_file"
   if [ "$bad" -eq 1 ] || [ -n "$rec" ] || [ "${#kinds[@]}" -eq 0 ]; then
-    [ -z "$err" ] || err_msg="$(err_line "$err")"
-    d_fail "${err_msg:-$fallback}"
+    d_fail_err "$err" "$fallback"
     return 0
   fi
   for ((i = 0; i < ${#kinds[@]}; i++)); do
@@ -1212,10 +1218,9 @@ check_flow_review_draft() {
 # call's first stderr line or a fixed cause when it gave none, and returns 0
 # so doctor goes on, as check_agent_settings does.
 check_ticket_worktrees_left() {
-  local n path left err="" err_msg=""
+  local n path left err=""
   if ! capture left err orch_python_call ticket-worktree worktrees_left </dev/null; then
-    [ -z "$err" ] || err_msg="$(err_line "$err")"
-    d_fail "${err_msg:-ticket worktree listing failed}"
+    d_fail_err "$err" "ticket worktree listing failed"
     return 0
   fi
   while read -r n path; do
