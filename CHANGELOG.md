@@ -1,5 +1,22 @@
 # Changelog
 
+## 6.12.6
+
+`orch.sh ticket` and `orch.sh ticket-worktree` now run as Python converted
+nouns, from `scripts/orch_py/orch/ticket.py` and
+`scripts/orch_py/orch/ticket_worktree.py`. Their arguments, output, exit codes
+(`ticket merge`'s and `ticket reclaim`'s exit 3 on a rebase conflict and
+`ticket exists`'s exit 2 included), `orch:` messages and order of side effects
+are unchanged, in plain and autopilot sessions, and a closed stdout pipe ends
+them silently. Without python3 both now die pointing at `orch.sh doctor`, as
+every converted noun does. `pr open` and `pr publish` refuse a spec with open
+tickets, and `doctor` lists leftover ticket worktrees, through the
+`orch_python_call` bridge; the two helpers the side-checkout prune walk still
+needs, `refuse_ticket_worktrees` and `ticket_worktrees_under`, move into
+`checkout.sh`. The bash `ticket` and `ticket-worktree` modules and their test
+sections are removed, and the Python git adapter gains the rebase,
+fast-forward, worktree and reset verbs the two nouns reach.
+
 ## 6.12.5
 
 `orch.sh redo review` and `redo spec [--new-issue]` now run as a Python
