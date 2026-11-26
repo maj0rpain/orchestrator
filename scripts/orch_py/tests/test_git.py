@@ -716,8 +716,14 @@ def test_a_rename_moves_the_branch_and_its_upstream_the_same_from_a_real_repo_an
 def test_a_rename_git_refuses_gives_its_status_and_stderr_the_same_from_both(
         retiring, old, new, stderr):
     git, fake = Git(cwd=str(retiring)), retiring_fake()
+    real = git.branch_rename(old, new)
 
-    assert git.branch_rename(old, new) == fake.branch_rename(old, new) == GitFailure(128, stderr)
+    # git's own wording moves between versions ("No branch named 'nope'." on
+    # older ones), so the real run is held to its status and the branch its
+    # refusal names; the fake gives today's wording exactly.
+    assert fake.branch_rename(old, new) == GitFailure(128, stderr)
+    assert real.code == 128
+    assert real.stderr.startswith("fatal: ") and "'%s'" % stderr.split("'")[1] in real.stderr
     assert fake.branch_exists(old) is (old == "main")
 
 
