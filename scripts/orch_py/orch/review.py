@@ -4,17 +4,21 @@ the record's Terminal state section (review_record_terminal), the record the
 terminal state is read from, the flat one or, while a redo is half-finished,
 its retired copy under pre-redo-<n>/ (review_terminal_record), whether the
 flat record is gone (review_flat_record_gone), and the classification itself
-(review_terminal_state), each as bash's, messages included. The bash copies
+(review_terminal_state), each as bash's, messages included; and `review
+retire <n>`'s move of the iteration records aside into pre-redo-<n>/
+(review_retire), which a redo review makes. The bash copies
 stay for `review terminal` and doctor; tests/test_review.py pins this
 classification to bash's by the golden review records of
 tests/review_terminal/, run through both.
 """
 from __future__ import annotations
 
+import fnmatch
 import os
 from typing import List, Optional, Tuple
 
-from orch.common import ORCH_DIR_NAME, capture, die, plain_number, read_raw, trim
+from orch.common import (ORCH_DIR_NAME, capture, die, mkdir_p_or_die, move_files_aside,
+                         plain_number, read_raw, trim)
 from orch.flow_state import flow_state_file, flow_state_get_many
 from orch.handoff import section_body
 from orch.redo import redo_midway
@@ -143,3 +147,23 @@ def review_terminal_state(root: str, i: str, budget: str) -> Tuple[List[str], in
             reason = trim(after[len(sep):])
             return ["stop"] + ([reason] if reason else []) + (rest.split("\n") if rest else []), 0
     return ["malformed", MALFORMED_SHAPE], 1
+
+
+def review_retire(root: str, n: str) -> str:
+    """`review retire <n>`'s move, as bash's: every iteration record of the
+    checkout at <root> moved into review/pre-redo-<n>/, the review directory
+    made first; the folder's path, which the bash verb prints. A folder that
+    exists is the one a run of this same redo made before dying, so it is
+    resumed into, but one already holding a record being moved is refused
+    before any move (move_files_aside). Dies first when <n> is not a plain
+    number. It reads no state: the caller requires the flow."""
+    if not plain_number(n):
+        die("not a redo number: %s" % n)
+    directory = review_dir(root)
+    dest = "%s/pre-redo-%s" % (directory, n)
+    mkdir_p_or_die(directory, "cannot create the review directory %s" % directory)
+    names = sorted(name for name in os.listdir(directory)
+                   if fnmatch.fnmatchcase(name, "iteration-*.md")
+                   and os.path.exists(os.path.join(directory, name)))
+    move_files_aside(directory, dest, "a review record - redo_count should only increase", names)
+    return dest

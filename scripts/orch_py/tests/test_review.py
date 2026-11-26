@@ -20,7 +20,7 @@ from conftest import bash_sourced, died_of
 from orch.branch import branch_name_flow, branch_name_redo
 from orch.redo import redo_midway
 from orch.review import (review_flat_record_gone, review_record_path, review_record_terminal,
-                         review_terminal_record, review_terminal_state)
+                         review_retire, review_terminal_record, review_terminal_state)
 
 GOLDEN = Path(__file__).resolve().parent / "review_terminal"
 SCRIPTS = Path(__file__).resolve().parents[2]
@@ -198,3 +198,59 @@ def test_a_redo_is_not_midway_unless_its_count_is_above_zero_and_the_branch_is_i
 
 def test_a_slug_that_merely_ends_in_a_redo_name_is_not_midway():
     assert redo_midway("12", "foo-redo-1", "orch/12-foo-redo-1", "1") is None
+
+
+def review_records(root, *names):
+    """Writes each of <names> into <root>'s review directory, holding its own
+    name: the directory, a Path."""
+    directory = root / ".orchestrator" / "review"
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (directory / name).write_text(name)
+    return directory
+
+
+def test_a_retire_moves_every_iteration_record_into_its_redo_s_folder(tmp_path):
+    review = review_records(tmp_path, "iteration-01.md", "iteration-02.md", "notes.md")
+
+    assert review_retire(str(tmp_path), "3") == "%s/pre-redo-3" % review
+    assert sorted(str(p.relative_to(review)) for p in review.rglob("*.md")) == [
+        "notes.md", "pre-redo-3/iteration-01.md", "pre-redo-3/iteration-02.md"]
+
+
+def test_a_retire_with_no_record_makes_the_review_directory_and_no_folder(tmp_path):
+    assert review_retire(str(tmp_path), "1") == "%s/.orchestrator/review/pre-redo-1" % tmp_path
+    assert list((tmp_path / ".orchestrator" / "review").iterdir()) == []
+
+
+def test_a_retire_resumes_into_the_folder_a_died_run_of_the_same_redo_made(tmp_path):
+    review = review_records(tmp_path, "iteration-02.md")
+    (review / "pre-redo-1").mkdir()
+    (review / "pre-redo-1" / "iteration-01.md").write_text("moved before the death")
+
+    review_retire(str(tmp_path), "1")
+
+    assert sorted(p.name for p in (review / "pre-redo-1").iterdir()) == [
+        "iteration-01.md", "iteration-02.md"]
+
+
+@pytest.mark.parametrize("n", ["", "1a", "-1", " 2"])
+def test_a_retire_refuses_what_is_not_a_redo_number(tmp_path, capsys, n):
+    review_records(tmp_path, "iteration-01.md")
+
+    assert died_of(capsys, lambda: review_retire(str(tmp_path), n)) == (
+        1, "", "orch: not a redo number: %s\n" % n)
+    assert (tmp_path / ".orchestrator" / "review" / "iteration-01.md").exists()
+
+
+def test_a_retire_refuses_a_folder_already_holding_one_of_its_records(tmp_path, capsys):
+    review = review_records(tmp_path, "iteration-01.md", "iteration-02.md")
+    (review / "pre-redo-1").mkdir()
+    (review / "pre-redo-1" / "iteration-02.md").write_text("an earlier loop's")
+
+    assert died_of(capsys, lambda: review_retire(str(tmp_path), "1")) == (
+        1, "", "orch: %s/pre-redo-1 already holds a review record - redo_count should only "
+        "increase - refusing to overwrite it\n" % review)
+    assert sorted(p.name for p in review.glob("iteration-*.md")) == [
+        "iteration-01.md", "iteration-02.md"]
+    assert (review / "pre-redo-1" / "iteration-02.md").read_text() == "an earlier loop's"
