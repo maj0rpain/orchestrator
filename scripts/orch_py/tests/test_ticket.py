@@ -2,9 +2,9 @@
 ticket module's copies answer them: a breakdown's sub-issue listing read from
 the gh fake's store, the `## Blocked by` and `## Ticket` reads and rewrites of
 a body, code fences and CRLF ends included, and `ticket exists`, `ticket
-block`, `ticket unblock` and `ticket retire` against the store, each gh
-failure through the store's failure injection under the bash operation
-name."""
+block`, `ticket unblock`, `ticket retire` and `ticket reset` against the
+store, each gh failure through the store's failure injection under the bash
+operation name."""
 from __future__ import annotations
 
 import os
@@ -16,8 +16,8 @@ from orch.gh import SubIssue
 from orch.repo import REPO_REMEDY
 from orch.ticket import (blocked_by_section_numbers, has_ticket_heading,
                          rewrite_blocked_by_section, strip_ticket_sections, ticket_block,
-                         ticket_exists, ticket_listing_state, ticket_retire, ticket_sub_issues,
-                         ticket_unblock)
+                         ticket_exists, ticket_listing_state, ticket_reset, ticket_retire,
+                         ticket_sub_issues, ticket_unblock)
 
 
 # --- the sub-issue listing ----------------------------------------------------------
@@ -428,3 +428,69 @@ def test_a_breakdown_save_point_that_cannot_be_removed_dies_naming_it(seed, caps
 
     assert died_of(capsys, lambda: ticket_retire(fake(seed), "14", str(retiring))) == (
         1, "", "orch: could not remove the breakdown save point of #14\n")
+
+
+# --- ticket reset -----------------------------------------------------------------------
+
+
+@pytest.fixture
+def resetting(seed, tmp_path):
+    """#14's breakdown after a review: open #20, closed #21 and #22, each
+    with a saved report, as #14 and #99 have, under the checkout at
+    tmp_path/repo."""
+    seed.issue(14, "open")
+    seed.issue(20, "open")
+    seed.issue(21, "closed")
+    seed.issue(22, "closed")
+    for n in (20, 21, 22):
+        seed.sub_issue(14, n)
+    root = tmp_path / "repo"
+    (root / ".orchestrator" / "reports").mkdir(parents=True)
+    for n in (14, 20, 21, 22, 99):
+        (root / ".orchestrator" / "reports" / ("%d.md" % n)).write_text("report\n")
+    return root
+
+
+def reports(root):
+    return sorted(os.listdir(str(root / ".orchestrator" / "reports")))
+
+
+def states(store, *numbers):
+    return [read(store, "issues", n, "state") for n in numbers]
+
+
+def test_reset_reopens_each_closed_ticket_and_drops_its_report_and_the_parent_s(
+        seed, store, resetting):
+    ticket_reset(fake(seed), "14", str(resetting))
+
+    assert states(store, 20, 21, 22) == ["OPEN\n", "OPEN\n", "OPEN\n"]
+    assert reports(resetting) == ["20.md", "99.md"]
+
+
+def test_a_reset_whose_sub_issue_read_fails_dies_before_any_change(seed, store, capsys,
+                                                                    resetting):
+    seed.fail("adapter_sub_issues", GH_502)
+
+    assert died_of(capsys, lambda: ticket_reset(fake(seed), "14", str(resetting))) == (
+        1, "", "orch: gh could not list sub-issues of #14: HTTP 502: Bad Gateway\n")
+    assert reports(resetting) == ["14.md", "20.md", "21.md", "22.md", "99.md"]
+
+
+def test_a_report_that_cannot_be_removed_dies_before_its_ticket_reopens(seed, store, capsys,
+                                                                        resetting):
+    (resetting / ".orchestrator" / "reports" / "22.md").unlink()
+    (resetting / ".orchestrator" / "reports" / "22.md").mkdir()
+
+    assert died_of(capsys, lambda: ticket_reset(fake(seed), "14", str(resetting))) == (
+        1, "", "orch: could not remove ticket #22's saved report\n")
+    assert states(store, 21, 22) == ["OPEN\n", "CLOSED\n"]
+
+
+def test_a_reopen_failing_partway_dies_with_the_earlier_tickets_reopened(seed, store, capsys,
+                                                                         resetting):
+    seed.fail_after("adapter_issue_reopen", 1, GH_502)
+
+    assert died_of(capsys, lambda: ticket_reset(fake(seed), "14", str(resetting))) == (
+        1, "", "orch: gh could not reopen ticket #22: HTTP 502: Bad Gateway\n")
+    assert states(store, 21, 22) == ["OPEN\n", "CLOSED\n"]
+    assert reports(resetting) == ["14.md", "20.md", "99.md"]

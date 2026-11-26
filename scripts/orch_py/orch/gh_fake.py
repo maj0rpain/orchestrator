@@ -442,6 +442,16 @@ class FakeGh:
         else:
             _write(_issue_path(self.store, n, "reason"), (reason or "completed") + "\n")
 
+    def issue_reopen(self, n: int) -> None:
+        """The stored issue OPEN again, its close reason and duplicate gone."""
+        self._failing("adapter_issue_reopen")
+        self._known(n)
+        _write(_issue_path(self.store, n, "state"), "OPEN\n")
+        for name in ("reason", "duplicate_of"):
+            path = _issue_path(self.store, n, name)
+            if os.path.lexists(path):
+                os.remove(path)
+
     # --- label operations ---
 
     def label_create(self, name: str, colour: str, description: str) -> None:
@@ -582,6 +592,19 @@ class FakeGh:
         self._failing("adapter_pr_comments")
         self._pr_known(n)
         return self._comments(n, _pr_path(self.store, n, "comments"))
+
+    def pr_close(self, n: int, comment: str) -> None:
+        """The stored PR CLOSED, <comment> appended by fake-gh - but closing
+        one already CLOSED succeeds and appends no comment, as GitHub does.
+        The bash fake's other arm, an open PR whose head branch is gone from
+        origin closed with no comment, is not copied: it reads origin with
+        git in the working directory, which an in-process fake has none of."""
+        self._failing("adapter_pr_close", compound=True)
+        self._pr_known(n)
+        if read_text(_pr_path(self.store, n, "state")) == "CLOSED":
+            return
+        self._comment_append(_pr_path(self.store, n, "comments"), comment)
+        _write(_pr_path(self.store, n, "state"), "CLOSED\n")
 
     # --- claim operations ---
 

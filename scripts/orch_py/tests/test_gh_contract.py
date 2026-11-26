@@ -549,6 +549,15 @@ def test_issue_close_as_completed_or_as_a_duplicate(fixture_gh):
     assert fixture_gh.argvs() == [completed, CLOSE_DUPLICATE]
 
 
+def test_issue_reopen_names_the_issue_alone(fixture_gh):
+    reopen = ["issue", "reopen", "5"]
+    fixture_gh.reply(reopen, "url\n")
+    gh = real_gh(fixture_gh)
+
+    assert gh.issue_reopen(5) is None
+    assert fixture_gh.argvs() == [reopen]
+
+
 def test_a_failed_write_passes_gh_s_stderr_through(fixture_gh):
     fixture_gh.reply(COMMENT, stderr="HTTP 502: Bad Gateway\nsecond line\n", exit=1)
 
@@ -732,6 +741,23 @@ def test_a_close_with_a_comment_is_a_compound_write_given_up_at_once(fixture_gh)
 
     assert failed.value.stderr.startswith("orch: GitHub API rate limit reached")
     assert fixture_gh.argvs() == [argv, RATE_LIMIT]
+    assert sleeps == []
+
+
+def test_a_pr_close_posts_its_comment_and_is_a_compound_write_given_up_at_once(fixture_gh):
+    argv = ["pr", "close", "4", "--comment", "Closed by a redo.\n\nSee `orch/7-x-redo-1`."]
+    fixture_gh.reply(argv, "", stderr=SECONDARY + "\n", exit=1, then=[("", "", 0)])
+    fixture_gh.reply(RATE_LIMIT, pools(0, 5))
+    sleeps = []
+    gh = real_gh(fixture_gh, sleeps=sleeps)
+
+    with pytest.raises(GhFailed) as failed:
+        gh.pr_close(4, "Closed by a redo.\n\nSee `orch/7-x-redo-1`.")
+    closed = gh.pr_close(4, "Closed by a redo.\n\nSee `orch/7-x-redo-1`.")
+
+    assert failed.value.stderr.startswith("orch: GitHub API rate limit reached")
+    assert closed is None
+    assert fixture_gh.argvs() == [argv, RATE_LIMIT, argv]
     assert sleeps == []
 
 
