@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from conftest import died_of, fake, labels_of
+from conftest import died_of, fake, hold_flow, labels_of
 from orch.standing import phase_labels_in, standing_finish
 
 # A clock reading 2026-01-02T03:04:05Z.
@@ -26,11 +26,7 @@ def test_the_phase_labels_among_labels_are_named_in_table_order_in_any_case():
 def state(tmp_path):
     """A flow's state.json at phase spec, under tmp_path/.orchestrator: its
     path, a str."""
-    directory = tmp_path / ".orchestrator"
-    directory.mkdir()
-    path = directory / "state.json"
-    path.write_text('{"phase": "spec"}\n')
-    return str(path)
+    return str(hold_flow(tmp_path, phase="spec"))
 
 
 def phase_of(state):

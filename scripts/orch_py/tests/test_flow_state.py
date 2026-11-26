@@ -116,11 +116,12 @@ def test_the_seed_and_its_spec_phase_write_reproduce_bash_init_s_state_file_byte
     assert state.read_bytes() == (GOLDEN / "seed" / (name + ".json")).read_bytes()
 
 
-def test_the_phase_write_refuses_a_phase_outside_the_phase_table(tmp_path, capsys):
+@pytest.mark.parametrize("write", [phase_write, phase_write_try])
+def test_the_phase_writers_refuse_a_phase_outside_the_phase_table(tmp_path, capsys, write):
     state = tmp_path / "state.json"
     state.write_text('{"phase":"spec"}')
 
-    assert died_of(capsys, lambda: phase_write(str(state), "plan")) == (
+    assert died_of(capsys, lambda: write(str(state), "plan")) == (
         1, "", "orch: not a flow phase: plan (want one of: spec implement review done)\n")
     assert state.read_text() == '{"phase":"spec"}'
 
@@ -157,15 +158,6 @@ def test_the_phase_write_try_records_the_phase_and_succeeds(tmp_path):
     assert phase_write_try(str(state), "implement", lambda: SEED_CLOCK) is True
     assert state.read_text() == (
         '{\n  "phase": "implement",\n  "updated": "2026-01-02T03:04:05Z"\n}\n')
-
-
-def test_the_phase_write_try_dies_on_a_phase_outside_the_phase_table(tmp_path, capsys):
-    state = tmp_path / "state.json"
-    state.write_text('{"phase":"spec"}')
-
-    assert died_of(capsys, lambda: phase_write_try(str(state), "plan")) == (
-        1, "", "orch: not a flow phase: plan (want one of: spec implement review done)\n")
-    assert state.read_text() == '{"phase":"spec"}'
 
 
 @pytest.mark.parametrize("key, message", [

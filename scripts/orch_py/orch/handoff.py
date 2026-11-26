@@ -275,6 +275,17 @@ def handoff_comment_missing(issue: str, stem: str, hint: str = "") -> NoReturn:
         % (issue, stem, " - post it with handoff post " + hint if hint else ""))
 
 
+def _comment_copy_or_die(status: int, path: str, issue: str, stem: str, hint: str = "") -> None:
+    """Reacts to a handoff comment's copy to <path>: exits 1 for <status> 2,
+    a copy not written (its line already on stderr), and with no file at
+    <path> dies naming issue #<issue>'s missing <stem> handoff comment, as
+    bash handoff_comment_status does."""
+    if status == 2:
+        raise SystemExit(1)
+    if not os.path.isfile(path):
+        handoff_comment_missing(issue, stem, hint)
+
+
 def _handoff_file_read(name: str, hint: str, root: str) -> str:
     path = "%s/%s" % (handoff_dir(root), name)
     if not os.path.isfile(path):
@@ -290,11 +301,8 @@ def _handoff_comment_read(name: str, hint: str, gh_of, env: Mapping[str, str], r
     entries, reason = timeline_read(gh_of(), issue)
     if entries is None:
         timeline_die(issue, reason)
-    status = handoff_comment_write(entries, _stem(name), path)
-    if status == 2:
-        raise SystemExit(1)
-    if status == 1 or not os.path.isfile(path):
-        handoff_comment_missing(issue, _stem(name), hint)
+    _comment_copy_or_die(handoff_comment_write(entries, _stem(name), path),
+                         path, issue, _stem(name), hint)
     return path
 
 
@@ -344,9 +352,6 @@ def handoff_path(phase: str, gh, env: Mapping[str, str], root: str) -> Tuple[str
     status, reason = handoff_comment_fetch_due(gh, issue, phase, scratch)
     if status == 1:
         timeline_die(issue, reason)
-    if status != 0:
-        raise SystemExit(1)
     path = "%s/%s" % (scratch, handoff)
-    if not os.path.isfile(path):
-        handoff_comment_missing(issue, _stem(handoff))
+    _comment_copy_or_die(status, path, issue, _stem(handoff))
     return path, True

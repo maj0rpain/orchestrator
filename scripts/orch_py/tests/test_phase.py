@@ -310,7 +310,7 @@ def test_advance_refuses_to_leave_implement_without_each_field_review_needs(
 
 
 def test_advance_checks_the_fields_in_order_branch_first(root, seed, capsys, implementing):
-    hold_flow(root, slug="advancing", phase="implement", issue=None, host_fallbacks=True)
+    flow(root, "implement", issue=None)
 
     assert died_of(capsys, lambda: orch_phase(root, seed, "advance"))[2] == \
         "orch: no branch recorded in state\n"
