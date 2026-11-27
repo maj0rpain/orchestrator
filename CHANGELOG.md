@@ -1,5 +1,23 @@
 # Changelog
 
+## 6.12.8
+
+`orch.sh review` now runs as a Python converted noun, from
+`scripts/orch_py/orch/review.py`. All twelve verbs move. Their arguments, usage
+lines, output, exit codes (`review ci`'s 0 / 1 / 2 / 75 split, `review rerun`'s
+die2 paths and `review ci-log`'s exit 1 included), `orch:` messages and order of
+side effects are unchanged, in plain and autopilot sessions, and a closed stdout
+pipe ends it silently. Without python3 it now dies pointing at `orch.sh doctor`,
+as every converted noun does. Doctor's terminal-state, CI and Standards checks
+each make one Python call and so need python3, as its agent and ticket worktree
+checks already do; its budget read keeps a bash copy of the default of 5. Fix:
+a Python noun that meets a GitHub rate limit in an autopilot session now records
+the GitHub limit pause the watcher picks up, as bash's `gh_limit_handle` does.
+The bash `review`
+module, its test sections, the Known items and Wait modules and most of the
+Filed finding module are removed, and the Python gh and git adapters gain the
+reads and writes the noun reaches.
+
 ## 6.12.7
 
 `orch.sh pr` now runs as a Python converted noun, from
