@@ -5,11 +5,11 @@ bash noun until every verb is here. run(argv) takes the arguments after
 error dies through orch.common.die. It dispatches every verb, refusing an
 unknown op and each verb's arguments with bash's messages, and runs those
 converted so far - `settings`, `show`, `active`, `rounds`, `budget`, `start`,
-`candidates`, and the question, reply and re-entry verbs `questions`,
-`reply`, `resume`, `ask`, `answer` and `reenter`, over the Standing module's
-transitions - with the bash noun's stdout, exit codes and `orch:` messages,
-in a plain and an autopilot (ORCH_AUTOPILOT=1) session. A verb whose body is
-not yet here is refused (not_ported).
+`candidates`, `watch`, and the question, reply and re-entry verbs
+`questions`, `reply`, `resume`, `ask`, `answer` and `reenter`, over the
+Standing module's transitions - with the bash noun's stdout, exit codes and
+`orch:` messages, in a plain and an autopilot (ORCH_AUTOPILOT=1) session. A
+verb whose body is not yet here is refused (not_ported).
 
 Beside the noun, the concept every Python noun reads: whether this is an
 autopilot session, the plan's `## Autopilot` block, as handoff_report checks
@@ -27,14 +27,17 @@ from __future__ import annotations
 
 import calendar
 import os
+import shutil
+import signal
 import subprocess
 import time
 from typing import Callable, Dict, List, Mapping, NoReturn, Optional, Tuple
 
-from orch.agent import autopilot_setting_check
+from orch.agent import autopilot_setting_check, default_plugin_root
 from orch.common import (ORCH_DIR_NAME, die, file_write_atomic, is_positive_int, plain_number,
-                         read_raw, read_text, stdout_write, trim)
+                         read_raw, read_text, stdout_write, trim, warn)
 from orch.git import Git
+from orch.host import host_detect
 from orch.repo import REPO_REMEDY, RepoPin, owner_name
 from orch.root import checkout_root
 
@@ -243,11 +246,12 @@ CANDIDATES_USAGE = "usage: orch.sh autopilot candidates [<n>... | --all | --limi
 class Autopilot:
     """One run of the noun: the checkout at <root> the git adapter <git>
     runs in, the environment <env>, the repo pin <pin>, the gh adapter
-    <gh_of> makes at the first GitHub call, the clock and the process
-    starter."""
+    <gh_of> makes at the first GitHub call, the clock, the process starter
+    and the sleep."""
 
     def __init__(self, root: str, git, env: Mapping[str, str], pin, gh_of,
-                 clock: Callable[[], float], starter: Callable[..., object]) -> None:
+                 clock: Callable[[], float], starter: Callable[..., object],
+                 sleep: Callable[[float], None] = time.sleep) -> None:
         self.root = root
         self.git = git
         self.env = env
@@ -255,6 +259,7 @@ class Autopilot:
         self.gh_of = gh_of
         self.clock = clock
         self.starter = starter
+        self.sleep = sleep
         self._config: Dict[str, Dict[str, str]] = {}
 
     def lookup(self, name: str) -> Tuple[str, str]:
@@ -344,7 +349,7 @@ def dispatch(ap: Autopilot, op: str, args: List[str]) -> int:
         if len(args) != count:
             die("usage: orch.sh autopilot %s%s" % (op, tail))
     elif op == "watch":
-        watch_every(args)
+        return watch_verb(ap, watch_every(args))
     elif op == "candidates":
         return candidates_verb(ap, *candidates_args(args))
     else:
@@ -718,6 +723,117 @@ def questions_verb(ap: Autopilot) -> int:
     return 0
 
 
+# --- the gate and watch --------------------------------------------------------------
+
+
+def gate(ap: Autopilot) -> None:
+    """The host and settings gate tick and watch start with, bash
+    autopilot_gate: dies on any detected host other than Claude Code, or no
+    claude on PATH, then with no permission mode set, naming the key, then
+    on a model or effort outside its list - before any issue is claimed."""
+    host = host_detect(ap.env)
+    if (host and host != "claude") or shutil.which("claude", path=ap.env.get("PATH")) is None:
+        die("autopilot is Claude Code only (no headless-session fallback on this host;"
+            " see docs/host-capabilities.md)")
+    if ap.setting("permission-mode")[1] == "unset":
+        die("%spermission-mode is not set - choose how headless sessions run (git config"
+            " %spermission-mode <%s>)" % (SETTING_PREFIX, SETTING_PREFIX, "|".join(AUTOPILOT_MODES)))
+    for name in ("model", "effort"):
+        ap.setting(name)
+
+
+def orch_sh() -> str:
+    """The orch.sh beside the package's plugin root, which the watcher's
+    children run - bash AUTOPILOT_SELF."""
+    return os.path.join(default_plugin_root(), "scripts", "orch.sh")
+
+
+class WatchStopped(BaseException):
+    """The INT or TERM the watch took: it ends the loop wherever it is."""
+
+
+class Watch:
+    """One watch: the run it serves and the tick it waits on, None between
+    ticks."""
+
+    def __init__(self, ap: Autopilot) -> None:
+        self.ap = ap
+        self.tick = None
+
+    def tick_status(self) -> int:
+        """Starts one tick, a fresh `orch.sh autopilot tick` with stdin from
+        /dev/null and stdout dropped, as bash's background job has them, and
+        waits for it: its exit status as bash's wait gives it - 128 plus the
+        signal that killed it, 127 for an orch.sh that is missing and 126
+        for one that cannot be run."""
+        try:
+            self.tick = self.ap.starter([orch_sh(), "autopilot", "tick"],
+                                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+        except FileNotFoundError:
+            return 127
+        except OSError:
+            return 126
+        code = self.tick.wait()
+        self.tick = None
+        return code if code >= 0 else 128 - code
+
+    def stop_tick(self) -> None:
+        """The watch's INT/TERM step for the tick it waits on, bash
+        autopilot_watch_stop_child: sends it TERM and waits for it to
+        exit."""
+        if self.tick is None:
+            return
+        try:
+            self.tick.terminate()
+        except OSError:
+            pass
+        self.tick.wait()
+
+
+def watch_verb(ap: Autopilot, every: int) -> int:
+    """Repeats tick every <every> seconds until interrupted, bash
+    autopilot_watch, after the gate. Refuses while another watch of this
+    clone is alive, replaces a pidfile whose process is gone, reports a
+    failed tick on stderr and carries on. On INT or TERM it removes its
+    pidfile, TERMs the tick it waits on and waits for it, or cuts its sleep
+    short, and exits 0; on any other exit it removes its pidfile. Each tick
+    is a fresh orch.sh process, so a tick that dies takes nothing else with
+    it."""
+    from orch.liveness import watch_begin, watch_end, watch_pidfile
+
+    gate(ap)
+    pidfile = watch_pidfile(ap.git)
+    if not watch_begin(pidfile, ap.env):
+        return 1
+    watch = Watch(ap)
+    # Set once the first INT or TERM is taken, or the watch is ending:
+    # another signal then changes nothing.
+    stopping = []
+
+    def stop(signum, frame) -> None:
+        if not stopping:
+            stopping.append(signum)
+            raise WatchStopped()
+
+    handlers = {signum: signal.signal(signum, stop) for signum in (signal.SIGINT, signal.SIGTERM)}
+    try:
+        while True:
+            code = watch.tick_status()
+            if code != 0:
+                warn("autopilot watch: the tick failed (exit %d); trying again in %ds"
+                     % (code, every))
+            ap.sleep(every)
+    except WatchStopped:
+        watch_end(pidfile)
+        watch.stop_tick()
+        return 0
+    finally:
+        stopping.append(0)
+        for signum, handler in handlers.items():
+            signal.signal(signum, handler)
+        watch_end(pidfile)
+
+
 # The verbs taking a fixed number of arguments that are converted, each
 # called with the run and its arguments.
 VERBS: Mapping[str, Callable[..., int]] = {
@@ -743,16 +859,17 @@ def run(
     env: Optional[Mapping[str, str]] = None,
     clock: Callable[[], float] = time.time,
     starter: Callable[..., object] = subprocess.Popen,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> int:
     """`orch.sh autopilot <op> [<arg>...]`: the real adapters, the
-    process's environment, the system clock and subprocess.Popen as the
-    process starter unless a test hands in others. Outside a checkout it
-    dies first, as orch.sh does, whatever the op."""
+    process's environment, the system clock and its sleep, and
+    subprocess.Popen as the process starter unless a test hands in others.
+    Outside a checkout it dies first, as orch.sh does, whatever the op."""
     from orch.gh import adapter_of
 
     env = os.environ if env is None else env
     git = Git() if git is None else git
     root = checkout_root(git, env)
     pin = RepoPin(env, git)
-    ap = Autopilot(root, git, env, pin, adapter_of(gh, env, pin), clock, starter)
+    ap = Autopilot(root, git, env, pin, adapter_of(gh, env, pin), clock, starter, sleep)
     return dispatch(ap, argv[0] if argv else "", argv[1:])
