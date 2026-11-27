@@ -80,7 +80,7 @@
 18	19	gh rate limits: the GitHub pause and the hit file (#2577)	ae5774c587564fdd1c9190be8c122a34d3267f39
 1	2	host detection (host.sh, #281)	810863fbb3e926aaff3a2d2d00c5e6caa68f55d7
 6	7	orch_load	b7690e1c2206cbbb9683deef992bff879a329c86
-11	12	on-demand loading	161f172b800f03519d7a836f0c7cfe2b853a3884
+10	13	on-demand loading	75fb0b8414a4b4d27a09dd73528c40ae565dd5e3
 16	19	stub table cache	f08da23fcef1d9cfbb031ed5cab21326cda0ee8c
 1	2	mp-skill	e60393c4f6e6f95d5fba4df7ab64704fd650e873
 4	5	bash version guard	b9c291545a1708ed286831ce6e7ed83b277ce540
@@ -92,7 +92,7 @@
 62	67	side-checkout prune (#726)	b92a62f0db52259032afca832e12764b484db06c
 85	91	side-checkout prune: edge cases (#726)	be6e71c8214125ec83ffd5f4faedf8cb94a56993
 14	15	archive keeps flow-less directories (#1247)	73924579b8aeea19afbf9325c81a24744f6b81cb
-34	39	side-checkout prune: a covered branch tip (#1906)	774365433b68e83a4f7167f635d18d484eead2d1
+32	35	side-checkout prune: a covered branch tip (#1906)	55bf0be54cb1e3fdcda77e64611360ded847d117
 11	12	side-checkout prune: fork PRs are not proof (#1979)	c70657c441d5cc8aa73d5eb99d956093e1637301
 14	156	side-checkout prune: the merged-PR close backstop (#2477)	a501f2353d1fcbf2475d4c0426d7252221cc76ad
 4	4	side_checkout_marker reads the worktree's git pointer	b0b623fd717390f7cd5b48579acfe4d055c2990c

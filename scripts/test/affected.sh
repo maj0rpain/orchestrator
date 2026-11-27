@@ -55,9 +55,10 @@
 #                                     and hooks_test.sh, whose paste guard
 #                                     rows run spec-review check through it,
 #                                     plus the side-checkout sections, whose
-#                                     entry classification scans the package
-#                                     and whose merged-PR close is a bridge
-#                                     (the pytest suite runs on every call);
+#                                     merged-PR close is a bridge (the pytest
+#                                     suite, the .orchestrator entry
+#                                     classification with it, runs on every
+#                                     call);
 #                                     not every section that reaches the
 #                                     package - a flow's init and the
 #                                     status and help calls reach it from

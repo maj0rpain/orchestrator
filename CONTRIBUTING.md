@@ -91,8 +91,9 @@ own. In affected.sh a change under `scripts/orch_py/` selects the base and
 branch sections, which call a converted noun's own verbs through CLI dispatch
 (base's `pr open` and branch's `pr publish` fixtures), hooks_test.sh, whose
 paste guard rows run `spec-review check` through it, and the side-checkout
-sections, whose `.orchestrator` entry classification scans the package and whose
-merged-PR close is the `pr close_missed_finish` bridge. That is not every
+sections, whose merged-PR close is the `pr close_missed_finish` bridge; the
+`.orchestrator` entry classification is a pytest case, in
+`test_flow_less_entries.py`, so it runs on every call. That is not every
 section that reaches the package: a section that starts a flow runs `init`
 through the dispatch, and some run `status` or `help`; CI's whole run covers
 those.
