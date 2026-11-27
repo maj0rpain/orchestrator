@@ -3,10 +3,22 @@ dispatch, with its unknown-op refusal and every usage line bash has;
 `review begin`, `path`, `terminal`, `resume` and `retire`, with the budget
 fallback and its default of 5 (review_budget_fallback); `review file`, built
 on orch/filed_finding.py; `review known-items`, built on
-orch/known_items.py; and `review standards`, with the Standards resolution
-under it (standards_resolve_source). The verbs other tickets port - ci,
-ci-log, rerun and ready - check their arguments as bash does and, past them,
-die with the unknown-op refusal.
+orch/known_items.py; `review standards`, with the Standards resolution
+under it (standards_resolve_source); and `review ci`. The verbs other
+tickets port - ci-log, rerun and ready - check their arguments as bash does
+and, past them, die with the unknown-op refusal.
+
+`review ci [--no-wait] [<pr>]` waits on the flow's PR or the one given: the
+grace counted from the push, read from the head's remote-tracking reflog
+(ci_push_time, #475), skipped when the repo shows no evidence of CI
+(no_ci_evidence, #476, ADR-0032); the required checks while the grace
+remains, then the counted ones; the total stored from the first call
+(orch/wait.py's StoredTotal, a provisional Guard before its key is known),
+each call blocking at most ORCH_WAIT_BLOCK seconds and exiting 75 while the
+wait is not over. `--no-wait` is one pass of it that writes nothing. The
+rate limits it meets go through the gh adapter's Limits, handed the open
+wait, or told the call never waits. ci_probe, one look over one scope, is
+what doctor's CI check reads.
 
 run(argv) takes the arguments after `review`, as orch.sh would hand them on,
 and returns the exit code; every error dies through orch.common.die, with
@@ -44,8 +56,9 @@ import time
 from typing import Callable, Dict, List, Mapping, NoReturn, Optional, Tuple
 
 from orch.common import (ORCH_DIR_NAME, capture, die, fenced, int_as_test_reads,
-                         is_positive_int, lines_of, list_join, mkdir_p_or_die, move_files_aside,
-                         plain_number, read_raw, rm_f_or_die, stdout_write, trim, warn)
+                         is_number, is_positive_int, lines_of, list_join, mkdir_p_or_die,
+                         move_files_aside, plain_number, read_raw, require_poll_knobs,
+                         rm_f_or_die, stdout_write, trim, warn)
 from orch.branch import discard_own_branch_work
 from orch.checkout import checkout_branch_or_rebasing
 from orch.filed_finding import (FILED_AXES, FILED_SEVERITIES, category_for_axis,
@@ -61,8 +74,10 @@ from orch.handoff import handoff_file_for, handoff_read, section_body
 from orch.known_items import (entries_append_from, known_items_write, section_entries,
                               section_entries_append)
 from orch.redo import redo_midway
+from orch.repo import REPO_REMEDY, RepoPin
 from orch.root import checkout_root
 from orch.triage_labels import TriageLabels
+from orch.wait import Guard, StoredTotal, still_running, wait_block
 
 TERMINAL_HEADING = "## Terminal state"
 # The separators `stop` may carry its reason after, on the same line.
@@ -277,6 +292,270 @@ def ci_ready_gate(gh, pr: int, code: int = 1) -> None:
     die(message, code)
 
 
+# --- review ci -----------------------------------------------------------------
+
+# How long `review ci` waits and how often it looks, read from the
+# environment rather than from positional arguments, with their defaults: the
+# 60-second grace is what stops a repo whose checks have not registered yet
+# being declared CI-less, and a test that could not turn it down would take a
+# minute to prove it works.
+CI_GRACE = ("ORCH_CI_GRACE", "60")
+CI_TIMEOUT = ("ORCH_CI_TIMEOUT", "900")
+CI_INTERVAL = ("ORCH_CI_INTERVAL", "10")
+
+CI_USAGE = "usage: orch.sh review ci [--no-wait] [<pr>]"
+NO_CI_SIGNALS = ("no CI signals found: no workflow files in the head, no required checks on %s,"
+                 " no checks or statuses on earlier PR commits or the %s tip")
+# A workflow file, as the head's tree listing is matched line by line.
+WORKFLOW_FILE = re.compile(r"\.ya?ml$")
+FULL_SHA = re.compile(r"[0-9a-f]{40}")
+
+
+def ci_knob(env: Mapping[str, str], knob: Tuple[str, str]) -> str:
+    """<knob>'s value as <env> sets it, else its default: unset and empty
+    alike."""
+    name, default = knob
+    return env.get(name, "") or default
+
+
+def ci_probe(gh, pr: int, scope: str) -> List[str]:
+    """One look at PR <pr>'s checks in <scope> - "required", else every
+    check - classified (ci_classify): the verdict, then its detail lines.
+    pr_checks answers none for a repo with no checks and fails for an API
+    that would not answer or an answer it could not read, so the two
+    meanings an empty read could carry stay apart. Doctor's CI check reads
+    this, over the required scope."""
+    try:
+        checks = gh.pr_checks(pr, scope)
+    except GhFailed as failed:
+        return ci_classify(None, failed.stderr)
+    return ci_classify(checks, "")
+
+
+def ci_push_time(git, oid: str, branch: str) -> Optional[int]:
+    """When the PR's head <oid> was pushed, in epoch seconds: the newest
+    reflog entry of head branch <branch>'s remote-tracking ref whose new
+    value is <oid>. None when there is no such entry - pushed from another
+    machine, or a reflog that is not kept - and the grace then counts from
+    the wait's first call."""
+    if not oid or not branch:
+        return None
+    ref = "refs/remotes/origin/" + branch
+    if not git.ref_exists(ref):
+        return None
+    return next((date for sha, date in git.reflog_dates(ref) or [] if sha == oid), None)
+
+
+def no_ci_evidence(gh, git, head: str, base: str, pr: int) -> bool:
+    """Whether the repo shows no evidence of CI, for review ci's grace
+    (#476, ADR-0032): True only when all four signals read as absent -
+    workflow files in the PR head's tree, read locally; required checks on
+    the base branch, by classic protection or a ruleset; a check run or
+    commit status on an earlier commit of the PR; and one on the base tip.
+    False on the first signal present or unreadable: a false "has CI" costs
+    a minute of grace, a false "no CI" marks a PR ready over checks nobody
+    verified. Recomputed on every call, so a workflow the PR itself adds is
+    always seen."""
+    if not head or not base:
+        return False
+    # A head this clone has never fetched is unreadable, not empty.
+    if not git.has_commit(head):
+        return False
+    names = git.tree_names(head, ".github/workflows/")
+    if names is None or any(WORKFLOW_FILE.search(line)
+                            for name in names for line in name.split("\n")):
+        return False
+    try:
+        if gh.branch_required_checks(base):
+            return False
+        if "required_status_checks" in gh.branch_rules(base):
+            return False
+        # The base tip's answer, then each PR commit's, from one read. The
+        # refs read's head is skipped by SHA, not by position: a push landing
+        # between the two reads leaves a newer last commit, judged as an
+        # earlier one.
+        tip, commits = gh.pr_commits_checked(pr)
+    except GhFailed:
+        return False
+    if tip != "no":
+        return False
+    for sha, answer in commits:
+        if not FULL_SHA.fullmatch(sha) or answer not in ("yes", "no"):
+            return False
+        if sha != head and answer != "no":
+            return False
+    return True
+
+
+class _CiCall:
+    """One review ci call's PR and what it learnt of it: <pr>, the PR's
+    number as given or recorded, <given> whether it was given on the command
+    line, and, once read, the PR's head SHA ("" when the read failed), head
+    branch and base branch, how long before the wait's first call the head
+    was pushed (push_age, 0 when unknown) and whether the repo shows no
+    evidence of CI anywhere (no_ci)."""
+
+    def __init__(self, gh, git, pr: str, given: bool, grace: str) -> None:
+        self.gh = gh
+        self.git = git
+        self.pr = pr
+        self.given = given
+        self.grace = grace
+        self.head = self.head_ref = self.base = ""
+        self.unread: Optional[str] = None
+        self.push_age = 0
+        self.no_ci = False
+
+    def refs_read(self) -> None:
+        """The PR's refs read; a failed read leaves the head "" and gh's
+        stderr in <unread>, None after a read that worked."""
+        try:
+            self.head, self.head_ref, self.base = self.gh.pr_refs(int(self.pr))
+        except GhFailed as failed:
+            self.head = ""
+            self.unread = failed.stderr
+
+    def refs_unread(self) -> bool:
+        """Whether the call must stop because the PR it was given by number
+        could not be read - printing `unreachable` and its detail line; the
+        flow's PR, whose unread refs only key its total by PR, goes on."""
+        if self.unread is None or not self.given:
+            return False
+        ci_print(ci_unreachable("could not read PR #%s: %s" % (self.pr, gh_reason(self.unread))))
+        return True
+
+    def context(self, start: int) -> None:
+        """push_age from the head's push before <start>, the wait's first
+        call, and no_ci. With no evidence of CI anywhere, there is nothing
+        for the grace to wait on; it replaces only the wait - the unfiltered
+        probe still runs, so a check already reported on the head gives its
+        verdict as before."""
+        if not self.head:
+            return
+        pushed = ci_push_time(self.git, self.head, self.head_ref)
+        if pushed is not None and pushed < start:
+            self.push_age = start - pushed
+        self.no_ci = no_ci_evidence(self.gh, self.git, self.head, self.base, int(self.pr))
+
+    def probe(self, elapsed: float) -> Tuple[List[str], bool]:
+        """One probe of the PR's checks: its lines, and whether it answered
+        `none` from the required checks while the grace remains. Branch
+        protection's required checks decide it wherever it names any: gh
+        cannot tell "this repo requires nothing" from "what it requires has
+        not registered yet", so the grace is spent waiting on the required
+        set, and only once it is spent or skipped does the read widen to
+        every check (ci_counted). Widening sooner is how an unrelated green
+        check gets mistaken for a required one that never arrived."""
+        if not self.no_ci and self.push_age + elapsed < float(self.grace):
+            lines = ci_probe(self.gh, int(self.pr), "required")
+            return lines, lines[0] == "none"
+        return ci_counted_probe(self.gh, int(self.pr)), False
+
+    def deliver(self, lines: List[str]) -> Optional[int]:
+        """Prints a terminal verdict's <lines> and returns its status; None,
+        printing nothing, for `pending`."""
+        verdict = lines[0]
+        if verdict == "pending":
+            return None
+        if verdict == "none":
+            # Only reachable with the grace spent or skipped: the detail line
+            # says which, here rather than in ci_probe, so doctor's lines are
+            # unchanged.
+            if self.no_ci:
+                detail = NO_CI_SIGNALS % (self.base, self.base)
+            else:
+                detail = "nothing reported before the %ss grace ran out" % self.grace
+            ci_print(lines + [CI_DETAIL_INDENT + detail])
+            return 0
+        if verdict in ("green", "failing", "unreachable"):
+            ci_print(lines)
+            return 0 if verdict == "green" else 1
+        # Unreachable while ci_classify answers one of the five words: the arm
+        # that keeps an unrecognised answer from spinning the waiting form.
+        ci_print(ci_unreachable("unrecognised answer from gh pr checks: " + verdict))
+        return 1
+
+
+def ci_print(lines: List[str]) -> None:
+    """A verdict's lines on stdout."""
+    stdout_write("".join(line + "\n" for line in lines))
+
+
+def review_ci_once(call: _CiCall, clock: Callable[[], float]) -> int:
+    """`review ci --no-wait`: one pass of the probe the waiting form
+    repeats. It reads no total, never sleeps and writes no state, wait file
+    or guard; where the loop would sleep it prints `pending`. A rate limit
+    is given up on at once. The push age counts from this call's start."""
+    call.gh.limits.no_wait = True
+    start = int(clock())
+    call.refs_read()
+    if call.refs_unread():
+        return 1
+    call.context(start)
+    lines, grace_none = call.probe(0)
+    if grace_none:
+        ci_print(["pending"])
+        return 0
+    status = call.deliver(lines)
+    if status is None:
+        ci_print(lines)
+        status = 0
+    return status
+
+
+def review_ci_wait(call: _CiCall, root: str, env: Mapping[str, str],
+                   clock: Callable[[], float], sleep: Callable[[float], None]) -> int:
+    """`review ci`: polls until a verdict or ORCH_CI_TIMEOUT. Two clocks: the
+    timeout counts from the wait's first call (the stored total), the grace
+    from the push. The total belongs to the PR and its head commit, or to
+    the PR alone when the head cannot be read, and is forgotten once a call
+    delivers an outcome. Each call blocks at most ORCH_WAIT_BLOCK seconds,
+    ending as still running (75) while the wait is not over. The refs read
+    runs before the wait's key is known, so a provisional guard stands in
+    for it: a limit the block cannot hold ends the call as still running
+    with no total yet."""
+    timeout, interval = ci_knob(env, CI_TIMEOUT), ci_knob(env, CI_INTERVAL)
+    require_poll_knobs([(CI_GRACE[0], call.grace), (CI_TIMEOUT[0], timeout),
+                        (CI_INTERVAL[0], interval)], 2)
+    block = wait_block(env, 2)
+    orch_dir = "%s/%s" % (root, ORCH_DIR_NAME)
+    guard = Guard.open(orch_dir, call.pr, block, clock, sleep)
+    call.gh.limits.wait = guard
+    call.refs_read()
+    if not guard.check():
+        return still_running(block)
+    if call.refs_unread():
+        return 1
+    total = StoredTotal.open(orch_dir, "review ci %s %s" % (call.pr, call.head), block, clock,
+                             sleep, call_start=guard.call_start)
+    call.gh.limits.wait = total
+    elapsed = total.taken()
+    call.context(int(total.start))
+    if call.head and not total.limited_check():
+        return still_running(block)
+    while True:
+        lines, grace_none = call.probe(elapsed)
+        if not total.limited_check():
+            return still_running(block)
+        status = None if grace_none else call.deliver(lines)
+        if status is None and (grace_none or elapsed < float(timeout)):
+            if not total.tick(interval):
+                return still_running(block)
+            elapsed = total.taken()
+            continue
+        if status is None:
+            # Still pending at the cap is an answer we do not have, not a
+            # green one: the loop stops rather than marking a PR ready over
+            # something nothing ever verified.
+            ci_print(ci_unreachable("checks were still pending after %ss" % timeout))
+            status = 1
+        break
+    # Every terminal verdict leaves the loop with its status, so the stored
+    # total is forgotten in this one place.
+    total.forget()
+    return status
+
+
 # --- the noun -----------------------------------------------------------------
 
 # What a review budget reads as when nobody has set one - a flow started
@@ -298,11 +577,13 @@ OPS = "begin|path|file|known-items|standards|ci|ci-log|rerun|ready|terminal|resu
 
 
 def run(argv: List[str], git=None, env: Optional[Mapping[str, str]] = None,
-        clock: Callable[[], float] = time.time, gh=None) -> int:
+        clock: Callable[[], float] = time.time, gh=None,
+        sleep: Callable[[float], None] = time.sleep) -> int:
     """`orch.sh review <op>`: the real git and gh adapters, the process's
-    environment and the system clock unless a test hands in others; the exit
-    code. The gh adapter is made at a verb's first GitHub call (adapter_of).
-    Outside a checkout it dies first, as orch.sh does, whatever the op."""
+    environment and the system clock and sleep unless a test hands in
+    others; the exit code. Outside a checkout it dies first, as orch.sh
+    does, whatever the op. The gh adapter is made at an op's first GitHub
+    call (adapter_of), pinned to the repo of the checkout <git> runs in."""
     env = os.environ if env is None else env
     git = Git() if git is None else git
     root = checkout_root(git, env)
@@ -310,11 +591,12 @@ def run(argv: List[str], git=None, env: Optional[Mapping[str, str]] = None,
     verb = _VERBS.get(op)
     if verb is None:
         die("unknown review op: %s (want %s)" % (op or "<none>", OPS))
-    return verb(args, root, git, env, clock, adapter_of(gh, env)) or 0
+    gh_of = adapter_of(gh, env, pin=RepoPin(env, git))
+    return verb(args, root, git, env, clock, gh_of, sleep) or 0
 
 
 def _begin(args: List[str], root: str, git, env: Mapping[str, str], clock,
-           gh_of) -> None:
+           gh_of, sleep) -> None:
     """`review begin`: refuses past the budget, else records and prints the
     next iteration. A loop's first iteration - the recorded one 0, or one
     whose record has a Terminal state - renews the loop's flake rerun in the
@@ -355,7 +637,7 @@ RESUME_KEYS = TERMINAL_KEYS + ("phase",)
 
 
 def _resume(args: List[str], root: str, git, env: Mapping[str, str], clock,
-            gh_of) -> None:
+            gh_of, sleep) -> None:
     """`review resume`: resumes a review loop whose driving session died
     mid-iteration, spending no budget (ADR-0054). Only a pending or
     interrupted loop resumes; any other state exits 1 with nothing changed.
@@ -392,7 +674,7 @@ def _resume(args: List[str], root: str, git, env: Mapping[str, str], clock,
 
 
 def _path(args: List[str], root: str, git, env: Mapping[str, str], clock,
-          gh_of) -> None:
+          gh_of, sleep) -> None:
     """`review path [iteration]`: the record path of <iteration>, or of the
     recorded iteration when none is given or it is empty."""
     state_file = flow_state_file(root)
@@ -407,7 +689,7 @@ def _path(args: List[str], root: str, git, env: Mapping[str, str], clock,
 
 
 def _terminal(args: List[str], root: str, git, env: Mapping[str, str], clock,
-              gh_of) -> int:
+              gh_of, sleep) -> int:
     """`review terminal`: review_terminal_state's lines, and its status as
     the exit code."""
     state = require_state_read(flow_state_file(root), env, TERMINAL_KEYS, 1)
@@ -420,12 +702,47 @@ def _terminal(args: List[str], root: str, git, env: Mapping[str, str], clock,
 
 
 def _retire(args: List[str], root: str, git, env: Mapping[str, str], clock,
-            gh_of) -> None:
+            gh_of, sleep) -> None:
     """`review retire <n>`: review_retire's move, its folder printed."""
     require_state(flow_state_file(root), env)
     if len(args) != 1:
         die("usage: orch.sh review retire <n>")
     stdout_write(review_retire(root, args[0]) + "\n")
+
+
+def _ci(args: List[str], root: str, git, env: Mapping[str, str], clock,
+        gh_of, sleep) -> int:
+    """`review ci [--no-wait] [<pr>]`: the PR given, read with no flow
+    state, or the flow's recorded PR; its stored total is the same wait
+    store either way. Exit 0 for green or none, 1 for failing or
+    unreachable, 75 while the wait is not over, and every refusal - usage,
+    a PR that is no number, no flow or PR recorded, no repo, a bad knob -
+    2."""
+    nowait, pr_arg = False, None
+    for arg in args:
+        if arg == "--no-wait":
+            nowait = True
+            continue
+        if pr_arg is not None:
+            die(CI_USAGE, 2)
+        pr_arg = arg
+    if pr_arg is not None and not plain_number(pr_arg):
+        die("not a PR number: %s" % pr_arg, 2)
+    if pr_arg is not None:
+        pr = pr_arg
+    else:
+        pr = require_state_read(flow_state_file(root), env, ["pr"], 2)["pr"]
+        require_value("pr", pr, 2)
+    gh = gh_of()
+    if not gh.pin():
+        die(REPO_REMEDY, 2)
+    grace = ci_knob(env, CI_GRACE)
+    call = _CiCall(gh, git, pr, pr_arg is not None, grace)
+    if nowait:
+        if not is_number(grace):
+            die("%s is not a number: %s" % (CI_GRACE[0], grace), 2)
+        return review_ci_once(call, clock)
+    return review_ci_wait(call, root, env, clock, sleep)
 
 
 # --- the verbs other tickets port ---------------------------------------------
@@ -450,7 +767,7 @@ HEX = re.compile(r"[0-9a-fA-F]+")
 
 
 def _file(args: List[str], root: str, git, env: Mapping[str, str], clock,
-          gh_of) -> None:
+          gh_of, sleep) -> None:
     """`review file <sev> <title> --axis <a> --finding-file <f>
     --severity-reason <r> --location <loc> --why <w> [--spec-question <q>]`:
     files a finding as a GitHub issue, its body rendered from its parts, and
@@ -529,7 +846,7 @@ FILED_NUMBER = re.compile(r"#[0-9]+")
 
 
 def _known_items(args: List[str], root: str, git, env: Mapping[str, str], clock,
-                 gh_of) -> None:
+                 gh_of, sleep) -> None:
     """`review known-items <path> <loop boundary>`: writes the loop's
     known-items file to <path>, overwriting it - `## Deviations`, the
     implement handoff's Deviations, then `## Known items`: Waiting to be
@@ -787,7 +1104,7 @@ def standards_resolve_source(root: str, emit: Callable[[str], None]) -> None:
 
 
 def _standards(args: List[str], root: str, git, env: Mapping[str, str], clock,
-               gh_of) -> None:
+               gh_of, sleep) -> None:
     """`review standards`: the one Standards: line both reviewers' prompts
     end with, from the resolution's list - `Standards: none` when it is
     empty. A rejected declaration dies with its message and prints nothing
@@ -800,30 +1117,22 @@ def _standards(args: List[str], root: str, git, env: Mapping[str, str], clock,
     stdout_write("Standards: %s\n" % (listed or "none"))
 
 
-def _ci(args: List[str], root: str, git, env: Mapping[str, str], clock,
-        gh_of) -> None:
-    given = [arg for arg in args if arg != "--no-wait"]
-    if len(given) > 1:
-        die("usage: orch.sh review ci [--no-wait] [<pr>]", 2)
-    _unported("ci")
-
-
 def _ci_log(args: List[str], root: str, git, env: Mapping[str, str], clock,
-            gh_of) -> None:
+            gh_of, sleep) -> None:
     if len(args) != 1:
         die("usage: orch.sh review ci-log <pr>")
     _unported("ci-log")
 
 
 def _rerun(args: List[str], root: str, git, env: Mapping[str, str], clock,
-           gh_of) -> None:
+           gh_of, sleep) -> None:
     if len(args) != 1:
         die("usage: orch.sh review rerun <pr>", 2)
     _unported("rerun")
 
 
 def _ready(args: List[str], root: str, git, env: Mapping[str, str], clock,
-           gh_of) -> None:
+           gh_of, sleep) -> None:
     _unported("ready")
 
 
