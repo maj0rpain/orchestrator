@@ -587,19 +587,6 @@ GH_FAILING="$(gh_fixture && printf '%s\n' "$GH_FIXTURE/bin")"
 # on PATH.
 orch_gh_failing() { PATH="$GH_FAILING:$PATH" "$ORCH" "$@"; }
 
-# sc_add <slug> [args...]: makes a fixture side checkout quietly. add runs the
-# finished sweep first and reports it on stderr, so that stderr is held back:
-# discarded when add succeeds, printed when it fails. The new path passes
-# through on stdout, and add's exit status is returned.
-sc_add() {
-  local err st
-  err="$(mktemp)"
-  orch_gh_failing side-checkout add "$@" 2>"$err"; st=$?
-  [ "$st" -eq 0 ] || cat "$err" >&2
-  rm -f "$err"
-  return "$st"
-}
-
 # The missing-repo wording, built the way orch.sh builds REPO_MISSING,
 # REPO_CAUSE and REPO_REMEDY - but spelled out here, never read from orch.sh,
 # so a wording change there that the suite does not mirror still fails a test.

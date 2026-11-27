@@ -13,10 +13,10 @@ fresh_dir() { (cd "$(mktemp -d)" && pwd -P); }
 # Checked against real temporary checkouts, through what each prints.
 echo
 echo "checkout"
-sc_clone
+new_repo >/dev/null
 top="$(pwd -P)"
-git checkout -q -b orch/1-feature
-side="$(sc_add alpha)"
+side="$(fresh_dir)/side"
+git worktree add -q --detach "$side"
 
 assert_eq "main_checkout prints the main checkout from a side checkout" \
   "$(cd "$side" && sourced_orch main_checkout)" "$top"

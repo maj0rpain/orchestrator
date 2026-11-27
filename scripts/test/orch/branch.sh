@@ -5,6 +5,19 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# sc_add <slug> [args...]: makes a fixture side checkout quietly. add runs the
+# finished sweep first and reports it on stderr, so that stderr is held back:
+# discarded when add succeeds, printed when it fails. The new path passes
+# through on stdout, and add's exit status is returned.
+sc_add() {
+  local err st
+  err="$(mktemp)"
+  orch_gh_failing side-checkout add "$@" 2>"$err"; st=$?
+  [ "$st" -eq 0 ] || cat "$err" >&2
+  rm -f "$err"
+  return "$st"
+}
+
 # branch_and_config: the current branch and the local git config, the facts a
 # refusal on an unreadable tree must leave as they were (git status cannot run
 # there, so these are what can be read).
