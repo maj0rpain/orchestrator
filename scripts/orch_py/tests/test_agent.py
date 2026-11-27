@@ -1277,6 +1277,15 @@ def test_name_shapes_emits_ordered_role_glob_ere_lines_and_covers_all_roles(caps
     )
 
 
+def test_autopilot_setting_check_passes_an_allowed_value_and_dies_on_another(capsys):
+    assert agent.autopilot_setting_check("model", "opus", "orchestrator.autopilot.model") is None
+    assert capsys.readouterr() == ("", "")
+    assert died_of(capsys, lambda: agent.autopilot_setting_check(
+        "effort", "extreme", "orchestrator.autopilot.effort")) == (
+        1, "", "orch: orchestrator.autopilot.effort is extreme - not an allowed effort"
+               " (want low|medium|high|xhigh|max|inherit)\n")
+
+
 def test_validate_autopilot_checks_claude_model_and_effort_and_preserves_error_message(capsys):
     for model in ("sonnet", "opus", "haiku", "fable", "inherit"):
         assert cli.call_func(

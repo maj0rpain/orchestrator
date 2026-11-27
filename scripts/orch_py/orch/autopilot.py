@@ -1,19 +1,40 @@
-"""The autopilot concept's module (scripts/orch/autopilot.sh), kept to what
-the Python nouns read and write: whether this is an autopilot session, the
-plan's `## Autopilot` block, as handoff_report checks it for 01-plan.md, the
-UTC timestamps the pause files hold, and the GitHub limit record the gh
-adapter's limit handling makes in an autopilot process - the GitHub limit
-pause under the main checkout and a session's hit file, in the format and at
-the path autopilot.sh reads them (pinned by tests/github_pause/, ADR-0067).
+"""orch.sh's autopilot noun (ADR-0067), being converted from
+scripts/orch/autopilot.sh verb group by verb group; orch.sh still runs the
+bash noun until every verb is here. run(argv) takes the arguments after
+`autopilot`, as orch.sh will hand them on, and returns the exit code; every
+error dies through orch.common.die. It dispatches every verb, refusing an
+unknown op and each verb's arguments with bash's messages, and runs those
+converted so far - `settings`, `show`, `active`, `rounds`, `budget`, `start`
+and `candidates` - with the bash noun's stdout, exit codes and `orch:`
+messages, in a plain and an autopilot (ORCH_AUTOPILOT=1) session. A verb
+whose body is not yet here is refused (not_ported).
+
+Beside the noun, the concept every Python noun reads: whether this is an
+autopilot session, the plan's `## Autopilot` block, as handoff_report checks
+it for 01-plan.md, the UTC timestamps the pause files hold, and the GitHub
+limit record the gh adapter's limit handling makes in an autopilot process -
+the GitHub limit pause under the main checkout and a session's hit file, in
+the format and at the path autopilot.sh reads them (pinned by
+tests/github_pause/, ADR-0067).
+
+The gh, handoff, flow-state, standing, trust and filed-finding modules the
+verbs call are imported inside them: each imports this module's concept
+part at its own import, so importing them here at the top would be a cycle.
 """
 from __future__ import annotations
 
 import calendar
 import os
+import subprocess
 import time
-from typing import Callable, List, Mapping, Optional, Tuple
+from typing import Callable, Dict, List, Mapping, NoReturn, Optional, Tuple
 
-from orch.common import ORCH_DIR_NAME, is_positive_int, read_text, trim
+from orch.agent import autopilot_setting_check
+from orch.common import (ORCH_DIR_NAME, die, is_positive_int, plain_number, read_text,
+                         stdout_write, trim)
+from orch.git import Git
+from orch.repo import REPO_REMEDY, RepoPin, owner_name
+from orch.root import checkout_root
 
 # A GitHub pause is never recorded further ahead than this many seconds:
 # no GitHub limit names a later reset.
@@ -152,3 +173,380 @@ def github_limit_record(env: Mapping[str, str], reset: int, now: float,
     if autopilot_active(env) and hit and not pause_put(hit, capped):
         clauses.append("could not write the GitHub limit hit file " + hit)
     return clauses
+
+
+# --- the noun -------------------------------------------------------------------
+
+# The verbs, in the order the unknown-op refusal lists them.
+OPS = ("show|settings|active|rounds|budget|start|candidates|tick|watch|run|ask|answer|reenter"
+       "|questions|reply|resume|sync|sync-finish|sync-dropped|sync-fail")
+
+# The permission modes a headless session may run with, and the numeric
+# settings' defaults. Each lives here alone, so show validates against one
+# list.
+AUTOPILOT_MODES = ("default", "acceptEdits", "plan", "dontAsk", "bypassPermissions")
+AUTOPILOT_CAP_DEFAULT = 3
+AUTOPILOT_ROUNDS_DEFAULT = 2
+AUTOPILOT_BUDGET_DEFAULT = 3
+AUTOPILOT_GITHUB_RESERVE_DEFAULT = 20
+
+# The autopilot setting names, in the order show prints them; settings prints
+# the same list, so the two never disagree.
+AUTOPILOT_SETTING_NAMES = ("permission-mode", "cap", "handle", "rounds", "budget", "model",
+                           "effort", "auto-sync", "github-reserve")
+
+# The seconds watch waits between ticks unless --every names others.
+AUTOPILOT_WATCH_EVERY_DEFAULT = 60
+
+# Each verb that takes a fixed number of arguments: that number, and what its
+# usage line names after the verb.
+ARITY = {
+    "settings": (0, ""),
+    "show": (0, ""),
+    "active": (0, ""),
+    "rounds": (0, ""),
+    "budget": (0, ""),
+    "start": (2, " <issue> <plan-file>"),
+    "tick": (0, ""),
+    "run": (1, " <issue>"),
+    "questions": (0, ""),
+    "reply": (2, " <issue> <file>"),
+    "resume": (1, " <issue>"),
+    "sync": (1, " <issue>"),
+    "sync-finish": (0, ""),
+    "sync-dropped": (1, " <file>"),
+    "sync-fail": (1, " <reason>"),
+    "reenter": (2, " <phase> <file>"),
+    "ask": (2, " <phase> <file>"),
+    "answer": (2, " <phase> <file>"),
+}
+
+# The git config section every setting lives under, and the pattern that
+# reads them all.
+SETTING_PREFIX = "orchestrator.autopilot."
+SETTING_PATTERN = r"^orchestrator\.autopilot\."
+# The defaults of the settings that have one but the handle, as text.
+SETTING_DEFAULTS = {
+    "cap": str(AUTOPILOT_CAP_DEFAULT),
+    "rounds": str(AUTOPILOT_ROUNDS_DEFAULT),
+    "budget": str(AUTOPILOT_BUDGET_DEFAULT),
+    "auto-sync": "true",
+    "github-reserve": str(AUTOPILOT_GITHUB_RESERVE_DEFAULT),
+}
+
+WATCH_USAGE = "usage: orch.sh autopilot watch [--every <seconds>]"
+CANDIDATES_USAGE = "usage: orch.sh autopilot candidates [<n>... | --all | --limit <k>]"
+
+
+class Autopilot:
+    """One run of the noun: the checkout at <root> the git adapter <git>
+    runs in, the environment <env>, the repo pin <pin>, the gh adapter
+    <gh_of> makes at the first GitHub call, the clock and the process
+    starter."""
+
+    def __init__(self, root: str, git, env: Mapping[str, str], pin, gh_of,
+                 clock: Callable[[], float], starter: Callable[..., object]) -> None:
+        self.root = root
+        self.git = git
+        self.env = env
+        self.pin = pin
+        self.gh_of = gh_of
+        self.clock = clock
+        self.starter = starter
+        self._config: Dict[str, Dict[str, str]] = {}
+
+    def lookup(self, name: str) -> Tuple[str, str]:
+        """The key orchestrator.autopilot.<name> - local config, then global
+        - and where it came from, local, global or unset: ("", "unset") when
+        neither holds it. Never validates. Each scope is read once."""
+        key = SETTING_PREFIX + name
+        for scope in ("local", "global"):
+            if scope not in self._config:
+                self._config[scope] = self.git.config_regexp(scope, SETTING_PATTERN)
+            if key in self._config[scope]:
+                return self._config[scope][key], scope
+        return "", "unset"
+
+    def setting(self, name: str) -> Tuple[str, str]:
+        """The effective, validated value of orchestrator.autopilot.<name>
+        and its source (local, global, default or unset), bash
+        autopilot_setting. The permission mode, the model and the effort
+        stay unset when unset, the handle falls back to the repo's owner, the
+        auto-sync to true and the four integers to their defaults
+        (github-reserve ranging 0-99). Dies naming the key and the value when
+        a value is out of range; the handle's owner is resolved only when the
+        handle is needed."""
+        value, source = self.lookup(name)
+        key = SETTING_PREFIX + name
+        if name in ("permission-mode", "model", "effort"):
+            if source == "unset":
+                return value, source
+            if name != "permission-mode":
+                # The agent module holds Claude Code's lists.
+                autopilot_setting_check(name, value, key)
+            elif value not in AUTOPILOT_MODES:
+                die("%s is %s - not a permission mode (want %s)"
+                    % (key, value, "|".join(AUTOPILOT_MODES)))
+            return value, source
+        if name == "handle":
+            if source != "unset":
+                return value, source
+            repo = self.pin.resolve()
+            if repo is None:
+                die("%s (the handle defaults to the repo's owner; or git config %s <handle>)"
+                    % (REPO_REMEDY, key))
+            return owner_name(repo.name).split("/", 1)[0], "default"
+        if source == "unset":
+            value, source = SETTING_DEFAULTS[name], "default"
+        if name == "auto-sync":
+            if value not in ("true", "false"):
+                die("%s is %s - it must be true or false (git config %s true|false)"
+                    % (key, value, key))
+        elif name == "github-reserve":
+            if not plain_number(value) or int(value) > 99:
+                die("%s is %s - it must be an integer from 0 to 99 (git config %s <n>)"
+                    % (key, value, key))
+            value = str(int(value))
+        else:
+            if not is_positive_int(value):
+                die("%s is %s - it must be a positive integer (git config %s <n>)"
+                    % (key, value, key))
+            value = str(int(value))
+        return value, source
+
+
+def watch_every(args: List[str]) -> int:
+    """watch's arguments, bash's: none, or `--every <seconds>`, a positive
+    whole number - the seconds between ticks."""
+    every = str(AUTOPILOT_WATCH_EVERY_DEFAULT)
+    if args:
+        if args[0] != "--every" or len(args) != 2:
+            die(WATCH_USAGE)
+        every = args[1]
+    if not is_positive_int(every):
+        die("--every must be a positive whole number of seconds, got: " + every)
+    return int(every)
+
+
+def not_ported(op: str) -> NoReturn:
+    """The refusal of a verb whose body is not yet converted: the noun is
+    not routed through orch.sh until every verb is."""
+    die("autopilot %s is not converted to Python yet" % op)
+
+
+def dispatch(ap: Autopilot, op: str, args: List[str]) -> int:
+    """Runs the verb <op> on <args>, its exit code; refuses an unknown op
+    and arguments the verb does not take, as bash's cmd_autopilot does."""
+    if op in ARITY:
+        count, tail = ARITY[op]
+        if len(args) != count:
+            die("usage: orch.sh autopilot %s%s" % (op, tail))
+    elif op == "watch":
+        watch_every(args)
+    elif op == "candidates":
+        return candidates_verb(ap, *candidates_args(args))
+    else:
+        die("unknown autopilot op: %s (want %s)" % (op or "<none>", OPS))
+    verb = VERBS.get(op)
+    if verb is None:
+        not_ported(op)
+    return verb(ap, *args)
+
+
+def candidates_args(args: List[str]) -> Tuple[str, int, List[int]]:
+    """candidates' arguments, bash's: issue numbers, `--all` or `--limit
+    <k>`, never two forms - the mode (named, all or limit), the limit and
+    the issues named."""
+    mode, limit, issues = "", 0, []
+    rest = list(args)
+    while rest:
+        arg = rest.pop(0)
+        if arg == "--all":
+            if mode:
+                die(CANDIDATES_USAGE)
+            mode = "all"
+        elif arg == "--limit":
+            if mode or not rest:
+                die(CANDIDATES_USAGE)
+            if not is_positive_int(rest[0]):
+                die("--limit must be a positive whole number, got: " + rest[0])
+            mode, limit = "limit", int(rest.pop(0))
+        elif not plain_number(arg) or mode not in ("", "named"):
+            die(CANDIDATES_USAGE)
+        else:
+            mode = "named"
+            issues.append(int(arg))
+    if not mode:
+        die(CANDIDATES_USAGE)
+    return mode, limit, issues
+
+
+def settings_verb(ap: Autopilot) -> int:
+    """`autopilot settings`: the setting names, one a line, in show order."""
+    stdout_write("".join(name + "\n" for name in AUTOPILOT_SETTING_NAMES))
+    return 0
+
+
+def show_verb(ap: Autopilot) -> int:
+    """`autopilot show`: one line per setting, its key, value and source,
+    "(none)" for a setting with no value. Dies on a value out of range,
+    after the lines of the settings before it."""
+    for name in AUTOPILOT_SETTING_NAMES:
+        value, source = ap.setting(name)
+        stdout_write("%s%s %s (%s)\n" % (SETTING_PREFIX, name, value or "(none)", source))
+    return 0
+
+
+def active_verb(ap: Autopilot) -> int:
+    """`autopilot active`: 0 in an autopilot session, else 1, printing
+    nothing."""
+    return 0 if autopilot_active(ap.env) else 1
+
+
+def plan_value(ap: Autopilot, key: str) -> int:
+    """`autopilot rounds` and `autopilot budget`: the <key> line of the `##
+    Autopilot` block of the flow's issue's newest plan comment, printed as
+    a plain integer, bash autopilot_plan_value. Dies when no issue is
+    recorded, when the comments cannot be read, when the issue has no plan
+    comment, and when its block holds no one valid <key> line."""
+    # Imported here: these modules read this one at their own import.
+    from orch.flow_state import flow_state_file, require_issue
+    from orch.handoff import handoff_comment_missing
+    from orch.issue_timeline import timeline_body, timeline_die, timeline_handoff, timeline_read
+
+    issue = require_issue(flow_state_file(ap.root), ap.env)["issue"]
+    entries, reason = timeline_read(ap.gh_of(), issue)
+    if entries is None:
+        timeline_die(issue, reason)
+    index = timeline_handoff(entries, "01-plan")
+    if index is None:
+        handoff_comment_missing(issue, "01-plan")
+    values = autopilot_block_values(timeline_body(entries, index), key)
+    if len(values) != 1 or not is_positive_int(values[0]):
+        die("issue #%s's plan comment has no valid ## Autopilot %s line" % (issue, key))
+    stdout_write("%d\n" % int(values[0]))
+    return 0
+
+
+def start_verb(ap: Autopilot, issue: str, plan_file: str) -> int:
+    """`autopilot start <issue> <plan-file>`: the Standing module's start,
+    the ready label the repo's own, the plan checked against this
+    checkout's flow state."""
+    from orch.flow_state import flow_state_file
+    from orch.standing import standing_start
+    from orch.triage_labels import TriageLabels
+
+    ready = TriageLabels(lambda: ap.root).label("ready-for-agent")
+    standing_start(ap.gh_of(), issue, plan_file, ready, flow_state_file(ap.root), ap.env)
+    return 0
+
+
+def verdict(gh, triage, n: int, row: Optional[Tuple[str, List[str]]] = None) -> str:
+    """The quick autopilot's verdict on issue #n, bash autopilot_verdict:
+    `eligible <none|move|override>` or `skip <reason>`, the first exclusion
+    in the fixed order (closed, missing, untrusted, phase, wontfix,
+    needs-info, ticket, untriaged-finding). Only an issue read here - one
+    with no listed <row>, its state and labels - can be `missing`, on gh's
+    not-found reason. <triage> names the repo's triage labels. Writes
+    nothing; dies on any other failed read."""
+    from orch.filed_finding import finding_untriaged
+    from orch.gh import GhFailed, gh_issue_not_found, gh_or_die, gh_reason, label_listed
+    from orch.standing import phase_labels_in
+    from orch.trust import issue_check
+
+    if row is None:
+        try:
+            row = gh.issue_state_labels(n)
+        except GhFailed as failed:
+            if gh_issue_not_found(failed.stderr):
+                return "skip missing"
+            die("could not read issue #%d: %s" % (n, gh_reason(failed.stderr)))
+    state, labels = row
+    if state != "OPEN":
+        return "skip closed"
+    try:
+        untrusted = issue_check(gh, n)
+    except GhFailed as failed:
+        die("could not check the trust of issue #%d: %s" % (n, gh_reason(failed.stderr)))
+    if untrusted is not None:
+        return "skip untrusted " + untrusted.writer
+    phases = phase_labels_in(labels)
+    if phases:
+        return "skip phase " + phases[0]
+    for role in ("wontfix", "needs-info"):
+        if label_listed(labels, triage.label(role)):
+            return "skip " + role
+    parent = gh_or_die("read issue #%d's parent" % n, gh.issue_parent, n)
+    if parent:
+        return "skip ticket #%d" % parent
+    # A filed finding finding triage has not yet triaged: the issue triage gate.
+    if finding_untriaged(labels, triage):
+        return "skip untriaged-finding"
+    if label_listed(labels, triage.label("ready-for-agent")):
+        return "eligible none"
+    if label_listed(labels, triage.label("ready-for-human")):
+        return "eligible override"
+    return "eligible move"
+
+
+def candidates_verb(ap: Autopilot, mode: str, limit: int, issues: List[int]) -> int:
+    """`autopilot candidates`: one line per issue, `<n> <verdict>` - the
+    issues named, in the order named, each read on its own; or with --all
+    and --limit <k> every open issue, oldest first, from one listing whose
+    rows give each verdict its state and labels, --limit keeping the first
+    k eligible lines. Every read comes before the first line is printed, so
+    a failed read leaves no partial list. It writes nothing."""
+    from orch.gh import gh_or_die
+    from orch.triage_labels import TriageLabels
+
+    gh = ap.gh_of()
+    triage = TriageLabels(lambda: ap.root)
+    rows: Mapping[int, Tuple[str, List[str]]] = {}
+    if mode != "named":
+        listed = gh_or_die("list the open issues", gh.issues_open_rows)
+        issues = [row.number for row in listed]
+        rows = {row.number: (row.state, row.labels) for row in listed}
+    report, eligible = [], 0
+    for n in issues:
+        if mode == "limit" and eligible >= limit:
+            break
+        answer = verdict(gh, triage, n, rows.get(n))
+        if answer.startswith("eligible"):
+            eligible += 1
+        report.append("%d %s\n" % (n, answer))
+    stdout_write("".join(report))
+    return 0
+
+
+# The verbs taking a fixed number of arguments that are converted, each
+# called with the run and its arguments.
+VERBS: Mapping[str, Callable[..., int]] = {
+    "settings": settings_verb,
+    "show": show_verb,
+    "active": active_verb,
+    "rounds": lambda ap: plan_value(ap, "Rounds"),
+    "budget": lambda ap: plan_value(ap, "Budget"),
+    "start": start_verb,
+}
+
+
+def run(
+    argv: List[str],
+    gh=None,
+    git=None,
+    env: Optional[Mapping[str, str]] = None,
+    clock: Callable[[], float] = time.time,
+    starter: Callable[..., object] = subprocess.Popen,
+) -> int:
+    """`orch.sh autopilot <op> [<arg>...]`: the real adapters, the
+    process's environment, the system clock and subprocess.Popen as the
+    process starter unless a test hands in others. Outside a checkout it
+    dies first, as orch.sh does, whatever the op."""
+    from orch.gh import adapter_of
+
+    env = os.environ if env is None else env
+    git = Git() if git is None else git
+    root = checkout_root(git, env)
+    pin = RepoPin(env, git)
+    ap = Autopilot(root, git, env, pin, adapter_of(gh, env, pin), clock, starter)
+    return dispatch(ap, argv[0] if argv else "", argv[1:])

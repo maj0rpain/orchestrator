@@ -11,8 +11,8 @@ import os
 
 import pytest
 
-from orch.gh import (Check, ClaimRow, Gh, GhFailed, IssueRow, LabelledBody, SubIssue, Unparsed,
-                     gh_die, gh_or_die)
+from orch.gh import (Check, ClaimRow, Gh, GhFailed, IssueRow, LabelledBody, StateRow, SubIssue,
+                     Unparsed, gh_die, gh_issue_not_found, gh_or_die)
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY, RepoPin
 
@@ -248,6 +248,43 @@ def test_the_issue_list_limit_stops_at_github_s_search_cap(fixture_gh, capsys):
     real_gh(fixture_gh, ORCH_ISSUE_LIST_LIMIT="5000").issues_titled_rows("ready")
 
     assert capsys.readouterr().err == ""
+
+
+OPEN_ROWS_JQ = ".[] | .number, .state, (.labels | length), (.labels[].name)"
+
+
+def open_rows_argv(limit="1000"):
+    return ["issue", "list", "--state", "open", "--search", "sort:created-asc", "--limit", limit,
+            "--json", "number,state,labels", "--jq", OPEN_ROWS_JQ]
+
+
+def test_issues_open_rows_reads_each_count_marked_record(fixture_gh, capsys):
+    fixture_gh.reply(open_rows_argv(), "7\nOPEN\n2\nready-for-agent\nbug\n012\nCLOSED\n0\n")
+
+    assert real_gh(fixture_gh).issues_open_rows() == [
+        StateRow(7, "OPEN", ["ready-for-agent", "bug"]),
+        StateRow(12, "CLOSED", []),
+    ]
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("answer", ["x\nOPEN\n0\n", "7\nOPEN\n3\na\n", "7\n"])
+def test_an_open_rows_listing_that_does_not_parse_fails(fixture_gh, answer):
+    fixture_gh.reply(open_rows_argv(), answer)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).issues_open_rows()
+    assert failed.value.stderr == "gh answered a listing that does not parse"
+
+
+def test_an_open_rows_listing_at_the_issue_list_limit_warns(fixture_gh, capsys):
+    fixture_gh.reply(open_rows_argv("2"), "1\nOPEN\n0\n2\nOPEN\n0\n")
+
+    assert len(real_gh(fixture_gh, ORCH_ISSUE_LIST_LIMIT="2").issues_open_rows()) == 2
+    assert capsys.readouterr().err == (
+        "orch: the open issues reached the issue-list limit of 2"
+        " - the newest past it are missing from this list\n"
+    )
 
 
 def state_argv(number):
@@ -520,6 +557,19 @@ def test_issue_body_edit_and_comment_pass_the_file(fixture_gh):
     assert gh.issue_body_edit(5, "b.md") is None
     assert gh.issue_comment(5, "c.md") is None
     assert fixture_gh.argvs() == [BODY_EDIT, COMMENT]
+
+
+@pytest.mark.parametrize("answer,url", [
+    ("https://github.com/o/r/issues/5#issuecomment-9\nmore\n",
+     "https://github.com/o/r/issues/5#issuecomment-9"),
+    ("", ""),
+], ids=["a URL", "none"])
+def test_issue_comment_url_posts_the_file_and_answers_the_first_line_gh_printed(
+        fixture_gh, answer, url):
+    fixture_gh.reply(COMMENT, answer)
+
+    assert real_gh(fixture_gh).issue_comment_url(5, "c.md") == url
+    assert fixture_gh.argvs() == [COMMENT]
 
 
 def test_issue_relabel_is_one_edit_and_none_with_nothing_named(fixture_gh):
@@ -1541,3 +1591,9 @@ def test_a_claim_list_origin_cannot_answer_fails_with_git_s_reason(claims):
 
     assert failed.value.stderr.startswith(
         "fatal: '%s' does not appear to be a git repository\n" % origin)
+
+
+def test_gh_issue_not_found_reads_gh_s_missing_issue_reason():
+    assert gh_issue_not_found("GraphQL: Could not resolve to an issue or pull request with the"
+                              " number of 99. (repository.issue)\n")
+    assert not gh_issue_not_found("HTTP 502: Bad Gateway\n")

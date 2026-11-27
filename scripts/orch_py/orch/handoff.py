@@ -16,7 +16,8 @@ file adapter moves them into a labelled folder and whose comment adapter
 reads the issue's comments once, then posts a retired marked comment per
 live handoff, dying with the names already posted, as bash's did; neither
 has a bash copy left, their one bash caller the redo module, gone at the
-redo noun's cutover.
+redo noun's cutover. And the plan comment's post `autopilot start` makes
+(handoff_comment_post_url), its URL answered.
 
 A line inside a code fence (orch.common.fenced), its delimiters included, is
 never a heading: it neither opens nor closes a section, and inside an open
@@ -360,6 +361,24 @@ def handoff_comment_fetch_due(gh, issue: str, phase: str, scratch: str) -> Tuple
         if handoff_comment_write(entries, _stem(handoff), "%s/%s" % (scratch, handoff)) == 2:
             status = COPY_UNWRITTEN
     return status, ""
+
+
+def handoff_comment_post_url(gh, issue: str, name: str, path: str) -> Optional[str]:
+    """Posts the handoff file at <path>, already validated, as a new comment
+    on issue #<issue> under <name>'s marker, as bash's
+    handoff_comment_post_url does, `autopilot start` its one caller: the
+    posted comment's URL, "" where gh printed none. None, after `orch: gh
+    could not post the <name> handoff on issue #<issue>: <reason>` on
+    stderr, when the post fails. The temp body is removed on every path."""
+    unmade = "could not create a temp file for the handoff comment"
+    with temp_text_file(marked_comment_write("handoff", name) + (read_raw(path) or ""),
+                        unmade, unmade) as body:
+        try:
+            return gh.issue_comment_url(int(issue), body)
+        except GhFailed as failed:
+            warn("gh could not post the %s handoff on issue #%s: %s"
+                 % (name, issue, gh_reason(failed.stderr)))
+            return None
 
 
 def _stem(name: str) -> str:

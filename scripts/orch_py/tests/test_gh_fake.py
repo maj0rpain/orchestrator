@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from orch.gh import Check, Gh, GhFailed, IssueRow, LabelledBody, SubIssue, adapter
+from orch.gh import Check, Gh, GhFailed, IssueRow, LabelledBody, StateRow, SubIssue, adapter
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit
 from orch.repo import RepoPin
@@ -1323,3 +1323,27 @@ def test_the_fake_pins_as_the_repo_pin_it_is_given(store):
     assert FakeGh(str(store), {}, pin=with_origin).pin() is True
     assert FakeGh(str(store), {}, pin=without).pin() is False
     assert FakeGh(str(store), {}).pin() is True
+
+
+def test_issue_comment_url_answers_the_posted_comment_s_url_as_the_bash_fake_does(
+        store, tmp_path):
+    bash(store, "fake_issue 5 open\nfake_comment 5 alice 2026-01-01T00:00:00Z first\n")
+    note = tmp_path / "note.md"
+    note.write_text("A note.")
+    gh = fake(store)
+
+    assert gh.issue_comment_url(5, str(note)) == "https://github.com/o/r/issues/5#issuecomment-2"
+    (store / "no_comment_url").write_text("")
+    assert gh.issue_comment_url(5, str(note)) == ""
+    assert bash(store, "fake_comments_of 5") == "first\n\nA note.\n\nA note."
+
+
+def test_issues_open_rows_lists_the_open_issues_oldest_first_as_the_bash_fake_does(
+        store, capsys):
+    bash(store, "fake_issue 3 open bug\nfake_issue 1 open\nfake_issue 2 closed\n")
+
+    assert fake(store).issues_open_rows() == [StateRow(1, "OPEN", []),
+                                              StateRow(3, "OPEN", ["bug"])]
+    assert fake(store, ORCH_ISSUE_LIST_LIMIT="1").issues_open_rows() == [StateRow(1, "OPEN", [])]
+    assert capsys.readouterr().err == ("orch: the open issues reached the issue-list limit of 1"
+                                       " - the newest past it are missing from this list\n")

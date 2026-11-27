@@ -31,7 +31,7 @@ from typing import Callable, List, Mapping, Optional, Sequence, Tuple
 
 from orch import gh as real
 from orch.common import file_lines, plain_number, read_raw, read_text
-from orch.gh import Check, Checks, GhFailed, IssueRow, LabelledBody, Limits
+from orch.gh import Check, Checks, GhFailed, IssueRow, LabelledBody, Limits, StateRow
 
 # The author and timestamp of every comment the fake's own operations write.
 COMMENT_AUTHOR = "fake-gh"
@@ -412,6 +412,17 @@ class FakeGh:
         real.labelled_limit_warn(self.env, len(rows), label)
         return rows
 
+    def issues_open_rows(self) -> List[StateRow]:
+        self._failing("adapter_issues_open_rows")
+        stale = self._lagging("adapter_issues_open_rows")
+        if stale is not None:
+            rows = real.parse_state_rows(stale)
+        else:
+            rows = [StateRow(n, _first_line(_issue_path(self.store, n, "state")), self._labels(n))
+                    for n in self._labelled_open()]
+        real.issue_list_limit_warn(self.env, len(rows), "the open issues")
+        return rows
+
     def issues_open_titles(self) -> List[Tuple[int, str]]:
         self._failing("adapter_issues_open_titles")
         return [(n, read_text(_issue_path(self.store, n, "title")) or "")
@@ -449,6 +460,17 @@ class FakeGh:
         self._failing("adapter_issue_comment")
         self._known(n)
         self._comment_append(_issue_path(self.store, n, "comments"), read_raw(body_file) or "")
+
+    def issue_comment_url(self, n: int, body_file: str) -> str:
+        """The comment appended, and its URL - "" where the store holds
+        no_comment_url, as a gh that printed none."""
+        self._failing("adapter_issue_comment_url")
+        self._known(n)
+        directory = _issue_path(self.store, n, "comments")
+        self._comment_append(directory, read_raw(body_file) or "")
+        if os.path.exists(_store_path(self.store, "no_comment_url")):
+            return ""
+        return "https://github.com/o/r/issues/%d#issuecomment-%s" % (n, _numbered(directory)[-1])
 
     def issue_relabel(
         self, n: int, add: Sequence[str] = (), remove: Sequence[str] = ()

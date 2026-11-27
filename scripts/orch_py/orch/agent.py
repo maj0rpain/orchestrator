@@ -625,18 +625,24 @@ def name_shapes(args: Optional[List[str]] = None) -> int:
     return 0
 
 
-def validate_autopilot(args: List[str]) -> int:
-    """Bridge for autopilot.sh: validates a Claude Code model or effort value
-    against HOST_SPECS, dying with the exact autopilot error message when
-    disallowed."""
-    if len(args) != 3 or args[0] not in AGENT_KINDS:
-        die("usage: orch_python_call agent validate_autopilot <model|effort> <value> <key>")
-    kind, value, key = args
+def autopilot_setting_check(kind: str, value: str, key: str) -> None:
+    """The autopilot model or effort setting <key>'s <value> checked against
+    Claude Code's list for <kind>: dies naming the key, the value and the
+    allowed values when it is not one of them - the Python autopilot noun's
+    in-process call, and the bridge's."""
     if not agent_allowed(kind, value, AGENT_DEFAULT_HOST):
         die(
             "%s is %s - not an allowed %s (want %s)"
             % (key, value, kind, agent_values(kind, AGENT_DEFAULT_HOST))
         )
+
+
+def validate_autopilot(args: List[str]) -> int:
+    """Bridge for autopilot.sh: autopilot_setting_check on a Claude Code
+    model or effort value."""
+    if len(args) != 3 or args[0] not in AGENT_KINDS:
+        die("usage: orch_python_call agent validate_autopilot <model|effort> <value> <key>")
+    autopilot_setting_check(*args)
     return 0
 
 

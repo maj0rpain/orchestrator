@@ -83,6 +83,16 @@ class IssueRow(NamedTuple):
     labels: List[str]
 
 
+class StateRow(NamedTuple):
+    """One issue of a state listing: its number, its state as GitHub
+    answered it (never assumed from the listing's open-only filter) and its
+    labels."""
+
+    number: int
+    state: str
+    labels: List[str]
+
+
 class LabelledBody(NamedTuple):
     """One issue of a listing with bodies: its number, its labels, and its
     body, carriage returns kept and trailing newlines dropped."""
@@ -181,6 +191,12 @@ def gh_reason(stderr: str) -> str:
     return stderr.split("\n", 1)[0] or "gh gave no reason"
 
 
+def gh_issue_not_found(stderr: str) -> bool:
+    """Whether a failed issue read's <stderr> says GitHub holds no such
+    issue."""
+    return "Could not resolve to an issue or pull request with the number of" in stderr
+
+
 def gh_die(what: str, stderr: str, hint: str = "", code: int = 1) -> NoReturn:
     """Dies with "gh could not <what>: <reason>", then " - <hint>" when a
     hint is given; exit <code>, 2 where the bash verb died through die2."""
@@ -264,17 +280,20 @@ def issue_list_limit(env: Mapping[str, str]) -> int:
     return int(env.get("ORCH_ISSUE_LIST_LIMIT", "") or 1000)
 
 
-def labelled_limit_warn(env: Mapping[str, str], count: int, *labels: str) -> None:
-    """Warns when a listing of the open issues carrying every one of
-    <labels> returned <count> rows, reaching its effective limit - the lesser
-    of the issue-list limit and GitHub's search cap - naming that limit and
-    the labels, joined by " and "."""
+def issue_list_limit_warn(env: Mapping[str, str], count: int, what: str) -> None:
+    """Warns when a listing of <what> returned <count> rows, reaching its
+    effective limit - the lesser of the issue-list limit and GitHub's search
+    cap - naming that limit."""
     limit = min(issue_list_limit(env), ISSUE_SEARCH_CAP)
     if count >= limit:
-        warn(
-            "the open issues labelled %s reached the issue-list limit of %d"
-            " - the newest past it are missing from this list" % (" and ".join(labels), limit)
-        )
+        warn("%s reached the issue-list limit of %d - the newest past it are missing from this"
+             " list" % (what, limit))
+
+
+def labelled_limit_warn(env: Mapping[str, str], count: int, *labels: str) -> None:
+    """issue_list_limit_warn for a listing of the open issues carrying every
+    one of <labels>, joined by " and "."""
+    issue_list_limit_warn(env, count, "the open issues labelled " + " and ".join(labels))
 
 
 def _captured_lines(text: str) -> List[str]:
@@ -293,10 +312,12 @@ def _label_block(lines: List[str], i: int, count: str) -> Tuple[List[str], int]:
     return labels, i + int(count)
 
 
-def parse_titled_rows(text: str) -> List[IssueRow]:
-    """The count-marked records of a titled listing: number, state and title
-    joined by a tab, label count, then one label per line. Raises GhFailed
-    "gh answered a listing that does not parse" on a record that is not."""
+def _field_rows(text: str) -> List[Tuple[int, str, List[str]]]:
+    """The count-marked records of a listing whose second line is one field:
+    number, that field, label count, then one label per line - each as its
+    number, field and labels. Raises GhFailed "gh answered a listing that
+    does not parse" on a record that is not, as bash's issues_rows_read_via
+    does."""
     lines = _captured_lines(text)
     rows = []
     i = 0
@@ -307,9 +328,26 @@ def parse_titled_rows(text: str) -> List[IssueRow]:
         if not (plain_number(number) and field and plain_number(count)):
             raise GhFailed(LISTING_UNPARSED)
         labels, i = _label_block(lines, i + 3, count)
-        state, _, title = field.partition("\t")
-        rows.append(IssueRow(int(number), state, title, labels))
+        rows.append((int(number), field, labels))
     return rows
+
+
+def parse_titled_rows(text: str) -> List[IssueRow]:
+    """The count-marked records of a titled listing: number, state and title
+    joined by a tab, label count, then one label per line. Raises GhFailed
+    "gh answered a listing that does not parse" on a record that is not."""
+    rows = []
+    for number, field, labels in _field_rows(text):
+        state, _, title = field.partition("\t")
+        rows.append(IssueRow(number, state, title, labels))
+    return rows
+
+
+def parse_state_rows(text: str) -> List[StateRow]:
+    """The count-marked records of a state listing: number, state, label
+    count, then one label per line. Raises GhFailed "gh answered a listing
+    that does not parse" on a record that is not."""
+    return [StateRow(*row) for row in _field_rows(text)]
 
 
 def parse_labelled_bodies(text: str) -> List[LabelledBody]:
@@ -842,6 +880,18 @@ class Gh:
         labelled_limit_warn(self.env, len(rows), label)
         return rows
 
+    def issues_open_rows(self) -> List[StateRow]:
+        """Every open issue, oldest first and cut at the issue-list limit
+        (the newest dropped), with its state and labels, warning when the cut
+        is reached."""
+        rows = parse_state_rows(self._gh(
+            ["issue", "list", "--state", "open", "--search", "sort:created-asc",
+             "--limit", str(issue_list_limit(self.env)), "--json", "number,state,labels",
+             "--jq", ".[] | .number, .state, (.labels | length), (.labels[].name)"]
+        ))
+        issue_list_limit_warn(self.env, len(rows), "the open issues")
+        return rows
+
     def issues_open_titles(self) -> List[Tuple[int, str]]:
         """Every open issue, pull requests left out, as its number and title,
         newest first as GitHub lists them - every page, never cut at the
@@ -888,6 +938,13 @@ class Gh:
     def issue_comment(self, n: int, body_file: str) -> None:
         """Posts the file's contents as a comment on the issue."""
         self._gh(["issue", "comment", str(n), "--body-file", body_file])
+
+    def issue_comment_url(self, n: int, body_file: str) -> str:
+        """Posts the file's contents as a comment on the issue, as
+        issue_comment does, and answers the URL gh printed for it - the first
+        line it printed, "" where it printed none."""
+        out = self._gh(["issue", "comment", str(n), "--body-file", body_file])
+        return out.split("\n", 1)[0]
 
     def issue_relabel(
         self, n: int, add: Sequence[str] = (), remove: Sequence[str] = ()

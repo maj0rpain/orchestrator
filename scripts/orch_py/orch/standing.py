@@ -7,7 +7,9 @@ read (claims_read) - each as bash's standing_ counterpart, but label_verdict,
 which has no bash copy left; the claim release a spec review round's
 pause makes in an autopilot flow, and a finished phase's close under its
 claim (standing_finish, with its label move, standing_move_label), which the
-phase noun's finish runs for phase advance and for review ready.
+phase noun's finish runs for phase advance and for review ready; and the start of an autopilot flow
+(standing_start), the Python autopilot noun's `start`, whose bash copy
+stays with the bash noun until it is gone.
 standing_pause, standing_finish and standing_move_label have no bash copy
 left: their bash callers, the spec and phase modules, went at those nouns'
 cutovers, while standing_release and standing_chain_start stay in bash for
@@ -29,14 +31,17 @@ writes.
 """
 from __future__ import annotations
 
+import contextlib
+import os
 import socket
+import sys
 import time
 from typing import Callable, List, Mapping, NamedTuple, NoReturn, Optional, Sequence, Tuple
 
-from orch.common import die
+from orch.common import die, plain_number, stdout_write
 from orch.flow_state import phase_write_try
-from orch.gh import ClaimRow, GhFailed, gh_reason, label_listed
-from orch.handoff import PHASES
+from orch.gh import ClaimRow, GhFailed, gh_die, gh_reason, label_listed
+from orch.handoff import PHASES, handoff_check, handoff_comment_post_url
 
 # The label an autopilot flow's issue carries while a session holds its claim.
 STANDING_RUNNING_LABEL = "orch:running"
@@ -224,3 +229,46 @@ def standing_finish(gh, issue: str, phase: str, reason: str, state_file: str,
         standing_landed_die("could not record phase %s in %s" % (phase, state_file), landed)
     landed.append("recorded phase " + phase)
     standing_release(gh, issue, landed)
+
+
+def standing_start(gh, issue: str, plan_file: str, ready: str, state_file: str,
+                   env: Mapping[str, str]) -> None:
+    """`autopilot start <issue> <plan-file>`, bash standing_start: the
+    planning close's last step. Refuses an issue that is not a plain number,
+    a missing plan file, an issue whose read fails, one without the repo's
+    <ready> label (its ready-for-agent) and one already carrying a phase
+    label; then checks the plan as the 01-plan handoff with its `##
+    Autopilot` block required, its FAIL lines on stderr, refusing an invalid
+    one. Past them it posts the plan comment, then adds the first phase's
+    label - last, so an issue a failed post leaves unlabelled is never
+    picked up - and prints the two lines saying so. <state_file> is the
+    flow state the plan's check reads."""
+    if not plain_number(issue):
+        die("issue must be a plain issue number, got: " + issue)
+    if not os.path.isfile(plan_file):
+        die("plan file not found: " + plan_file)
+    standing, reason = standing_read(gh, int(issue))
+    if standing is None:
+        gh_die("read issue #" + issue, reason)
+    if not label_listed(standing.labels, ready):
+        die("issue #%s does not carry the '%s' label - an autopilot flow starts from a ready"
+            " issue" % (issue, ready))
+    if standing.phase_labels:
+        die("issue #%s already carries the phase label %s - it is already an autopilot flow"
+            % (issue, standing.phase_labels.split(" ", 1)[0]))
+    with contextlib.redirect_stdout(sys.stderr):
+        status = handoff_check(plan_file, state_file, env, "", "01-plan.md", "autopilot")
+    if status != 0:
+        die("plan %s is not valid - nothing posted" % plan_file)
+    url = handoff_comment_post_url(gh, issue, "01-plan", plan_file)
+    if url is None:
+        raise SystemExit(1)
+    first = phase_label(PHASES[0])
+    try:
+        gh.issue_relabel(int(issue), add=[first])
+    except GhFailed as failed:
+        die("posted the 01-plan comment on issue #%s but adding %s failed: %s - the issue is"
+            " unlabelled, so no watcher picks it up; re-run autopilot start"
+            % (issue, first, gh_reason(failed.stderr)))
+    stdout_write("posted the plan comment on issue #%s%s\n" % (issue, ": " + url if url else ""))
+    stdout_write("added %s to issue #%s\n" % (first, issue))
