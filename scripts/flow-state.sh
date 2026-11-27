@@ -8,7 +8,7 @@
 # the key table's key, default and seed columns, and writes a new flow's seed
 # for Python init, the only writer that creates the file, then stamps the
 # seed's spec phase through the Python phase writer, which checks it against
-# handoff.py's copy of the phase table. The Python phase writers record every
+# handoff.py's phase table. The Python phase writers record every
 # phase move - init's, phase advance's, review ready's and the redos'; bash
 # writes every other change. The
 # golden state.json files in scripts/orch_py/tests/flow_state/ pin the two:

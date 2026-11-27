@@ -111,7 +111,7 @@
 5	6	state set with a failed write (#1931)	66ac26360bdade59684a39e2807100da88249a45
 13	14	the entry read and the required-field helpers	a21d58d9af73409ad17978f1a87393fd70cb5fb2
 1	2	triage_label_into: parse once, later lookups start no command	ba2dc83098993a7a23392d37d31c6a721b76254e
-21	22	trust module	3d49c979ae77e73ff15734cdf8eb280ef4533c15
+21	23	trust module	1afb7d76ab00e26be6177336cab34e082da1f6f7
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594
 247	307	docs_lint.sh	4b2eea3cf50ca0b51822bf947ece35768b3c7a93
 40	30	version_bump_test.sh	13c6acda626586d9df9be1d51a465dd889fdc723

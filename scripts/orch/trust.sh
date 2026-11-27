@@ -4,7 +4,7 @@
 # A PR is its own when its head branch lives in the repo (isCrossRepository
 # false); a fork PR is dropped (trust_filter_prs). Which comments orch.sh reads
 # - those whose authorAssociation is OWNER, MEMBER or COLLABORATOR (ADR-0057) -
-# is decided by the Python copy, orch/trust.py's filter_comments.
+# is decided by orch/trust.py's filter_comments.
 # Which issues autopilot runs on is decided by the Python copy, orch/trust.py's
 # issue_check: an issue is trusted when its body and its title both are. The
 # bash copy below (trust_issue_check) has no caller left.

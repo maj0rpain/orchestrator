@@ -384,7 +384,7 @@ def _post_failed(name: str, issue: str, failed: GhFailed) -> None:
 def handoff_comment_post(gh, issue: str, name: str, path: str) -> bool:
     """Posts the handoff file at <path>, already validated, silently as a
     new comment on issue #<issue> under <name>'s marker, as bash's
-    handoff_comment_post does - the newest tagged comment is the handoff,
+    handoff_comment_post did - the newest tagged comment is the handoff,
     so a post never edits an earlier one. False, after `orch: gh could not
     post the <name> handoff on issue #<issue>: <reason>` on stderr, when the
     post fails. The temp body is removed on every path."""
@@ -400,7 +400,7 @@ def handoff_comment_post(gh, issue: str, name: str, path: str) -> bool:
 def handoff_comment_post_url(gh, issue: str, name: str, path: str) -> Optional[str]:
     """Posts the handoff file at <path>, already validated, as a new comment
     on issue #<issue> under <name>'s marker, as bash's
-    handoff_comment_post_url does, `autopilot start` its one caller: the
+    handoff_comment_post_url did, `autopilot start` its one caller: the
     posted comment's URL, "" where gh printed none. None, after `orch: gh
     could not post the <name> handoff on issue #<issue>: <reason>` on
     stderr, when the post fails. The temp body is removed on every path."""
@@ -429,7 +429,7 @@ def _comment_copy_or_die(status: int, path: str, issue: str, stem: str, hint: st
     """Reacts to a handoff comment's copy to <path>: exits 1 for <status>
     COPY_UNWRITTEN, a copy not written (its line already on stderr), and with no file at
     <path> dies naming issue #<issue>'s missing <stem> handoff comment, as
-    bash handoff_comment_status does."""
+    bash handoff_comment_status did."""
     if status == COPY_UNWRITTEN:
         raise SystemExit(1)
     if not os.path.isfile(path):
@@ -664,7 +664,7 @@ def validate_verb(argv: List[str], env: Mapping[str, str], root: str) -> int:
 def section_verb(argv: List[str]) -> int:
     """`handoff section <file> <heading>`: prints the body of <file>'s one
     `## <heading>` section, its leading and trailing blank lines trimmed and
-    its inner ones kept, so a section holding only whitespace prints
+    its inner ones kept as empty lines, so a section holding only whitespace prints
     nothing. Dies on a missing file, heading, or a repeated one."""
     _usage(argv, 2, "section <file> <heading>")
     path, heading = argv[0], "## " + argv[1]
@@ -681,7 +681,10 @@ def section_verb(argv: List[str]) -> int:
     body = section_body(text, heading)
     filled = [i for i, line in enumerate(body) if line.strip(_BLANK)]
     if filled:
-        stdout_write("".join(line + "\n" for line in body[filled[0]:filled[-1] + 1]))
+        # An inner blank line prints empty, whatever whitespace it held, as
+        # bash's awk trim printed it.
+        stdout_write("".join((line if line.strip(_BLANK) else "") + "\n"
+                             for line in body[filled[0]:filled[-1] + 1]))
     return 0
 
 

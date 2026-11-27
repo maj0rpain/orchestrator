@@ -188,7 +188,7 @@ def phase_write_try(path: str, phase: str, clock: Callable[[], float] = time.tim
                     pairs: Sequence[Pair] = ()) -> bool:
     """Records <phase> in the state file at <path>, ported from the deleted
     bash phase_write_try, with <pairs> written with it in one write, as bash
-    phase_write <phase> <key> <value>... writes them (state_write_many_try):
+    phase_write <phase> <key> <value>... wrote them (state_write_many_try):
     the phase and the keys are recorded together or not at all. Dies unless
     <phase> is a flow phase, writing nothing; whether the write succeeded
     otherwise, printing nothing and leaving the file untouched when it is
@@ -201,7 +201,7 @@ def phase_write(path: str, phase: str, clock: Callable[[], float] = time.time,
                 pairs: Sequence[Pair] = ()) -> None:
     """phase_write_try, dying "could not record phase in <path> - the flow
     is unchanged" where the write fails, phase followed by each key of
-    <pairs> once, in order, as bash phase_write dies (state_write_many)."""
+    <pairs> once, in order, as bash phase_write died (state_write_many)."""
     state_write_many(path, _phase_pairs(phase, pairs), clock)
 
 

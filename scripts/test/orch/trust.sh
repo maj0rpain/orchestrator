@@ -20,7 +20,8 @@ fake_issue_authorship() {
 # --- trust module -----------------------------------------------------------
 # The Trust module's own rules: the issue check by the author's association
 # and the attended reads' warning, both through `init --issue`, and the PR
-# filter. The comment filter is the Python copy's, tested in pytest.
+# filter. The comment filter is orch/trust.py's filter_comments, tested in
+# pytest.
 echo
 echo "trust module"
 sc_clone

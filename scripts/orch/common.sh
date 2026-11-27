@@ -342,19 +342,6 @@ file_read() {
   return 1
 }
 
-# file_write_atomic <file> <text>: <text> written to <file>, exactly, through a
-# temp file beside it moved into place on success - so a failed write leaves an
-# existing <file> untouched and never a partly written one. Creates <file>'s
-# directory. Fails, saying nothing, when it cannot write.
-file_write_atomic() {
-  local _fwa_tmp
-  mkdir -p "$(dirname "$1")" || return 1
-  _fwa_tmp="$(mktemp "$1.XXXXXX")" || return 1
-  if printf '%s' "$2" >"$_fwa_tmp" && mv "$_fwa_tmp" "$1"; then return 0; fi
-  rm -f "$_fwa_tmp"
-  return 1
-}
-
 # state_word <var> <state>: GitHub's uppercase issue or PR <state> into <var>
 # as the lowercase word a message prints. Any other value is passed through
 # unchanged.

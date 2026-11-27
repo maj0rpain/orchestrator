@@ -253,6 +253,14 @@ def test_section_prints_the_body_trimmed_of_leading_and_trailing_blank_lines(
     assert capsys.readouterr() == ("Use X.\n\nAnd Y.\nMust run offline.\n", "")
 
 
+def test_section_prints_an_inner_whitespace_only_line_as_an_empty_line(root, seed, capsys):
+    path = write(root, "h.md", "## Decisions", "Use X.", "   ", "\t", "And Y.", "## Constraints",
+                 "None.")
+
+    assert orch_handoff(root, seed, "section", str(path), "Decisions") == 0
+    assert capsys.readouterr() == ("Use X.\n\n\nAnd Y.\n", "")
+
+
 def test_section_of_a_whitespace_only_section_prints_nothing(root, seed, capsys):
     path = write(root, "h.md", "## Rejected alternatives", "  ", "", "## Constraints", "None.")
 

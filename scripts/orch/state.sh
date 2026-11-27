@@ -36,8 +36,7 @@ state_key_field() {
 # misspelt read would otherwise look exactly like an unset one. It calls the
 # Flow state module's reader directly and does not check the file parses, so
 # on an unreadable state.json jq's own parse error and status come through;
-# commands that must refuse such a file do it first, with
-# require_state_readable.
+# commands that must refuse such a file read through require_state_read.
 state_get() {
   state_read "$STATE" "$1"
 }
@@ -164,14 +163,6 @@ STATE_UNREADABLE_MSG="state.json cannot be read - run orch.sh doctor --flow"
 # and for require_state_read, which checks parsing after it.
 require_state_exists() {
   [ -f "$STATE" ] || "${1:-die}" "no active flow ($ORCH_DIR_NAME/state.json not found). Run $(flow_cmd start) first."
-}
-
-# require_state_readable [die2]: dies, through the dier given, when the state
-# file exists but is not exactly one JSON object. A missing file passes: the
-# caller settles whether a flow must exist.
-# shellcheck disable=SC2120 # no caller passes a dier any more; die2 stays for one that needs it
-require_state_readable() {
-  [ ! -f "$STATE" ] || flow_state_readable "$STATE" || "${1:-die}" "$STATE_UNREADABLE_MSG"
 }
 
 # require_state_read [die|die2] <var>=<key>...: a command's entry read. Dies
