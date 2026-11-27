@@ -12,11 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from conftest import bash_sourced
+from orch import filed_finding
 from orch import help as help_noun
 
 GOLDEN = Path(__file__).resolve().parent / "help" / "golden.txt"
-FILED_FINDING_SH = Path(__file__).resolve().parents[2] / "orch" / "filed-finding.sh"
 
 
 def help_text(capsys, *argv):
@@ -49,11 +48,11 @@ def test_help_documents_the_entry(capsys, entry):
 
 
 def test_help_gives_review_file_the_finding_s_parts_as_flags(capsys):
-    """The severities and axes come from the bash Filed finding tables that
-    review file reads, so help names the ones review file takes."""
-    tables = bash_sourced(
-        FILED_FINDING_SH, 'printf "%s\\n%s" "${FILED_SEVERITIES// /|}" "${FILED_AXES// /|}"')
-    severities, axes = tables.split("\n")
+    """The severities and axes come from the Filed finding tables that review
+    file reads (orch/filed_finding.py), so help names the ones review file
+    takes."""
+    severities = "|".join(filed_finding.FILED_SEVERITIES)
+    axes = "|".join(filed_finding.FILED_AXES)
     out = help_text(capsys)
     lines = out.splitlines()
     first = next(i for i, line in enumerate(lines) if line.startswith("  review file "))

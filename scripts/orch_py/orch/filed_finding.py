@@ -1,12 +1,15 @@
-"""The Filed finding module, as the bash side's filed-finding.sh holds it: an
-issue a review loop filed carries a review:<severity> label until finding
-triage gives it one of its own labels (ADR-0031). The issue and
-finding-triage nouns read it - issue triage and finding triage: its filed
-severities and their label test, its categories with each one's label, the
-create that makes a missing label, and its issue body parsed back into its
-fields. It also holds the filing checks audit file makes, under their bash
-names: the flag parse, the input and location checks, the needs-triage label
-made ready, and the body temp file. The bash side's copy serves review file.
+"""The Filed finding module: an issue a review loop filed carries a
+review:<severity> label until finding triage gives it one of its own labels
+(ADR-0031). The issue and finding-triage nouns read it - issue triage and
+finding triage: its filed severities and their label test, its categories
+with each one's label, the create that makes a missing label, and its issue
+body parsed back into its fields. It also holds the filing checks audit file
+and review file make: the flag parse, the input and location checks, the
+needs-triage label made ready, and the body temp file; and what review file
+alone needs - each severity's label and its upsert, the category a review
+axis starts in, and the body rendered from its parts. The bash
+filed-finding.sh keeps only the review label test and the untriaged-finding
+check, for autopilot's gate.
 """
 from __future__ import annotations
 
@@ -16,7 +19,7 @@ from contextlib import contextmanager
 from typing import Iterator, List, NamedTuple, Optional, Sequence, Tuple
 
 from orch.common import die, read_raw, temp_text_file, text_file_write
-from orch.gh import GhFailed, label_listed
+from orch.gh import GhFailed, gh_or_die, label_listed
 from orch.triage_labels import TriageLabels
 
 # A review label: review: in any casing, followed by at least one character.
@@ -25,13 +28,25 @@ REVIEW_LABEL = re.compile(r"^review:.", re.IGNORECASE)
 # The roles finding triage itself applies, so their labels show it ran.
 FINDING_TRIAGE_ROLES = ("ready-for-agent", "ready-for-human", "wontfix")
 
-# The severities a filed finding carries as review:<severity>, in the bash
-# severity table's order. Blocking is always fixed in the loop, never filed.
-FILED_SEVERITIES = ("major", "nit")
+# The severity table: each severity a filed finding carries as
+# review:<severity> - the ones `review file` files - with its label's colour,
+# in order. Blocking is always fixed in the loop, never filed.
+FILED_SEVERITY_TABLE = (("major", "d93f0b"), ("nit", "c5def5"))
+
+# The filed severities alone, in the table's order.
+FILED_SEVERITIES = tuple(severity for severity, _ in FILED_SEVERITY_TABLE)
+
+# The axis table: each review axis a finding is filed on, with the category a
+# finding filed on it starts in, in order. A Spec
+# finding misses what was asked for, so it is a bug; a Standards finding
+# improves how it was built.
+FILED_AXIS_TABLE = (("spec", "bug"), ("standards", "enhancement"))
+
+# The review axes alone, in the table's order.
+FILED_AXES = tuple(axis for axis, _ in FILED_AXIS_TABLE)
 
 # The category table: each category a finding is filed under, with its
-# label's colour and description - GitHub's own defaults - in the bash
-# table's order.
+# label's colour and description - GitHub's own defaults - in order.
 FILED_CATEGORIES = (
     ("bug", "d73a4a", "Something isn't working"),
     ("enhancement", "a2eeef", "New feature or request"),
@@ -103,6 +118,24 @@ def filed_severity_label_or_die(n: str, labels: Sequence[str]) -> None:
             % (n, " or ".join("review:" + sev for sev in FILED_SEVERITIES)))
 
 
+def filed_severity_label(severity: str) -> Optional[Tuple[str, str]]:
+    """The review:<severity> label's colour, from the severity table, and
+    its description; None for a severity with no entry."""
+    for name, colour in FILED_SEVERITY_TABLE:
+        if name == severity:
+            return colour, "Review finding filed at %s severity" % severity
+    return None
+
+
+def category_for_axis(axis: str) -> Optional[str]:
+    """The category a finding filed on review axis <axis> starts in, from
+    the axis table, whatever the axis's case; None for any other axis."""
+    for name, category in FILED_AXIS_TABLE:
+        if axis.lower() == name:
+            return category
+    return None
+
+
 def category_other(category: str) -> Optional[str]:
     """The category a finding loses when triage settles on <category>; None
     for anything but bug or enhancement."""
@@ -131,10 +164,20 @@ def category_label_ensure(gh, category: str) -> bool:
     return False
 
 
+def severity_label_ensure(gh, severity: str) -> None:
+    """Makes the filed severity <severity>'s review:<severity> label, with
+    its colour and description, creating it or rewriting the one that
+    exists: the label is this plugin's own, so overwriting it is safe, and
+    filing needs no listing step. A failed write dies."""
+    colour, description = filed_severity_label(severity) or ("", "")
+    name = "review:" + severity
+    gh_or_die("create label " + name, gh.label_upsert, name, colour, description)
+
+
 def needs_triage_label_ready(gh, triage: TriageLabels) -> str:
     """The repo's needs-triage label, read through <triage>, made through
-    label_ensure where it is missing, with bash's triage_label_ensure colour
-    and description: the label is the repo's, so it is never rewritten."""
+    label_ensure where it is missing, with the triage label's colour and
+    description: the label is the repo's, so it is never rewritten."""
     label = triage.label("needs-triage")
     label_ensure(gh, label, "e4e669", "Not yet triaged")
     return label
@@ -209,6 +252,26 @@ def finding_body_file_rewrite(path: str, body: str) -> None:
     """Rewrites the body temp file <path>, made by finding_body_file_new, to
     hold <body>."""
     text_file_write(path, body, _BODY_UNWRITTEN)
+
+
+def finding_body_render(finding: str, fields: FindingBody) -> str:
+    """A filed finding's issue body: the finding text <finding>, its NULs
+    and trailing newlines dropped as bash's $(cat) drops them, a blank line,
+    then each labelled line of <fields> followed by a blank line, so GitHub
+    shows each as its own paragraph - the spec question's only when there is
+    one. Its pr_number goes unused: the PR line carries the URL alone. The
+    labelled lines are the closer's, byte for byte, so a body filed before
+    rendering existed parses as one rendered now does."""
+    axis = fields.axis.lower()
+    parts = [finding.replace("\0", "").rstrip("\n"),
+             "**Axis:** " + axis[:1].upper() + axis[1:],
+             "**Severity:** %s - %s" % (fields.severity, fields.reason),
+             "**Location:** `%s:%s` at %s" % (fields.file, fields.line, fields.sha),
+             "**PR:** " + fields.pr,
+             "**Why not fixed in the loop:** " + fields.why]
+    if fields.question:
+        parts.append("**Spec question:** " + fields.question)
+    return "".join(part + "\n\n" for part in parts)
 
 
 def _labelled(line: str, label: str) -> Optional[str]:

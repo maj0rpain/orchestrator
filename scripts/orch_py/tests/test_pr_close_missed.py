@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import GH_502, comments_of, died_of, fake, read
+from conftest import GH_502, GITHUB_ORIGIN, comments_of, died_of, fake, read
 from orch import pr
 from orch.gh import GhFailed
 from orch.gh_fake import FakeGh
@@ -131,7 +131,7 @@ def github(seed):
 
 def checkout():
     """A checkout with origin on acme/widgets, main a valid branch name."""
-    git = FakeGit(remotes={"origin": "https://github.com/acme/widgets.git"})
+    git = FakeGit(remotes=GITHUB_ORIGIN)
     git.seed("is_branch_name", "main", answer=True)
     return git
 

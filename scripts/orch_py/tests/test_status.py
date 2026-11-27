@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from conftest import (
+    GITHUB_ORIGIN,
     committed,
     died_of,
     git_repo,
@@ -23,14 +24,13 @@ from orch.gh_fake import FakeGh
 from orch.git import FakeGit, Git, Worktree
 from orch.repo import RepoPin
 
-ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
 CLAUDE = {"CLAUDECODE": "1"}
 
 
 def alone(root):
     """A FakeGit at <root>, the clone's only checkout, on orch/42-my-feature,
     its origin a GitHub repo."""
-    git = FakeGit(ORIGIN, toplevel=str(root))
+    git = FakeGit(GITHUB_ORIGIN, toplevel=str(root))
     git.seed("worktree_list", answer=[Worktree(str(root), "orch/42-my-feature")])
     return git
 
@@ -112,7 +112,9 @@ def test_status_on_an_unreadable_state_file_dies_naming_doctor(root, seed, capsy
 
 
 def test_a_failed_checkout_read_dies_after_the_no_flow_line(root, seed, capsys):
-    assert died_of(capsys, lambda: orch_status(seed, FakeGit(ORIGIN, toplevel=str(root)))) == (
+    git = FakeGit(GITHUB_ORIGIN, toplevel=str(root))
+
+    assert died_of(capsys, lambda: orch_status(seed, git)) == (
         1, "No active flow. Run /orchestrator:start from an approved plan.\n",
         "orch: could not read the checkouts - git worktree list failed\n")
 

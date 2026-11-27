@@ -1,7 +1,8 @@
 """The wait module's stored total of a re-callable wait, against a clock and
 a sleep the test hands in, with the orchestrator directory under tmp_path -
-and against the golden stored-total files of wait/, which the bash wait
-section reads and advances too, with the same expected values (ADR-0067):
+and against the golden stored-total files of wait/, the pin of the stored
+total's format (ADR-0067) since the bash Wait module that read and advanced
+them to the same expected values was deleted:
 wait/stored-total is a total with 1.2 s slept, its first call's epoch second
 far in the future so the slept total alone counts, and
 wait/stored-total.advanced the same total after one call of 1-second ticks

@@ -305,18 +305,6 @@ SSH
 
 # git_fails_bin <pattern>: a fails_bin for git.
 git_fails_bin() { fails_bin git "$1"; }
-# state_write_fails_after_first_bin: a state_write_fails_bin variant that lets
-# the first state.json.* temp file through and fails every later one, so a
-# command's first state write lands and the rest fail.
-state_write_fails_after_first_bin() {
-  local dir
-  dir="$(mktemp -d)"
-  writeln '#!/bin/sh' 'case " $* " in' '  *state.json.*)' \
-    "    if [ -e '$dir/seen' ]; then exit 1; fi; : >'$dir/seen' ;;" 'esac' \
-    "exec $(command -v mktemp) \"\$@\"" >"$dir/mktemp"
-  chmod +x "$dir/mktemp"
-  printf '%s\n' "$dir"
-}
 
 # worktree_list_fails_bin: a git_fails_bin where git worktree list fails and
 # nothing else does, so it fails every checkout_parse reader.
@@ -575,8 +563,7 @@ healthy_repo() {
 
 # fresh_flow <slug>: a section's own starting point - a healthy_repo with a
 # flow named <slug> just started in it, at the spec phase, cwd inside it. A
-# section that needs a later phase arranges it with state_fixture, or
-# review_flow for the review phase.
+# section that needs a later phase arranges it with state_fixture.
 fresh_flow() { healthy_repo; "$ORCH" init "$1" >/dev/null; }
 
 # fake_flow <slug>: a section's starting point on the store-backed GitHub fake
@@ -584,17 +571,6 @@ fresh_flow() { healthy_repo; "$ORCH" init "$1" >/dev/null; }
 # cwd inside it. Unlike fresh_flow it brings no healthy_repo environment; the
 # section still ends with its own restore_suite_env.
 fake_flow() { new_repo >/dev/null; fake_github; "$ORCH" init "$1" >/dev/null; }
-
-# review_flow <slug>: fresh_flow, then on to the review phase - leaves a flow
-# named <slug> at the review phase with the plan, spec and implement handoffs
-# complete, cwd inside it, and whatever healthy_repo exports.
-review_flow() {
-  fresh_flow "$1"
-  complete_handoff "$("$ORCH" handoff path spec)"
-  complete_handoff "$("$ORCH" handoff path implement)"
-  complete_handoff "$("$ORCH" handoff path review)"
-  state_fixture phase review
-}
 
 # --- the store-backed gh fake (#280) ------------------------------------------
 #
@@ -840,11 +816,9 @@ fake_pr_cross() { printf '%s\n' "${2:-true}" >"$ORCH_GH_FAKE_STORE/prs/$1/cross_
 # fake_next_pr <n>: the number the next PR opened takes.
 fake_next_pr() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_pr"; }
 
-# PR #n read back from the store: its base branch, body, and whether it is a
-# draft (yes or no).
+# PR #n read back from the store: its base branch and body.
 fake_pr_base_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/base" 2>/dev/null; }
 fake_pr_body_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/body" 2>/dev/null; }
-fake_pr_draft_of() { [ -f "$ORCH_GH_FAKE_STORE/prs/$1/draft" ] && echo yes || echo no; }
 
 # fake_label <name> <colour> <description>: seeds a label the repo already
 # has. An unseeded store has no labels.
@@ -1057,17 +1031,6 @@ sc_add() {
   [ "$st" -eq 0 ] || cat "$err" >&2
   rm -f "$err"
   return "$st"
-}
-
-# marked_ticket_worktree <n>: adds ticket worktree t<n> under the current
-# checkout, on a branch, and copies a side-checkout marker recording issue 123
-# into its git folder - a ticket worktree carrying a copied marker (#1110).
-# Prints its path.
-marked_ticket_worktree() {
-  local path
-  path="$("$ORCH" ticket-worktree add "$1")" || return
-  printf '123\n' >"$(git -C "$path" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
-  printf '%s\n' "$path"
 }
 
 # The missing-repo wording, built the way orch.sh builds REPO_MISSING,

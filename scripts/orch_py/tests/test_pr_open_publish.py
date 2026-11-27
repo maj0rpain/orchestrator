@@ -16,8 +16,8 @@ import subprocess
 
 import pytest
 
-from conftest import (CLAUDE, GH_502, SESSIONS, CountingGh, died_of, fake, hold_flow, prs_of, read,
-                      state_json)
+from conftest import (CLAUDE, GH_502, SESSIONS, CountingGh, died_of, fake, hold_flow, lines, prs_of,
+                      read, state_json)
 from orch import pr
 from orch.git import FakeGit
 
@@ -123,10 +123,6 @@ BODY_PIECES = [
 def body_without(line):
     """COMPLETE_BODY with every line that is exactly <line> dropped."""
     return "".join(kept + "\n" for kept in COMPLETE_BODY.split("\n")[:-1] if kept != line)
-
-
-def lines(*texts):
-    return "".join(text + "\n" for text in texts)
 
 
 def publish_refused(tmp_path, root, seed, capsys, text):

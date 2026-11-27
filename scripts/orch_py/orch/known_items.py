@@ -1,6 +1,8 @@
-"""The Known items concept's module (scripts/orch/known-items.sh): splitting
-a record's text into entries, appending them as tagged bullets, and writing
-the known-items file a review pass's reviewers read.
+"""The Known items concept's module, the one copy of it since the bash
+Known items module went with the bash review noun: splitting a record's text
+into entries, appending them as tagged bullets, and writing
+the known-items file the reviewers of a review pass and of the review
+loop read (`review known-items`).
 
 An entry is a top-level `- ` bullet joined with its indented continuation
 lines by single spaces, its leading `- ` stripped, or a non-blank line at the
@@ -10,8 +12,7 @@ column, and with no bullet open an entry of its own: it never ends an entry
 or opens one. An entry reading None, None. or None declined. is a source
 saying it has nothing, and is dropped.
 
-The appenders return the bullet lines bash's appenders append to a variable;
-the Python caller concatenates them.
+The appenders return their bullet lines, which the caller concatenates.
 """
 from __future__ import annotations
 

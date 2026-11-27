@@ -13,14 +13,13 @@ import tempfile
 
 import pytest
 
-from conftest import (CLAUDE, GH_502, SESSIONS, CountingGh, UnparsedPrComments, comments_of,
-                      orch_pr, prs_of, read, snapshot)
+from conftest import (CLAUDE, GH_502, GITHUB_ORIGIN, SESSIONS, CountingGh, UnparsedPrComments,
+                      comments_of, orch_pr, prs_of, read, snapshot)
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY, RepoPin
 
 OPS = "open|publish|release|comment|comments|fetch|read|update|draft|ready"
-ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
 BRANCH = "orch/12-foo"
 # The opening of every PR-body refusal.
 BODY_REFUSED = "orch: the PR body does not meet the PR-writing standard - no PR was opened: "
@@ -31,7 +30,7 @@ def checkout_git(root, branch=BRANCH, base=None, origin=True):
     detached HEAD when None), with <base> as its orchestrator.base setting
     when given, main a branch name, and origin pointing at acme/widgets
     unless <origin> is False."""
-    git = FakeGit(ORIGIN if origin else {}, toplevel=str(root),
+    git = FakeGit(GITHUB_ORIGIN if origin else {}, toplevel=str(root),
                   local_config={"orchestrator.base": base} if base else None)
     if branch is not None:
         git.seed("current_branch", answer=branch)

@@ -336,10 +336,10 @@ def _handoff_comment_read(name: str, hint: str, gh_of, env: Mapping[str, str], r
 
 
 def handoff_read(name: str, hint: str, gh_of, env: Mapping[str, str], root: str) -> str:
-    """The dying read, bash handoff_read: the readable path of the handoff
-    file <name> in the checkout at <root>, as this session's adapter
-    (handoff_store) finds it, <hint> naming the caller's situation in the
-    missing message. The file adapter dies `handoff not found: <path> -
+    """The dying read, as bash's handoff_read was, its bash copy gone: the
+    readable path of the handoff file <name> in the checkout at <root>, as
+    this session's adapter (handoff_store) finds it, <hint> naming the
+    caller's situation in the missing message. The file adapter dies `handoff not found: <path> -
     write it <hint>` on a missing file. The comment adapter requires the
     recorded issue, reads its comments once through the gh adapter <gh_of>
     makes and copies the live one to the scratch directory: a failed read

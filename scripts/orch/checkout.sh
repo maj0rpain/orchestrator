@@ -362,18 +362,6 @@ discard_work_in() {
   git -C "$path" clean -fdq >/dev/null 2>&1 || die "$who: git clean failed in $path"
 }
 
-# require_flow_branch <who> <branch> <recorded>: dies (exit 1, "nothing was
-# discarded") unless <branch> is <recorded>, the branch the flow state records,
-# whatever the phase - the proof a discard-rule caller owes before it
-# discards. It reads nothing: the caller hands over the branch from its one
-# read of flow state, and settles first that a flow state exists. Called as a
-# bare statement, so the die stops the caller.
-require_flow_branch() {
-  local who="$1" b="$2" fb="$3"
-  [ -n "$fb" ] || die "$who: on $b, the active flow records no branch yet - nothing was discarded"
-  [ "$fb" = "$b" ] || die "$who: the current branch $b is not the flow's branch $fb - nothing was discarded"
-}
-
 # work_to_discard <merging-var> <rebasing-var> <dirty-var>: the one definition
 # of "work to discard" in the current checkout ($ROOT): a merge in progress, a
 # rebase in progress, a tree dirty outside the planning allowlist. Probes once
@@ -394,17 +382,16 @@ work_to_discard() {
 }
 
 # discard_flow_branch_work: the flow-branch case of the discard rule (ADR-0054),
-# the one primitive every site meeting uncommitted or in-progress work a dead
-# session left on the flow's own branch - or, for review resume, a quick
-# implementation's own branch, or, for branch create, a detached HEAD (a side
-# checkout's, with no rebase in progress) - applies: branch create (through
-# discard_create_work, which proves the current branch is the flow's or
-# detached; on any other branch it discards nothing) and review resume
-# (through discard_own_branch_work); ticket reclaim runs orch.checkout's
-# Python copy. Each caller first settles that the branch is the one to
-# discard on; this primitive checks no ownership. In the current checkout
-# ($ROOT): a merge or rebase in progress is aborted, and a tree dirty outside
-# the planning allowlist is reset and cleaned. Nothing to discard changes
+# the one primitive every bash site meeting uncommitted or in-progress work a
+# dead session left on the flow's own branch - or, for branch create, a
+# detached HEAD (a side checkout's, with no rebase in progress) - applies:
+# branch create (through discard_create_work, which proves the current branch
+# is the flow's or detached; on any other branch it discards nothing); review
+# resume and ticket reclaim run its Python copy in orch.checkout. Each caller
+# first settles that the branch is the one to discard on; this primitive checks
+# no ownership. In the current checkout ($ROOT): a merge or rebase in progress
+# is aborted, and a tree dirty outside the planning allowlist is reset and
+# cleaned. Nothing to discard changes
 # nothing. In an interactive flow's main checkout - autopilot_active false and
 # checkout_kind main, the one tree a human plausibly edits by hand - it refuses
 # instead, exit 1, naming the exact discard command and writing nothing. A

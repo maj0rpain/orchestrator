@@ -2,7 +2,7 @@
 nouns use: the Phase label test, the claim release a spec review round's
 pause makes in an autopilot flow, and a finished phase's close under its
 claim (standing_finish, with its label move, standing_move_label), which the
-phase noun's phase_finish runs for phase advance and for bash review ready.
+phase noun's finish runs for phase advance and for review ready.
 standing_pause, standing_finish and standing_move_label have no bash copy
 left: their bash callers, the spec and phase modules, went at those nouns'
 cutovers, while standing_release and standing_chain_start stay in bash for

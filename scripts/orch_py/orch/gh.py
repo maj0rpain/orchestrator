@@ -6,7 +6,10 @@ Every GitHub call goes through an operation named for what its callers need.
 Each owns gh's flags and --jq expressions and answers in Python values; a gh
 failure raises GhFailed carrying gh's stderr, and an answer that does not
 parse as the operation's JSON raises Unparsed. A caller dies through gh_or_die
-or gh_die, or reacts another way through gh_reason. The claim delete is the
+or gh_die, or reacts another way through gh_reason. The CI-evidence reads take
+gh api's whole answer, as gh.sh's ci_api_read did while the bash review noun
+stood, and read it here the way its jq expression did, so an error body GitHub
+answers with is read too. The claim delete is the
 one operation the real adapter makes through git rather than gh, as bash's
 adapter_claim_delete is: the claim is a ref on origin.
 
@@ -20,7 +23,6 @@ is set, as the bash suite's fake_github sets it, else the real adapter.
 """
 from __future__ import annotations
 
-import datetime
 import json
 import os
 import re
@@ -38,6 +40,7 @@ from typing import (
     TypeVar,
 )
 
+from orch.autopilot import epoch_iso, github_limit_record
 from orch.common import die, lines_of, message_line, plain_number, warn
 from orch.git import Git
 from orch.repo import REPO_REMEDY, RepoPin
@@ -99,6 +102,22 @@ class SubIssue(NamedTuple):
     open_blockers: Optional[int]
 
 
+# The GraphQL query behind pr_commits_checked, as gh.sh had it: one line, so a
+# logged argv stays one line. A rollup's contexts are the commit's check runs
+# and commit statuses together; null where it has none.
+PR_COMMITS_CHECKED_QUERY = (
+    "query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner,"
+    " name: $name) { pullRequest(number: $number) { baseRef { target { ... on Commit {"
+    " statusCheckRollup { contexts { totalCount } } } } } commits(first: 100) { nodes {"
+    " commit { oid statusCheckRollup { contexts { totalCount } } } } } } } }"
+)
+
+# What pr_commits_checked answers: the base tip's "yes" or "no" - "" where
+# GitHub holds no base ref - then each commit's SHA and its "yes" or "no",
+# oldest first, as text: a caller judges an answer that is neither.
+CommitsChecked = Tuple[str, List[Tuple[str, str]]]
+
+
 class Check(NamedTuple):
     """One check of a PR: its bucket - pass, fail, pending, skipping or
     cancel - its name and its link, "" for a check that has none."""
@@ -106,6 +125,17 @@ class Check(NamedTuple):
     bucket: str
     name: str
     link: str
+
+
+class Checks(list):
+    """A PR's checks as pr_checks answers them, a list of Check in gh's
+    order. <reported> is gh's own line where it answered none by saying so -
+    "no checks reported on the '<branch>' branch", its stderr - and "" for
+    any other answer: what review rerun's no-checks death quotes."""
+
+    def __init__(self, checks: Sequence[Check] = (), reported: str = "") -> None:
+        super().__init__(checks)
+        self.reported = reported
 
 
 # gh pr checks's exit for pending checks, which still answers the JSON.
@@ -120,11 +150,13 @@ CHECKS_UNPARSED = "gh pr checks answered with something jq could not read\n"
 
 class GhFailed(Exception):
     """A failed gh call: <stderr> is gh's own error, or the rate-limit
-    message that replaced it."""
+    message that replaced it; <stdout> what gh printed all the same, "" where
+    the failure is no gh run's - GitHub's error body, for `gh api`."""
 
-    def __init__(self, stderr: str) -> None:
+    def __init__(self, stderr: str, stdout: str = "") -> None:
         super().__init__(stderr)
         self.stderr = stderr
+        self.stdout = stdout
 
 
 class Unparsed(Exception):
@@ -388,6 +420,97 @@ def parse_checks(text: str) -> List[Check]:
                   jq_text(c.get("link") or "")) for c in answer]
 
 
+# --- jq's reading of a JSON answer, for the reads that take gh's whole answer
+
+API_UNPARSED = "gh api answered with something jq could not read\n"
+
+
+def _jq_field(value, key: str):
+    """jq's `.<key>`: null on null, the field (null where absent) on an
+    object; Unparsed on anything else."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise Unparsed("no object")
+    return value.get(key)
+
+
+def _jq_each(value) -> list:
+    """jq's `.[]`: an array's items, an object's values; Unparsed on
+    anything else, null included."""
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        return list(value.values())
+    raise Unparsed("nothing to iterate")
+
+
+def _jq_or(value, default):
+    """jq's `<value> // <default>`: the default for null and false."""
+    return default if value is None or value is False else value
+
+
+def _jq_order(value) -> Tuple[int, object]:
+    """jq's sort order: null, false, true, numbers, strings, arrays, then
+    objects - an array or object among its kind by its JSON text."""
+    if value is None:
+        return 0, 0
+    if isinstance(value, bool):
+        return (2, 0) if value else (1, 0)
+    if isinstance(value, (int, float)):
+        return 3, value
+    if isinstance(value, str):
+        return 4, value
+    return (5 if isinstance(value, list) else 6), json.dumps(value, sort_keys=True)
+
+
+def _jq_unique(values: list) -> list:
+    """jq's `unique`: each value once, in jq's sort order."""
+    ordered = sorted(values, key=_jq_order)
+    return [v for i, v in enumerate(ordered) if i == 0 or _jq_order(v) != _jq_order(ordered[i - 1])]
+
+
+def _jq_raw_lines(values: Sequence[object]) -> List[str]:
+    """The lines `jq -r` prints for <values>, captured as the bash readers
+    capture them: every trailing empty line dropped."""
+    return _captured_lines("".join(jq_text(value) + "\n" for value in values))
+
+
+def _jq_checked(commit) -> str:
+    """The jq `checked` gh.sh ran: "yes" where the commit's rollup counts any
+    check run or status, else "no" - compared as jq compares, so only a
+    count above zero, a string, an array or an object is above 0."""
+    count = _jq_or(_jq_field(_jq_field(_jq_field(commit, "statusCheckRollup"), "contexts"),
+                             "totalCount"), 0)
+    return "yes" if _jq_order(count) > (3, 0) else "no"
+
+
+def parse_commits_checked(text: str) -> CommitsChecked:
+    """pr_commits_checked's answer from the lines jq prints for it: the
+    first the base tip's, then a "<sha><TAB><answer>" line per commit, split
+    at its first tab - a line with none its SHA alone and an empty answer."""
+    lines = _captured_lines(text)
+    if not lines:
+        return "", []
+    commits = []
+    for line in lines[1:]:
+        sha, _, answer = line.partition("\t")
+        commits.append((sha, answer))
+    return lines[0], commits
+
+
+def _commits_checked_lines(answer) -> List[str]:
+    """The lines gh.sh's jq printed for the GraphQL answer: the base tip's,
+    then one per commit."""
+    pr = _jq_field(_jq_field(_jq_field(answer, "data"), "repository"), "pullRequest")
+    base = _jq_field(pr, "baseRef")
+    lines = ["" if base is None else _jq_checked(_jq_field(base, "target"))]
+    for node in _jq_each(_jq_field(_jq_field(pr, "commits"), "nodes")):
+        commit = _jq_field(node, "commit")
+        lines.append("%s\t%s" % (jq_text(_jq_field(commit, "oid")), _jq_checked(commit)))
+    return lines
+
+
 def _json(text: str):
     try:
         return json.loads(text)
@@ -419,12 +542,6 @@ def limit_kind(stderr: str) -> str:
     return ""
 
 
-def epoch_iso(epoch: int) -> str:
-    """Epoch seconds as a UTC timestamp."""
-    moment = datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc)
-    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def number_of(text: str) -> int:
     """<text> as a number, as awk reads one: its leading digits, else 0."""
     match = re.match(r"\s*([0-9]+)", text)
@@ -448,9 +565,19 @@ class Limits:
     line each, raising GhFailed when it cannot: the read is never retried nor
     handled.
 
-    Out of this slice: an autopilot process's record of the reset (the
-    GitHub pause and the hit file), and a re-callable wait's quiet give-up,
-    whose mark no Python process can be handed.
+    A limit given up on is recorded in an autopilot process
+    (orch.autopilot's github_limit_record: the GitHub limit pause under the
+    main checkout <main_checkout> answers, and a session's hit file), each
+    failed write one clause joined onto the limit line after " - ", as
+    gh.sh's gh_limit_handle joins them.
+
+    Two settings serve a re-callable wait, `review ci`'s: <wait>, the open
+    wait (an orch.wait OpenWait), asked whether a first secondary limit's
+    wait fits in what is left of its block - when it does not, the call
+    fails with no message and nothing recorded, the wait's mark left for
+    its checks to end the call as still running; and <no_wait>, set by a
+    call that never waits (`review ci --no-wait`), which gives a first
+    secondary limit up at once.
     """
 
     def __init__(
@@ -459,11 +586,15 @@ class Limits:
         pools: Pools,
         sleep: Callable[[float], None],
         now: Callable[[], float],
+        main_checkout: Callable[[], Optional[str]] = lambda: None,
     ) -> None:
         self.env = env
         self.pools = pools
         self.sleep = sleep
         self.now = now
+        self.main_checkout = main_checkout
+        self.wait = None
+        self.no_wait = False
 
     def run(self, attempt: Callable[[], T], compound: bool = False) -> T:
         retried = False
@@ -474,8 +605,11 @@ class Limits:
                 kind = limit_kind(failed.stderr)
                 if not kind:
                     raise
-                if kind == "secondary" and not retried and not compound:
-                    self.sleep(float(self.env.get("ORCH_GH_LIMIT_WAIT", "") or LIMIT_WAIT_DEFAULT))
+                if kind == "secondary" and not retried and not compound and not self.no_wait:
+                    nap = float(self.env.get("ORCH_GH_LIMIT_WAIT", "") or LIMIT_WAIT_DEFAULT)
+                    if self.wait is not None and not self.wait.limit_fits(nap):
+                        raise GhFailed("") from None
+                    self.sleep(nap)
                     retried = True
                     continue
                 raise GhFailed(message_line(self.message())) from None
@@ -496,11 +630,16 @@ class Limits:
         return latest or int(self.now()) + LIMIT_RESET_FALLBACK
 
     def message(self) -> str:
-        return (
+        """The one limit line, naming the reset, any failed write of the
+        autopilot record joined on after " - "."""
+        reset = self.reset()
+        line = (
             "GitHub API rate limit reached - it resets at %s. An autopilot session"
             " ends its turn now and does not retry; the watcher picks the work up"
-            " after the reset." % epoch_iso(self.reset())
+            " after the reset." % epoch_iso(reset)
         )
+        clauses = github_limit_record(self.env, reset, self.now(), self.main_checkout)
+        return line + " - " + "; ".join(clauses) if clauses else line
 
 
 # --- claims -------------------------------------------------------------------
@@ -540,7 +679,7 @@ class Gh:
     ) -> None:
         self.repo_pin = pin
         self.env = env
-        self.limits = Limits(env, self._rate_limit, sleep, now)
+        self.limits = Limits(env, self._rate_limit, sleep, now, pin.git.main_checkout)
 
     def pin(self) -> bool:
         """Whether a repo resolves to pin gh to, calling no gh - for a command
@@ -567,7 +706,7 @@ class Gh:
             stderr=subprocess.PIPE,
         )
         if run.returncode not in answered:
-            raise GhFailed(_text(run.stderr))
+            raise GhFailed(_text(run.stderr), _text(run.stdout))
         return run.returncode, _text(run.stdout)
 
     def _gh(self, args: Sequence[str], compound: bool = False) -> str:
@@ -864,6 +1003,16 @@ class Gh:
         lines += [""] * (3 - len(lines))
         return lines[0], lines[1], lines[2]
 
+    def pr_url_head(self, n: int) -> Tuple[str, str]:
+        """The PR's canonical URL and its remote head SHA, each "" where
+        GitHub leaves it unset."""
+        lines = _captured_lines(self._gh(
+            ["pr", "view", str(n), "--json", "url,headRefOid",
+             "--jq", '(.url // ""), (.headRefOid // "")']
+        ))
+        lines += [""] * (2 - len(lines))
+        return lines[0], lines[1]
+
     def pr_state_draft(self, n: int) -> Tuple[str, bool]:
         """The PR's state - OPEN, CLOSED or MERGED - and whether it is a
         draft: only gh's "true" is one."""
@@ -905,10 +1054,11 @@ class Gh:
         """Adds the label to the PR, removing none."""
         self._gh(["pr", "edit", str(n), "--add-label", label])
 
-    def pr_checks(self, n: int, scope: str) -> List[Check]:
+    def pr_checks(self, n: int, scope: str) -> Checks:
         """The PR's checks - the ones branch protection requires under scope
         "required", else every check on its head - in gh's order; none where
-        gh reports no checks, or no required ones. gh exits 8 for pending
+        gh reports no checks, or no required ones, gh's stderr saying so kept
+        as their <reported> line. gh exits 8 for pending
         checks, still answering the JSON: that is read as an answer, and
         where it leaves nothing readable, one pending check with no name or
         link stands for it. Fails with "gh pr checks answered with something
@@ -920,14 +1070,14 @@ class Gh:
                 lambda: self._run_status(args, (0, CHECKS_PENDING_EXIT)))
         except GhFailed as failed:
             if _NO_CHECKS.search(failed.stderr):
-                return []
+                return Checks(reported=failed.stderr)
             raise
         pending = [Check("pending", "", "")] if status == CHECKS_PENDING_EXIT else []
         try:
-            return parse_checks(out) or pending
+            return Checks(parse_checks(out) or pending)
         except Unparsed:
             if pending:
-                return pending
+                return Checks(pending)
             raise GhFailed(CHECKS_UNPARSED) from None
 
     def pr_close(self, n: int, comment: str) -> None:
@@ -936,12 +1086,82 @@ class Gh:
         # leave the comment, and a rerun would post it twice.
         self._gh(["pr", "close", str(n), "--comment", comment], compound=True)
 
+    # --- CI-evidence operations (#476): each decides nothing ---
+
+    def _api_read(self, absent: str, path: str, read: Callable[[object], List[str]],
+                  *args: str) -> List[str]:
+        """One `gh api <path> <args>` read, its JSON answer read by <read>
+        into lines. A failure whose stdout or stderr names <absent> - GitHub's
+        message for an absence it answers as an error - is no lines; any
+        other passes gh's stderr through. An answer <read> cannot read fails
+        with "gh api answered with something jq could not read"."""
+        try:
+            answer = self._gh(["api", path, *args])
+        except GhFailed as failed:
+            if absent and absent in failed.stdout + "\n" + failed.stderr:
+                return []
+            raise
+        try:
+            return read(_json(answer))
+        except Unparsed:
+            raise GhFailed(API_UNPARSED) from None
+
+    def branch_required_checks(self, branch: str) -> List[str]:
+        """The check contexts classic branch protection requires on
+        <branch>, each once, in jq's sort order; none for an unprotected
+        branch - GitHub's 404 "Branch not protected". A bare 404 "Not Found",
+        from lacking access, fails it as any other failure does."""
+
+        def contexts(answer) -> List[str]:
+            listed = _jq_each(_jq_or(_jq_field(answer, "contexts"), []))
+            checks = _jq_each(_jq_or(_jq_field(answer, "checks"), []))
+            listed = listed + [_jq_field(check, "context") for check in checks]
+            return _jq_raw_lines(_jq_unique(listed))
+
+        return self._api_read(
+            "Branch not protected",
+            "repos/{owner}/{repo}/branches/%s/protection/required_status_checks" % branch,
+            contexts)
+
+    def pr_commits_checked(self, n: int) -> CommitsChecked:
+        """Whether the base branch tip, then each of PR #n's first 100
+        commits, has any check run or commit status, from one GraphQL read
+        (CommitsChecked)."""
+        lines = self._api_read("", "graphql", _commits_checked_lines,
+                               "-F", "owner={owner}", "-F", "name={repo}", "-F", "number=%d" % n,
+                               "-f", "query=" + PR_COMMITS_CHECKED_QUERY)
+        return parse_commits_checked("".join(line + "\n" for line in lines))
+
+    def branch_rules(self, branch: str) -> List[str]:
+        """The type of every rule the repo's rulesets apply to <branch>, in
+        GitHub's order; none for none."""
+        return self._api_read(
+            "", "repos/{owner}/{repo}/rules/branches/%s" % branch,
+            lambda answer: _jq_raw_lines([_jq_field(rule, "type") for rule in _jq_each(answer)]))
+
+    # --- GitHub Actions operations ---
+
+    def run_rerun(self, run: int) -> None:
+        """Reruns the failed jobs of Actions run <run>. The id is always
+        given: `gh run rerun` with none opens a prompt."""
+        self._gh(["run", "rerun", str(run), "--failed"])
+
+    def job_failed_log(self, job: int) -> str:
+        """The failed steps' log of Actions job <job>, as gh prints it."""
+        return self._gh(["run", "view", "--job", str(job), "--log-failed"])
+
     # --- label operations ---
 
     def label_create(self, name: str, colour: str, description: str) -> None:
         """Creates the label where the repo has none of that name; fails
         where it has one, leaving it as it is."""
         self._gh(["label", "create", name, "--color", colour, "--description", description])
+
+    def label_upsert(self, name: str, colour: str, description: str) -> None:
+        """Creates the label, or rewrites the one that exists, to that colour
+        and description."""
+        self._gh(["label", "create", name, "--force", "--color", colour,
+                  "--description", description])
 
     # --- repo operations ---
 

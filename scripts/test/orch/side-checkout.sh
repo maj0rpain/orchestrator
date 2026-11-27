@@ -30,6 +30,17 @@ sp_branch_off() {
   git -C "$1" commit -q --allow-empty -m "work on $2"
 }
 
+# marked_ticket_worktree <n>: adds ticket worktree t<n> under the current
+# checkout, on a branch, and copies a side-checkout marker recording issue 123
+# into its git folder - a ticket worktree carrying a copied marker (#1110).
+# Prints its path.
+marked_ticket_worktree() {
+  local path
+  path="$("$ORCH" ticket-worktree add "$1")" || return
+  printf '123\n' >"$(git -C "$path" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
+  printf '%s\n' "$path"
+}
+
 # --- side-checkout (#722) -----------------------------------------------------
 # A side checkout: a worktree the plugin makes under the main checkout's
 # .orchestrator/checkouts/<slug>, on no branch at origin/<base>, carrying the
@@ -1188,8 +1199,9 @@ restore_suite_env
 # <scripts-dir> (orch.sh, flow-state.sh, orch/*.sh and the Python package's
 # orch_py/orch/*.py) builds - as $ORCH/<name>, $ORCH_DIR_NAME/<name>,
 # $home/<name>, a printf format '%s/<name>' or '%s/%s/<name>' on a line naming
-# $ORCH or $ORCH_DIR_NAME, or a Python join's ORCH_DIR_NAME, "<name>" or a
-# Python format "%s/%s/<name>" on a line naming ORCH_DIR_NAME - against
+# $ORCH or $ORCH_DIR_NAME, or a Python join's ORCH_DIR_NAME, "<name>", a
+# Python format "%s/%s/<name>" on a line naming ORCH_DIR_NAME, or a Python
+# orch_dir + "/<name>", the orchestrator directory handed in - against
 # FLOW_LESS_ENTRIES plus the flow's own entries. Prints one line per name on
 # neither list and per listed name never found, stating the rule; returns 1
 # when it printed any.
@@ -1200,6 +1212,7 @@ fl_classify() {
     grep -hE "printf '%s/(%s/)?[a-z]" "$dir/orch.sh" "$dir/flow-state.sh" "$dir"/orch/*.sh | grep -E '\$\{?ORCH(_DIR_NAME)?([^A-Za-z_]|$)' |
       grep -oE "'%s/(%s/)?[a-z][a-z.-]*" | sed -E "s|.*/||"
     grep -hoE 'ORCH_DIR_NAME, *"[a-z][a-z.-]*"' "$dir"/orch_py/orch/*.py | sed -E 's|.*"([^"]*)"|\1|'
+    grep -hoE 'orch_dir \+ "/[a-z][a-z.-]*"' "$dir"/orch_py/orch/*.py | sed -E 's|.*"/([^"]*)"|\1|'
     grep -hE '"%s/%s/[a-z]' "$dir"/orch_py/orch/*.py | grep -E 'ORCH_DIR_NAME' |
       grep -oE '"%s/%s/[a-z][a-z.-]*' | sed -E 's|.*/||'; } | sort -u)"
   listed="$( { sourced_orch_script 'printf "%s\n" "${FLOW_LESS_ENTRIES[@]}"'; tr ' ' '\n' <<<"$FL_FLOW_OWN"; } | sort -u)"
@@ -1222,11 +1235,13 @@ cp "$PLUGIN_ROOT/scripts/orch_py/orch/"*.py "$fl_fix/orch_py/orch/"
 echo 'newthing_dir() { printf "%s\n" "$ORCH/brandnew"; }' >>"$fl_fix/orch/branch.sh"
 echo 'PY_NEW = os.path.join("/", ORCH_DIR_NAME, "pynew")' >>"$fl_fix/orch_py/orch/checkout.py"
 echo 'PY_FMT = "%s/%s/pyformat/%s" % ("/", ORCH_DIR_NAME, 1)' >>"$fl_fix/orch_py/orch/checkout.py"
+echo 'PY_DIR = orch_dir + "/pyorchdir"' >>"$fl_fix/orch_py/orch/checkout.py"
 out="$(fl_classify "$fl_fix")"; st=$?
 assert_status "an unclassified entry fails the classification" "$st" 1
 assert_contains "the failure names the entry" "$out" ".orchestrator/brandnew"
 assert_contains "and one the Python package builds" "$out" ".orchestrator/pynew"
 assert_contains "and one it builds with a %s/%s format" "$out" ".orchestrator/pyformat"
+assert_contains "and one it builds on the orchestrator directory handed in" "$out" ".orchestrator/pyorchdir"
 assert_contains "the failure states the rule" "$out" "The rule: an entry a command creates"
 rm -rf "$fl_fix"
 

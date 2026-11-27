@@ -215,7 +215,7 @@ restore_suite_env GH_HOST GH_FIXTURE
 echo
 echo "gh_reason and capture_err"
 new_repo >/dev/null
-# Sourced rather than run, as is_filed_severity is: both are helpers every gh
+# Sourced rather than run: gh_reason and capture_err are helpers every gh
 # death goes through, and sourcing orch.sh defines them without running main.
 reason() { sourced_orch gh_reason "$1"; }
 assert_eq "gh_reason gives only the first line of gh's stderr" \
@@ -473,7 +473,7 @@ fake_lag adapter_issue_body 2
 lagging adapter_issue_body; assert_status "a lagged operation answers stale" "$?" 0
 lagging adapter_issue_body; assert_status "for as many calls as fake_lag asked" "$?" 0
 lagging adapter_issue_body; assert_status "and current after them" "$?" 1
-lagging adapter_label_create; assert_status "an operation with no lag is current" "$?" 1
+lagging adapter_labels; assert_status "an operation with no lag is current" "$?" 1
 # The fake takes the real adapter's argument grammar (#664): an unknown option,
 # or one missing its value, exits 2 with a message on stderr - parsed before
 # fake_failing, so even a seeded failure does not mask it. No converted caller
@@ -524,17 +524,9 @@ assert_eq "as --reason missing its value, with no unknown option" "$err" \
 rm -f "$pbody"
 assert_eq "and a refused close left the issue open" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/state")" "OPEN"
 assert_eq "and a refused relabel left its labels unchanged" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/labels")" ""
-# The optional check_runs and statuses lists read as empty with nothing on
-# stderr, and the snapshot hides every read-side file but no countdown.
+# The snapshot hides no countdown.
 fake_github
 new_repo >/dev/null
-fake_pr 71 open feat main
-assert_eq "commits checked with no check_runs or statuses seeded prints nothing on stderr" \
-  "$(sourced_orch adapter_pr_commits_checked 71 2>&1 >/dev/null)" ""
-fake_checks 71 all green
-rs_before="$(fake_snapshot)"
-faked adapter_pr_checks 71 all >/dev/null 2>&1
-assert_eq "a scripted checks read leaves the snapshot as it was" "$(fake_snapshot)" "$rs_before"
 fake_fail_after adapter_issue_body 2
 rs_before="$(fake_snapshot)"
 faked adapter_issue_body 5 >/dev/null 2>&1
@@ -624,16 +616,11 @@ assert_eq "gh fake: pr refs of an empty head prints an empty line and the branch
   "$out" "$(writeln '' topic main x)"
 assert_eq "its merged-PRs read prints the empty head in its slot" \
   "$(faked adapter_prs_merged topic main)" "$(printf '80\t\tfalse')"
-out="$(faked adapter_pr_url_head 80; echo x)"
-assert_eq "its URL-and-head read prints the URL, then an empty line" \
-  "$out" "$(writeln https://github.com/o/r/pull/80 '' x)"
 fake_pr 81 merged topic2 main
 assert_eq "an absent head reads as forty zeros from the refs read" \
   "$(faked adapter_pr_refs 81)" "$(writeln "$zeros" topic2 main)"
-assert_eq "from the merged-PRs read" \
+assert_eq "and from the merged-PRs read" \
   "$(faked adapter_prs_merged topic2 main)" "$(printf '81\t%s\tfalse' "$zeros")"
-assert_eq "and from the URL-and-head read" \
-  "$(faked adapter_pr_url_head 81)" "$(writeln https://github.com/o/r/pull/81 "$zeros")"
 fake_pr 82 open topic3 main
 fake_pr_head 82 abc123
 assert_eq "a non-empty head prints three lines and no commits" \
@@ -800,17 +787,6 @@ gh_reply 1 '' 'HTTP 403: Resource not accessible by integration' \
 out="$(contract adapter_label_upsert review:nit c5def5 "Review finding filed at nit severity" 2>&1)"; st=$?
 assert_status "label upsert: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
-gh_reply 0 '' '' label create "triage me" --color e4e669 --description "Not yet triaged"
-out="$(contract adapter_label_create "triage me" e4e669 "Not yet triaged" 2>&1)"; st=$?
-assert_status "label create: creates a missing label, never with --force" "$st" 0
-assert_eq "printing nothing" "$out" ""
-
-gh_reply 1 '' 'label with name "bug" already exists; use `--force` to update its color and description' \
-  label create bug --color d73a4a --description "Something isn't working"
-out="$(contract adapter_label_create bug d73a4a "Something isn't working" 2>&1)"; st=$?
-assert_status "label create: a label that exists fails it" "$st" 1
-assert_contains "passing gh's stderr through" "$out" 'label with name "bug" already exists'
-
 gh_reply 0 $'bug\td73a4a\tSomething isn\'t working\nwontfix\tffffff\t' \
   '' label list --limit 1000 --json name,color,description --jq '.[] | [.name, .color, (.description // "")] | @tsv'
 out="$(contract adapter_labels_detail 1000 2>&1)"; st=$?
@@ -819,8 +795,8 @@ assert_eq "as name, colour and description, tab-separated" "$out" $'bug\td73a4a\
 
 : >"$GH_FIXTURE/env.log"
 export GH_REPO=ghe.example.com/acme/widgets
-gh_reply 0 '' '' label create enhancement --color a2eeef --description "New feature or request"
-contract adapter_label_create enhancement a2eeef "New feature or request" >/dev/null 2>&1
+gh_reply 0 '' '' label create enhancement --force --color a2eeef --description "New feature or request"
+contract adapter_label_upsert enhancement a2eeef "New feature or request" >/dev/null 2>&1
 assert_contains "a repo on another host pins gh's host too" "$(cat "$GH_FIXTURE/env.log")" \
   "GH_REPO=ghe.example.com/acme/widgets GH_HOST=ghe.example.com label create enhancement"
 export GH_REPO=acme/widgets
@@ -981,25 +957,6 @@ assert_eq "one number and title per line, tab-separated" "$out" "$(printf '3\tFi
 
 ibody="$(mktemp)"
 writeln 'The body.' >"$ibody"
-gh_reply 0 $'https://github.com/acme/widgets/issues/17\n' '' \
-  issue create --title "Rename it" --body-file "$ibody" --label review:nit --label "triage me"
-out="$(contract adapter_issue_create "Rename it" "$ibody" review:nit "triage me" 2>&1)"; st=$?
-assert_status "issue create: files the issue under every label" "$st" 0
-assert_eq "printing its number alone" "$out" "17"
-gh_reply 0 $'https://github.com/acme/widgets/issues/18\n' '' \
-  issue create --title "Unlabelled" --body-file "$ibody"
-out="$(contract adapter_issue_create "Unlabelled" "$ibody" 2>&1)"; st=$?
-assert_status "issue create: files an issue with no label" "$st" 0
-assert_eq "printing its number" "$out" "18"
-gh_reply 0 $'Something went sideways\n' '' issue create --title "No URL" --body-file "$ibody"
-out="$(contract adapter_issue_create "No URL" "$ibody" 2>/dev/null)"; st=$?
-assert_status "issue create: gh output with no issue URL fails it" "$st" 1
-assert_eq "printing no number" "$out" ""
-gh_reply 1 '' 'could not add label: review:nit not found' issue create --title "Refused" --body-file "$ibody"
-out="$(contract adapter_issue_create "Refused" "$ibody" 2>&1)"; st=$?
-assert_status "issue create: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "could not add label: review:nit not found"
-
 gh_reply 0 'https://github.com/acme/widgets/issues/23' '' issue edit 23 --body-file "$ibody"
 out="$(contract adapter_issue_body_edit 23 "$ibody" 2>&1)"; st=$?
 assert_status "issue body edit: replaces the body from the file" "$st" 0
@@ -1217,28 +1174,6 @@ out="$(contract adapter_pr_refs 58 2>&1)"; st=$?
 assert_status "pr refs: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 
-url_jq='(.url // ""), (.headRefOid // "")'
-gh_reply 0 $'https://github.com/acme/widgets/pull/57\nbbbb\n' '' \
-  pr view 57 --json url,headRefOid --jq "$url_jq"
-out="$(contract adapter_pr_url_head 57 2>&1)"; st=$?
-assert_status "pr url head: reads the PR's URL and head" "$st" 0
-assert_eq "the URL on the first line, the head SHA on the second" \
-  "$out" "$(writeln https://github.com/acme/widgets/pull/57 bbbb)"
-gh_reply 1 '' 'HTTP 502: Bad Gateway' \
-  pr view 58 --json url,headRefOid --jq "$url_jq"
-out="$(contract adapter_pr_url_head 58 2>&1)"; st=$?
-assert_status "pr url head: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
-
-gh_reply 0 '✓ Pull request acme/widgets#57 is marked as "ready for review"' '' pr ready 57
-out="$(contract adapter_pr_ready 57 2>&1)"; st=$?
-assert_status "pr ready: marks the PR ready" "$st" 0
-assert_eq "printing nothing" "$out" ""
-gh_reply 1 '' 'HTTP 403: Resource not accessible by integration' pr ready 58
-out="$(contract adapter_pr_ready 58 2>&1)"; st=$?
-assert_status "pr ready: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
-
 gh_reply 0 '✓ Pull request acme/widgets#57 is converted to "draft"' '' pr ready 57 --undo
 out="$(contract adapter_pr_draft 57 2>&1)"; st=$?
 assert_status "pr draft: turns the PR into a draft" "$st" 0
@@ -1332,155 +1267,6 @@ assert_status "pr label add: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 assert_eq "every PR operation was pinned to the resolved repo" \
   "$(grep ' pr ' "$GH_FIXTURE/env.log" | grep -cv '^GH_REPO=acme/widgets GH_HOST=<unset> pr ')" "0"
-
-# The CI operations. These parse gh's JSON themselves, so each reply here is
-# gh's raw answer.
-checks_tsv() { printf '%s\t%s\t%s\n' "$@"; }
-runs=https://github.com/acme/widgets/actions/runs
-gh_reply 0 "[{\"bucket\":\"fail\",\"name\":\"build\",\"link\":\"$runs/4242/job/77\"},{\"bucket\":\"pass\",\"name\":\"lint\",\"link\":null}]" '' \
-  pr checks 57 --required --json bucket,name,link
-out="$(contract adapter_pr_checks 57 required 2>&1)"; st=$?
-assert_status "pr checks: reads the required checks" "$st" 0
-assert_eq "one check per line, bucket, name and link as TSV, an empty link for none" \
-  "$out" "$(checks_tsv fail build "$runs/4242/job/77" pass lint '')"
-gh_reply 0 '[{"bucket":"pass","name":"build","link":"x"}]' '' pr checks 57 --json bucket,name,link
-out="$(contract adapter_pr_checks 57 all 2>&1)"; st=$?
-assert_status "pr checks: reads every check, without --required" "$st" 0
-assert_eq "in the same shape" "$out" "$(checks_tsv pass build x)"
-gh_reply 8 '[{"bucket":"pending","name":"build","link":"y"}]' '' pr checks 60 --json bucket,name,link
-out="$(contract adapter_pr_checks 60 all 2>&1)"; st=$?
-assert_status "pr checks: gh's exit 8 for pending checks is absorbed" "$st" 0
-assert_eq "its answer read like an exit 0's" "$out" "$(checks_tsv pending build y)"
-gh_reply 8 '' '' pr checks 61 --json bucket,name,link
-out="$(contract adapter_pr_checks 61 all 2>&1)"; st=$?
-assert_status "pr checks: an exit 8 with nothing readable still succeeds" "$st" 0
-assert_eq "as one pending check with no name or link" "$out" "$(checks_tsv pending '' '')"
-checks_err="$(mktemp)"
-gh_reply 1 '' "no checks reported on the 'topic' branch" pr checks 62 --json bucket,name,link
-out="$(contract adapter_pr_checks 62 all 2>"$checks_err")"; st=$?
-assert_status "pr checks: no checks reported succeeds" "$st" 0
-assert_eq "printing nothing at all on stdout" "$out" ""
-assert_eq "passing gh's line through on stderr" "$(cat "$checks_err")" "no checks reported on the 'topic' branch"
-gh_reply 1 '' "no required checks reported on the 'topic' branch" pr checks 62 --required --json bucket,name,link
-out="$(contract adapter_pr_checks 62 required 2>"$checks_err")"; st=$?
-assert_status "pr checks: no required checks reported succeeds" "$st" 0
-assert_eq "printing nothing at all on stdout" "$out" ""
-assert_eq "passing gh's line through on stderr" "$(cat "$checks_err")" "no required checks reported on the 'topic' branch"
-rm -f "$checks_err"
-gh_reply 0 '[]' '' pr checks 63 --json bucket,name,link
-out="$(contract adapter_pr_checks 63 all 2>&1)"; st=$?
-assert_status "pr checks: an empty list succeeds" "$st" 0
-assert_eq "printing nothing at all" "$out" ""
-gh_reply 0 'not json at all' '' pr checks 64 --json bucket,name,link
-out="$(contract adapter_pr_checks 64 all 2>&1)"; st=$?
-assert_status "pr checks: an answer jq cannot read fails it, never reads as no checks" "$st" 1
-assert_eq "saying what it could not read" "$out" "gh pr checks answered with something jq could not read"
-gh_reply 1 '' 'dial tcp: lookup api.github.com: no such host' pr checks 65 --json bucket,name,link
-out="$(contract adapter_pr_checks 65 all 2>&1)"; st=$?
-assert_status "pr checks: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "dial tcp: lookup api.github.com: no such host"
-# ci_probe over the real adapter: a failed read is unreachable, its detail
-# the first line of gh's stderr alone, and none of that stderr leaks.
-gh_reply 1 '' $'dial tcp: lookup api.github.com: no such host\nsecond line' pr checks 66 --json bucket,name,link
-out="$(contract ci_probe 66 all 2>&1)"; st=$?
-assert_status "ci probe: a failed checks read is still an answer" "$st" 0
-assert_eq "unreachable, with the first line of gh's stderr and nothing else" "$out" \
-  "$(writeln unreachable "      dial tcp: lookup api.github.com: no such host")"
-# A read that fails with nothing on stderr names that, never a blank detail
-# line (#925).
-gh_reply 1 '' '' pr checks 68 --json bucket,name,link
-out="$(contract ci_probe 68 all 2>&1)"; st=$?
-assert_status "ci probe: a silently failed checks read is still an answer" "$st" 0
-assert_eq "unreachable, its detail saying gh gave no reason" "$out" \
-  "$(writeln unreachable "      gh gave no reason")"
-gh_reply 1 '' "no checks reported on the 'topic' branch" pr checks 67 --json bucket,name,link
-out="$(contract ci_probe 67 all 2>&1)"; st=$?
-assert_status "ci probe: no checks reported is an answer" "$st" 0
-assert_eq "classified as none, gh's stderr swallowed" "$out" "none"
-
-prot="repos/{owner}/{repo}/branches/main/protection/required_status_checks"
-gh_reply 0 '{"strict":false,"contexts":["build","lint"],"checks":[{"context":"build","app_id":null}]}' '' api "$prot"
-out="$(contract adapter_branch_required_checks main 2>&1)"; st=$?
-assert_status "branch required checks: reads classic protection" "$st" 0
-assert_eq "each required context once, one per line" "$out" "$(writeln build lint)"
-gh_reply 1 '{"message":"Branch not protected","status":"404"}' 'gh: Branch not protected (HTTP 404)' \
-  api "repos/{owner}/{repo}/branches/open/protection/required_status_checks"
-out="$(contract adapter_branch_required_checks open 2>&1)"; st=$?
-assert_status "branch required checks: GitHub's 404 for an unprotected branch succeeds" "$st" 0
-assert_eq "printing nothing at all" "$out" ""
-gh_reply 1 '' 'gh: Branch not protected (HTTP 404)' \
-  api "repos/{owner}/{repo}/branches/quiet/protection/required_status_checks"
-out="$(contract adapter_branch_required_checks quiet 2>&1)"; st=$?
-assert_status "branch required checks: the 404 named on stderr alone succeeds" "$st" 0
-assert_eq "printing nothing at all, gh's stderr swallowed" "$out" ""
-gh_reply 1 '{"message":"Branch not protected","status":"404"}' '' \
-  api "repos/{owner}/{repo}/branches/mute/protection/required_status_checks"
-out="$(contract adapter_branch_required_checks mute 2>&1)"; st=$?
-assert_status "branch required checks: the 404 named on stdout alone succeeds" "$st" 0
-assert_eq "printing nothing at all" "$out" ""
-gh_reply 1 '{"message":"Not Found","status":"404"}' 'gh: Not Found (HTTP 404)' \
-  api "repos/{owner}/{repo}/branches/hidden/protection/required_status_checks"
-out="$(contract adapter_branch_required_checks hidden 2>&1)"; st=$?
-assert_status "branch required checks: a bare 404 Not Found fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "gh: Not Found (HTTP 404)"
-gh_reply 0 '{"strict":true}' '' api "repos/{owner}/{repo}/branches/loose/protection/required_status_checks"
-out="$(contract adapter_branch_required_checks loose 2>&1)"; st=$?
-assert_status "branch required checks: protection requiring no checks succeeds" "$st" 0
-assert_eq "printing nothing at all" "$out" ""
-
-gh_reply 0 '[{"type":"deletion"},{"type":"required_status_checks","parameters":{}}]' '' \
-  api "repos/{owner}/{repo}/rules/branches/main"
-out="$(contract adapter_branch_rules main 2>&1)"; st=$?
-assert_status "branch rules: reads the rules on a branch" "$st" 0
-assert_eq "one rule type per line" "$out" "$(writeln deletion required_status_checks)"
-gh_reply 0 '[]' '' api "repos/{owner}/{repo}/rules/branches/bare"
-out="$(contract adapter_branch_rules bare 2>&1)"; st=$?
-assert_status "branch rules: a branch no ruleset touches succeeds" "$st" 0
-assert_eq "printing nothing at all" "$out" ""
-gh_reply 1 '' 'HTTP 502: Bad Gateway' api "repos/{owner}/{repo}/rules/branches/down"
-out="$(contract adapter_branch_rules down 2>&1)"; st=$?
-assert_status "branch rules: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
-
-commits_checked_argv=(api graphql -F owner='{owner}' -F name='{repo}' -F number=31
-  -f query="$(sourced_orch_script 'printf %s "$PR_COMMITS_CHECKED_QUERY"')")
-gh_reply 0 '{"data":{"repository":{"pullRequest":{"baseRef":{"target":{"statusCheckRollup":null}},"commits":{"nodes":[{"commit":{"oid":"aaaa","statusCheckRollup":null}},{"commit":{"oid":"bbbb","statusCheckRollup":{"contexts":{"totalCount":0}}}},{"commit":{"oid":"cccc","statusCheckRollup":{"contexts":{"totalCount":4}}}}]}}}}}' '' "${commits_checked_argv[@]}"
-out="$(contract adapter_pr_commits_checked 31 2>&1)"; st=$?
-assert_status "PR commits checked: reads the base tip and the commits in one GraphQL call" "$st" 0
-assert_eq "the base answer, then a line per commit: null and zero are no, a count is yes" "$out" \
-  "$(writeln no "$(printf 'aaaa\tno')" "$(printf 'bbbb\tno')" "$(printf 'cccc\tyes')")"
-gh_reply 0 '{"data":{"repository":{"pullRequest":{"baseRef":{"target":{"statusCheckRollup":{"contexts":{"totalCount":2}}}},"commits":{"nodes":[]}}}}}' '' "${commits_checked_argv[@]}"
-assert_eq "PR commits checked: a base tip with a check is yes" "$(contract adapter_pr_commits_checked 31 2>&1)" "yes"
-gh_reply 0 '{"data":{"repository":{"pullRequest":{"baseRef":null,"commits":{"nodes":[{"commit":{"oid":"aaaa","statusCheckRollup":null}}]}}}}}' '' "${commits_checked_argv[@]}"
-out="$(contract adapter_pr_commits_checked 31 2>&1)"; st=$?
-assert_status "PR commits checked: a null base ref succeeds" "$st" 0
-assert_eq "printing an empty first line" "$out" "$(printf '\naaaa\tno')"
-gh_reply 1 '' 'gh: Server Error (HTTP 502)' "${commits_checked_argv[@]}"
-out="$(contract adapter_pr_commits_checked 31 2>&1)"; st=$?
-assert_status "PR commits checked: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "gh: Server Error (HTTP 502)"
-gh_reply 0 'not json' '' "${commits_checked_argv[@]}"
-out="$(contract adapter_pr_commits_checked 31 2>&1)"; st=$?
-assert_status "PR commits checked: an answer jq cannot read fails it" "$st" 1
-
-gh_reply 0 '✓ Requested rerun of failed jobs' '' run rerun 4242 --failed
-out="$(contract adapter_run_rerun 4242 2>&1)"; st=$?
-assert_status "run rerun: reruns the run's failed jobs" "$st" 0
-assert_eq "printing nothing" "$out" ""
-gh_reply 1 '' 'HTTP 403: Resource not accessible by integration' run rerun 4243 --failed
-out="$(contract adapter_run_rerun 4243 2>&1)"; st=$?
-assert_status "run rerun: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
-gh_reply 0 $'build\tstep\tline one\n' '' run view --job 77 --log-failed
-out="$(contract adapter_job_failed_log 77 2>&1)"; st=$?
-assert_status "job failed log: reads the job's failed steps" "$st" 0
-assert_eq "printing gh's log as it came" "$out" $'build\tstep\tline one'
-gh_reply 1 '' 'failed to get run log: log not found' run view --job 78 --log-failed
-out="$(contract adapter_job_failed_log 78 2>&1)"; st=$?
-assert_status "job failed log: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "failed to get run log: log not found"
-assert_eq "every CI operation was pinned to the resolved repo" \
-  "$(grep -E ' (pr checks|api|run rerun|run view) ' "$GH_FIXTURE/env.log" | grep -cv '^GH_REPO=acme/widgets GH_HOST=<unset> ')" "0"
 
 # The sub-issue and dependency operations. These run gh api, whose --jq the
 # operation owns, so each reply here is what that --jq printed. The writes
@@ -1842,10 +1628,7 @@ sourced_orch adapter_issue_relabel 5 --remove needs-human >/dev/null
 assert_eq "a removal matches case-insensitively" "$(fake_labels_of 5)" ""
 sourced_orch adapter_label_upsert needs-human d93f0b "Waiting" >/dev/null
 assert_eq "an upsert keeps the existing name and rewrites colour and description" "$(fake_labels)" "Needs-Human	d93f0b	Waiting"
-assert_status "create's exists check folds case" "$(sourced_orch adapter_label_create NEEDS-HUMAN 000000 x >/dev/null 2>&1; echo $?)" 1
 printf 'Needs-Human\n' >"$ORCH_GH_FAKE_STORE/pr_label_drops"
-n="$(sourced_orch adapter_issue_create t /dev/null needs-human)"
-assert_eq "an issue create stores the repo's casing" "$(fake_labels_of "$n")" "Needs-Human "
 body="$(mktemp)"
 pn="$(sourced_orch adapter_pr_create main feat t "$body" --label needs-human --label Other)"
 assert_eq "the PR-create drop knob matches case-insensitively" "$(sourced_orch adapter_pr_labels "$pn")" "Other"
@@ -2084,28 +1867,6 @@ assert_status "and the retry meeting it again fails the call" "$st" 1
 assert_contains "with the handler's message" "$out" "orch: GitHub API rate limit reached"
 assert_eq "the secondary wording is not passed through" \
   "$(grep -c 'secondary rate limit' <<<"$out")" "0"
-rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
-# While a re-callable wait is open (WAIT_MARK set), a first limit wait the
-# call's block cannot hold is not retried early: the rest of the block is slept,
-# the call's mark is left and the guard gives up quietly, so the poll loop ends
-# the call as still running (exit 75, total kept).
-fake_ratelimit "$secondary_wording"
-gl_wf="$(mktemp)"
-SECONDS=0
-out="$(ORCH_WAIT_BLOCK=1 ORCH_GH_LIMIT_WAIT=30 sourced_orch_script 'WAIT_MARK=$1.limited; adapter_issue_body 5' "$gl_wf" 2>&1)"; st=$?
-assert_status "a secondary limit a wait's block cannot hold fails the guarded call" "$st" 1
-assert_status "its mark for the poll loop is left" "$([ -e "$gl_wf.limited" ] && echo 0 || echo 1)" 0
-assert_eq "with no limit message, nothing being given up" "$(grep -c 'rate limit reached' <<<"$out")" "0"
-assert_status "and it waits the block, not ORCH_GH_LIMIT_WAIT" "$((SECONDS < 20 ? 0 : 1))" 0
-rm -f "$gl_wf" "$gl_wf.limited" "$ORCH_GH_FAKE_STORE/ratelimit"
-# Under NO_WAIT_CALL (review ci --no-wait) a first secondary limit is given up
-# on at once: the limit message, no ORCH_GH_LIMIT_WAIT sleep.
-fake_ratelimit "$secondary_wording"
-SECONDS=0
-out="$(NO_WAIT_CALL=1 ORCH_GH_LIMIT_WAIT=30 sourced_orch_script 'adapter_issue_body 5' 2>&1)"; st=$?
-assert_status "under NO_WAIT_CALL a first secondary limit fails the call" "$st" 1
-assert_contains "with the limit message" "$out" "orch: GitHub API rate limit reached"
-assert_status "at once, with no ORCH_GH_LIMIT_WAIT sleep" "$((SECONDS < 20 ? 0 : 1))" 0
 rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
 # A quota read that itself meets rate-limit wording is made once: never retried,
 # no limit message, no wait. The second call would succeed, so a retry shows.

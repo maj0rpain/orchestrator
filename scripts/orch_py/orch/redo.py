@@ -26,7 +26,7 @@ from orch.branch import branch_name_redo, branch_retire
 from orch.checkout import refuse_ticket_worktrees
 from orch.common import die, dir_stamp, int_as_test_reads, stdout_write
 from orch.flow_state import (flow_state_file, phase_write, require_state_read, require_value,
-                             review_budget_fallback, state_write_many)
+                             state_write_many)
 from orch.gh import adapter_of, gh_or_die
 from orch.git import Git
 from orch.handoff import handoff_file_retire, handoff_retire, handoffs_written_from
@@ -50,8 +50,7 @@ def redo_midway(issue: str, slug: str, branch: str, redo_count: str) -> Optional
     of <issue> and <slug> (the exact name, so a slug that merely ends that way
     does not match: #2550). The one test the retire plan below and the review
     loop's terminal-state read both make, so they never disagree on whether a
-    redo is resuming; bash review.sh keeps its copy for review terminal and
-    doctor."""
+    redo is resuming."""
     count = int_as_test_reads(redo_count)
     if count is None or count <= 0:
         return None
@@ -179,7 +178,7 @@ def review(args: List[str], root: str, git, gh_of, env: Mapping[str, str],
     review begin resets it when the next loop starts. Prints the new redo
     number."""
     # Imported on call: the review module imports this one for redo_midway.
-    from orch.review import review_retire, review_terminal_state
+    from orch.review import review_budget_fallback, review_retire, review_terminal_state
 
     if args:
         die("usage: orch.sh redo review")

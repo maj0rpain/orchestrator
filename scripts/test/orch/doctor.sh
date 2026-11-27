@@ -87,6 +87,17 @@ EOF
 nojq_path=""
 on_windows_bash || nojq_path="$(gh_fixture && path_without_jq)"
 
+# review_flow <slug>: fresh_flow, then on to the review phase - leaves a flow
+# named <slug> at the review phase with the plan, spec and implement handoffs
+# complete, cwd inside it, and whatever healthy_repo exports.
+review_flow() {
+  fresh_flow "$1"
+  complete_handoff "$("$ORCH" handoff path spec)"
+  complete_handoff "$("$ORCH" handoff path implement)"
+  complete_handoff "$("$ORCH" handoff path review)"
+  state_fixture phase review
+}
+
 # --- host detection (host.sh, #281) -------------------------------------------
 echo
 echo "host detection (host.sh, #281)"
@@ -142,9 +153,9 @@ echo "doctor.sh is a one-way dependency (#281)"
 # directory names, as a whole word, no function doctor.sh defines - a name in a
 # comment is no call; one in a quoted literal is - except cmd_doctor, which
 # main() dispatches, and the reporters d_ok, d_warn, d_fail and d_remedy, which
-# a check living in the module of the concept it serves (review.sh's
-# check_standards_declaration) reports through when doctor runs it;
-# check_agent_settings is doctor's own, alongside check_glossary.
+# a check living in the module of the concept it serves would report through
+# when doctor runs it; check_standards_declaration and check_agent_settings are
+# doctor's own, alongside check_glossary.
 # doctor_callbacks <scripts-dir> prints each such name found, for the
 # functions defined in <scripts-dir>/orch/doctor.sh. host.sh,
 # triage-labels.sh and planning-allowlist.sh are outside it: the hooks share
@@ -201,8 +212,9 @@ env_load="$(mktemp)"
 out="$(ORCH_LOAD_TRACE="$env_load" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "passes a healthy repo" "$st" 0
 # No claim and no side checkout: the claims and side-flow checks reach none of
-# the modules their branches need.
-assert_trace_names_no "doctor --env in a repo with no claims and no side checkouts" "$env_load" autopilot handoff liveness
+# the modules their branches need; and the Standards check reads its resolution
+# from Python, so no bash module path loads review.
+assert_trace_names_no "doctor --env in a repo with no claims and no side checkouts" "$env_load" autopilot handoff liveness review
 rm -f "$env_load"
 assert_contains "keeps the ok-line format of the commands it replaces" "$out" "ok    git present"
 assert_contains "opens with a bare group header" "$out" "tools"
@@ -1014,8 +1026,10 @@ assert_eq "agent settings fails via require_python on 3.8.10, as one exact line"
   "$(printf '%s\n' "$out" | grep -Fxc 'FAIL  orch.sh agent needs python3 3.9 or newer (found 3.8.10) - run orch.sh doctor')" "1"
 assert_contains "the checks after the python3 one still ran on 3.8.10" "$out" \
   "ok    Full verification command: true"
-assert_contains "doctor finishes its report after a 3.8.10 agent failure, counting both FAILs" \
-  "$(printf '%s\n' "$out" | tail -1)" " ok, 0 warn, 2 FAIL"
+assert_eq "the Standards check fails via require_python on 3.8.10, as one exact line" \
+  "$(printf '%s\n' "$out" | grep -Fxc 'FAIL  orch.sh doctor needs python3 3.9 or newer (found 3.8.10) - run orch.sh doctor')" "1"
+assert_contains "doctor finishes its report after a 3.8.10 agent failure, counting the three FAILs" \
+  "$(printf '%s\n' "$out" | tail -1)" " ok, 0 warn, 3 FAIL"
 rm -rf "$py3_dir"
 unset py3_real
 unset -f py3_doctor
@@ -1851,6 +1865,7 @@ assert_status "a stop record is healthy too" "$st" 0
 assert_contains "names the terminal state and its reason" \
   "$out" "review loop at a terminal state: stop (CI failed twice.)"
 assert_trace_loads_once "doctor --flow at review with a PR and a stopped loop" "$rv_load"
+assert_trace_names_no "doctor --flow at review with a PR and a stopped loop" "$rv_load" review
 rm -f "$rv_load"
 
 writeln '## Terminal state' '**stop**' 'CI failed twice.' >.orchestrator/review/iteration-05.md
@@ -1886,8 +1901,8 @@ mv .orchestrator/review/stop.saved .orchestrator/review/iteration-05.md
 rm .orchestrator/review/iteration-05-standards.md .orchestrator/review/iteration-05-spec.md
 
 # Mid-redo (#2569), the flat record moved into pre-redo-1/: the stopped loop's
-# end is read there, and branch, through which redo_midway names the -redo-<n>
-# branch, is loaded once.
+# end is read there, by the review noun's Python bridge, so no bash module path
+# loads review.
 "$ORCH" state set issue 21
 state_fixture branch orch/21-doctorterm-redo-1
 state_fixture redo_count 1
@@ -1904,7 +1919,7 @@ assert_contains "a malformed retired record fails" "$out" "has a malformed termi
 assert_contains "the remedy naming the retired record" "$out" \
   ".orchestrator/review/pre-redo-1/iteration-05.md"
 assert_trace_loads_once "doctor --flow with the flat record gone mid-redo" "$rd_load"
-assert_eq "loading branch" "$(grep -c '^branch ' "$rd_load")" "1"
+assert_trace_names_no "doctor --flow with the flat record gone mid-redo" "$rd_load" review
 rm -f "$rd_load"
 restore_suite_env
 
@@ -1993,6 +2008,106 @@ assert_status "a silently failing checks read warns rather than fails" "$st" 0
 assert_contains "saying gh gave no reason" "$out" \
   "warn  CI: could not be read from GitHub for PR #40: gh gave no reason"
 fake_unfail
+restore_suite_env
+
+# --- doctor: review checks bridged to Python --------------------------------
+# The terminal-state, CI and Standards declaration checks each read their
+# answer from one orch_python_call of the review noun's bridge. A failed call
+# is one FAIL with no remedy - its first stderr line, else the check's fallback
+# - and doctor goes on; the budget the terminal check is handed is doctor's own
+# bash copy of the fallback.
+echo
+echo "doctor: review checks bridged to Python"
+review_flow doctorbridge
+doctor_github
+state_fixture pr 40
+fake_pr 40 open orch/doctorbridge main
+fake_pr_draft 40
+fake_checks 40 required green
+state_fixture iteration 2
+"$ORCH" state set budget 5
+want="$("$ORCH" doctor --flow 2>&1 | grep 'review loop hasn')"
+assert_contains "budget 5 reads as the budget" "$want" "iteration 2 of budget 5"
+for raw in "" abc; do
+  "$ORCH" state set budget "$raw"
+  out="$("$ORCH" doctor --flow 2>&1)"
+  assert_eq "budget '$raw' checks the terminal state against the default of 5" \
+    "$(printf '%s\n' "$out" | grep 'review loop hasn')" "$want"
+done
+"$ORCH" state set budget 5
+
+# One python3 start each, counted by the bridge function its arguments name.
+for fn in doctor_terminal doctor_ci; do
+  br_py="$(counting_glob_bin python3 "*\" $fn \"*")"
+  PATH="$br_py:$PATH" "$ORCH" doctor --flow >/dev/null 2>&1
+  assert_eq "a review-phase doctor run with a PR starts one python3 for $fn" \
+    "$(counting_starts "$br_py" python3)" "1"
+  rm -rf "$br_py"
+done
+br_py="$(counting_glob_bin python3 '*" doctor_standards "*')"
+PATH="$br_py:$PATH" "$ORCH" doctor --env >/dev/null 2>&1
+assert_eq "doctor --env starts one python3 for doctor_standards" \
+  "$(counting_starts "$br_py" python3)" "1"
+rm -rf "$br_py"
+
+# A bridge failing with empty stderr is its check's fallback FAIL alone.
+br_fail="$(fails_bin python3 '*" doctor_terminal "*' 1)"
+out="$(PATH="$br_fail:$PATH" "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a failed terminal bridge fails doctor --flow" "$st" 1
+assert_eq "as the terminal check's fallback FAIL, once" \
+  "$(printf '%s\n' "$out" | grep -c '^FAIL  review terminal state could not be read$')" "1"
+assert_eq "and the only FAIL" "$(printf '%s\n' "$out" | grep -c '^FAIL ')" "1"
+assert_not_contains "with no remedy" "$out" "rewrite the first line"
+assert_contains "and doctor goes on to the CI check" "$out" "CI: required checks green"
+rm -rf "$br_fail"
+br_fail="$(fails_bin python3 '*" doctor_ci "*' 1)"
+out="$(PATH="$br_fail:$PATH" "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a failed CI bridge fails doctor --flow" "$st" 1
+assert_eq "as the CI check's fallback FAIL, the only one" \
+  "$(printf '%s\n' "$out" | grep '^FAIL ')" "FAIL  CI checks could not be read"
+assert_not_contains "with no remedy" "$out" "gh pr checks 40"
+assert_contains "and doctor goes on" "$out" ", 1 FAIL"
+rm -rf "$br_fail"
+
+# Only exit 3 is a rejected declaration: any other failure is a failed bridge,
+# never the declaration's FAIL and remedy, though CLAUDE.md declares an entry
+# the resolution would reject.
+writeln 'Standards: `docs/missing.md`' >CLAUDE.md
+for br_st in 1 2; do
+  br_fail="$(fails_bin python3 '*" doctor_standards "*' "$br_st")"
+  out="$(PATH="$br_fail:$PATH" "$ORCH" doctor --env 2>&1)"; st=$?
+  assert_status "a Standards bridge exiting $br_st fails doctor --env" "$st" 1
+  assert_eq "as the Standards check's fallback FAIL, the only one" \
+    "$(printf '%s\n' "$out" | grep '^FAIL ')" "FAIL  Standards resolution could not run"
+  assert_not_contains "not the rejected declaration's remedy" "$out" "Standards: paragraph of"
+  assert_contains "and doctor goes on" "$out" ", 1 FAIL"
+  rm -rf "$br_fail"
+done
+br_fail="$(fails_bin python3 '*" doctor_standards "*' 2 'orch: the resolution broke')"
+out="$(PATH="$br_fail:$PATH" "$ORCH" doctor --env 2>&1)"
+assert_contains "a failed Standards bridge's FAIL is its first stderr line" "$out" \
+  "FAIL  the resolution broke"
+assert_not_contains "never the rejected declaration's remedy" "$out" "Standards: paragraph of"
+rm -rf "$br_fail"
+
+# With no python3, each check prints the shared needs-python3 line, as doctor's,
+# and doctor goes on to its summary.
+if on_windows_bash; then
+  skip "no python3: each review check prints doctor's needs-python3 line" "path_without may not drop python3 on Windows/Git Bash"
+else
+  br_path="$(path_without python3)"
+  br_none="FAIL  orch.sh doctor needs python3 3.9 or newer (found none) - run orch.sh doctor"
+  out="$(PATH="$br_path" "$ORCH" doctor --flow 2>&1)"
+  assert_eq "no python3: the terminal and CI checks each print the line" \
+    "$(printf '%s\n' "$out" | grep -Fxc "$br_none")" "2"
+  assert_contains "and doctor --flow goes on to its summary" \
+    "$(printf '%s\n' "$out" | tail -1)" " FAIL"
+  out="$(PATH="$br_path" "$ORCH" doctor --env 2>&1)"
+  assert_eq "no python3: the Standards check prints the line" \
+    "$(printf '%s\n' "$out" | grep -Fxc "$br_none")" "1"
+  assert_contains "and doctor --env goes on to its summary" \
+    "$(printf '%s\n' "$out" | tail -1)" " FAIL"
+fi
 restore_suite_env
 
 # --- doctor: review draft check -------------------------------------------
@@ -2228,9 +2343,14 @@ fi
 # Bridge exit failures and empty/malformed exit-0 output emit one FAIL without
 # aborting.
 ab_dir="$(mktemp -d)"
+ab_real="$(command -v python3)"
 # agent_bridge_doctor <body>: py3_stub_doctor with python3 3.9.0, <body> run
-# for every call but the version probe.
-agent_bridge_doctor() { py3_stub_doctor "$ab_dir" 3.9.0 "$1"; }
+# for the agent bridge's calls and the real python3 for every other call but
+# the version probe.
+agent_bridge_doctor() {
+  py3_stub_doctor "$ab_dir" 3.9.0 "case \" \$* \" in *\" check_settings \"*) $1 ;; esac
+exec \"$ab_real\" \"\$@\""
+}
 agent_bridge_doctor 'printf "orch: bridge exploded\n" >&2; exit 1'
 assert_status "bridge non-zero exit with stderr fails doctor" "$st" 1
 assert_contains "reporting stderr through err_line" "$out" "FAIL  bridge exploded"
@@ -2259,7 +2379,7 @@ assert_not_contains "trailing data does not replay partial records" "$out" "ok  
 assert_contains "trailing data emits one FAIL" "$(printf '%s\n' "$out" | tail -1)" "0 warn, 1 FAIL"
 
 rm -rf "$ab_dir"
-unset ab_dir
+unset ab_dir ab_real
 unset -f agent_bridge_doctor
 restore_suite_env
 

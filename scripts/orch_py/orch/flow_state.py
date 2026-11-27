@@ -17,12 +17,15 @@ Beside the reader sit the pieces of bash's state module that only read
 state.json: flow_holding_phase, the guard a branch or issue an active flow
 holds answers to (ADR-0029), STATE_UNREADABLE_MSG, the refusal an unreadable
 state.json earns, require_state_exists, the refusal when there is no flow,
+require_state, the refusal of no flow or an unreadable one (its bash copy
+gone with the bash review noun, its one bash caller),
 require_state_read, a command's entry read of the keys it needs,
 require_value, the refusal of a required field left empty, and
 require_issue, the entry read of the flow's issue a command that needs one
-makes; then what two keys read as when a flow never recorded them,
-review_budget_fallback and flow_base_fallback_into, whose bash copies stay
-for the bash nouns that read them.
+makes; then what the base reads as when a flow never recorded it,
+flow_base_fallback_into, whose bash copy stays for the bash nouns that read
+it. The review budget's fallback is the review noun's (orch.review), with a
+bash copy in doctor.sh, its one bash reader.
 """
 from __future__ import annotations
 
@@ -294,6 +297,16 @@ def require_state_exists(state_file: str, env: Mapping[str, str], code: int = 1)
             % (ORCH_DIR_NAME, flow_cmd(env, "start")), code)
 
 
+def require_state(state_file: str, env: Mapping[str, str]) -> None:
+    """Dies unless an active flow's state file exists (require_state_exists)
+    and is exactly one JSON object, STATE_UNREADABLE_MSG its refusal - as
+    bash's require_state was, its bash copy gone: for a command that needs a
+    flow but reads no key."""
+    require_state_exists(state_file, env)
+    if _state_object(state_file) is None:
+        die(STATE_UNREADABLE_MSG)
+
+
 def require_state_read(state_file: str, env: Mapping[str, str], keys: Sequence[str],
                        code: int) -> Dict[str, str]:
     """A command's entry read, bash require_state_read: every one of <keys>
@@ -329,6 +342,13 @@ def require_value(key: str, value: str, code: int = 1) -> None:
         die(message, code)
 
 
+def recorded_pr(value: str) -> Union[int, str]:
+    """The flow's recorded PR <value> as a gh adapter call takes it: a plain
+    number, which pr open writes, as an int; anything else as it is, for gh
+    to refuse with its own reason, as bash's adapter calls did."""
+    return int(value) if plain_number(value) else value
+
+
 def require_issue(state_file: str, env: Mapping[str, str],
                   keys: Sequence[str] = ()) -> Dict[str, str]:
     """The state read of <state_file>, its recorded issue and any further
@@ -339,18 +359,6 @@ def require_issue(state_file: str, env: Mapping[str, str],
     state = require_state_read(state_file, env, ("issue",) + tuple(keys), 1)
     require_value("issue", state["issue"])
     return state
-
-
-# What a review budget reads as when nobody has set one - a flow started
-# before the key existed, or a value nothing can count: bash review.sh's
-# DEFAULT_BUDGET. The number itself is the human's, read from state.
-DEFAULT_BUDGET = "5"
-
-
-def review_budget_fallback(raw: str) -> str:
-    """The budget read from state, <raw>, or DEFAULT_BUDGET where it is
-    empty or not a plain number - bash review_budget_fallback."""
-    return raw if plain_number(raw) else DEFAULT_BUDGET
 
 
 def flow_base_fallback_into(raw: str, gh_of: Callable[[], Any], git, pin) -> str:

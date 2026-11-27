@@ -1,7 +1,8 @@
 """The golden known-items pair: a source text and the known-items file it
 makes, built from the source's Deviations and Review headings byte for byte
-by the Python Known items helpers here, and by the bash ones in the bash
-known-items section, from the same two files."""
+by the Known items helpers - the pin of the known-items file's format
+(ADR-0067) since the bash helpers that built it from the same two files were
+deleted."""
 from __future__ import annotations
 
 from pathlib import Path

@@ -3,8 +3,8 @@
 # Sourced by orch_test.sh (the orch.sh suite's runner), hooks_test.sh and
 # docs_lint.sh: the counting fixture, a stub (in a directory its caller puts
 # first on PATH) that logs one line each time a command starts
-# (counting_argv_bin: each start whose arguments match) and then runs the real
-# command.
+# (counting_argv_bin and counting_glob_bin: each start whose arguments match)
+# and then runs the real command.
 # Sourcing it only defines functions.
 # Bash 4.2+, as the rest of the suite.
 
@@ -29,6 +29,17 @@ counting_argv_bin() {
   local dir
   dir="$(counting_bin "$1")"
   printf '#!/bin/sh\n[ "$*" = "%s" ] && echo x >>"%s/%s.log"\nexec "%s" "$@"\n' "$2" "$dir" "$1" "$(command -v "$1")" >"$dir/$1"
+  printf '%s\n' "$dir"
+}
+
+# counting_glob_bin <cmd> <pattern>: like counting_bin, but a start is logged
+# only when its arguments, space-joined and padded with a space either side,
+# match the glob <pattern>, as fails_bin matches them. Prints the dir.
+counting_glob_bin() {
+  local dir
+  dir="$(counting_bin "$1")"
+  printf '#!/bin/sh\ncase " $* " in %s) echo x >>"%s/%s.log" ;; esac\nexec "%s" "$@"\n' \
+    "$2" "$dir" "$1" "$(command -v "$1")" >"$dir/$1"
   printf '%s\n' "$dir"
 }
 

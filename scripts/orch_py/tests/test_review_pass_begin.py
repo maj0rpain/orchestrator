@@ -9,9 +9,8 @@ from __future__ import annotations
 import pytest
 
 from orch.git import FakeGit
-from conftest import flow_state, orch_review_pass, state_json
+from conftest import GITHUB_ORIGIN, flow_state, orch_review_pass, state_json
 
-ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
 BRANCH = "quick/12-foo"
 USAGE = "orch: usage: orch.sh review-pass begin <issue>\n"
 OFF_CLAUDE_NEXT = "/orchestrator:next (or orch-flow's Next phase section)"
@@ -30,7 +29,7 @@ def checkout_git(root, branch=BRANCH, base="trunk"):
     """The checkout's git adapter: its toplevel <root>, on <branch> (a
     detached HEAD when None), its common directory <root>/.git, and
     <base> recorded as the branch's base in git config when given."""
-    git = FakeGit(ORIGIN, toplevel=str(root))
+    git = FakeGit(GITHUB_ORIGIN, toplevel=str(root))
     git.seed("git_common_dir", answer=str(root / ".git"))
     if branch is not None:
         git.seed("current_branch", answer=branch)

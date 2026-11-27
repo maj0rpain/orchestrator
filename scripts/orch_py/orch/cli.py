@@ -149,6 +149,12 @@ def _pr(argv: List[str]) -> int:
     return run(argv)
 
 
+def _review(argv: List[str]) -> int:
+    from orch.review import run
+
+    return run(argv)
+
+
 def _help(argv: List[str]) -> int:
     from orch.help import run
 
@@ -179,6 +185,7 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "ticket": _ticket,
     "ticket-worktree": _ticket_worktree,
     "pr": _pr,
+    "review": _review,
     "help": _help,
 }
 
@@ -189,7 +196,7 @@ ALIASES: Dict[str, str] = {"-h": "help", "--help": "help"}
 # silent SIGPIPE death on a closed stdout pipe; a noun converted before them
 # keeps its flush failure there, as it always ended.
 SIGPIPE_NOUNS = frozenset({"init", "slug", "status", "archive", "help", "phase", "redo",
-                           "ticket", "ticket-worktree", "pr"})
+                           "ticket", "ticket-worktree", "pr", "review"})
 
 
 def _sigpipe_as_bash(run: Callable[[List[str]], int], argv: List[str]) -> int:

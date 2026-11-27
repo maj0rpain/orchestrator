@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import CHECKOUT, GH_502, checkout, labels_doc
+from conftest import CHECKOUT, GH_502, GITHUB_ORIGIN, checkout, labels_doc
 from orch import finding_triage
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit
@@ -17,7 +17,6 @@ HEAD = "a" * 40
 FIX = "f" * 40
 UNREACHABLE = "0123456789abcdef0123456789abcdef01234567"
 USAGE = "orch: usage: orch.sh finding-triage scan [--all] [<issue> | --pr <n>]\n"
-ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
 REF = "refs/remotes/origin/main"
 
 
@@ -42,7 +41,7 @@ def repo(toplevel=CHECKOUT, git=None):
     """The checkout: origin acme/widgets, origin/HEAD naming main, main
     fetched, and the filing commit HEAD resolved - seeded on <git> when one is
     given, else on a FakeGit of its own."""
-    git = FakeGit(ORIGIN, toplevel=toplevel) if git is None else git
+    git = FakeGit(GITHUB_ORIGIN, toplevel=toplevel) if git is None else git
     git.seed("is_branch_name", "main", answer=True)
     git.seed("origin_head_branch", answer="main")
     git.seed("fetch_default_branch", "main", answer=True)
@@ -186,7 +185,7 @@ class PrHeadGit(FakeGit):
 def test_a_sha_only_the_pr_head_holds_is_fetched_once_and_scanned(seed, capsys):
     pr_head = "b" * 40
     finding(seed, 7, ["review:nit", "needs-triage"], "`src/other.sh:2` at " + pr_head, pr="8")
-    git = repo(git=PrHeadGit("8", pr_head, remotes=ORIGIN, toplevel=CHECKOUT))
+    git = repo(git=PrHeadGit("8", pr_head, remotes=GITHUB_ORIGIN, toplevel=CHECKOUT))
     fate = Fates()
 
     assert scan(seed, git=git, fate=fate) == 0

@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from orch import audit, issue, pr, review_pass, spec_review, ticket_worktree, verification
+from orch import audit, issue, pr, review, review_pass, spec_review, ticket_worktree, verification
 from orch.gh import Unparsed
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit, Git
@@ -143,12 +143,33 @@ def flow_state(root, phase, issue, branch=None):
     return hold_flow(root, slug="x", phase=phase, issue=issue, branch=branch)
 
 
+def lines(*texts):
+    """<texts> as a file's lines, each ending in a newline."""
+    return "".join(text + "\n" for text in texts)
+
+
+def write(root, relative, *texts, raw=None):
+    """<texts>, each ending in a newline - or <raw> as it is - written to
+    <root>/<relative>, a Path's, its directories made: its path."""
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(lines(*texts) if raw is None else raw)
+    return path
+
+
+def record(root, i, *texts, raw=None, under="", report=""):
+    """Iteration <i>'s review record in <root>, holding <texts> or <raw> as
+    write takes them, in the review directory or its <under> folder - or,
+    with <report>, its iteration-NN-<report>.md reviewer's report: its
+    path."""
+    name = "iteration-%02d%s.md" % (i, "-" + report if report else "")
+    return write(root, Path(".orchestrator", "review", under, name), *texts, raw=raw)
+
+
 def write_labels_doc(root, text):
     """Writes <text> as the triage-labels doc of the checkout at <root>, a
     Path, making its directories as needed."""
-    path = root / LABELS_DOC
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text)
+    write(root, LABELS_DOC, raw=text)
 
 
 # The triage-labels doc's role table header: its column names, then its
@@ -406,12 +427,10 @@ def write_staged(root, files):
     """Writes the files named, removes those mapped to None, and stages
     every change."""
     for name, text in files.items():
-        path = root / name
         if text is None:
-            path.unlink()
+            (root / name).unlink()
             continue
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        write(root, name, raw=text)
     run_git(root, "add", "-A")
 
 
@@ -535,6 +554,12 @@ class UnparsedPrComments(FakeGh):
         raise Unparsed("no comment list")
 
 
+def answered(capsys, code):
+    """(exit code, stdout, stderr) of a call that returned <code>."""
+    out, err = capsys.readouterr()
+    return code, out, err
+
+
 def died_of(capsys, run):
     """(exit code, stdout, stderr) of <run>, which must die."""
     with pytest.raises(SystemExit) as died:
@@ -568,6 +593,11 @@ def orch_pr(seed, git, *argv, env=None, gh=None):
         return pr.run(list(argv), gh=gh, git=git, env=env)
     except SystemExit as died:
         return died.code
+
+
+def is_draft(seed, n):
+    """Whether PR #<n> in <seed>'s store is a draft."""
+    return os.path.isfile(os.path.join(seed.store, "prs", str(n), "draft"))
 
 
 def prs_of(store):
@@ -639,6 +669,28 @@ class FakeClock:
         self.now += seconds
         if self.on_sleep is not None:
             self.on_sleep(len(self.slept))
+
+
+# A checkout's origin on GitHub, for a gh fake to pin its repo to.
+GITHUB_ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
+
+
+def orch_review(seed, root, *argv, env=None, git=None, clock=None, gh=None):
+    """`orch.sh review <argv>` in-process in the checkout at <root>, under
+    <env> (Claude Code's plain session when None), the git adapter <git> - a
+    FakeGit at <root> with its origin on GitHub when None - and the gh adapter
+    <gh> - the gh fake on <seed>'s store pinned through <git> when None -
+    <clock> (a FakeClock when None) the time and sleep of both: its exit code,
+    a SystemExit's included."""
+    env = CLAUDE if env is None else env
+    git = FakeGit(GITHUB_ORIGIN, toplevel=str(root)) if git is None else git
+    clock = FakeClock() if clock is None else clock
+    if gh is None:
+        gh = FakeGh(seed.store, env, pin=RepoPin(env, git), sleep=clock.sleep, now=clock)
+    try:
+        return review.run(list(argv), git=git, gh=gh, env=env, clock=clock, sleep=clock.sleep)
+    except SystemExit as died:
+        return died.code
 
 
 def orch_spec_review(root, *argv, seed=None, env=None, clock=None, sleep=None):

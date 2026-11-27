@@ -74,9 +74,7 @@ gh_capture_err() {
 # temp files, through the limit retry protocol (#2724) - the one copy of it: a
 # failed call goes through gh_limit_handle, a first secondary limit (status 2)
 # is retried once, a limit given up on (status 1) fails the call with the
-# handler's message in place of the command's stderr - or with nothing on
-# stderr, for the silent give-up of a re-callable wait (the mark
-# the Wait module's wait_limit_fits leaves) - and any other failure
+# handler's message in place of the command's stderr - and any other failure
 # keeps its stderr as it is. The command's status passes through, and so does
 # the stdout of the deciding attempt alone - the one whose outcome the call
 # returns - byte for byte from its file, never through a shell variable; an
@@ -111,9 +109,7 @@ gh_limit_retry() {
 #
 # gh_limit_handle is the one limit handler: the guard calls it on a failed
 # call, and the test fake's failing operations call it too. It never dies: the
-# failed call returns its own status, with the distinct message on stderr -
-# except the silent give-up of a re-callable wait, which leaves a mark and no
-# message.
+# failed call returns its own status, with the distinct message on stderr.
 
 # gh_limit_kind <stderr>: secondary for GitHub's secondary-limit wording,
 # "submitted too quickly" or an HTTP 429; primary for its primary-limit
@@ -153,13 +149,7 @@ gh_limit_reset() {
 # Status 0: no limit - the caller passes its failure through untouched.
 # Status 2: a first secondary limit, waited out (ORCH_GH_LIMIT_WAIT seconds,
 # default 60) - the caller retries once and calls this again with
-# <retry spent> 1. While a re-callable wait is open and wait_limit_fits says
-# what is left of ORCH_WAIT_BLOCK cannot hold that wait (the Wait module alone
-# decides from WAIT_MARK, and leaves its own mark there), the status is 1
-# with no message, nothing recorded: the wait is not over, and the Wait
-# module's checks end the call as still running.
-# While NO_WAIT_CALL is set (review ci --no-wait) a first secondary limit
-# is given up on at once too, as a primary one.
+# <retry spent> 1.
 # Status 1: a limit to give up on - a primary one, a secondary one met again
 # after the retry, or a first secondary one on a compound write (never
 # retried, so called with <retry spent> 1), handled as a primary one. The
@@ -168,13 +158,11 @@ gh_limit_reset() {
 # (autopilot_github_limit_record), and a failed write is part of that same one
 # line, after " - " with its clauses joined by "; ", so gh_reason keeps it.
 gh_limit_handle() {
-  local kind reset nap clauses="" clause msg
+  local kind reset clauses="" clause msg
   kind="$(gh_limit_kind "$1")"
   [ -n "$kind" ] || return 0
-  if [ "$kind" = secondary ] && [ "$2" = 0 ] && [ -z "${NO_WAIT_CALL:-}" ]; then
-    nap="${ORCH_GH_LIMIT_WAIT:-60}"
-    wait_limit_fits "$nap" || return 1
-    sleep "$nap"
+  if [ "$kind" = secondary ] && [ "$2" = 0 ]; then
+    sleep "${ORCH_GH_LIMIT_WAIT:-60}"
     return 2
   fi
   reset="$(gh_limit_reset)"
@@ -296,14 +284,13 @@ gh_or_die() {
 # --- gh adapter -------------------------------------------------------------
 #
 # The seam between orch.sh's decision logic and the `gh` CLI. A caller like
-# filed-finding.sh's severity_label_ensure calls an adapter operation, never
+# autopilot.sh's autopilot_labels_ensure calls an adapter operation, never
 # `gh` itself, so a test can replace one in-process function instead of faking a
 # `gh` binary on PATH. Every GitHub call in orch.sh and its modules goes
 # through one. History: begun with labels (#91), issues (#92); all since #280.
 #
 # The operations, in the order they are defined below:
-# - label: adapter_label_upsert, adapter_label_create, adapter_labels,
-#   adapter_labels_detail
+# - label: adapter_label_upsert, adapter_labels, adapter_labels_detail
 # - rate limit: adapter_rate_limit
 # - issue: adapter_issue_body, adapter_issue_comments,
 #   adapter_issue_state_labels, adapter_issue_title_labels,
@@ -311,12 +298,11 @@ gh_or_die() {
 #   adapter_issue_created_at, adapter_issues_labelled_rows,
 #   adapter_issues_any_labelled_rows,
 #   adapter_issues_open_rows, adapter_issues_titled_rows,
-#   adapter_issue_create, adapter_issue_body_edit, adapter_issue_comment,
+#   adapter_issue_body_edit, adapter_issue_comment,
 #   adapter_issue_comment_url,
 #   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
 # - pr: adapter_pr_create, adapter_pr_labels, adapter_pr_body,
-#   adapter_pr_comments, adapter_pr_refs, adapter_pr_url_head,
-#   adapter_pr_ready, adapter_pr_draft,
+#   adapter_pr_comments, adapter_pr_refs, adapter_pr_draft,
 #   adapter_pr_state_draft, adapter_prs_open, adapter_prs_open_bodies,
 #   adapter_prs_open_mergeability,
 #   adapter_pr_diff, adapter_prs_merged,
@@ -329,11 +315,8 @@ gh_or_die() {
 #   adapter_blocker_add, adapter_blocker_remove, adapter_sub_issues_supported
 # - repo: adapter_repo_default_branch, adapter_repo_local_default,
 #   adapter_auth_status <host>
-# - ci: adapter_pr_checks, adapter_branch_required_checks,
-#   adapter_branch_rules, adapter_pr_commits_checked,
-#   adapter_run_rerun, adapter_job_failed_log
 #
-# ORCH_GH_ADAPTER is an opt-in test knob in the same spirit as review.sh's
+# ORCH_GH_ADAPTER is an opt-in test knob in the same spirit as review ci's
 # ORCH_CI_* ones, but read differently: not a value substituted at load time,
 # but a file sourced immediately after the real adapter functions are defined:
 # anything it redefines overrides the corresponding real function for the
@@ -342,7 +325,7 @@ gh_or_die() {
 # is identical to before the seam existed.
 #
 # Operations under the #280 contract - the label, issue, PR, sub-issue and
-# dependency, repo, and CI ones - are named for what their callers need and own
+# dependency, and repo ones - are named for what their callers need and own
 # gh's flags, --jq and GitHub's database ids: each prints plain text in the
 # shape documented on it, and on a gh failure returns non-zero with gh's stderr
 # passed through.
@@ -392,13 +375,6 @@ url_number() {
 # updates the one that exists, to that colour and description. Prints nothing.
 adapter_label_upsert() {
   gh label create "$1" --force --color "$2" --description "$3" >/dev/null
-}
-
-# adapter_label_create <name> <colour> <description>: creates the label where
-# the repo has none of that name; fails where it has one, leaving it as it is.
-# Prints nothing.
-adapter_label_create() {
-  gh label create "$1" --color "$2" --description "$3" >/dev/null
 }
 
 # adapter_labels <limit>: the names of the repo's labels, at most <limit> of
@@ -612,8 +588,7 @@ issues_any_labelled_limit_warn() {
 # (<err_var> "gh answered a listing that does not parse"). Warns through
 # issues_labelled_limit_warn when the listing reaches the issue-list limit. Dies
 # when an array name is not a declared associative array. Elements are assigned
-# by eval on a validated name, the value by reference, as finding_body_parse
-# does.
+# by eval on a validated name, the value by reference (assoc_pairs_assign).
 issues_labelled_rows_read() {
   issues_rows_read_via issues_labelled_rows_read adapter_issues_labelled_rows issues_labelled_limit_warn "$@"
 }
@@ -739,21 +714,6 @@ adapter_issues_open_titles() {
     --jq '.[] | select(has("pull_request") | not) | "\(.number)\t\(.title)"'
 }
 
-# adapter_issue_create <title> <body-file> [label...]: files the issue under
-# every label named and prints its number alone. Fails, printing nothing, where
-# gh succeeded but printed no issue URL.
-adapter_issue_create() {
-  local title="$1" body="$2" args=() l out n
-  shift 2
-  for l in "$@"; do args+=(--label "$l"); done
-  out="$(gh issue create --title "$title" --body-file "$body" ${args[@]+"${args[@]}"})" || return
-  if ! n="$(url_number issues "$out")"; then
-    printf 'gh issue create printed no issue URL: %s\n' "$out" >&2
-    return 1
-  fi
-  printf '%s\n' "$n"
-}
-
 # adapter_issue_body_edit <n> <file>: replaces the issue's body with the
 # file's contents. Prints nothing.
 adapter_issue_body_edit() {
@@ -865,9 +825,8 @@ adapter_pr_comments() {
   gh pr view "$1" --json comments
 }
 
-# adapter_pr_refs <n>: review ci's read of the PR's own head and base (issues
-# #475, #476) - the SHA and branch its grace is anchored to come from the PR,
-# not from local HEAD, which can be anywhere by the time the loop ends. Prints
+# adapter_pr_refs <n>: the read of the PR's own head and base, from the PR, not
+# from local HEAD, which can be anywhere by the time a caller reads it. Prints
 # the head SHA, the head branch and the base branch, an empty line for one
 # GitHub leaves unset.
 adapter_pr_refs() {
@@ -881,27 +840,6 @@ adapter_pr_refs() {
 # caller-named variables, on gh_lines_read's contract.
 pr_refs_read() {
   gh_lines_read adapter_pr_refs "$1" "$5" "$2" "$3" "$4"
-}
-
-# adapter_pr_url_head <n>: review file's read of the PR's canonical URL and
-# remote head commit (issue #1936). Prints the URL on the first line and the
-# head SHA on the second, an empty line for one GitHub leaves unset.
-adapter_pr_url_head() {
-  gh pr view "$1" --json url,headRefOid --jq '(.url // ""), (.headRefOid // "")'
-}
-
-# pr_url_head_read <n> <url_var> <sha_var> <err_var>: reads PR <n> once through
-# adapter_pr_url_head and writes its URL and head SHA (each empty where GitHub
-# leaves it unset) into the first two caller-named variables, on
-# gh_lines_read's contract.
-pr_url_head_read() {
-  local __puhr_rest
-  gh_lines_read adapter_pr_url_head "$1" "$4" "$2" "$3" __puhr_rest
-}
-
-# adapter_pr_ready <n>: marks the draft PR ready for review. Prints nothing.
-adapter_pr_ready() {
-  gh pr ready "$1" >/dev/null
 }
 
 # adapter_pr_draft <n>: turns the ready PR back into a draft (issue #967).
@@ -1167,111 +1105,6 @@ adapter_repo_local_default() {
 # checks every account on every host otherwise, and one stale account fails it.
 adapter_auth_status() {
   gh auth status --active --hostname "$1"
-}
-
-# --- ci operations ---
-
-# adapter_pr_checks <n> <required|all>: the PR's checks - the ones branch
-# protection requires, or every check on its head - one per line as TSV,
-# "<bucket><TAB><name><TAB><link>", in gh's order; an empty link for a check
-# that has none. Nothing at all on stdout where gh reports no checks, or no
-# required ones, with gh's line passed through on stderr. gh documents exit
-# 8 for pending checks, still answering the JSON: that is read like an exit
-# 0, and where it leaves nothing readable, a single pending check with no
-# name or link is printed. Fails where gh answered with something jq cannot
-# read.
-adapter_pr_checks() {
-  local args=("$1") err out tsv st=0
-  [ "$2" != required ] || args+=(--required)
-  gh_capture out err gh pr checks "${args[@]}" --json bucket,name,link || st=$?
-  case "$st" in
-    0|8) ;;
-    *)
-      ! grep -q 'no checks reported\|no required checks' <<<"$err" || st=0
-      printf '%s' "$err" >&2
-      return "$st" ;;
-  esac
-  if ! tsv="$(printf '%s' "$out" | jq -r '.[] | "\(.bucket)\t\(.name)\t\(.link // "")"' 2>/dev/null)"; then
-    if [ "$st" = 8 ]; then printf 'pending\t\t\n'; return 0; fi
-    printf 'gh pr checks answered with something jq could not read\n' >&2
-    return 1
-  fi
-  if [ -z "$tsv" ]; then
-    [ "$st" != 8 ] || printf 'pending\t\t\n'
-    return 0
-  fi
-  printf '%s\n' "$tsv"
-}
-
-# ci_api_read <what> <path> <jq> [gh api args...]: one gh api read (the args,
-# a GraphQL query's fields, follow the path), its JSON answer run through
-# the jq expression. On a gh failure, gh's stderr passes through - except
-# where <what> is given and gh's answer names it: GitHub's message for an
-# absence it reports as an error, which succeeds printing nothing. Shared by the
-# CI-evidence operations below; not called from anywhere else.
-ci_api_read() {
-  local err out res st=0
-  gh_capture out err gh api "$2" "${@:4}" || st=$?
-  if [ "$st" != 0 ]; then
-    if [ -n "$1" ] && grep -qF -- "$1" <<<"$out"$'\n'"$err"; then
-      return 0
-    fi
-    printf '%s' "$err" >&2
-    return "$st"
-  fi
-  if ! res="$(printf '%s' "$out" | jq -r "$3" 2>/dev/null)"; then
-    printf 'gh api answered with something jq could not read\n' >&2
-    return 1
-  fi
-  [ -z "$res" ] || printf '%s\n' "$res"
-}
-
-# review ci's CI-evidence reads (issue #476). None of them decides anything:
-# no_ci_evidence judges what they print.
-#
-# adapter_branch_required_checks <branch>: the check contexts classic branch
-# protection requires on the branch, one per line, each once. Nothing at all
-# for an unprotected branch - GitHub's 404 `Branch not protected`. Any other
-# failure, a bare 404 `Not Found` from lacking access included, fails it.
-adapter_branch_required_checks() {
-  ci_api_read 'Branch not protected' \
-    "repos/{owner}/{repo}/branches/$1/protection/required_status_checks" \
-    '[(.contexts // [])[], ((.checks // [])[] | .context)] | unique | .[]'
-}
-
-# adapter_branch_rules <branch>: the type of every rule the repo's rulesets
-# apply to the branch, one per line; nothing at all for none.
-adapter_branch_rules() {
-  ci_api_read '' "repos/{owner}/{repo}/rules/branches/$1" '.[].type'
-}
-
-# The GraphQL query and jq behind adapter_pr_commits_checked. One line, so a
-# logged argv (the gh fixture's) stays one line. A rollup's contexts are the
-# commit's check runs and commit statuses together; null where it has none.
-PR_COMMITS_CHECKED_QUERY='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { baseRef { target { ... on Commit { statusCheckRollup { contexts { totalCount } } } } } commits(first: 100) { nodes { commit { oid statusCheckRollup { contexts { totalCount } } } } } } } }'
-PR_COMMITS_CHECKED_JQ='def checked: if (.statusCheckRollup.contexts.totalCount // 0) > 0 then "yes" else "no" end; .data.repository.pullRequest | (if .baseRef == null then "" else .baseRef.target | checked end), (.commits.nodes[] | "\(.commit.oid)\t\(.commit | checked)")'
-
-# adapter_pr_commits_checked <n>: whether the base branch tip, then each of PR
-# #n's first 100 commits, has any check run or commit status. The first line is
-# the base tip's "yes" or "no" - empty where GitHub holds no base ref - then one
-# "<sha><TAB>yes|no" line per commit, oldest first. One GraphQL read; it decides
-# nothing, no_ci_evidence judges what it prints.
-adapter_pr_commits_checked() {
-  ci_api_read '' graphql "$PR_COMMITS_CHECKED_JQ" \
-    -F owner='{owner}' -F name='{repo}' -F number="$1" -f query="$PR_COMMITS_CHECKED_QUERY"
-}
-
-# adapter_run_rerun <run>: reruns the failed jobs of GitHub Actions run <run>
-# (issue #525). Prints nothing.
-adapter_run_rerun() {
-  gh run rerun "$1" --failed >/dev/null
-}
-
-# adapter_job_failed_log <job>: the failed steps' log of GitHub Actions job
-# <job>, as gh prints it. Fails, with gh's stderr passed through, where gh
-# could not read the log.
-adapter_job_failed_log() {
-  gh run view --job "$1" --log-failed
 }
 
 # --- claim operations (#1454) ---

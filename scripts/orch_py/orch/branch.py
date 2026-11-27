@@ -5,12 +5,12 @@ branch, read through the git adapter's config_value, and the PR and
 forked-from ones written through its config_set (bash keeps no writer of the
 PR key since pr converted), the branch kinds (bash branch_kind) and whether a
 branch is a plugin-made branch that records a base, the flow's branch name
-and its redo form (bash branch_name_flow_into and branch_name_redo), a
-ticket branch's name, the issue a flow or quick branch name gives, the
-discard rule's own-branch proof and discard (bash discard_own_branch_work),
-and branch_retire, every arm of bash `branch retire <old> <new>`. A later
-`branch` noun grows it rather than moving it, as the base module was grown
-for `base`.
+(bash branch_name_flow_into) and its redo form (as bash's branch_name_redo
+was, its bash copy gone), a ticket branch's name, the issue a flow or quick
+branch name gives, the discard rule's own-branch proof and discard (as
+bash's discard_own_branch_work was, its bash copy gone), and branch_retire,
+every arm of bash `branch retire <old> <new>`. A later `branch` noun grows
+it rather than moving it, as the base module was grown for `base`.
 """
 from __future__ import annotations
 
@@ -127,12 +127,13 @@ def branch_records_base(git, branch: str) -> bool:
 
 def discard_own_branch_work(git, root: str, env: Mapping[str, str], who: str, branch: str,
                             recorded: str, active: bool) -> None:
-    """The discard rule's prelude and the discard in one - bash
-    discard_own_branch_work: proves <branch> is the caller's own, then runs
-    the flow-branch discard in the checkout at <root>, the git adapter
-    <git>'s own, <env> telling an autopilot session. <recorded> is the
-    flow's recorded branch (empty for none) and <active> whether a flow is
-    active, both from the caller's one read of flow state; this reads none.
+    """The discard rule's prelude and the discard in one, as bash's
+    discard_own_branch_work was, its bash copy gone: proves <branch> is the
+    caller's own, then runs the flow-branch discard in the checkout at
+    <root>, the git adapter <git>'s own, <env> telling an autopilot session.
+    <recorded> is the flow's recorded branch (empty for none) and <active>
+    whether a flow is active, both from the caller's one read of flow state;
+    this reads none.
     Own is the branch the flow records, in any phase; else, with an active
     flow, the flow-branch proof dies on it; with none, a `quick` branch."""
     # Imported here: the checkout module reads this one at its own import.

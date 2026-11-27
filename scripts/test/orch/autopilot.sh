@@ -2970,6 +2970,15 @@ assert_eq "and touches no label" "$(fake_labels_of 7)" "$before"
 printf '2020-01-01T00:00:00Z\n' >"$top/.orchestrator/autopilot/github-limit"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a passed GitHub pause is removed" "$(on_disk "$top/.orchestrator/autopilot/github-limit")" absent
+# The golden GitHub limit pause the Python limit record writes for a reset of
+# 1800001800 (ADR-0067; scripts/orch_py/tests/test_github_limit_record.py)
+# reads as that reset, and is what the bash writer writes for it.
+gl_golden="${ORCH%/*}/orch_py/tests/github_pause/github-limit"
+assert_eq "the golden GitHub limit pause reads as its reset" "$(sourced_orch autopilot_pause_epoch "$gl_golden")" 1800001800
+sourced_orch autopilot_pause_put "$top/.orchestrator/autopilot/github-limit" 1800001800
+assert_eq "and is what the bash writer writes for that reset" \
+  "$(cmp -s "$top/.orchestrator/autopilot/github-limit" "$gl_golden" && echo same)" same
+rm -f "$top/.orchestrator/autopilot/github-limit"
 # a file more than an hour ahead is cut to an hour, warned once, and held
 gh_file="$top/.orchestrator/autopilot/github-limit"
 gl_calls="$(tick_calls)"

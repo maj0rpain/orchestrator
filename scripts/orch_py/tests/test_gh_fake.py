@@ -30,14 +30,20 @@ BASH_HELPERS = {
         "fake_default_branch", "fake_claim_seed", "fake_claim_held",
         "fake_pr_draft", "fake_pr_head", "fake_pr_merged", "fake_issue_created", "iso_of",
         "iso_ago", "fake_next_pr", "fake_checks", "fake_pr_base_of", "fake_pr_body_of",
-        "fake_pr_draft_of",
     ],
+    SCRIPTS / "test" / "orch" / "state.sh": ["fake_pr_draft_of"],
     SCRIPTS / "test" / "orch" / "gh.sh": ["fake_ratelimit", "fake_duplicate_of",
                                           "fake_issue_body", "fake_pr_comments_of"],
     SCRIPTS / "test" / "orch" / "autopilot.sh": ["fake_reason_of"],
-    SCRIPTS / "test" / "orch" / "review.sh": ["fake_title_of", "fake_body_of",
-                                              "fake_next_issue"],
 }
+# The issue reads and the next-issue seeder the bash review suite defined: the
+# suite went with the bash review noun, and these write-back cases still read
+# the store through them.
+ISSUE_READS = r"""
+fake_title_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/title" 2>/dev/null; }
+fake_body_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/body" 2>/dev/null; }
+fake_next_issue() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_issue"; }
+"""
 SECONDARY = "You have exceeded a secondary rate limit."
 NOW = 1_900_000_000
 
@@ -62,7 +68,8 @@ def bash_definitions(path, names):
     return "\n".join(found[name] for name in names)
 
 
-HELPERS = "\n".join(bash_definitions(path, names) for path, names in BASH_HELPERS.items())
+HELPERS = "\n".join(bash_definitions(path, names) for path, names in BASH_HELPERS.items()) + (
+    ISSUE_READS)
 
 
 def bash(store, script):
@@ -337,6 +344,28 @@ def test_label_create_adds_a_missing_label_and_fails_on_one_in_any_casing(store)
     )
 
 
+def test_label_upsert_rewrites_a_label_in_its_casing_and_adds_a_missing_one_as_bash_does(store):
+    bash(store, "fake_label Bug d73a4a 'Something is wrong'; fake_label nit c5def5 'Small'")
+    gh = fake(store)
+
+    gh.label_upsert("BUG", "ffffff", "Rewritten")
+    gh.label_upsert("review:major", "d93f0b", "Review finding filed at major severity")
+
+    assert (store / "labels").read_text() == (
+        "nit\tc5def5\tSmall\n"
+        "Bug\tffffff\tRewritten\n"
+        "review:major\td93f0b\tReview finding filed at major severity\n"
+    )
+
+
+def test_a_label_upsert_seeded_to_fail_writes_nothing(store, seed):
+    seed.fail("adapter_label_upsert", "HTTP 502: Bad Gateway\n")
+
+    with pytest.raises(GhFailed):
+        fake(store).label_upsert("review:nit", "c5def5", "x")
+    assert not (store / "labels").exists()
+
+
 def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
     gh = fake(store)
     with pytest.raises(GhFailed) as failed:
@@ -383,6 +412,12 @@ def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
     ("adapter_prs_merged_closing",
      lambda gh: gh.prs_merged_closing("main", "2026-01-01T00:00:00Z")),
     ("adapter_prs_merged_bodies", lambda gh: gh.prs_merged_bodies("main")),
+    ("adapter_pr_url_head", lambda gh: gh.pr_url_head(6)),
+    ("adapter_branch_required_checks", lambda gh: gh.branch_required_checks("main")),
+    ("adapter_branch_rules", lambda gh: gh.branch_rules("main")),
+    ("adapter_pr_commits_checked", lambda gh: gh.pr_commits_checked(6)),
+    ("adapter_run_rerun", lambda gh: gh.run_rerun(4242)),
+    ("adapter_job_failed_log", lambda gh: gh.job_failed_log(77)),
 ])
 def test_the_added_operations_fail_under_the_bash_operation_names(store, operation, call):
     bash(store, "fake_issue 5 open review:nit; fake_issue 7 open; fake_default_branch trunk; "
@@ -912,14 +947,44 @@ adapter_prs_merged_bodies main
         open_bodies + ["|"] + merged + ["|", "Refs #8", "", "Closes #5", ""])
 
 
-@pytest.mark.parametrize("answer", [
-    "green", "failing", "cancel", "external", "tworuns", "onerun", "mixed", "badrunid",
-    "comma", "pending", "none", "empty"])
-def test_each_scripted_checks_answer_reads_as_the_bash_fake_answers_it(store, answer):
-    bash_answer = bash(store, "fake_checks 4 all %s; adapter_pr_checks 4 all 2>/dev/null" % answer)
+RUNS = "https://github.com/acme/widgets/actions/runs"
+EXT_CI = "https://ci.example.com/build/9"
+# What each scripted checks answer reads as, in adapter_pr_checks's TSV shape:
+# the bash fake's answers when it still had the operation.
+SCRIPTED_CHECKS = {
+    "green": "pass\tbuild\t%s/1/job/1\n" % RUNS,
+    "failing": "fail\tbuild\t%s/4242/job/77\npass\tlint\t%s/1/job/1\n" % (RUNS, RUNS),
+    "cancel": "cancel\tbuild\t%s/5150/job/9\n" % RUNS,
+    "external": "pass\tlint\t%s/1/job/1\nfail\text-ci\t%s\nfail\tbuild\t%s/4242/job/77\n"
+                % (RUNS, EXT_CI, RUNS),
+    "tworuns": "fail\tbuild\t%s/4242/job/77\nfail\ttest\t%s/4343/job/78\n" % (RUNS, RUNS),
+    "onerun": "fail\tbuild\t%s/4242/job/77\nfail\ttest\t%s/4242/job/78\n" % (RUNS, RUNS),
+    "mixed": "fail\tbuild\t%s/4242/job/77\nfail\text-ci\t%s\n" % (RUNS, EXT_CI),
+    "badrunid": "fail\tbuild\t%s/12abc\n" % RUNS,
+    "comma": "fail\tbuild (linux, x64)\t%s/4242/job/77\n" % RUNS,
+    "pending": "pending\tbuild\t\n",
+    "none": "",
+    "empty": "",
+}
+
+
+@pytest.mark.parametrize("answer", sorted(SCRIPTED_CHECKS))
+def test_each_scripted_checks_answer_reads_as_its_checks(store, answer):
+    bash(store, "fake_checks 4 all %s" % answer)
 
     assert "".join("\t".join(check) + "\n" for check in fake(store).pr_checks(4, "all")) == (
-        bash_answer)
+        SCRIPTED_CHECKS[answer])
+
+
+@pytest.mark.parametrize("script, says", [
+    ("fake_checks 4 all none", "no checks reported on the 'topic' branch\n"),
+    ("fake_checks 4 all empty", ""),
+    ("fake_checks 4 required green", "no checks reported on the 'topic' branch\n"),
+], ids=["none", "empty", "unscripted"])
+def test_no_checks_carry_gh_s_no_checks_line_but_an_empty_list(store, script, says):
+    bash(store, script)
+
+    assert fake(store).pr_checks(4, "all").reported == says
 
 
 def test_a_checks_script_answers_one_per_call_the_last_repeating_an_unscripted_scope_none(store):
@@ -992,7 +1057,7 @@ adapter_pr_state_draft 40 | paste -sd ' ' -
     )
 
 
-def test_python_seeded_prs_checks_and_creation_times_read_back_through_the_bash_fake(store):
+def test_python_seeded_prs_and_creation_times_read_back_through_the_bash_fake(store):
     seed = FakeStore(str(store))
     seed.issue(7, "open")
     seed.issue_created(7, "2026-03-01T12:00:00Z")
@@ -1003,7 +1068,6 @@ def test_python_seeded_prs_checks_and_creation_times_read_back_through_the_bash_
     seed.pr_diff(4, "+y\n")
     seed.pr(10, "merged", "orch/7-x", "main")
     seed.pr_merged(10, "2026-03-02T00:00:00Z", 7, 9)
-    seed.checks(4, "required", "failing", "green")
     seed.next_pr(50)
 
     assert bash(store, r"""
@@ -1013,16 +1077,134 @@ adapter_pr_labels 4 | paste -sd ' ' -
 adapter_pr_refs 4 | paste -sd ' ' -
 adapter_pr_diff 4
 adapter_prs_merged_closing main 2026-03-01T00:00:00Z
-adapter_pr_checks 4 required; adapter_pr_checks 4 required; adapter_pr_checks 4 required
 cat "$ORCH_GH_FAKE_STORE/next_pr"
 """) == (
         "2026-03-01T12:00:00Z\nOPEN true\nbug wip\nabc123 topic main\n+y\n"
         "10\torch/7-x\t2026-03-02T00:00:00Z\t7,9\tfalse\n"
-        "fail\tbuild\thttps://github.com/acme/widgets/actions/runs/4242/job/77\n"
-        "pass\tlint\thttps://github.com/acme/widgets/actions/runs/1/job/1\n"
-        + "pass\tbuild\thttps://github.com/acme/widgets/actions/runs/1/job/1\n" * 2
-        + "50\n"
+        "50\n"
     )
+
+
+def test_a_python_seeded_checks_script_is_laid_out_as_the_bash_seeder_lays_it_out(store):
+    FakeStore(str(store)).checks(4, "required", "failing", "green")
+    bash(store, "fake_checks 5 required failing green")
+
+    assert (store / "checks" / "4" / "required").read_text() == (
+        (store / "checks" / "5" / "required").read_text())
+    assert [fake(store).pr_checks(4, "required") for _ in range(3)] == [
+        [Check("fail", "build", RUNS + "/4242/job/77"), Check("pass", "lint", RUNS + "/1/job/1")],
+        [Check("pass", "build", RUNS + "/1/job/1")],
+        [Check("pass", "build", RUNS + "/1/job/1")],
+    ]
+
+
+# --- the review noun's reads and its rerun -------------------------------------
+
+HEAD = "a" * 40
+EARLIER = "b" * 40
+
+
+def test_the_review_reads_of_a_bash_seeded_store_answer_as_the_store_holds_them(store):
+    # The store as the bash suite's fake_* seeders and the layout write it, raw.
+    bash(store, r"""
+s="$ORCH_GH_FAKE_STORE"
+fake_pr 7 open topic main; fake_pr_head 7 %(head)s %(earlier)s %(head)s
+printf 'https://ghe.example.com/x/y/pull/7\n' >"$s/prs/7/url"
+fake_pr 8 open other next
+fake_pr 9 open bare main; fake_pr_head 9 ''
+mkdir -p "$s/protection" "$s/rules" "$s/job_logs"
+printf 'build\nlint\n' >"$s/protection/main"
+printf 'deletion\nrequired_status_checks\n' >"$s/rules/main"
+printf 'main\n%(earlier)s\n' >"$s/check_runs"; printf 'next\n' >"$s/statuses"
+printf 'build\tstep\tline one\n' >"$s/job_logs/77"
+""" % {"head": HEAD, "earlier": EARLIER})
+    gh = fake(store)
+
+    assert gh.pr_url_head(7) == ("https://ghe.example.com/x/y/pull/7", HEAD)
+    assert gh.pr_url_head(8) == ("https://github.com/o/r/pull/8", "0" * 40)
+    assert gh.branch_required_checks("main") == ["build", "lint"]
+    assert gh.branch_required_checks("open") == []
+    assert gh.branch_rules("main") == ["deletion", "required_status_checks"]
+    assert gh.branch_rules("bare") == []
+    assert gh.pr_commits_checked(7) == ("yes", [(EARLIER, "yes"), (HEAD, "no")])
+    assert gh.pr_commits_checked(8) == ("yes", [("0" * 40, "no")])
+    assert gh.pr_commits_checked(9) == ("yes", [])
+    assert gh.job_failed_log(77) == "build\tstep\tline one\n"
+
+
+def test_python_seeded_review_reads_write_the_store_layout(store):
+    seed = FakeStore(str(store))
+    seed.pr(7, "open", "topic", "main")
+    seed.pr_head(7, HEAD, EARLIER, HEAD)
+    seed.pr(8, "open", "other", "next")
+    seed.pr_head(8, HEAD, EARLIER)
+    seed.pr_head(8, "")
+    seed.pr_url(7, "https://ghe.example.com/x/y/pull/7")
+    seed.required_checks("main", "build", "lint")
+    seed.rules("main", "required_status_checks")
+    seed.check_run(EARLIER)
+    seed.status("main")
+    seed.job_log(77, "log line 1\nlog line 2\n")
+    gh = fake(store)
+
+    assert bash(store, r"""
+s="$ORCH_GH_FAKE_STORE"
+cat "$s/prs/7/url" "$s/prs/7/head_oid"; paste -sd ' ' "$s/prs/7/commits"
+paste -sd ' ' "$s/protection/main"; cat "$s/rules/main" "$s/check_runs" "$s/statuses"
+cat "$s/job_logs/77"
+""") == ("https://ghe.example.com/x/y/pull/7\n%(head)s\n%(earlier)s %(head)s\n"
+         "build lint\nrequired_status_checks\n%(earlier)s\nmain\nlog line 1\nlog line 2\n"
+         % {"head": HEAD, "earlier": EARLIER})
+    assert gh.pr_url_head(7) == ("https://ghe.example.com/x/y/pull/7", HEAD)
+    assert gh.branch_required_checks("main") == ["build", "lint"]
+    assert gh.branch_rules("main") == ["required_status_checks"]
+    assert gh.job_failed_log(77) == "log line 1\nlog line 2\n"
+    assert gh.pr_commits_checked(7) == ("yes", [(EARLIER, "yes"), (HEAD, "no")])
+    assert gh.pr_commits_checked(8) == ("no", [])
+
+
+def test_a_pr_s_evidence_read_is_logged_and_its_raw_answer_or_missing_base_ref_honoured(store):
+    seed = FakeStore(str(store))
+    seed.pr(7, "open", "topic", "main")
+    seed.pr_head(7, HEAD)
+    seed.pr(8, "open", "other", "main")
+    seed.check_run("main")
+    seed.no_base_ref(7)
+    seed.evidence_raw(8, "no", EARLIER + "\tmaybe", "not-a-sha")
+    gh = fake(store)
+
+    assert gh.pr_commits_checked(7) == ("", [(HEAD, "no")])
+    assert gh.pr_commits_checked(8) == ("no", [(EARLIER, "maybe"), ("not-a-sha", "")])
+    assert gh.pr_commits_checked(8) == ("no", [(EARLIER, "maybe"), ("not-a-sha", "")])
+    assert (seed.evidence_reads(7), seed.evidence_reads(8)) == (1, 2)
+
+
+def test_a_review_read_of_a_pr_the_store_lacks_fails_as_gh_does(store):
+    gh = fake(store)
+
+    for call in (lambda: gh.pr_url_head(5), lambda: gh.pr_commits_checked(5)):
+        with pytest.raises(GhFailed) as failed:
+            call()
+        assert "Could not resolve to a PullRequest with the number of 5" in failed.value.stderr
+
+
+def test_python_reruns_are_kept_in_order_in_the_store_layout(store):
+    seed = FakeStore(str(store))
+    gh = fake(store)
+
+    gh.run_rerun(4242)
+    gh.run_rerun(4343)
+    gh.run_rerun(5150)
+
+    assert seed.reruns() == ["4242", "4343", "5150"]
+    assert (store / "reruns").read_text() == "4242\n4343\n5150\n"
+
+
+def test_a_job_log_the_store_lacks_cannot_be_read(store):
+    with pytest.raises(GhFailed) as failed:
+        fake(store).job_failed_log(78)
+
+    assert failed.value.stderr == "log not found\n"
 
 
 def test_a_pr_create_carrying_a_label_gives_up_at_a_first_secondary_limit(store, tmp_path):

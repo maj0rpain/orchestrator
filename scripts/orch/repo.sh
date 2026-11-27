@@ -64,10 +64,9 @@ repo_owner_name() {
 # repo_pin: pin every later gh call to the repo - resolve it, export it as
 # GH_REPO when that is unset, then pin its host (repo_pin_host). Returns 1,
 # exporting nothing, when nothing resolves, and never dies: each caller picks
-# its own exit: the gh guard's subshell signal or die, or review ci-log's die
-# (exit 1), or die2 in a command that reserves exit 1 and so resolves the repo
-# itself (review ci, review rerun, the open-PR reader, autopilot answer).
-# ticket exists pins through orch.repo's Python RepoPin.
+# its own exit: the gh guard's subshell signal or die, or die2 in autopilot
+# answer, which reserves exit 1 and so resolves the repo itself. ticket exists
+# and the review noun pin through orch.repo's Python RepoPin.
 repo_pin() {
   local preset="${GH_REPO:-}"
   repo_resolve || return 1
