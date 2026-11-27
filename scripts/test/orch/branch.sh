@@ -1243,6 +1243,18 @@ assert_status "a rebase in progress in an autopilot flow is aborted" "$st" 0
 assert_eq "leaving no rebase in progress" \
   "$(rebase_state)" "none"
 
+# the worktree list unreadable: whether this is the main checkout cannot be
+# told, so nothing is discarded
+echo hand >>README.md
+before="$(restart_facts)"
+wl_fails="$(worktree_list_fails_bin)"
+out="$(PATH="$wl_fails:$PATH" orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "an unreadable worktree list in an interactive flow dies with exit 1" "$st" 1
+assert_contains "saying the main checkout cannot be told" "$out" \
+  "could not tell whether $(git rev-parse --show-toplevel) is the main checkout - nothing was discarded"
+assert_eq "leaving the dirty tree as it was" "$(restart_facts)" "$before"
+git checkout -q -- README.md
+
 # A done flow still holds its branch: a restart discards dirty work and stays
 # on the branch.
 state_fixture phase "done"
@@ -1287,6 +1299,19 @@ side="$(sc_add sidebr)"
   echo hand >>README.md
   out="$(orch_gh_failing branch create 2>&1)"; st=$?
   assert_status "a dirty tree in a side checkout is discarded" "$st" 0
+  assert_eq "leaving it clean" "$(git status --porcelain)" ""
+)
+# a linked worktree that is no side checkout discards without autopilot too
+hand="$(mktemp -d)/hand"
+git worktree add -q --detach "$hand"
+(
+  cd "$hand" || { bad "cd into the hand-made worktree" "cannot cd into $hand"; exit 1; }
+  orch_gh_failing init handbr >/dev/null
+  orch_gh_failing state set issue 18
+  orch_gh_failing branch create >/dev/null
+  echo hand >>README.md
+  out="$(orch_gh_failing branch create 2>&1)"; st=$?
+  assert_status "a dirty tree in a hand-made worktree is discarded" "$st" 0
   assert_eq "leaving it clean" "$(git status --porcelain)" ""
 )
 

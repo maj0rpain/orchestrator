@@ -49,7 +49,7 @@
 39	42	branch sync (#792)	631b20bd11c01ca6923d45e0ad29af7e95b1fea8
 20	17	branch busy (#1201)	02f48d9f24d427659c60f7d348216ae33b8c882a
 37	14	branch off and branch create refuse a busy checkout (#1202)	5f458af05c95fd222fe91ed1534d69604f4fa227
-24	21	branch create on a restart (ADR-0054)	75f78757ce2e925d021d8ee545a164f6bb10ceda
+27	26	branch create on a restart (ADR-0054)	1786c4a01a21c7009d7f2a5ea28eaf3f59717081
 50	30	branch create off the flow's branch (#1911)	93599a113411d3f02f33c8f140e502bc4836953d
 15	14	the fork start point is decided where origin is asked (#1930)	2b219aa91892167de0c774ed1a8824f2c4d958b8
 1	1	branch: unknown op	0fc6b7bf37b3f2afb4f1644fc0a6ae8f0644fa43

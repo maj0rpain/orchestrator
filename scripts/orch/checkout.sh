@@ -393,16 +393,20 @@ work_to_discard() {
 # is aborted, and a tree dirty outside the planning allowlist is reset and
 # cleaned. Nothing to discard changes
 # nothing. In an interactive flow's main checkout - autopilot_active false and
-# checkout_kind main, the one tree a human plausibly edits by hand - it refuses
-# instead, exit 1, naming the exact discard command and writing nothing. A
+# $ROOT's top level main_checkout's path, the one tree a human plausibly edits
+# by hand - it refuses instead, exit 1, naming the exact discard command and
+# writing nothing; telling the main checkout from the rest reads no marker. A
 # failed abort, reset or clean dies (exit 1) naming the step. Called as a bare
 # statement, so the die stops the caller.
 discard_flow_branch_work() {
-  local merging="" rebasing="" dirty kind cmds=""
+  local merging="" rebasing="" dirty top main cmds=""
   work_to_discard merging rebasing dirty || return 0
   if ! autopilot_active; then
-    kind="$(checkout_kind "$ROOT")" || die "could not tell whether $ROOT is the main checkout - nothing was discarded"
-    if [ "$kind" = main ]; then
+    if ! top="$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null)" ||
+      ! main="$(cd "$top" && main_checkout)"; then
+      die "could not tell whether $ROOT is the main checkout - nothing was discarded"
+    fi
+    if [ "$top" = "$main" ]; then
       [ -z "$merging" ] || cmds="git -C \"$ROOT\" merge --abort; "
       [ -z "$rebasing" ] || cmds="${cmds}git -C \"$ROOT\" rebase --abort; "
       die "uncommitted or in-progress work on the flow's branch in the main checkout - discard it yourself ($(list_join "$dirty")${merging:+ merge in progress}): ${cmds}git -C \"$ROOT\" reset --hard && git -C \"$ROOT\" clean -fd"
