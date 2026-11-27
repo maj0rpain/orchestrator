@@ -165,8 +165,9 @@ def tip_covered(git, branch: str, prs: List[str]) -> Verdict:
     if missing is not None:
         return _not_finished("%s: PR #%s's head %s is not in this repo - fetch it to let the sweep"
                              " judge" % (branch, missing[0], missing[1][:7]))
-    n, head = first or ("", "")
-    return _not_finished("%s has commits past PR #%s's merged head %s" % (branch, n, head[:7]))
+    first_n, first_head = first or ("", "")
+    return _not_finished("%s has commits past PR #%s's merged head %s"
+                         % (branch, first_n, first_head[:7]))
 
 
 def side_checkout_finished(gh, git, path: str, default: Callable[[], str],
