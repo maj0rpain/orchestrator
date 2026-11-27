@@ -45,6 +45,13 @@ def default_branch(gh, git, pin) -> DefaultBranch:
             answer = ""
         if answer and git.is_branch_name(answer):
             return DefaultBranch(answer, GITHUB)
+    return default_branch_local(git)
+
+
+def default_branch_local(git) -> DefaultBranch:
+    """The default branch without asking GitHub, the lookup's local
+    fallback: the branch origin/HEAD names in the checkout <git> reads, else
+    main."""
     head = git.origin_head_branch()
     if head and git.is_branch_name(head):
         return DefaultBranch(head, ORIGIN_HEAD)

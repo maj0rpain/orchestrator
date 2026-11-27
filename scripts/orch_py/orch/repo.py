@@ -20,11 +20,14 @@ REPO_REMEDY = REPO_CAUSE + " - set GH_REPO=<owner>/<repo>"
 
 class Repo(NamedTuple):
     """A resolved repo: its [HOST/]OWNER/REPO name, where it came from
-    (GH_REPO or origin), and the host it pins, empty for none."""
+    (GH_REPO or origin), the host it pins, empty for none, and whether it
+    came from an origin in an SSH form, whose host may be an SSH Host alias
+    the ssh translation could not resolve."""
 
     name: str
     source: str
     host: str
+    origin_ssh: bool = False
 
 
 def ssh_host(host: str) -> str:
@@ -65,6 +68,12 @@ def url_form(url: str) -> str:
 def repo_host(name: str) -> str:
     """The explicit host of a [HOST/]OWNER/REPO name; "" for OWNER/REPO."""
     return name.split("/", 1)[0] if name.count("/") >= 2 else ""
+
+
+def owner_name(name: str) -> str:
+    """The OWNER/REPO of a [HOST/]OWNER/REPO name, any host dropped -
+    repo_host's twin."""
+    return name.split("/", 1)[1] if name.count("/") >= 2 else name
 
 
 def repo_from_url(url: str, lookup: Callable[[str], str] = ssh_host) -> Optional[str]:
@@ -134,7 +143,16 @@ class RepoPin:
         name = repo_from_url(url, self.ssh_lookup)
         if name is None:
             return None
-        return Repo(name, "origin", repo_host(name) or "github.com")
+        return Repo(name, "origin", repo_host(name) or "github.com", url_form(url) == "ssh")
+
+    def gh_host(self) -> str:
+        """The GitHub host gh targets for the resolved repo, by the one rule
+        the pin follows: the host the repo pins, else (a user-set OWNER/REPO
+        GH_REPO) the user's GH_HOST, or github.com when unset, as gh does.
+        Call only once the repo resolves."""
+        repo = self.resolve()
+        return (repo.host if repo is not None else "") or self.env.get("GH_HOST", "") \
+            or "github.com"
 
     def gh_env(self) -> Optional[Dict[str, str]]:
         """The environment a pinned gh call runs with: the pin's own, with
