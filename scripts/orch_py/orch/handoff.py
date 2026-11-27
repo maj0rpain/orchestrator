@@ -105,8 +105,8 @@ def handoff_scratch_dir(root: str) -> str:
 
 
 def phase_handoff(phase: str) -> Optional[str]:
-    """phase_cell handoff <phase>: the handoff <phase> consumes; None when
-    it consumes none or the table does not hold it."""
+    """The handoff <phase> consumes, as bash's phase_cell handoff was; None
+    when it consumes none or the table does not hold it."""
     for row_phase, handoff, _, _ in PHASE_TABLE:
         if row_phase == phase:
             return handoff or None
@@ -114,8 +114,9 @@ def phase_handoff(phase: str) -> Optional[str]:
 
 
 def phase_writer(phase: str) -> Optional[str]:
-    """phase_cell writer <phase>: the phase that wrote the handoff <phase>
-    consumes; None when it consumes none or the table does not hold it."""
+    """The phase that wrote the handoff <phase> consumes, as bash's
+    phase_cell writer was; None when it consumes none or the table does not
+    hold it."""
     for row_phase, _, writer, _ in PHASE_TABLE:
         if row_phase == phase:
             return writer or None
@@ -180,7 +181,7 @@ def host_fallbacks_required(state_file: str) -> bool:
     """Whether a handoff must carry `## Host fallbacks`: with no state file
     at <state_file> there is no older flow to spare, and a flow started
     before 1.0.0, its state with no host_fallbacks true, keeps validating
-    without it, as bash host_fallbacks_required."""
+    without it, as bash's host_fallbacks_required did."""
     if not os.path.isfile(state_file):
         return True
     state = flow_state_get_many(state_file, ("host_fallbacks",))
@@ -201,8 +202,8 @@ def _required_sections(name: str, state_file: str) -> Optional[List[str]]:
 
 
 def handoff_required(name: str, state_file: str) -> List[str]:
-    """The headings the handoff file <name> must hold, in order, as bash
-    handoff_required prints them; dies on a name no phase table row
+    """The headings the handoff file <name> must hold, in order, as bash's
+    handoff_required printed them; dies on a name no phase table row
     consumes."""
     required = _required_sections(name, state_file)
     if required is None:
@@ -212,14 +213,15 @@ def handoff_required(name: str, state_file: str) -> List[str]:
 
 def handoff_report(path: str, state_file: str, env: Mapping[str, str], name: str = "",
                    autopilot: str = "") -> Tuple[List[str], int]:
-    """The single statement of what a valid handoff is, bash handoff_report:
-    one line per required section of the handoff at <path>, each `ok
-    <heading>` or `FAIL <problem>`, and status 1 when any failed, else 0.
+    """The single statement of what a valid handoff is, as bash's
+    handoff_report was: one line per required section of the handoff at
+    <path>, each `ok <heading>` or `FAIL <problem>`, and status 1 when any
+    failed, else 0.
     <name> is the handoff file name the sections are looked up by, the
     file's own basename unless given: an autopilot scratch file is not named
     as its handoff. The plan's `## Autopilot` block (autopilot_block_report)
     is checked, and required, in an autopilot session or when <autopilot> is
-    `autopilot`. A name no row consumes is no lines and status 1, after bash's
+    `autopilot`. A name no row consumes is no lines and status 1, after an
     `orch: unknown handoff file` line on stderr - never a death. The file is
     read once; one that cannot be read reads as empty."""
     base = name or os.path.basename(path)
@@ -247,10 +249,10 @@ def handoff_report(path: str, state_file: str, env: Mapping[str, str], name: str
 def handoff_check(path: str, state_file: str, env: Mapping[str, str], show_ok: str = "",
                   name: str = "", autopilot: str = "") -> int:
     """Checks the handoff at <path> and relays the verdict on stdout in the
-    aligned `ok    ` / `FAIL  ` form, bash handoff_check: every FAIL line,
-    and the ok lines too when <show_ok> is `ok`. A missing file is one FAIL
-    line and status 2, an invalid one status 1, a valid one 0. It never dies
-    - the status is the verdict. <name> and <autopilot> are
+    aligned `ok    ` / `FAIL  ` form, as bash's handoff_check did: every
+    FAIL line, and the ok lines too when <show_ok> is `ok`. A missing file
+    is one FAIL line and status 2, an invalid one status 1, a valid one 0.
+    It never dies - the status is the verdict. <name> and <autopilot> are
     handoff_report's."""
     if not os.path.isfile(path):
         stdout_write("FAIL  handoff not found: %s\n" % path)
@@ -366,8 +368,8 @@ def handoff_comment_fetch_due(gh, issue: str, phase: str, scratch: str) -> Tuple
 def handoff_comment_body(name: str, path: str) -> Iterator[str]:
     """Yields the path of a temp file holding the body of a handoff comment,
     <name>'s marker then the file at <path>, already validated, and removes
-    it on exit - bash handoff_comment_body. Dies when the temp file cannot
-    be made or written."""
+    it on exit, as bash's handoff_comment_body did. Dies when the temp file
+    cannot be made or written."""
     unmade = "could not create a temp file for the handoff comment"
     with temp_text_file(marked_comment_write("handoff", name) + (read_raw(path) or ""),
                         unmade, unmade) as body:
@@ -419,8 +421,9 @@ def _stem(name: str) -> str:
 
 def handoff_comment_missing(issue: str, stem: str, hint: str = "") -> NoReturn:
     """Dies naming the handoff <stem> (its file name without the `.md`)
-    missing from issue #<issue>'s comments, bash handoff_comment_missing; a
-    <hint> follows ` - post it with handoff post `."""
+    missing from issue #<issue>'s comments, as bash's
+    handoff_comment_missing did; a <hint> follows
+    ` - post it with handoff post `."""
     die("issue #%s has no %s handoff comment%s"
         % (issue, stem, " - post it with handoff post " + hint if hint else ""))
 
@@ -572,9 +575,6 @@ def _handoff_comment_retire(gh, issue: str, names: Sequence[str]) -> None:
 
 # The handoff noun's verbs, as its unknown-op refusal lists them.
 OPS = "path|post|fetch|validate|section"
-# What awk's [[:space:]] matches in the C locale: the blank a body line may
-# hold and still read as blank.
-_BLANK = " \t\n\v\f\r"
 
 
 def handoff_name_check(name: str) -> None:
@@ -679,11 +679,11 @@ def section_verb(argv: List[str]) -> int:
     if count > 1:
         die("repeated section: %s in %s" % (heading, path))
     body = section_body(text, heading)
-    filled = [i for i, line in enumerate(body) if line.strip(_BLANK)]
+    filled = [i for i, line in enumerate(body) if trim(line)]
     if filled:
         # An inner blank line prints empty, whatever whitespace it held, as
         # bash's awk trim printed it.
-        stdout_write("".join((line if line.strip(_BLANK) else "") + "\n"
+        stdout_write("".join((line if trim(line) else "") + "\n"
                              for line in body[filled[0]:filled[-1] + 1]))
     return 0
 

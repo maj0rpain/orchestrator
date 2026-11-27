@@ -1026,27 +1026,6 @@ out="$(contract adapter_issue_body_edit 23 "$ibody" 2>&1)"; st=$?
 assert_status "issue body edit: replaces the body from the file" "$st" 0
 assert_eq "printing nothing" "$out" ""
 
-gh_reply 0 'https://github.com/acme/widgets/issues/23#issuecomment-1' '' issue comment 23 --body-file "$ibody"
-out="$(contract adapter_issue_comment 23 "$ibody" 2>&1)"; st=$?
-assert_status "issue comment: posts the file as a comment" "$st" 0
-assert_eq "printing nothing" "$out" ""
-gh_reply 1 '' 'HTTP 403: Resource not accessible by integration' issue comment 24 --body-file "$ibody"
-out="$(contract adapter_issue_comment 24 "$ibody" 2>&1)"; st=$?
-assert_status "issue comment: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
-gh_reply 0 'https://github.com/acme/widgets/issues/23#issuecomment-1' '' issue comment 23 --body-file "$ibody"
-out="$(contract adapter_issue_comment_url 23 "$ibody" 2>&1)"; st=$?
-assert_status "issue comment url: posts the file as a comment" "$st" 0
-assert_eq "printing the URL gh printed" "$out" "https://github.com/acme/widgets/issues/23#issuecomment-1"
-gh_reply 0 '' '' issue comment 23 --body-file "$ibody"
-out="$(contract adapter_issue_comment_url 23 "$ibody" 2>&1)"; st=$?
-assert_status "issue comment url: a reply with no URL succeeds" "$st" 0
-assert_eq "printing nothing" "$out" ""
-gh_reply 1 '' 'HTTP 403: Resource not accessible by integration' issue comment 24 --body-file "$ibody"
-out="$(contract adapter_issue_comment_url 24 "$ibody" 2>&1)"; st=$?
-assert_status "issue comment url: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
-
 gh_reply 0 'https://github.com/acme/widgets/issues/23' '' \
   issue edit 23 --remove-label "triage me" --remove-label bug --add-label afk --add-label enhancement
 out="$(contract adapter_issue_relabel 23 --add afk --remove "triage me" --add enhancement --remove bug 2>&1)"; st=$?

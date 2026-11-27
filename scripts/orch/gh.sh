@@ -387,8 +387,7 @@ gh_or_die() {
 #   adapter_issue_created_at, adapter_issues_labelled_rows,
 #   adapter_issues_any_labelled_rows,
 #   adapter_issues_open_rows, adapter_issues_titled_rows,
-#   adapter_issue_body_edit, adapter_issue_comment,
-#   adapter_issue_comment_url,
+#   adapter_issue_body_edit,
 #   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
 # - pr: adapter_pr_create, adapter_pr_labels, adapter_pr_body,
 #   adapter_pr_refs, adapter_pr_draft,
@@ -792,21 +791,6 @@ adapter_issues_open_titles() {
 # file's contents. Prints nothing.
 adapter_issue_body_edit() {
   gh issue edit "$1" --body-file "$2" >/dev/null
-}
-
-# adapter_issue_comment <n> <file>: posts the file's contents as a comment on
-# the issue. Prints nothing.
-adapter_issue_comment() {
-  gh issue comment "$1" --body-file "$2" >/dev/null
-}
-
-# adapter_issue_comment_url <n> <file>: posts the file's contents as a comment
-# on the issue, as adapter_issue_comment does, and prints the URL gh printed for
-# the posted comment; where gh printed none, succeeds printing nothing.
-adapter_issue_comment_url() {
-  local out
-  out="$(gh issue comment "$1" --body-file "$2")" || return
-  [ -z "$out" ] || printf '%s\n' "${out%%$'\n'*}"
 }
 
 # adapter_issue_relabel <n> [--add <label>]... [--remove <label>]...: one edit

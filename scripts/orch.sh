@@ -134,10 +134,7 @@ readonly ROOT
 readonly ORCH="$ROOT/$ORCH_DIR_NAME"
 STATE="$(flow_state_file "$ROOT")"
 readonly STATE
-readonly HANDOFF_DIR="$ORCH/handoff"
 readonly REVIEW_DIR="$ORCH/review"
-# Where an autopilot flow fetches a handoff comment to read it as a file.
-readonly HANDOFF_SCRATCH_DIR="$ORCH/scratch"
 
 # The modules, after the ROOT block, whose constants they read: every file
 # beside common.sh but common.sh and loader.sh - the noun modules and the

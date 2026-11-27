@@ -126,7 +126,8 @@
 #                     GitHub leaves off: adapter_issue_open_blockers answers
 #                     nothing for them
 #   no_sub_issues     present, the sub-issues endpoint refuses every issue
-#   no_comment_url    present, adapter_issue_comment_url prints no URL
+#   no_comment_url    present, the Python fake's issue comment URL post
+#                     answers no URL
 #   offline           present, every operation fails with a connection error
 #   ratelimit         present, every operation but the rate_limit read fails
 #                     as a GitHub API rate limit, with the file's contents as
@@ -400,13 +401,11 @@ fake_issue_labels_counted() {
 
 # fake_comment_append <dir> <author> <created-at> <body-file> [<assoc>]:
 # one comment appended to an issue's or PR's comments directory, numbered in
-# order, its authorAssociation OWNER unless given, its number left in
-# fake_comment_number. The existing comments are counted with a glob, and the
-# comment's directory made in one mkdir.
+# order, its authorAssociation OWNER unless given. The existing comments are
+# counted with a glob, and the comment's directory made in one mkdir.
 fake_comment_append() {
   local d="$1" k=1 e
   for e in "$d"/*; do [ -e "$e" ] && k=$((k + 1)); done
-  fake_comment_number="$k"
   mkdir -p "$d/$k"
   printf '%s\n' "$2" >"$d/$k/author"
   printf '%s\n' "$3" >"$d/$k/created"
@@ -431,9 +430,6 @@ fake_close_comment() {
   fake_comment_write "$1" "$c"
   rm -f "$c"
 }
-
-# fake_comment_url <n> <k>: the URL of the k-th comment on issue <n>.
-fake_comment_url() { printf 'https://github.com/o/r/issues/%s#issuecomment-%s\n' "$1" "$2"; }
 
 # adapter_issue_body <n>: the stored body, then a newline, as gh's --jq .body
 # prints it.
@@ -679,27 +675,6 @@ adapter_issue_body_edit() {
   ! fake_failing adapter_issue_body_edit || return 1
   fake_issue_known "$1" || return 1
   cat "$2" >"$(fake_issue_dir "$1")/body"
-}
-
-# adapter_issue_comment <n> <file>: the file's contents appended as a comment,
-# by fake-gh.
-adapter_issue_comment() {
-  ! fake_failing adapter_issue_comment || return 1
-  fake_issue_known "$1" || return 1
-  fake_comment_write "$(fake_issue_dir "$1")/comments" "$2"
-}
-
-# adapter_issue_comment_url <n> <file>: adapter_issue_comment, then the posted
-# comment's URL, as fake_comment_url names it; nothing where no_comment_url
-# is present.
-adapter_issue_comment_url() {
-  local d
-  ! fake_failing adapter_issue_comment_url || return 1
-  fake_issue_known "$1" || return 1
-  d="$(fake_issue_dir "$1")/comments"
-  fake_comment_write "$d" "$2"
-  [ ! -f "$(fake_store)/no_comment_url" ] || return 0
-  fake_comment_url "$1" "$fake_comment_number"
 }
 
 # fake_option_value <operation> <option-names> <option> [value...]: true where

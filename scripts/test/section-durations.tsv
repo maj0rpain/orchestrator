@@ -63,7 +63,6 @@
 1	2	list_has	35674c3c656a92f5c2ba4ebfddb52cf6602b0640
 0	1	list_join	2cdab9701b23386ed65209c4834779316c9e7994
 1	2	word_listed	57898b88e72e83296291ec2606d7f5d85024c603
-1	2	is_positive_int	aef022a486dba84523cc42537a4546a9ffbfa651
 0	1	err_line (#1718)	9e6bb14897b469bce430b3d324406f5c631e639d
 1	1	git_push (#1300)	4428d6f3c13ae854b436b35225f299d8c3909abb
 1	2	capture_err and capture without a temp file (#1780)	fc19f584557286e04c9abe1748bf4408b90215bf
@@ -74,7 +73,7 @@
 1	2	label_listed	cf6a4f0c40eebe56871168f1bfd7b5040c92b77e
 17	19	gh failure verb and readers (#1022)	b910d0575406af9bdc96f4ad370ed036cb79a0b0
 16	21	gh fake (#280)	9c53cbe04eb7bf519dfc6f9731313b56ef7ab5c5
-8	104	gh adapter contract (#280)	88a9c40bfc885b9cc49c83cc1965a64bbfeab221
+86	96	gh adapter contract (#280)	431fed40bdcfd6d042cda19a1cc53e9cb2233eb2
 15	17	claim adapter operations (#1454)	ee8e4abbf30a177a807e0b5bb9da02463d39876f
 3	5	label casing (#1943)	2feeb4e2f314b9ec6fd4db9d942c6e1b41cfe055
 51	44	gh rate limits (#2577)	d2f456ea30f6d5044a01281f0fab427a57351708
