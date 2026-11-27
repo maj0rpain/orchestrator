@@ -149,15 +149,6 @@ def test_issue_forget_leaves_neither_record(main):
     assert sorted(os.listdir(run_file(main, ""))) == []
 
 
-def test_live_issues_lists_only_live_issues_ascending(main):
-    liveness.run_begin(main, "20", os.getpid(), ENV)
-    liveness.tick_begin(main, "100", os.getpid(), ENV)
-    liveness.tick_begin(main, "21", dead_pid(), ENV)
-    write(run_file(main, "22.tick"), "x\n")
-
-    assert liveness.live_issues(main, ENV) == ["20", "100"]
-
-
 # --- the hit file -----------------------------------------------------------------
 
 

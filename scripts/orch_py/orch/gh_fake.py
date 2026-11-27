@@ -593,11 +593,8 @@ class FakeGh:
         """The stored labels, the first <limit> of them, each (name, colour,
         description); none where the store holds no labels."""
         self._failing("adapter_labels_detail")
-        rows = []
-        for line in _lines(_store_path(self.store, "labels"))[:limit]:
-            name, colour, description = (line.split("\t") + ["", ""])[:3]
-            rows.append((name, colour, description))
-        return rows
+        lines = _lines(_store_path(self.store, "labels"))[:limit]
+        return real.parse_label_details("\n".join(lines))
 
     # --- repo operations ---
 

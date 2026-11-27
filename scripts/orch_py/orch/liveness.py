@@ -20,7 +20,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-from typing import Callable, List, Mapping, Optional, Tuple
+from typing import Callable, Mapping, Optional, Tuple
 
 from orch.autopilot import autopilot_dir
 from orch.common import (DIR_STAMP_PATTERN, dir_stamp, die, file_write_atomic, mkdir_p_or_die,
@@ -167,17 +167,6 @@ def issue_forget(main: str, issue: str) -> None:
     """Removes both of issue <issue>'s records."""
     rm_f(_issue_file(main, issue, "pid"))
     rm_f(_issue_file(main, issue, "tick"))
-
-
-def live_issues(main: str, env: Mapping[str, str]) -> List[str]:
-    """The issues whose process is alive by issue_alive's rule, ascending."""
-    try:
-        names = os.listdir(run_dir(main))
-    except OSError:
-        names = []
-    issues = {name.rsplit(".", 1)[0] for name in names
-              if name.endswith((".pid", ".tick")) and plain_number(name.rsplit(".", 1)[0])}
-    return [issue for issue in sorted(issues, key=int) if issue_alive(main, issue, env)[0]]
 
 
 def hit_path(main: str, issue: str) -> str:

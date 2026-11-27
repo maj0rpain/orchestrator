@@ -12,9 +12,10 @@ writer (orch.common) appends under, the current branch a review pass
 starts on, the worktree list, another checkout's branch and its git folder
 the checkout scan (orch.checkout) reads, the worktree removal a side
 checkout's teardown (orch.side_checkout) makes, and the base fetch and
-detached worktree add that side-checkout add makes, the push the gh adapter's claim
-delete makes, branch retire's
-local branch reads and rename, origin probe, tracking push and remote
+detached worktree add that side-checkout add makes, the push the gh
+adapter's claim delete makes, the empty commit and its lease push the claim
+create makes, branch retire's local branch reads and rename, origin probe,
+tracking push and remote
 delete (orch.branch), the dirty paths the planning allowlist's flow-start scan
 judges, the scoped git config reads, writes and unsets
 (`config_regexp`, `config_set`, `config_unset`) the agent noun uses, and what

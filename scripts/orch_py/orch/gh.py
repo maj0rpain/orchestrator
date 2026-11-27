@@ -355,6 +355,18 @@ def parse_titled_rows(text: str) -> List[IssueRow]:
     return rows
 
 
+def parse_label_details(text: str) -> List[Tuple[str, str, str]]:
+    """The label rows of a detailed label listing, one per non-empty line:
+    name, colour and description, tab-separated as gh's @tsv prints them, a
+    missing field read as ""."""
+    rows = []
+    for line in text.split("\n"):
+        if line:
+            name, colour, description = (line.split("\t") + ["", ""])[:3]
+            rows.append((name, colour, description))
+    return rows
+
+
 def parse_state_rows(text: str) -> List[StateRow]:
     """The count-marked records of a state listing: number, state, label
     count, then one label per line. Raises GhFailed "gh answered a listing
@@ -1366,12 +1378,7 @@ class Gh:
         answer = self._gh(["label", "list", "--limit", str(limit),
                            "--json", "name,color,description",
                            "--jq", '.[] | [.name, .color, (.description // "")] | @tsv'])
-        rows = []
-        for line in answer.split("\n"):
-            if line:
-                name, colour, description = (line.split("\t") + ["", ""])[:3]
-                rows.append((name, colour, description))
-        return rows
+        return parse_label_details(answer)
 
     # --- repo operations ---
 
