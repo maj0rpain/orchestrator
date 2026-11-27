@@ -1,5 +1,16 @@
 # Changelog
 
+## 6.12.11
+
+`orch.sh handoff` now runs as a Python converted noun, from
+`scripts/orch_py/orch/handoff.py`: `path`, `post`, `fetch`, `validate` and
+`section`. Their usage lines, messages and exit codes are unchanged. The bash
+`handoff`, `comments`, `issue-timeline` and `marked-comment` modules and their
+test sections are deleted, along with the bash `phase_write`,
+`require_flow_phase`, `adapter_issue_comments`, `adapter_pr_comments` and
+`trust_filter_comments`, which had no callers left, and the parity tests that
+kept the Python and bash copies in step.
+
 ## 6.12.10
 
 `orch.sh autopilot` now runs as a Python converted noun, from
