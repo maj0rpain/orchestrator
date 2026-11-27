@@ -104,8 +104,8 @@ iteration|0|0|review begin counts it
 # not become an infinite retry loop.
 flake_rerun_used|false|false|-
 redo_count|0|0|a redo that retires a branch counts it
-# Marks a flow whose handoffs must record Host fallbacks (see
-# host_fallbacks_required); an older flow without it reads false.
+# Marks a flow whose handoffs must record Host fallbacks (handoff.py reads
+# it); an older flow without it reads false.
 host_fallbacks|false|true|init seeds it
 created||arg|init seeds it
 updated||arg|every state change stamps it'
