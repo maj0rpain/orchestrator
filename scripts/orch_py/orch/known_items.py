@@ -1,6 +1,7 @@
 """The Known items concept's module (scripts/orch/known-items.sh): splitting
 a record's text into entries, appending them as tagged bullets, and writing
-the known-items file a review pass's reviewers read.
+the known-items file the reviewers of a review pass and of the review
+loop read (`review known-items`).
 
 An entry is a top-level `- ` bullet joined with its indented continuation
 lines by single spaces, its leading `- ` stripped, or a non-blank line at the

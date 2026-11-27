@@ -1,10 +1,12 @@
 """The review noun (scripts/orch/review.sh), as far as it is ported: the verb
-dispatch, with its unknown-op refusal and every usage line bash has, and
+dispatch, with its unknown-op refusal and every usage line bash has;
 `review begin`, `path`, `terminal`, `resume` and `retire`, with the budget
-fallback and its default of 5 (review_budget_fallback). The verbs other
-tickets port - file, known-items, standards, ci, ci-log, rerun and ready -
-check their arguments as bash does and, past them, die with the unknown-op
-refusal.
+fallback and its default of 5 (review_budget_fallback); `review file`, built
+on orch/filed_finding.py; `review known-items`, built on
+orch/known_items.py; and `review standards`, with the Standards resolution
+under it (standards_resolve_source). The verbs other tickets port - ci,
+ci-log, rerun and ready - check their arguments as bash does and, past them,
+die with the unknown-op refusal.
 
 run(argv) takes the arguments after `review`, as orch.sh would hand them on,
 and returns the exit code; every error dies through orch.common.die, with
@@ -37,22 +39,30 @@ from __future__ import annotations
 import fnmatch
 import glob
 import os
+import re
 import time
 from typing import Callable, Dict, List, Mapping, NoReturn, Optional, Tuple
 
-from orch.common import (ORCH_DIR_NAME, capture, die, int_as_test_reads, is_positive_int,
-                         mkdir_p_or_die, move_files_aside, plain_number, read_raw, rm_f_or_die,
-                         stdout_write, trim, warn)
+from orch.common import (ORCH_DIR_NAME, capture, die, fenced, int_as_test_reads,
+                         is_positive_int, lines_of, list_join, mkdir_p_or_die, move_files_aside,
+                         plain_number, read_raw, rm_f_or_die, stdout_write, trim, warn)
 from orch.branch import discard_own_branch_work
 from orch.checkout import checkout_branch_or_rebasing
-from orch.filed_finding import FILED_AXES, FILED_SEVERITIES
+from orch.filed_finding import (FILED_AXES, FILED_SEVERITIES, category_for_axis,
+                                category_label_ensure, filed_severity_label,
+                                finding_body_file_new, finding_body_parse, finding_body_render,
+                                finding_flags_parse, finding_input_check, finding_location_check,
+                                needs_triage_label_ready, severity_label_ensure)
 from orch.flow_state import (Pair, flow_state_file, flow_state_get_many, require_state,
-                             require_state_read, state_write_many)
-from orch.gh import Check, GhFailed, gh_reason
+                             require_state_read, require_value, state_write_many)
+from orch.gh import Check, GhFailed, adapter_of, gh_or_die, gh_reason
 from orch.git import Git
-from orch.handoff import section_body
+from orch.handoff import handoff_file_for, handoff_read, section_body
+from orch.known_items import (entries_append_from, known_items_write, section_entries,
+                              section_entries_append)
 from orch.redo import redo_midway
 from orch.root import checkout_root
+from orch.triage_labels import TriageLabels
 
 TERMINAL_HEADING = "## Terminal state"
 # The separators `stop` may carry its reason after, on the same line.
@@ -288,11 +298,11 @@ OPS = "begin|path|file|known-items|standards|ci|ci-log|rerun|ready|terminal|resu
 
 
 def run(argv: List[str], git=None, env: Optional[Mapping[str, str]] = None,
-        clock: Callable[[], float] = time.time) -> int:
-    """`orch.sh review <op>`: the real git adapter, the process's
+        clock: Callable[[], float] = time.time, gh=None) -> int:
+    """`orch.sh review <op>`: the real git and gh adapters, the process's
     environment and the system clock unless a test hands in others; the exit
-    code. Outside a checkout it dies first, as orch.sh does, whatever the
-    op."""
+    code. The gh adapter is made at a verb's first GitHub call (adapter_of).
+    Outside a checkout it dies first, as orch.sh does, whatever the op."""
     env = os.environ if env is None else env
     git = Git() if git is None else git
     root = checkout_root(git, env)
@@ -300,10 +310,11 @@ def run(argv: List[str], git=None, env: Optional[Mapping[str, str]] = None,
     verb = _VERBS.get(op)
     if verb is None:
         die("unknown review op: %s (want %s)" % (op or "<none>", OPS))
-    return verb(args, root, git, env, clock) or 0
+    return verb(args, root, git, env, clock, adapter_of(gh, env)) or 0
 
 
-def _begin(args: List[str], root: str, git, env: Mapping[str, str], clock) -> None:
+def _begin(args: List[str], root: str, git, env: Mapping[str, str], clock,
+           gh_of) -> None:
     """`review begin`: refuses past the budget, else records and prints the
     next iteration. A loop's first iteration - the recorded one 0, or one
     whose record has a Terminal state - renews the loop's flake rerun in the
@@ -343,7 +354,8 @@ def _terminal_recorded(root: str, i: str) -> bool:
 RESUME_KEYS = TERMINAL_KEYS + ("phase",)
 
 
-def _resume(args: List[str], root: str, git, env: Mapping[str, str], clock) -> None:
+def _resume(args: List[str], root: str, git, env: Mapping[str, str], clock,
+            gh_of) -> None:
     """`review resume`: resumes a review loop whose driving session died
     mid-iteration, spending no budget (ADR-0054). Only a pending or
     interrupted loop resumes; any other state exits 1 with nothing changed.
@@ -379,7 +391,8 @@ def _resume(args: List[str], root: str, git, env: Mapping[str, str], clock) -> N
         stdout_write("terminate\n")
 
 
-def _path(args: List[str], root: str, git, env: Mapping[str, str], clock) -> None:
+def _path(args: List[str], root: str, git, env: Mapping[str, str], clock,
+          gh_of) -> None:
     """`review path [iteration]`: the record path of <iteration>, or of the
     recorded iteration when none is given or it is empty."""
     state_file = flow_state_file(root)
@@ -393,7 +406,8 @@ def _path(args: List[str], root: str, git, env: Mapping[str, str], clock) -> Non
     stdout_write(review_record_path(root, n) + "\n")
 
 
-def _terminal(args: List[str], root: str, git, env: Mapping[str, str], clock) -> int:
+def _terminal(args: List[str], root: str, git, env: Mapping[str, str], clock,
+              gh_of) -> int:
     """`review terminal`: review_terminal_state's lines, and its status as
     the exit code."""
     state = require_state_read(flow_state_file(root), env, TERMINAL_KEYS, 1)
@@ -405,7 +419,8 @@ def _terminal(args: List[str], root: str, git, env: Mapping[str, str], clock) ->
     return status
 
 
-def _retire(args: List[str], root: str, git, env: Mapping[str, str], clock) -> None:
+def _retire(args: List[str], root: str, git, env: Mapping[str, str], clock,
+            gh_of) -> None:
     """`review retire <n>`: review_retire's move, its folder printed."""
     require_state(flow_state_file(root), env)
     if len(args) != 1:
@@ -414,58 +429,401 @@ def _retire(args: List[str], root: str, git, env: Mapping[str, str], clock) -> N
 
 
 # --- the verbs other tickets port ---------------------------------------------
-# Each checks its arguments as bash does, in bash's order; past them, a verb
-# not ported yet dies with the unknown-op refusal, as an op review lacks.
-
-FILE_USAGE = ("usage: orch.sh review file <%s> <title> --axis <%s> --finding-file <f>"
-              " --severity-reason <r> --location <<file>:<line>> --why <reason>"
-              " [--spec-question <q>]" % ("|".join(FILED_SEVERITIES), "|".join(FILED_AXES)))
-
+# Each not ported yet checks its arguments as bash does, in bash's order; past
+# them, it dies with the unknown-op refusal, as an op review lacks.
 
 def _unported(op: str) -> NoReturn:
     die("unknown review op: %s (want %s)" % (op, OPS))
 
 
-def _file(args: List[str], root: str, git, env: Mapping[str, str], clock) -> None:
-    require_state_read(flow_state_file(root), env, ["pr"], 1)
+# --- review file ----------------------------------------------------------------
+
+FILE_USAGE = ("usage: orch.sh review file <%s> <title> --axis <%s> --finding-file <f>"
+              " --severity-reason <r> --location <<file>:<line>> --why <reason>"
+              " [--spec-question <q>]" % ("|".join(FILED_SEVERITIES), "|".join(FILED_AXES)))
+# The flags review file takes, and the ones of them it requires.
+FILE_FLAGS = ("--axis", "--finding-file", "--severity-reason", "--location", "--why",
+              "--spec-question")
+FILE_REQUIRED = FILE_FLAGS[:-1]
+# A head SHA GitHub answers: hex, in either case.
+HEX = re.compile(r"[0-9a-fA-F]+")
+
+
+def _file(args: List[str], root: str, git, env: Mapping[str, str], clock,
+          gh_of) -> None:
+    """`review file <sev> <title> --axis <a> --finding-file <f>
+    --severity-reason <r> --location <loc> --why <w> [--spec-question <q>]`:
+    files a finding as a GitHub issue, its body rendered from its parts, and
+    prints its number alone. Every check - the flags, the severity, the
+    axis, the title, the finding file, the location, the flow's recorded PR
+    and its head SHA read from GitHub, and the rendered body's round trip
+    through the parser - comes before any label or issue write, so a
+    malformed finding never reaches GitHub."""
+    pr = require_state_read(flow_state_file(root), env, ["pr"], 1)["pr"]
     if len(args) < 2:
         die(FILE_USAGE)
-    _unported("file")
+    severity, title = args[0], args[1]
+    given: Dict[str, str] = {}
+    for flag, value in finding_flags_parse(FILE_USAGE, FILE_FLAGS, args[2:]):
+        if flag in given:
+            die(FILE_USAGE)
+        given[flag] = value
+    if any(flag not in given for flag in FILE_REQUIRED):
+        die(FILE_USAGE)
+    axis = given["--axis"].lower()
+    finding, reason = given["--finding-file"], given["--severity-reason"]
+    location, why = given["--location"], given["--why"]
+    question = given.get("--spec-question", "")
+
+    label = filed_severity_label(severity)
+    if label is None:
+        die("not a severity that gets filed: %s (want %s - blocking is always fixed, never filed)"
+            % (severity, " or ".join(FILED_SEVERITIES)))
+    # The category follows the axis; finding triage confirms or flips it later.
+    category = category_for_axis(axis)
+    if category is None:
+        die("not a review axis: %s (want %s)" % (axis, " or ".join(FILED_AXES)))
+    finding_input_check(title, finding)
+    finding_location_check(location)
+    # Split at the last colon: the line is the part after it, N or N-M.
+    file, _, line = location.rpartition(":")
+    # The PR's URL and remote head come from GitHub for the flow's recorded
+    # PR, before any write: the URL is right on any host, and the remote head
+    # is what finding triage scan fetches.
+    require_value("pr", pr)
+    gh = gh_of()
+    url, sha = gh_or_die("read the URL and head of PR #%s, recorded in state" % pr,
+                         gh.pr_url_head, pr)
+    if not HEX.fullmatch(sha):
+        die("not a sha: %s (want a hex commit SHA)" % sha)
+
+    body = finding_body_render(read_raw(finding) or "", axis, severity, reason, file, line, sha,
+                               url, why, question)
+    with finding_body_file_new(body) as body_file:
+        got = finding_body_parse(body)
+        for field, value in (("axis", axis), ("severity", severity), ("reason", reason),
+                             ("file", file), ("line", line), ("sha", sha), ("pr", url),
+                             ("why", why), ("question", question)):
+            if getattr(got, field) != value:
+                die("the rendered body does not parse back: %s (given '%s', parsed '%s')"
+                    % (field, value, getattr(got, field)))
+        severity_label_ensure(gh, severity)
+        triage = needs_triage_label_ready(gh, TriageLabels(lambda: root))
+        category_label_ensure(gh, category)
+        # The title carries no severity prefix: the label holds it, where
+        # triage can change it, and the title reads as an issue.
+        n = gh_or_die("create the issue", gh.issue_create, title, body_file,
+                      ["review:" + severity, triage, category])
+    # The number alone: the record cites a number, and the caller would
+    # otherwise be parsing a URL out of prose every time.
+    stdout_write("%d\n" % n)
 
 
-def _known_items(args: List[str], root: str, git, env: Mapping[str, str], clock) -> None:
+# --- review known-items ----------------------------------------------------------
+
+# A review record's own name: the reports and known-items files beside it
+# carry a suffix after the number.
+RECORD_NAME = re.compile(r"iteration-([0-9]+)\.md")
+# A Filed entry's issue number, its leading #<n>.
+FILED_NUMBER = re.compile(r"#[0-9]+")
+
+
+def _known_items(args: List[str], root: str, git, env: Mapping[str, str], clock,
+                 gh_of) -> None:
+    """`review known-items <path> <loop boundary>`: writes the loop's
+    known-items file to <path>, overwriting it - `## Deviations`, the
+    implement handoff's Deviations, then `## Known items`: Waiting to be
+    filed from each record numbered above the boundary, Filed from each at or
+    below it, tagged with its #<n> where it leads with one, and the plan's
+    Rejected alternatives. A heading with no entry reads None. Every refusal
+    comes before the write, and the file is built aside and moved into
+    place, so a refused run leaves <path> as it was. The handoffs are read
+    through this session's adapter: comments in an autopilot flow."""
     require_state(flow_state_file(root), env)
     if len(args) != 2:
         die("usage: orch.sh review known-items <path> <loop boundary>")
-    _unported("known-items")
+    path, boundary = args
+    if not plain_number(boundary):
+        die("not a loop boundary: %s (want the iteration read before the loop's first)"
+            % boundary)
+    implement = read_raw(handoff_read(handoff_file_for("review"), "", gh_of, env, root)) or ""
+    plan = read_raw(handoff_read(handoff_file_for("spec"), "", gh_of, env, root)) or ""
+
+    deviations = section_entries_append(implement, "## Deviations")
+    waiting = filed = ""
+    directory = review_dir(root)
+    names = os.listdir(directory) if os.path.isdir(directory) else []
+    for name in sorted(names):
+        match = RECORD_NAME.fullmatch(name)
+        if not match:
+            continue
+        n = match.group(1)
+        text = read_raw(os.path.join(directory, name)) or ""
+        if int(n, 10) > int(boundary, 10):
+            waiting += section_entries_append(text, "## Waiting to be filed",
+                                              "waiting to be filed, iteration " + n)
+            continue
+        for entry in section_entries(text, "## Filed"):
+            number = FILED_NUMBER.match(entry)
+            filed += entries_append_from([entry], "filed " + number.group(0) if number
+                                         else "filed")
+    rejected = section_entries_append(plan, "## Rejected alternatives", "rejected alternative")
+    known_items_write(path, deviations, waiting + filed + rejected)
 
 
-def _standards(args: List[str], root: str, git, env: Mapping[str, str], clock) -> None:
+# --- review standards (#1532) ----------------------------------------------------
+
+# The whitespace awk's and bash's [[:space:]] match, ASCII alone.
+SPACE = " \t\n\v\f\r"
+# A URL's scheme, as bash's ^[A-Za-z][A-Za-z0-9+.-]*: reads one.
+URL_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:")
+# A backticked span, or a Markdown link's target, as grep -oE finds them.
+MENTION = re.compile(r"`[^`]+`|\]\([^)]+\)")
+SPAN = re.compile(r"`[^`]+`")
+# Where a link's target ends: its first whitespace, a title after it.
+BLANK_RUN = re.compile("[%s]" % re.escape(SPACE))
+# A heading's closing #s, after whitespace, then any trailing whitespace.
+CLOSING_HASHES = re.compile(r"[%s]+#+[%s]*$" % (re.escape(SPACE), re.escape(SPACE)))
+# The root files the resolution reads, the second pair only when the repo has
+# neither of the first.
+ROOT_FILES = (("CLAUDE.md", "AGENTS.md"), ("CODING_STANDARDS.md", "CONTRIBUTING.md"))
+
+
+def _blank(line: str) -> bool:
+    return not line.strip(SPACE)
+
+
+def standards_is_heading(line: str) -> bool:
+    """The one ATX heading rule: 1 to 6 #s, at most 3 spaces in, then a
+    space, a tab or the line's end."""
+    if not re.match(r" {0,3}#", line):
+        return False
+    h = line.lstrip(" ")
+    hashes = len(h) - len(h.lstrip("#"))
+    return hashes <= 6 and (len(h) == hashes or h[hashes] in " \t")
+
+
+def standards_heading_text(line: str) -> str:
+    """A heading's text: surrounding whitespace and closing #s trimmed."""
+    h = line.lstrip(" ").lstrip("#")
+    return CLOSING_HASHES.sub("", h, count=1).strip(SPACE)
+
+
+def standards_paragraphs(root: str, relative: str) -> List[Tuple[bool, str]]:
+    """The paragraphs of the repo file <relative>, each (fenced, its lines
+    joined by spaces), none when it cannot be read. A paragraph ends at a
+    blank line (inside a fence or out), an ATX heading outside a fence or a
+    fence delimiter line; a heading is a paragraph of its own; lines inside
+    a fence join into fenced paragraphs; delimiter lines are in no
+    paragraph. Each line's one trailing CR is dropped."""
+    text = read_raw(os.path.join(root, relative))
+    found: List[Tuple[bool, str]] = []
+    joined: List[str] = []
+    kind = False
+
+    def flush() -> None:
+        if joined:
+            found.append((kind, " ".join(joined)))
+        del joined[:]
+
+    rows = [line[:-1] if line.endswith("\r") else line for line in lines_of(text or "")]
+    for line, fence in zip(rows, fenced(rows)):
+        if fence == 2 or (fence == 1 and _blank(line)):
+            flush()
+        elif fence == 1:
+            kind = True
+            joined.append(line)
+        elif standards_is_heading(line):
+            flush()
+            found.append((False, line))
+        elif _blank(line):
+            flush()
+        else:
+            kind = False
+            joined.append(line)
+    flush()
+    return found
+
+
+def standards_heading_count(root: str, relative: str, heading: str) -> int:
+    """How many ATX headings of the repo file <relative> read exactly
+    <heading>. Lines inside a fenced code block, blank ones and its
+    delimiters too, are no headings."""
+    rows = lines_of(read_raw(os.path.join(root, relative)) or "")
+    return sum(1 for line, fence in zip(rows, fenced(rows))
+               if not fence and standards_is_heading(line)
+               and standards_heading_text(line) == heading)
+
+
+def standards_resolve(base: str, target: str) -> Optional[str]:
+    """The repo-relative path <target> names, taken against <base> (a
+    repo-relative directory, "" for the repo root), its # fragment dropped;
+    None for a URL, an absolute path, a path holding whitespace, one that
+    leaves the repo, or one not ending in .md."""
+    target = target.partition("#")[0]
+    if not target or target.startswith("/") or any(c in SPACE for c in target):
+        return None
+    if URL_SCHEME.match(target) or not target.endswith(".md"):
+        return None
+    out: List[str] = []
+    for seg in ("%s/%s" % (base, target)).split("/"):
+        if seg in ("", "."):
+            continue
+        if seg == "..":
+            if not out:
+                return None
+            out.pop()
+        else:
+            out.append(seg)
+    return "/".join(out) or None
+
+
+def standards_mentions(root: str, relative: str) -> List[str]:
+    """The repo-relative .md paths the repo file <relative> mentions, in
+    backticks (against the repo root) or as Markdown links (against its
+    directory), in the order they appear. Backticks pair per paragraph, so a
+    span may wrap a line break and a stray backtick never pairs across a
+    blank line."""
+    directory = relative.rpartition("/")[0]
+    found = []
+    for _, paragraph in standards_paragraphs(root, relative):
+        for mention in MENTION.findall(paragraph):
+            if mention.startswith("`"):
+                path = standards_resolve("", mention[1:-1])
+            else:
+                link = BLANK_RUN.split(mention[2:-1], maxsplit=1)[0]
+                link = link[1:] if link.startswith("<") else link
+                link = link[:-1] if link.endswith(">") else link
+                path = standards_resolve(directory, link)
+            if path is not None:
+                found.append(path)
+    return found
+
+
+def standards_inside(root: str, relative: str) -> bool:
+    """Whether the repo path <relative> is an existing file that, every
+    symlink followed, lies under the repo's physical root."""
+    path = os.path.join(root, relative)
+    if not os.path.isfile(path):
+        return False
+    return os.path.realpath(path).startswith(os.path.realpath(root) + "/")
+
+
+def standards_declared(root: str, entry: str) -> None:
+    """Dies unless the declared <entry> is a repo-relative path naming a
+    regular file inside the repo, optionally with a #Heading naming one
+    section that must match exactly once."""
+    named = "Standards entry `%s`" % entry
+    if entry.startswith("/"):
+        die("%s is an absolute path (want a repo-relative path)" % named)
+    if URL_SCHEME.match(entry):
+        die("%s is a URL (want a repo-relative path)" % named)
+    path, hashed, heading = entry.partition("#")
+    depth = 0
+    for seg in path.split("/"):
+        if seg == "..":
+            depth -= 1
+            if depth < 0:
+                die("%s leaves the repo (want a path inside it)" % named)
+        elif seg not in ("", "."):
+            depth += 1
+    full = "%s/%s" % (root, path)
+    if not os.path.exists(full):
+        die("%s names a missing file" % named)
+    if not os.path.isfile(full):
+        die("%s is not a regular file" % named)
+    if not standards_inside(root, path):
+        die("%s leaves the repo (want a path inside it)" % named)
+    if not hashed:
+        return
+    n = standards_heading_count(root, path, heading)
+    if n < 1:
+        die("%s names a missing heading" % named)
+    if n != 1:
+        die("%s names an ambiguous heading (matches %d times)" % (named, n))
+
+
+def standards_resolve_source(root: str, emit: Callable[[str], None]) -> None:
+    """The Standards resolution of the checkout at <root>, and the path it
+    took, each line handed to <emit>: a declaration in the root files when
+    one exists, else the crawl - CLAUDE.md and AGENTS.md, or with neither
+    CODING_STANDARDS.md and CONTRIBUTING.md, then the .md paths they
+    mention, then the ones those mention: two hops, never a third, each path
+    listed once at its first place and only when it lies inside the repo.
+    The first line is `declared <file>` or `crawled`, then the list, one
+    path a line. A declaration the resolution rejects dies with its message,
+    after emitting the first line and the entries up to the rejected one,
+    last, for doctor to read as data."""
+    listed: List[str] = []
+    for names in ROOT_FILES:
+        listed = [name for name in names if standards_inside(root, name)]
+        if listed:
+            break
+    for name in listed:
+        declaration = next((text for fence, text in standards_paragraphs(root, name)
+                            if not fence and text.startswith("Standards:")), None)
+        if declaration is None:
+            continue
+        emit("declared " + name)
+        entries = [span[1:-1] for span in SPAN.findall(declaration)]
+        if not entries:
+            die("%s declares Standards: with no entries (want backticked paths)" % name)
+        for entry in entries:
+            emit(entry)
+            standards_declared(root, entry)
+        return
+    hop = list(listed)
+    for _ in range(2):
+        found: List[str] = []
+        for name in hop:
+            for path in standards_mentions(root, name):
+                if path not in listed and standards_inside(root, path):
+                    listed.append(path)
+                    found.append(path)
+        hop = found
+    emit("crawled")
+    for path in listed:
+        emit(path)
+
+
+def _standards(args: List[str], root: str, git, env: Mapping[str, str], clock,
+               gh_of) -> None:
+    """`review standards`: the one Standards: line both reviewers' prompts
+    end with, from the resolution's list - `Standards: none` when it is
+    empty. A rejected declaration dies with its message and prints nothing
+    on stdout."""
     if args:
         die("usage: orch.sh review standards")
-    _unported("standards")
+    resolved: List[str] = []
+    standards_resolve_source(root, resolved.append)
+    listed = list_join(resolved[1:])
+    stdout_write("Standards: %s\n" % (listed or "none"))
 
 
-def _ci(args: List[str], root: str, git, env: Mapping[str, str], clock) -> None:
+def _ci(args: List[str], root: str, git, env: Mapping[str, str], clock,
+        gh_of) -> None:
     given = [arg for arg in args if arg != "--no-wait"]
     if len(given) > 1:
         die("usage: orch.sh review ci [--no-wait] [<pr>]", 2)
     _unported("ci")
 
 
-def _ci_log(args: List[str], root: str, git, env: Mapping[str, str], clock) -> None:
+def _ci_log(args: List[str], root: str, git, env: Mapping[str, str], clock,
+            gh_of) -> None:
     if len(args) != 1:
         die("usage: orch.sh review ci-log <pr>")
     _unported("ci-log")
 
 
-def _rerun(args: List[str], root: str, git, env: Mapping[str, str], clock) -> None:
+def _rerun(args: List[str], root: str, git, env: Mapping[str, str], clock,
+           gh_of) -> None:
     if len(args) != 1:
         die("usage: orch.sh review rerun <pr>", 2)
     _unported("rerun")
 
 
-def _ready(args: List[str], root: str, git, env: Mapping[str, str], clock) -> None:
+def _ready(args: List[str], root: str, git, env: Mapping[str, str], clock,
+           gh_of) -> None:
     _unported("ready")
 
 
