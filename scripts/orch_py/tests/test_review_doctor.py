@@ -1,16 +1,16 @@
-"""The three review reads doctor's review checks take in process, each called
-directly on a plain directory under tmp_path, the gh fake on its store, and
-checked by exactly the data doctor reads: review_terminal_report's
-classification word, its detail and, for malformed, the record path;
-ci_probe's verdict and detail lines over the required checks; and
-standards_resolve_source's lines, with a rejected declaration's partial
-output and its death."""
+"""Two of the review reads doctor's review checks take in process, each
+called directly on a plain directory under tmp_path, the gh fake on its
+store, and checked by exactly the data doctor reads: ci_probe's verdict and
+detail lines over the required checks; and standards_resolve_source's lines,
+with a rejected declaration's partial output and its death. The third,
+review_terminal_report, has doctor as its one caller, so test_doctor.py's
+review loop cases test it through doctor."""
 from __future__ import annotations
 
 import pytest
 
-from conftest import fake, hold_flow, record, write
-from orch.review import MALFORMED_SHAPE, ci_probe, review_terminal_report, standards_resolve_source
+from conftest import fake, write
+from orch.review import ci_probe, standards_resolve_source
 
 INDENT = "      "
 
@@ -22,62 +22,6 @@ def checkout(tmp_path):
     root = tmp_path.resolve() / "repo"
     root.mkdir()
     return root
-
-
-# --- the terminal-state read ---------------------------------------------------
-
-
-def terminal(root, i, budget):
-    """review_terminal_report's lines, each ended by a newline."""
-    return "".join(line + "\n" for line in review_terminal_report(str(root), i, budget))
-
-
-def test_terminal_state_is_none_for_a_loop_not_started(checkout):
-    assert terminal(checkout, "0", "5") == "none\n"
-
-
-def test_terminal_state_is_pending_short_of_the_budget(checkout):
-    assert terminal(checkout, "2", "5") == "pending\n"
-
-
-def test_terminal_state_is_interrupted_at_the_budget(checkout):
-    assert terminal(checkout, "5", "5") == "interrupted\n"
-
-
-def test_terminal_state_is_ready(checkout):
-    record(checkout, 5, "## Terminal state", "ready")
-    assert terminal(checkout, "5", "5") == "ready\n"
-
-
-def test_terminal_state_is_stop_with_its_reason_lines(checkout):
-    record(checkout, 2, "## Terminal state", "stop", "CI failed twice.")
-    assert terminal(checkout, "2", "5") == "stop\nCI failed twice.\n"
-
-
-def test_terminal_state_is_malformed_its_shape_then_the_record_path(checkout):
-    path = record(checkout, 5, "## Terminal state", "**stop**")
-    assert terminal(checkout, "5", "5") == "malformed\n%s\n%s\n" % (MALFORMED_SHAPE, path)
-
-
-def test_terminal_state_is_unreadable_with_the_directory_it_could_not_make(checkout):
-    (checkout / ".orchestrator").mkdir()
-    (checkout / ".orchestrator" / "review").write_text("")
-    assert terminal(checkout, "5", "5").rstrip("\n") == (
-        "unreadable\ncannot create the review directory %s/.orchestrator/review" % checkout)
-
-
-def test_terminal_state_mid_redo_names_the_retired_malformed_record(checkout):
-    hold_flow(checkout, slug="t", phase="review", issue=21, branch="orch/21-t-redo-1",
-              redo_count=1)
-    path = record(checkout, 5, "## Terminal state", "stopped here", under="pre-redo-1")
-    assert terminal(checkout, "5", "5") == "malformed\n%s\n%s\n" % (MALFORMED_SHAPE, path)
-
-
-def test_terminal_state_mid_redo_reads_the_retired_stop(checkout):
-    hold_flow(checkout, slug="t", phase="review", issue=21, branch="orch/21-t-redo-1",
-              redo_count=1)
-    record(checkout, 5, "## Terminal state", "stop - base sync failed.", under="pre-redo-1")
-    assert terminal(checkout, "5", "5") == "stop\nbase sync failed.\n"
 
 
 # --- the CI read ---------------------------------------------------------------

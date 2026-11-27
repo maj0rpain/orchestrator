@@ -26,10 +26,11 @@ The phase table is the one Python copy of the bash side's (PHASE_TABLE),
 which Python does not read, pinned to it by tests/test_handoff.py's drift
 test; PHASES is its first column, and phase_writer and
 phase_next read it as bash's phase_cell writer did and its phase_next did,
-phases_from as bash's phases_from does. Python doctor's handoff check reads
-through each adapter what bash's does: handoff_ready, handoff_fetch_due,
+and phases_from reads it as bash's phases_from did. Python doctor's handoff
+check reads through each adapter: handoff_ready, handoff_fetch_due,
 handoff_fetched and handoff_doctor_missing, each with its file and comment
-form, as bash's of the same name. `handoff
+form; phases_from and these have no bash copy left, their one bash caller
+the doctor module, gone at the doctor noun's cutover. `handoff
 path` resolves through the Handoff store's adapter handoff_store chooses per
 call: the file adapter, the handoff directory's files, and in an autopilot
 session the comment adapter, marked comments on the recorded issue, read
@@ -144,7 +145,8 @@ def handoffs_due(phase: str) -> List[str]:
 
 def phases_from(phase: str) -> Optional[List[str]]:
     """<phase> and every phase after it, in table order, as bash's
-    phases_from; None for a phase the table does not hold."""
+    phases_from was, its bash copy gone; None for a phase the table does not
+    hold."""
     if phase not in PHASES:
         return None
     return list(PHASES[PHASES.index(phase):])

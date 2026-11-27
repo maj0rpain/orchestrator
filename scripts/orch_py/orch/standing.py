@@ -3,7 +3,8 @@ nouns use: the Phase label test, and what Python doctor reads an autopilot
 flow's issue with - the phase labels' text, the live phase, the label
 verdict against a recorded phase and the phase-redo rule (REDO_PAIRS), the
 read of an issue's Standing (standing_read), the host id and the claims
-read (claims_read) - each as bash's of the same name; the claim release a spec review round's
+read (claims_read) - each as bash's standing_ counterpart, but label_verdict,
+which has no bash copy left; the claim release a spec review round's
 pause makes in an autopilot flow, and a finished phase's close under its
 claim (standing_finish, with its label move, standing_move_label), which the
 phase noun's finish runs for phase advance and for review ready.
@@ -71,7 +72,8 @@ def live_phase(labels: Sequence[str]) -> str:
 
 def label_verdict(labels: Sequence[str], phase: str) -> Tuple[str, str]:
     """Whether the phase labels among <labels> agree with the recorded
-    <phase> - bash standing_label_verdict: ("none", "") with no phase label;
+    <phase>, as bash's standing_label_verdict was, its bash copy gone:
+    ("none", "") with no phase label;
     ("agrees", <text>) when the one carried is <phase>'s; else ("disagrees",
     <text>), <text> the phase labels' phase_labels_text."""
     text = phase_labels_text(labels)

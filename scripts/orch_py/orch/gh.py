@@ -658,7 +658,7 @@ class Limits:
 
 # Where the claims live on origin, and the refspec a claim list fetches them by.
 CLAIMS_PREFIX = "refs/orch/claims/"
-CLAIMS_REFSPEC = "+refs/orch/claims/*:refs/orch/claims/*"
+CLAIMS_REFSPEC = "+%s*:%s*" % (CLAIMS_PREFIX, CLAIMS_PREFIX)
 # The fields a claim commit's message records, one `<field>: <value>` line each.
 CLAIM_FIELDS = ("host", "pid", "phase", "started")
 
@@ -678,7 +678,7 @@ def claim_row(ref: str, message: str) -> ClaimRow:
 def claim_ref(n: int) -> str:
     """The ref on origin that holds the claim on issue #n - bash
     adapter_claim_ref."""
-    return "refs/orch/claims/%d" % n
+    return "%s%d" % (CLAIMS_PREFIX, n)
 
 
 # --- the real adapter --------------------------------------------------------

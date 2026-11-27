@@ -307,16 +307,11 @@ handoff_path() { "handoff_$(handoff_store)_path" "$@"; }
 
 # File adapter.
 
-# handoff_file_locate <file>: prints $HANDOFF_DIR/<file>; non-zero when absent.
-handoff_file_locate() {
-  printf '%s/%s\n' "$HANDOFF_DIR" "$1"
-  [ -f "$HANDOFF_DIR/$1" ]
-}
-
-# handoff_file_path <phase> <file>: prints the write target; non-zero when the
-# handoff is missing.
+# handoff_file_path <phase> <file>: prints the write target,
+# $HANDOFF_DIR/<file>; non-zero when the handoff is missing.
 handoff_file_path() {
-  handoff_file_locate "$2"
+  printf '%s/%s\n' "$HANDOFF_DIR" "$2"
+  [ -f "$HANDOFF_DIR/$2" ]
 }
 
 # Comment adapter.

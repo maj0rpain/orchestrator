@@ -33,7 +33,8 @@ import shutil
 import subprocess
 import sys
 import time
-from typing import Callable, Dict, List, Mapping, NamedTuple, Optional, Sequence, TypeVar, Union
+from typing import (Callable, Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple, TypeVar,
+                    Union)
 
 from orch import agent, glossary
 from orch.autopilot import autopilot_active, iso_epoch
@@ -58,7 +59,7 @@ from orch.root import checkout_root
 from orch.side_checkout import (FINISHED, UNREAD, side_checkout_finished,
                                 side_checkout_marker_issue)
 from orch.standing import (claims_read, host_id, label_verdict, live_phase, phase_label,
-                           redo_phase, standing_read)
+                           redo_phase, Standing, standing_read)
 from orch.triage_labels import LABELS_DOC, expected_labels
 
 T = TypeVar("T")
@@ -119,7 +120,7 @@ class Doctor:
         # The flow's values (FLOW_KEYS, the budget after its fallback) from
         # the one state read, when state.json is exactly one JSON object.
         self.flow: Optional[Dict[str, str]] = None
-        self._issue: Optional[IssueRead] = None
+        self._issue: Optional[Tuple[Optional[Standing], str]] = None
         self._pr: Optional[PrRead] = None
 
     # --- the reporter ---
@@ -240,17 +241,15 @@ class Doctor:
 
     # --- the flow memos ---
 
-    def issue_read(self) -> "IssueRead":
-        """The flow issue's state and labels, read from GitHub at most once
-        per run: every check that needs either takes that one answer. Call
-        only after gh_gate has opened. The recorded number goes to gh as
-        recorded_pr hands a recorded PR on: a plain number as an int."""
+    def issue_read(self) -> Tuple[Optional[Standing], str]:
+        """The flow issue's Standing and "", or None and gh's reason where
+        the read fails (standing_read), read from GitHub at most once per
+        run: every check that needs the issue's state or labels takes that
+        one answer. Call only after gh_gate has opened. The recorded number
+        goes to gh as recorded_pr hands a recorded PR on: a plain number as
+        an int."""
         if self._issue is None:
-            try:
-                state, labels = self.gh.issue_state_labels(recorded_pr(self.flow["issue"]))
-                self._issue = IssueRead(True, state, labels, "")
-            except GhFailed as failed:
-                self._issue = IssueRead(False, "", [], failed.stderr)
+            self._issue = standing_read(self.gh, recorded_pr(self.flow["issue"]))
         return self._issue
 
     def pr_read(self) -> "PrRead":
@@ -293,16 +292,6 @@ class Doctor:
 
 # The state keys the flow checks read, in the probe's one read.
 FLOW_KEYS = ("phase", "issue", "branch", "pr", "iteration", "budget")
-
-
-class IssueRead(NamedTuple):
-    """The flow-issue memo: whether the read answered, the state and labels
-    it gave, and gh's stderr where it did not."""
-
-    read: bool
-    state: str
-    labels: List[str]
-    err: str
 
 
 class PrRead(NamedTuple):
@@ -1154,10 +1143,11 @@ def check_flow_issue(d: Doctor) -> None:
         return
     if not d.gh_gate():
         return
-    read = d.issue_read()
-    if read.state == "OPEN":
+    standing, reason = d.issue_read()
+    state = standing.state if standing else ""
+    if state == "OPEN":
         d.ok("issue #%s open" % issue)
-    elif read.state == "CLOSED":
+    elif state == "CLOSED":
         # pr open always writes `Closes #<issue>`, so a done flow's issue
         # being closed is the expected result of merging.
         if d.flow["phase"] == "done":
@@ -1166,7 +1156,9 @@ def check_flow_issue(d: Doctor) -> None:
             d.fail("issue #%s is closed." % issue)
             d.remedy("gh issue reopen " + issue)
     else:
-        d.fail("issue #%s could not be read from GitHub: %s" % (issue, gh_reason(read.err)))
+        # A read that answered neither state carries no reason of its own:
+        # it takes gh_reason's word for an empty stderr.
+        d.fail("issue #%s could not be read from GitHub: %s" % (issue, reason or gh_reason("")))
         d.remedy("gh issue view " + issue)
 
 
@@ -1422,10 +1414,10 @@ def check_flow_autopilot_label(d: Doctor) -> None:
         return
     if not d.gh_gate():
         return
-    read = d.issue_read()
-    if not read.read:
+    standing, _ = d.issue_read()
+    if standing is None:
         return
-    if phase_label_verdict(d, issue, phase, read.labels, "this checkout", "phase label"):
+    if phase_label_verdict(d, issue, phase, standing.labels, "this checkout", "phase label"):
         return
     if autopilot_active(d.env):
         d.fail("issue #%s carries no phase label - an autopilot session needs the flow's phase"
