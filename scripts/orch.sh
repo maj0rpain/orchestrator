@@ -150,8 +150,8 @@ readonly HANDOFF_SCRATCH_DIR="$ORCH/scratch"
 # one way, doctor.sh calling into this file and the other modules, which call
 # nothing doctor.sh defines but cmd_doctor, from main(), and the reporters d_ok,
 # d_warn, d_fail and d_remedy, from a check living in the module of the concept
-# it serves (review.sh's check_standards_declaration; check_agent_settings is
-# doctor's own, alongside check_glossary) (scripts/test/orch/doctor.sh holds
+# it serves (none does today: check_standards_declaration, check_agent_settings
+# and check_glossary are doctor's own) (scripts/test/orch/doctor.sh holds
 # this).
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   orch_stubs

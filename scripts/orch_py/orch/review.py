@@ -21,11 +21,19 @@ rate limits it meets go through the gh adapter's Limits, handed the open
 wait, or told the call never waits. ci_probe, one look over one scope, is
 what doctor's CI check reads.
 
+Doctor's three review checks each read their answer from one bridge here,
+through orch_python_call: doctor_terminal, the terminal-state check's
+classification; doctor_ci, the CI check's ci_probe over the required checks;
+and doctor_standards, the Standards declaration check's resolution, exiting
+3 on a rejected declaration. Each prints data, and doctor.sh prints its own
+lines from it.
+
 run(argv) takes the arguments after `review`, as orch.sh would hand them on,
 and returns the exit code; every error dies through orch.common.die, with
 bash's messages and in bash's order of guards and side effects, in a plain
 and an autopilot session. Each verb reads its flow state once. The bash noun
-still serves the CLI: nothing dispatches here yet.
+still serves the CLI: the package CLI registers the noun, but orch.sh hands
+no verb here yet.
 
 Under the verbs sits the review loop's terminal-state read: an iteration's
 record path (review_record_path), the record's Terminal state section
@@ -35,8 +43,8 @@ pre-redo-<n>/ (review_terminal_record), whether the flat record is gone
 (review_flat_record_gone), and the classification itself
 (review_terminal_state), each as bash's, messages included; and `review
 retire <n>`'s move of the iteration records aside into pre-redo-<n>/
-(review_retire), which a redo review makes. The bash copies stay for
-doctor until the cutover; tests/test_review.py pins this classification to
+(review_retire), which a redo review makes. The bash copies stay for the
+bash noun until the cutover; tests/test_review.py pins this classification to
 bash's by the golden review records of tests/review_terminal/, run through
 both, and tests/test_review_noun.py reads them through `review terminal`.
 
@@ -45,7 +53,7 @@ mark a PR ready (ci_ready_gate), with the helpers under it - which checks count
 (ci_counted), one look at them (ci_counted_probe), its classification
 (ci_classify) and the unreachable verdict (ci_unreachable) - each a copy of
 bash's, messages included. The bash versions stay in review.sh for `review
-ci`, the loop and doctor until the review noun converts (ADR-0067).
+ci` and the loop until the review noun converts (ADR-0067).
 """
 from __future__ import annotations
 
@@ -711,6 +719,70 @@ def _retire(args: List[str], root: str, git, env: Mapping[str, str], clock,
     if len(args) != 1:
         die("usage: orch.sh review retire <n>")
     stdout_write(review_retire(root, args[0]) + "\n")
+
+
+# --- doctor's bridges ----------------------------------------------------------
+# One orch_python_call each, from doctor.sh's review-phase terminal-state and CI
+# checks and its env scope's Standards declaration check: each prints the data
+# the check reads, and doctor prints its own lines from it.
+
+def doctor_terminal(args: List[str], git=None, env: Optional[Mapping[str, str]] = None) -> None:
+    """Bridge for doctor's terminal-state check: `doctor_terminal
+    <iteration> <budget>`, the two values doctor already read. Prints
+    review_terminal_state's lines - the classification word, then its detail
+    - and, for malformed, the path of the record the remedy names, last;
+    exit 0 whatever the classification. Flow state is read once, and only
+    when the flat record is gone, for the retired record of a half-finished
+    redo. The real git adapter and the process's environment unless a test
+    hands in others."""
+    if len(args) != 2:
+        die("usage: orch_python_call review doctor_terminal <iteration> <budget>")
+    git = Git() if git is None else git
+    root = checkout_root(git, os.environ if env is None else env)
+    i, budget = args
+    state = None
+    if review_flat_record_gone(root, i):
+        # A failed read counts as no redo in progress, and is not made again.
+        state = flow_state_get_many(flow_state_file(root), FALLBACK_KEYS) or {}
+    lines, _ = review_terminal_state(root, i, budget, state)
+    if lines[0] == "malformed":
+        lines.append(review_terminal_record(root, i, state))
+    stdout_write("".join(line + "\n" for line in lines))
+
+
+def doctor_ci(args: List[str], gh=None, git=None, env: Optional[Mapping[str, str]] = None) -> None:
+    """Bridge for doctor's CI check: `doctor_ci <pr>`. Prints ci_probe's
+    verdict and detail lines over the PR's required checks. The real
+    adapters and the process's environment unless a test hands in others."""
+    if len(args) != 1:
+        die("usage: orch_python_call review doctor_ci <pr>")
+    env = os.environ if env is None else env
+    git = Git() if git is None else git
+    ci_print(ci_probe(adapter_of(gh, env, pin=RepoPin(env, git))(), args[0], "required"))
+
+
+# The exit doctor_standards ends with on a rejected declaration, apart from
+# every other failure of the call.
+STANDARDS_REJECTED = 3
+
+
+def doctor_standards(args: List[str], git=None,
+                     env: Optional[Mapping[str, str]] = None) -> int:
+    """Bridge for doctor's Standards declaration check: `doctor_standards`.
+    Prints standards_resolve_source's lines - `declared <file>` or `crawled`,
+    then the list - and exits 0. A declaration the resolution rejects leaves
+    the declaring file and the entries up to the rejected one on stdout, its
+    message on stderr, and exits STANDARDS_REJECTED. The real git adapter
+    and the process's environment unless a test hands in others."""
+    if args:
+        die("usage: orch_python_call review doctor_standards")
+    git = Git() if git is None else git
+    root = checkout_root(git, os.environ if env is None else env)
+    try:
+        standards_resolve_source(root, lambda line: stdout_write(line + "\n"))
+    except SystemExit:
+        return STANDARDS_REJECTED
+    return 0
 
 
 def _ci(args: List[str], root: str, git, env: Mapping[str, str], clock,

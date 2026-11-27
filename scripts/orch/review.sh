@@ -955,38 +955,6 @@ review_standards() {
   fi
 }
 
-# check_standards_declaration: doctor's Standards declaration check, named in
-# its env check list: the resolution review_standards_resolve_source makes,
-# reported - never parsed a second time. A declaration it dies on is a FAIL
-# carrying its own message.
-check_standards_declaration() {
-  local resolved err list first decl_file entry=""
-  if ! capture resolved err review_standards_resolve_source; then
-    d_fail "$(err_line "$err")"
-    # The died resolution left its stdout: the declaring file, then the entries
-    # up to the rejected one (none when the paragraph had no entries).
-    lines_split "$resolved" first list
-    decl_file="${first#declared }"
-    entry="${list##*$'\n'}"
-    if [ -n "$entry" ]; then
-      d_remedy "change the entry \`$entry\` in the Standards: paragraph of $decl_file to a repo-relative path of a file in the repo, with at most one #Heading that matches once - or delete the paragraph to have the reviewers crawl the standards documents" \
-        "see docs/repo-setup.md under the plugin root"
-    else
-      d_remedy "list backticked repo-relative paths in the Standards: paragraph of $decl_file - or delete the paragraph to have the reviewers crawl the standards documents" \
-        "see docs/repo-setup.md under the plugin root"
-    fi
-    return 0
-  fi
-  lines_split "$resolved" first list
-  case "$first" in
-    declared\ *) d_ok "Standards declared in ${first#declared }: $(list_join "$list")" ;;
-    *)
-      if [ -n "$list" ]; then d_ok "no Standards: declaration - the list is crawled: $(list_join "$list")"
-      else d_ok "no Standards: declaration and nothing to crawl - the reviewers apply the smell baseline alone"; fi ;;
-  esac
-  return 0
-}
-
 # review_resume: resumes a review loop whose driving session died mid-iteration,
 # spending no budget (ADR-0054). It reads `review terminal` first: only pending
 # and interrupted resume, any other state exits 1 with nothing changed. Then it

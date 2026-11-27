@@ -12,12 +12,13 @@
 #
 # Nothing here is called back from orch.sh or its other modules but
 # cmd_doctor and the reporters d_ok, d_warn, d_fail and d_remedy, which a
-# check living in the module of the concept it serves reports through
-# (review.sh's check_standards_declaration): doctor's own glossary and agent
-# settings checks, check_glossary and check_agent_settings, reach their
-# converted Python modules only through orch.sh; init's adopted-issue check
-# lives in the Python init noun (orch/init.py), and the triage-label parser
-# the checks read lives in triage-labels.sh.
+# check living in the module of the concept it serves would report through:
+# doctor's own glossary, agent settings and review checks, check_glossary,
+# check_agent_settings, check_standards_declaration and the review-phase
+# terminal-state and CI checks, reach their converted Python modules only
+# through orch.sh; init's adopted-issue check lives in the Python init noun
+# (orch/init.py), and the triage-label parser the checks read lives in
+# triage-labels.sh.
 #
 # Sourced into orch.sh, from its orch/ directory, after its shared mechanism
 # (ORCH_SCRIPTS, ROOT, STATE, ORCH_DIR_NAME, HANDOFF_DIR), common.sh
@@ -29,10 +30,8 @@
 # loads through orch_load. The helpers it calls from noun modules
 # (default_branch_local, default_branch_seed, base_setting and
 # origin_has_branch from base.sh,
-# require_state from state.sh), and the checks its env check list names from
-# other modules (review.sh's check_standards_declaration; check_glossary and
-# check_agent_settings are doctor's own), are defined by the time cmd_doctor
-# runs:
+# require_state from state.sh) are defined by the time cmd_doctor runs - every
+# check its env check list names is doctor's own:
 # run as a command they are stubs that load their module on first call
 # (loader.sh's orch_stubs). cmd_doctor is then
 # dispatched from main() exactly like any other command.
@@ -103,7 +102,7 @@ D_FLOW_ISSUE=""    # the flow's issue, likewise
 D_FLOW_BRANCH=""   # the flow's branch, likewise
 D_FLOW_PR=""       # the flow's PR, likewise
 D_FLOW_ITERATION="" # the review loop's iteration, likewise
-D_FLOW_BUDGET=""   # the review budget, after the shared budget fallback
+D_FLOW_BUDGET=""   # the review budget, after d_budget_fallback
 D_GH_SKIPPED=0
 D_JQ_SKIPPED=0
 
@@ -190,6 +189,21 @@ d_probe_gh() {
   fi
 }
 
+# What a review budget reads as when nobody has set one - a flow started before
+# the key existed, or a value nothing can count: the bash copy of the review
+# noun's DEFAULT_BUDGET (orch/review.py), for doctor's budget read alone.
+readonly D_DEFAULT_BUDGET=5
+
+# d_budget_fallback <raw> <var>: sets <var> to the budget read from state,
+# <raw>, or D_DEFAULT_BUDGET where it is empty or not a plain number - the bash
+# copy of orch/review.py's review_budget_fallback.
+d_budget_fallback() {
+  case "$1" in
+    ""|*[!0-9]*) printf -v "$2" '%s' "$D_DEFAULT_BUDGET" ;;
+    *) printf -v "$2" '%s' "$1" ;;
+  esac
+}
+
 d_probe() {
   local scope="$1" view err budget_raw
   if command -v jq >/dev/null 2>&1; then D_JQ=ok; fi
@@ -204,11 +218,8 @@ d_probe() {
     D_FLOW_PHASE=phase D_FLOW_ISSUE=issue D_FLOW_BRANCH=branch D_FLOW_PR=pr \
     D_FLOW_ITERATION=iteration budget_raw=budget 2>/dev/null; then
     D_STATE=ok
-    # The budget read, here, and the review checks run in command substitutions:
-    # load review once, in this shell.
-    orch_load review
     # shellcheck disable=SC2154 # budget_raw is set by flow_state_get_many above
-    D_FLOW_BUDGET="$(review_budget_fallback "$budget_raw")"
+    d_budget_fallback "$budget_raw" D_FLOW_BUDGET
   fi
   # The flow scope runs on every /orchestrator:next and every status, and a flow
   # with no PR recorded has nothing to ask GitHub. It reaches gh through
@@ -497,6 +508,44 @@ check_labels_doc() {
   if [ "$n" -gt 0 ]; then d_ok "$n triage labels documented in $LABELS_DOC"; return 0; fi
   d_fail "$LABELS_DOC lists no triage labels - the spec phase labels its issue from it."
   d_remedy "fix $LABELS_DOC's table, or delete it to use the canonical names"
+}
+
+# The Standards resolution both reviewers' prompts are built from, read through
+# the review noun's one bridge call and reported - never parsed a second time:
+# `declared <file>` or `crawled`, then the list. A declaration it rejects exits
+# 3, leaving the declaring file and the entries up to the rejected one on
+# stdout, and is a FAIL carrying the resolution's own message; any other
+# failed call is one FAIL with no remedy, and doctor goes on.
+check_standards_declaration() {
+  local resolved err st=0 list first decl_file entry
+  capture resolved err orch_python_call --as doctor review doctor_standards </dev/null || st=$?
+  if [ "$st" -eq 3 ]; then
+    d_fail "$(err_line "$err")"
+    # The entries up to the rejected one, last (none when the paragraph had
+    # no entries).
+    lines_split "$resolved" first list
+    decl_file="${first#declared }"
+    entry="${list##*$'\n'}"
+    if [ -n "$entry" ]; then
+      d_remedy "change the entry \`$entry\` in the Standards: paragraph of $decl_file to a repo-relative path of a file in the repo, with at most one #Heading that matches once - or delete the paragraph to have the reviewers crawl the standards documents" \
+        "see docs/repo-setup.md under the plugin root"
+    else
+      d_remedy "list backticked repo-relative paths in the Standards: paragraph of $decl_file - or delete the paragraph to have the reviewers crawl the standards documents" \
+        "see docs/repo-setup.md under the plugin root"
+    fi
+    return 0
+  fi
+  if [ "$st" -ne 0 ]; then
+    d_fail_err "$err" "Standards resolution could not run"
+    return 0
+  fi
+  lines_split "$resolved" first list
+  case "$first" in
+    declared\ *) d_ok "Standards declared in ${first#declared }: $(list_join "$list")" ;;
+    *)
+      if [ -n "$list" ]; then d_ok "no Standards: declaration - the list is crawled: $(list_join "$list")"
+      else d_ok "no Standards: declaration and nothing to crawl - the reviewers apply the smell baseline alone"; fi ;;
+  esac
 }
 
 # The root GLOSSARY.md, read through the converted glossary noun's own parse,
@@ -1095,16 +1144,18 @@ check_flow_pr() {
 # a human sees "this loop looks interrupted" before wondering why redo
 # won't run. Listed for review alone, like check_flow_upstream's phases:
 # outside review, there is no loop to classify and nothing to say about one.
+# The classification comes from the review noun's one bridge call, handed the
+# iteration and budget d_probe read: the word, its detail and, for malformed,
+# the record path last. A failed call is one FAIL, and doctor goes on.
 check_flow_review_terminal() {
-  local i budget terminal word detail
+  local i budget terminal err word detail shape record
   i="$D_FLOW_ITERATION"
   budget="$D_FLOW_BUDGET"
-  # branch is read only when the flat record is gone: review_terminal_record
-  # then asks redo_midway, which names the -redo-<n> branch through it.
-  if review_flat_record_gone "$i"; then
-    orch_load branch
+  if ! capture terminal err orch_python_call --as doctor review doctor_terminal "$i" "$budget" \
+    </dev/null; then
+    d_fail_err "$err" "review terminal state could not be read"
+    return 0
   fi
-  terminal="$(review_terminal_state "$i" "$budget")" || true
   lines_split "$terminal" word detail
   case "$word" in
     none)  d_ok "review loop: not started yet" ;;
@@ -1123,8 +1174,9 @@ check_flow_review_terminal() {
     # A FAIL, not a warn: the record is there but unreadable, and
     # /orchestrator:next will not rewrite it - only a human editing it will.
     malformed)
-      d_fail "review loop's last iteration ($i) has a malformed terminal state - $detail"
-      d_remedy "rewrite the first line of $(review_terminal_record "$i") in the expected shape above" ;;
+      lines_split "$detail" shape record
+      d_fail "review loop's last iteration ($i) has a malformed terminal state - $shape"
+      d_remedy "rewrite the first line of $record in the expected shape above" ;;
     unreadable)
       d_fail "review loop's terminal state cannot be read: $detail" ;;
   esac
@@ -1146,18 +1198,23 @@ check_flow_review_budget() {
 }
 
 # The loop requires CI green (with one flake rerun) before it marks the PR
-# ready, so ci_probe's own classification is the loop's read of exactly this -
-# reused rather than a second query of the same endpoint. Doctor asks once and
-# reports what it sees now; the grace/timeout widening in `review ci` belongs
-# to the live loop deciding whether to keep polling, which a snapshot has no
-# business doing. required, not all: branch protection's required set is what
-# the loop itself waits on once one is named.
+# ready, so the review noun's ci_probe classification is the loop's read of
+# exactly this - reused rather than a second query of the same endpoint, through
+# its one bridge call, which prints the verdict and its detail lines. Doctor
+# asks once and reports what it sees now; the grace/timeout widening in `review
+# ci` belongs to the live loop deciding whether to keep polling, which a
+# snapshot has no business doing. required, not all: branch protection's
+# required set is what the loop itself waits on once one is named. A failed
+# call is one FAIL, and doctor goes on.
 check_flow_review_ci() {
-  local pr res verdict detail reason
+  local pr res err verdict detail reason
   pr="$D_FLOW_PR"
   [ -n "$pr" ] || return 0
   d_gh_gate || return 0
-  res="$(ci_probe "$pr" required)"
+  if ! capture res err orch_python_call --as doctor review doctor_ci "$pr" </dev/null; then
+    d_fail_err "$err" "CI checks could not be read"
+    return 0
+  fi
   lines_split "$res" verdict detail
   case "$verdict" in
     green)   d_ok "CI: required checks green" ;;

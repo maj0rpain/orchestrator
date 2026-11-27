@@ -149,6 +149,12 @@ def _pr(argv: List[str]) -> int:
     return run(argv)
 
 
+def _review(argv: List[str]) -> int:
+    from orch.review import run
+
+    return run(argv)
+
+
 def _help(argv: List[str]) -> int:
     from orch.help import run
 
@@ -179,6 +185,7 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "ticket": _ticket,
     "ticket-worktree": _ticket_worktree,
     "pr": _pr,
+    "review": _review,
     "help": _help,
 }
 
