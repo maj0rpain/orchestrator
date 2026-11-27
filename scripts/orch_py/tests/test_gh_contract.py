@@ -905,6 +905,16 @@ def test_pr_checks_with_none_reported_answers_none(fixture_gh, stderr):
     assert real_gh(fixture_gh).pr_checks(4, "required") == []
 
 
+@pytest.mark.parametrize("stderr, reported", [
+    ("no checks reported on the 'topic' branch\n", "no checks reported on the 'topic' branch\n"),
+    ("\n", ""),
+], ids=["gh-says-none", "empty-list"])
+def test_pr_checks_answering_none_keeps_gh_s_own_line_saying_so(fixture_gh, stderr, reported):
+    fixture_gh.reply(checks_argv(4), stderr=stderr, exit=0 if stderr == "\n" else 1)
+
+    assert real_gh(fixture_gh).pr_checks(4, "all").reported == reported
+
+
 def test_pr_checks_whose_answer_does_not_parse_fail(fixture_gh):
     fixture_gh.reply(checks_argv(4), "<html>\n")
 

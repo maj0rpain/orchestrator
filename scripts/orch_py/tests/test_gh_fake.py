@@ -950,6 +950,15 @@ def test_each_scripted_checks_answer_reads_as_the_bash_fake_answers_it(store, an
         bash_answer)
 
 
+@pytest.mark.parametrize("script", ["fake_checks 4 all none", "fake_checks 4 all empty",
+                                    "fake_checks 4 required green"],
+                         ids=["none", "empty", "unscripted"])
+def test_no_checks_carry_the_line_the_bash_fake_says_so_with(store, script):
+    bash_says = bash(store, "%s; adapter_pr_checks 4 all 2>&1 >/dev/null" % script)
+
+    assert fake(store).pr_checks(4, "all").reported == bash_says
+
+
 def test_a_checks_script_answers_one_per_call_the_last_repeating_an_unscripted_scope_none(store):
     bash(store, "fake_checks 4 required pending green")
     gh = fake(store)

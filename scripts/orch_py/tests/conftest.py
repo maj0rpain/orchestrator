@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from orch import audit, issue, pr, review_pass, spec_review, ticket_worktree, verification
+from orch import audit, issue, pr, review, review_pass, spec_review, ticket_worktree, verification
 from orch.gh import Unparsed
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit, Git
@@ -639,6 +639,26 @@ class FakeClock:
         self.now += seconds
         if self.on_sleep is not None:
             self.on_sleep(len(self.slept))
+
+
+# A checkout's origin on GitHub, for a gh fake to pin its repo to.
+GITHUB_ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
+
+
+def orch_review(seed, root, *argv, env=None, git=None, clock=None):
+    """`orch.sh review <argv>` in-process in the checkout at <root>, under
+    <env> (Claude Code's plain session when None), the git adapter <git> - a
+    FakeGit at <root> with its origin on GitHub when None - and the gh fake on
+    <seed>'s store pinned through it, <clock> (a FakeClock when None) the
+    time and sleep of both: its exit code, a SystemExit's included."""
+    env = CLAUDE if env is None else env
+    git = FakeGit(GITHUB_ORIGIN, toplevel=str(root)) if git is None else git
+    clock = FakeClock() if clock is None else clock
+    gh = FakeGh(seed.store, env, pin=RepoPin(env, git), sleep=clock.sleep, now=clock)
+    try:
+        return review.run(list(argv), git=git, gh=gh, env=env, clock=clock, sleep=clock.sleep)
+    except SystemExit as died:
+        return died.code
 
 
 def orch_spec_review(root, *argv, seed=None, env=None, clock=None, sleep=None):

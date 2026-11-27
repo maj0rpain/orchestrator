@@ -1,12 +1,13 @@
-"""The review noun (scripts/orch/review.sh), as far as it is ported: the verb
+"""The review noun (scripts/orch/review.sh), all twelve verbs: the verb
 dispatch, with its unknown-op refusal and every usage line bash has;
 `review begin`, `path`, `terminal`, `resume` and `retire`, with the budget
 fallback and its default of 5 (review_budget_fallback); `review file`, built
 on orch/filed_finding.py; `review known-items`, built on
 orch/known_items.py; `review standards`, with the Standards resolution
-under it (standards_resolve_source); and `review ci`. The verbs other
-tickets port - ci-log, rerun and ready - check their arguments as bash does
-and, past them, die with the unknown-op refusal.
+under it (standards_resolve_source); `review ci`; `review rerun` and
+`review ci-log`, over the failing counted checks' Actions links; and
+`review ready`, the CI gate, the PR marked ready, then orch/phase.py's
+finish called in process.
 
 `review ci [--no-wait] [<pr>]` waits on the flow's PR or the one given: the
 grace counted from the push, read from the head's remote-tracking reflog
@@ -39,8 +40,8 @@ doctor until the cutover; tests/test_review.py pins this classification to
 bash's by the golden review records of tests/review_terminal/, run through
 both, and tests/test_review_noun.py reads them through `review terminal`.
 
-It also holds the CI gate `pr ready` runs before it marks a PR ready
-(ci_ready_gate), with the helpers under it - which checks count
+It also holds the CI gate `pr ready` and `review ready` run before they
+mark a PR ready (ci_ready_gate), with the helpers under it - which checks count
 (ci_counted), one look at them (ci_counted_probe), its classification
 (ci_classify) and the unreachable verdict (ci_unreachable) - each a copy of
 bash's, messages included. The bash versions stay in review.sh for `review
@@ -53,14 +54,14 @@ import glob
 import os
 import re
 import time
-from typing import Callable, Dict, List, Mapping, NoReturn, Optional, Tuple
+from typing import Callable, Dict, List, Mapping, Optional, Tuple
 
 from orch.common import (ORCH_DIR_NAME, capture, die, fenced, int_as_test_reads,
                          is_number, is_positive_int, lines_of, list_join, mkdir_p_or_die,
                          move_files_aside, plain_number, read_raw, require_poll_knobs,
                          rm_f_or_die, stdout_write, trim, warn)
 from orch.branch import discard_own_branch_work
-from orch.checkout import checkout_branch_or_rebasing
+from orch.checkout import checkout_branch_or_rebasing, checkout_kind
 from orch.filed_finding import (FILED_AXES, FILED_SEVERITIES, category_for_axis,
                                 category_label_ensure, filed_severity_label,
                                 finding_body_file_new, finding_body_parse, finding_body_render,
@@ -71,8 +72,10 @@ from orch.flow_state import (Pair, flow_state_file, flow_state_get_many, require
 from orch.gh import Check, GhFailed, adapter_of, gh_or_die, gh_reason
 from orch.git import Git
 from orch.handoff import handoff_file_for, handoff_read, section_body
+from orch.host import flow_cmd
 from orch.known_items import (entries_append_from, known_items_write, section_entries,
                               section_entries_append)
+from orch.phase import finish
 from orch.redo import redo_midway
 from orch.repo import REPO_REMEDY, RepoPin
 from orch.root import checkout_root
@@ -272,12 +275,12 @@ def ci_counted_probe(gh, pr: int) -> List[str]:
     return ci_classify(checks, "")
 
 
-def ci_ready_gate(gh, pr: int, code: int = 1) -> None:
+def ci_ready_gate(gh, pr: int, code: int = 1, hint: str = "") -> None:
     """The check before PR <pr> is marked ready: one look, no grace and no
-    polling, through ci_counted. It only refuses. Failed and unreadable
-    checks die, exit <code>; pending ones warn on stderr and return; green
-    or none return silently. bash's --hint is not copied: pr ready, its one
-    Python caller, gives none."""
+    polling, through ci_counted. It only refuses; `review ci` keeps the
+    waiting. Failed and unreadable checks die, exit <code>, " - <hint>"
+    appended where one is given; pending ones warn on stderr and return;
+    green or none return silently."""
     verdict, *detail = ci_counted_probe(gh, pr)
     # The detail lines, unindented, comma-separated, empty ones skipped.
     checks = ", ".join(line.lstrip(" ") for line in detail if line.lstrip(" "))
@@ -289,7 +292,7 @@ def ci_ready_gate(gh, pr: int, code: int = 1) -> None:
         if verdict == "pending":
             warn("PR #%d checks are still pending" % pr)
         return
-    die(message, code)
+    die(message + (" - " + hint if hint else ""), code)
 
 
 # --- review ci -----------------------------------------------------------------
@@ -745,14 +748,6 @@ def _ci(args: List[str], root: str, git, env: Mapping[str, str], clock,
     return review_ci_wait(call, root, env, clock, sleep)
 
 
-# --- the verbs other tickets port ---------------------------------------------
-# Each not ported yet checks its arguments as bash does, in bash's order; past
-# them, it dies with the unknown-op refusal, as an op review lacks.
-
-def _unported(op: str) -> NoReturn:
-    die("unknown review op: %s (want %s)" % (op, OPS))
-
-
 # --- review file ----------------------------------------------------------------
 
 FILE_USAGE = ("usage: orch.sh review file <%s> <title> --axis <%s> --finding-file <f>"
@@ -1117,23 +1112,148 @@ def _standards(args: List[str], root: str, git, env: Mapping[str, str], clock,
     stdout_write("Standards: %s\n" % (listed or "none"))
 
 
+# --- review rerun and review ci-log ---------------------------------------------
+
+# Where an Actions run's id starts in a check's link, and where a job's does.
+RUNS_SEGMENT = "/actions/runs/"
+JOB_SEGMENT = "/job/"
+# A link to an Actions run: the segment, then a digit; and to one of its jobs.
+RUN_LINK = re.compile(re.escape(RUNS_SEGMENT) + "[0-9]")
+JOB_LINK = re.compile(re.escape(RUNS_SEGMENT) + "[0-9].*" + re.escape(JOB_SEGMENT) + "[0-9]")
+JOB_ID = re.compile("[0-9]*")
+FAILING_BUCKETS = ("fail", "cancel")
+# How many of a job log's last lines review ci-log prints.
+LOG_TAIL = 200
+
+
 def _ci_log(args: List[str], root: str, git, env: Mapping[str, str], clock,
             gh_of, sleep) -> None:
+    """`review ci-log <pr>`: the failed-step log of each failing Actions job
+    behind PR <pr>'s counted checks (ci_counted), for the driver to judge a
+    failing CI, everything on stdout. A job's log is cut to its last
+    LOG_TAIL lines, a line before it counting the lines cut. A failing check
+    that is no Actions job gets a line saying so, and a job whose log cannot
+    be read a line naming it, and the next job goes on. Every refusal and a
+    GitHub that cannot be read die, exit 1. It reads no flow state."""
     if len(args) != 1:
         die("usage: orch.sh review ci-log <pr>")
-    _unported("ci-log")
+    pr = args[0]
+    if not plain_number(pr):
+        die("not a PR number: %s" % pr)
+    gh = gh_of()
+    if not gh.pin():
+        die(REPO_REMEDY)
+    checks = gh_or_die("read the checks of PR #%s" % pr, ci_counted, gh, int(pr))
+    for check in checks:
+        if check.bucket not in FAILING_BUCKETS:
+            continue
+        if not JOB_LINK.search(check.link):
+            stdout_write("check %s is not a GitHub Actions run - no log to read\n" % check.name)
+            continue
+        job = JOB_ID.match(check.link.rpartition(JOB_SEGMENT)[2]).group(0)
+        try:
+            log = gh.job_failed_log(job)
+        except GhFailed as failed:
+            stdout_write("check %s: the log of job %s could not be read: %s\n"
+                         % (check.name, job, gh_reason(failed.stderr)))
+            continue
+        # Read as bash's capture reads it, its trailing newlines dropped, then
+        # printed a line at a time: an empty log is one empty line.
+        rows = log.rstrip("\n").split("\n")
+        stdout_write("check %s: failed-step log of job %s\n" % (check.name, job))
+        if len(rows) > LOG_TAIL:
+            stdout_write("[cut: %d earlier lines of %d]\n" % (len(rows) - LOG_TAIL, len(rows)))
+        stdout_write("".join(row + "\n" for row in rows[-LOG_TAIL:]))
 
 
 def _rerun(args: List[str], root: str, git, env: Mapping[str, str], clock,
-           gh_of, sleep) -> None:
+           gh_of, sleep) -> Optional[int]:
+    """`review rerun <pr>`, the loop's flake rerun (#525): the failed jobs of
+    every distinct Actions run behind PR <pr>'s failing counted checks
+    (ci_counted), every failed or cancelled one, a run's id the `runs/<id>`
+    segment of a check's link. Every failing check's link is verified before
+    any rerun starts; each run is rerun once, in the order first met, its id
+    printed as its rerun starts. Exit 0 means every rerun started, the only
+    answer that spends the loop's rerun; 1 that a failing check is no
+    Actions run, so nothing is rerun; everything else - a usage error, no
+    repo, a GitHub that cannot be read, no failing check, a refused rerun -
+    exits 2. It reads no flow state."""
     if len(args) != 1:
         die("usage: orch.sh review rerun <pr>", 2)
-    _unported("rerun")
+    pr = args[0]
+    if not plain_number(pr):
+        die("not a PR number: %s" % pr, 2)
+    gh = gh_of()
+    # Resolved here, not left to the adapter, whose death exits 1 and would
+    # read as "nothing to rerun".
+    if not gh.pin():
+        die(REPO_REMEDY, 2)
+    checks = gh_or_die("read the checks of PR #%s" % pr, ci_counted, gh, int(pr), code=2)
+    if not checks:
+        # gh's "no checks" answer, not a failure reason, so not gh_reason's
+        # to cut.
+        reported = checks.reported.split("\n", 1)[0]
+        die("PR #%s has no checks to rerun: %s" % (pr, reported or "no checks reported"), 2)
+    runs: List[str] = []
+    failing = unrerunnable = False
+    for check in checks:
+        if check.bucket not in FAILING_BUCKETS:
+            continue
+        failing = True
+        if not RUN_LINK.search(check.link):
+            warn("check %s on PR #%s is not a GitHub Actions run - nothing to rerun"
+                 % (check.name, pr))
+            unrerunnable = True
+            continue
+        run = check.link.rpartition(RUNS_SEGMENT)[2].partition("/")[0]
+        if not plain_number(run):
+            warn("check %s on PR #%s links no Actions run id - nothing to rerun"
+                 % (check.name, pr))
+            unrerunnable = True
+            continue
+        if run not in runs:
+            runs.append(run)
+    if not failing:
+        die("PR #%s has no failed or cancelled check to rerun" % pr, 2)
+    if unrerunnable:
+        return 1
+    for run in runs:
+        gh_or_die("rerun the failed jobs of Actions run %s" % run, gh.run_rerun, int(run),
+                  code=2)
+        stdout_write(run + "\n")
+    return None
+
+
+# --- review ready ---------------------------------------------------------------
+
+# What every refusal of review ready ends with: nothing has moved on.
+READY_HINT = "the flow stays in review"
 
 
 def _ready(args: List[str], root: str, git, env: Mapping[str, str], clock,
            gh_of, sleep) -> None:
-    _unported("ready")
+    """`review ready`: the review loop's Termination. The CI gate first
+    (ci_ready_gate), then the flow's PR marked ready and the flow finished
+    as done - GitHub first, state second: recording `done` over a PR still
+    in draft would claim a success nobody can see, and leave the flow no
+    phase to retry it from. The finish is orch/phase.py's, in process; a
+    failure there dies as it does, the PR left ready and the phase review,
+    so a re-run finishes the flow. stdout is the PR number alone; in a side
+    checkout, which outlives its PR, stderr points at the finish command
+    that clears it once the PR merges. Its arguments are ignored, as
+    bash's."""
+    state_file = flow_state_file(root)
+    state = require_state_read(state_file, env, ["pr", "issue"], 1)
+    pr = state["pr"]
+    require_value("pr", pr)
+    gh = gh_of()
+    ci_ready_gate(gh, int(pr), hint=READY_HINT)
+    gh_or_die("mark PR #%s ready" % pr, gh.pr_ready, int(pr), hint=READY_HINT)
+    finish("done", "marked PR #%s ready" % pr, state["issue"], state_file, gh_of, env, clock)
+    stdout_write(pr + "\n")
+    if checkout_kind(git, root) == "side":
+        warn("this is a side checkout - once PR #%s merges, run %s to archive its flow and"
+             " remove it" % (pr, flow_cmd(env, "finish")))
 
 
 _VERBS: Dict[str, Callable[..., Optional[int]]] = {

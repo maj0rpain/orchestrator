@@ -126,6 +126,17 @@ class Check(NamedTuple):
     link: str
 
 
+class Checks(list):
+    """A PR's checks as pr_checks answers them, a list of Check in gh's
+    order. <reported> is gh's own line where it answered none by saying so -
+    "no checks reported on the '<branch>' branch", its stderr - and "" for
+    any other answer: what review rerun's no-checks death quotes."""
+
+    def __init__(self, checks: Sequence[Check] = (), reported: str = "") -> None:
+        super().__init__(checks)
+        self.reported = reported
+
+
 # gh pr checks's exit for pending checks, which still answers the JSON.
 CHECKS_PENDING_EXIT = 8
 # gh's stderr where a PR has no checks, or no required ones.
@@ -1042,10 +1053,11 @@ class Gh:
         """Adds the label to the PR, removing none."""
         self._gh(["pr", "edit", str(n), "--add-label", label])
 
-    def pr_checks(self, n: int, scope: str) -> List[Check]:
+    def pr_checks(self, n: int, scope: str) -> Checks:
         """The PR's checks - the ones branch protection requires under scope
         "required", else every check on its head - in gh's order; none where
-        gh reports no checks, or no required ones. gh exits 8 for pending
+        gh reports no checks, or no required ones, gh's stderr saying so kept
+        as their <reported> line. gh exits 8 for pending
         checks, still answering the JSON: that is read as an answer, and
         where it leaves nothing readable, one pending check with no name or
         link stands for it. Fails with "gh pr checks answered with something
@@ -1057,14 +1069,14 @@ class Gh:
                 lambda: self._run_status(args, (0, CHECKS_PENDING_EXIT)))
         except GhFailed as failed:
             if _NO_CHECKS.search(failed.stderr):
-                return []
+                return Checks(reported=failed.stderr)
             raise
         pending = [Check("pending", "", "")] if status == CHECKS_PENDING_EXIT else []
         try:
-            return parse_checks(out) or pending
+            return Checks(parse_checks(out) or pending)
         except Unparsed:
             if pending:
-                return pending
+                return Checks(pending)
             raise GhFailed(CHECKS_UNPARSED) from None
 
     def pr_close(self, n: int, comment: str) -> None:

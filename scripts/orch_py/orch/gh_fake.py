@@ -31,7 +31,7 @@ from typing import Callable, List, Mapping, Optional, Sequence, Tuple
 
 from orch import gh as real
 from orch.common import file_lines, plain_number, read_raw, read_text
-from orch.gh import Check, GhFailed, IssueRow, LabelledBody, Limits
+from orch.gh import Check, Checks, GhFailed, IssueRow, LabelledBody, Limits
 
 # The author and timestamp of every comment the fake's own operations write.
 COMMENT_AUTHOR = "fake-gh"
@@ -44,8 +44,11 @@ EPOCH = "1970-01-01T00:00:00Z"
 NO_HEAD_OID = "0" * 40
 _RUNS = "https://github.com/acme/widgets/actions/runs"
 _EXT_CI = "https://ci.example.com/build/9"
+# gh's line where a PR has no checks, as bash fake_no_checks prints it.
+NO_CHECKS = "no checks reported on the 'topic' branch\n"
 # The checks each scripted answer stands for, as fake_checks_answer prints
-# them; boom is a connection error, and none and empty no checks at all.
+# them; boom is a connection error, and none and empty no checks at all -
+# none with gh's NO_CHECKS line, empty with no word from gh.
 CHECKS_ANSWERS = {
     "green": [Check("pass", "build", _RUNS + "/1/job/1")],
     "failing": [Check("fail", "build", _RUNS + "/4242/job/77"),
@@ -769,17 +772,17 @@ class FakeGh:
         self._pr_known(n)
         return read_raw(_pr_path(self.store, n, "diff")) or ""
 
-    def pr_checks(self, n: int, scope: str) -> List[Check]:
+    def pr_checks(self, n: int, scope: str) -> Checks:
         """The next answer of the script fake_checks seeded for the PR and
         scope - one per call, the last repeating once the script runs out -
         each read logged in checks/<n>/reads. An unscripted scope has no
-        checks."""
+        checks, gh's NO_CHECKS line saying so."""
         self._failing("adapter_pr_checks")
         directory = _store_path(self.store, "checks", n)
         _write(os.path.join(directory, "reads"), "read\n", "ab")
         script = os.path.join(directory, scope)
         if not os.path.isfile(script):
-            return []
+            return Checks(reported=NO_CHECKS)
         answers = file_lines(script)
         i = real.number_of(read_raw(script + ".n") or "") + 1
         _write(script + ".n", "%d\n" % i)
@@ -790,7 +793,7 @@ class FakeGh:
             raise GhFailed(OFFLINE)
         if answer not in CHECKS_ANSWERS:
             raise GhFailed("gh fake: no checks answer named '%s'\n" % answer)
-        return list(CHECKS_ANSWERS[answer])
+        return Checks(CHECKS_ANSWERS[answer], NO_CHECKS if answer == "none" else "")
 
     def pr_body(self, n: int) -> str:
         self._failing("adapter_pr_body")
