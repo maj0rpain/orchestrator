@@ -16,42 +16,17 @@ import subprocess
 
 import pytest
 
-from conftest import orch_autopilot, stat_of
+from conftest import PROC_START as START, orch_autopilot, proc_add
 from orch import autopilot
 from orch.git import FakeGit
 
 ORIGIN = "https://github.com/o/r.git"
 MODE_KEY = "orchestrator.autopilot.permission-mode"
-# The process start the fake /proc gives this process and the other watch.
-START = "424242"
+# The other watch's pid, its process started at START, as this process's is.
 OTHER = 4321
 TICK = [os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(autopilot.__file__))))), "scripts", "orch.sh"),
     "autopilot", "tick"]
-
-
-@pytest.fixture
-def proc(tmp_path):
-    """A fake /proc holding this process, started at START."""
-    path = tmp_path / "proc"
-    (path / str(os.getpid())).mkdir(parents=True)
-    (path / str(os.getpid()) / "stat").write_text(stat_of(os.getpid(), START))
-    return path
-
-
-def proc_add(proc, pid, start):
-    (proc / str(pid)).mkdir()
-    (proc / str(pid) / "stat").write_text(stat_of(pid, start))
-
-
-@pytest.fixture
-def claude_bin(tmp_path):
-    """A directory holding an executable `claude`."""
-    path = tmp_path / "bin"
-    path.mkdir()
-    (path / "claude").write_text("#!/bin/sh\nexit 0\n")
-    (path / "claude").chmod(0o755)
-    return path
 
 
 @pytest.fixture

@@ -21,7 +21,8 @@ from pathlib import Path
 
 import pytest
 
-from conftest import comments_of, hold_flow, iso, labels_of, orch_autopilot, read, stat_of
+from conftest import (PROC_START as START, comments_of, hold_flow, iso, labels_of,
+                      orch_autopilot, proc_add, read)
 from orch import autopilot
 from orch.gh_fake import FakeGh
 from orch.repo import RepoPin
@@ -30,8 +31,7 @@ from test_side_checkout_add_prune import Clone
 
 NOW = 1780315200
 API_LIMIT = "API rate limit exceeded for user ID 1."
-# A start time the fake /proc gives a live session's process.
-START = "424242"
+# A live session's pid, its process started at START, as this process's is.
 LIVE_PID = 4242
 
 
@@ -125,21 +125,15 @@ class Ticker:
     housekeeping runs only where a case removes it, and the fake starter of
     its children."""
 
-    def __init__(self, tmp_path, seed):
+    def __init__(self, tmp_path, seed, proc, claude_bin):
         self.clone = Clone(tmp_path, seed, local_config={
             "orchestrator.autopilot.permission-mode": "acceptEdits"})
         self.git = self.clone.git
         self.main = self.clone.main
         self.seed = seed
         self.store = seed.store
-        self.proc = tmp_path / "proc"
-        (self.proc / str(os.getpid())).mkdir(parents=True)
-        (self.proc / str(os.getpid()) / "stat").write_text(stat_of(os.getpid(), START))
-        bin_dir = tmp_path / "bin"
-        bin_dir.mkdir()
-        (bin_dir / "claude").write_text("#!/bin/sh\nexit 0\n")
-        (bin_dir / "claude").chmod(0o755)
-        self.env = {"ORCHESTRATOR_HOST": "claude", "PATH": str(bin_dir),
+        self.proc = proc
+        self.env = {"ORCHESTRATOR_HOST": "claude", "PATH": str(claude_bin),
                     "ORCH_PROC_DIR": str(self.proc), "ORCH_GH_LIMIT_WAIT": "0",
                     "ORCH_HOST_ID": "this-host"}
         self.clock = lambda: NOW
@@ -183,8 +177,7 @@ class Ticker:
         record naming a process the fake /proc holds."""
         self.seed.claim(n, host=host, phase=phase)
         if live:
-            (self.proc / str(LIVE_PID + n)).mkdir()
-            (self.proc / str(LIVE_PID + n) / "stat").write_text(stat_of(LIVE_PID + n, START))
+            proc_add(self.proc, LIVE_PID + n, START)
             self.put("run/%d.pid" % n, "%d %s\n" % (LIVE_PID + n, START))
 
     def tick(self, *argv, gh_class=None):
@@ -203,11 +196,11 @@ class Ticker:
 
 
 @pytest.fixture
-def t(tmp_path, seed, monkeypatch):
+def t(tmp_path, seed, proc, claude_bin, monkeypatch):
     # The tick enters the main checkout, as bash's cd does: the case's
     # directory is restored after it.
     monkeypatch.chdir(tmp_path)
-    return Ticker(tmp_path, seed)
+    return Ticker(tmp_path, seed, proc, claude_bin)
 
 
 # --- the GitHub limit pause -------------------------------------------------------

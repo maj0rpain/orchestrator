@@ -1,6 +1,7 @@
 """orch.sh's autopilot noun (ADR-0067). orch.sh runs the noun as a converted
-noun, and the bash autopilot module is gone: each helper keeps the name it had
-there, noted as `bash <name>`, with its messages and its order of steps.
+noun, and the bash autopilot module is gone: each helper is named for its bash
+one without the `autopilot_` prefix, its bash name noted as `bash <name>`, and
+keeps its messages and its order of steps.
 run(argv) takes the arguments after `autopilot`, as orch.sh hands them on, and
 returns the exit code; every error dies through orch.common.die. It dispatches
 every verb, refusing an unknown op and each verb's arguments with bash's
@@ -16,8 +17,9 @@ in-process, the hourly housekeeping, sync detection, and ranking and Pickup
 within the Cap and the Sync slots, each run started detached as `orch.sh
 autopilot run <issue>` - with the bash noun's stdout, exit codes and `orch:`
 messages, in a plain and an autopilot (ORCH_AUTOPILOT=1) session. The only
-orch.sh children it starts run Python nouns: a tick's init and redo in a side
-checkout, its runs, and a run's `verification stop`.
+orch.sh children it starts run Python nouns: the watch's fresh `orch.sh
+autopilot tick` per tick, a tick's init and redo in a side checkout, its runs,
+and a run's `verification stop`.
 
 Beside the noun, the concept every Python noun reads: whether this is an
 autopilot session, the plan's `## Autopilot` block, as handoff_report checks
@@ -417,12 +419,10 @@ def plan_number(ap: Autopilot, root: str, key: str) -> int:
     # Imported here: these modules read this one at their own import.
     from orch.flow_state import flow_state_file, require_issue
     from orch.handoff import handoff_comment_missing
-    from orch.issue_timeline import timeline_body, timeline_die, timeline_handoff, timeline_read
+    from orch.issue_timeline import timeline_body, timeline_handoff, timeline_read_or_die
 
     issue = require_issue(flow_state_file(root), ap.env)["issue"]
-    entries, reason = timeline_read(ap.gh_of(), issue)
-    if entries is None:
-        timeline_die(issue, reason)
+    entries = timeline_read_or_die(ap.gh_of(), issue)
     index = timeline_handoff(entries, "01-plan")
     if index is None:
         handoff_comment_missing(issue, "01-plan")
@@ -650,8 +650,7 @@ def reply_verb(ap: Autopilot, issue: str, path: str) -> int:
     issue, then needs-human removed - refused unless the label is still on
     and no reply follows the issue's newest question comment."""
     from orch.gh import gh_or_die
-    from orch.issue_timeline import timeline_die, timeline_question, timeline_read, \
-        timeline_replied
+    from orch.issue_timeline import timeline_question, timeline_read_or_die, timeline_replied
     from orch.standing import STANDING_HUMAN_LABEL, standing_human_guard, standing_resume
 
     if not is_positive_int(issue):
@@ -662,9 +661,7 @@ def reply_verb(ap: Autopilot, issue: str, path: str) -> int:
         die("reply file is empty: " + path)
     gh = ap.gh_of()
     standing_human_guard(gh, issue)
-    entries, reason = timeline_read(gh, issue)
-    if entries is None:
-        timeline_die(issue, reason)
+    entries = timeline_read_or_die(gh, issue)
     if timeline_question(entries) is None:
         die("issue #%s has no question comment to reply to" % issue)
     if timeline_replied(entries):
@@ -756,7 +753,7 @@ def questions_verb(ap: Autopilot) -> int:
     latest stop decides the kind. One line saying so when nothing is listed;
     every read comes first, so a failed one dies printing nothing."""
     from orch.gh import gh_or_die
-    from orch.issue_timeline import (timeline_die, timeline_question, timeline_read,
+    from orch.issue_timeline import (timeline_question, timeline_read_or_die,
                                      timeline_replied, timeline_stop, timeline_url)
     from orch.standing import STANDING_HUMAN_LABEL, STANDING_SYNC_PHASE, standing_of
 
@@ -766,9 +763,7 @@ def questions_verb(ap: Autopilot) -> int:
     lines = []
     for row in sorted(rows, key=lambda row: row.number):
         standing = standing_of(row.state, row.labels)
-        entries, reason = timeline_read(gh, str(row.number))
-        if entries is None:
-            timeline_die(str(row.number), reason)
+        entries = timeline_read_or_die(gh, str(row.number))
         question, stop = timeline_question(entries), timeline_stop(entries)
         q_phase = entries[question].info.arg if question is not None else ""
         stop_phase = entries[stop].info.arg if stop is not None else ""
@@ -1367,11 +1362,9 @@ def post_minimal_plan(ap: Autopilot, gh, issue: str) -> None:
     post fails."""
     from orch.flow_state import flow_state_file
     from orch.handoff import handoff_check, handoff_comment_post
-    from orch.issue_timeline import timeline_die, timeline_handoff, timeline_read
+    from orch.issue_timeline import timeline_handoff, timeline_read_or_die
 
-    entries, reason = timeline_read(gh, issue)
-    if entries is None:
-        timeline_die(issue, reason)
+    entries = timeline_read_or_die(gh, issue)
     if timeline_handoff(entries, "01-plan") is not None:
         return
     unmade = "could not create a temp file"

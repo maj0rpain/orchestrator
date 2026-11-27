@@ -49,7 +49,8 @@ from orch.common import (ORCH_DIR_NAME, die, fenced, file_write_atomic, lines_of
                          warn)
 from orch.flow_state import flow_state_file, flow_state_get_many, require_issue
 from orch.gh import GhFailed, gh_reason
-from orch.issue_timeline import Entry, timeline_body, timeline_die, timeline_handoff, timeline_read
+from orch.issue_timeline import (Entry, timeline_body, timeline_die, timeline_handoff, timeline_read,
+                                 timeline_read_or_die)
 from orch.marked_comment import marked_comment_write
 
 # The text under the marker of the comment that retires a handoff.
@@ -450,9 +451,7 @@ def _handoff_comment_read(name: str, hint: str, gh_of, env: Mapping[str, str], r
     issue = require_issue(flow_state_file(root), env)["issue"]
     path = "%s/%s" % (handoff_scratch_dir(root), name)
     rm_f(path)
-    entries, reason = timeline_read(gh_of(), issue)
-    if entries is None:
-        timeline_die(issue, reason)
+    entries = timeline_read_or_die(gh_of(), issue)
     _comment_copy_or_die(handoff_comment_write(entries, _stem(name), path),
                          path, issue, _stem(name), hint)
     return path
@@ -544,9 +543,7 @@ def _handoff_comment_retire(gh, issue: str, names: Sequence[str]) -> None:
     comment, or whose newest is already retired, posts nothing, so a redo
     that died partway is finished by the next. A post that fails dies naming
     the comments already posted."""
-    entries, reason = timeline_read(gh, issue)
-    if entries is None:
-        timeline_die(issue, reason)
+    entries = timeline_read_or_die(gh, issue)
     posted: List[str] = []
     for name in names:
         stem = _stem(name)

@@ -406,11 +406,14 @@ class Chain:
                   ", ".join("%s %s" % (verb, label) for verb, _, label in pairs),
                   lambda: self.gh.issue_relabel(int(self.issue), add=add, remove=remove))
 
-    def timeline(self, purpose: str):
+    def timeline(self, purpose: str, note: Optional[Tuple[str, str]] = None):
         """The issue's comments, read once; dies naming <purpose> and why
-        the read failed."""
+        the read failed, the stop <note>'s kind and text, when given,
+        recorded first by stop_note."""
         entries, reason = timeline_read(self.gh, self.issue)
         if entries is None:
+            if note is not None:
+                self.stop_note(*note)
             self.die("could not read issue #%s's comments to %s: %s"
                      % (self.issue, purpose, reason or "the comments could not be read"))
         return entries
@@ -602,11 +605,7 @@ def standing_limit_stop(chain: Chain, phase: str, reset: str, pause: str, rc: in
     stopped = "the session stopped on %s%s and exited with code %s" % (what, when, rc)
     plan = chain.get("plan")
     if plan is None:
-        entries, reason = timeline_read(chain.gh, chain.issue)
-        if entries is None:
-            chain.stop_note("limit stop", stopped)
-            chain.die("could not read issue #%s's comments to count the stops in a row: %s"
-                      % (chain.issue, reason or "the comments could not be read"))
+        entries = chain.timeline("count the stops in a row", note=("limit stop", stopped))
         count = timeline_limit_count(entries, phase)
         plan = "third" if count >= 2 else "count:%d" % count
         chain.put("plan", plan)

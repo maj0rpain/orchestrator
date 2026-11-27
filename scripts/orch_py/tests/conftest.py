@@ -125,6 +125,36 @@ def stat_of(pid, start):
     return "%d (python3 x) %s\n" % (pid, " ".join(fields))
 
 
+# The process start the fake /proc of the proc fixture gives this process.
+PROC_START = "424242"
+
+
+def proc_add(proc, pid, start):
+    """Process <pid>, started at <start>, added to the fake /proc <proc>."""
+    (proc / str(pid)).mkdir(parents=True)
+    (proc / str(pid) / "stat").write_text(stat_of(pid, start))
+
+
+@pytest.fixture
+def proc(tmp_path):
+    """A fake /proc, tmp_path/proc, holding this process, started at
+    PROC_START: its path, for ORCH_PROC_DIR."""
+    path = tmp_path / "proc"
+    proc_add(path, os.getpid(), PROC_START)
+    return path
+
+
+@pytest.fixture
+def claude_bin(tmp_path):
+    """tmp_path/bin, a directory holding an executable `claude` that exits
+    0: its path, for PATH."""
+    path = tmp_path / "bin"
+    path.mkdir()
+    (path / "claude").write_text("#!/bin/sh\nexit 0\n")
+    (path / "claude").chmod(0o755)
+    return path
+
+
 def comments_of(store, n, kind="issues"):
     """The bodies of issue #n's comments, in order - PR #n's with <kind>
     "prs"."""

@@ -98,9 +98,9 @@ class Picker(Ticker):
 
 
 @pytest.fixture
-def p(tmp_path, seed, monkeypatch):
+def p(tmp_path, seed, proc, claude_bin, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    return Picker(tmp_path, seed)
+    return Picker(tmp_path, seed, proc, claude_bin)
 
 
 # --- the cap, lost claims and the order ------------------------------------------

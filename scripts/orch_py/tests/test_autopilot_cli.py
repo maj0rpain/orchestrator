@@ -41,17 +41,13 @@ def clone(tmp_path):
 
 
 @pytest.fixture
-def env(tmp_path, seed):
+def env(tmp_path, seed, claude_bin):
     """The environment every orch.sh call runs in: HOME under tmp_path and
     no other global git config, the repo pinned, the gh fake's store, the
     Claude Code host and a claude on PATH."""
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "claude").write_text("#!/bin/sh\nexit 0\n")
-    (bin_dir / "claude").chmod(0o755)
     env = dict(os.environ, HOME=str(tmp_path), GH_REPO="acme/widgets",
                ORCH_GH_FAKE_STORE=seed.store, ORCHESTRATOR_HOST="claude",
-               PATH="%s%s%s" % (bin_dir, os.pathsep, os.environ["PATH"]))
+               PATH="%s%s%s" % (claude_bin, os.pathsep, os.environ["PATH"]))
     for name in GLOBAL_CONFIG + ("ORCH_AUTOPILOT_FOREGROUND", "ORCH_AUTOPILOT"):
         env.pop(name, None)
     return env

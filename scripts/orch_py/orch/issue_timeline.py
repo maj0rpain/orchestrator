@@ -7,8 +7,9 @@ and the autopilot noun read.
 
 A reply is any comment after the newest question comment but a re-entry
 comment; a stop is a refusal or a failure comment, never a limit stop. Only
-the read can fail: timeline_read hands the failure back, and timeline_die is
-the one dying helper, as in bash.
+the read can fail: timeline_read hands the failure back, timeline_die is
+the one dying helper, and timeline_read_or_die the read that dies on failure,
+as in bash.
 """
 from __future__ import annotations
 
@@ -47,6 +48,15 @@ def timeline_die(issue: str, reason: str) -> None:
     if not reason:
         die("could not read issue #%s's comments" % issue)
     gh_die("read the comments of issue #" + issue, reason)
+
+
+def timeline_read_or_die(gh, issue: str) -> List[Entry]:
+    """timeline_read's entries for issue <issue>, else timeline_die, bash
+    timeline_read_or_die."""
+    entries, reason = timeline_read(gh, issue)
+    if entries is None:
+        timeline_die(issue, reason)
+    return entries
 
 
 def timeline_handoff(entries: List[Entry], name: str) -> Optional[int]:
