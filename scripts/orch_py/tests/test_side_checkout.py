@@ -1,13 +1,11 @@
 """The side-checkout concept module's archive and teardown - archive_root,
-archive_flow, and archive-then-remove with its or-exit wrapper - and one round
-of add, the issue lookup and the sweep, against real repositories under
-tmp_path: git's worktree semantics are git's, so no fake
-models them. Each message is bash side-checkout.sh's, verbatim."""
+archive_flow, and archive-then-remove with its or-exit wrapper - and add, the
+issue lookup and the sweep, against real repositories under tmp_path: git's
+worktree semantics are git's, so no fake models them. Each message is the one
+the bash side-checkout noun gave, verbatim."""
 from __future__ import annotations
 
 import os
-import subprocess
-from pathlib import Path
 
 import pytest
 
@@ -15,7 +13,6 @@ from conftest import (ARCHIVE_STAMP, archive_clock, archive_main, archived, comm
                       done_flow, fake, origin_clone, run_git, side_checkout, worktree_add)
 from orch.git import Git
 from orch.side_checkout import (
-    FLOW_LESS_ENTRIES,
     archive_flow,
     archive_root,
     side_checkout_add,
@@ -23,24 +20,6 @@ from orch.side_checkout import (
     side_checkout_for_issue,
     side_checkout_prune,
 )
-
-SIDE_CHECKOUT_SH = Path(__file__).resolve().parents[2] / "orch" / "side-checkout.sh"
-
-
-def bash_flow_less_entries():
-    """FLOW_LESS_ENTRIES in scripts/orch/side-checkout.sh, read with the bash
-    module sourced in a bash child process, in list order."""
-    run = subprocess.run(
-        ["bash", "-c", 'source "$1"; printf "%s\\0" "${FLOW_LESS_ENTRIES[@]}"', "_",
-         str(SIDE_CHECKOUT_SH)],
-        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, timeout=30, check=True,
-    )
-    return tuple(run.stdout.decode().split("\0")[:-1])
-
-
-@pytest.mark.skipif(not SIDE_CHECKOUT_SH.exists(), reason="the bash side-checkout module is gone")
-def test_the_flow_less_entries_are_the_bash_module_s():
-    assert FLOW_LESS_ENTRIES == bash_flow_less_entries()
 
 
 @pytest.fixture
@@ -251,3 +230,52 @@ def test_a_side_checkout_added_for_an_issue_is_found_for_it_then_swept_once_merg
         "removed side checkout %s\ndeleted branch quick/5-alpha\n" % path, "")
     assert side_checkout_for_issue(git, "5") is None
     assert not os.path.exists(path)
+
+
+@pytest.fixture
+def pushed(tmp_path, seed):
+    """A clone of a bare origin whose main has moved on past the clone's
+    remote ref, and a stray local branch named origin/main at the first
+    commit: the clone's root, and the moved tip."""
+    origin, main = tmp_path / "origin.git", tmp_path.resolve() / "clone"
+    origin_clone(origin, main, "main")
+    run_git(main, "checkout", "-qb", "main")
+    committed(main, {"a.txt": "a\n"}, "first")
+    run_git(main, "push", "-q", "origin", "main")
+    run_git(main, "fetch", "-q", "origin")
+    run_git(main, "commit", "-q", "--allow-empty", "-m", "main moves on")
+    moved = run_git(main, "rev-parse", "HEAD")
+    run_git(main, "push", "-q", "origin", "main")
+    run_git(main, "reset", "-q", "--hard", "HEAD~1")
+    run_git(main, "branch", "origin/main", "HEAD")
+    seed.default_branch("main\n")
+    return main, moved
+
+
+def test_add_from_a_side_checkout_nests_under_the_main_checkout_at_origin_s_fetched_tip(
+        pushed, seed, capsys):
+    main, moved = pushed
+    first = side_checkout_add(["first"], fake(seed), Git(cwd=str(main)), {}, str(main))
+    capsys.readouterr()
+
+    path = side_checkout_add(["second"], fake(seed), Git(cwd=first), {}, first)
+
+    assert path == str(main / ".orchestrator" / "checkouts" / "second")
+    assert run_git(path, "rev-parse", "HEAD") == moved
+    assert (run_git(path, "rev-parse", "--show-toplevel"), run_git(main, "status", "--porcelain")) \
+        == (path, "")
+
+
+def test_add_whose_base_cannot_be_fetched_makes_no_worktree(pushed, seed, capsys):
+    main, _ = pushed
+    run_git(main, "config", "orchestrator.base", "nosuch")
+
+    git = Git(cwd=str(main))
+
+    code, out, err = died_of(
+        capsys, lambda: side_checkout_add(["nofetch"], fake(seed), git, {}, str(main)))
+    assert (code, out) == (1, "")
+    assert err.endswith(
+        "orch: could not fetch base branch nosuch from origin - no side checkout was made\n")
+    assert not (main / ".orchestrator" / "checkouts" / "nofetch").exists()
+    assert len(run_git(main, "worktree", "list").split("\n")) == 1

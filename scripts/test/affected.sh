@@ -38,8 +38,8 @@
 #   the lens bench's fixture directories (scripts/dev/lens-bench/,
 #   scripts/test/lens-bench/), markdown files included
 #                                     lens_bench_test.sh (wins over *.md)
-#   flow-state.sh                     the core set, plus the state and
-#                                     side-checkout sections
+#   flow-state.sh                     the core set, plus the state
+#                                     sections
 #   host.sh                           the core set, plus the host sections
 #   bash-walk.sh, paste-guard.sh, planning-allowlist.sh
 #                                     hooks_test.sh
@@ -53,12 +53,10 @@
 #                                     through the dispatch (base's pr open
 #                                     and branch's pr publish fixtures),
 #                                     and hooks_test.sh, whose paste guard
-#                                     rows run spec-review check through it,
-#                                     plus the side-checkout sections, whose
-#                                     merged-PR close is a bridge (the pytest
-#                                     suite, the .orchestrator entry
-#                                     classification with it, runs on every
-#                                     call);
+#                                     rows run spec-review check through it
+#                                     (the pytest suite, the .orchestrator
+#                                     entry classification with it, runs on
+#                                     every call);
 #                                     not every section that reaches the
 #                                     package - a flow's init and the
 #                                     status and help calls reach it from
@@ -446,7 +444,7 @@ classify() {
     [ "$row" -eq 1 ] || support_select "$f" "$state"
   elif ! listed "$f" "${CORE_FILES[@]}"; then
     case "$f" in
-      scripts/flow-state.sh) core=1; sections_of state side-checkout ;;
+      scripts/flow-state.sh) core=1; sections_of state ;;
       scripts/host.sh) core=1; sections_of host ;;
       scripts/bash-walk.sh | scripts/paste-guard.sh | scripts/planning-allowlist.sh) want+=(hooks_test.sh) ;;
       scripts/triage-labels.sh) want+=(hooks_test.sh); sections_of triage-labels ;;
@@ -469,7 +467,7 @@ classify() {
       scripts/dev/hook-edit-width.sh | scripts/dev/width.sh | scripts/test/shell_code.awk)
         want+=(hooks_test.sh); sections_of harness ;;
       scripts/dev/*) sections_of harness ;;
-      scripts/orch_py/*) want+=(hooks_test.sh); sections_of base branch side-checkout ;;
+      scripts/orch_py/*) want+=(hooks_test.sh); sections_of base branch ;;
       scripts/test/orch_py_test.sh) sections_of harness ;;
       docker/* | .dockerignore) want+=(autopilot_container_test.sh autopilot_up_test.sh) ;;
       .claude-plugin/*) want+=(version_bump_test.sh autopilot_up_test.sh) ;;

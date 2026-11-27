@@ -4155,11 +4155,11 @@ assert_eq "under their headers" "$(printf '%s\n' "$out" | grep '^# ')" \
 
 undescribed=""
 for name in base_branch_into base_source float_add \
-  require_state_exists fake_online orch_gh_failing; do
+  require_state_exists fake_default_branch orch_gh_failing; do
   grep -qE "^$name"$'\t''[^-]' <<<"$index_default"$'\n'"$out" \
     || undescribed+=" $name"
 done
-assert_eq "each of the six newly commented helpers prints a description" "$undescribed" ""
+assert_eq "each of six commented helpers prints a description" "$undescribed" ""
 
 index_dir="$(tree_copy scripts)"
 plant_file "$index_dir/orch" zz-planted.sh <<'PLANTED'
@@ -4678,7 +4678,7 @@ tr_init "$af"
 tr_put "$af" scripts/test/orch/branch.sh 'x=1' '# --- branch create ---' '# --- branch (x.y) retire ---'
 tr_put "$af" scripts/test/orch/state.sh '# --- state ---'
 tr_put "$af" scripts/test/orch/common.sh '# --- common one ---'
-for af_f in base host init redo review side-checkout triage-labels; do
+for af_f in base host init redo review triage-labels; do
   tr_put "$af" "scripts/test/orch/$af_f.sh" "# --- $af_f s ---"
 done
 for af_f in scripts/orch.sh scripts/orch/common.sh scripts/orch/branch.sh \
@@ -4792,8 +4792,8 @@ af_row "a markdown lens-bench fixture selects the lens bench suite" scripts/dev/
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
 af_row "a markdown lens-bench test fixture selects the lens bench suite" scripts/test/lens-bench/run-1/map.md \
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
-af_py_s="base s,$af_branch_titles,side-checkout s"
-af_row "a Python package module selects the sections of the nouns that run a converted noun's verb, the hooks suite and the side-checkout ones, not the full suite" \
+af_py_s="base s,$af_branch_titles"
+af_row "a Python package module selects the sections of the nouns that run a converted noun's verb and the hooks suite, not the full suite" \
   scripts/orch_py/orch/cli.py "$TR_GATE,$af_py_s,hooks_test.sh,docs_lint.sh"
 af_row "the pytest suite's wrapper selects the harness sections, and shellchecks itself" \
   "scripts/test/$PYTEST_SUITE" "$TR_GATE,$TR_HARNESS,docs_lint.sh,scripts/test/$PYTEST_SUITE"
@@ -4841,8 +4841,8 @@ assert_eq "the common module's section file selects its own sections alone" "$(t
 
 # The new rows (#3548).
 af_hooks_s="hooks_test.sh,docs_lint.sh"
-af_row "flow-state.sh selects the core set and the state and side-checkout sections" scripts/flow-state.sh \
-  "$TR_GATE,$TR_HARNESS,loader one,side-checkout s,state,$af_core_s,scripts/flow-state.sh"
+af_row "flow-state.sh selects the core set and the state sections" scripts/flow-state.sh \
+  "$TR_GATE,$TR_HARNESS,loader one,state,$af_core_s,scripts/flow-state.sh"
 af_row "host.sh selects the core set and the host sections" scripts/host.sh \
   "$TR_GATE,$TR_HARNESS,host s,loader one,$af_core_s,scripts/host.sh"
 af_row "bash-walk.sh selects the hooks suite" scripts/bash-walk.sh "$TR_GATE,$af_hooks_s,scripts/bash-walk.sh"

@@ -1111,6 +1111,48 @@ def test_handoff_section_into_a_pipe_closed_unread_dies_of_sigpipe(tmp_path, rep
     assert answer == ("", "", 141)
 
 
+# --- side-checkout -----------------------------------------------------------
+
+
+def test_an_unknown_side_checkout_op_is_refused_through_the_python_noun(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "side-checkout", "bogus",
+                   path=python3_shim(tmp_path)) == (
+        "", "orch: unknown side-checkout op: bogus (want add|list|remove|prune|issue)\n", 1)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+@pytest.mark.parametrize("path_of, found", [
+    (lambda tmp_path: path_without(tmp_path, "python3"), "none"),
+    (py38_path, "3.8.10"),
+], ids=["missing", "below-3.9"])
+def test_side_checkout_refuses_without_a_usable_python3_pointing_at_doctor(
+        tmp_path, repo, seed, path_of, found):
+    assert orch_sh(tmp_path, repo, seed, "side-checkout", "list", path=path_of(tmp_path)) == (
+        "", "orch: orch.sh side-checkout needs python3 3.9 or newer (found %s) - run orch.sh"
+            " doctor\n" % found, 1)
+
+
+def test_side_checkout_list_into_a_pipe_already_closed_dies_of_sigpipe(tmp_path, repo, seed):
+    """The pipe's reader is gone before orch.sh starts, so list's first line
+    stops it, silently, as SIGPIPE stopped bash's printf."""
+    committed(repo, {"a.txt": "a\n"}, "first")
+    side = repo / ".orchestrator" / "checkouts" / "alpha"
+    run_git(repo, "worktree", "add", "-q", "-b", "alpha", str(side))
+    (Path(run_git(side, "rev-parse", "--absolute-git-dir")) / "orchestrator-side-checkout") \
+        .write_text("")
+    reader, writer = os.pipe()
+    os.close(reader)
+    try:
+        run = subprocess.run(
+            ["/bin/bash", str(SCRIPTS / "orch.sh"), "side-checkout", "list"], cwd=str(repo),
+            env=dict(os.environ, HOME=str(tmp_path), ORCH_GH_FAKE_STORE=seed.store),
+            stdin=subprocess.DEVNULL, stdout=writer, stderr=subprocess.PIPE, timeout=30)
+    finally:
+        os.close(writer)
+
+    assert (run.returncode, run.stderr) == (-signal.SIGPIPE, b"")
+
+
 # --- redo ------------------------------------------------------------------
 
 

@@ -35,6 +35,28 @@ fake_checks() {
   rm -f "$d/$scope.n"
 }
 
+# complete_handoff <file>: a complete handoff at <file>, holding every section
+# the phase table requires for its name - read from the missing sections
+# `orch.sh handoff validate` reports for an empty file of that name, outside
+# autopilot, so the fixture cannot drift from the validator - each with a
+# placeholder body, plus Host fallbacks whatever the state says. On a name the
+# table does not hold, validate reports no section, and it fails and writes no
+# file.
+complete_handoff() {
+  local dir empty headings heading
+  dir="$(mktemp -d)" || return 1
+  empty="$dir/${1##*/}"
+  : >"$empty"
+  headings="$(env -u ORCH_AUTOPILOT "$ORCH" handoff validate "$empty" 2>/dev/null \
+    | sed -n 's/^FAIL  missing section: //p')"
+  rm -rf "$dir"
+  [ -n "$headings" ] || return 1
+  grep -qxF '## Host fallbacks' <<<"$headings" || headings="$headings"$'\n''## Host fallbacks'
+  while IFS= read -r heading; do
+    writeln "$heading" "Placeholder for ${heading#\#\# }." ''
+  done <<<"$headings" >"$1"
+}
+
 # --- state ------------------------------------------------------------------
 echo
 echo "state"

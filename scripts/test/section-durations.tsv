@@ -24,7 +24,7 @@
 5	6	orch_load before cross-module reads (#2868)	5db9f2e34990e50e71563abb1d19db9b4786a8ad
 5	6	on-demand sourcing variable (#2820)	843a286249d55d1746ba3984a2cd00769abaf91b
 2	2	declaration substitutions (#1327)	731e5ddc95dc1ef4f8a4a9cdf18479fdb3713e58
-8	13	the helper index (#1144)	bfff59a1d846480d91e03b6280498e22ff8a216f
+9	15	the helper index (#1144)	316d664fa914f899257ce67912409a82b59377e6
 1	2	stand-in adapter (#2465)	589945872ba102d2aeab4cfd812f478d707af177
 1	2	git env clear (#1905)	a0d5df34beb31554efbcbfcab5348d829a121ad1
 4	5	runner git isolation (#1905)	66c79102a274152525b997e4b4086b2d5ee926ab
@@ -32,32 +32,32 @@
 2	2	the suite start (#3582)	2834495999cad083389c65eae5bdba646b64a1a3
 9	10	the pytest suite (#3912)	a30b0999011c69549747df92308c42cd475ddff4
 3	4	the counting fixture's stdin counter (#3434)	70e8481ff5f9f267f1c2c7505f059b47b49c8f5a
-107	137	affected.sh, the ticket verification (#2023)	96a4abf0de1beb9e10faa7efdc7950e96dbb2c30
+111	134	affected.sh, the ticket verification (#2023)	f278df249bb1aa54e21ced8acbd0d06321a2953f
 6	7	the row rule (#3549)	999463864819e1a8148da016fe2fb2c21599a127
 9	12	the shared test support, function by function (#3550)	6f624170fd48c9db0da686db7d4bf8789c235adc
 7	10	the gh fake, operation by operation (#3551)	65f0dc037b742809eb1cfbdd5b18f0ebd36f6aae
-14	15	base	07ff5508f721d1922536c4537214f701c52d53dd
-38	31	a flow's base branch	dc1b95f862cec0114a7a0b7a3212313d50975422
-3	4	base set on a truncated state.json (#1929)	de4767097a86d163c76e27f57e97f2f368040804
-19	12	branch create	90d76b091c81d6ae08d766ce01c283986db4a9b9
-20	14	branch off	8b92e65dc6c7b591115ee89344fd0bf60e0aaa57
-10	11	a quick implementation's base branch	d96fc61d145f3075796b9e2c3d7401009520aa7b
-7	9	a quick implementation's base SHA (#243)	910d5fe5b0be4e565ca40ce2e9eed973aeb217a8
-16	10	plugin-made branches have no upstream (#1152)	2d7a48cfffed1c41306ee2cbc9cb341ff36c692a
-14	15	branch retire	902b8d6e2638ad16475244b966efccca00f54192
-1	2	branch_records_base (#1713)	2559471b4dcffbda03e5e6538403252f4f4af167
-39	42	branch sync (#792)	631b20bd11c01ca6923d45e0ad29af7e95b1fea8
-20	17	branch busy (#1201)	02f48d9f24d427659c60f7d348216ae33b8c882a
-37	14	branch off and branch create refuse a busy checkout (#1202)	5f458af05c95fd222fe91ed1534d69604f4fa227
-27	26	branch create on a restart (ADR-0054)	1786c4a01a21c7009d7f2a5ea28eaf3f59717081
-50	30	branch create off the flow's branch (#1911)	93599a113411d3f02f33c8f140e502bc4836953d
-15	14	the fork start point is decided where origin is asked (#1930)	2b219aa91892167de0c774ed1a8824f2c4d958b8
-1	1	branch: unknown op	0fc6b7bf37b3f2afb4f1644fc0a6ae8f0644fa43
-4	5	branch retire beside a same-named tag (#2337)	8287092bad1181174e416f2901a617716c3d3d1e
-14	7	branch create and branch off beside a same-named tag (#2337)	1bcf83d3d4fe48c968da694766680fc2192f40b6
-16	17	checkout (#1078)	7c438c5348ba9aab0a61aef9c93427abb2bc06af
-4	4	checkout current branch (#1079)	4d824f418789394c8d3fc1803bed841811c9501d
-20	14	checkout busy, redo-retired branch (#1981)	2edd3a1f585b070f69d9fd62e9328eb763e1bca3
+18	19	base	3dfb2ca9c0260cc996972c7beeb6f4d59ac11b43
+30	33	a flow's base branch	a38a88e4fd87d244f389a36c20379a4ae9f40714
+4	4	base set on a truncated state.json (#1929)	1120aedf3fa2ad596a3f884d5b8f1bcf2db9c172
+19	13	branch create	e201d16ae46144959db0ed2078f800cf093e6079
+19	14	branch off	b335c49a0d5937c94a9985a22ad750c51a876cf7
+10	11	a quick implementation's base branch	eb3c04ec05148afc4d9dd04332fd6e83ac8cb3d7
+7	8	a quick implementation's base SHA (#243)	5ef9ceda87f7b8189c75f73c58320ead54b05418
+15	10	plugin-made branches have no upstream (#1152)	3e4cdd7695e57c71ff63d833cce36db638bd5f70
+13	14	branch retire	cd5d34fe49d4f1a0c41cd31d1d34c508b07ecda6
+1	2	branch_records_base (#1713)	732b2bc65a2876bc0fe994c592bba44d868fe5fa
+39	43	branch sync (#792)	7ec6c8017440bd950ee89c84ca3e38d72e72c834
+20	18	branch busy (#1201)	c193392538397be6ee3243830a72eb7828553c62
+25	13	branch off and branch create refuse a busy checkout (#1202)	abada3d4c9e9306ec951a99b3d25b68c270b4303
+29	26	branch create on a restart (ADR-0054)	d0bd78c3073b8986ee4619e561dfb92674d80a2d
+50	31	branch create off the flow's branch (#1911)	b58a0476acb7282ce7afb665bcc9e26b91bea607
+15	14	the fork start point is decided where origin is asked (#1930)	82d7898d27606144a15a26d8341a15750ff4a6bf
+1	1	branch: unknown op	05fc0ac8f292ef8344776a7af43f50393f0ff287
+4	5	branch retire beside a same-named tag (#2337)	57ccbfa57e3a21f5654fcb2ea85d151b372d1680
+14	8	branch create and branch off beside a same-named tag (#2337)	409f064fbe9b6a86d460a3821ba2cc21812740b1
+6	7	checkout (#1078)	034241e9e04ed5228146d375b014d3293cef6ca7
+4	4	checkout current branch (#1079)	d402f627ba50a3c716ac0ac24115f71bb152fd28
+20	14	checkout busy, redo-retired branch (#1981)	0608e4d5c7b58927eb7859c5d847edb713e43621
 8	10	common.sh is the bottom layer	04f7eed4e1b745bc381196f09f7ddd3c7337cc02
 5	5	exclude_line	b6acb7e0c1f3b1c7398f701f5050c66553304c1a
 1	2	list_has	35674c3c656a92f5c2ba4ebfddb52cf6602b0640
@@ -68,16 +68,16 @@
 1	2	capture_err and capture without a temp file (#1780)	fc19f584557286e04c9abe1748bf4408b90215bf
 7	9	capture, capture_err and file_read	15f31dc392fbcce33a8210b2b13e103e6a539901
 0	1	die_hinted and die_opt_check	a31d5ea9ef99f315cf022f51ad5894482feffb9e
-28	31	every gh call pinned to the repo (#520)	a67f77254a7d3c4bd54410e4269dc6556144bd6a
-2	2	gh_reason and capture_err (#846)	58a2e7e65ea477f1e87ffcd7ed48e390ac55d879
-1	2	label_listed	cf6a4f0c40eebe56871168f1bfd7b5040c92b77e
-17	19	gh failure verb and readers (#1022)	b910d0575406af9bdc96f4ad370ed036cb79a0b0
-16	21	gh fake (#280)	9c53cbe04eb7bf519dfc6f9731313b56ef7ab5c5
-86	96	gh adapter contract (#280)	431fed40bdcfd6d042cda19a1cc53e9cb2233eb2
-15	17	claim adapter operations (#1454)	ee8e4abbf30a177a807e0b5bb9da02463d39876f
-3	5	label casing (#1943)	2feeb4e2f314b9ec6fd4db9d942c6e1b41cfe055
-51	44	gh rate limits (#2577)	d2f456ea30f6d5044a01281f0fab427a57351708
-18	19	gh rate limits: the GitHub pause and the hit file (#2577)	ae5774c587564fdd1c9190be8c122a34d3267f39
+26	29	every gh call pinned to the repo (#520)	12610a497fb3c413d19c717ca88ddcb833e0bc10
+2	2	gh_reason and capture_err (#846)	6ec07789da152ae208e3f61e20e338f2cbd29845
+1	2	label_listed	e12ea96e22abb77ff7769944d5df8a6c91157c48
+15	17	gh failure verb and readers (#1022)	5065e5bd818a064019fd8d6ebbbd211bab63bf4b
+17	23	gh fake (#280)	531ea501edccae8ceaf595f952fc9db8ac38e2d1
+90	101	gh adapter contract (#280)	cdd420e4e8c7412011dff3e6a3cd4e4204bdda9a
+14	15	claim adapter operations (#1454)	31299046cb683f3d8bc876aae9d832d33ba6a7b4
+4	5	label casing (#1943)	73499530e159cda07ef5c57508e843424cea3bef
+52	44	gh rate limits (#2577)	d6831a2da6fa55cd3b35128b3330c0f8e9271e3f
+18	19	gh rate limits: the GitHub pause and the hit file (#2577)	64542a8ec1bd27e51900edea076032be8561208f
 1	2	host detection (host.sh, #281)	810863fbb3e926aaff3a2d2d00c5e6caa68f55d7
 6	7	orch_load	b7690e1c2206cbbb9683deef992bff879a329c86
 10	13	on-demand loading	75fb0b8414a4b4d27a09dd73528c40ae565dd5e3
@@ -87,28 +87,16 @@
 1	2	outside a checkout (#931)	0ae7f89078991baf6f44277fef5b969e1b217f1f
 9	10	repo show	03b579d082d6e4e5353a860b91cb90f1006013d0
 8	9	default-branch	2ab1b9bd03b98654ef71dcf00efa0fd1f0f07c16
-47	51	side-checkout (#722)	6200f5914084f3c0d9798196ec57e41eb853a066
-74	79	side-checkout archive and remove (#724)	fe1ecb5f3b17a9f2ba74f70ec0095d0d6092349e
-62	67	side-checkout prune (#726)	b92a62f0db52259032afca832e12764b484db06c
-85	91	side-checkout prune: edge cases (#726)	be6e71c8214125ec83ffd5f4faedf8cb94a56993
-14	15	archive keeps flow-less directories (#1247)	73924579b8aeea19afbf9325c81a24744f6b81cb
-32	35	side-checkout prune: a covered branch tip (#1906)	55bf0be54cb1e3fdcda77e64611360ded847d117
-11	12	side-checkout prune: fork PRs are not proof (#1979)	c70657c441d5cc8aa73d5eb99d956093e1637301
-14	156	side-checkout prune: the merged-PR close backstop (#2477)	a501f2353d1fcbf2475d4c0426d7252221cc76ad
-4	4	side_checkout_marker reads the worktree's git pointer	b0b623fd717390f7cd5b48579acfe4d055c2990c
-7	9	side checkout marker issue: reading without re-classifying (#3073)	5cd6f6c69819c5aee84b37d42b6ba8d85edea4d8
-5	6	archive reads the flow's slug once	970a924e38db49678ce547a21682e81433b39ad6
-10	12	side-checkout: the default branch is asked for only when needed	7ed16999cc8a02472634165947ceedd335ab0e2b
-15	16	state	8b77ff1868f1356d60ce1799238eabcbe1577955
-21	19	a flow from before the budget shipped	7fbb5fb1def3fa9540d2e878f1a0d56c07f2e25e
-9	10	state get reads every key with its default	389ad4cacf6ad6824b47085c58b47c8aa3989a21
-6	7	state.json schema	7e9787bf56e9d51707ecf8e569aa827712e3992e
-3	5	state set on a corrupt state.json	26f88375dccd370dc3eddbabadae383ffbe8a04f
-16	17	the Flow state module, sourced alone	ac980e873ba23afeadf8c0206cb5e21c217433c0
-3	5	commands on a truncated state.json (#1929)	5a4a879550262477332333e4784d3373703b786c
-5	6	the shared and own-checkout readers on a truncated state.json	d7e0601fa4a4a65bf6388c503ef8804d88f53bed
-5	6	state set with a failed write (#1931)	66ac26360bdade59684a39e2807100da88249a45
-11	12	the entry read and the required-field helpers	4313f62a6d36a23be98d1d9ff10c6b20e465b5ee
+15	17	state	d12af5ba0b7f0bd7639cf14c00454bfc8c4fb36a
+19	18	a flow from before the budget shipped	40be75d11c81729616d6f367f54007388ad4c686
+8	10	state get reads every key with its default	a92f4a50ce0fd709476174d5859af85220395e6a
+6	7	state.json schema	c3c675261828078ffc6a1d6c5c5f447a560f82ca
+4	5	state set on a corrupt state.json	149f5e05249cc959566d6a0a8a64300aed83f026
+17	18	the Flow state module, sourced alone	350b023c4f041a6f75d81bfe5f929bbceae7b709
+4	5	commands on a truncated state.json (#1929)	17fd89c9944c6652e7ae61febde2256f6565f541
+5	6	the shared and own-checkout readers on a truncated state.json	378512dddef5a34e606373dcb6bae8478cbd85a1
+5	6	state set with a failed write (#1931)	4c210c7cfe27956eaf5ece37f81a0663068ea5ac
+11	12	the entry read and the required-field helpers	705e21eebf9cb45d3ccd976ee9ece88380bb090b
 1	2	triage_label_into: parse once, later lookups start no command	ba2dc83098993a7a23392d37d31c6a721b76254e
 21	23	trust module	1afb7d76ab00e26be6177336cab34e082da1f6f7
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594

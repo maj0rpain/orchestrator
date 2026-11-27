@@ -147,6 +147,41 @@ pause_near() {
 # space-separated, one trailing space.
 fake_labels_of() { LC_ALL=C sort "$ORCH_GH_FAKE_STORE/issues/$1/labels" 2>/dev/null | tr '\n' ' '; }
 
+# fake_comments_of <n>: the bodies of issue #n's comments read back from the
+# store, in order, one blank line between.
+fake_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
+
+# fake_offline: every operation fails with a connection error, as with GitHub
+# unreachable. fake_online undoes it, and the store's noauth too.
+fake_offline() { : >"$ORCH_GH_FAKE_STORE/offline"; }
+# fake_online: GitHub reachable and authenticated again.
+fake_online()  { rm -f "$ORCH_GH_FAKE_STORE/offline" "$ORCH_GH_FAKE_STORE/noauth" "$ORCH_GH_FAKE_STORE/ratelimit"; }
+
+# fake_pr_head <n> <sha> [commit...]: seeds PR #n's head SHA and its commits,
+# oldest first - given none, the head alone, or none when the head is empty.
+fake_pr_head() {
+  local d="$ORCH_GH_FAKE_STORE/prs/$1"
+  printf '%s\n' "$2" >"$d/head_oid"
+  shift 2
+  rm -f "$d/commits"
+  [ $# -eq 0 ] || printf '%s\n' "$@" >"$d/commits"
+}
+
+# iso_of <epoch>: epoch seconds as a UTC timestamp, GNU or BSD date.
+iso_of() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; }
+
+# fake_comment_bodies <comments-dir>: the bodies of the directory's comments,
+# in order, one blank line between; nothing for none.
+fake_comment_bodies() {
+  local d="$1" k first=1
+  [ -d "$d" ] || return 0
+  for k in $(ls "$d" | sort -n); do
+    [ "$first" = 1 ] || printf '\n\n'
+    first=0
+    cat "$d/$k/body"
+  done
+}
+
 # --- every gh call pinned to the repo (#520) ----------------------------------
 # A fork whose gh default points upstream: origin is the fork, GH_REPO unset,
 # ORCH_GH_ADAPTER unset so the real adapter operations run, against the fixture

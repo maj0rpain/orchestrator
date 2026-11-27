@@ -1,38 +1,12 @@
 # shellcheck shell=bash
 # checkout.sh - the Checkout module: a concept module with no orch.sh noun of
 # its own, holding the facts about the repo's checkouts - the main checkout,
-# side checkouts, ticket worktrees and hand-made worktrees - that every other
-# module reads, and the ticket-worktree listing and refusal
-# (ticket_worktrees_under, refuse_ticket_worktrees) that side-checkout's
-# per-checkout walk and archive run in bash, starting no Python process.
+# ticket worktrees and the branch a checkout holds - that every other module
+# reads, and the ticket-worktree listing and refusal (ticket_worktrees_under,
+# refuse_ticket_worktrees). The checkout scan and kind classification are
+# orch/checkout.py's, read by the converted nouns.
 # Its tests: scripts/test/orch/checkout.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
-
-# checkouts: the one walk over git worktree list, the composition of
-# checkout_parse (the one place the porcelain is read) and checkout_classify
-# (the one place the kind rule is spelled). Prints one line per
-# checkout, the main checkout first:
-#
-#   <kind> <flow> <branch> <path>
-#
-# <kind> is main for the first entry; ticket for a checkout whose parent
-# directory is <checkout>/.orchestrator/worktrees for some listed checkout and
-# whose name is t<n>, n a positive integer with no leading zero (whether or not
-# it carries a side marker); side for one carrying the side-checkout ownership
-# marker; hand-made for anything else - a worktree whose directory is gone
-# included, unless its path is a ticket path. <flow> is 1 when the checkout
-# holds a flow, else 0. <branch> is git's own record of the checked-out
-# branch, or - on a detached HEAD. <path> comes last, so a path with spaces
-# survives `read -r kind flow branch path`. Fails, printing nothing, when git
-# worktree list fails.
-checkouts() {
-  local i flow paths=() branches=()
-  checkout_parse || return
-  for i in "${!paths[@]}"; do
-    if checkout_has_flow "${paths[i]}"; then flow=1; else flow=0; fi
-    printf '%s %s %s %s\n' "$(checkout_classify "$i")" "$flow" "${branches[i]}" "${paths[i]}"
-  done
-}
 
 # checkout_parse: one `git worktree list --porcelain` (run from the current
 # directory), read into the caller's `paths` list and
@@ -50,23 +24,6 @@ checkout_parse() {
   done <<<"$list"
 }
 
-# checkout_classify <index>: prints the kind of entry <index> of the caller's
-# `paths` list (see checkout_parse): main for index 0, else ticket, side or
-# hand-made, checked in that order. The one place the kind rule is spelled;
-# a side-or-hand-made entry reads its worktree's git pointer, and costs a git
-# process only when that pointer cannot be read.
-checkout_classify() {
-  if [ "$1" -eq 0 ]; then
-    echo main
-  elif checkout_ticket_path "${paths[$1]}" "${paths[@]}"; then
-    echo ticket
-  elif side_checkout_marker "${paths[$1]}" >/dev/null; then
-    echo side
-  else
-    echo hand-made
-  fi
-}
-
 # checkout_ticket_path <path> <checkout>...: whether <path> is a ticket
 # worktree's path - t<n>, n a positive integer with no leading zero, directly
 # under one <checkout>'s .orchestrator/worktrees.
@@ -81,37 +38,6 @@ checkout_ticket_path() {
   return 1
 }
 
-# checkout_kind <path>: prints the kind checkout_classify gives (main, ticket,
-# side or hand-made) for the checkout holding <path> - a folder inside a
-# checkout included - the one classification every site that asks a checkout's
-# kind reads. Classifies only the matching entry: one parse, and at most one
-# marker read. Fails, printing nothing, when <path> is in no checkout, the
-# list fails, or no entry matches.
-checkout_kind() {
-  local top i st paths=() branches=()
-  top="$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" || return 1
-  if pushd "$top" >/dev/null; then
-    checkout_parse; st=$?
-    popd >/dev/null || return 1
-  else
-    return 1
-  fi
-  [ "$st" -eq 0 ] || return 1
-  for i in "${!paths[@]}"; do
-    [ "${paths[i]}" = "$top" ] && { checkout_classify "$i"; return 0; }
-  done
-  return 1
-}
-
-# checkouts_main <walk>: prints the main checkout's path from a walk already
-# held: the parse of its first line. Prints nothing and fails on an empty walk.
-checkouts_main() {
-  local _kind _flow _branch path
-  [ -n "$1" ] || return 1
-  read -r _kind _flow _branch path <<<"${1%%$'\n'*}"
-  printf '%s\n' "$path"
-}
-
 # The main checkout: the first entry git worktree list prints, unclassified -
 # one git process, no marker read, no flow state. Fails, printing nothing,
 # when the list fails or is empty.
@@ -122,14 +48,11 @@ main_checkout() {
   printf '%s\n' "${paths[0]}"
 }
 
-# checkouts_or_die / main_checkout_or_die: what checkouts / main_checkout
-# print, or die "could not read the checkouts - git worktree list failed", the
-# one place that message is spelled. Called in a substitution, where die exits
-# only the subshell, so every caller carries the status out (|| exit $?).
+# main_checkout_or_die: what main_checkout prints, or die "could not read the
+# checkouts - git worktree list failed", the one place that message is spelled
+# (checkouts_unreadable). Called in a substitution, where die exits only the
+# subshell, so every caller carries the status out (|| exit $?).
 checkouts_unreadable() { die "could not read the checkouts - git worktree list failed"; }
-checkouts_or_die() {
-  checkouts || checkouts_unreadable
-}
 main_checkout_or_die() {
   main_checkout || checkouts_unreadable
 }

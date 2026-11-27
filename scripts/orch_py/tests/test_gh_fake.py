@@ -24,20 +24,17 @@ BASH_FAKE = SCRIPTS / "test" / "gh_adapter_fake.sh"
 BASH_HELPERS = {
     SCRIPTS / "test" / "orch" / "setup.sh": [
         "fake_issue", "fake_issue_relabel",
-        "fake_comment_bodies",
-        "fake_fail", "fake_unfail", "fake_offline", "fake_online",
-        "fake_comments_of", "fake_pr",
-        "fake_default_branch", "fake_pr_draft", "fake_pr_head", "iso_of",
+        "fake_fail", "fake_unfail", "fake_pr",
+        "fake_default_branch", "fake_pr_draft",
         "fake_next_pr", "fake_pr_base_of", "fake_pr_body_of",
     ],
     SCRIPTS / "test" / "orch" / "gh.sh": ["fake_lag", "fake_ratelimit", "fake_duplicate_of",
                                           "fake_issue_body", "fake_pr_comments_of",
                                           "fake_issue_title", "fake_label", "fake_labels",
                                           "fake_label_names", "fake_labels_of",
-                                          "fake_fail_after", "fake_fail_times", "fake_quota"],
-    SCRIPTS / "test" / "orch" / "side-checkout.sh": ["fake_state_of", "fake_pr_cross",
-                                                     "fake_pr_merged", "fake_issue_created",
-                                                     "iso_ago"],
+                                          "fake_fail_after", "fake_fail_times", "fake_quota",
+                                          "fake_comments_of", "fake_offline", "fake_online",
+                                          "fake_pr_head", "iso_of", "fake_comment_bodies"],
     SCRIPTS / "test" / "orch" / "trust.sh": ["fake_issue_authorship"],
     SCRIPTS / "test" / "orch" / "state.sh": ["fake_pr_draft_of", "fake_checks"],
 }
@@ -69,6 +66,25 @@ fake_comment_seed() { printf '%s' "$4" | fake_comment_append "$1" "$2" "$3" /dev
 fake_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/$1/comments" "$2" "$3" "$4" "${5-}"; }
 fake_pr_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/prs/$1/comments" "$2" "$3" "$4" "${5-}"; }
 """
+# The issue-state read and the fork, merge and creation seeders the bash
+# side-checkout suite defined: the suite went with the bash side-checkout noun,
+# and these cases still seed and read the store through them.
+SIDE_CHECKOUT_SEEDS = r"""
+fake_state_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/state" 2>/dev/null; }
+iso_ago() { iso_of "$(( $(date -u +%s) - $1 ))"; }
+fake_issue_created() {
+  iso_ago "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/created_at"
+}
+fake_pr_cross() { printf '%s\n' "${2:-true}" >"$ORCH_GH_FAKE_STORE/prs/$1/cross_repository"; }
+fake_pr_merged() {
+  local n="$1" age="$2" d
+  shift 2
+  d="$ORCH_GH_FAKE_STORE/prs/$n"
+  iso_ago "$age" >"$d/merged_at"
+  : >"$d/closing"
+  for i in "$@"; do printf '%s\n' "$i" >>"$d/closing"; done
+}
+"""
 SECONDARY = "You have exceeded a secondary rate limit."
 NOW = 1_900_000_000
 
@@ -94,7 +110,7 @@ def bash_definitions(path, names):
 
 
 HELPERS = "\n".join(bash_definitions(path, names) for path, names in BASH_HELPERS.items()) + (
-    ISSUE_READS + CLAIM_READS + COMMENT_SEEDS)
+    ISSUE_READS + CLAIM_READS + COMMENT_SEEDS + SIDE_CHECKOUT_SEEDS)
 
 
 def bash(store, script):

@@ -560,8 +560,8 @@ class Git:
     # it names, as bash's `git -C "$main_root" worktree remove`.
 
     def worktree_remove(self, checkout: str, path: str) -> Optional[str]:
-        """`git -C <checkout> worktree remove <path>`, never with force -
-        bash side_checkout_remove_worktree's run: None when the worktree is
+        """`git -C <checkout> worktree remove <path>`, never with force, as
+        bash side_checkout_remove_worktree ran it: None when the worktree is
         gone, else the first line of what git printed refusing it."""
         run = self._run(["-C", checkout, "worktree", "remove", path])
         if run.returncode == 0:

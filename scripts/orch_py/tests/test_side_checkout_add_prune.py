@@ -1,10 +1,10 @@
 """The side-checkout concept module's add, finished sweep (prune) and
-lookups - the side-checkout verbs Python autopilot reaches - called as the
-side-checkout conversion will call them, on a FakeGit checkout at tmp_path
-and the gh fake on its store: their stdout, stderr and status, and what they
-leave on disk and on the fake. Each message is bash side-checkout.sh's,
-verbatim, and the cases are those of its side-checkout, prune and merged-PR
-close sections."""
+lookups - the verbs `orch.sh side-checkout add` and `prune` run, and Python
+autopilot reaches - on a FakeGit checkout at tmp_path and the gh fake on its
+store: their stdout, stderr and status, and what they leave on disk and on
+the fake. Each message is the one the bash side-checkout noun gave, verbatim,
+and the cases are those its bash add, prune, covered-tip, fork-PR, merged-PR
+close and default-branch sections checked."""
 from __future__ import annotations
 
 import os
@@ -15,6 +15,7 @@ import pytest
 from conftest import (GITHUB_ORIGIN, CountingGh, SideCheckouts, comments_of, fake, hold_flow,
                       linked_worktree, read, sha_of)
 from orch import side_checkout
+from orch.base import branch_base_key
 from orch.git import FakeGit, GitFailure, Worktree
 
 # The clock the sweep archives and closes at, 2026-06-01T12:00:00Z, and the
@@ -135,6 +136,43 @@ def add(capsys, clone, *argv, gh=None):
     return code, out, err
 
 
+def noun(capsys, clone, *argv):
+    """`orch.sh side-checkout <argv>` through the noun's run, from the main
+    checkout, at NOW, the gh fake on the clone's store: (exit code, stdout,
+    stderr)."""
+    return outcome(capsys, lambda: side_checkout.run(
+        list(argv), gh=fake(clone.seed), git=clone.git, env={}, clock=lambda: NOW))
+
+
+# --- the noun's add and prune ------------------------------------------------------
+
+
+def test_the_noun_s_prune_runs_the_sweep(capsys, clone, monkeypatch):
+    monkeypatch.chdir(clone.main)
+    qk = clone.quick("qk", 7, 42)
+
+    assert noun(capsys, clone, "prune") == (
+        0, "removed side checkout %s\ndeleted branch quick/7-qk\n" % qk, "")
+
+
+def test_the_noun_s_prune_takes_no_arguments(capsys, clone):
+    assert noun(capsys, clone, "prune", "extra") == (
+        1, "", "orch: usage: orch.sh side-checkout prune\n")
+
+
+def test_the_noun_s_add_prints_the_new_path_alone(capsys, adding, monkeypatch):
+    monkeypatch.chdir(adding.main)
+    path, marker = adding.addable("alpha")
+
+    assert noun(capsys, adding, "add", "alpha", "--issue", "9") == (
+        0, path + "\n", "no finished side checkouts\n")
+    assert marker.read_text() == "9\n"
+
+
+def test_the_noun_s_add_wants_a_slug(capsys, adding):
+    assert noun(capsys, adding, "add") == (1, "", USAGE)
+
+
 # --- the finished sweep: verdicts first ------------------------------------------
 
 
@@ -237,6 +275,188 @@ def test_the_whole_sweep_asks_github_for_the_default_branch_once(capsys, clone):
     code, out, _ = prune(capsys, clone, gh=gh)
     assert (code, len(gh.default_asks)) == (0, 1)
     assert out.count("removed side checkout") == 2
+
+
+# --- the finished sweep: each verdict's reason, as bash's sections check it --------
+
+
+def test_a_side_checkout_on_no_branch_is_skipped_as_having_none(capsys, clone):
+    nb = clone.add("nb", "quick/1-nb")
+    clone.git.seed("branch_at", nb, answer=None)
+
+    assert prune(capsys, clone) == (0, "skipped %s: no branch\nno finished side checkouts\n" % nb,
+                                    "")
+
+
+def test_a_done_flow_whose_pr_is_closed_unmerged_is_skipped_naming_it_closed(capsys, clone):
+    pc = clone.flow("pc", 62)
+    clone.seed.pr(62, "closed", "orch/pc-flow", "main")
+
+    assert prune(capsys, clone)[:2] == (
+        0, "skipped %s: PR #62 is closed\nno finished side checkouts\n" % pc)
+
+
+def test_a_github_read_failing_with_nothing_on_stderr_says_gh_gave_no_reason(capsys, clone):
+    fl = clone.flow("fl", 41)
+    clone.seed.fail("adapter_pr_state_draft", "")
+
+    assert prune(capsys, clone) == (1, "", (
+        "orch: could not check %s: could not read GitHub: gh gave no reason\n"
+        "orch: 1 checkout(s) could not be checked - nothing was removed\n" % fl))
+    assert "orch/fl-flow" in clone.git.branches
+
+
+@pytest.mark.parametrize("kind", ["flow-less", "flow"])
+def test_a_tip_past_its_merged_pr_s_head_keeps_the_checkout_and_its_branch(
+        capsys, clone, kind):
+    if kind == "flow":
+        path, branch = clone.flow("up", 81), "orch/up-flow"
+    else:
+        path, branch = clone.quick("up", 31, 81), "quick/31-up"
+    clone.tip(branch, sha_of("up-follow-up"))
+    clone.git.seed("ancestry", sha_of("up-follow-up"), sha_of("up"), answer=False)
+
+    assert prune(capsys, clone)[:2] == (0, (
+        "skipped %s: %s has commits past PR #81's merged head %s\nno finished side checkouts\n"
+        % (path, branch, sha_of("up")[:7])))
+    assert branch in clone.git.branches
+
+
+def test_a_tip_behind_its_merged_pr_s_head_is_swept(capsys, clone):
+    bh = clone.quick("bh", 32, 83)
+    clone.tip("quick/32-bh", sha_of("bh-behind"))
+    clone.git.seed("ancestry", sha_of("bh-behind"), sha_of("bh"), answer=True)
+
+    assert prune(capsys, clone)[:2] == (
+        0, "removed side checkout %s\ndeleted branch quick/32-bh\n" % bh)
+
+
+def test_a_merged_head_this_repo_does_not_hold_keeps_the_checkout_saying_to_fetch(
+        capsys, clone):
+    ms = clone.add("ms", "quick/35-ms")
+    clone.seed.pr(84, "merged", "quick/35-ms", "main")
+    clone.seed.pr_head(84, "1" * 40)
+
+    assert prune(capsys, clone)[:2] == (0, (
+        "skipped %s: quick/35-ms: PR #84's head 1111111 is not in this repo - fetch it to let the"
+        " sweep judge\nno finished side checkouts\n" % ms))
+
+
+def test_an_older_merged_pr_s_head_covering_the_tip_sweeps_it(capsys, clone):
+    mc = clone.add("mc", "quick/33-mc")
+    clone.merged(clone.seed, 85, "quick/33-mc", sha_of("mc"))
+    clone.merged(clone.seed, 86, "quick/33-mc", sha_of("unrelated"))
+    clone.git.seed("ancestry", sha_of("mc"), sha_of("unrelated"), answer=False)
+
+    assert prune(capsys, clone)[:2] == (
+        0, "removed side checkout %s\ndeleted branch quick/33-mc\n" % mc)
+
+
+def test_no_merged_pr_s_head_covering_the_tip_names_the_newest(capsys, clone):
+    mn = clone.add("mn", "quick/34-mn")
+    for n, head in ((87, "first"), (88, "second")):
+        clone.merged(clone.seed, n, "quick/34-mn", sha_of(head))
+        clone.git.seed("ancestry", sha_of("mn"), sha_of(head), answer=False)
+
+    assert prune(capsys, clone)[:2] == (0, (
+        "skipped %s: quick/34-mn has commits past PR #88's merged head %s\n"
+        "no finished side checkouts\n" % (mn, sha_of("second")[:7])))
+
+
+def test_a_merged_fork_pr_is_no_proof_the_checkout_is_finished(capsys, clone):
+    fk = clone.quick("fk", 41, 91)
+    clone.seed.pr_cross(91)
+
+    assert prune(capsys, clone) == (
+        0, "skipped %s: no merged PR from quick/41-fk into main\nno finished side checkouts\n"
+        % fk, "orch: ignored 1 PR(s) from forks for quick/41-fk\n")
+
+
+def test_a_cross_repository_flag_that_cannot_be_read_removes_nothing(capsys, clone):
+    bf = clone.quick("bf", 43, 93)
+    clone.seed.pr_cross(93, "maybe")
+
+    assert prune(capsys, clone) == (1, "", (
+        "orch: could not check %s: could not read GitHub: the merged PRs from quick/43-bf into"
+        " main\norch: 1 checkout(s) could not be checked - nothing was removed\n" % bf))
+
+
+def test_a_flow_less_checkout_is_held_to_the_base_recorded_for_its_branch(capsys, tmp_path, seed):
+    clone = Clone(tmp_path, seed, local_config={
+        "orchestrator.base": "main", branch_base_key("quick/15-rb"): "uat",
+        branch_base_key("quick/16-rm2"): "uat"})
+    rb = clone.add("rb", "quick/15-rb")
+    clone.merged(seed, 54, "quick/15-rb", sha_of("rb"), base="uat")
+    rm2 = clone.add("rm2", "quick/16-rm2")
+    clone.merged(seed, 55, "quick/16-rm2", sha_of("rm2"))
+
+    assert prune(capsys, clone)[:2] == (0, (
+        "skipped %s: no merged PR from quick/16-rm2 into uat\nremoved side checkout %s\n"
+        "deleted branch quick/15-rb\n" % (rm2, rb)))
+
+
+def test_a_side_checkout_whose_archive_cannot_be_made_stays_and_the_sweep_carries_on(
+        capsys, clone):
+    ab = clone.flow("ab", 57)
+    ac = clone.quick("ac", 12, 59)
+    (clone.tmp_path / ".orchestrator" / "archive").write_text("")
+
+    assert prune(capsys, clone) == (1, "removed side checkout %s\ndeleted branch quick/12-ac\n"
+                                    % ac, (
+        "orch: could not archive the flow in side checkout %s: could not create the archive"
+        " directory %s - nothing was archived - left as it stands\n"
+        % (ab, clone.archived("ab-flow"))))
+    assert (Path(ab) / ".orchestrator" / "state.json").is_file()
+    assert "orch/ab-flow" in clone.git.branches
+
+
+def test_a_pr_merged_before_its_issue_was_created_closes_nothing_and_the_checkout_goes(
+        capsys, clone):
+    clone.quick("bd", 611, 711)
+    clone.seed.issue(611, "open")
+    clone.seed.pr_merged(711, "2026-06-01T10:00:00Z", 611)
+    clone.seed.issue_created(611, HOUR_AGO)
+
+    code, out, _ = prune(capsys, clone)
+    assert (code, out.endswith("deleted branch quick/611-bd\n")) == (0, True)
+    assert read(clone.seed.store, "issues", 611, "state") == "OPEN\n"
+
+
+# --- the finished sweep and add: the default branch asked only when needed -------
+
+
+def test_a_sweep_walking_no_side_checkout_never_asks_for_the_default_branch(capsys, clone):
+    gh = CountingGh(clone.seed.store, {}, sleep=lambda _: None)
+
+    assert prune(capsys, clone, gh=gh)[:2] == (0, "no finished side checkouts\n")
+    assert gh.default_asks == []
+
+
+def test_a_sweep_over_a_recorded_base_closed_issue_checkout_never_asks(capsys, tmp_path, seed):
+    clone = Clone(tmp_path, seed, local_config={branch_base_key("quick/21-d2"): "main"})
+    d2 = clone.quick("d2", 21, 61)
+    gh = CountingGh(clone.seed.store, {}, sleep=lambda _: None)
+
+    assert prune(capsys, clone, gh=gh)[:2] == (
+        0, "removed side checkout %s\ndeleted branch quick/21-d2\n" % d2)
+    assert gh.default_asks == []
+
+
+@pytest.mark.parametrize("config,finished,asks", [
+    ({}, False, 1),
+    ({}, True, 1),
+    ({"orchestrator.base": "main"}, False, 0),
+], ids=["no-base-idle", "no-base-sweep-needs-it", "base-set-idle"])
+def test_add_asks_for_the_default_branch_at_most_once(capsys, tmp_path, seed, config, finished,
+                                                      asks):
+    adding = Adding(tmp_path, seed, local_config=config)
+    if finished:
+        adding.quick("d3", 22, 62)
+    path, _ = adding.addable("d4")
+    gh = CountingGh(adding.seed.store, {}, sleep=lambda _: None)
+
+    assert add(capsys, adding, "d4", gh=gh)[:2] == (0, path + "\n")
+    assert len(gh.default_asks) == asks
 
 
 # --- the finished sweep: per-checkout failures -----------------------------------

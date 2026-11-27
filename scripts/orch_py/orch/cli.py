@@ -179,6 +179,12 @@ def _autopilot(argv: List[str]) -> int:
     return run(argv)
 
 
+def _side_checkout(argv: List[str]) -> int:
+    from orch.side_checkout import run
+
+    return run(argv)
+
+
 # The converted nouns: each takes the arguments after the noun and returns its
 # exit code.
 NOUNS: Dict[str, Callable[[List[str]], int]] = {
@@ -208,6 +214,7 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "doctor": _doctor,
     "help": _help,
     "autopilot": _autopilot,
+    "side-checkout": _side_checkout,
 }
 
 # The other spellings main runs as a noun - help's option spellings and
@@ -219,7 +226,7 @@ ALIASES: Dict[str, str] = {"-h": "help", "--help": "help", "health": "doctor"}
 # keeps its flush failure there, as it always ended.
 SIGPIPE_NOUNS = frozenset({"init", "slug", "status", "archive", "help", "phase", "handoff",
                            "redo", "ticket", "ticket-worktree", "pr", "review", "doctor",
-                           "autopilot"})
+                           "autopilot", "side-checkout"})
 
 
 def _sigpipe_as_bash(run: Callable[[List[str]], int], argv: List[str]) -> int:
@@ -253,9 +260,10 @@ def call_func(argv: List[str]) -> int:
     `--as <command>` already taken off by orch.__main__: runs the named
     function of a converted noun's module with `<arg>...`, returning its exit
     code (0 when it returns None). The noun is a converted one. Refuses an
-    unknown noun or a missing or private function. Its one caller is the
-    bash side-checkout noun, naming itself by `--as`; doctor and autopilot,
-    converted nouns, call every answer in process and call none."""
+    unknown noun or a missing or private function. Its one caller was the
+    bash side-checkout noun, naming itself by `--as`, now converted: no
+    caller is left, and every converted noun calls every answer in
+    process."""
     if len(argv) < 2:
         die("usage: orch_python_call [--as <command>] <noun> <func> [<arg>...]")
     noun, name, args = argv[0], argv[1], argv[2:]
