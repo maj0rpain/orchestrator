@@ -7,7 +7,8 @@ spec <verb>`, `orch.sh glossary <verb>`, `orch.sh parallel show`, `orch.sh
 route show`, `orch.sh agent <verb>`, `orch.sh slug <text>`, `orch.sh status`,
 `orch.sh init <slug>`, `orch.sh archive`, `orch.sh phase <verb>`, `orch.sh
 redo <op>`, `orch.sh ticket <verb>`, `orch.sh ticket-worktree <verb>`,
-`orch.sh pr <verb>` or `orch.sh help` (and its spellings)
+`orch.sh pr <verb>`, `orch.sh autopilot <verb>` or `orch.sh help` (and its
+spellings)
 as a command, in a checkout under tmp_path, against a fake store seeded in the
 layout the bash suite's fake_* helpers write, with ORCH_GH_FAKE_STORE set as
 fake_github sets it."""
@@ -1217,6 +1218,66 @@ def test_orch_sh_doctor_env_reports_the_bash_that_ran_it(tmp_path, repo, seed):
     assert "\nok    bash %s\n" % version in out
 
 
+# --- autopilot ---------------------------------------------------------------
+
+# A valid value for each autopilot setting, in `autopilot settings` order.
+AUTOPILOT_VALUES = {
+    "permission-mode": "bypassPermissions", "cap": "2", "handle": "octo", "rounds": "4",
+    "budget": "5", "model": "opus", "effort": "high", "auto-sync": "false",
+    "github-reserve": "15",
+}
+
+
+def test_autopilot_settings_and_show_round_trip_through_the_python_noun(tmp_path, repo, seed):
+    """scripts/autopilot-container.sh writes one git config key per name
+    `autopilot settings` prints, then has `autopilot show` validate them:
+    each name settings prints is a key show reads back, from the local
+    config, in the same order."""
+    path = python3_shim(tmp_path)
+    names, err, code = orch_sh(tmp_path, repo, seed, "autopilot", "settings", path=path,
+                               unset=GLOBAL_CONFIG)
+    assert (err, code) == ("", 0)
+    for name in names.split():
+        run_git(repo, "config", "orchestrator.autopilot." + name, AUTOPILOT_VALUES[name])
+
+    shown = orch_sh(tmp_path, repo, seed, "autopilot", "show", path=path, unset=GLOBAL_CONFIG)
+
+    assert shown == ("".join("orchestrator.autopilot.%s %s (local)\n" % (name, value)
+                             for name, value in AUTOPILOT_VALUES.items()), "", 0)
+    assert names.split() == list(AUTOPILOT_VALUES)
+    assert (tmp_path / "shim.log").read_text() == "ran\nran\n"
+
+
+def test_autopilot_show_refuses_an_invalid_setting_through_the_python_noun(tmp_path, repo, seed):
+    run_git(repo, "config", "orchestrator.autopilot.cap", "zero")
+
+    out, err, code = orch_sh(tmp_path, repo, seed, "autopilot", "show", unset=GLOBAL_CONFIG)
+
+    assert (err, code) == ("orch: orchestrator.autopilot.cap is zero - it must be a positive"
+                           " integer (git config orchestrator.autopilot.cap <n>)\n", 1)
+    assert out == "orchestrator.autopilot.permission-mode (none) (unset)\n"
+
+
+def test_an_unknown_autopilot_op_is_refused_through_the_python_noun(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "autopilot", "wipe") == (
+        "", "orch: unknown autopilot op: wipe (want show|settings|active|rounds|budget|start"
+            "|candidates|tick|watch|run|ask|answer|reenter|questions|reply|resume|sync"
+            "|sync-finish|sync-dropped|sync-fail)\n", 1)
+
+
+@pytest.mark.parametrize("given, code", [("1", 0), ("", 1)], ids=["autopilot", "plain"])
+def test_autopilot_active_answers_through_the_python_noun(tmp_path, repo, seed, given, code):
+    assert orch_sh(tmp_path, repo, seed, "autopilot", "active",
+                   knobs={"ORCH_AUTOPILOT": given}) == ("", "", code)
+
+
+def test_autopilot_dies_pointing_at_doctor_without_python3(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "autopilot", "settings",
+                   path=path_without(tmp_path, "python3")) \
+        == ("", "orch: orch.sh autopilot needs python3 3.9 or newer (found none)"
+                " - run orch.sh doctor\n", 1)
+
+
 # --- orch_python_call bootstrap ----------------------------------------------
 
 
@@ -1318,7 +1379,7 @@ def test_orch_python_call_names_the_command_given_by_as_in_its_refusal(
         tmp_path, repo, path_of, found):
     script = (
         'source "$1"\n'
-        'st=0; orch_python_call --as autopilot route run show || st=$?\n'
+        'st=0; orch_python_call --as side-checkout route run show || st=$?\n'
         'printf "after:%s\\n" "$st"\n'
     )
 
@@ -1328,13 +1389,14 @@ def test_orch_python_call_names_the_command_given_by_as_in_its_refusal(
 
     assert (out, err, code) == (
         "after:1\n",
-        "orch: orch.sh autopilot needs python3 3.9 or newer (found %s) - run orch.sh doctor\n"
+        "orch: orch.sh side-checkout needs python3 3.9 or newer (found %s) - run orch.sh doctor\n"
         % found,
         0,
     )
 
 
-@pytest.mark.parametrize("args", [["--as"], ["--as", "autopilot", "route"], ["--as", "", "route", "run"]],
+@pytest.mark.parametrize("args", [["--as"], ["--as", "side-checkout", "route"],
+                                  ["--as", "", "route", "run"]],
                          ids=["as-alone", "as-without-func", "as-empty"])
 def test_orch_python_call_refuses_an_incomplete_call_with_its_usage(tmp_path, repo, args):
     script = (

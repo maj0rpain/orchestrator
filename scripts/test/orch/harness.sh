@@ -679,6 +679,44 @@ decl_substitutions() {
   return 1
 }
 
+# term_run <stdout file> <stderr file> <pid file>... -- <command>...: starts
+# <command> in the background, its output to the two files (one shared open
+# file, stderr merged into stdout, when both are the same path), polls (up to 20
+# seconds) until every pid file has content, sends TERM to it, and waits. A pid
+# file still empty at the limit is reported through bad, naming it; the TERM and
+# the wait follow all the same. The command's own pid is the one TERMed, so a
+# caller wanting a directory or an unset variable passes `env -u` or `bash -c
+# 'cd ...; exec ...'` as the command. Sets term_st (its exit status) and
+# term_secs (the seconds it took to return after the TERM).
+term_run() {
+  local out="$1" err="$2" pid pid_file tries=0 t0 all_written unwritten
+  local -a pid_files=()
+  shift 2
+  while [ "$1" != -- ]; do pid_files+=("$1"); shift; done
+  shift
+  if [ "$out" = "$err" ]; then
+    "$@" >"$out" 2>&1 &
+  else
+    "$@" >"$out" 2>"$err" &
+  fi
+  pid=$!
+  while [ "$tries" -le 200 ]; do
+    all_written=1
+    unwritten=""
+    for pid_file in "${pid_files[@]}"; do [ -s "$pid_file" ] || { all_written=0; unwritten+=" $pid_file"; }; done
+    [ "$all_written" = 1 ] && break
+    tries=$((tries + 1))
+    sleep 0.1
+  done
+  if [ "$all_written" != 1 ]; then
+    bad "term_run: a pid file stayed empty for the 20-second bound" "still empty:$unwritten"
+  fi
+  t0=$SECONDS
+  kill -TERM "$pid"
+  wait "$pid"; term_st=$?
+  term_secs=$((SECONDS - t0))
+}
+
 # --- isolation --------------------------------------------------------------
 echo
 echo "isolation"
@@ -4743,7 +4781,7 @@ tr_init "$af"
 tr_put "$af" scripts/test/orch/branch.sh 'x=1' '# --- branch create ---' '# --- branch (x.y) retire ---'
 tr_put "$af" scripts/test/orch/state.sh '# --- state ---'
 tr_put "$af" scripts/test/orch/common.sh '# --- common one ---'
-for af_f in autopilot base host init redo review side-checkout triage-labels; do
+for af_f in base host init redo review side-checkout triage-labels; do
   tr_put "$af" "scripts/test/orch/$af_f.sh" "# --- $af_f s ---"
 done
 for af_f in scripts/orch.sh scripts/orch/common.sh scripts/orch/branch.sh \
@@ -4857,7 +4895,7 @@ af_row "a markdown lens-bench fixture selects the lens bench suite" scripts/dev/
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
 af_row "a markdown lens-bench test fixture selects the lens bench suite" scripts/test/lens-bench/run-1/map.md \
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
-af_py_s="autopilot s,base s,$af_branch_titles,side-checkout s"
+af_py_s="base s,$af_branch_titles,side-checkout s"
 af_row "a Python package module selects the sections of the nouns that run a converted noun's verb, the hooks suite and the side-checkout ones, not the full suite" \
   scripts/orch_py/orch/cli.py "$TR_GATE,$af_py_s,hooks_test.sh,docs_lint.sh"
 af_row "the pytest suite's wrapper selects the harness sections, and shellchecks itself" \

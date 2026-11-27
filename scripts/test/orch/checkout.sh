@@ -8,6 +8,11 @@
 # fresh_dir: a new empty directory's physical path, as git records it.
 fresh_dir() { (cd "$(mktemp -d)" && pwd -P); }
 
+# has_line <text> <line>: yes when <line> is one whole line of <text>, else no.
+has_line() {
+  case $'\n'"$1"$'\n' in *$'\n'"$2"$'\n'*) echo yes ;; *) echo no ;; esac
+}
+
 # --- checkout (#1078) ---------------------------------------------------------
 # The Checkout module's walk, checkouts: one line per checkout of the repo,
 # <kind> <flow> <branch> <path>, the main checkout first. Checked against real

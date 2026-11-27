@@ -4,8 +4,8 @@ rule, the phase labels and the label entries, the claims read and create,
 the single writes (begin, sync request, resume) and the chain transitions
 (stop, sync finish, sync dropped, limit stop, claim release, the finished
 phase's close), each failure dying with the writes that landed and the claim
-held, and the resumable chain's landed record - the cases bash's
-scripts/test/orch/standing.sh holds. Ask and re-entry are driven through
+held, and the resumable chain's landed record - the cases the deleted bash
+Standing sections held. Ask and re-entry are driven through
 autopilot.run in test_autopilot_questions.py, their marker refusals here."""
 from __future__ import annotations
 

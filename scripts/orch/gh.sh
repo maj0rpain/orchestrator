@@ -55,7 +55,7 @@ gh() {
 # gh_capture <out-var> <err-var> <command...> and gh_capture_err <err-var>
 # <command...>: capture and capture_err for a GitHub operation - an adapter_*
 # operation, gh itself, or a function or whole command whose first GitHub call
-# would otherwise resolve the Repo in the capture's subshell (standing_claim).
+# would otherwise resolve the Repo in the capture's subshell.
 # Each runs the memoising resolver (repo_resolve) in the caller's shell first,
 # ignoring its status, so the Repo is resolved once for the shell that calls
 # it, rather than once per subshell the call runs in; a failed resolution is
@@ -373,7 +373,7 @@ gh_or_die() {
 # --- gh adapter -------------------------------------------------------------
 #
 # The seam between orch.sh's decision logic and the `gh` CLI. A caller like
-# autopilot.sh's autopilot_labels_ensure calls an adapter operation, never
+# handoff.sh's handoff_comment_post calls an adapter operation, never
 # `gh` itself, so a test can replace one in-process function instead of faking a
 # `gh` binary on PATH. Every GitHub call in orch.sh and its modules goes
 # through one. History: begun with labels (#91), issues (#92); all since #280.

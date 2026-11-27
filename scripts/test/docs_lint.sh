@@ -105,7 +105,7 @@
 #   scan_memory_limit  the autopilot service sets mem_limit and memswap_limit
 #     from ORCH_MEMORY and docker/.env.example mentions it
 #   scan_autopilot_env  docker/.env.example names the ORCH_<NAME> variable of
-#     every setting in the autopilot module's AUTOPILOT_SETTING_NAMES
+#     every setting in the Python autopilot module's AUTOPILOT_SETTING_NAMES
 #   scan_clone_dir  the autopilot service pins ORCH_CLONE_DIR to the repo
 #     volume's mount target, the entrypoint's default and the image's directory
 #   scan_review_pass  the review pass is defined once in orch-review-pass and
@@ -2871,20 +2871,29 @@ check "docker/compose.yaml limits memory from ORCH_MEMORY and .env.example docum
   "$(scan_memory_limit "$PLUGIN_ROOT")"
 
 # .env.example names the variable of every autopilot setting (#3103). The names
-# come from the autopilot module's one list, sourced from the real plugin root
-# (a scanned fixture carries no module), never matched in its text.
+# come from the Python autopilot module's one list, read from the real plugin
+# root (a scanned fixture carries no module), never matched in its text.
+# autopilot_setting_names_read: prints AUTOPILOT_SETTING_NAMES from the Python
+# autopilot module, one name per line, through orch_py_eval; fails when the
+# module cannot be imported.
+autopilot_setting_names_read() {
+  orch_py_eval '
+from orch.autopilot import AUTOPILOT_SETTING_NAMES
+sys.stdout.write("".join(name + "\n" for name in AUTOPILOT_SETTING_NAMES))
+' </dev/null
+}
 # scan_autopilot_env <plugin root>: one line per setting whose ORCH_<NAME>
-# variable the env example omits, or one line when the list cannot be read.
+# variable the env example omits, or one line when the list cannot be read -
+# a missing module, an empty list or a failed Python read alike.
 scan_autopilot_env() {
-  local r="$1" name var
-  local -a names
-  names=()
-  # shellcheck source=/dev/null
-  if source "$PLUGIN_ROOT/scripts/orch/autopilot.sh" 2>/dev/null; then
-    names=("${AUTOPILOT_SETTING_NAMES[@]}")
+  local r="$1" name var names_out
+  local -a names=()
+  if names_out="$(autopilot_setting_names_read)"; then
+    mapfile -t names <<<"$names_out"
+    [ -n "${names[0]:-}" ] || names=()
   fi
   if [ "${#names[@]}" -eq 0 ]; then
-    echo "scripts/orch/autopilot.sh: no AUTOPILOT_SETTING_NAMES read"
+    echo "scripts/orch_py/orch/autopilot.py: no AUTOPILOT_SETTING_NAMES read"
     return 0
   fi
   for name in "${names[@]}"; do
@@ -2896,7 +2905,7 @@ scan_autopilot_env() {
 }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/docker"
-mapfile -t autopilot_names < <(source "$PLUGIN_ROOT/scripts/orch/autopilot.sh" && printf '%s\n' "${AUTOPILOT_SETTING_NAMES[@]}")
+mapfile -t autopilot_names < <(autopilot_setting_names_read)
 : >"$fixture/docker/.env.example"
 for name in "${autopilot_names[@]}"; do
   printf '# ORCH_%s=\n' "$(tr 'a-z-' 'A-Z_' <<<"$name")" >>"$fixture/docker/.env.example"
@@ -2906,12 +2915,13 @@ sed -i '/ORCH_GITHUB_RESERVE=/d' "$fixture/docker/.env.example"
 assert_eq "an env example missing one setting is flagged, naming its variable" \
   "$(scan_autopilot_env "$fixture")" "docker/.env.example: does not name ORCH_GITHUB_RESERVE"
 flags "a plugin root with no autopilot module is flagged naming the module" \
-  "$( (PLUGIN_ROOT="$(new_fixture)"; scan_autopilot_env "$fixture") )" "scripts/orch/autopilot.sh: no AUTOPILOT_SETTING_NAMES read"
+  "$( (PLUGIN_ROOT="$(new_fixture)"; scan_autopilot_env "$fixture") )" "scripts/orch_py/orch/autopilot.py: no AUTOPILOT_SETTING_NAMES read"
 emptylist="$(new_fixture)"
-mkdir -p "$emptylist/scripts/orch"
-printf 'AUTOPILOT_SETTING_NAMES=()\n' >"$emptylist/scripts/orch/autopilot.sh"
+mkdir -p "$emptylist/scripts/orch_py/orch"
+: >"$emptylist/scripts/orch_py/orch/__init__.py"
+printf 'AUTOPILOT_SETTING_NAMES = ()\n' >"$emptylist/scripts/orch_py/orch/autopilot.py"
 flags "an autopilot module with an empty list is flagged naming the module" \
-  "$( (PLUGIN_ROOT="$emptylist"; scan_autopilot_env "$fixture") )" "scripts/orch/autopilot.sh: no AUTOPILOT_SETTING_NAMES read"
+  "$( (PLUGIN_ROOT="$emptylist"; scan_autopilot_env "$fixture") )" "scripts/orch_py/orch/autopilot.py: no AUTOPILOT_SETTING_NAMES read"
 check "docker/.env.example names the variable of every autopilot setting" \
   "$(scan_autopilot_env "$PLUGIN_ROOT")"
 

@@ -5,6 +5,18 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# fake_issue_authorship <n> <author> <association> [<editor> [<renamer>]]: sets
+# issue #n's author and association, the last editor of its body and the latest
+# renamer of its title - the last two empty (never edited, never renamed) unless
+# given. The issue is kept as it is otherwise.
+fake_issue_authorship() {
+  local d="$ORCH_GH_FAKE_STORE/issues/$1"
+  printf '%s\n' "$2" >"$d/author"
+  printf '%s\n' "$3" >"$d/association"
+  printf '%s\n' "${4:-}" >"$d/editor"
+  printf '%s\n' "${5:-}" >"$d/renamer"
+}
+
 # --- trust module -----------------------------------------------------------
 # The Trust module's own rules: which associations its comment filter keeps,
 # the issue check by the author's association, and the attended reads'
@@ -113,8 +125,8 @@ assert_contains "and still returns 0" "$tr_failed" "rc=0"
 fake_unfail
 
 # The PR filter's own rules (trust_filter_prs), on lines as the adapter gives
-# them. The commands using it (side-checkout.sh, autopilot.sh) test only their
-# own exit codes and verdicts.
+# them. The command using it (side-checkout.sh) tests only its own exit codes
+# and verdicts.
 tr_pf() { printf '%b' "$1" | sourced_orch trust_filter_prs "$2" 2>"$tr_file"; }
 assert_eq "a same-repo PR is kept, without its flag" "$(tr_pf '5\tfalse\n' x)" "5"
 assert_eq "a fork PR is dropped" "$(tr_pf '5\ttrue\n' x)" ""

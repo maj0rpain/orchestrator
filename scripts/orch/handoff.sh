@@ -32,7 +32,7 @@ phase_list() {
 }
 
 # The flow's phases, space-separated in flow order: read inside functions only
-# (the state writer, autopilot's and standing's phase walks). Set when this
+# (the state writer's phase guard). Set when this
 # module is sourced, from the phase table above.
 PHASES="$(phase_list)"
 # shellcheck disable=SC2034 # read by other modules, each calling orch_load handoff first
@@ -262,8 +262,9 @@ handoff_comment_post() {
 
 # handoff_comment_post_url <issue> <name> <file> <url-var>: the post of
 # handoff_comment_post through adapter_issue_comment_url, assigning the posted
-# comment's URL to <url-var>, empty where gh printed none. `autopilot start`
-# (standing_start) is its only caller. Same failure contract as
+# comment's URL to <url-var>, empty where gh printed none. Its one caller, the
+# bash `autopilot start`, went with the bash autopilot noun; the Python one
+# posts through orch/handoff.py's copy. Same failure contract as
 # handoff_comment_post.
 handoff_comment_post_url() {
   local issue="$1" name="$2" file="$3" body gh_err posted_url=""

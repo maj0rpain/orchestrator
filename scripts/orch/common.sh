@@ -4,7 +4,7 @@
 # the concept it serves, whichever modules call it, and common.sh calls nothing
 # a noun module defines; its test section checks this. A concept with no noun
 # has a module of its own too, such as the Checkout module (checkout.sh) and
-# the Filed finding module (filed-finding.sh). Sourced by orch.sh ahead of the
+# the Trust module (trust.sh). Sourced by orch.sh ahead of the
 # ROOT block, which dies through die when run outside a git repository, and
 # ahead of every noun module.
 
@@ -100,10 +100,6 @@ err_line() {
 # colon-free so the path is valid on Windows too. now(), in flow-state.sh, stays
 # ISO-8601: it is a field value, never a path segment.
 dir_stamp() { date -u +%Y%m%d-%H%M%S; }
-# DIR_STAMP_PATTERN: dir_stamp's shape as an extended regex, owned here beside
-# it so a name test elsewhere (the session log prune) follows a change to it.
-# shellcheck disable=SC2034 # used by the liveness module
-DIR_STAMP_PATTERN='[0-9]{8}-[0-9]{6}'
 
 # Float comparison and addition, in awk, because the poll loops' timings are
 # overridable and the tests turn them down to fractions of a second; bash

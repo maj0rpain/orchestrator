@@ -7,8 +7,7 @@ and a dead pidfile replaced, each tick a fresh `orch.sh autopilot tick` from
 the fake process starter with a failed one warned, the sleep between ticks
 from the fake sleep, INT and TERM during a tick and during the sleep, and
 the pidfile removed on any other exit. Ported from the bash autopilot watch
-section; the end-to-end checks through orch.sh come with the dispatch
-switch."""
+section; the end-to-end checks through orch.sh are test_autopilot_cli.py's."""
 from __future__ import annotations
 
 import os

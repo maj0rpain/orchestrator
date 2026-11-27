@@ -1,31 +1,31 @@
-"""orch.sh's autopilot noun (ADR-0067), being converted from
-scripts/orch/autopilot.sh verb group by verb group; orch.sh still runs the
-bash noun until every verb is here. run(argv) takes the arguments after
-`autopilot`, as orch.sh will hand them on, and returns the exit code; every
-error dies through orch.common.die. It dispatches every verb, refusing an
-unknown op and each verb's arguments with bash's messages, and runs those
-converted so far - `settings`, `show`, `active`, `rounds`, `budget`, `start`,
-`candidates`, `watch`, the question, reply and re-entry verbs `questions`,
-`reply`, `resume`, `ask`, `answer` and `reenter`, and the Sync request verbs
-`sync`, `sync-finish`, `sync-dropped` and `sync-fail`, over the Standing
-module's transitions, `run`, the session wrapper a tick starts, with its
-session end, the pause files it reads and extends, and the review budget
-record, and `tick` - the pause checks, the label check, the claims read and
-stale cleanup, the done read, the merged-PR close through the pr module
+"""orch.sh's autopilot noun (ADR-0067). orch.sh runs the noun as a converted
+noun, and the bash autopilot module is gone: each helper keeps the name it had
+there, noted as `bash <name>`, with its messages and its order of steps.
+run(argv) takes the arguments after `autopilot`, as orch.sh hands them on, and
+returns the exit code; every error dies through orch.common.die. It dispatches
+every verb, refusing an unknown op and each verb's arguments with bash's
+messages, and runs them all - `settings`, `show`, `active`, `rounds`,
+`budget`, `start`, `candidates`, `watch`, the question, reply and re-entry
+verbs `questions`, `reply`, `resume`, `ask`, `answer` and `reenter`, and the
+Sync request verbs `sync`, `sync-finish`, `sync-dropped` and `sync-fail`, over
+the Standing module's transitions, `run`, the session wrapper a tick starts,
+with its session end, the pause files it reads and extends, and the review
+budget record, and `tick` - the pause checks, the label check, the claims read
+and stale cleanup, the done read, the merged-PR close through the pr module
 in-process, the hourly housekeeping, sync detection, and ranking and Pickup
 within the Cap and the Sync slots, each run started detached as `orch.sh
 autopilot run <issue>` - with the bash noun's stdout, exit codes and `orch:`
 messages, in a plain and an autopilot (ORCH_AUTOPILOT=1) session. The only
-orch.sh children it starts run Python nouns: a tick's init and redo in a
-side checkout, its runs, and a run's `verification stop`.
+orch.sh children it starts run Python nouns: a tick's init and redo in a side
+checkout, its runs, and a run's `verification stop`.
 
 Beside the noun, the concept every Python noun reads: whether this is an
 autopilot session, the plan's `## Autopilot` block, as handoff_report checks
 it for 01-plan.md, the UTC timestamps the pause files hold, and the GitHub
 limit record the gh adapter's limit handling makes in an autopilot process -
 the GitHub limit pause under the main checkout and a session's hit file, in
-the format and at the path autopilot.sh reads them (pinned by
-tests/github_pause/, ADR-0067).
+the format and at the path the bash gh adapter's limit record writes them
+too (pinned by tests/github_pause/, ADR-0067).
 
 The gh, handoff, flow-state, standing, trust, filed-finding, liveness and
 side-checkout modules the verbs call are imported inside them: each imports
@@ -192,8 +192,7 @@ def github_limit_record(env: Mapping[str, str], reset: int, now: float,
 # --- the noun -------------------------------------------------------------------
 
 # The verbs, in the order the unknown-op refusal lists them.
-OPS = ("show|settings|active|rounds|budget|start|candidates|tick|watch|run|ask|answer|reenter"
-       "|questions|reply|resume|sync|sync-finish|sync-dropped|sync-fail")
+OPS = "show|settings|active|rounds|budget|start|candidates|tick|watch|run|ask|answer|reenter|questions|reply|resume|sync|sync-finish|sync-dropped|sync-fail"
 
 # The permission modes a headless session may run with, and the numeric
 # settings' defaults. Each lives here alone, so show validates against one

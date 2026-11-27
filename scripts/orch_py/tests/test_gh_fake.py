@@ -5,12 +5,15 @@ files inject failures under the bash adapter's operation names."""
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
 
+from conftest import until
 from orch.gh import Check, Gh, GhFailed, IssueRow, LabelledBody, StateRow, SubIssue, adapter
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit
@@ -21,21 +24,23 @@ BASH_FAKE = SCRIPTS / "test" / "gh_adapter_fake.sh"
 # The bash suite's store helpers, by the file that defines each.
 BASH_HELPERS = {
     SCRIPTS / "test" / "orch" / "setup.sh": [
-        "fake_issue", "fake_issue_authorship", "fake_issue_relabel", "fake_issue_title",
-        "fake_comment_seed", "fake_comment", "fake_comment_bodies", "fake_label",
-        "fake_fail", "fake_fail_after", "fake_fail_times",
-        "fake_unfail", "fake_offline", "fake_online", "fake_quota", "fake_lag",
-        "fake_state_of", "fake_labels_of", "fake_comments_of",
-        "fake_pr", "fake_pr_comment", "fake_pr_cross", "fake_labels",
-        "fake_default_branch", "fake_claim_seed", "fake_claim_held",
-        "fake_pr_draft", "fake_pr_head", "fake_pr_merged", "fake_issue_created", "iso_of",
-        "fake_label_names",
-        "iso_ago", "fake_next_pr", "fake_pr_base_of", "fake_pr_body_of",
+        "fake_issue", "fake_issue_relabel",
+        "fake_comment_seed", "fake_comment", "fake_comment_bodies",
+        "fake_fail", "fake_unfail", "fake_offline", "fake_online", "fake_lag",
+        "fake_comments_of", "fake_pr", "fake_pr_comment",
+        "fake_default_branch", "fake_pr_draft", "fake_pr_head", "iso_of",
+        "fake_next_pr", "fake_pr_base_of", "fake_pr_body_of",
     ],
-    SCRIPTS / "test" / "orch" / "state.sh": ["fake_pr_draft_of", "fake_checks"],
     SCRIPTS / "test" / "orch" / "gh.sh": ["fake_ratelimit", "fake_duplicate_of",
-                                          "fake_issue_body", "fake_pr_comments_of"],
-    SCRIPTS / "test" / "orch" / "autopilot.sh": ["fake_reason_of"],
+                                          "fake_issue_body", "fake_pr_comments_of",
+                                          "fake_issue_title", "fake_label", "fake_labels",
+                                          "fake_label_names", "fake_labels_of",
+                                          "fake_fail_after", "fake_fail_times", "fake_quota"],
+    SCRIPTS / "test" / "orch" / "side-checkout.sh": ["fake_state_of", "fake_pr_cross",
+                                                     "fake_pr_merged", "fake_issue_created",
+                                                     "iso_ago"],
+    SCRIPTS / "test" / "orch" / "trust.sh": ["fake_issue_authorship"],
+    SCRIPTS / "test" / "orch" / "state.sh": ["fake_pr_draft_of", "fake_checks"],
 }
 # The issue reads and the next-issue seeder the bash review suite defined: the
 # suite went with the bash review noun, and these write-back cases still read
@@ -44,6 +49,18 @@ ISSUE_READS = r"""
 fake_title_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/title" 2>/dev/null; }
 fake_body_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/body" 2>/dev/null; }
 fake_next_issue() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_issue"; }
+"""
+# The claim seeder and reader and the closing-reason read the bash autopilot
+# and Standing suites used: they went with the bash autopilot noun, and these
+# cases still seed and read the store through them.
+CLAIM_READS = r"""
+fake_claim_seed() {
+  mkdir -p "$ORCH_GH_FAKE_STORE/claims"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$1" "${2:-$(hostname)}" "${3:-1}" "${5:-spec}" "${4:-2026-01-01T00:00:00Z}" \
+    >"$ORCH_GH_FAKE_STORE/claims/$1"
+}
+fake_claim_held() { [ -f "$ORCH_GH_FAKE_STORE/claims/$1" ] && echo held || echo free; }
+fake_reason_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/reason" 2>/dev/null; }
 """
 SECONDARY = "You have exceeded a secondary rate limit."
 NOW = 1_900_000_000
@@ -70,7 +87,7 @@ def bash_definitions(path, names):
 
 
 HELPERS = "\n".join(bash_definitions(path, names) for path, names in BASH_HELPERS.items()) + (
-    ISSUE_READS)
+    ISSUE_READS + CLAIM_READS)
 
 
 def bash(store, script):
@@ -365,6 +382,27 @@ def test_a_label_upsert_seeded_to_fail_writes_nothing(store, seed):
     with pytest.raises(GhFailed):
         fake(store).label_upsert("review:nit", "c5def5", "x")
     assert not (store / "labels").exists()
+
+
+def test_a_fifo_at_hold_parks_the_operation_until_a_line_is_written_to_it(store):
+    """As the bash fake's: a call of the operation writes its process's pid
+    to `held` and waits, before touching the store, until something is
+    written to the fifo hold/<operation>."""
+    (store / "hold").mkdir()
+    os.mkfifo(str(store / "hold" / "adapter_label_upsert"))
+    call = threading.Thread(target=fake(store).label_upsert, args=("nit", "c5def5", "Small"),
+                            daemon=True)
+    call.start()
+
+    assert until(lambda: (store / "held").is_file()
+                 and (store / "held").read_text() == "%d\n" % os.getpid())
+    assert call.is_alive() and not (store / "labels").exists()
+    with open(str(store / "hold" / "adapter_label_upsert"), "w") as release:
+        release.write("x\n")
+    call.join(5)
+
+    assert not call.is_alive()
+    assert (store / "labels").read_text() == "nit\tc5def5\tSmall\n"
 
 
 def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):

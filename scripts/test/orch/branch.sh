@@ -79,6 +79,9 @@ state_write_fails_after_first_bin() {
   printf '%s\n' "$dir"
 }
 
+# branch_presence <ref>: present or gone, whether the branch <ref> exists.
+branch_presence() { if git rev-parse --verify --quiet "$1" >/dev/null 2>&1; then echo present; else echo gone; fi; }
+
 # --- branch create -----------------------------------------------------------
 # Unlike branch off's caller-named branch, this one derives its own name from
 # state - slug plus the recorded issue - and records both `branch` and

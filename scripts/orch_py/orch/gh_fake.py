@@ -14,8 +14,9 @@ fail/<operation>.times countdowns, offline, ratelimit and noauth. A failure
 goes through the real adapter's rate-limit handling (orch.gh.Limits), the
 rate_limit read answering from the store's quota. The reads the bash fake
 lets lag (lag/<operation>, .after and .stale) lag here too, the stale answer
-read in the shape the real operation reads gh's. Not honoured: hold/, a fifo
-that parks a bash call.
+read in the shape the real operation reads gh's. A fifo at hold/<operation>
+parks the call as it parks a bash one: the calling process's pid is written
+to `held`, and the call waits until something is written to the fifo.
 
 FakeStore seeds and reads back the store as the bash suite's fake_* helpers
 do, for a test that runs orch.sh on it.
@@ -26,6 +27,7 @@ import json
 import os
 import shutil
 import socket
+import stat
 import time
 from typing import Callable, List, Mapping, Optional, Sequence, Tuple
 
@@ -76,6 +78,14 @@ def _write(path: str, text: str, mode: str = "wb") -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, mode) as f:
         f.write(text.encode("utf-8", "surrogateescape"))
+
+
+def _mode(path: str) -> int:
+    """The file's mode, os.stat's; 0 where it is missing."""
+    try:
+        return os.stat(path).st_mode
+    except OSError:
+        return 0
 
 
 def _first_line(path: str) -> str:
@@ -218,7 +228,20 @@ class FakeGh:
                 _write(fail + ".times", "%d\n" % (real.number_of(times) - 1))
         return stderr
 
+    def _hold(self, operation: str) -> None:
+        """A fifo at hold/<operation> parks the call, as the bash fake's
+        does: it writes this process's pid to the store's `held` file and
+        waits until something is written to the fifo, or its writer closes
+        it."""
+        fifo = _store_path(self.store, "hold", operation)
+        if not stat.S_ISFIFO(_mode(fifo)):
+            return
+        _write(_store_path(self.store, "held"), "%d\n" % os.getpid())
+        with open(fifo, "rb") as held:
+            held.readline()
+
     def _fail_raw(self, operation: str) -> None:
+        self._hold(operation)
         stderr = self._seeded_failure(operation)
         if stderr is not None:
             raise GhFailed(stderr)

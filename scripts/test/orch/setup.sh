@@ -111,11 +111,6 @@ assert_first_line() {
   assert_eq "$1" "$(printf '%s\n' "$2" | sed -n 1p)" "$3"
 }
 
-# has_line <text> <line>: yes when <line> is one whole line of <text>, else no.
-has_line() {
-  case $'\n'"$1"$'\n' in *$'\n'"$2"$'\n'*) echo yes ;; *) echo no ;; esac
-}
-
 # adapter_stood_in <definitions> <cmd>...: runs <cmd> with ORCH_GH_ADAPTER at a
 # stand-in adapter, a temp file that sources the gh adapter fake and then holds
 # <definitions> (bash text) verbatim. The file is removed whatever <cmd>'s
@@ -271,8 +266,6 @@ clash_commits() {
 
 # on_disk <path>: present or absent, whether anything is at <path>.
 on_disk() { if [ -e "$1" ]; then echo present; else echo absent; fi; }
-# branch_presence <ref>: present or gone, whether the branch <ref> exists.
-branch_presence() { if git rev-parse --verify --quiet "$1" >/dev/null 2>&1; then echo present; else echo gone; fi; }
 
 writeln() { printf '%s\n' "$@"; }
 # write_ssh_stub <command run for github-work> <exit status>: an ssh at
@@ -306,25 +299,6 @@ git_fails_bin() { fails_bin git "$1"; }
 # worktree_list_fails_bin: a git_fails_bin where git worktree list fails and
 # nothing else does, so it fails every checkout_parse reader.
 worktree_list_fails_bin() { git_fails_bin '" worktree list "*'; }
-# path_without <cmd>: PATH with no <cmd> on it, printed: each directory holding
-# one is replaced by a new directory linking every other command there.
-path_without() {
-  local dir links k=0 kept="" f
-  local -a dirs
-  IFS=: read -r -a dirs <<<"$PATH"
-  for dir in "${dirs[@]}"; do
-    k=$((k + 1))
-    if [ -e "$dir/$1" ]; then
-      links="$(mktemp -d)"
-      for f in "$dir"/*; do
-        [ "${f##*/}" = "$1" ] || ln -s "$f" "$links/${f##*/}"
-      done
-      dir="$links"
-    fi
-    kept="${kept:+$kept:}$dir"
-  done
-  printf '%s\n' "$kept"
-}
 # break_index / restore_index [<checkout>]: make a checkout's working tree
 # (default: the current directory) unreadable - git status fails on a garbage
 # index - and put the index back. They return non-zero, touching no file, when
@@ -360,34 +334,6 @@ sourced_orch_script() { local s="$1"; shift; bash -c 'source "$1"; shift; '"$s" 
 # temp_file_make fail on its PK_NTH-th call, counted in the file PK_COUNT, and
 # work otherwise.
 NTH_MAKE_FAKE='real_make=$(declare -f temp_file_make); temp_file_make() { local n=0; [ ! -e "$PK_COUNT" ] || n=$(<"$PK_COUNT"); n=$((n+1)); echo "$n" >"$PK_COUNT"; [ "$n" -ne "$PK_NTH" ] || return 1; eval "${real_make/temp_file_make/real_temp_file_make}"; real_temp_file_make "$@"; }; '
-# rl_event <5h status> <5h utilization> <5h reset> <7d status> <7d utilization>
-# <7d reset>: a rate_limit_event line.
-rl_event() {
-  printf '{"type":"rate_limit_event","rate_limit_info":{"status":"%s","resetsAt":%s,"rateLimitType":"seven_day","utilization":%s,"unifiedWindows":{"five_hour":{"utilization":%s,"resetsAt":%s,"status":"%s"},"seven_day":{"utilization":%s,"resetsAt":%s,"status":"%s"}}}}\n' \
-    "$4" "$6" "$5" "$2" "$3" "$1" "$5" "$6" "$4"
-}
-# ndjson_with <line>: a session log of NDJSON lines with <line> as a plain text
-# line among them, and a rate_limit_event that rejects nothing.
-ndjson_with() {
-  printf '%s\n' '{"type":"system","subtype":"init"}' "$(rl_event allowed 0.1 4102444800 allowed 0.1 4102444800)" \
-    "$1" '{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}'
-}
-# live_orch <function> [args...]: calls the function in a background shell that
-# sourced orch.sh, from the current directory, and keeps that shell alive, so a
-# record the function writes names a running process. Sets LIVE_PID; live_stop
-# kills the shell, leaving the record naming a process that is gone.
-live_orch() {
-  local fifo line
-  fifo="$(mktemp -u)"
-  mkfifo "$fifo"
-  # The child opens the fifo's write end first, so its death before the ready
-  # line ends the read with EOF; it closes the end before its long sleep.
-  bash -c 'exec 9>"$2"; source "$1"; shift 2; "$@"; echo ready >&9; exec 9>&-; exec sleep 600' _ "$ORCH" "$fifo" "$@" &
-  LIVE_PID=$!
-  line="$(fifo_read_line 60 "live_orch ready read ($fifo)" "$fifo")"
-  rm -f "$fifo"
-}
-live_stop() { kill "$LIVE_PID" 2>/dev/null; wait "$LIVE_PID" 2>/dev/null; return 0; }
 # marker_of <kind> [<arg>] [retired]: the marked-comment module's first line for
 # the kind, so a seeded comment is written as the module writes it.
 marker_of() { sourced_orch marked_comment_write "$@"; }
@@ -455,12 +401,6 @@ complete_handoff() {
   while IFS= read -r heading; do
     writeln "$heading" "Placeholder for ${heading#\#\# }." ''
   done <<<"$headings" >"$1"
-}
-# plan_file <file> [block]: a complete plan handoff, with the `## Autopilot`
-# block's body when one is given.
-plan_file() {
-  complete_handoff "$1" || return 1
-  [ -z "${2:-}" ] || printf '\n## Autopilot\n\n%s\n' "$2" >>"$1"
 }
 
 # SHELL_CODE_AWK: the one rule of what counts as code in a shell file, an awk
@@ -599,36 +539,6 @@ fake_pr_head() {
 # iso_of <epoch>: epoch seconds as a UTC timestamp, GNU or BSD date.
 iso_of() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; }
 
-# pause_near <file> <seconds>: "near" when <file> holds now + <seconds>, +-10s;
-# "unreadable" when it holds no timestamp, else "far: <got> vs <want>".
-pause_near() {
-  local want got iso
-  want="$(( $(date +%s) + $2 ))"; iso="$(cat "$1" 2>/dev/null)"
-  got="$(date -u -d "$iso" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$iso" +%s 2>/dev/null)" || { echo unreadable; return; }
-  if [ "$(( got - want ))" -ge -10 ] && [ "$(( got - want ))" -le 10 ]; then echo near; else echo "far: $got vs $want"; fi
-}
-
-# iso_ago <age-seconds>: the UTC timestamp <age-seconds> before the current
-# time.
-iso_ago() { iso_of "$(( $(date -u +%s) - $1 ))"; }
-
-# fake_issue_created <n> <age-seconds>: issue #n created <age-seconds> ago, by
-# the current time.
-fake_issue_created() {
-  iso_ago "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/created_at"
-}
-
-# fake_pr_merged <n> <age-seconds> [issue...]: PR #n merged <age-seconds> ago,
-# by the current time, its closingIssuesReferences the issues given.
-fake_pr_merged() {
-  local n="$1" age="$2" d
-  shift 2
-  d="$ORCH_GH_FAKE_STORE/prs/$n"
-  iso_ago "$age" >"$d/merged_at"
-  : >"$d/closing"
-  for i in "$@"; do printf '%s\n' "$i" >>"$d/closing"; done
-}
-
 # fake_comment_seed <comments-dir> <author> <created-at> <body> [<association>]:
 # the body, byte
 # for byte, appended as a comment by the fake's own fake_comment_append, so the
@@ -662,20 +572,6 @@ fake_issue() {
   fake_issue_relabel "${d##*/}" "$@"
 }
 
-# fake_issue_title <n> <title>: seeds issue #n's title.
-fake_issue_title() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/title"; }
-# fake_issue_authorship <n> <author> <association> [<editor> [<renamer>]]: sets
-# issue #n's author and association, the last editor of its body and the latest
-# renamer of its title - the last two empty (never edited, never renamed) unless
-# given. The issue is kept as it is otherwise.
-fake_issue_authorship() {
-  local d="$ORCH_GH_FAKE_STORE/issues/$1"
-  printf '%s\n' "$2" >"$d/author"
-  printf '%s\n' "$3" >"$d/association"
-  printf '%s\n' "${4:-}" >"$d/editor"
-  printf '%s\n' "${5:-}" >"$d/renamer"
-}
-
 # fake_issue_relabel <n> <label>...: sets issue #n's labels; its state, title,
 # body and comments are kept.
 fake_issue_relabel() {
@@ -685,43 +581,13 @@ fake_issue_relabel() {
   [ $# -eq 0 ] || printf '%s\n' "$@" >"$ORCH_GH_FAKE_STORE/issues/$n/labels"
 }
 
-# fake_comments_clear <n>: issue #n holds no comments.
-fake_comments_clear() { rm -rf "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
-
 # fake_comment <n> <author> <created-at> <body> [<association>]: seeds a comment
 # on issue #n, after any it has; its association is OWNER unless given.
 fake_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/$1/comments" "$2" "$3" "$4" "${5-}"; }
 
-# handoff_missing_msg <mode> <issue> <name> [<hint>]: the mode's message for a
-# missing handoff <name>; the hint, when given, is the "post it with handoff
-# post <hint>" (comment) or "write it <hint>" (file) tail.
-handoff_missing_msg() {
-  if [ "$1" = comment ]; then
-    printf 'orch: issue #%s has no %s handoff comment%s' "$2" "$3" "${4:+ - post it with handoff post $4}"
-  else
-    printf 'orch: handoff not found: %s/.orchestrator/handoff/%s.md%s' "$PWD" "$3" "${4:+ - write it $4}"
-  fi
-}
-
-# Issue #n read back from the store: its state (OPEN or CLOSED), labels
-# (sorted, space-separated, one trailing space) and the bodies of its comments,
-# in order, one blank line between.
-fake_state_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/state" 2>/dev/null; }
-fake_labels_of() { LC_ALL=C sort "$ORCH_GH_FAKE_STORE/issues/$1/labels" 2>/dev/null | tr '\n' ' '; }
+# fake_comments_of <n>: the bodies of issue #n's comments read back from the
+# store, in order, one blank line between.
 fake_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
-
-# fake_claim_seed <issue> [host] [pid] [started] [phase]: seeds a claim on the
-# issue, held by this host with pid 1, a start long past and the spec phase
-# unless given. A claim
-# is a ref on origin; the fake keeps it as a line in the store.
-fake_claim_seed() {
-  mkdir -p "$ORCH_GH_FAKE_STORE/claims"
-  printf '%s\t%s\t%s\t%s\t%s\n' "$1" "${2:-$(hostname)}" "${3:-1}" "${5:-spec}" "${4:-2026-01-01T00:00:00Z}" \
-    >"$ORCH_GH_FAKE_STORE/claims/$1"
-}
-
-# fake_claim_held <issue>: held or free, whether the store holds a claim on it.
-fake_claim_held() { [ -f "$ORCH_GH_FAKE_STORE/claims/$1" ] && echo held || echo free; }
 
 # tick_fixture: a clone of a bare origin, the gh fake, the permission mode set,
 # claude on PATH and the fake session launcher in place. The launcher records
@@ -788,32 +654,12 @@ fake_pr_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/prs/$1/comments" "$2"
 # fake_pr_draft <n>: seeds PR #n as a draft.
 fake_pr_draft() { : >"$ORCH_GH_FAKE_STORE/prs/$1/draft"; }
 
-# fake_pr_cross <n> [flag]: seeds PR #n's cross-repository flag - a fork PR
-# (true) by default; the fake prints the flag as given, so any other value
-# seeds one gh would never print. A PR never seeded is same-repo (false).
-fake_pr_cross() { printf '%s\n' "${2:-true}" >"$ORCH_GH_FAKE_STORE/prs/$1/cross_repository"; }
-
 # fake_next_pr <n>: the number the next PR opened takes.
 fake_next_pr() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_pr"; }
 
 # PR #n read back from the store: its base branch and body.
 fake_pr_base_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/base" 2>/dev/null; }
 fake_pr_body_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/body" 2>/dev/null; }
-
-# fake_label <name> <colour> <description>: seeds a label the repo already
-# has. An unseeded store has no labels.
-fake_label() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$ORCH_GH_FAKE_STORE/labels"; }
-
-# fake_label_names <name>...: the repo's labels are exactly the names given,
-# each with no colour or description - none given, the repo has no labels.
-fake_label_names() {
-  : >"$ORCH_GH_FAKE_STORE/labels"
-  [ $# -eq 0 ] || printf '%s\t\t\n' "$@" >"$ORCH_GH_FAKE_STORE/labels"
-}
-
-# fake_labels: the store's labels read back, sorted, one per line as
-# "<name><TAB><colour><TAB><description>".
-fake_labels() { LC_ALL=C sort "$ORCH_GH_FAKE_STORE/labels" 2>/dev/null || true; }
 
 # fake_fail <operation> [stderr]: every later call of the named adapter
 # operation fails, non-zero, with stderr (default "fake gh: <operation>
@@ -830,24 +676,6 @@ fake_fail() {
 
 # The seeded two-line gh stderr whose first line a death must carry.
 GH_502=$'HTTP 502: Bad Gateway\nsecond line'
-
-# fake_fail_after <operation> <n> [stderr]: fake_fail, but the next n calls of
-# the operation still succeed - a run of writes that dies part-way. The stderr
-# passes through to fake_fail as given, omitted or empty.
-fake_fail_after() {
-  fake_fail "$1" "${@:3}"
-  printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/fail/$1.after"
-}
-
-# fake_fail_times <operation> <n> [stderr]: the next n calls of the operation
-# fail, then it succeeds again - a transient failure. It writes the fail file
-# itself rather than through fake_fail, so stderr defaults to empty, not to
-# fake_fail's message: a failure a retry absorbs leaves nothing a test reads.
-fake_fail_times() {
-  mkdir -p "$ORCH_GH_FAKE_STORE/fail"
-  printf '%s' "${3-}" >"$ORCH_GH_FAKE_STORE/fail/$1"
-  printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/fail/$1.times"
-}
 
 # fake_unfail: every operation fake_fail named succeeds again.
 fake_unfail() { rm -rf "$ORCH_GH_FAKE_STORE/fail"; }
@@ -871,9 +699,6 @@ fake_default_branch() { printf '%s' "$1" >"$ORCH_GH_FAKE_STORE/default_branch"; 
 fake_offline() { : >"$ORCH_GH_FAKE_STORE/offline"; }
 # fake_online: GitHub reachable and authenticated again.
 fake_online()  { rm -f "$ORCH_GH_FAKE_STORE/offline" "$ORCH_GH_FAKE_STORE/noauth" "$ORCH_GH_FAKE_STORE/ratelimit"; }
-# fake_quota <pool> <remaining> <limit> <reset-epoch>: the pool's line in the
-# rate_limit read's answer; the other pool, if unset, is no line at all.
-fake_quota() { printf '%s\t%s\t%s\t%s\n' "$@" >>"$ORCH_GH_FAKE_STORE/quota"; }
 
 # --- the fixture gh (adapter contract tests, #280) ----------------------------
 #
@@ -931,11 +756,6 @@ GH
   PATH="$GH_FIXTURE/bin:$PATH"
 }
 
-# gh_calls: how many calls the fixture gh on PATH has answered or refused - 0
-# for none. A behaviour test on the store-backed fake asserts it stays 0, so
-# no command reached a gh subprocess.
-gh_calls() { log_count "$GH_FIXTURE/env.log"; }
-
 # orch.sh run with a PATH gh that fails - a fixture gh given no reply - for a
 # repo whose origin GitHub cannot answer for (a local bare repo): default-branch
 # settles on origin/HEAD, so a test using it pins that rather than leaving it to
@@ -944,30 +764,6 @@ GH_FAILING="$(gh_fixture && printf '%s\n' "$GH_FIXTURE/bin")"
 # orch_gh_failing <args>...: runs orch.sh with the failing fixture gh first
 # on PATH.
 orch_gh_failing() { PATH="$GH_FAILING:$PATH" "$ORCH" "$@"; }
-
-# assert_trace_loads_once <label> <trace file>: asserts a load trace, written by
-# a run that had ORCH_LOAD_TRACE=<file> on, names no module twice.
-assert_trace_loads_once() {
-  assert_eq "$1: the load trace names no module twice" \
-    "$(awk '{print $1}' "$2" | sort | uniq -d | tr '\n' ' ')" ""
-}
-
-# assert_trace_names_no <label> <trace file> <module>...: asserts a load trace,
-# written by a run that had ORCH_LOAD_TRACE=<file> on, names none of the given
-# modules - a module the run must not load at all.
-assert_trace_names_no() {
-  local label="$1" trace="$2" mod line n
-  shift 2
-  local -a lines=()
-  mapfile -t lines <"$trace"
-  for mod in "$@"; do
-    n=0
-    for line in "${lines[@]}"; do
-      [ "${line%%[[:space:]]*}" = "$mod" ] && n=$((n + 1))
-    done
-    assert_eq "$label: the load trace names no $mod" "$n" "0"
-  done
-}
 
 # sc_add <slug> [args...]: makes a fixture side checkout quietly. add runs the
 # finished sweep first and reports it on stderr, so that stderr is held back:
@@ -997,44 +793,6 @@ tree_copy() {
   dir="$(mktemp -d)" || return 1
   cp -R "$PLUGIN_ROOT/$1" "$dir/" || return 1
   printf '%s\n' "$dir/${1##*/}"
-}
-
-# term_run <stdout file> <stderr file> <pid file>... -- <command>...: starts
-# <command> in the background, its output to the two files (one shared open
-# file, stderr merged into stdout, when both are the same path), polls (up to 20
-# seconds) until every pid file has content, sends TERM to it, and waits. A pid
-# file still empty at the limit is reported through bad, naming it; the TERM and
-# the wait follow all the same. The command's own pid is the one TERMed, so a
-# caller wanting a directory or an unset variable passes `env -u` or `bash -c
-# 'cd ...; exec ...'` as the command. Sets term_st (its exit status) and
-# term_secs (the seconds it took to return after the TERM).
-term_run() {
-  local out="$1" err="$2" pid pid_file tries=0 t0 all_written unwritten
-  local -a pid_files=()
-  shift 2
-  while [ "$1" != -- ]; do pid_files+=("$1"); shift; done
-  shift
-  if [ "$out" = "$err" ]; then
-    "$@" >"$out" 2>&1 &
-  else
-    "$@" >"$out" 2>"$err" &
-  fi
-  pid=$!
-  while [ "$tries" -le 200 ]; do
-    all_written=1
-    unwritten=""
-    for pid_file in "${pid_files[@]}"; do [ -s "$pid_file" ] || { all_written=0; unwritten+=" $pid_file"; }; done
-    [ "$all_written" = 1 ] && break
-    tries=$((tries + 1))
-    sleep 0.1
-  done
-  if [ "$all_written" != 1 ]; then
-    bad "term_run: a pid file stayed empty for the 20-second bound" "still empty:$unwritten"
-  fi
-  t0=$SECONDS
-  kill -TERM "$pid"
-  wait "$pid"; term_st=$?
-  term_secs=$((SECONDS - t0))
 }
 
 # >>> summary

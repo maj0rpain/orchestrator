@@ -77,7 +77,9 @@ trust_issue_read() {
 TRUST_WRITER=""
 TRUST_WHAT=""
 TRUST_REASON=""
-# shellcheck disable=SC2034 # the TRUST_ results are read by pickup
+# The TRUST_ results were read by the bash pickup, gone with the bash
+# autopilot noun.
+# shellcheck disable=SC2034
 
 # trust_issue_check <n>: whether issue <n> is trusted. The author is trusted
 # when its association is OWNER, MEMBER or COLLABORATOR. The body is trusted

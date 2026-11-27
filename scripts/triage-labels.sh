@@ -5,10 +5,9 @@
 # Reads this repo's triage-labels doc: the table mapping each canonical
 # triage role to the repo's local label name. Needs only ROOT defined, so any
 # script that needs the repo's triage labels can source it alone, without
-# orch.sh's shared mechanism (#575). Its readers are the bash modules that
-# label issues (autopilot.sh, filed-finding.sh, standing.sh) and
-# hook-grilling.sh; the Python nouns, doctor and init among them, read the doc
-# through its own copy (orch/triage_labels.py).
+# orch.sh's shared mechanism (#575). Its reader is hook-grilling.sh; the
+# Python nouns, doctor, init and autopilot among them, read the doc through
+# its own copy (orch/triage_labels.py).
 #
 # LABELS_DOC is assigned plainly here, its one home: orch.sh sources this
 # module and marks it readonly right after, and no module sourced after

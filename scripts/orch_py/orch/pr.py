@@ -16,13 +16,12 @@ run dies with bash's "unknown pr op" refusal, naming every op.
 
 The merged-PR backstop (#2477, #2478) lives here alone: PR_CLOSE_GRACE,
 pr_close_missed, the merged-closing read and the newest-merge pick, behind
-two entries: close_missed_rows, which autopilot's tick calls at most once a
-tick, never once per issue - Python autopilot's in-process, the bash tick
-through its bridge close_missed_tick - and close_missed_finish, which
+two entries: close_missed_rows, which autopilot's tick calls in process at
+most once a tick, never once per issue, and close_missed_finish, which
 side-checkout's sweep calls once per finished checkout, each call carrying
 that checkout's one issue - the bash sweep through its bridge,
 orch/side_checkout.py's in-process. Each ends whatever its reads and closes
-did, after their warnings; only a bridge's usage error dies.
+did, after their warnings; only the bridge's usage error dies.
 
 Bash cached the default branch for its process, so pr open's base fallback
 and its issue-line check - and pr publish's recorded base and its check, and
@@ -263,26 +262,6 @@ def pr_lines_by_prefix(lines: Sequence[str], prefix: str) -> List[str]:
     return [text for text in lines if "\t" in text and text.split("\t")[1].startswith(prefix)]
 
 
-TICK_USAGE = "usage: orch_python_call pr close_missed_tick <table>"
-
-
-def _done_rows(table: str) -> List[List[str]]:
-    """The done table's rows, `<issue> <running> <sync> <human>` each, as
-    their four fields, blank lines skipped; dies with TICK_USAGE on a row
-    of another shape: not four fields, an issue that is no plain number, or
-    a flag other than 0 or 1."""
-    rows = []
-    for text in table.split("\n"):
-        fields = text.split()
-        if not fields:
-            continue
-        if len(fields) != 4 or not plain_number(fields[0]) \
-                or any(flag not in ("0", "1") for flag in fields[1:]):
-            die(TICK_USAGE)
-        rows.append(fields)
-    return rows
-
-
 def close_missed_rows(rows: List[List[str]], gh=None, git=None,
                       env: Optional[Mapping[str, str]] = None,
                       now: Callable[[], float] = time.time) -> List[List[str]]:
@@ -314,24 +293,6 @@ def close_missed_rows(rows: List[List[str]], gh=None, git=None,
                 continue
         kept.append(row)
     return kept
-
-
-def close_missed_tick(
-    args: List[str],
-    gh=None,
-    git=None,
-    env: Optional[Mapping[str, str]] = None,
-    now: Callable[[], float] = time.time,
-) -> None:
-    """Bridge for the bash autopilot's tick, once per tick and only on a
-    done table that is not empty: `close_missed_tick <table>`, the done
-    table autopilot_done_read took, its `<issue> <running> <sync> <human>`
-    lines oldest issue first. Prints close_missed_rows' rows, the table less
-    every issue it closed, never failing the bridge."""
-    if len(args) != 1:
-        die(TICK_USAGE)
-    kept = close_missed_rows(_done_rows(args[0]), gh, git, env, now)
-    stdout_write("".join(" ".join(row) + "\n" for row in kept))
 
 
 FINISH_USAGE = "usage: orch_python_call pr close_missed_finish <issue> <pr> <branch>"

@@ -1,18 +1,18 @@
-"""The Standing module (scripts/orch/standing.sh): where an autopilot flow's
-issue stands. It owns the label set (the phase labels, orch:running,
-needs-human, orch:limited and orch:sync) and the label entries a tick
-ensures, the phase-label helpers, the label verdict against a recorded
-phase and the phase-redo rule (REDO_PAIRS), the host id, the read of an
-issue's Standing (standing_read) with the sync-request and Pickup reads on
-it, the claims on origin (claims_read, one read; standing_claim, the
-create), and every write to an issue's Standing - each a transition: begin,
-sync request, resume, start, ask, reenter, stop, sync finish, sync dropped,
-limit stop, claim release, the pause a spec review round makes and a
-finished phase's close (standing_finish, with its label move), which the
-phase noun's finish runs for phase advance and for review ready. Each keeps
-bash's standing_ counterpart's writes, order and messages; label_verdict,
-standing_pause, standing_finish and standing_move_label have no bash copy
-left.
+"""The Standing module, the one copy since the bash standing.sh went with the
+bash autopilot noun: where an autopilot flow's issue stands. It owns the label
+set (the phase labels, orch:running, needs-human, orch:limited and orch:sync)
+and the label entries a tick ensures, the phase-label helpers, the label
+verdict against a recorded phase and the phase-redo rule (REDO_PAIRS), the
+host id, the read of an issue's Standing (standing_read) with the sync-request
+and Pickup reads on it, the claims on origin (claims_read, one read;
+standing_claim, the create), and every write to an issue's Standing - each a
+transition: begin, sync request, resume, start, ask, reenter, stop, sync
+finish, sync dropped, limit stop, claim release, the pause a spec review round
+makes and a finished phase's close (standing_finish, with its label move),
+which the phase noun's finish runs for phase advance and for review ready.
+Each keeps the writes, order and messages of the bash standing_ function it
+was ported from; label_verdict, standing_pause, standing_finish and
+standing_move_label never had a bash copy.
 
 A phase label, `orch:<phase>`, records an autopilot flow's phase on its
 issue. PHASES is the flow's phases in order, read from the handoff module

@@ -1,105 +1,65 @@
-2	3	isolation	515032bd4fc32da75de21c0eedd643e862a3d360
-19	15	isolation under a git hook (#1905)	35f86424bbb12bbb8e632b51969bdbc47308e9ff
-21	26	the section filter (ORCH_TEST_ONLY, #612)	36d9c986790bf3f47e1c7834d5eb6a17adb6c226
-12	14	quiet mode (ORCH_TEST_QUIET, #614)	4100c3c77ce578a6223b24e690ef49d34d92d318
-247	81	the parallel runner (ORCH_TEST_JOBS, #780)	d46e7b212b2beaff6d351ecaad880cd5326273ae
-21	35	the parallel runner's start order (#2857)	24f3031be75cb1a6895308aee7cf9da472bfbc5d
-144	143	the shard setting (#2859)	e24f280cb0dcaaa4f453dd8ce7d56585dd487551
-21	26	the seeded start (stub cache)	bf7197e48dad2434e4deee70b1632a9e447c8419
-341	284	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	7c18ca2fba1b8dc7fee520c27490c394b4dffd58
-5	7	assertions in a subshell (#1904)	34c2cd5e5c0cd4ab21489cdf76693ca41135caed
-2	3	the standalone suites' tally (#1904)	920fb1ef303bcfa717825c48d90afa818f4577e9
-21	26	the section files (#932)	f821bae7090a918325b98d2750de4eadd74cf7dc
-365	49	the suite's temp root (#807)	8bdc926450e99b087eb25dea1b355b2382a963af
-2	3	the real-gh guard (#779)	58240508755bf097c180166d526e1dd8df861655
-58	47	all.sh, the single entry point (#615)	25ae006f6076967e59cf78ca1e4b3c712bdd42a5
-1	2	all.sh's suite list holds every runner (#1941)	4ac3ec66ebe302a02caf0627903c67622533dab2
-550	189	the job pool (#2022)	e3f2cf2660017e623116bd714d44002448d4090c
-1	2	the slot fd contract (#2300)	6e5ad96592f5f3bf9119e9019ba96b31965c6262
-73	31	the test runners' CPU load (#1586)	a8f0dd8d22fae397dd593226410a4b3511d5507a
-2	3	shell code (#1411)	d6f0b5684eb985877391eac85d5f85833f476f05
-48	49	test-helper placement (#1006)	9fa9ce9e8bdaa098b1398be4a0f858e689d9435e
-25	26	helper body copies (#3170)	c17691d78de45d05e57e5bb3d0a2706afd3e8783
-35	36	gh op placement (#1037)	ea3237a8c86e6fa269bbbde551a74dcc88adf3a7
-4	5	marked comment prelude placement (#1853)	c82cf7623be19b2a4f0f5ef61192bbda043ed69a
-14	15	comment reader placement (#3085)	096f0e3ca64ee96e61506ef207e1de781487e079
-9	10	orch_load before cross-module reads (#2868)	d335c2b84d813749699f53bf3a211c145840a9ee
-5	6	on-demand sourcing variable (#2820)	ce0c1d9dacf7454faeb8f75d8ecb968d94d39c59
-2	3	declaration substitutions (#1327)	4bc6af8c075fa3e228d591c36e7b5295c2f26169
-12	20	the helper index (#1144)	bb8ef87a7a53d024a8e9ff715cde112a87c59eb5
-1	2	stand-in adapter (#2465)	ce60dec4a1298c84a2ce5ae1ed245aab5549a7c5
-1	2	git env clear (#1905)	2052083fded3c2e6d1aa8fadec0eec89e399e3fd
-4	5	runner git isolation (#1905)	01fbd5362c760f5e032f5718bfce5059936d5050
-1	1	the background child start (#3025)	e76c57b4f833ba908735ba800db723cc5b722d13
-2	2	the suite start (#3582)	8b728fac06f79e5eb1b689336897e6ee0647884a
-9	9	the pytest suite (#3912)	a0897fd9267c334bd1bb5ffa32e987b1ccf1f4ec
-3	4	the counting fixture's stdin counter (#3434)	0d610419ca21e2a6e7c93f257e8571c8565d04f3
-100	122	affected.sh, the ticket verification (#2023)	1258fe0c055abf1de30411460d0b21358f0b10fd
-6	7	the row rule (#3549)	c89e784b702b9ae0654beebb22547dd9c7ee68fd
-9	11	the shared test support, function by function (#3550)	e009c6a49b809e560893b50abf39c3b0c6ca4abe
-6	9	the gh fake, operation by operation (#3551)	908597903fef76669a0b925147633b574a128918
-96	99	autopilot	b39b708427f3b3eabccb77268002bdae69478d94
-19	22	autopilot rounds, budget and start	aa2443d8a0c80d9ce68df2b1bf09288cf524dc1e
-24	27	autopilot ask and answer	d374ce77668243df44c9d8001fde90f4ab60e78c
-22	25	autopilot reenter	de7a7306bc541701088758c999585c4d396cb169
-81	81	autopilot tick and run	ea420959a4c71bd39c3e265249fedc2a81a874aa
-13	15	autopilot tick: started by a relative path (#3055)	874df9dd829054203fd69dec4faa432e88f825f2
-31	35	autopilot tick: the flow-issue read at the issue-list limit	87fd328e03cd0c6f7425e1cbdaef31f03496f087
-36	42	autopilot tick: the direct read before each claim	04317f667165e8a4e9285a82079997079ae66758
-160	181	autopilot tick: the cap, lost claims and the order	cee39070d4c3a3f3f32f14249cec35fb14fac80b
-98	116	autopilot tick: side checkouts, refusals and failed steps	82ce4d36cf71cfe7f9bd20ced4d4963b566ab4f8
-22	11	autopilot watch	f7376c1954f7fb3dc1e7769e8d327f7ddf5053cc
-34	38	autopilot tick: the usage limit	e89943459f3f13145fea1a88410db15f031852e4
-94	107	autopilot tick: limited issues	6eb8c15a064a1445d9944ed9dbf92046400eea1b
-56	64	autopilot questions, reply and resume	7496aacabf615ba4ca219a5af94c7ef48fe4b284
-1	1	autopilot_phase_arg refuses two adjacent phases (#1546)	643a3344885717aece7083e1cfb09113a1837231
-3	3	autopilot pause store	c68a4e6789f319dae5389f6644895392197525bd
-93	105	autopilot session end	1d2c1b167d15f7e1d31f5fae0e18daa3d2c8713a
-2	37	autopilot tick: the trust check	c1df317726510ee9c731b2915e76f9aa6ebe3d1b
-67	72	autopilot run: the budget and the final reply (#2004)	d403cb4f63a10f3ecbca612d3d0774d27a9456c2
-2	3	autopilot answer on a truncated state.json (#1929)	d8586ce89bd2dfe423bb78a4580117fc600c0f32
-23	26	autopilot: labels in the repo's casing (#1943)	e8569c1ae971ae67b891c1a788a5bf48d0da01af
-14	17	autopilot tick: the label check writes only drift (#2691)	e69b40fa3574cae87ff15d4e3a69a518b5f11919
-114	130	autopilot tick and run: sync requests	e5cd5e2b74f7f381324d80875e5f3fd9da7a5bf3
-144	162	autopilot tick: pickup rank and sync slots	16933d6a52fffa6fdef500d50b64d87f22bdd2db
-55	62	autopilot tick: sync request auto-detection (#2325)	46ab1333142d64f9b9af12af2b668145a91fdeb2
-102	109	autopilot tick: the merged-PR close backstop (#2478)	ea4ada816b5b94a61f4043f4de46ab1cbc1c6571
-48	55	autopilot tick: one read of the done issues (#2559)	0c52e73598458458f789e54c6bbe9fba3a655ab9
-12	14	autopilot sync-finish, sync-dropped and sync-fail	0197754e888a81ed101c2975e37e7aa5a6e099a4
-21	24	autopilot tick: the GitHub limit pause (#2577)	91f8726e769d96924f00ee8d6464e38995f25d33
-37	41	autopilot tick: a pickup that meets a GitHub limit (#2577)	f82dda0c4eea94455fc9651f71563aa17819010c
-101	116	autopilot tick: stops that cannot land are contained (#3052)	064aa43dc185acd174af31653c2179c4eb10ded8
-16	19	autopilot tick: one read of the claims on origin (#3062)	cbf53c501d152c4b7011da04fc667e0a5c92a710
-25	27	autopilot run: a start-up read that meets a GitHub limit (#2577)	43b2b347d56fe1fa47065e2bb9d24dc9469c3e4c
-34	38	autopilot tick: the early GitHub pause (#2577)	48770aabbf08efeb99d855e5e81a9e2649ecc412
-23	26	autopilot run: the session log's GitHub usage line (#2577)	b8d5488ba082d88ab4c152765d2154c27a48ae60
-29	34	autopilot candidates	5f15a993785b077ca08c742e671dd17425a7aca1
-4	4	autopilot answer: no repo (#3050)	9bd83ccd0ae61efa4e6aa6741703fb0ca1a5f2cc
-3	4	autopilot session ops read the issue in one jq	655e414891d5e7442c5b6288ee92c1b2c9eeb43a
-55	63	autopilot tick: housekeeping prunes old session logs	e09fb23f2a7804ebf04a141ab08ed26a38de7be3
-50	56	autopilot tick: housekeeping sweeps finished side checkouts	8b40fce84e7342b6a066aa78dbceb4773cd9cdee
+2	4	isolation	4bafe42284a23a6b06a7975abb61f5b4ee560415
+22	16	isolation under a git hook (#1905)	291356df371e1fb1c62a000a51cdd37abb4503fc
+24	27	the section filter (ORCH_TEST_ONLY, #612)	165b2266914ded73547cfa92c2a788e1d4c5e2a6
+14	16	quiet mode (ORCH_TEST_QUIET, #614)	6387a7fb33dd0072585ac765692225211b5410bf
+298	95	the parallel runner (ORCH_TEST_JOBS, #780)	e58d9bc589afcd1eea898b3fc2a59bd5d6b595c4
+24	41	the parallel runner's start order (#2857)	b7d63dbe15a54da6a3eefddf4353e352ff31e12d
+162	167	the shard setting (#2859)	45c07112d1a7fb6156b28d895c0299970f82f509
+1	30	the seeded start (stub cache)	734909631cc3e1983fd13639c4d9a8a808afb265
+390	314	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	5a5dad7cc3be73fcc5dd93076e3d303555d2ee31
+5	7	assertions in a subshell (#1904)	9ea4c7138c6c51e72dc7e4cfb12ea78f93e57ded
+2	4	the standalone suites' tally (#1904)	cc8fa9a8be2ffc6523d2f372b9f24994267700a7
+21	30	the section files (#932)	9d3f551bdb0d1f77629554086eca3e11d8978aa9
+448	55	the suite's temp root (#807)	7f97052c3d32bf6b6e3cba5d952a13b2f90f5177
+2	4	the real-gh guard (#779)	632d8c60502e615059585622f8bb1628d9fd5756
+70	56	all.sh, the single entry point (#615)	aa1eef138a9377e60d42c2291f3dd6f59f7dec74
+1	2	all.sh's suite list holds every runner (#1941)	2cf60456e8ae2d406f4c3368025c7b7fcb6be8d9
+66	216	the job pool (#2022)	4bdb3b03d35ae719673d4d2b67ead053a4f95e39
+1	2	the slot fd contract (#2300)	4eec40729586d945aad7f84b3bafb0e31a22170d
+90	39	the test runners' CPU load (#1586)	2b496134d95921dfa5080362727c22d30401c2a9
+2	2	shell code (#1411)	76811d4faaed7acab92a952453a3c3ffe4f17812
+35	35	test-helper placement (#1006)	f452c8a10f903bcd628ab98d77ff2606c0b785ff
+20	21	helper body copies (#3170)	1a2d49212eaabea355fdbf97b7ccf0ec4e1a4423
+26	27	gh op placement (#1037)	9c930d33d9f76d1658ecfb76fe4d9a6d6a65db8c
+4	5	marked comment prelude placement (#1853)	acd3e3d3374af526fc725322321cb760fbc91546
+10	11	comment reader placement (#3085)	59d0cc89999103a3af8af9e20c3f2451bbcf7cae
+6	7	orch_load before cross-module reads (#2868)	9a752b83593092eed6592dea7b4e85f674d0020d
+5	6	on-demand sourcing variable (#2820)	55ebad34e6cbb6fd92a04c8b34d7cb3711a5c5a1
+1	2	declaration substitutions (#1327)	cf0474c9dc7b799bbe5968124f48b985252e12f8
+10	17	the helper index (#1144)	f535f096a482f389583a190b68850b432defbe47
+1	2	stand-in adapter (#2465)	38a29d6536ea5102be82db7260f9f9c0ebccc414
+1	2	git env clear (#1905)	64958e7bc2b0f051cea3d43dbe91c697309d306f
+5	5	runner git isolation (#1905)	28098952d366c4c255cc3a0fb936718ca1550b66
+1	1	the background child start (#3025)	b1753b2933f539273a7562eb9f81ad0acc628eda
+2	2	the suite start (#3582)	5774fb03990438e897bbb101234a92b1ee9e95f2
+10	10	the pytest suite (#3912)	916e535e06fe64988bd02ef0395b829600f78405
+2	4	the counting fixture's stdin counter (#3434)	03c0668070c1555efbd6f1ecd010137833ad9b78
+113	137	affected.sh, the ticket verification (#2023)	5a6359a7c9bc19cfbe484f5b2ed771c62e606cc0
+7	9	the row rule (#3549)	da5a8a60ae0914dd5387fe2c2eacad059f116c86
+10	14	the shared test support, function by function (#3550)	36bf0cd78304d59cfc3abb38783760484eeacaf0
+7	10	the gh fake, operation by operation (#3551)	4e1d38e6990e7add8bd4cfe7db120d54bfd06930
 14	15	base	07ff5508f721d1922536c4537214f701c52d53dd
 38	31	a flow's base branch	dc1b95f862cec0114a7a0b7a3212313d50975422
 3	4	base set on a truncated state.json (#1929)	de4767097a86d163c76e27f57e97f2f368040804
-17	12	branch create	3b232476eb90f5bb6dea81ee318a669e3c8d0824
-17	12	branch off	c0d85f0ee6d15abb769f461af78850a8567793c7
-8	9	a quick implementation's base branch	72cd3c4294e0f50c40c8514eb5b489c936d5a82c
-6	7	a quick implementation's base SHA (#243)	1b44b1830c22d83a34179c5fb2f11f1b6f3aa3e4
-13	8	plugin-made branches have no upstream (#1152)	18b4e5b4861dedfa171a37a2c7d42495ecaac57d
-11	13	branch retire	6e0ef38b0cf48a6cc666d81f317f5aa85247482b
-2	2	branch_records_base (#1713)	ed4dc760c86cd4c995a29e78d9d4ed872e6a95c3
-34	37	branch sync (#792)	d467f34f8556796d7fef47466040a0deb1c97d41
-17	16	branch busy (#1201)	0c7b4220cc2dff1b7797634fa5e01dff178bea8f
-21	11	branch off and branch create refuse a busy checkout (#1202)	3d82b6f5f630347d65a0e535a4e9236d6d19a9ec
-21	20	branch create on a restart (ADR-0054)	0502ccc6f06adb7790af1e0dedc61c05d112f318
-43	27	branch create off the flow's branch (#1911)	4b2734aed8e4c43aa0c08fe7ffe08cec57f1781d
-12	12	the fork start point is decided where origin is asked (#1930)	336eb38234f0caf884f611d25ac35370884d060d
-1	2	branch: unknown op	b1229665941ea3f9f33a2166c5fbf7ffe117f0bb
-3	4	branch retire beside a same-named tag (#2337)	bee77fb4fde9e8669e8930548ab1263c3ae0304f
-11	6	branch create and branch off beside a same-named tag (#2337)	b9d8506a0e6e551181f369b4f52eb5ffc23f10aa
-14	15	checkout (#1078)	fcf77c433fd8f107550a2cadbac96af60bcf2952
-3	4	checkout current branch (#1079)	d402f627ba50a3c716ac0ac24115f71bb152fd28
-24	13	checkout busy, redo-retired branch (#1981)	0608e4d5c7b58927eb7859c5d847edb713e43621
+19	12	branch create	90d76b091c81d6ae08d766ce01c283986db4a9b9
+20	14	branch off	8b92e65dc6c7b591115ee89344fd0bf60e0aaa57
+10	11	a quick implementation's base branch	d96fc61d145f3075796b9e2c3d7401009520aa7b
+7	9	a quick implementation's base SHA (#243)	910d5fe5b0be4e565ca40ce2e9eed973aeb217a8
+16	10	plugin-made branches have no upstream (#1152)	2d7a48cfffed1c41306ee2cbc9cb341ff36c692a
+14	15	branch retire	902b8d6e2638ad16475244b966efccca00f54192
+1	2	branch_records_base (#1713)	2559471b4dcffbda03e5e6538403252f4f4af167
+39	42	branch sync (#792)	631b20bd11c01ca6923d45e0ad29af7e95b1fea8
+20	17	branch busy (#1201)	02f48d9f24d427659c60f7d348216ae33b8c882a
+37	14	branch off and branch create refuse a busy checkout (#1202)	5f458af05c95fd222fe91ed1534d69604f4fa227
+24	21	branch create on a restart (ADR-0054)	75f78757ce2e925d021d8ee545a164f6bb10ceda
+50	30	branch create off the flow's branch (#1911)	93599a113411d3f02f33c8f140e502bc4836953d
+15	14	the fork start point is decided where origin is asked (#1930)	2b219aa91892167de0c774ed1a8824f2c4d958b8
+1	1	branch: unknown op	0fc6b7bf37b3f2afb4f1644fc0a6ae8f0644fa43
+4	5	branch retire beside a same-named tag (#2337)	8287092bad1181174e416f2901a617716c3d3d1e
+14	7	branch create and branch off beside a same-named tag (#2337)	1bcf83d3d4fe48c968da694766680fc2192f40b6
+16	17	checkout (#1078)	7c438c5348ba9aab0a61aef9c93427abb2bc06af
+4	4	checkout current branch (#1079)	4d824f418789394c8d3fc1803bed841811c9501d
+20	14	checkout busy, redo-retired branch (#1981)	2edd3a1f585b070f69d9fd62e9328eb763e1bca3
 6	7	comments module	ab28cc40a5a06628f8ab117b0dd520e62c879e85
 8	10	common.sh is the bottom layer	04f7eed4e1b745bc381196f09f7ddd3c7337cc02
 5	5	exclude_line	b6acb7e0c1f3b1c7398f701f5050c66553304c1a
@@ -112,55 +72,49 @@
 1	2	capture_err and capture without a temp file (#1780)	fc19f584557286e04c9abe1748bf4408b90215bf
 7	9	capture, capture_err and file_read	15f31dc392fbcce33a8210b2b13e103e6a539901
 0	1	die_hinted and die_opt_check	a31d5ea9ef99f315cf022f51ad5894482feffb9e
-1	2	review label and untriaged finding	3b680e3dc5065584d82ec9a70964114493fcfc60
-21	23	every gh call pinned to the repo (#520)	305e92344dd4df8c4900c5e523cfcbee99933591
-2	2	gh_reason and capture_err (#846)	945f77cb2a6453cdc91c5642f7d92d731d01112c
-1	2	label_listed	a4944cc37004a436b3273b1e242a8617a5e2cc1c
-18	19	gh failure verb and readers (#1022)	8ec16b064e87fc5ede895234c3fba4f8ca36407b
-16	21	gh fake (#280)	1f7b93e397b250df775827f45c3208f47238fcf5
-90	100	gh adapter contract (#280)	ed062c73b599385021c2f84b8d60f9ba55159f13
-16	18	claim adapter operations (#1454)	faa35fc415d08eda21b71812e5e6e5c46b39b2d4
-3	4	label casing (#1943)	41702561181f22517cb801c3da597ce5b3409ff3
-48	42	gh rate limits (#2577)	5ec09fb0232ccd3ffa97e89312a5ebd0daf1aaba
-17	19	gh rate limits: the GitHub pause and the hit file (#2577)	1119e4139cb6643ccc47356d4b53d9e76cb9d94f
-2	3	handoff path	6506b76fc19c8f2e5161f6834d42da7db79b7efb
-14	15	phase table	6a3661c69e2f37c4fdf3adbddede35d88896f08a
-14	16	handoff validate	b411144437c99bdbfb21ef3b6b947928e85eb0ca
-8	9	handoff section	38ae086c189354056af5c6f1c589e562a0d6ce60
-6	7	spec handoff	f4513a0c4ef8393663e6fa8c14a0cfca3eba5dc7
-3	5	handoff templates	d8a35e3d1dd995b7656b4732a2ad1a720cc3d7ea
-9	11	handoff verification	61db1be4e9df7ca88a5e3280c235cf9e55e32059
-21	24	handoff comments (autopilot)	546aa602e64d8d5b250d67077a006b07f4e6ba8f
-45	51	handoff store contract (#1820)	bbd2e3e49318f3c280763a1e99f36e9919fd75b8
-2	3	handoff post and fetch with no state file	9575adf21ffee7c534f52098f40746563996ffed
+28	29	every gh call pinned to the repo (#520)	4fa8832de74902bcafa26bccd975138b4148c426
+3	3	gh_reason and capture_err (#846)	f20408bfddf4dac7c2497b9bf990691b4790d7fb
+1	3	label_listed	f93f04da27ae9419f632ccb983146270f908e702
+18	20	gh failure verb and readers (#1022)	6f022f0ce48d6088c2ed4a85b305e626cca6bfdb
+19	24	gh fake (#280)	75336c30f4a126f71facd914436a0a655ec0821b
+91	103	gh adapter contract (#280)	1f24df2afea253d1b89bbef2bc9cf914660dcefb
+17	18	claim adapter operations (#1454)	0a5502657c5c6656f23909bbbf7cf9cb5df2ce69
+4	5	label casing (#1943)	8967c4cca4f59fc47bcee920bac6f8582eb5085c
+53	46	gh rate limits (#2577)	bed904bd846745aa245c00b5213595b70703ed0e
+19	20	gh rate limits: the GitHub pause and the hit file (#2577)	1b93ca0d971a12570038ed11505b654d9d0af815
+2	4	handoff path	562d06102a381584416150c44fc7141836c111de
+14	15	phase table	15ffd7135edb899371ac8cea6584cd0d822cfaca
+14	15	handoff validate	cf9177592c5a544f6e56fb49ce135d6b78eac712
+7	9	handoff section	1caad378aa2fa53c185cedb516a5c4762044a9ca
+6	6	spec handoff	40d9ac0f7fd8058e1bcee0438f7f8f4a48a36010
+4	5	handoff templates	f3aa4d96b0cca171848d0169f4376c209f1e6b1d
+10	11	handoff verification	697fa47400914e54d5a62644701cf0e1dbac529f
+22	25	handoff comments (autopilot)	0861e5acff943feea7df7c705ab58296669b8ab7
+47	55	handoff store contract (#1820)	d9b92d8aeb28fbf29569327cc79195f7a3de364e
+2	4	handoff post and fetch with no state file	90de4751ecc7b294a7f59a55542dbef845beb36e
 1	2	host detection (host.sh, #281)	810863fbb3e926aaff3a2d2d00c5e6caa68f55d7
-185	223	issue-timeline module	c60c74521e712ce2d67cc0b5fceb0a3a9673363e
-8	9	Liveness module	a3eb853321244ddc291751d37b820bf4e3a80df7
-9	10	orch_load	a8015cd4b32b847d8cb4db628fcf4875f1825828
-12	13	on-demand loading	57abe7cb4c4c956462d288d8e183c2a39f0f216c
-17	20	stub table cache	adcb99b0833cf7efb04197fab5b31d0fd6678f29
-1	2	mp-skill	6ac734149252de0268b27a22de4050894e49a354
-5	5	bash version guard	a8d2cfe5bbb32166e192820e2b3d83282e7a66ce
-1	2	outside a checkout (#931)	e5c70ed8a90ea1696b300a7a8f75e91707e1690b
+90	102	issue-timeline module	9b38701552a254104ef11a1f06337834aa7b019b
+6	7	orch_load	b7690e1c2206cbbb9683deef992bff879a329c86
+11	12	on-demand loading	161f172b800f03519d7a836f0c7cfe2b853a3884
+16	19	stub table cache	f08da23fcef1d9cfbb031ed5cab21326cda0ee8c
+1	2	mp-skill	e60393c4f6e6f95d5fba4df7ab64704fd650e873
+4	5	bash version guard	b9c291545a1708ed286831ce6e7ed83b277ce540
+1	2	outside a checkout (#931)	0ae7f89078991baf6f44277fef5b969e1b217f1f
 29	25	marked-comment module	f6f5c1a7f89a0d4a6d8a53403309d4f68d4fe0c2
 9	10	repo show	03b579d082d6e4e5353a860b91cb90f1006013d0
 8	9	default-branch	2ab1b9bd03b98654ef71dcf00efa0fd1f0f07c16
-7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
-43	46	side-checkout (#722)	7dc790777a8555986bab40cc320ac68d6e3cb8c0
-61	67	side-checkout archive and remove (#724)	d61468c43994b27731225e8fa9c800756d74143b
-57	61	side-checkout prune (#726)	e94105ff2670d2e65c05a114be28220c83091f47
-73	78	side-checkout prune: edge cases (#726)	a6175e83b83b662fcc4e2ad06645cc8e0c1ce6b1
-12	13	archive keeps flow-less directories (#1247)	f0995e89b111d509b904c815f2f1d1688f3ba437
-31	34	side-checkout prune: a covered branch tip (#1906)	6da2f8a896b1813db0dc74fad8e4ea2486f9921a
-10	12	side-checkout prune: fork PRs are not proof (#1979)	7dd8d3fb3cdec8619f1297cefaf131f9989968d2
-121	126	side-checkout prune: the merged-PR close backstop (#2477)	1f38ca3930b9a0ca00c0bc251b66a94de0435836
-3	4	side_checkout_marker reads the worktree's git pointer	d31a2b3b83c72522f87238dc1d45e73b7a4b6cb5
-7	8	side checkout marker issue: reading without re-classifying (#3073)	8b19c794ef4be0750983ee35fe8f0b9f5a94e529
-4	5	archive reads the flow's slug once	479dab274c7a796a4fb5c4095d6dc3bbf52b3586
-10	11	side-checkout: the default branch is asked for only when needed	3fc687b966c5b562d19f6fbe0cc519d02c25f747
-20	21	Standing module	b9b154534211e48a0c5a7a19899358f257498c4e
-101	76	Standing transitions	f91fc6159d2633a39ed09251f4e53d4df65eb404
-2	3	standing_ask reads the issue in one jq	323242a91458cfdc0852ce80bf275f3a21daf5f0
+47	51	side-checkout (#722)	6200f5914084f3c0d9798196ec57e41eb853a066
+74	79	side-checkout archive and remove (#724)	fe1ecb5f3b17a9f2ba74f70ec0095d0d6092349e
+62	67	side-checkout prune (#726)	b92a62f0db52259032afca832e12764b484db06c
+85	91	side-checkout prune: edge cases (#726)	be6e71c8214125ec83ffd5f4faedf8cb94a56993
+14	15	archive keeps flow-less directories (#1247)	73924579b8aeea19afbf9325c81a24744f6b81cb
+34	39	side-checkout prune: a covered branch tip (#1906)	774365433b68e83a4f7167f635d18d484eead2d1
+11	12	side-checkout prune: fork PRs are not proof (#1979)	c70657c441d5cc8aa73d5eb99d956093e1637301
+14	156	side-checkout prune: the merged-PR close backstop (#2477)	a501f2353d1fcbf2475d4c0426d7252221cc76ad
+4	4	side_checkout_marker reads the worktree's git pointer	b0b623fd717390f7cd5b48579acfe4d055c2990c
+7	9	side checkout marker issue: reading without re-classifying (#3073)	5cd6f6c69819c5aee84b37d42b6ba8d85edea4d8
+5	6	archive reads the flow's slug once	970a924e38db49678ce547a21682e81433b39ad6
+10	12	side-checkout: the default branch is asked for only when needed	7ed16999cc8a02472634165947ceedd335ab0e2b
 14	15	state	0c580f49e511758e838f9ddd6af8e775b042e6be
 14	13	a flow from before the budget shipped	2a2d0365f8f384fb0837404a0af8dff641cda76a
 7	7	state get reads every key with its default	2beca9f0a4a08ccb856a99d7fb0056e432afbf81
@@ -173,11 +127,11 @@
 4	5	state set with a failed write (#1931)	82669eee93bd1e9a868a8de7da255df518db5bf2
 12	13	the entry read and the required-field helpers	9a232bcb9d4b7188901cd615e76836895fa1ae50
 1	2	triage_label_into: parse once, later lookups start no command	ba2dc83098993a7a23392d37d31c6a721b76254e
-19	21	trust module	fa9ddfe15cdbea37ab5523493c97f1e967397961
+22	25	trust module	9d785dc96704a7bd94d104fb14fe34b7c4775710
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594
-218	117	docs_lint.sh	2cb0eda88379d554ccb7fcb5fa536a15f0e5ee86
+247	307	docs_lint.sh	4b2eea3cf50ca0b51822bf947ece35768b3c7a93
 40	30	version_bump_test.sh	13c6acda626586d9df9be1d51a465dd889fdc723
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
-17	17	autopilot_up_test.sh	e83bb3b5d6213ab54507233be7cc6e624358622c
+39	41	autopilot_up_test.sh	68a84aa80b2feb5cc7dddc8103eb23c82b0c5155
 51	51	lens_bench_test.sh	ffb52c95b18f2076683217dffc8d27f1d03a136d
 519	1378	shellcheck

@@ -233,18 +233,20 @@ main() {
   case "$cmd" in
     # The nouns converted to Python, the one place naming them: each runs
     # through orch_python, and has no module of its own here. Among them
-    # init, phase, redo, ticket, ticket-worktree, pr, review and doctor with
-    # its alias health, and the bare global commands slug, status, archive and
-    # help, help with its option spellings, which the Python entry point runs
-    # as help; a bare orch.sh is help too. Doctor's bash check reports the bash
+    # init, phase, redo, ticket, ticket-worktree, pr, review, autopilot and
+    # doctor with its alias health, and the bare global commands slug, status,
+    # archive and help, help with its option spellings, which the Python entry
+    # point runs as help; a bare orch.sh is help too. orch_python execs
+    # python3, so the process `orch.sh autopilot watch` or `orch.sh autopilot
+    # run` starts keeps its pid, which the watch pidfile and the run records
+    # name. Doctor's bash check reports the bash
     # running this script, which Python cannot see: it is handed on as
     # ORCH_RUNNING_BASH, trimmed of its "(1)-release" tail.
-    issue|finding-triage|verification|audit|review-pass|spec-review|spec|breakdown|glossary|parallel|route|agent|slug|status|archive|help|-h|--help|init|phase|redo|ticket|ticket-worktree|pr|review|doctor|health)
+    issue|finding-triage|verification|audit|review-pass|spec-review|spec|breakdown|glossary|parallel|route|agent|slug|status|archive|help|-h|--help|init|phase|redo|ticket|ticket-worktree|pr|review|autopilot|doctor|health)
       case "$cmd" in doctor|health) export ORCH_RUNNING_BASH="${BASH_VERSION%%(*}" ;; esac
       orch_python "$cmd" "$@" ;;
     default-branch) cmd_default_branch "$@" ;;
     base)          cmd_base "$@" ;;
-    autopilot)     cmd_autopilot "$@" ;;
     repo)          cmd_repo "$@" ;;
     state)         cmd_state "$@" ;;
     handoff)       cmd_handoff "$@" ;;

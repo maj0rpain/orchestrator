@@ -1286,64 +1286,6 @@ def test_autopilot_setting_check_passes_an_allowed_value_and_dies_on_another(cap
                " (want low|medium|high|xhigh|max|inherit)\n")
 
 
-def test_validate_autopilot_checks_claude_model_and_effort_and_preserves_error_message(capsys):
-    for model in ("sonnet", "opus", "haiku", "fable", "inherit"):
-        assert cli.call_func(
-            ["agent", "validate_autopilot", "model", model, "orchestrator.autopilot.model"]
-        ) == 0
-        assert capsys.readouterr() == ("", "")
-
-    for effort in ("low", "medium", "high", "xhigh", "max", "inherit"):
-        assert cli.call_func(
-            ["agent", "validate_autopilot", "effort", effort, "orchestrator.autopilot.effort"]
-        ) == 0
-        assert capsys.readouterr() == ("", "")
-
-    for bad_model in ("gpt", "Opus", "opus haiku", "", "opus\nsonnet"):
-        assert died_of(
-            capsys,
-            lambda v=bad_model: cli.call_func(
-                ["agent", "validate_autopilot", "model", v, "orchestrator.autopilot.model"]
-            ),
-        ) == (
-            1, "",
-            "orch: orchestrator.autopilot.model is %s - not an allowed model"
-            " (want sonnet|opus|haiku|fable|inherit)\n" % bad_model,
-        )
-
-    for bad_effort in ("extreme", "High", ""):
-        assert died_of(
-            capsys,
-            lambda v=bad_effort: cli.call_func(
-                ["agent", "validate_autopilot", "effort", v, "orchestrator.autopilot.effort"]
-            ),
-        ) == (
-            1, "",
-            "orch: orchestrator.autopilot.effort is %s - not an allowed effort"
-            " (want low|medium|high|xhigh|max|inherit)\n" % bad_effort,
-        )
-
-    # The error message names the key it is handed.
-    assert died_of(
-        capsys,
-        lambda: cli.call_func(["agent", "validate_autopilot", "model", "gpt", "custom.key"]),
-    ) == (
-        1, "",
-        "orch: custom.key is gpt - not an allowed model"
-        " (want sonnet|opus|haiku|fable|inherit)\n",
-    )
-
-    # Usage refusals for wrong arity or unknown setting kind.
-    for bad_args in ([], ["model"], ["model", "opus"], ["bogus", "opus", "k"],
-                     ["model", "opus", "k", "extra"]):
-        assert died_of(
-            capsys, lambda a=bad_args: agent.validate_autopilot(a)
-        ) == (
-            1, "",
-            "orch: usage: orch_python_call agent validate_autopilot <model|effort> <value> <key>\n",
-        )
-
-
 def settings_records(capsys, git, home, plugin_root):
     """agent.settings_report's records - doctor's agent settings check, as
     data - for the checkout <git> is in, Junie's files under <home>,

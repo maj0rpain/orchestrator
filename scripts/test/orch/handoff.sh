@@ -57,6 +57,24 @@ literal_handoff() {
 # the fake has answered or refused - 0 for none.
 fake_comment_reads() { log_count "$ORCH_GH_FAKE_STORE/comment_reads"; }
 
+# handoff_missing_msg <mode> <issue> <name> [<hint>]: the mode's message for a
+# missing handoff <name>; the hint, when given, is the "post it with handoff
+# post <hint>" (comment) or "write it <hint>" (file) tail.
+handoff_missing_msg() {
+  if [ "$1" = comment ]; then
+    printf 'orch: issue #%s has no %s handoff comment%s' "$2" "$3" "${4:+ - post it with handoff post $4}"
+  else
+    printf 'orch: handoff not found: %s/.orchestrator/handoff/%s.md%s' "$PWD" "$3" "${4:+ - write it $4}"
+  fi
+}
+
+# plan_file <file> [block]: a complete plan handoff, with the `## Autopilot`
+# block's body when one is given.
+plan_file() {
+  complete_handoff "$1" || return 1
+  [ -z "${2:-}" ] || printf '\n## Autopilot\n\n%s\n' "$2" >>"$1"
+}
+
 # --- handoff path -----------------------------------------------------------
 echo
 echo "handoff path"
@@ -719,15 +737,10 @@ printf '\n```\n## Autopilot\n\nRounds: 0\nBudget: 9\n```\n' >>"$f"
 printf '\n## Autopilot\n\nRounds: 2\nBudget: 3\n' >>"$f"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" handoff validate "$f" 2>&1)"; st=$?
 assert_status "a fenced example block ahead of the real one is not read" "$st" 0
-# The block check and the autopilot-session test are the handoff module's and
-# common's own: an autopilot validation loads no autopilot module.
-hb_trace="$(mktemp)"
 plan_file "$f" $'Rounds: 0\nBudget: 3'
-out="$(ORCH_LOAD_TRACE="$hb_trace" ORCH_AUTOPILOT=1 "$ORCH" handoff validate "$f" 2>&1)"; st=$?
+out="$(ORCH_AUTOPILOT=1 "$ORCH" handoff validate "$f" 2>&1)"; st=$?
 assert_status "an autopilot plan with a bad block still fails" "$st" 1
 assert_contains "naming the bad value" "$out" "## Autopilot Rounds is 0 - it must be a whole number of 1 or more"
-assert_trace_names_no "an autopilot plan's validation" "$hb_trace" autopilot
-rm -f "$hb_trace"
 restore_suite_env
 
 # --- handoff post and fetch with no state file --------------------------------

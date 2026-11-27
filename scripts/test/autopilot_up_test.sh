@@ -205,17 +205,34 @@ assert_contains "probe: the run's phase wins over pickup" "$probed" "24 ?"
 contract="$root/contract-clone"
 mkdir "$contract" && git -C "$contract" init -q
 mkfifo "$root/contract.fifo"
+# The records name the background shell, written for its pid by the Python
+# Liveness module (orch/liveness.py) under the clone, before the shell execs
+# a sleep that keeps the pid and its start time alive.
+contract_py='
+import os, sys, time
+if sys.path and sys.path[0] == "":
+    del sys.path[0]
+sys.path.insert(0, sys.argv[1])
+from orch import liveness
+pid, main, env = int(sys.argv[2]), sys.argv[3], os.environ
+ok = liveness.run_begin(main, "41", pid, env)
+liveness.tick_begin(main, "51", pid, env)
+liveness.tick_begin(main, "52", pid, env)
+ok = liveness.run_begin(main, "52", pid, env) and ok
+open(liveness.log_path(main, "41", "review", time.time), "w").close()
+sys.exit(0 if ok else 1)
+'
 # The background shell opens the fifo's write end first, so its early death
 # is EOF.
-(cd "$contract" && exec bash -c 'exec 9>"$2"; source "$1"; liveness_run_begin 41 && liveness_tick_begin 51 && liveness_tick_begin 52 && liveness_run_begin 52 && : >"$(liveness_log_path 41 review)" && echo ready >&9; exec 9>&-; exec sleep 30' _ "$DIR/orch.sh" "$root/contract.fifo") >"$root/contract.out" 2>&1 &
+(cd "$contract" && exec bash -c 'exec 9>"$2"; python3 -c "$3" "$1" "$$" "$PWD" && echo ready >&9; exec 9>&-; exec sleep 30' _ "$DIR/orch_py" "$root/contract.fifo" "$contract_py") >"$root/contract.out" 2>&1 &
 contract_pid=$!
 contract_line=""
 contract_line="$(fifo_read_line 60 "contract read ($root/contract.fifo)" "$root/contract.fifo")"
 assert_eq "probe contract: the setup reached ready" "$contract_line" "ready"
 probed="$(ORCH_CLONE_DIR="$contract" sh -c "$probe_text")"
 kill "$contract_pid" 2>/dev/null
-assert_contains "probe contract: lists the run liveness_run_begin recorded, with its phase" "$probed" "41 review"
-assert_contains "probe contract: lists the tick liveness_tick_begin recorded as a pickup" "$probed" "51 pickup"
+assert_contains "probe contract: lists the run a run record names, with its phase" "$probed" "41 review"
+assert_contains "probe contract: lists the tick a tick record names as a pickup" "$probed" "51 pickup"
 assert_eq "probe contract: a tick then a run lists the issue once, by its run record" "$(printf '%s\n' "$probed" | grep -c '^52 ')" "1"
 assert_contains "probe contract: the run record's phase, not pickup" "$probed" "52 ?"
 

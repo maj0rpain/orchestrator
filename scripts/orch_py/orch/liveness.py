@@ -5,7 +5,7 @@ running.
 It owns the main checkout's autopilot run/ layout (run/<issue>.pid, the run
 record; run/<issue>.tick, the tick's record; and run/<issue>.hit, the hit
 file: the reset of a GitHub API rate limit a session hit), the record format,
-`<pid> <start-time>`, which the bash side's liveness.sh wrote too, and the
+`<pid> <start-time>`, which the deleted bash liveness.sh wrote too, and the
 start-time reader: field 22 of /proc/<pid>/stat under ORCH_PROC_DIR (default
 /proc) on a host with /proc, else `ps -o lstart=`, its words joined by `_`. A
 record is alive while its pid runs with the start time it records; a

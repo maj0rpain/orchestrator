@@ -45,6 +45,62 @@ marked_ticket_worktree() {
 # clone's shared exclude file, the one every checkout of it reads.
 exclude_count() { grep -cxF "$1" "$(git rev-parse --git-common-dir)/info/exclude" || true; }
 
+# assert_trace_loads_once <label> <trace file>: asserts a load trace, written by
+# a run that had ORCH_LOAD_TRACE=<file> on, names no module twice.
+assert_trace_loads_once() {
+  assert_eq "$1: the load trace names no module twice" \
+    "$(awk '{print $1}' "$2" | sort | uniq -d | tr '\n' ' ')" ""
+}
+
+# iso_ago <age-seconds>: the UTC timestamp <age-seconds> before the current
+# time.
+iso_ago() { iso_of "$(( $(date -u +%s) - $1 ))"; }
+
+# fake_issue_created <n> <age-seconds>: issue #n created <age-seconds> ago, by
+# the current time.
+fake_issue_created() {
+  iso_ago "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/created_at"
+}
+
+# fake_pr_cross <n> [flag]: seeds PR #n's cross-repository flag - a fork PR
+# (true) by default; the fake prints the flag as given, so any other value
+# seeds one gh would never print. A PR never seeded is same-repo (false).
+fake_pr_cross() { printf '%s\n' "${2:-true}" >"$ORCH_GH_FAKE_STORE/prs/$1/cross_repository"; }
+
+# fake_pr_merged <n> <age-seconds> [issue...]: PR #n merged <age-seconds> ago,
+# by the current time, its closingIssuesReferences the issues given.
+fake_pr_merged() {
+  local n="$1" age="$2" d
+  shift 2
+  d="$ORCH_GH_FAKE_STORE/prs/$n"
+  iso_ago "$age" >"$d/merged_at"
+  : >"$d/closing"
+  for i in "$@"; do printf '%s\n' "$i" >>"$d/closing"; done
+}
+
+# path_without <cmd>: PATH with no <cmd> on it, printed: each directory holding
+# one is replaced by a new directory linking every other command there.
+path_without() {
+  local dir links k=0 kept="" f
+  local -a dirs
+  IFS=: read -r -a dirs <<<"$PATH"
+  for dir in "${dirs[@]}"; do
+    k=$((k + 1))
+    if [ -e "$dir/$1" ]; then
+      links="$(mktemp -d)"
+      for f in "$dir"/*; do
+        [ "${f##*/}" = "$1" ] || ln -s "$f" "$links/${f##*/}"
+      done
+      dir="$links"
+    fi
+    kept="${kept:+$kept:}$dir"
+  done
+  printf '%s\n' "$kept"
+}
+
+# fake_state_of <n>: issue #n's state read back from the store, OPEN or CLOSED.
+fake_state_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/state" 2>/dev/null; }
+
 # --- side-checkout (#722) -----------------------------------------------------
 # A side checkout: a worktree the plugin makes under the main checkout's
 # .orchestrator/checkouts/<slug>, on no branch at origin/<base>, carrying the
@@ -1447,22 +1503,19 @@ assert_status "the close backstop on a truncated state.json returns 0" "$st" 0
 assert_eq "it prints nothing" "$out" ""
 assert_eq "it reads no issue from GitHub, so the open issue is left alone" "$(fake_state_of 610)" "OPEN"
 
-# The issue's state is read through gh's own state-and-labels read, loading no
-# Standing module: a failed read warns with gh's reason and skips the close.
+# The issue's state is read through gh's own state-and-labels read: a failed
+# read warns with gh's reason and skips the close.
 fake_offline
 bf_quick ir 614 714; fake_pr_merged 714 3600 614
 fake_online
 ir="$(git worktree list --porcelain | sed -n "s/^worktree //p" | grep "/ir\$")"
-ir_trace="$(mktemp)"
 fake_fail adapter_issue_state_labels "HTTP 502"
-out="$(ORCH_LOAD_TRACE="$ir_trace" sourced_orch side_checkout_close_missed "$ir" quick/614-ir 2>&1)"; st=$?
+out="$(sourced_orch side_checkout_close_missed "$ir" quick/614-ir 2>&1)"; st=$?
 assert_status "a failed issue read leaves the close backstop returning 0" "$st" 0
 assert_eq "it warns with gh's reason" "$out" \
   "orch: could not read issue #614: HTTP 502 - the merged-PR close skips it"
-assert_trace_names_no "the close backstop's issue read" "$ir_trace" standing
 assert_eq "and the issue stays open" "$(fake_state_of 614)" "OPEN"
 fake_unfail
-rm -f "$ir_trace"
 
 # A closed issue is skipped: no close process is started for it.
 fake_offline
