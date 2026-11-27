@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from conftest import (GITHUB_ORIGIN, CountingGh, SideCheckouts, comments_of, fake, hold_flow,
-                      linked_worktree, read, sha_of)
+                      linked_worktree, outcome, read, sha_of)
 from orch import side_checkout
 from orch.base import branch_base_key
 from orch.git import FakeGit, GitFailure, Worktree
@@ -100,17 +100,6 @@ class Clone(SideCheckouts):
 @pytest.fixture
 def clone(tmp_path, seed):
     return Clone(tmp_path, seed)
-
-
-def outcome(capsys, call):
-    """(exit code, stdout, stderr) of <call>: what it returned (0 for None),
-    or the exit it died with."""
-    try:
-        code = call()
-    except SystemExit as died:
-        code = died.code
-    out, err = capsys.readouterr()
-    return (0 if code is None else code), out, err
 
 
 def prune(capsys, clone, *argv, gh=None):

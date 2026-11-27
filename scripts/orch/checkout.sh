@@ -1,7 +1,9 @@
 # shellcheck shell=bash
 # checkout.sh - the Checkout module: a concept module with no orch.sh noun of
-# its own, holding the facts about the repo's checkouts - the main checkout and
-# the branch a checkout holds - that every other module reads. The checkout
+# its own, holding the facts about the repo's checkouts - the main checkout, the
+# branch a checkout holds, the busy-checkout refusal, whether a merge or a
+# rebase is in progress, and the discard rule's pieces (ADR-0054) - that every
+# other module reads. The checkout
 # scan, kind classification and ticket-worktree listing are orch/checkout.py's,
 # read by the converted nouns.
 # Its tests: scripts/test/orch/checkout.sh.
@@ -35,8 +37,9 @@ main_checkout() {
 
 # main_checkout_or_die: what main_checkout prints, or die "could not read the
 # checkouts - git worktree list failed", the one place that message is spelled
-# (checkouts_unreadable). Called in a substitution, where die exits only the
-# subshell, so every caller carries the status out (|| exit $?).
+# (checkouts_unreadable). Kept with one bash caller, the gh adapter's limit
+# record, which calls it in a substitution with the die message silenced and
+# reads its failure as a plain non-zero status.
 checkouts_unreadable() { die "could not read the checkouts - git worktree list failed"; }
 main_checkout_or_die() {
   main_checkout || checkouts_unreadable

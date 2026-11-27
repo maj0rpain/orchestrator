@@ -11,7 +11,7 @@ import os
 import pytest
 
 from conftest import (ARCHIVE_STAMP, archive_clock, archive_main, archived, done_flow, has_branch,
-                      hold_flow, mark_side, run_git, side_checkout, worktree_add)
+                      hold_flow, mark_side, outcome, run_git, side_checkout, worktree_add)
 from orch import side_checkout as module
 from orch.git import FakeGit, Git
 
@@ -26,13 +26,8 @@ def orch(capsys, monkeypatch, cwd, *argv, git=None):
     adapter there (or <git>), no gh adapter, at archive_clock's time: (exit
     code, stdout, stderr)."""
     monkeypatch.chdir(str(cwd))
-    try:
-        code = module.run(list(argv), git=Git(cwd=str(cwd)) if git is None else git, env={},
-                          clock=archive_clock)
-    except SystemExit as died:
-        code = died.code
-    out, err = capsys.readouterr()
-    return code, out, err
+    return outcome(capsys, lambda: module.run(
+        list(argv), git=Git(cwd=str(cwd)) if git is None else git, env={}, clock=archive_clock))
 
 
 def listed_order(main):

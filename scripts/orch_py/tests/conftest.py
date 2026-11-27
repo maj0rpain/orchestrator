@@ -673,6 +673,17 @@ def died_of(capsys, run):
     return died.value.code, out, err
 
 
+def outcome(capsys, call):
+    """(exit code, stdout, stderr) of <call>: what it returned (0 for None),
+    or the exit it died with."""
+    try:
+        code = call()
+    except SystemExit as died:
+        code = died.code
+    out, err = capsys.readouterr()
+    return (0 if code is None else code), out, err
+
+
 def orch_issue(seed, *argv, gh=None, git=None, env=None, pin=None):
     """`orch.sh issue <argv>` in-process: its exit code, a SystemExit's
     included. <gh> is the gh fake on <seed>'s store when None, <pin> its repo
