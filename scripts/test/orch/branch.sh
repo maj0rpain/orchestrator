@@ -5,6 +5,19 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# sc_add <slug> [args...]: makes a fixture side checkout quietly. add runs the
+# finished sweep first and reports it on stderr, so that stderr is held back:
+# discarded when add succeeds, printed when it fails. The new path passes
+# through on stdout, and add's exit status is returned.
+sc_add() {
+  local err st
+  err="$(mktemp)"
+  orch_gh_failing side-checkout add "$@" 2>"$err"; st=$?
+  [ "$st" -eq 0 ] || cat "$err" >&2
+  rm -f "$err"
+  return "$st"
+}
+
 # branch_and_config: the current branch and the local git config, the facts a
 # refusal on an unreadable tree must leave as they were (git status cannot run
 # there, so these are what can be read).
@@ -81,6 +94,39 @@ state_write_fails_after_first_bin() {
 
 # branch_presence <ref>: present or gone, whether the branch <ref> exists.
 branch_presence() { if git rev-parse --verify --quiet "$1" >/dev/null 2>&1; then echo present; else echo gone; fi; }
+
+# break_index / restore_index: make the current directory's working tree
+# unreadable - git status fails on a garbage index - and put the index back.
+# They return non-zero, touching no file, when its git directory cannot be
+# resolved.
+break_index() {
+  local idx
+  idx="$(git rev-parse --absolute-git-dir)/index" || return 1
+  cp "$idx" "$idx.bak" && echo garbage >"$idx"
+}
+restore_index() {
+  local idx
+  idx="$(git rev-parse --absolute-git-dir)/index" || return 1
+  mv "$idx.bak" "$idx"
+}
+
+# discards_in <dir> <slug> <issue> <what>: in a subshell inside the linked
+# worktree <dir>, starts a flow <slug> on <issue>, makes its branch, dirties the
+# tree and runs branch create again without autopilot, asserting it exits 0 and
+# leaves the tree clean; <what> names the worktree in the assertions.
+discards_in() {
+  (
+    cd "$1" || { bad "cd into the $4" "cannot cd into $1"; exit 1; }
+    orch_gh_failing init "$2" >/dev/null
+    orch_gh_failing state set issue "$3"
+    orch_gh_failing branch create >/dev/null
+    echo hand >>README.md
+    local out st
+    out="$(orch_gh_failing branch create 2>&1)"; st=$?
+    assert_status "a dirty tree in a $4 is discarded" "$st" 0
+    assert_eq "leaving it clean" "$(git status --porcelain)" ""
+  )
+}
 
 # --- branch create -----------------------------------------------------------
 # Unlike branch off's caller-named branch, this one derives its own name from
@@ -1243,6 +1289,18 @@ assert_status "a rebase in progress in an autopilot flow is aborted" "$st" 0
 assert_eq "leaving no rebase in progress" \
   "$(rebase_state)" "none"
 
+# the worktree list unreadable: whether this is the main checkout cannot be
+# told, so nothing is discarded
+echo hand >>README.md
+before="$(restart_facts)"
+wl_fails="$(worktree_list_fails_bin)"
+out="$(PATH="$wl_fails:$PATH" orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "an unreadable worktree list in an interactive flow dies with exit 1" "$st" 1
+assert_contains "saying the main checkout cannot be told" "$out" \
+  "could not tell whether $(git rev-parse --show-toplevel) is the main checkout - nothing was discarded"
+assert_eq "leaving the dirty tree as it was" "$(restart_facts)" "$before"
+git checkout -q -- README.md
+
 # A done flow still holds its branch: a restart discards dirty work and stays
 # on the branch.
 state_fixture phase "done"
@@ -1279,16 +1337,11 @@ git checkout -q -- README.md
 # a side checkout discards without autopilot
 sc_clone
 side="$(sc_add sidebr)"
-(
-  cd "$side" || { bad "cd into the side checkout" "cannot cd into $side"; exit 1; }
-  orch_gh_failing init sidebr >/dev/null
-  orch_gh_failing state set issue 16
-  orch_gh_failing branch create >/dev/null
-  echo hand >>README.md
-  out="$(orch_gh_failing branch create 2>&1)"; st=$?
-  assert_status "a dirty tree in a side checkout is discarded" "$st" 0
-  assert_eq "leaving it clean" "$(git status --porcelain)" ""
-)
+discards_in "$side" sidebr 16 "side checkout"
+# a linked worktree that is no side checkout discards without autopilot too
+hand="$(mktemp -d)/hand"
+git worktree add -q --detach "$hand"
+discards_in "$hand" handbr 18 "hand-made worktree"
 
 # --- branch create off the flow's branch (#1911) ------------------------------
 # The discard rule runs only on the flow's own branch or a detached HEAD. On any

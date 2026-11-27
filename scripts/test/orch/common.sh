@@ -42,9 +42,11 @@ assert_eq "common.sh calls no function a noun module defines" \
   "$(common_upcalls "$(dirname "$ORCH")" | tr '\n' ' ')" ""
 
 # --- exclude_line -------------------------------------------------------------
-# exclude_orch_dirs' three callers (init, side-checkout add, the ticket
-# worktree) call it bare under set -e, so a failed write (#1548) pins their
-# message; the appends keep an unterminated last line whole (#1912).
+# exclude_orch_dirs has no bash caller left - the converted nouns write the
+# exclude file through orch/common.py's copy - and is kept because the spec's
+# Stays list keeps it. These cases still pin its failed-write message, naming
+# the missing lines and the file (#1548), and that exclude_line's appends keep
+# an unterminated last line whole (#1912).
 echo
 echo "exclude_line"
 new_repo >/dev/null
@@ -121,18 +123,10 @@ assert_eq "list_has matches glob and regex characters and an empty item literall
     for item in "" "a*" "a?" "[ab]" "a\\b" "x.*" ".*"; do
       if list_has "$1" "$item"; then printf " y"; else printf " n"; fi
     done' $'a*\na?\n[ab]\na\\b\nx.*\n\nq')" " y y y y y y n"
-assert_eq "list_has and path_last_into answer with an empty PATH" \
+assert_eq "list_has answers with an empty PATH" \
   "$(sourced_orch_script '
     PATH=
-    list_has $'"'"'a\nb'"'"' b && printf y; list_has a b || printf n
-    path_last_into r /d/e/f.md .md; printf " %s" "$r"')" "yn f"
-# path_last_into: a path's last component, a suffix stripped, as basename gives.
-assert_eq "path_last_into gives a path's last component, with and without the suffix, directories or none" \
-  "$(sourced_orch_script '
-    for args in "/a/b/c.md" "/a/b/c.md .md" "c.md" "c.md .md" ".md .md" "/a/b/ " "/ "; do
-      set -- $args
-      path_last_into r "$1" "${2:-}"; printf "|%s" "$r"
-    done')" "|c.md|c|c.md|c|.md|b|/"
+    list_has $'"'"'a\nb'"'"' b && printf y; list_has a b || printf n')" "yn"
 
 # --- list_join ----------------------------------------------------------------
 # The one newline-list join: non-empty lines, joined by ", ".
@@ -164,18 +158,6 @@ assert_eq "word_listed answers with an empty PATH" \
   "$(sourced_orch_script '
     PATH=
     word_listed "a b c" b && printf y; word_listed "a b c" "a b" || printf n')" "yn"
-
-# --- err_line (#1718) ---------------------------------------------------------
-# A captured error's first line, everything through its first `orch: ` dropped.
-echo
-echo "err_line"
-new_repo >/dev/null
-assert_eq "err_line drops the prefix and keeps the first line" \
-  "$(sourced_orch err_line $'orch: first\n     second')" "first"
-assert_eq "err_line drops stray text ahead of the first prefix" \
-  "$(sourced_orch err_line $'jq: parse error\norch: the reason')" "the reason"
-assert_eq "err_line leaves an error with no prefix as its first line" \
-  "$(sourced_orch err_line $'plain\nmore')" "plain"
 
 # --- git_push (#1300) ---------------------------------------------------------
 # Every push orch.sh makes runs through git_push, which returns the push's

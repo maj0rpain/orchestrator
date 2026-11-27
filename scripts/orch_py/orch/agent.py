@@ -612,10 +612,11 @@ def run(
 
 
 def name_shapes(args: Optional[List[str]] = None) -> int:
-    """Bridge for docs_lint.sh: prints AGENT_NAME_SHAPES in order as
-    `role<TAB>glob<TAB>ere` lines, pre-expanded via agent_shape_ere."""
+    """docs_lint.sh's read, through its orch_py_eval: prints
+    AGENT_NAME_SHAPES in order as `role<TAB>glob<TAB>ere` lines, pre-expanded
+    via agent_shape_ere. Takes no arguments."""
     if args:
-        die("usage: orch_python_call agent name_shapes")
+        die("usage: orch.agent.name_shapes()")
     sys.stdout.write(
         "".join(
             "%s\t%s\t%s\n" % (role, glob, agent_shape_ere(glob))

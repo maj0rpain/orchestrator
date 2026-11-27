@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import fake, write
+from conftest import fake, outcome, write
 from orch.review import ci_probe, standards_resolve_source
 
 INDENT = "      "
@@ -61,13 +61,7 @@ def test_ci_probe_carries_a_failed_reads_first_line(seed):
 def standards(root, capsys):
     """(exit code, stdout, stderr) of standards_resolve_source printing each
     line it emits: 0 when it returns, a death's code otherwise."""
-    try:
-        standards_resolve_source(str(root), print)
-    except SystemExit as died:
-        out, err = capsys.readouterr()
-        return died.code, out, err
-    out, err = capsys.readouterr()
-    return 0, out, err
+    return outcome(capsys, lambda: standards_resolve_source(str(root), print))
 
 
 def test_standards_resolution_prints_crawled_alone_with_nothing_to_crawl(checkout, capsys):

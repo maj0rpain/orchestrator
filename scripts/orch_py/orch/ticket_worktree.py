@@ -7,9 +7,8 @@ branch, and ticket_worktree_teardown, the one site that tears a ticket
 worktree down. orch.sh runs the noun as a converted noun, and the bash
 ticket-worktree module is gone: each helper keeps the name it had there, with
 its messages and its order of steps. ticket_worktrees_under and
-refuse_ticket_worktrees are orch.checkout's, their bash copies in the bash
-Checkout module, where side-checkout's per-checkout walk runs them with no
-Python process. Doctor's leftover-ticket-worktree check (orch/doctor.py) reads
+refuse_ticket_worktrees are orch.checkout's, their bash copies gone with the
+bash side-checkout noun. Doctor's leftover-ticket-worktree check (orch/doctor.py) reads
 orch.checkout's ticket_worktrees_under in process, as `list` does.
 
 A ticket worktree is a ticket's own worktree on its own ticket branch, so the

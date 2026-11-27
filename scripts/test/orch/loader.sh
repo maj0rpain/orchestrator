@@ -75,15 +75,20 @@ trace="$(mktemp)"
 run_traced() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash "$ORCH" "$@" >/dev/null 2>&1 || true; }
 
 run_traced state get phase
-assert_trace_names_no "state get loads the state module and never the side checkout's" "$trace" side-checkout
+assert_trace_names_no "state get loads the state module and never the branch module" "$trace" branch
 assert_contains "state get loads the state module" "$(cat "$trace")" "state 0"
 assert_eq "no module loads twice at depth 0" \
   "$(awk '$2 == 0 {print $1}' "$trace" | sort | uniq -d)" ""
 run_traced nonesuch-command
 assert_eq "an unknown command loads no module" "$(cat "$trace")" ""
-run_traced side-checkout issue
+# default-branch asks GitHub, here the gh fake, from a command substitution,
+# loading the gh module there: new_repo's origin is a GitHub URL, so the repo
+# resolves.
+fake_github
+run_traced default-branch
+restore_suite_env
 assert_eq "a load from a subshell records a depth above 0" \
-  "$(awk '$2 > 0 {print $1}' "$trace" | sed -n 1p)" "checkout"
+  "$(awk '$2 > 0 {print $1}' "$trace" | sed -n 1p)" "gh"
 out="$(bash "$ORCH" state get phase 2>&1)"; status=$?
 out2="$(ORCH_LOAD_TRACE=/nonexistent/dir/trace bash "$ORCH" state get phase 2>&1)"; status2=$?
 assert_eq "an unwritable ORCH_LOAD_TRACE leaves the command's output as it is" "$out2" "$out"
@@ -154,7 +159,7 @@ out="$(src_run 'source "$1"; cmd_state() { echo replaced; }; cmd_state')"
 assert_eq "a function replaced after source stays replaced" "$out" "replaced"
 
 src_run 'ORCH_SOURCE_LAZY=1; source "$1"' >/dev/null
-assert_trace_names_no "a plain ORCH_SOURCE_LAZY=1 loads on demand" "$trace" side-checkout
+assert_trace_names_no "a plain ORCH_SOURCE_LAZY=1 loads on demand" "$trace" checkout
 out="$(src_run 'ORCH_SOURCE_LAZY=1; source "$1"; echo "${ORCH_SOURCE_LAZY-unset}"')"
 assert_eq "and is unset after the source" "$out" "unset"
 out="$(src_run 'export ORCH_SOURCE_LAZY=1; source "$1"; echo "${ORCH_SOURCE_LAZY-unset}"')"
@@ -166,7 +171,7 @@ assert_eq "and loads every module" "$(awk '{print $1}' "$trace")" "$(orch_module
 
 : >"$trace"
 ORCH_LOAD_TRACE="$trace" sourced_orch branch_records_base orch/40-flowing || true
-assert_trace_names_no "sourced_orch loads on demand" "$trace" side-checkout
+assert_trace_names_no "sourced_orch loads on demand" "$trace" checkout
 : >"$trace"
 ORCH_LOAD_TRACE="$trace" sourced_orch eval 'true'
 assert_eq "sourced_orch eval loads every module" "$(awk '{print $1}' "$trace")" "$(orch_modules_list)"

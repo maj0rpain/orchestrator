@@ -147,6 +147,41 @@ pause_near() {
 # space-separated, one trailing space.
 fake_labels_of() { LC_ALL=C sort "$ORCH_GH_FAKE_STORE/issues/$1/labels" 2>/dev/null | tr '\n' ' '; }
 
+# fake_comments_of <n>: the bodies of issue #n's comments read back from the
+# store, in order, one blank line between.
+fake_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
+
+# fake_offline: every operation fails with a connection error, as with GitHub
+# unreachable. fake_online undoes it, and the store's noauth too.
+fake_offline() { : >"$ORCH_GH_FAKE_STORE/offline"; }
+# fake_online: GitHub reachable and authenticated again.
+fake_online()  { rm -f "$ORCH_GH_FAKE_STORE/offline" "$ORCH_GH_FAKE_STORE/noauth" "$ORCH_GH_FAKE_STORE/ratelimit"; }
+
+# fake_pr_head <n> <sha> [commit...]: seeds PR #n's head SHA and its commits,
+# oldest first - given none, the head alone, or none when the head is empty.
+fake_pr_head() {
+  local d="$ORCH_GH_FAKE_STORE/prs/$1"
+  printf '%s\n' "$2" >"$d/head_oid"
+  shift 2
+  rm -f "$d/commits"
+  [ $# -eq 0 ] || printf '%s\n' "$@" >"$d/commits"
+}
+
+# iso_of <epoch>: epoch seconds as a UTC timestamp, GNU or BSD date.
+iso_of() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; }
+
+# fake_comment_bodies <comments-dir>: the bodies of the directory's comments,
+# in order, one blank line between; nothing for none.
+fake_comment_bodies() {
+  local d="$1" k first=1
+  [ -d "$d" ] || return 0
+  for k in $(ls "$d" | sort -n); do
+    [ "$first" = 1 ] || printf '\n\n'
+    first=0
+    cat "$d/$k/body"
+  done
+}
+
 # --- every gh call pinned to the repo (#520) ----------------------------------
 # A fork whose gh default points upstream: origin is the fork, GH_REPO unset,
 # ORCH_GH_ADAPTER unset so the real adapter operations run, against the fixture
@@ -450,31 +485,6 @@ unset vdir
 # the error variable and prints nothing to stderr. The caller's variables are
 # named as an unprefixed reader's locals would be.
 rerr="$(mktemp)"
-fake_pr 7 open topic main
-fake_pr_draft 7
-out="$(sourced_orch_script 'pr_state_draft_read 7 state draft err; printf "%s|%s" "$state" "$draft"')"
-assert_eq "pr_state_draft_read writes the state and the draft flag" "$out" "OPEN|true"
-fake_pr 8 merged topic main
-out="$(sourced_orch_script 'pr_state_draft_read 8 state draft err; printf "%s|%s" "$state" "$draft"')"
-assert_eq "a PR that is no draft reads false" "$out" "MERGED|false"
-fake_fail adapter_pr_state_draft "$GH_502"
-out="$(sourced_orch_script 'state=x draft=x; st=0; pr_state_draft_read 7 state draft err || st=$?
-  printf "%s|%s|%s|%s" "$st" "$state" "$draft" "$err"' 2>"$rerr")"
-assert_eq "a failed read writes neither and fills the error variable" "$out" \
-  "1|x|x|$GH_502"
-assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
-
-printf 'abc123\n' >"$ORCH_GH_FAKE_STORE/prs/8/head_oid"
-out="$(sourced_orch_script 'pr_refs_read 8 oid ref base err; printf "%s|%s|%s" "$oid" "$ref" "$base"')"
-assert_eq "pr_refs_read writes the head SHA, head branch and base" "$out" \
-  "abc123|topic|main"
-fake_fail adapter_pr_refs "$GH_502"
-out="$(sourced_orch_script 'oid=x ref=x base=x; st=0; pr_refs_read 8 oid ref base err || st=$?
-  printf "%s|%s|%s|%s|%s" "$st" "$oid" "$ref" "$base" "$err"' 2>"$rerr")"
-assert_eq "a failed refs read writes none and fills the error variable" "$out" \
-  "1|x|x|x|$GH_502"
-assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
-
 fake_issue 9 open bug enhancement
 fake_issue_title 9 "A title"
 out="$(sourced_orch_script 'issue_title_labels_read 9 title labels err; printf "%s|%s" "$title" "$labels"')"
@@ -496,9 +506,6 @@ assert_eq "gh_lines_read splits the answer into the caller's variables" "$out" "
 enhancement"
 out="$(sourced_orch_script 'issue_title_labels_read 9 out st err; printf "%s|%s" "$out" "$st"')"
 assert_eq "a reader fills variables named out and st" "$out" "A title|bug
-enhancement"
-out="$(sourced_orch_script 'issue_state_labels_read 9 out st err; printf "%s|%s" "$out" "$st"')"
-assert_eq "issue_state_labels_read fills them too" "$out" "OPEN|bug
 enhancement"
 fake_fail adapter_issue_title_labels "$GH_502"
 out="$(sourced_orch_script 'out=x err=x; st=0; gh_lines_read adapter_issue_title_labels 9 gh_err out err || st=$?
@@ -943,11 +950,6 @@ out="$(contract adapter_pr_diff 57 2>&1)"; st=$?
 assert_status "pr diff: reads the diff" "$st" 0
 assert_eq "printing it as gh does" "$out" "$(writeln 'diff --git a/w b/w' '+widget')"
 
-gh_reply 0 $'OPEN\nreview:nit\nneeds-triage\n' '' issue view 23 --json state,labels --jq '.state, (.labels[].name)'
-out="$(contract adapter_issue_state_labels 23 2>&1)"; st=$?
-assert_status "issue state and labels: reads both" "$st" 0
-assert_eq "the state first, then one label per line" "$out" "$(writeln OPEN review:nit needs-triage)"
-
 gh_reply 0 $'Widgets need a handle\nready-for-agent\n' '' \
   issue view 23 --json title,labels --jq '.title, (.labels[].name)'
 out="$(contract adapter_issue_title_labels 23 2>&1)"; st=$?
@@ -1194,22 +1196,6 @@ out="$(contract adapter_pr_body 404 2>&1)"; st=$?
 assert_status "pr body: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "no pull requests found for 404"
 
-refs_jq='(.headRefOid // ""), (.headRefName // ""), (.baseRefName // "")'
-gh_reply 0 $'bbbb\ntopic\nmain\n' '' \
-  pr view 57 --json headRefOid,headRefName,baseRefName --jq "$refs_jq"
-out="$(contract adapter_pr_refs 57 2>&1)"; st=$?
-assert_status "pr refs: reads the PR's head and base" "$st" 0
-assert_eq "head SHA, head branch, base branch and no commits" \
-  "$out" "$(writeln bbbb topic main)"
-assert_eq "its --jq prints an empty line for a field GitHub leaves null" \
-  "$(printf '%s' '{"headRefOid":null,"headRefName":"topic","baseRefName":"main"}' | jq -r "$refs_jq")" \
-  "$(writeln '' topic main)"
-gh_reply 1 '' 'HTTP 502: Bad Gateway' \
-  pr view 58 --json headRefOid,headRefName,baseRefName --jq "$refs_jq"
-out="$(contract adapter_pr_refs 58 2>&1)"; st=$?
-assert_status "pr refs: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
-
 gh_reply 0 '✓ Pull request acme/widgets#57 is converted to "draft"' '' pr ready 57 --undo
 out="$(contract adapter_pr_draft 57 2>&1)"; st=$?
 assert_status "pr draft: turns the PR into a draft" "$st" 0
@@ -1218,16 +1204,6 @@ gh_reply 1 '' 'HTTP 422: Draft pull requests are not supported in this repositor
 out="$(contract adapter_pr_draft 58 2>&1)"; st=$?
 assert_status "pr draft: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 422: Draft pull requests are not supported in this repository."
-
-gh_reply 0 $'OPEN\ntrue\n' '' pr view 57 --json state,isDraft --jq '.state, .isDraft'
-out="$(contract adapter_pr_state_draft 57 2>&1)"; st=$?
-assert_status "pr state draft: reads the PR's state and draft flag" "$st" 0
-assert_eq "the state, then true or false" "$out" "$(writeln OPEN true)"
-gh_reply 1 '' 'GraphQL: Could not resolve to a PullRequest with the number of 58.' \
-  pr view 58 --json state,isDraft --jq '.state, .isDraft'
-out="$(contract adapter_pr_state_draft 58 2>&1)"; st=$?
-assert_status "pr state draft: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "GraphQL: Could not resolve to a PullRequest with the number of 58."
 
 gh_reply 0 $'57\ttrue\n58\tfalse\n' '' pr list --head quick/12-foo --state open --json number,isCrossRepository --jq '.[] | "\(.number)\t\(.isCrossRepository)"'
 out="$(contract adapter_prs_open quick/12-foo 2>&1)"; st=$?
@@ -1240,15 +1216,6 @@ assert_eq "nothing at all for none" "$out" ""
 gh_reply 1 '' 'HTTP 502: Bad Gateway' pr list --head down --state open --json number,isCrossRepository --jq '.[] | "\(.number)\t\(.isCrossRepository)"'
 out="$(contract adapter_prs_open down 2>&1)"; st=$?
 assert_status "prs open: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
-
-gh_reply 0 $'61\tabc123\ttrue\n62\tdef456\tfalse\n' '' pr list --head quick/12-foo --base main --state merged --json number,headRefOid,isCrossRepository --jq '.[] | "\(.number)\t\(.headRefOid)\t\(.isCrossRepository)"'
-out="$(contract adapter_prs_merged quick/12-foo main 2>&1)"; st=$?
-assert_status "prs merged: lists the merged PRs from a branch into a base" "$st" 0
-assert_eq "one line per PR: number, head SHA and cross-repository flag, unfiltered" "$out" $'61\tabc123\ttrue\n62\tdef456\tfalse'
-gh_reply 1 '' 'HTTP 502: Bad Gateway' pr list --head down --base main --state merged --json number,headRefOid,isCrossRepository --jq '.[] | "\(.number)\t\(.headRefOid)\t\(.isCrossRepository)"'
-out="$(contract adapter_prs_merged down main 2>&1)"; st=$?
-assert_status "prs merged: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 
 gh_reply 0 $'Refs #5\n\nImplements it.\nFixes #6\n' '' \

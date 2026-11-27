@@ -14,7 +14,8 @@ makes, the directory bash's mkdir -p makes, the removals bash's rm -f and
 rm -rf make, the move of named files aside into a folder, every name
 checked before the first move, as bash's move_files_aside made it (its bash
 copy gone), the clean-tree refusal bash's require_clean_tree makes, the
-capture of a call's stderr and death that bash's capture and err_line make,
+capture of a call's stderr and death that bash's capture makes, with the
+first-line quote bash's err_line made (its bash copy gone),
 and the status a call ends with that bash's subshell gives (subshell).
 
 Every `orch: ` message goes through die or warn, as in the bash side's
@@ -429,8 +430,8 @@ _SLUG_SEPARATORS = re.compile(r"[^a-z0-9]+")
 
 
 def normalize_slug(text: str) -> str:
-    """The one normalisation a slug gets, as the bash copy in common.sh makes
-    it: ASCII letters lowercased, each run of anything but a-z and 0-9 one
+    """The one normalisation a slug gets, as bash's normalize_slug made it,
+    its bash copy gone: ASCII letters lowercased, each run of anything but a-z and 0-9 one
     hyphen, hyphens trimmed. Like bash's sed it reads <text> a line at a time,
     so a newline survives, and trailing newlines go as $(...) drops them. Dies
     when nothing survives."""

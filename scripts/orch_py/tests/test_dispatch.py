@@ -42,6 +42,7 @@ from conftest import (
     path_without,
     read,
     run_git,
+    side_checkout,
     until,
     verification_records,
     verification_store,
@@ -1111,6 +1112,45 @@ def test_handoff_section_into_a_pipe_closed_unread_dies_of_sigpipe(tmp_path, rep
     assert answer == ("", "", 141)
 
 
+# --- side-checkout -----------------------------------------------------------
+
+
+def test_an_unknown_side_checkout_op_is_refused_through_the_python_noun(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "side-checkout", "bogus",
+                   path=python3_shim(tmp_path)) == (
+        "", "orch: unknown side-checkout op: bogus (want add|list|remove|prune|issue)\n", 1)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+@pytest.mark.parametrize("path_of, found", [
+    (lambda tmp_path: path_without(tmp_path, "python3"), "none"),
+    (py38_path, "3.8.10"),
+], ids=["missing", "below-3.9"])
+def test_side_checkout_refuses_without_a_usable_python3_pointing_at_doctor(
+        tmp_path, repo, seed, path_of, found):
+    assert orch_sh(tmp_path, repo, seed, "side-checkout", "list", path=path_of(tmp_path)) == (
+        "", "orch: orch.sh side-checkout needs python3 3.9 or newer (found %s) - run orch.sh"
+            " doctor\n" % found, 1)
+
+
+def test_side_checkout_list_into_a_pipe_already_closed_dies_of_sigpipe(tmp_path, repo, seed):
+    """The pipe's reader is gone before orch.sh starts, so list's first line
+    stops it, silently, as SIGPIPE stopped bash's printf."""
+    committed(repo, {"a.txt": "a\n"}, "first")
+    side_checkout(repo, "alpha")
+    reader, writer = os.pipe()
+    os.close(reader)
+    try:
+        run = subprocess.run(
+            ["/bin/bash", str(SCRIPTS / "orch.sh"), "side-checkout", "list"], cwd=str(repo),
+            env=dict(os.environ, HOME=str(tmp_path), ORCH_GH_FAKE_STORE=seed.store),
+            stdin=subprocess.DEVNULL, stdout=writer, stderr=subprocess.PIPE, timeout=30)
+    finally:
+        os.close(writer)
+
+    assert (run.returncode, run.stderr) == (-signal.SIGPIPE, b"")
+
+
 # --- redo ------------------------------------------------------------------
 
 
@@ -1313,144 +1353,3 @@ def test_autopilot_dies_pointing_at_doctor_without_python3(tmp_path, repo, seed)
                    path=path_without(tmp_path, "python3")) \
         == ("", "orch: orch.sh autopilot needs python3 3.9 or newer (found none)"
                 " - run orch.sh doctor\n", 1)
-
-
-# --- orch_python_call bootstrap ----------------------------------------------
-
-
-def source_orch_sh(tmp_path, cwd, script, path=None, knobs=None, unset=()):
-    """bash <script> with $1 = scripts/orch.sh, run by bash_run."""
-    return bash_run(
-        tmp_path, cwd, ["-euo", "pipefail", "-c", script, "_", str(SCRIPTS / "orch.sh")],
-        path=path, knobs=knobs, unset=unset,
-    )
-
-
-def test_orch_python_call_runs_without_exec_and_returns_exit_code(tmp_path, repo):
-    git_config(tmp_path, repo, "orchestrator.route", "quick")
-    script = (
-        'source "$1"\n'
-        'orch_python_call route run show\n'
-        'st=0; orch_python_call route run bogus 2>&1 || st=$?\n'
-        'printf "after:%s\\n" "$st"\n'
-    )
-
-    out, err, code = source_orch_sh(tmp_path, repo, script, unset=GLOBAL_CONFIG)
-
-    assert (err, code) == ("", 0)
-    assert out == (
-        "quick\n"
-        "orch: unknown route op: bogus (want show)\n"
-        "after:1\n"
-    )
-
-
-@pytest.mark.parametrize("module", ["json.py", "orch.py"])
-def test_orch_python_call_drops_empty_sys_path_entry_so_cwd_modules_cannot_shadow(
-        tmp_path, repo, module):
-    (repo / module).write_text("import sys\nsys.stderr.write('shadowed\\n')\nsys.exit(7)\n")
-    git_config(tmp_path, repo, "orchestrator.route", "quick")
-    script = 'source "$1"\norch_python_call route run show\n'
-
-    out, err, code = source_orch_sh(tmp_path, repo, script, unset=GLOBAL_CONFIG)
-
-    assert (out, err, code) == ("quick\n", "", 0)
-
-
-@pytest.mark.parametrize("given", [None, "", "/the/caller/s/path"],
-                         ids=["unset", "empty", "set"])
-def test_orch_python_call_restores_callers_pythonpath_for_subprocesses(tmp_path, repo, given):
-    real_git = shutil.which("git")
-    shim_dir = tmp_path / "git-shim"
-    shim_dir.mkdir()
-    log = tmp_path / "pythonpath.log"
-    shim = shim_dir / "git"
-    shim.write_text(
-        '#!/bin/sh\n'
-        'printf "%%s\\n" "${PYTHONPATH-unset}" >>"%s"\n'
-        'exec "%s" "$@"\n' % (log, real_git)
-    )
-    shim.chmod(0o755)
-    git_config(tmp_path, repo, "orchestrator.route", "quick")
-    script = (
-        'source "$1"\n'
-        'PATH="%s:$PATH" orch_python_call route run show\n' % shim_dir
-    )
-    knobs = {} if given is None else {"PYTHONPATH": given}
-    unset = GLOBAL_CONFIG + (("PYTHONPATH",) if given is None else ())
-
-    out, err, code = source_orch_sh(tmp_path, repo, script, knobs=knobs, unset=unset)
-
-    assert (out, err, code) == ("quick\n", "", 0)
-    seen = log.read_text().splitlines()
-    assert seen and all(line == ("unset" if given is None else given) for line in seen)
-
-
-@pytest.mark.parametrize("path_of, found", [
-    (lambda tmp_path: path_without(tmp_path, "python3"), "none"),
-    (py38_path, "3.8.10"),
-], ids=["missing", "below-3.9"])
-def test_orch_python_call_refuses_cleanly_without_python3_3_9(tmp_path, repo, path_of, found):
-    script = (
-        'source "$1"\n'
-        'st=0; orch_python_call route run show || st=$?\n'
-        'printf "after:%s\\n" "$st"\n'
-    )
-
-    out, err, code = source_orch_sh(
-        tmp_path, repo, script, path=path_of(tmp_path), unset=GLOBAL_CONFIG
-    )
-
-    assert (out, err, code) == (
-        "after:1\n",
-        "orch: orch.sh route needs python3 3.9 or newer (found %s) - run orch.sh doctor\n" % found,
-        0,
-    )
-
-
-@pytest.mark.parametrize("path_of, found", [
-    (lambda tmp_path: path_without(tmp_path, "python3"), "none"),
-    (py38_path, "3.8.10"),
-], ids=["missing", "below-3.9"])
-def test_orch_python_call_names_the_command_given_by_as_in_its_refusal(
-        tmp_path, repo, path_of, found):
-    script = (
-        'source "$1"\n'
-        'st=0; orch_python_call --as side-checkout route run show || st=$?\n'
-        'printf "after:%s\\n" "$st"\n'
-    )
-
-    out, err, code = source_orch_sh(
-        tmp_path, repo, script, path=path_of(tmp_path), unset=GLOBAL_CONFIG
-    )
-
-    assert (out, err, code) == (
-        "after:1\n",
-        "orch: orch.sh side-checkout needs python3 3.9 or newer (found %s) - run orch.sh doctor\n"
-        % found,
-        0,
-    )
-
-
-@pytest.mark.parametrize("args", [["--as"], ["--as", "side-checkout", "route"],
-                                  ["--as", "", "route", "run"]],
-                         ids=["as-alone", "as-without-func", "as-empty"])
-def test_orch_python_call_refuses_an_incomplete_call_with_its_usage(tmp_path, repo, args):
-    script = (
-        'source "$1"\n'
-        'shift\n'
-        'st=0; orch_python_call "$@" || st=$?\n'
-        'printf "after:%s\\n" "$st"\n'
-    )
-
-    out, err, code = bash_run(
-        tmp_path, repo,
-        ["-euo", "pipefail", "-c", script, "_", str(SCRIPTS / "orch.sh"), *args],
-        unset=GLOBAL_CONFIG,
-    )
-
-    assert (out, err, code) == (
-        "after:1\n",
-        "orch: usage: orch_python_call [--as <command>] <noun> <func> [<arg>...]\n",
-        0,
-    )

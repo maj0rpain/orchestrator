@@ -1249,7 +1249,7 @@ def test_sync_fails_fast_with_exact_messages_on_exclude_delete_create_and_write_
             d4.chmod(0o755)
 
 
-# --- bridges: docs linter and autopilot; doctor's settings report -------------
+# --- in-process reads: docs linter and autopilot; doctor's settings report ----
 
 
 def test_name_shapes_emits_ordered_role_glob_ere_lines_and_covers_all_roles(capsys):
@@ -1269,11 +1269,9 @@ def test_name_shapes_emits_ordered_role_glob_ere_lines_and_covers_all_roles(caps
     assert [role for role, _, _ in rows] == list(agent.AGENT_ROLES)
     assert [(role, glob) for role, glob, _ in rows] == list(agent.AGENT_NAME_SHAPES)
 
-    # Dispatches via orch_python_call (cli.call_func) and refuses extra args.
-    assert cli.call_func(["agent", "name_shapes"]) == 0
-    assert capsys.readouterr() == (out, "")
-    assert died_of(capsys, lambda: cli.call_func(["agent", "name_shapes", "extra"])) == (
-        1, "", "orch: usage: orch_python_call agent name_shapes\n"
+    # Refuses arguments, naming itself as docs_lint.sh reads it.
+    assert died_of(capsys, lambda: agent.name_shapes(["extra"])) == (
+        1, "", "orch: usage: orch.agent.name_shapes()\n"
     )
 
 

@@ -26,7 +26,7 @@
 # - Key lookups (flow_state_key_field, and flow_state_get before it reads):
 #   1 for a key outside the table, 2 for a programming error such as an
 #   unknown column.
-# - Predicates (flow_state_readable, flow_state_active): 0 or 1 is the answer,
+# - Predicates (flow_state_active): 0 or 1 is the answer,
 #   never an error; jq is silenced, so an absent or unparseable file prints
 #   nothing.
 # - flow_state_get on a file jq cannot parse: jq's own error and status pass
@@ -155,13 +155,6 @@ EOT
 # /.orchestrator/state.json.
 flow_state_file() { printf '%s/%s/state.json\n' "${1%/}" "$ORCH_DIR_NAME"; }
 
-# flow_state_readable <file>: true when <file> holds exactly one JSON object,
-# the rule flow_state_get_many's read applies too.
-flow_state_readable() {
-  # jq -e also exits 2 or 5 (usage, parse error); a predicate answers 0 or 1.
-  jq -se 'length == 1 and (.[0] | type) == "object"' "$1" >/dev/null 2>&1 || return 1
-}
-
 # flow_state_get <file> <key>: prints <key>'s value in <file>, or the table's
 # default for a null or missing value - never for a stored false (jq's `//`
 # would treat false like null).
@@ -205,8 +198,8 @@ flow_state_resolve_many_arg() {
 # NUL inside a value is dropped by the jq. A key outside the table returns 1
 # and a malformed <var>=<key> (no =, or an empty <var>) returns 2, both before
 # any jq, by flow_state_resolve_many_arg; a failed read - an absent file, one
-# flow_state_readable refuses (not exactly one JSON object: null, trailing text
-# or a second value included), a missing sentinel, or a short read - returns 1.
+# that is not exactly one JSON object (null, trailing text or a second value
+# included), a missing sentinel, or a short read - returns 1.
 # On any failure nothing is assigned.
 #
 # The one jq slurps the file and refuses anything but exactly one JSON object

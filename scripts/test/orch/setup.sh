@@ -126,33 +126,6 @@ adapter_stood_in() {
   return "$st"
 }
 
-# counted_adapter_run <log> <definitions> <cmd>...: empties <log>, then runs
-# <cmd> through adapter_stood_in with COUNT_LOG set to <log>, so <definitions>
-# can append a line per adapter read to "$COUNT_LOG". Returns <cmd>'s status.
-counted_adapter_run() {
-  local log="$1" defs="$2"
-  shift 2
-  : >"$log"
-  COUNT_LOG="$log" adapter_stood_in "$defs" "$@"
-}
-
-# counting_defs <adapter-fn> <tag>: definitions that wrap the fake's
-# <adapter-fn> so each call appends "<tag> <first-arg>" to "$COUNT_LOG" before
-# the fake answers (empty when it gets no argument). Join several with writeln
-# for counted_adapter_run.
-counting_defs() {
-  writeln \
-    "eval \"fake_$1_read() \$(declare -f $1 | tail -n +2)\"" \
-    "$1() { printf '%s %s\\n' '$2' \"\${1-}\" >>\"\$COUNT_LOG\"; fake_$1_read \"\$@\"; }"
-}
-
-# default_reads_run <log> <cmd>...: runs <cmd> with the adapter's default-branch
-# read appending a line to <log> per call, so log_count <log> is how many times
-# <cmd> asked GitHub for it. It seeds nothing: the caller sets the fake's reply.
-default_reads_run() {
-  counted_adapter_run "$1" "$(counting_defs adapter_repo_default_branch branch)" "${@:2}"
-}
-
 # log_count <log> [<tag>]: the lines in <log>, only those starting with "<tag> "
 # when a tag is given; 0 for a <log> that is absent, in both forms.
 log_count() {
@@ -299,20 +272,6 @@ git_fails_bin() { fails_bin git "$1"; }
 # worktree_list_fails_bin: a git_fails_bin where git worktree list fails and
 # nothing else does, so it fails every checkout_parse reader.
 worktree_list_fails_bin() { git_fails_bin '" worktree list "*'; }
-# break_index / restore_index [<checkout>]: make a checkout's working tree
-# (default: the current directory) unreadable - git status fails on a garbage
-# index - and put the index back. They return non-zero, touching no file, when
-# the checkout's git directory cannot be resolved.
-break_index() {
-  local idx
-  idx="$(git -C "${1:-.}" rev-parse --absolute-git-dir)/index" || return 1
-  cp "$idx" "$idx.bak" && echo garbage >"$idx"
-}
-restore_index() {
-  local idx
-  idx="$(git -C "${1:-.}" rev-parse --absolute-git-dir)/index" || return 1
-  mv "$idx.bak" "$idx"
-}
 # sourced_orch <function> [args...]: the function's output, called in a shell
 # that sourced orch.sh, with its status. It sets ORCH_SOURCE_LAZY=1 before the
 # source line, so the modules load on demand, as orch.sh does as a command and
@@ -383,28 +342,6 @@ state_fixture_drop() {
   jq 'reduce $ARGS.positional[] as $k (.; del(.[$k]))' "$file" --args "$@" >"$tmp" \
     && mv "$tmp" "$file" \
     || { rm -f "$tmp"; return 1; }
-}
-
-# complete_handoff <file>: a complete handoff at <file>, holding every section
-# the phase table requires for its name - read from the missing sections
-# `orch.sh handoff validate` reports for an empty file of that name, outside
-# autopilot, so the fixture cannot drift from the validator - each with a
-# placeholder body, plus Host fallbacks whatever the state says. On a name the
-# table does not hold, validate reports no section, and it fails and writes no
-# file.
-complete_handoff() {
-  local dir empty headings heading
-  dir="$(mktemp -d)" || return 1
-  empty="$dir/${1##*/}"
-  : >"$empty"
-  headings="$(env -u ORCH_AUTOPILOT "$ORCH" handoff validate "$empty" 2>/dev/null \
-    | sed -n 's/^FAIL  missing section: //p')"
-  rm -rf "$dir"
-  [ -n "$headings" ] || return 1
-  grep -qxF '## Host fallbacks' <<<"$headings" || headings="$headings"$'\n''## Host fallbacks'
-  while IFS= read -r heading; do
-    writeln "$heading" "Placeholder for ${heading#\#\# }." ''
-  done <<<"$headings" >"$1"
 }
 
 # SHELL_CODE_AWK: the one rule of what counts as code in a shell file, an awk
@@ -487,8 +424,7 @@ seeded_home() {
 # healthy_repo: a new_repo set up as the setup skill leaves one - a GitHub
 # origin, a triage-labels doc, a full verification line, the orchestrator's
 # folders git-excluded - with the fixture gh, CLAUDE_PLUGIN_ROOT set and a
-# throwaway HOME, cwd inside it: fresh_flow's repo, and the side-checkout
-# sections' fresh walk.
+# throwaway HOME, cwd inside it: fresh_flow's repo.
 healthy_repo() {
   new_repo >/dev/null
   git remote set-url origin https://github.com/acme/widgets.git
@@ -524,31 +460,6 @@ fake_github() {
   export ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" ORCH_GH_FAKE_STORE
 }
 
-# fake_pr_head <n> <sha> [commit...]: seeds PR #n's head SHA and its commits,
-# oldest first - given none, the head alone, or none when the head is empty.
-fake_pr_head() {
-  local d="$ORCH_GH_FAKE_STORE/prs/$1"
-  printf '%s\n' "$2" >"$d/head_oid"
-  shift 2
-  rm -f "$d/commits"
-  [ $# -eq 0 ] || printf '%s\n' "$@" >"$d/commits"
-}
-
-# iso_of <epoch>: epoch seconds as a UTC timestamp, GNU or BSD date.
-iso_of() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; }
-
-# fake_comment_bodies <comments-dir>: the bodies of the directory's comments,
-# in order, one blank line between; nothing for none.
-fake_comment_bodies() {
-  local d="$1" k first=1
-  [ -d "$d" ] || return 0
-  for k in $(ls "$d" | sort -n); do
-    [ "$first" = 1 ] || printf '\n\n'
-    first=0
-    cat "$d/$k/body"
-  done
-}
-
 # fake_issue <n> <state> [labels...]: seeds issue #n afresh, open or closed,
 # carrying the labels named - no title, body or comments.
 fake_issue() {
@@ -569,10 +480,6 @@ fake_issue_relabel() {
   [ $# -eq 0 ] || printf '%s\n' "$@" >"$ORCH_GH_FAKE_STORE/issues/$n/labels"
 }
 
-# fake_comments_of <n>: the bodies of issue #n's comments read back from the
-# store, in order, one blank line between.
-fake_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
-
 # fake_pr <n> <state> <head> <base>: seeds PR #n afresh, open, closed or
 # merged, from the head branch into the base - no body, comments or commits,
 # and not a draft.
@@ -584,9 +491,6 @@ fake_pr() {
   printf '%s\n' "$3" >"$d/head"
   printf '%s\n' "$4" >"$d/base"
 }
-
-# fake_pr_draft <n>: seeds PR #n as a draft.
-fake_pr_draft() { : >"$ORCH_GH_FAKE_STORE/prs/$1/draft"; }
 
 # fake_next_pr <n>: the number the next PR opened takes.
 fake_next_pr() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_pr"; }
@@ -617,12 +521,6 @@ fake_unfail() { rm -rf "$ORCH_GH_FAKE_STORE/fail"; }
 # fake_default_branch <answer>: seeds gh's answer to the repo's default branch,
 # byte for byte, so a test can seed a polluted or empty one.
 fake_default_branch() { printf '%s' "$1" >"$ORCH_GH_FAKE_STORE/default_branch"; }
-
-# fake_offline: every operation fails with a connection error, as with GitHub
-# unreachable. fake_online undoes it, and the store's noauth too.
-fake_offline() { : >"$ORCH_GH_FAKE_STORE/offline"; }
-# fake_online: GitHub reachable and authenticated again.
-fake_online()  { rm -f "$ORCH_GH_FAKE_STORE/offline" "$ORCH_GH_FAKE_STORE/noauth" "$ORCH_GH_FAKE_STORE/ratelimit"; }
 
 # --- the fixture gh (adapter contract tests, #280) ----------------------------
 #
@@ -688,19 +586,6 @@ GH_FAILING="$(gh_fixture && printf '%s\n' "$GH_FIXTURE/bin")"
 # orch_gh_failing <args>...: runs orch.sh with the failing fixture gh first
 # on PATH.
 orch_gh_failing() { PATH="$GH_FAILING:$PATH" "$ORCH" "$@"; }
-
-# sc_add <slug> [args...]: makes a fixture side checkout quietly. add runs the
-# finished sweep first and reports it on stderr, so that stderr is held back:
-# discarded when add succeeds, printed when it fails. The new path passes
-# through on stdout, and add's exit status is returned.
-sc_add() {
-  local err st
-  err="$(mktemp)"
-  orch_gh_failing side-checkout add "$@" 2>"$err"; st=$?
-  [ "$st" -eq 0 ] || cat "$err" >&2
-  rm -f "$err"
-  return "$st"
-}
 
 # The missing-repo wording, built the way orch.sh builds REPO_MISSING,
 # REPO_CAUSE and REPO_REMEDY - but spelled out here, never read from orch.sh,

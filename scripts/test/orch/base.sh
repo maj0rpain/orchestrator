@@ -5,6 +5,33 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# default_reads_run <log> <cmd>...: runs <cmd> with the adapter's default-branch
+# read appending a line to <log> per call, so log_count <log> is how many times
+# <cmd> asked GitHub for it. It seeds nothing: the caller sets the fake's reply.
+default_reads_run() {
+  counted_adapter_run "$1" "$(counting_defs adapter_repo_default_branch branch)" "${@:2}"
+}
+
+# counted_adapter_run <log> <definitions> <cmd>...: empties <log>, then runs
+# <cmd> through adapter_stood_in with COUNT_LOG set to <log>, so <definitions>
+# can append a line per adapter read to "$COUNT_LOG". Returns <cmd>'s status.
+counted_adapter_run() {
+  local log="$1" definitions="$2"
+  shift 2
+  : >"$log"
+  COUNT_LOG="$log" adapter_stood_in "$definitions" "$@"
+}
+
+# counting_defs <adapter-fn> <tag>: definitions that wrap the fake's
+# <adapter-fn> so each call appends "<tag> <first-arg>" to "$COUNT_LOG" before
+# the fake answers (empty when it gets no argument). Join several with writeln
+# for counted_adapter_run.
+counting_defs() {
+  writeln \
+    "eval \"fake_$1_read() \$(declare -f $1 | tail -n +2)\"" \
+    "$1() { printf '%s %s\\n' '$2' \"\${1-}\" >>\"\$COUNT_LOG\"; fake_$1_read \"\$@\"; }"
+}
+
 # --- base --------------------------------------------------------------------
 # The checkout-wide base branch setting and its one resolver. A typo here is
 # silent in the worst way - work quietly forks from and targets a branch nobody

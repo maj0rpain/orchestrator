@@ -110,7 +110,8 @@ def spec_rounds_dir(root: str) -> str:
     orchestrator directory. Not under spec-review/, the flow-less entry
     archive keeps: these belong to the flow and are archived with it. Built
     as one "%s/%s/<name>" format naming ORCH_DIR_NAME, the form the
-    side-checkout entry classification scans for."""
+    flow-less entries classification (tests/test_flow_less_entries.py)
+    scans for."""
     return "%s/%s/spec-rounds" % (root, ORCH_DIR_NAME)
 
 

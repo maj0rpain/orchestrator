@@ -1,19 +1,16 @@
-"""The side-checkout concept's module, as far as the checkout scan and the
-converted nouns need it: the ownership marker that makes a worktree a side
-checkout, where a flow is archived, the archive itself, and the side
-checkout's teardown - archived first, then removed (ADR-0037) - as the bash
-side's side-checkout.sh makes them, and the finished check, the sweep's
-own, that doctor reports a side checkout left standing by. It holds too the
-side-checkout verbs Python autopilot reaches, which the side-checkout
-conversion will call: add, with the name a picked-up issue's side checkout
-is made under, the finished sweep (prune), with its merged-PR close calling
-the pr module's close_missed_finish in-process, the side checkouts directory
-and the side checkout an issue's marker records. A side checkout is
-a worktree the plugin makes under the main checkout's .orchestrator/checkouts/
-(ADR-0037); the marker in the worktree's own git folder - which git deletes
-with the worktree - is what makes it one, never a flow's state file, since a
-hand-made worktree can hold a flow too. Its bash copies stay while bash
-modules call them (ADR-0067).
+"""orch.sh side-checkout (ADR-0037), a Converted noun (ADR-0067): add, list,
+remove, prune and issue, and the side-checkout concept as the checkout scan
+and the other converted nouns need it - the ownership marker that makes a
+worktree a side checkout, where a flow is archived, the archive itself, the
+side checkout's teardown (archived first, then removed), and the finished
+check, the sweep's own, that doctor reports a side checkout left standing by.
+Python autopilot reaches add, with the name a picked-up issue's side checkout
+is made under, the finished sweep (prune), whose merged-PR close calls the pr
+module's close_missed_finish in-process, and the side checkout an issue's
+marker records. A side checkout is a worktree the plugin makes under the main
+checkout's .orchestrator/checkouts/; the marker in the worktree's own git
+folder - which git deletes with the worktree - is what makes it one, never a
+flow's state file, since a hand-made worktree can hold a flow too.
 """
 from __future__ import annotations
 
@@ -29,22 +26,40 @@ from typing import (Callable, Dict, Iterator, List, Mapping, NamedTuple, Optiona
 from orch.base import base_in_effect, default_branch, recorded_base_of
 from orch.branch import branch_issue_of
 from orch.checkout import (checkout_branch, checkout_gitdir_into, checkout_has_flow,
-                           checkout_kind, checkouts, main_checkout_or_die,
-                           refuse_ticket_worktrees)
+                           checkout_holding, checkout_kind, checkouts, checkouts_or_die,
+                           main_checkout_or_die, refuse_ticket_worktrees)
 from orch.common import (ORCH_DIR_NAME, capture, die, dir_stamp, err_line, exclude_orch_dirs,
                          file_write_atomic, first_line, mkdir_p_or_die, normalize_slug, plain_number,
-                         state_word, stderr_write, stdout_write, subshell, tree_status, warn)
+                         require_clean_tree, state_word, stderr_write, stdout_write, subshell,
+                         tree_status, warn)
 from orch.flow_state import flow_state_file, flow_state_get_many, recorded_pr
-from orch.gh import GhFailed, Unparsed, gh_reason
+from orch.gh import GhFailed, Unparsed, adapter_of, gh_reason
+from orch.git import Git
 from orch.repo import RepoPin
+from orch.root import checkout_root
 from orch.trust import trust_filter_prs
 
 # The ownership marker's file name, in the worktree's own git folder.
 SIDE_CHECKOUT_MARKER = "orchestrator-side-checkout"
 
 # The top-level entries under .orchestrator/ that belong to no flow, which
-# archive_flow leaves in place - bash FLOW_LESS_ENTRIES, whose comment gives
-# each entry's reason and the rule a new entry follows.
+# archive_flow leaves in place: the archive itself, the side checkouts, the
+# working directories of a standalone spec review (spec-review/<n>/, an
+# unattended one included) and of a review pass (review-pass/<branch>/), of an
+# audit run (audit/<kind>-<stamp>/), the autopilot watcher's records
+# (autopilot/, kept under the main checkout for the watcher), and the
+# breakdown save points (breakdown/<parent>/) and saved ticket reports
+# (reports/<n>.md), which are keyed by issue number and shared between a flow
+# and flow-less work in the same checkout, the verification runs' records and
+# checkout identity token (verification/), which key a command in a checkout
+# whatever flow it is in, and the stored totals of re-callable waits (wait/),
+# which outlive the phase that started them. The rule: an entry a command
+# creates for work that belongs to no flow goes on this list; every other
+# entry is the flow's, a spec phase's freely named round directories and a
+# flow's spec review round directories (spec-rounds/<k>/) included. The round
+# marker lives in the handoff folder, so it goes with it. The one copy of the
+# list: tests/test_flow_less_entries.py checks every entry the code builds is
+# classified by it.
 FLOW_LESS_ENTRIES = ("archive", "checkouts", "spec-review", "review-pass", "audit",
                      "autopilot", "breakdown", "reports", "verification", "wait")
 
@@ -68,8 +83,8 @@ def side_checkout_marker(git, path: str) -> Optional[str]:
 
 
 def side_checkout_marker_issue(git, path: str) -> Optional[str]:
-    """The issue the ownership marker of the worktree at <path> records -
-    bash side_checkout_marker_issue_into; None when it carries no marker, or
+    """The issue the ownership marker of the worktree at <path> records, as
+    bash side_checkout_marker_issue_into read it; None when it carries no marker, or
     the marker's content - the whole file, trailing newlines dropped, judged
     as one value - is no plain issue number (a marker of more than one line
     or holding a NUL byte included). For a readable git pointer it starts no
@@ -92,8 +107,8 @@ def side_checkouts_dir(main_root: str) -> str:
 
 def side_checkout_for_issue(git, issue: str) -> Optional[str]:
     """The path of the side checkout whose marker records <issue>, read
-    through the git adapter <git>'s checkout scan - bash
-    side_checkout_for_issue; None when there is none, the scan failing
+    through the git adapter <git>'s checkout scan, as bash
+    side_checkout_for_issue found it; None when there is none, the scan failing
     included."""
     found = checkouts(git)
     for checkout in found or ():
@@ -172,12 +187,12 @@ StateRead = Callable[[str, Sequence[str]], Optional[Dict[str, str]]]
 
 def finished_flow(gh, state_file: str, default: Callable[[], str], read_state: StateRead
                   ) -> Tuple[Verdict, str, List[str]]:
-    """Whether the flow at <state_file> is finished - bash finished_flow: at
-    done, and its recorded PR merged into its own base branch (the default
-    branch <default> names where the flow recorded none), its state read by
-    <read_state> and GitHub through the gh adapter <gh>. With the verdict,
-    the flow's branch and the one merged PR line - its number, a tab, its
-    head SHA - the branch tip is judged against."""
+    """Whether the flow at <state_file> is finished, as bash finished_flow
+    judged it: at done, and its recorded PR merged into its own base branch
+    (the default branch <default> names where the flow recorded none), its
+    state read by <read_state> and GitHub through the gh adapter <gh>. With
+    the verdict, the flow's branch and the one merged PR line - its number,
+    a tab, its head SHA - the branch tip is judged against."""
     state = read_state(state_file, ("phase", "slug", "branch", "pr", "base"))
     if state is None:
         return Verdict(UNREAD, "could not read " + state_file), "", []
@@ -203,8 +218,8 @@ def finished_flow(gh, state_file: str, default: Callable[[], str], read_state: S
 
 
 def tip_covered(git, branch: str, prs: List[str]) -> Verdict:
-    """Whether <branch>'s local tip is held by a merged PR - bash
-    tip_covered: equal to its head SHA or an ancestor of it, read through
+    """Whether <branch>'s local tip is held by a merged PR, as bash
+    tip_covered judged it: equal to its head SHA or an ancestor of it, read through
     the git adapter <git>. <prs> are lines of a number, a tab and a head
     SHA, newest first; any covering head is enough. Not finished names the
     newest PR whose head is missing from this repo (the sweep never
@@ -240,8 +255,8 @@ def tip_covered(git, branch: str, prs: List[str]) -> Verdict:
 
 def side_checkout_finished(gh, git, path: str, default: Callable[[], str],
                            read_state: StateRead) -> Verdict:
-    """Whether the side checkout at <path> is finished - bash
-    side_checkout_finished, the sweep's own test and the glossary's
+    """Whether the side checkout at <path> is finished, as bash
+    side_checkout_finished judged it - the sweep's own test and the glossary's
     **Finished**: the verdict side_checkout_verdict gives, without its
     branch."""
     return side_checkout_verdict(gh, git, path, default, read_state)[0]
@@ -437,12 +452,10 @@ def side_checkout_archive_and_remove_or_exit(git, path: str, main_root: str, her
 
 # --- the finished sweep and add -------------------------------------------------
 #
-# The side-checkout verbs Python autopilot reaches, as bash side-checkout.sh's
-# cmd_side_checkout_prune and cmd_side_checkout_add make them: each takes the
-# verb's arguments, the gh and git adapters, the environment, the root of the
+# The side-checkout verbs Python autopilot reaches too: each takes the verb's
+# arguments, the gh and git adapters, the environment, the root of the
 # checkout the command runs in (an archive's directory is shown from it) and,
-# for a test, the directory it runs in and the clock. Each prints what the
-# bash verb prints, and dies as it dies. Neither starts orch.sh.
+# for a test, the directory it runs in and the clock. Neither starts orch.sh.
 
 PRUNE_USAGE = "usage: orch.sh side-checkout prune"
 ADD_USAGE = "usage: orch.sh side-checkout add <slug> [--issue N]"
@@ -496,8 +509,8 @@ def _default_once(gh, git, env: Mapping[str, str]) -> Tuple[object, Callable[[],
 def side_checkout_close_missed(gh, git, env: Mapping[str, str], path: str, branch: str,
                                clock: Callable[[], float] = time.time) -> None:
     """The merged-PR backstop (#2477) for a checkout the sweep judged
-    finished, run before it is archived or removed - bash
-    side_checkout_close_missed. A flow's issue and PR are the ones its state
+    finished, run before it is archived or removed, as bash
+    side_checkout_close_missed ran it. A flow's issue and PR are the ones its state
     records; a flow-less checkout's PR is the newest merged from <branch>
     and its issue the one a `quick/<issue>-` branch names - any other branch
     is skipped. Reads the issue's state through gh's state-and-labels read,
@@ -535,8 +548,8 @@ def side_checkout_close_missed(gh, git, env: Mapping[str, str], path: str, branc
 def side_checkout_prune(argv: Sequence[str], gh, git, env: Mapping[str, str], root: str,
                         here: Optional[str] = None,
                         clock: Callable[[], float] = time.time) -> int:
-    """`side-checkout prune`, the sweep behind /orchestrator:finish - bash
-    cmd_side_checkout_prune. Every verdict is read first, so a GitHub that
+    """`side-checkout prune`, the sweep behind /orchestrator:finish, as the
+    bash noun ran it. Every verdict is read first, so a GitHub that
     cannot be read removes nothing at all. Then each finished side checkout,
     in git's order, has its merged-PR close run, its flow archived into the
     main checkout, its worktree removed - never with force - and its local
@@ -634,9 +647,9 @@ def finished_sweep(gh, git, env: Mapping[str, str], root: str, here: Optional[st
 def side_checkout_add(argv: Sequence[str], gh, git, env: Mapping[str, str], root: str,
                       here: Optional[str] = None,
                       clock: Callable[[], float] = time.time) -> str:
-    """`side-checkout add <slug> [--issue N]` - bash cmd_side_checkout_add:
-    the finished sweep first, its report on stderr, a failed one warned of
-    and never stopping add; then a worktree under the main checkout's side
+    """`side-checkout add <slug> [--issue N]`, as the bash noun ran it: the
+    finished sweep first, its report on stderr, a failed one warned of and
+    never stopping add; then a worktree under the main checkout's side
     checkouts directory, on no branch at origin/<base>, the base branch in
     effect, freshly fetched - git refuses one branch in two worktrees, and
     the main checkout usually holds the base - carrying the ownership
@@ -690,3 +703,107 @@ def _marker_written(gitdir: str, issue: str) -> bool:
     <gitdir>: empty, or <issue> on a line of its own."""
     return file_write_atomic(os.path.join(gitdir, SIDE_CHECKOUT_MARKER), issue + "\n" if issue else "",
                              make_directory=False)
+
+
+# --- the noun: orch.sh side-checkout <op> --------------------------------------
+
+LIST_USAGE = "usage: orch.sh side-checkout list"
+ISSUE_USAGE = "usage: orch.sh side-checkout issue"
+REMOVE_USAGE = "usage: orch.sh side-checkout remove <slug>"
+OPS = "add|list|remove|prune|issue"
+
+
+def list_verb(argv: Sequence[str], git) -> int:
+    """`side-checkout list`, as the bash noun ran it: one line per side
+    checkout - a worktree carrying the marker, and no other - in git's
+    worktree order: <slug> <path>, what it holds (checkout_holding), and
+    " quick #<issue>" when its marker records a plain issue number. Dies
+    when the checkouts cannot be read."""
+    if argv:
+        die(LIST_USAGE)
+    for checkout in checkouts_or_die(git):
+        if checkout.kind != "side":
+            continue
+        issue = side_checkout_marker_issue(git, checkout.path)
+        stdout_write("%s %s %s%s\n" % (
+            os.path.basename(checkout.path), checkout.path, checkout_holding(git, checkout.path),
+            " quick #" + issue if issue is not None else ""))
+    return 0
+
+
+def issue_verb(argv: Sequence[str], git) -> int:
+    """`side-checkout issue`, as the bash noun ran it: prints the issue
+    the side checkout holding the working directory (`pwd -P`) records in
+    its marker (see add --issue). Exits 1, printing nothing, when that
+    checkout is no side checkout - classified before the marker is read, so
+    a ticket worktree carrying a copied marker is none - or its marker
+    records no plain issue number; 2 on a usage error, so a caller never
+    reads one as the other."""
+    if argv:
+        die(ISSUE_USAGE, 2)
+    here = _here()
+    if checkout_kind(git, here) != "side":
+        return 1
+    issue = side_checkout_marker_issue(git, here)
+    if issue is None:
+        return 1
+    stdout_write(issue + "\n")
+    return 0
+
+
+def remove_verb(argv: Sequence[str], git, root: str, clock: Callable[[], float]) -> int:
+    """`side-checkout remove <slug>`, as the bash noun ran it: removes
+    side checkout <slug> by hand, never with force, through the main
+    checkout. Every refusal runs before anything moves, in this order: the
+    usage, an unknown slug (no worktree has <main-root>/.orchestrator/
+    checkouts/<slug>, the slug normalised as add normalises it, as its top
+    level), a worktree without the marker, uncommitted changes or untracked
+    files, and ticket worktrees left inside it when there is no flow to
+    archive - archive_flow refuses them itself when there is one. Then any
+    flow is archived into the main checkout, its directory shown from
+    <root>, and the worktree is removed, the branch left in place; a failed
+    archive dies with its error, removing nothing, and a failed removal dies
+    with the archive standing."""
+    if len(argv) != 1:
+        die(REMOVE_USAGE)
+    here = _here()
+    slug = normalize_slug(argv[0])
+    main_root = main_checkout_or_die(git)
+    path = "%s/%s" % (side_checkouts_dir(main_root), slug)
+    if git.toplevel_at(path) != path:
+        die("no side checkout %s at %s" % (slug, path))
+    if side_checkout_marker(git, path) is None:
+        die("%s carries no side-checkout marker - it is not the plugin's to remove, so it is left"
+            " alone" % path)
+    require_clean_tree(git, path, "side checkout %s has uncommitted changes or untracked files -"
+                       " commit or discard them first; it is never removed with force" % path)
+    if not checkout_has_flow(path):
+        side_checkout_refuse_ticket_worktrees(git, path)
+    return side_checkout_archive_and_remove_or_exit(git, path, main_root, here, "die", root,
+                                                    clock)
+
+
+def run(argv: List[str], gh=None, git=None, env: Optional[Mapping[str, str]] = None,
+        clock: Callable[[], float] = time.time) -> int:
+    """`orch.sh side-checkout <op>`: the real adapters and the process's
+    environment unless a test hands in others, an archive stamped by
+    <clock>. Outside a checkout it dies first, as orch.sh does, whatever the
+    op. Only add and prune reach GitHub, through the gh adapter <gh>, else
+    one made for this run's repo."""
+    env = os.environ if env is None else env
+    git = Git() if git is None else git
+    root = checkout_root(git, env)
+    op, rest = (argv[0], argv[1:]) if argv else ("", [])
+    gh_of = adapter_of(gh, env, RepoPin(env, git))
+    if op == "add":
+        side_checkout_add(rest, gh_of(), git, env, root, clock=clock)
+        return 0
+    if op == "list":
+        return list_verb(rest, git)
+    if op == "remove":
+        return remove_verb(rest, git, root, clock)
+    if op == "prune":
+        return side_checkout_prune(rest, gh_of(), git, env, root, clock=clock)
+    if op == "issue":
+        return issue_verb(rest, git)
+    die("unknown side-checkout op: %s (want %s)" % (op or "<none>", OPS))

@@ -182,9 +182,9 @@ class Doctor:
     # --- the probe ---
 
     def side_state(self, state_file: str, keys: Sequence[str]) -> Optional[Dict[str, str]]:
-        """A side checkout's state values, read as bash's side-checkout
-        checks read them, through jq: with jq missing, none, as for a file
-        that will not parse."""
+        """A side checkout's state values, read through
+        flow_state_get_many: with jq missing, none, as for a file that will
+        not parse."""
         return flow_state_get_many(state_file, keys) if self.jq else None
 
     def installed(self, command: str) -> bool:

@@ -382,18 +382,16 @@ gh_or_die() {
 # The operations, in the order they are defined below:
 # - label: adapter_label_upsert, adapter_labels_detail
 # - rate limit: adapter_rate_limit
-# - issue: adapter_issue_body, adapter_issue_state_labels,
-#   adapter_issue_title_labels, adapter_issue_authorship, adapter_issue_state,
+# - issue: adapter_issue_body, adapter_issue_title_labels,
+#   adapter_issue_authorship, adapter_issue_state,
 #   adapter_issue_created_at, adapter_issues_labelled_rows,
 #   adapter_issues_any_labelled_rows,
 #   adapter_issues_open_rows, adapter_issues_titled_rows,
 #   adapter_issue_body_edit,
 #   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
 # - pr: adapter_pr_create, adapter_pr_labels, adapter_pr_body,
-#   adapter_pr_refs, adapter_pr_draft,
-#   adapter_pr_state_draft, adapter_prs_open, adapter_prs_open_bodies,
-#   adapter_prs_open_mergeability,
-#   adapter_pr_diff, adapter_prs_merged,
+#   adapter_pr_draft, adapter_prs_open, adapter_prs_open_bodies,
+#   adapter_prs_open_mergeability, adapter_pr_diff,
 #   adapter_prs_merged_closing, adapter_prs_merged_bodies, adapter_pr_close,
 #   adapter_pr_comment,
 #   adapter_pr_body_edit, adapter_pr_title_edit, adapter_pr_label_add
@@ -501,12 +499,6 @@ adapter_issue_json() {
   gh issue view "$1" --json number,title,body,labels --jq "$ISSUE_JSON_JQ"
 }
 
-# adapter_issue_state_labels <n>: OPEN or CLOSED on the first line, then one
-# label per line - none at all for an unlabelled issue.
-adapter_issue_state_labels() {
-  gh issue view "$1" --json state,labels --jq '.state, (.labels[].name)'
-}
-
 # gh_lines_read <adapter> <n> <err_var> <var>... <rest-var>: the readers'
 # shared contract (#1106), the one the readers below cite. Reads
 # <n> once through <adapter> and splits its answer through lines_split into
@@ -523,15 +515,6 @@ gh_lines_read() {
     return 1
   fi
   lines_split "$__glr_out" "${@:4}"
-}
-
-# issue_state_labels_read <n> <state_var> <labels_var> <err_var>: reads issue
-# <n> once through adapter_issue_state_labels and writes its state (the first
-# line) and its labels (the rest, possibly empty) into the first two
-# caller-named variables, on gh_lines_read's contract: non-zero on a failed
-# read, writing neither, gh's stderr captured into <err_var>.
-issue_state_labels_read() {
-  gh_lines_read adapter_issue_state_labels "$1" "$4" "$2" "$3"
 }
 
 # gh_issue_not_found <stderr>: whether a failed issue read's captured stderr
@@ -876,46 +859,10 @@ adapter_pr_body() {
   gh pr view "$1" --json body --jq .body
 }
 
-# adapter_pr_refs <n>: the read of the PR's own head and base, from the PR, not
-# from local HEAD, which can be anywhere by the time a caller reads it. Prints
-# the head SHA, the head branch and the base branch, an empty line for one
-# GitHub leaves unset.
-adapter_pr_refs() {
-  gh pr view "$1" --json headRefOid,headRefName,baseRefName \
-    --jq '(.headRefOid // ""), (.headRefName // ""), (.baseRefName // "")'
-}
-
-# pr_refs_read <n> <head_oid_var> <head_ref_var> <base_var> <err_var>: reads
-# PR <n> once through adapter_pr_refs and writes its head SHA, head branch and
-# base branch (each empty where GitHub leaves it unset) into the three
-# caller-named variables, on gh_lines_read's contract.
-pr_refs_read() {
-  gh_lines_read adapter_pr_refs "$1" "$5" "$2" "$3" "$4"
-}
-
 # adapter_pr_draft <n>: turns the ready PR back into a draft (issue #967).
 # Prints nothing.
 adapter_pr_draft() {
   gh pr ready "$1" --undo >/dev/null
-}
-
-# adapter_pr_state_draft <n>: the PR's state - OPEN, CLOSED or MERGED - on the
-# first line, then true or false, whether it is a draft.
-adapter_pr_state_draft() {
-  gh pr view "$1" --json state,isDraft --jq '.state, .isDraft'
-}
-
-# pr_state_draft_read <n> <state_var> <draft_var> <err_var>: reads PR <n> once
-# through adapter_pr_state_draft and writes its state (OPEN, CLOSED or MERGED)
-# and its draft flag, normalised to true or false, into the first two
-# caller-named variables, on gh_lines_read's contract.
-pr_state_draft_read() {
-  local __psdr_state __psdr_draft __psdr_rest
-  gh_lines_read adapter_pr_state_draft "$1" "$4" \
-    __psdr_state __psdr_draft __psdr_rest || return 1
-  [ "$__psdr_draft" = true ] || __psdr_draft=false
-  printf -v "$2" '%s' "$__psdr_state"
-  printf -v "$3" '%s' "$__psdr_draft"
 }
 
 # adapter_prs_open <head> [base]: the open PRs from the head branch - into the
@@ -953,18 +900,6 @@ adapter_prs_open_mergeability() {
 # adapter_pr_diff <n>: the PR's diff, as gh prints it.
 adapter_pr_diff() {
   gh pr diff "$1"
-}
-
-# adapter_prs_merged <head> <base>: the PRs from the head branch merged into
-# the base branch, one line each, newest first: its number, its head SHA and
-# its isCrossRepository flag (`true` or `false`), tab-separated and unfiltered:
-# the Trust module's trust_filter_prs drops the fork PRs. The finished sweep's
-# read for a quick implementation, which records no PR of its own. GitHub
-# reports a squash or rebase merge as merged too, which git ancestry never
-# would.
-adapter_prs_merged() {
-  gh pr list --head "$1" --base "$2" --state merged --json number,headRefOid,isCrossRepository \
-    --jq '.[] | "\(.number)\t\(.headRefOid)\t\(.isCrossRepository)"'
 }
 
 # adapter_prs_merged_closing <base> <since>: every PR merged into the base

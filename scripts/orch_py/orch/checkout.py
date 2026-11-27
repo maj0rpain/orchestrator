@@ -6,8 +6,10 @@ or a rebase is in progress, the ticket-worktree refusal, the busy-checkout
 refusal, and the discard rule's pieces (ADR-0054): the flow-branch proof,
 the work to discard, the discard sequence in a checkout and the flow-branch
 discard - as the bash side's checkout.sh reads them, and its ticket-worktree
-module did until the ticket nouns were converted. Its bash copies stay while
-bash modules call them (ADR-0067).
+module did until the ticket nouns were converted. The bash copies of those
+bash modules still call stay (ADR-0067); the scan, the kind classification,
+what a checkout holds and the ticket-worktree listing and refusal are this
+module's alone, their bash copies gone with the bash side-checkout noun.
 """
 from __future__ import annotations
 
@@ -119,7 +121,8 @@ def ticket_path(path: str, checkout: str) -> bool:
 
 def checkouts(git) -> Optional[List[Checkout]]:
     """The one walk over the clone's checkouts, through the git adapter
-    <git>'s worktree list, the main checkout first - bash checkouts. Each is
+    <git>'s worktree list, the main checkout first, as bash checkouts was.
+    Each is
     main for the first entry; ticket when its path is a ticket path under any
     listed checkout (whether or not it carries a side marker); side when it
     carries the side-checkout ownership marker; hand-made for anything else,
@@ -137,8 +140,8 @@ def checkouts(git) -> Optional[List[Checkout]]:
 
 def checkout_classify(git, index: int, paths: List[str]) -> str:
     """The kind of entry <index> of <paths>: main, ticket, side or
-    hand-made, checked in that order - bash checkout_classify, the one place
-    the kind rule is spelled."""
+    hand-made, checked in that order, as bash checkout_classify was - the
+    one place the kind rule is spelled."""
     # Imported here: the side-checkout module reads the git folder through
     # this one.
     from orch.side_checkout import side_checkout_marker
@@ -155,8 +158,8 @@ def checkout_classify(git, index: int, paths: List[str]) -> str:
 
 def checkout_kind(git, path: str) -> Optional[str]:
     """The kind checkout_classify gives (main, ticket, side or hand-made)
-    the checkout holding <path>, a folder inside a checkout included - bash
-    checkout_kind, classifying only the matching entry. None when <path> is
+    the checkout holding <path>, a folder inside a checkout included, as
+    bash checkout_kind was, classifying only the matching entry. None when <path> is
     in no checkout, the list fails, or no entry matches."""
     top = git.toplevel_at(path)
     worktrees = git.worktree_list() if top is not None else None

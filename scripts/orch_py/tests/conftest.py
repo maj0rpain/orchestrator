@@ -413,12 +413,12 @@ def rebasing(path):
     return os.path.isdir(run_git(path, "rev-parse", "--absolute-git-dir") + "/rebase-merge")
 
 
-def mark_side(path):
-    """Writes the side-checkout ownership marker into the git folder of the
-    worktree at <path>."""
-    gitdir = run_git(path, "rev-parse", "--absolute-git-dir")
-    with open(os.path.join(gitdir, "orchestrator-side-checkout"), "w"):
-        pass
+def mark_side(path, content=""):
+    """Writes <content> (empty by default) as the side-checkout ownership
+    marker in the git folder of the checkout at <path>: the marker's path."""
+    marker = Path(run_git(path, "rev-parse", "--absolute-git-dir")) / "orchestrator-side-checkout"
+    marker.write_bytes(content.encode())
+    return marker
 
 
 def hold_flow(path, **state):
@@ -671,6 +671,17 @@ def died_of(capsys, run):
         run()
     out, err = capsys.readouterr()
     return died.value.code, out, err
+
+
+def outcome(capsys, call):
+    """(exit code, stdout, stderr) of <call>: what it returned (0 for None),
+    or the exit it died with."""
+    try:
+        code = call()
+    except SystemExit as died:
+        code = died.code
+    out, err = capsys.readouterr()
+    return (0 if code is None else code), out, err
 
 
 def orch_issue(seed, *argv, gh=None, git=None, env=None, pin=None):
