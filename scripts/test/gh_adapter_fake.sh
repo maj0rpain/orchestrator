@@ -313,12 +313,6 @@ fake_stale() {
   cat "$(fake_store)/lag/$1.stale" 2>/dev/null || true
 }
 
-fake_label_exists() {
-  local f
-  f="$(fake_store)/labels"
-  [ -f "$f" ] && grep -qxiF -- "$1" <<<"$(cut -f1 "$f")"
-}
-
 # fake_label_canon <name>: GitHub's casing rule - the name as the repo's label
 # store holds it where it holds it in any casing, else the name as given.
 fake_label_canon() {
@@ -351,18 +345,6 @@ fake_label_put() {
 # rewritten, in the store.
 adapter_label_upsert() {
   ! fake_failing adapter_label_upsert || return 1
-  fake_label_put "$1" "$2" "$3"
-}
-
-# adapter_label_create <name> <colour> <description>: the label added to the
-# store where it has none of that name; one it has fails the call, as gh does,
-# and is left as it is.
-adapter_label_create() {
-  ! fake_failing adapter_label_create || return 1
-  if fake_label_exists "$1"; then
-    printf 'label with name "%s" already exists; use `--force` to update its color and description\n' "$1" >&2
-    return 1
-  fi
   fake_label_put "$1" "$2" "$3"
 }
 

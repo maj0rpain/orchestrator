@@ -153,10 +153,10 @@
 2	2	gh_reason and capture_err (#846)	945f77cb2a6453cdc91c5642f7d92d731d01112c
 1	2	label_listed	a4944cc37004a436b3273b1e242a8617a5e2cc1c
 18	19	gh failure verb and readers (#1022)	8ec16b064e87fc5ede895234c3fba4f8ca36407b
-15	19	gh fake (#280)	777285f292b1718357220e4585676cdbb76e7b8c
-114	127	gh adapter contract (#280)	dcb8418d86a66644b0aa8fcf3a0de1aadc584f50
+16	21	gh fake (#280)	43843b915447eacd6e395a09d0569125908daa5b
+103	115	gh adapter contract (#280)	2142bf57c6e6a5d9026edc411f9c13ee2aaf3cc1
 16	18	claim adapter operations (#1454)	faa35fc415d08eda21b71812e5e6e5c46b39b2d4
-3	4	label casing (#1943)	56ac6b95b254e0b384f3125adbf598f09b0586e9
+3	4	label casing (#1943)	41702561181f22517cb801c3da597ce5b3409ff3
 48	42	gh rate limits (#2577)	5ec09fb0232ccd3ffa97e89312a5ebd0daf1aaba
 14	15	gh rate limits: the GitHub pause and the hit file (#2577)	b4b9c15807b83d1efd54e8267a594d247da1655d
 2	4	handoff path	f53a3d84f5d17aa6675f4f58c4cf7689b1d9a208

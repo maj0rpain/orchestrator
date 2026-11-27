@@ -263,7 +263,7 @@ class FakeGh:
         """Fails as `gh pr view` does where the store holds no PR #n."""
         if not os.path.isdir(_pr_path(self.store, n)):
             raise GhFailed(
-                "GraphQL: Could not resolve to a PullRequest with the number of %d."
+                "GraphQL: Could not resolve to a PullRequest with the number of %s."
                 " (repository.pullRequest)\n" % n
             )
 

@@ -13,11 +13,11 @@ import subprocess
 
 import pytest
 
-from conftest import AUTOPILOT, CLAUDE, NOW, SESSIONS, FakeClock, hold_flow, snapshot
-from orch import review
+from conftest import (AUTOPILOT, CLAUDE, NOW, SESSIONS, FakeClock, answered, hold_flow,
+                      orch_review, snapshot)
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit
-from orch.repo import REPO_REMEDY, RepoPin
+from orch.repo import REPO_REMEDY
 
 ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
 # review_ci_flow's short knobs.
@@ -35,26 +35,10 @@ def checkout(root):
 
 
 def ci(root, seed, *argv, env=None, clock=None, git=None, gh=None):
-    """`orch.sh review ci <argv>` in-process in the checkout at <root>, under
-    Claude Code's plain session with KNOBS and <env> over them, the gh fake on
-    <seed>'s store and <clock> (a FakeClock when None) for both: its exit
-    code."""
+    """`orch.sh review ci <argv>` through orch_review, under Claude Code's
+    plain session with KNOBS and <env> over them: its exit code."""
     env = dict(dict(CLAUDE, **KNOBS), **(env or {}))
-    clock = FakeClock() if clock is None else clock
-    git = checkout(root) if git is None else git
-    if gh is None:
-        gh = FakeGh(seed.store, env, pin=RepoPin(env, git), sleep=clock.sleep, now=clock)
-    try:
-        return review.run(["ci", *argv], git=git, gh=gh, env=env, clock=clock,
-                          sleep=clock.sleep)
-    except SystemExit as died:
-        return died.code
-
-
-def answered(capsys, code):
-    """(exit code, stdout, stderr) of a call that returned <code>."""
-    out, err = capsys.readouterr()
-    return code, out, err
+    return orch_review(seed, root, "ci", *argv, env=env, clock=clock, git=git, gh=gh)
 
 
 @pytest.fixture
@@ -606,6 +590,15 @@ def test_a_flow_state_with_no_pr_is_refused_at_exit_2(root, seed, capsys, pr):
 
     assert answered(capsys, ci(root, seed)) == (
         2, "", "orch: no PR recorded in state - the implement phase opens it\n")
+
+
+def test_a_recorded_pr_that_is_no_number_goes_to_gh_as_it_is_and_ends_unreachable(root, seed,
+                                                                                capsys):
+    hold_flow(root, slug="x", phase="review", issue=3, pr="seven")
+    seed.fail("adapter_pr_checks", 'no pull requests found for branch "seven"')
+
+    assert answered(capsys, ci(root, seed)) == (
+        1, 'unreachable\n%sno pull requests found for branch "seven"\n' % INDENT, "")
 
 
 def test_no_flow_state_is_refused_at_exit_2(root, seed, capsys):

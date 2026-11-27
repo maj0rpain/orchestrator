@@ -13,15 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from conftest import AUTOPILOT, CLAUDE, NOW, SESSIONS, orch_review
+from conftest import AUTOPILOT, CLAUDE, NOW, SESSIONS, answered, orch_review
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY
-
-
-def answered(capsys, code):
-    """(exit code, stdout, stderr) of a call that returned <code>."""
-    out, err = capsys.readouterr()
-    return code, out, err
 
 
 def rerun(seed, root, *argv, env=None, git=None):

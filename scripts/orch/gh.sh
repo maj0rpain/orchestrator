@@ -290,8 +290,7 @@ gh_or_die() {
 # through one. History: begun with labels (#91), issues (#92); all since #280.
 #
 # The operations, in the order they are defined below:
-# - label: adapter_label_upsert, adapter_label_create, adapter_labels,
-#   adapter_labels_detail
+# - label: adapter_label_upsert, adapter_labels, adapter_labels_detail
 # - rate limit: adapter_rate_limit
 # - issue: adapter_issue_body, adapter_issue_comments,
 #   adapter_issue_state_labels, adapter_issue_title_labels,
@@ -376,13 +375,6 @@ url_number() {
 # updates the one that exists, to that colour and description. Prints nothing.
 adapter_label_upsert() {
   gh label create "$1" --force --color "$2" --description "$3" >/dev/null
-}
-
-# adapter_label_create <name> <colour> <description>: creates the label where
-# the repo has none of that name; fails where it has one, leaving it as it is.
-# Prints nothing.
-adapter_label_create() {
-  gh label create "$1" --color "$2" --description "$3" >/dev/null
 }
 
 # adapter_labels <limit>: the names of the repo's labels, at most <limit> of

@@ -282,10 +282,10 @@ def discard_work_in(git, path: str, who: str) -> None:
 
 def require_flow_branch(who: str, branch: str, recorded: str) -> None:
     """Dies (exit 1, "nothing was discarded") unless <branch> is <recorded>,
-    the branch the flow state records, whatever the phase - bash
-    require_flow_branch, the proof a discard-rule caller owes before it
-    discards. It reads nothing: the caller hands over the branch from its
-    one read of flow state, empty for none recorded."""
+    the branch the flow state records, whatever the phase - as bash's
+    require_flow_branch was, its bash copy gone: the proof a discard-rule
+    caller owes before it discards. It reads nothing: the caller hands over
+    the branch from its one read of flow state, empty for none recorded."""
     if not recorded:
         die("%s: on %s, the active flow records no branch yet - nothing was discarded"
             % (who, branch))

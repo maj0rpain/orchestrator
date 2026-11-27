@@ -1,9 +1,11 @@
 """orch.sh's phase noun (ADR-0067): `phase advance`, which leaves the
 current phase once the handoff it writes for the next one is valid and the
 state the next one needs is recorded, and `phase boundary`, the block that
-ends a phase's session. Beside them phase_finish, the finished phase's
-close, which phase advance runs and bash review ready reaches through
-orch_python_call (`orch_python_call --as review phase phase_finish ...`).
+ends a phase's session. Beside them finish, the finished phase's close,
+which phase advance runs and review ready calls in process, and
+phase_finish, its orch_python_call bridge (`orch_python_call --as review
+phase phase_finish ...`), which bash review ready reached through and which
+no caller outside its own tests now reaches, bash review ready gone.
 
 run(argv) takes the arguments after `phase`, as orch.sh hands them on, and
 returns the exit code; every error dies through orch.common.die. It keeps

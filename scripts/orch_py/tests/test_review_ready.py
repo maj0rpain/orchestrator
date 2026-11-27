@@ -13,18 +13,12 @@ import os
 
 import pytest
 
-from conftest import (AUTOPILOT, CLAUDE, GITHUB_ORIGIN, SESSIONS, archive_main, hold_flow,
-                      labels_of, mark_side, orch_review, run_git, side_checkout, snapshot,
-                      state_json, worktree_add)
+from conftest import (AUTOPILOT, CLAUDE, GITHUB_ORIGIN, SESSIONS, answered, archive_main,
+                      hold_flow, labels_of, mark_side, orch_review, run_git, side_checkout,
+                      snapshot, state_json, worktree_add)
 from orch.git import Git
 
 HINT = " - the flow stays in review"
-
-
-def answered(capsys, code):
-    """(exit code, stdout, stderr) of a call that returned <code>."""
-    out, err = capsys.readouterr()
-    return code, out, err
 
 
 def is_draft(seed, n):
@@ -167,6 +161,20 @@ def test_no_pr_recorded_is_refused_before_any_github_call(root, seed, capsys, en
     assert answered(capsys, ready(seed, root, env=env)) == (
         1, "", "orch: no PR recorded in state - the implement phase opens it\n")
     assert snapshot(seed.store) == before
+
+
+# gh's answer to a PR given as a name it resolves as a branch.
+NO_BRANCH_PR = 'no pull requests found for branch "seven"'
+
+
+def test_a_recorded_pr_that_is_no_number_goes_to_gh_as_it_is_and_dies_with_gh_s_reason(
+        root, seed, capsys):
+    hold_flow(root, slug="x", phase="review", issue=3, pr="seven")
+    seed.fail("adapter_pr_checks", NO_BRANCH_PR)
+
+    assert answered(capsys, ready(seed, root)) == (
+        1, "", "orch: PR #seven checks cannot be read: %s%s\n" % (NO_BRANCH_PR, HINT))
+    assert phase_of(root) == "review"
 
 
 def test_no_flow_is_refused(root, seed, capsys):

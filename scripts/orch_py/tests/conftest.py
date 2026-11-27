@@ -535,6 +535,12 @@ class UnparsedPrComments(FakeGh):
         raise Unparsed("no comment list")
 
 
+def answered(capsys, code):
+    """(exit code, stdout, stderr) of a call that returned <code>."""
+    out, err = capsys.readouterr()
+    return code, out, err
+
+
 def died_of(capsys, run):
     """(exit code, stdout, stderr) of <run>, which must die."""
     with pytest.raises(SystemExit) as died:
@@ -645,16 +651,18 @@ class FakeClock:
 GITHUB_ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
 
 
-def orch_review(seed, root, *argv, env=None, git=None, clock=None):
+def orch_review(seed, root, *argv, env=None, git=None, clock=None, gh=None):
     """`orch.sh review <argv>` in-process in the checkout at <root>, under
     <env> (Claude Code's plain session when None), the git adapter <git> - a
-    FakeGit at <root> with its origin on GitHub when None - and the gh fake on
-    <seed>'s store pinned through it, <clock> (a FakeClock when None) the
-    time and sleep of both: its exit code, a SystemExit's included."""
+    FakeGit at <root> with its origin on GitHub when None - and the gh adapter
+    <gh> - the gh fake on <seed>'s store pinned through <git> when None -
+    <clock> (a FakeClock when None) the time and sleep of both: its exit code,
+    a SystemExit's included."""
     env = CLAUDE if env is None else env
     git = FakeGit(GITHUB_ORIGIN, toplevel=str(root)) if git is None else git
     clock = FakeClock() if clock is None else clock
-    gh = FakeGh(seed.store, env, pin=RepoPin(env, git), sleep=clock.sleep, now=clock)
+    if gh is None:
+        gh = FakeGh(seed.store, env, pin=RepoPin(env, git), sleep=clock.sleep, now=clock)
     try:
         return review.run(list(argv), git=git, gh=gh, env=env, clock=clock, sleep=clock.sleep)
     except SystemExit as died:

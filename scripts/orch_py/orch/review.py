@@ -74,8 +74,9 @@ from orch.filed_finding import (FILED_AXES, FILED_SEVERITIES, category_for_axis,
                                 finding_body_file_new, finding_body_parse, finding_body_render,
                                 finding_flags_parse, finding_input_check, finding_location_check,
                                 needs_triage_label_ready, severity_label_ensure)
-from orch.flow_state import (Pair, flow_state_file, flow_state_get_many, require_state,
-                             require_state_read, require_value, state_write_many)
+from orch.flow_state import (Pair, flow_state_file, flow_state_get_many, recorded_pr,
+                             require_state, require_state_read, require_value,
+                             state_write_many)
 from orch.gh import Check, GhFailed, adapter_of, gh_or_die, gh_reason
 from orch.git import Git
 from orch.handoff import handoff_file_for, handoff_read, section_body
@@ -168,7 +169,8 @@ def review_flat_record_gone(root: str, i: str) -> bool:
 def review_terminal_state(root: str, i: str, budget: str,
                           state: Optional[Mapping[str, str]] = None) -> Tuple[List[str], int]:
     """The review loop's last iteration, <i>, classified against <budget>,
-    as bash review_terminal_state: (its lines, its status). The first line is
+    as bash's review_terminal_state was, its bash copy gone: (its lines, its
+    status). The first line is
     the classification word: ready or stop (status 0), or none, pending,
     interrupted, malformed or unreadable (status 1). For stop the recorded
     reason follows, for malformed the expected-shape line, and for
@@ -247,8 +249,8 @@ def ci_unreachable(detail: str) -> List[str]:
 
 
 def ci_classify(checks: Optional[List[Check]], stderr: str) -> List[str]:
-    """One read of a PR's checks classified, as bash ci_classify: the
-    verdict, then any detail lines, indented. <checks> is None for a read
+    """One read of a PR's checks classified, as bash's ci_classify was, its
+    bash copy gone: the verdict, then any detail lines, indented. <checks> is None for a read
     that failed, with gh's <stderr>: unreachable, naming its reason. No
     checks is none; any failed or cancelled check with a name is failing,
     naming each; else any pending one is pending; else green."""
@@ -264,6 +266,18 @@ def ci_classify(checks: Optional[List[Check]], stderr: str) -> List[str]:
     return ["green"]
 
 
+def ci_read_classify(read: Callable[[], List[Check]]) -> List[str]:
+    """One read of a PR's checks, <read>, made and classified (ci_classify):
+    a read that raises GhFailed is unreachable, naming gh's reason. The one
+    shape of ci_probe and ci_counted_probe, which differ only in the read
+    they hand it."""
+    try:
+        checks = read()
+    except GhFailed as failed:
+        return ci_classify(None, failed.stderr)
+    return ci_classify(checks, "")
+
+
 def ci_counted(gh, pr: int) -> List[Check]:
     """The one owner of which checks count for a PR: the required checks
     where any are reported, else every check. A failed read raises GhFailed,
@@ -275,11 +289,7 @@ def ci_counted(gh, pr: int) -> List[Check]:
 def ci_counted_probe(gh, pr: int) -> List[str]:
     """ci_classify's classification of PR <pr>'s counted checks
     (ci_counted)."""
-    try:
-        checks = ci_counted(gh, pr)
-    except GhFailed as failed:
-        return ci_classify(None, failed.stderr)
-    return ci_classify(checks, "")
+    return ci_read_classify(lambda: ci_counted(gh, pr))
 
 
 def ci_ready_gate(gh, pr: int, code: int = 1, hint: str = "") -> None:
@@ -292,12 +302,12 @@ def ci_ready_gate(gh, pr: int, code: int = 1, hint: str = "") -> None:
     # The detail lines, unindented, comma-separated, empty ones skipped.
     checks = ", ".join(line.lstrip(" ") for line in detail if line.lstrip(" "))
     if verdict == "failing":
-        message = "PR #%d has failed checks: %s" % (pr, checks)
+        message = "PR #%s has failed checks: %s" % (pr, checks)
     elif verdict == "unreachable":
-        message = "PR #%d checks cannot be read: %s" % (pr, checks)
+        message = "PR #%s checks cannot be read: %s" % (pr, checks)
     else:
         if verdict == "pending":
-            warn("PR #%d checks are still pending" % pr)
+            warn("PR #%s checks are still pending" % pr)
         return
     die(message + (" - " + hint if hint else ""), code)
 
@@ -335,11 +345,7 @@ def ci_probe(gh, pr: int, scope: str) -> List[str]:
     that would not answer or an answer it could not read, so the two
     meanings an empty read could carry stay apart. Doctor's CI check reads
     this, over the required scope."""
-    try:
-        checks = gh.pr_checks(pr, scope)
-    except GhFailed as failed:
-        return ci_classify(None, failed.stderr)
-    return ci_classify(checks, "")
+    return ci_read_classify(lambda: gh.pr_checks(pr, scope))
 
 
 def ci_push_time(git, oid: str, branch: str) -> Optional[int]:
@@ -399,16 +405,19 @@ def no_ci_evidence(gh, git, head: str, base: str, pr: int) -> bool:
 
 class _CiCall:
     """One review ci call's PR and what it learnt of it: <pr>, the PR's
-    number as given or recorded, <given> whether it was given on the command
-    line, and, once read, the PR's head SHA ("" when the read failed), head
-    branch and base branch, how long before the wait's first call the head
-    was pushed (push_age, 0 when unknown) and whether the repo shows no
-    evidence of CI anywhere (no_ci)."""
+    number as given or recorded, <n>, that PR as gh calls take it
+    (recorded_pr: a recorded PR that is no number goes to gh as it is),
+    <given> whether it was given on the command line, and, once read, the
+    PR's head SHA ("" when the read failed), head branch and base branch,
+    how long before the wait's first call the head was pushed (push_age, 0
+    when unknown) and whether the repo shows no evidence of CI anywhere
+    (no_ci)."""
 
     def __init__(self, gh, git, pr: str, given: bool, grace: str) -> None:
         self.gh = gh
         self.git = git
         self.pr = pr
+        self.n = recorded_pr(pr)
         self.given = given
         self.grace = grace
         self.head = self.head_ref = self.base = ""
@@ -420,7 +429,7 @@ class _CiCall:
         """The PR's refs read; a failed read leaves the head "" and gh's
         stderr in <unread>, None after a read that worked."""
         try:
-            self.head, self.head_ref, self.base = self.gh.pr_refs(int(self.pr))
+            self.head, self.head_ref, self.base = self.gh.pr_refs(self.n)
         except GhFailed as failed:
             self.head = ""
             self.unread = failed.stderr
@@ -445,7 +454,7 @@ class _CiCall:
         pushed = ci_push_time(self.git, self.head, self.head_ref)
         if pushed is not None and pushed < start:
             self.push_age = start - pushed
-        self.no_ci = no_ci_evidence(self.gh, self.git, self.head, self.base, int(self.pr))
+        self.no_ci = no_ci_evidence(self.gh, self.git, self.head, self.base, self.n)
 
     def probe(self, elapsed: float) -> Tuple[List[str], bool]:
         """One probe of the PR's checks: its lines, and whether it answered
@@ -457,9 +466,9 @@ class _CiCall:
         every check (ci_counted). Widening sooner is how an unrelated green
         check gets mistaken for a required one that never arrived."""
         if not self.no_ci and self.push_age + elapsed < float(self.grace):
-            lines = ci_probe(self.gh, int(self.pr), "required")
+            lines = ci_probe(self.gh, self.n, "required")
             return lines, lines[0] == "none"
-        return ci_counted_probe(self.gh, int(self.pr)), False
+        return ci_counted_probe(self.gh, self.n), False
 
     def deliver(self, lines: List[str]) -> Optional[int]:
         """Prints a terminal verdict's <lines> and returns its status; None,
@@ -578,7 +587,9 @@ DEFAULT_BUDGET = "5"
 
 def review_budget_fallback(raw: str) -> str:
     """The budget read from state, <raw>, or DEFAULT_BUDGET where it is
-    empty or not a plain number - bash review_budget_fallback."""
+    empty or not a plain number - as bash's review_budget_fallback was, its
+    bash copy gone; doctor.sh's d_budget_fallback is the one bash copy
+    left."""
     return raw if plain_number(raw) else DEFAULT_BUDGET
 
 
@@ -876,7 +887,7 @@ def _file(args: List[str], root: str, git, env: Mapping[str, str], clock,
     require_value("pr", pr)
     gh = gh_of()
     url, sha = gh_or_die("read the URL and head of PR #%s, recorded in state" % pr,
-                         gh.pr_url_head, pr)
+                         gh.pr_url_head, recorded_pr(pr))
     if not HEX.fullmatch(sha):
         die("not a sha: %s (want a hex commit SHA)" % sha)
 
@@ -1317,9 +1328,10 @@ def _ready(args: List[str], root: str, git, env: Mapping[str, str], clock,
     state = require_state_read(state_file, env, ["pr", "issue"], 1)
     pr = state["pr"]
     require_value("pr", pr)
+    n = recorded_pr(pr)
     gh = gh_of()
-    ci_ready_gate(gh, int(pr), hint=READY_HINT)
-    gh_or_die("mark PR #%s ready" % pr, gh.pr_ready, int(pr), hint=READY_HINT)
+    ci_ready_gate(gh, n, hint=READY_HINT)
+    gh_or_die("mark PR #%s ready" % pr, gh.pr_ready, n, hint=READY_HINT)
     finish("done", "marked PR #%s ready" % pr, state["issue"], state_file, gh_of, env, clock)
     stdout_write(pr + "\n")
     if checkout_kind(git, root) == "side":

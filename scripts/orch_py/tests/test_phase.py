@@ -4,8 +4,9 @@ handoffs. `phase advance`: every refusal in its guard order, each per-phase
 field check, the open-tickets refusal, a clean advance per phase, and the
 autopilot advance - the label moved, the phase recorded, the claim released
 and the note printed. `phase boundary`: the block in each host's own words.
-And phase_finish, the finished phase's close review ready reaches through
-orch_python_call: in a plain session the next phase recorded and nothing
+And phase_finish, the orch_python_call bridge to the finished phase's close
+that bash review ready reached through, before review ready came to call
+finish in process: in a plain session the next phase recorded and nothing
 else, in an autopilot one the issue checked, then the label moved, the phase
 recorded and the claim released."""
 from __future__ import annotations

@@ -1,12 +1,14 @@
 """The autopilot reset record of a GitHub API rate limit given up on: in an
 autopilot process the gh adapter's limit handling writes the GitHub limit
-pause under the main checkout, its reset capped at an hour and a later reset
-already recorded kept, and in a session the wrapper's hit file too, each
-failed write joined onto the one limit line after " - ". Met through the gh
-fake on its store, the main checkout a FakeGit's, the clock handed in -
-and the pause file pinned to github_pause/github-limit, a golden file
-autopilot's bash tick section reads too (ADR-0067): the reset
-NOW + 1800 as the pause file holds it."""
+pause under the main checkout, replacing an earlier or unreadable reset
+recorded, and in a session the wrapper's hit file too, each failed write
+joined onto the one limit line after " - ". Met through the gh fake on its
+store, the main checkout a FakeGit's, the clock handed in - and the pause
+file pinned to github_pause/github-limit, a golden file autopilot's bash
+tick section reads too (ADR-0067): the reset NOW + 1800 as the pause file
+holds it. Which processes write the pause and the hit file, the reset capped
+at an hour and a later reset already recorded kept are test_review_rerun.py's
+cases, met through `review rerun`."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -55,53 +57,6 @@ def limited(seed, main, env, **kwargs):
     with pytest.raises(GhFailed) as failed:
         limited_gh(seed, main, env, **kwargs).issue_body(5)
     return failed.value.stderr
-
-
-def test_a_session_writes_the_pause_and_the_hit_file(seed, main, tmp_path):
-    hit = tmp_path / "run" / "5.hit"
-
-    stderr = limited(seed, main, {"ORCH_AUTOPILOT": "1", "ORCH_AUTOPILOT_HIT_FILE": str(hit)})
-
-    assert stderr == LIMIT % "2027-01-15T08:30:00Z" + "\n"
-    assert pause_of(main).read_bytes() == GOLDEN.read_bytes()
-    assert hit.read_bytes() == GOLDEN.read_bytes()
-
-
-@pytest.mark.parametrize("flag", ["ORCH_AUTOPILOT_TICK", "ORCH_AUTOPILOT_RUN"])
-def test_an_autopilot_process_outside_a_session_writes_the_pause_and_no_hit_file(
-        seed, main, tmp_path, flag):
-    hit = tmp_path / "run" / "5.hit"
-
-    limited(seed, main, {flag: "1", "ORCH_AUTOPILOT_HIT_FILE": str(hit)})
-
-    assert pause_of(main).read_bytes() == GOLDEN.read_bytes()
-    assert not hit.exists()
-
-
-def test_a_plain_process_writes_nothing(seed, main, tmp_path):
-    hit = tmp_path / "run" / "5.hit"
-
-    stderr = limited(seed, main, {"ORCH_AUTOPILOT_HIT_FILE": str(hit)})
-
-    assert stderr == LIMIT % "2027-01-15T08:30:00Z" + "\n"
-    assert not (main / ".orchestrator").exists()
-    assert not hit.exists()
-
-
-def test_a_reset_past_the_hour_is_recorded_an_hour_on(seed, main):
-    stderr = limited(seed, main, {"ORCH_AUTOPILOT_RUN": "1"}, reset=NOW + 7200)
-
-    assert stderr == LIMIT % "2027-01-15T10:00:00Z" + "\n"
-    assert pause_of(main).read_text() == "2027-01-15T09:00:00Z\n"
-
-
-def test_a_later_reset_already_recorded_is_kept(seed, main):
-    pause_of(main).parent.mkdir(parents=True)
-    pause_of(main).write_text("2027-01-15T08:50:00Z\n")
-
-    limited(seed, main, {"ORCH_AUTOPILOT_RUN": "1"})
-
-    assert pause_of(main).read_text() == "2027-01-15T08:50:00Z\n"
 
 
 @pytest.mark.parametrize("text", ["2027-01-15T08:10:00Z\n", "soon\n", ""],

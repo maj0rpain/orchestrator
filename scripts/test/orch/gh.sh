@@ -473,7 +473,7 @@ fake_lag adapter_issue_body 2
 lagging adapter_issue_body; assert_status "a lagged operation answers stale" "$?" 0
 lagging adapter_issue_body; assert_status "for as many calls as fake_lag asked" "$?" 0
 lagging adapter_issue_body; assert_status "and current after them" "$?" 1
-lagging adapter_label_create; assert_status "an operation with no lag is current" "$?" 1
+lagging adapter_labels; assert_status "an operation with no lag is current" "$?" 1
 # The fake takes the real adapter's argument grammar (#664): an unknown option,
 # or one missing its value, exits 2 with a message on stderr - parsed before
 # fake_failing, so even a seeded failure does not mask it. No converted caller
@@ -787,17 +787,6 @@ gh_reply 1 '' 'HTTP 403: Resource not accessible by integration' \
 out="$(contract adapter_label_upsert review:nit c5def5 "Review finding filed at nit severity" 2>&1)"; st=$?
 assert_status "label upsert: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
-gh_reply 0 '' '' label create "triage me" --color e4e669 --description "Not yet triaged"
-out="$(contract adapter_label_create "triage me" e4e669 "Not yet triaged" 2>&1)"; st=$?
-assert_status "label create: creates a missing label, never with --force" "$st" 0
-assert_eq "printing nothing" "$out" ""
-
-gh_reply 1 '' 'label with name "bug" already exists; use `--force` to update its color and description' \
-  label create bug --color d73a4a --description "Something isn't working"
-out="$(contract adapter_label_create bug d73a4a "Something isn't working" 2>&1)"; st=$?
-assert_status "label create: a label that exists fails it" "$st" 1
-assert_contains "passing gh's stderr through" "$out" 'label with name "bug" already exists'
-
 gh_reply 0 $'bug\td73a4a\tSomething isn\'t working\nwontfix\tffffff\t' \
   '' label list --limit 1000 --json name,color,description --jq '.[] | [.name, .color, (.description // "")] | @tsv'
 out="$(contract adapter_labels_detail 1000 2>&1)"; st=$?
@@ -806,8 +795,8 @@ assert_eq "as name, colour and description, tab-separated" "$out" $'bug\td73a4a\
 
 : >"$GH_FIXTURE/env.log"
 export GH_REPO=ghe.example.com/acme/widgets
-gh_reply 0 '' '' label create enhancement --color a2eeef --description "New feature or request"
-contract adapter_label_create enhancement a2eeef "New feature or request" >/dev/null 2>&1
+gh_reply 0 '' '' label create enhancement --force --color a2eeef --description "New feature or request"
+contract adapter_label_upsert enhancement a2eeef "New feature or request" >/dev/null 2>&1
 assert_contains "a repo on another host pins gh's host too" "$(cat "$GH_FIXTURE/env.log")" \
   "GH_REPO=ghe.example.com/acme/widgets GH_HOST=ghe.example.com label create enhancement"
 export GH_REPO=acme/widgets
@@ -1639,7 +1628,6 @@ sourced_orch adapter_issue_relabel 5 --remove needs-human >/dev/null
 assert_eq "a removal matches case-insensitively" "$(fake_labels_of 5)" ""
 sourced_orch adapter_label_upsert needs-human d93f0b "Waiting" >/dev/null
 assert_eq "an upsert keeps the existing name and rewrites colour and description" "$(fake_labels)" "Needs-Human	d93f0b	Waiting"
-assert_status "create's exists check folds case" "$(sourced_orch adapter_label_create NEEDS-HUMAN 000000 x >/dev/null 2>&1; echo $?)" 1
 printf 'Needs-Human\n' >"$ORCH_GH_FAKE_STORE/pr_label_drops"
 body="$(mktemp)"
 pn="$(sourced_orch adapter_pr_create main feat t "$body" --label needs-human --label Other)"

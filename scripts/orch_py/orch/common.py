@@ -12,10 +12,10 @@ a state read as in a line, the orchestrator's directory name, the UTC stamp
 a run directory is named with, the git exclude writer, the copy bash's cp
 makes, the directory bash's mkdir -p makes, the removals bash's rm -f and
 rm -rf make, the move of named files aside into a folder, every name
-checked before the first move, as bash's move_files_aside makes it, the
-clean-tree refusal bash's require_clean_tree makes, the capture of a
-call's stderr and death that bash's capture and err_line make, and the
-status a call ends with that bash's subshell gives (subshell).
+checked before the first move, as bash's move_files_aside made it (its bash
+copy gone), the clean-tree refusal bash's require_clean_tree makes, the
+capture of a call's stderr and death that bash's capture and err_line make,
+and the status a call ends with that bash's subshell gives (subshell).
 
 Every `orch: ` message goes through die or warn, as in the bash side's
 common.sh: die(message, 2) is the bash die2, for a command that reserves exit
@@ -362,7 +362,8 @@ def rm_rf_or_die(path: str, unremoved: str) -> None:
 
 def move_files_aside(directory: str, dest: str, what: str, names: Sequence[str]) -> None:
     """Moves each of <names> that exists in <directory> into exactly <dest>,
-    made only when there is something to move - bash's move_files_aside.
+    made only when there is something to move - as bash's move_files_aside
+    was, its bash copy gone.
     A <dest> already holding one of them is refused, naming <what>, before
     any move; a <dest> that merely exists is fine. Dies, too, when <dest>
     cannot be made or a file cannot be moved, where bash's mkdir or mv

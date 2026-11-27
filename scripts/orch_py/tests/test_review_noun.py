@@ -13,22 +13,14 @@ from pathlib import Path
 
 import pytest
 
-from conftest import (AUTOPILOT, CLAUDE, SESSIONS, TICKET_PARENT, Opens, committed, died_of,
-                      hold_flow, rebasing, run_git, state_json, worktree_add)
+from conftest import (AUTOPILOT, SESSIONS, TICKET_PARENT, FakeClock, Opens, answered, committed,
+                      died_of, hold_flow, orch_review, rebasing, run_git, state_json,
+                      worktree_add)
 from orch import review
 from orch.common import exclude_orch_dirs
 from orch.git import FakeGit, Git
 
 OPS = "begin|path|file|known-items|standards|ci|ci-log|rerun|ready|terminal|resume|retire"
-
-
-def orch_review(root, *argv, env=None, git=None):
-    """`orch.sh review <argv>` in-process in the checkout at <root>, under
-    <env> (Claude Code's plain session when None), the git adapter <git> - a
-    FakeGit at <root> when None: its exit code."""
-    git = FakeGit(toplevel=str(root)) if git is None else git
-    return review.run(list(argv), git=git, env=CLAUDE if env is None else env,
-                      clock=lambda: CLOCK)
 
 
 # A clock reading 2026-01-02T03:04:05Z, the time a state write stamps.
@@ -41,8 +33,8 @@ CLOCK = 1767323045.0
 @pytest.mark.parametrize("argv, op", [((), "<none>"), (("loop-next",), "loop-next"),
                                       (("",), "<none>")], ids=["none", "unknown", "empty"])
 @SESSIONS
-def test_an_op_review_does_not_have_is_refused_naming_every_op(root, capsys, argv, op, env):
-    assert died_of(capsys, lambda: orch_review(root, *argv, env=env)) == (
+def test_an_op_review_does_not_have_is_refused_naming_every_op(root, capsys, argv, op, env, seed):
+    assert answered(capsys, orch_review(seed, root, *argv, env=env)) == (
         1, "", "orch: unknown review op: %s (want %s)\n" % (op, OPS))
 
 
@@ -78,10 +70,10 @@ FILE_USAGE = ("usage: orch.sh review file <major|nit> <title> --axis <spec|stand
 ], ids=["path", "terminal", "resume", "retire-none", "retire-two", "file", "known-items",
         "standards", "ci", "ci-log", "rerun"])
 def test_each_verb_given_the_wrong_arguments_dies_with_its_usage_line(root, capsys, argv, code,
-                                                                       usage):
+                                                                       usage, seed):
     hold_flow(root, slug="x", phase="review", issue=7, pr=9, iteration=1)
 
-    assert died_of(capsys, lambda: orch_review(root, *argv)) == (code, "", "orch: %s\n" % usage)
+    assert answered(capsys, orch_review(seed, root, *argv)) == (code, "", "orch: %s\n" % usage)
 
 
 def no_flow():
@@ -93,8 +85,8 @@ def no_flow():
 @pytest.mark.parametrize("argv", [("path", "1", "2"), ("terminal", "extra"), ("retire",),
                                   ("file", "major"), ("known-items", "a")],
                          ids=["path", "terminal", "retire", "file", "known-items"])
-def test_a_verb_that_needs_a_flow_refuses_its_absence_before_its_usage(root, capsys, argv):
-    assert died_of(capsys, lambda: orch_review(root, *argv)) == (1, "", no_flow())
+def test_a_verb_that_needs_a_flow_refuses_its_absence_before_its_usage(root, capsys, argv, seed):
+    assert answered(capsys, orch_review(seed, root, *argv)) == (1, "", no_flow())
 
 
 @pytest.mark.parametrize("argv, code", [(("resume", "extra"), 1), (("standards", "x"), 1),
@@ -102,8 +94,8 @@ def test_a_verb_that_needs_a_flow_refuses_its_absence_before_its_usage(root, cap
                                         (("rerun",), 2)],
                          ids=["resume", "standards", "ci", "ci-log", "rerun"])
 def test_a_verb_that_checks_its_arguments_first_gives_its_usage_with_no_flow(root, capsys, argv,
-                                                                             code):
-    code_seen, out, err = died_of(capsys, lambda: orch_review(root, *argv))
+                                                                             code, seed):
+    code_seen, out, err = answered(capsys, orch_review(seed, root, *argv))
 
     assert (code_seen, out, err.startswith("orch: usage: orch.sh review ")) == (code, "", True)
 
@@ -134,59 +126,59 @@ SPENT = ("orch: budget of %s iterations spent - stop the loop and report, do not
          " another\n")
 
 
-def test_begin_past_the_budget_refuses_leaving_the_flow_as_it_was(root, capsys):
+def test_begin_past_the_budget_refuses_leaving_the_flow_as_it_was(root, capsys, seed):
     state = flow(root, iteration=5, budget=5)
     before = state.read_text()
 
-    assert died_of(capsys, lambda: orch_review(root, "begin")) == (1, "", SPENT % 5)
+    assert answered(capsys, orch_review(seed, root, "begin")) == (1, "", SPENT % 5)
     assert state.read_text() == before
 
 
 @pytest.mark.parametrize("budget", [{"budget": ""}, {}, {"budget": "lots"}, {"budget": None}],
                          ids=["empty", "missing", "non-numeric", "null"])
-def test_begin_reads_a_budget_nobody_counted_as_the_default_of_5(root, capsys, budget):
+def test_begin_reads_a_budget_nobody_counted_as_the_default_of_5(root, capsys, budget, seed):
     flow(root, iteration=4, **budget)
 
-    assert orch_review(root, "begin") == 0
+    assert orch_review(seed, root, "begin") == 0
     assert capsys.readouterr() == ("5\n", "")
-    assert died_of(capsys, lambda: orch_review(root, "begin")) == (1, "", SPENT % 5)
+    assert answered(capsys, orch_review(seed, root, "begin")) == (1, "", SPENT % 5)
 
 
 @SESSIONS
-def test_begin_prints_the_next_iteration_and_records_it(root, capsys, env):
+def test_begin_prints_the_next_iteration_and_records_it(root, capsys, env, seed):
     flow(root, iteration=2, budget=5, flake_rerun_used=True)
 
-    assert orch_review(root, "begin", env=env) == 0
+    assert orch_review(seed, root, "begin", env=env, clock=FakeClock(CLOCK)) == 0
     assert capsys.readouterr() == ("3\n", "")
     assert {k: state_of(root)[k] for k in ("iteration", "flake_rerun_used", "updated")} == {
         "iteration": 3, "flake_rerun_used": True, "updated": "2026-01-02T03:04:05Z"}
 
 
-def test_a_loop_s_first_iteration_renews_its_flake_rerun_in_the_same_write(root, capsys):
+def test_a_loop_s_first_iteration_renews_its_flake_rerun_in_the_same_write(root, capsys, seed):
     flow(root, iteration=0, budget=5, flake_rerun_used=True)
 
-    assert orch_review(root, "begin") == 0
+    assert orch_review(seed, root, "begin") == 0
     assert capsys.readouterr() == ("1\n", "")
     assert (state_of(root)["iteration"], state_of(root)["flake_rerun_used"]) == (1, False)
 
 
 def test_the_iteration_after_a_recorded_terminal_state_starts_a_loop_renewing_the_rerun(
-        root, capsys):
+        root, capsys, seed):
     flow(root, iteration=2, budget=5, flake_rerun_used=True)
     record(root, 2, "## Terminal state\nstop - CI failing.\n")
 
-    assert orch_review(root, "begin") == 0
+    assert orch_review(seed, root, "begin") == 0
     assert capsys.readouterr() == ("3\n", "")
     assert (state_of(root)["iteration"], state_of(root)["flake_rerun_used"]) == (3, False)
 
 
 @pytest.mark.parametrize("text", ["## Findings\nNone\n", "## Terminal state\n\n  \n"],
                          ids=["no-section", "empty-section"])
-def test_a_record_with_no_terminal_state_leaves_the_flake_rerun_spent(root, capsys, text):
+def test_a_record_with_no_terminal_state_leaves_the_flake_rerun_spent(root, capsys, text, seed):
     flow(root, iteration=2, budget=5, flake_rerun_used=True)
     record(root, 2, text)
 
-    assert orch_review(root, "begin") == 0
+    assert orch_review(seed, root, "begin") == 0
     assert capsys.readouterr() == ("3\n", "")
     assert state_of(root)["flake_rerun_used"] is True
 
@@ -194,24 +186,24 @@ def test_a_record_with_no_terminal_state_leaves_the_flake_rerun_spent(root, caps
 @pytest.mark.skipif(os.geteuid() == 0, reason="root writes into a read-only directory")
 @pytest.mark.parametrize("iteration, keys", [(0, "iteration, flake_rerun_used"), (2, "iteration")],
                          ids=["first", "later"])
-def test_a_failed_state_write_dies_printing_no_iteration(root, capsys, iteration, keys):
+def test_a_failed_state_write_dies_printing_no_iteration(root, capsys, iteration, keys, seed):
     state = flow(root, iteration=iteration, budget=5)
     (root / ".orchestrator" / "review").mkdir()
     before = state.read_text()
     os.chmod(str(state.parent), 0o555)
     try:
-        assert died_of(capsys, lambda: orch_review(root, "begin")) == (
+        assert answered(capsys, orch_review(seed, root, "begin")) == (
             1, "", "orch: could not record %s in %s - the flow is unchanged\n" % (keys, state))
     finally:
         os.chmod(str(state.parent), 0o755)
     assert state.read_text() == before
 
 
-def test_begin_on_an_iteration_that_is_no_number_dies_recording_nothing(root, capsys):
+def test_begin_on_an_iteration_that_is_no_number_dies_recording_nothing(root, capsys, seed):
     state = flow(root, iteration="abc", budget=5)
     before = state.read_text()
 
-    assert died_of(capsys, lambda: orch_review(root, "begin")) == (
+    assert answered(capsys, orch_review(seed, root, "begin")) == (
         1, "", "orch: not an iteration number: abc\n")
     assert state.read_text() == before
 
@@ -228,28 +220,28 @@ def review_dir(root):
                                         (("123",), "iteration-123.md")],
                          ids=["recorded", "empty", "padded", "base-10", "wide"])
 def test_path_prints_the_iteration_s_flat_record_making_the_review_directory(root, capsys, argv,
-                                                                            name):
+                                                                            name, seed):
     flow(root, iteration=5)
 
-    assert orch_review(root, "path", *argv) == 0
+    assert orch_review(seed, root, "path", *argv) == 0
     assert capsys.readouterr() == ("%s/%s\n" % (review_dir(root), name), "")
     assert review_dir(root).is_dir()
 
 
 @pytest.mark.parametrize("n", ["nope", "-1", " 2", "1.0"])
-def test_path_refuses_what_is_not_an_iteration_number_printing_no_path(root, capsys, n):
+def test_path_refuses_what_is_not_an_iteration_number_printing_no_path(root, capsys, n, seed):
     flow(root, iteration=5)
 
-    assert died_of(capsys, lambda: orch_review(root, "path", n)) == (
+    assert answered(capsys, orch_review(seed, root, "path", n)) == (
         1, "", "orch: not an iteration number: %s\n" % n)
 
 
 @SESSIONS
-def test_a_review_directory_that_cannot_be_made_is_no_path(root, capsys, env):
+def test_a_review_directory_that_cannot_be_made_is_no_path(root, capsys, env, seed):
     flow(root, iteration=1)
     review_dir(root).write_text("a file\n")
 
-    assert died_of(capsys, lambda: orch_review(root, "path", env=env)) == (
+    assert answered(capsys, orch_review(seed, root, "path", env=env)) == (
         1, "", "orch: cannot create the review directory %s\n" % review_dir(root))
 
 
@@ -284,10 +276,10 @@ def golden_flow(case, root):
 
 @pytest.mark.parametrize("case", VERB_CASES)
 def test_terminal_prints_each_golden_record_s_classification_and_exits_its_status(case, root,
-                                                                                 capsys):
+                                                                                 capsys, seed):
     out, status = golden_flow(case, root)
 
-    assert orch_review(root, "terminal") == status
+    assert orch_review(seed, root, "terminal") == status
     assert capsys.readouterr() == (out, "")
 
 
@@ -313,29 +305,29 @@ def midway(root, branch="orch/21-rtmid-redo-1"):
     ("## Terminal state\nstopped here\n", MALFORMED, 1),
 ], ids=["stop", "no-record", "malformed"])
 @SESSIONS
-def test_terminal_mid_redo_reads_the_retired_record(root, capsys, text, out, status, env):
+def test_terminal_mid_redo_reads_the_retired_record(root, capsys, text, out, status, env, seed):
     retired = midway(root)
     if text is None:
         shutil.rmtree(str(retired.parent))
     else:
         retired.write_text(text)
 
-    assert orch_review(root, "terminal", env=env) == status
+    assert orch_review(seed, root, "terminal", env=env) == status
     assert capsys.readouterr() == (out, "")
 
 
-def test_after_a_completed_redo_the_flow_branch_reads_its_flat_record_alone(root, capsys):
+def test_after_a_completed_redo_the_flow_branch_reads_its_flat_record_alone(root, capsys, seed):
     midway(root, branch="orch/21-rtmid").write_text("## Terminal state\nstop\nold.\n")
 
-    assert orch_review(root, "terminal") == 1
+    assert orch_review(seed, root, "terminal") == 1
     assert capsys.readouterr() == ("interrupted\n", "")
 
 
-def test_terminal_reads_its_state_once_even_through_the_fallback(root, capsys, monkeypatch):
+def test_terminal_reads_its_state_once_even_through_the_fallback(root, capsys, monkeypatch, seed):
     midway(root).write_text("## Terminal state\nstop\n")
     opens = Opens(monkeypatch, state_json(root))
 
-    assert orch_review(root, "terminal") == 0
+    assert orch_review(seed, root, "terminal") == 0
     assert (capsys.readouterr(), opens.count) == (("stop\n", ""), 1)
 
 
@@ -366,49 +358,49 @@ def review_files(root):
 
 
 @SESSIONS
-def test_retire_moves_every_record_and_its_reports_into_the_redo_s_folder(root, capsys, env):
+def test_retire_moves_every_record_and_its_reports_into_the_redo_s_folder(root, capsys, env, seed):
     flow(root)
     records(root, "iteration-01.md", "iteration-03.md", "iteration-03-spec.md", "notes.md")
 
-    assert orch_review(root, "retire", "2", env=env) == 0
+    assert orch_review(seed, root, "retire", "2", env=env) == 0
     assert capsys.readouterr() == ("%s/pre-redo-2\n" % review_dir(root), "")
     assert review_files(root) == ["notes.md", "pre-redo-2/iteration-01.md",
                                   "pre-redo-2/iteration-03-spec.md", "pre-redo-2/iteration-03.md"]
 
 
-def test_retire_with_nothing_to_move_prints_the_folder_and_makes_none(root, capsys):
+def test_retire_with_nothing_to_move_prints_the_folder_and_makes_none(root, capsys, seed):
     flow(root)
 
-    assert orch_review(root, "retire", "1") == 0
+    assert orch_review(seed, root, "retire", "1") == 0
     assert capsys.readouterr() == ("%s/pre-redo-1\n" % review_dir(root), "")
     assert list(review_dir(root).iterdir()) == []
 
 
-def test_retire_resumes_into_the_folder_a_died_run_of_the_same_redo_made(root, capsys):
+def test_retire_resumes_into_the_folder_a_died_run_of_the_same_redo_made(root, capsys, seed):
     flow(root)
     records(root, "pre-redo-1/iteration-01.md", "iteration-02.md")
 
-    assert orch_review(root, "retire", "1") == 0
+    assert orch_review(seed, root, "retire", "1") == 0
     assert capsys.readouterr() == ("%s/pre-redo-1\n" % review_dir(root), "")
     assert review_files(root) == ["pre-redo-1/iteration-01.md", "pre-redo-1/iteration-02.md"]
 
 
-def test_retire_refuses_to_overwrite_a_record_moving_nothing(root, capsys):
+def test_retire_refuses_to_overwrite_a_record_moving_nothing(root, capsys, seed):
     flow(root)
     records(root, "pre-redo-1/iteration-02.md", "iteration-01.md", "iteration-02.md")
 
-    assert died_of(capsys, lambda: orch_review(root, "retire", "1")) == (
+    assert answered(capsys, orch_review(seed, root, "retire", "1")) == (
         1, "", "orch: %s/pre-redo-1 already holds a review record - redo_count should only"
         " increase - refusing to overwrite it\n" % review_dir(root))
     assert review_files(root) == ["iteration-01.md", "iteration-02.md",
                                   "pre-redo-1/iteration-02.md"]
 
 
-def test_retire_refuses_what_is_not_a_redo_number(root, capsys):
+def test_retire_refuses_what_is_not_a_redo_number(root, capsys, seed):
     flow(root)
     records(root, "iteration-01.md")
 
-    assert died_of(capsys, lambda: orch_review(root, "retire", "nope")) == (
+    assert answered(capsys, orch_review(seed, root, "retire", "nope")) == (
         1, "", "orch: not a redo number: nope\n")
     assert review_files(root) == ["iteration-01.md"]
 
@@ -429,10 +421,10 @@ def resuming(ticket_repo):
     return ticket_repo
 
 
-def orch_resume(root, env=None):
+def orch_resume(seed, root, env=None):
     """`orch.sh review resume` in the real checkout at <root>: its exit
     code."""
-    return orch_review(root, "resume", env=env, git=Git())
+    return orch_review(seed, root, "resume", env=env, git=Git())
 
 
 def facts(root):
@@ -444,31 +436,31 @@ def facts(root):
 
 @SESSIONS
 def test_resume_with_no_record_clears_the_dead_run_s_reports_and_reruns_it(resuming, capsys,
-                                                                            env):
+                                                                            env, seed):
     before = state_json(resuming).read_text()
 
-    assert orch_resume(resuming, env) == 0
+    assert orch_resume(seed, resuming, env) == 0
     assert capsys.readouterr() == ("rerun 2\n", "")
     assert review_files(resuming) == ["iteration-01.md"]
     assert state_json(resuming).read_text() == before
 
 
-def test_resume_with_a_record_short_of_the_budget_goes_on_to_the_next(resuming, capsys):
+def test_resume_with_a_record_short_of_the_budget_goes_on_to_the_next(resuming, capsys, seed):
     record(resuming, 2, "## Findings\nNone\n")
     before = state_json(resuming).read_text()
 
-    assert orch_resume(resuming) == 0
+    assert orch_resume(seed, resuming) == 0
     assert capsys.readouterr() == ("next\n", "")
     assert "iteration-02-spec.md" in review_files(resuming)
     assert state_json(resuming).read_text() == before
 
 
-def test_resume_with_a_record_at_the_budget_terminates(resuming, capsys):
+def test_resume_with_a_record_at_the_budget_terminates(resuming, capsys, seed):
     flow(resuming, branch=TICKET_PARENT, iteration=2, budget=2)
     record(resuming, 2, "## Findings\nNone\n")
     before = state_json(resuming).read_text()
 
-    assert orch_resume(resuming) == 0
+    assert orch_resume(seed, resuming) == 0
     assert capsys.readouterr() == ("terminate\n", "")
     assert state_json(resuming).read_text() == before
 
@@ -480,69 +472,69 @@ def test_resume_with_a_record_at_the_budget_terminates(resuming, capsys):
     (2, "## Terminal state\nstopped\n", "malformed"),
 ], ids=["none", "ready", "stop", "malformed"])
 def test_resume_refuses_a_loop_that_is_not_pending_or_interrupted_touching_nothing(
-        resuming, capsys, iteration, text, word):
+        resuming, capsys, iteration, text, word, seed):
     flow(resuming, branch=TICKET_PARENT, iteration=iteration, budget=5)
     if text is not None:
         record(resuming, 2, text)
     (resuming / "README.md").write_text("hand edit\n")
     before = facts(resuming)
 
-    assert died_of(capsys, lambda: orch_resume(resuming)) == (
+    assert answered(capsys, orch_resume(seed, resuming)) == (
         1, "", "orch: nothing to resume: review terminal says %s\n" % word)
     assert facts(resuming) == before
 
 
-def test_resume_refuses_an_unreadable_record_touching_nothing(resuming, capsys):
+def test_resume_refuses_an_unreadable_record_touching_nothing(resuming, capsys, seed):
     shutil.rmtree(str(review_dir(resuming)))
     review_dir(resuming).write_text("a file\n")
     before = state_json(resuming).read_text()
 
-    assert died_of(capsys, lambda: orch_resume(resuming)) == (
+    assert answered(capsys, orch_resume(seed, resuming)) == (
         1, "", "orch: nothing to resume: review terminal says unreadable\n")
     assert state_json(resuming).read_text() == before
 
 
-def test_a_failed_clear_dies_naming_the_report_leaving_the_flow(resuming, capsys):
+def test_a_failed_clear_dies_naming_the_report_leaving_the_flow(resuming, capsys, seed):
     spec_report = review_dir(resuming) / "iteration-02-spec.md"
     spec_report.unlink()
     (spec_report / "sub").mkdir(parents=True)
     before = state_json(resuming).read_text()
 
-    assert died_of(capsys, lambda: orch_resume(resuming)) == (
+    assert answered(capsys, orch_resume(seed, resuming)) == (
         1, "", "orch: could not clear the dead iteration's reviewer report %s\n" % spec_report)
     assert state_json(resuming).read_text() == before
 
 
 def test_a_dirty_tree_in_an_interactive_main_checkout_is_refused_touching_nothing(resuming,
-                                                                                  capsys):
+                                                                                  capsys, seed):
     (resuming / "README.md").write_text("hand edit\n")
     before = facts(resuming)
 
-    assert died_of(capsys, lambda: orch_resume(resuming)) == (
+    assert answered(capsys, orch_resume(seed, resuming)) == (
         1, "", "orch: uncommitted or in-progress work on the flow's branch in the main checkout -"
         " discard it yourself (README.md): git -C \"%s\" reset --hard && git -C \"%s\" clean -fd\n"
         % (resuming, resuming))
     assert facts(resuming) == before
 
 
-def test_on_the_flow_s_branch_under_autopilot_resume_discards_then_reruns(resuming, capsys):
+def test_on_the_flow_s_branch_under_autopilot_resume_discards_then_reruns(resuming, capsys, seed):
     (resuming / "README.md").write_text("hand edit\n")
     (resuming / "stray.txt").write_text("junk\n")
 
-    assert orch_resume(resuming, AUTOPILOT) == 0
+    assert orch_resume(seed, resuming, AUTOPILOT) == 0
     assert capsys.readouterr() == ("rerun 2\n", "")
     assert run_git(resuming, "status", "--porcelain") == ""
 
 
 def test_a_rebase_in_progress_on_the_flow_s_branch_is_its_branch_and_discarded(resuming,
-                                                                               capsys):
+                                                                               capsys, seed):
     run_git(resuming, "checkout", "-qb", "side", TICKET_PARENT + "~1")
     committed(resuming, {"feature.txt": "from-side\n"}, "side")
     run_git(resuming, "checkout", "-q", TICKET_PARENT)
     with pytest.raises(Exception):  # noqa: B017 - the conflict is the point
         run_git(resuming, "rebase", "-q", "side")
 
-    assert orch_resume(resuming, AUTOPILOT) == 0
+    assert orch_resume(seed, resuming, AUTOPILOT) == 0
     assert capsys.readouterr() == ("rerun 2\n", "")
     assert not rebasing(str(resuming))
     assert run_git(resuming, "branch", "--show-current") == TICKET_PARENT
@@ -554,7 +546,7 @@ def test_a_rebase_in_progress_on_the_flow_s_branch_is_its_branch_and_discarded(r
     ("other", None, "on stray, the active flow records no branch yet"),
 ], ids=["another-branch", "detached", "no-branch-recorded"])
 def test_resume_off_the_flow_s_branch_is_refused_discarding_nothing(resuming, capsys, how,
-                                                                     recorded, message):
+                                                                     recorded, message, seed):
     flow(resuming, branch=recorded, iteration=2, budget=5)
     run_git(resuming, "checkout", "-qb", "stray")
     if how == "detached":
@@ -562,30 +554,30 @@ def test_resume_off_the_flow_s_branch_is_refused_discarding_nothing(resuming, ca
     (resuming / "README.md").write_text("hand edit\n")
     before = facts(resuming)
 
-    assert died_of(capsys, lambda: orch_resume(resuming, AUTOPILOT)) == (
+    assert answered(capsys, orch_resume(seed, resuming, AUTOPILOT)) == (
         1, "", "orch: review resume: %s - nothing was discarded\n" % message)
     assert facts(resuming) == before
 
 
-def test_with_the_flow_done_only_a_quick_branch_is_resumed_onto(resuming, capsys):
+def test_with_the_flow_done_only_a_quick_branch_is_resumed_onto(resuming, capsys, seed):
     flow(resuming, branch=TICKET_PARENT, iteration=2, budget=5, phase="done")
     run_git(resuming, "checkout", "-qb", "stray")
     before = facts(resuming)
 
-    assert died_of(capsys, lambda: orch_resume(resuming, AUTOPILOT)) == (
+    assert answered(capsys, orch_resume(seed, resuming, AUTOPILOT)) == (
         1, "", "orch: review resume: no active flow, and stray is not a quick implementation's"
         " branch - nothing was discarded\n")
     assert facts(resuming) == before
 
 
 def test_a_dirty_tree_in_a_side_checkout_is_discarded_in_a_plain_session(resuming, tmp_path,
-                                                                         capsys, monkeypatch):
+                                                                         capsys, monkeypatch, seed):
     side = worktree_add(resuming, tmp_path / "side", "-b", "sideflow")
     monkeypatch.chdir(side)
     flow(side, branch="sideflow", iteration=1, budget=3)
     (side / "README.md").write_text("hand edit\n")
 
-    assert orch_resume(side) == 0
+    assert orch_resume(seed, side) == 0
     assert capsys.readouterr() == ("rerun 1\n", "")
     assert run_git(side, "status", "--porcelain") == ""
 
@@ -601,18 +593,12 @@ def test_a_dirty_tree_in_a_side_checkout_is_discarded_in_a_plain_session(resumin
     (("resume",), 1, "", "orch: nothing to resume: review terminal says stop\n"),
     (("retire", "1"), 0, "<review>/pre-redo-1\n", ""),
 ], ids=["begin", "path", "path-given", "terminal", "resume", "retire"])
-def test_each_verb_reads_its_flow_state_once(root, capsys, monkeypatch, argv, code, out, err):
+def test_each_verb_reads_its_flow_state_once(root, capsys, monkeypatch, argv, code, out, err, seed):
     flow(root, iteration=1, budget=1)
     record(root, 1, "## Terminal state\nstop\nCI failed twice.\n")
     opens = Opens(monkeypatch, state_json(root))
 
-    def run():
-        try:
-            return orch_review(root, *argv)
-        except SystemExit as died:
-            return died.code
-
-    assert run() == code
+    assert orch_review(seed, root, *argv) == code
     assert capsys.readouterr() == (out.replace("<review>", str(review_dir(root))), err)
     assert opens.count == 1
 
@@ -625,8 +611,8 @@ UNREADABLE = "orch: state.json cannot be read - run orch.sh doctor --flow\n"
                                   ("known-items", "a", "1")],
                          ids=["begin", "path", "path-given", "terminal", "resume", "retire",
                               "file", "known-items"])
-def test_each_verb_that_needs_a_flow_refuses_an_unreadable_state_file(root, capsys, argv):
+def test_each_verb_that_needs_a_flow_refuses_an_unreadable_state_file(root, capsys, argv, seed):
     flow(root, iteration=1)
     state_json(root).write_text('{"slug": "x"')
 
-    assert died_of(capsys, lambda: orch_review(root, *argv)) == (1, "", UNREADABLE)
+    assert answered(capsys, orch_review(seed, root, *argv)) == (1, "", UNREADABLE)

@@ -299,8 +299,9 @@ def require_state_exists(state_file: str, env: Mapping[str, str], code: int = 1)
 
 def require_state(state_file: str, env: Mapping[str, str]) -> None:
     """Dies unless an active flow's state file exists (require_state_exists)
-    and is exactly one JSON object, STATE_UNREADABLE_MSG its refusal - bash
-    require_state, for a command that needs a flow but reads no key."""
+    and is exactly one JSON object, STATE_UNREADABLE_MSG its refusal - as
+    bash's require_state was, its bash copy gone: for a command that needs a
+    flow but reads no key."""
     require_state_exists(state_file, env)
     if _state_object(state_file) is None:
         die(STATE_UNREADABLE_MSG)
@@ -339,6 +340,13 @@ def require_value(key: str, value: str, code: int = 1) -> None:
         die("no required-field message for state key: %s" % key, 2)
     if not value:
         die(message, code)
+
+
+def recorded_pr(value: str) -> Union[int, str]:
+    """The flow's recorded PR <value> as a gh adapter call takes it: a plain
+    number, which pr open writes, as an int; anything else as it is, for gh
+    to refuse with its own reason, as bash's adapter calls did."""
+    return int(value) if plain_number(value) else value
 
 
 def require_issue(state_file: str, env: Mapping[str, str],
