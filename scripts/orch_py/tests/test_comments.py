@@ -1,6 +1,6 @@
 """The Comments module's trusted reader, as finding triage reads it: its
 deaths with a hint, and the form that hands the failure's reason back
-instead of dying - messages as the bash comments.sh words them."""
+instead of dying - messages as the bash Comments module worded them."""
 from __future__ import annotations
 
 import pytest

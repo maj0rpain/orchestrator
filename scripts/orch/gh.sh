@@ -382,9 +382,8 @@ gh_or_die() {
 # The operations, in the order they are defined below:
 # - label: adapter_label_upsert, adapter_labels_detail
 # - rate limit: adapter_rate_limit
-# - issue: adapter_issue_body, adapter_issue_comments,
-#   adapter_issue_state_labels, adapter_issue_title_labels,
-#   adapter_issue_authorship, adapter_issue_state,
+# - issue: adapter_issue_body, adapter_issue_state_labels,
+#   adapter_issue_title_labels, adapter_issue_authorship, adapter_issue_state,
 #   adapter_issue_created_at, adapter_issues_labelled_rows,
 #   adapter_issues_any_labelled_rows,
 #   adapter_issues_open_rows, adapter_issues_titled_rows,
@@ -392,7 +391,7 @@ gh_or_die() {
 #   adapter_issue_comment_url,
 #   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
 # - pr: adapter_pr_create, adapter_pr_labels, adapter_pr_body,
-#   adapter_pr_comments, adapter_pr_refs, adapter_pr_draft,
+#   adapter_pr_refs, adapter_pr_draft,
 #   adapter_pr_state_draft, adapter_prs_open, adapter_prs_open_bodies,
 #   adapter_prs_open_mergeability,
 #   adapter_pr_diff, adapter_prs_merged,
@@ -486,7 +485,7 @@ adapter_rate_limit() {
 # The trimmed issue object the whole-issue adapter prints (#528): the issue's
 # number, title and body and its label names - every other field gh answers
 # with is dropped, so the shape does not change with gh's version. It carries
-# no comments: they are read by adapter_issue_comments. No bash caller is left:
+# no comments: the Python gh adapter reads them. No bash caller is left:
 # `issue fetch --json` is Python now, with its own ISSUE_JSON_JQ in
 # orch/gh.py, and the adapter stays as a recorded deviation (#3916).
 ISSUE_JSON_JQ='{number, title, body, labels: [.labels[].name]}'
@@ -494,14 +493,6 @@ ISSUE_JSON_JQ='{number, title, body, labels: [.labels[].name]}'
 # adapter_issue_body <n>: the issue's body as GitHub holds it, then a newline.
 adapter_issue_body() {
   gh issue view "$1" --json body --jq .body
-}
-
-# adapter_issue_comments <n>: the issue's comments as gh answers them, raw JSON
-# - an object whose comments array holds each comment's author login object,
-# authorAssociation, createdAt, body and url, among gh's other fields.
-# Rendering happens above the adapter, in the Comments module.
-adapter_issue_comments() {
-  gh issue view "$1" --json comments
 }
 
 # adapter_issue_json <n>: the issue as ISSUE_JSON_JQ's one JSON object, with no
@@ -899,13 +890,6 @@ adapter_pr_labels() {
 # adapter_pr_body <n>: the PR's body as GitHub holds it, then a newline.
 adapter_pr_body() {
   gh pr view "$1" --json body --jq .body
-}
-
-# adapter_pr_comments <n>: the PR's comments as gh answers them, raw JSON, as
-# adapter_issue_comments prints an issue's (issue #418). Rendering happens above
-# the adapter, in the Comments module.
-adapter_pr_comments() {
-  gh pr view "$1" --json comments
 }
 
 # adapter_pr_refs <n>: the read of the PR's own head and base, from the PR, not

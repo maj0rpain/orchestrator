@@ -4,7 +4,6 @@ fake writes reads back through the bash helpers, and the store's failure
 files inject failures under the bash adapter's operation names."""
 from __future__ import annotations
 
-import json
 import os
 import re
 import subprocess
@@ -25,9 +24,9 @@ BASH_FAKE = SCRIPTS / "test" / "gh_adapter_fake.sh"
 BASH_HELPERS = {
     SCRIPTS / "test" / "orch" / "setup.sh": [
         "fake_issue", "fake_issue_relabel",
-        "fake_comment_seed", "fake_comment", "fake_comment_bodies",
+        "fake_comment_bodies",
         "fake_fail", "fake_unfail", "fake_offline", "fake_online",
-        "fake_comments_of", "fake_pr", "fake_pr_comment",
+        "fake_comments_of", "fake_pr",
         "fake_default_branch", "fake_pr_draft", "fake_pr_head", "iso_of",
         "fake_next_pr", "fake_pr_base_of", "fake_pr_body_of",
     ],
@@ -62,6 +61,14 @@ fake_claim_seed() {
 fake_claim_held() { [ -f "$ORCH_GH_FAKE_STORE/claims/$1" ] && echo held || echo free; }
 fake_reason_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/reason" 2>/dev/null; }
 """
+# The comment seeders the bash suite's shared setup defined: their last bash
+# caller went with the bash comment readers (#4266), and these cases still seed
+# comments through them, by the fake's own comment writer.
+COMMENT_SEEDS = r"""
+fake_comment_seed() { printf '%s' "$4" | fake_comment_append "$1" "$2" "$3" /dev/stdin "${5-}"; }
+fake_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/$1/comments" "$2" "$3" "$4" "${5-}"; }
+fake_pr_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/prs/$1/comments" "$2" "$3" "$4" "${5-}"; }
+"""
 SECONDARY = "You have exceeded a secondary rate limit."
 NOW = 1_900_000_000
 
@@ -87,7 +94,7 @@ def bash_definitions(path, names):
 
 
 HELPERS = "\n".join(bash_definitions(path, names) for path, names in BASH_HELPERS.items()) + (
-    ISSUE_READS + CLAIM_READS)
+    ISSUE_READS + CLAIM_READS + COMMENT_SEEDS)
 
 
 def bash(store, script):
@@ -600,8 +607,6 @@ fake_pr_comment 4 bob 2026-03-02T00:00:00Z $'Second\n' NONE
 adapter_prs_open topic; echo
 adapter_prs_open topic main; echo
 adapter_pr_body 4 | od -An -c | tr -s ' '
-adapter_pr_comments 4 | jq -c '.comments[]'
-adapter_pr_comments 9 | jq -c '.comments'
 """)
     gh = fake(store)
 
@@ -622,8 +627,6 @@ adapter_pr_comments 9 | jq -c '.comments'
     bash_lines = bash_answer.split("\n")
     assert bash_lines[:6] == ["12\tmaybe", "9\ttrue", "4\tfalse", "", "12\tmaybe", "4\tfalse"]
     assert bash_lines[7] == " B o d y \\r \\n l i n e \\n \\n"
-    assert [json.loads(line) for line in bash_lines[8:10]] == comments
-    assert bash_lines[10] == "[]"
 
 
 def test_the_merged_prs_of_a_bash_seeded_store_read_as_the_bash_fake_answers_them(store):
@@ -663,8 +666,8 @@ def test_prs_seeded_by_the_python_seeders_read_back_through_the_bash_fake(store)
     assert bash(store, r"""
 adapter_prs_open topic
 adapter_pr_body 4 | od -An -c | tr -s ' '
-adapter_pr_comments 4 | jq -c '.comments[0] | [.author.login, .authorAssociation, .createdAt, .body]'
-""") == '9\ttrue\n4\tfalse\n B o d y \\r \\n \\n\n["ann","NONE","2026-03-01T00:00:00Z","Hi."]\n'
+cat "$ORCH_GH_FAKE_STORE"/prs/4/comments/1/{author,association,created,body}
+""") == '9\ttrue\n4\tfalse\n B o d y \\r \\n \\n\nann\nNONE\n2026-03-01T00:00:00Z\nHi.'
 
 
 # --- writes the bash helpers read back ---------------------------------------
@@ -953,10 +956,10 @@ def test_a_store_seeded_by_the_python_seeders_reads_back_through_the_bash_helper
     assert bash(store, r"""
 printf '%s|%s|%s|%s|' "$(fake_state_of 5)" "$(fake_title_of 5)" "$(fake_labels_of 5)" "$(fake_comments_of 5)"
 printf '%s|%s|' "$(fake_body_of 5 | od -An -c | tr -s ' ')" "$(fake_state_of 6)"
-adapter_issue_comments 5 | jq -c '.comments[0] | [.author.login, .authorAssociation, .createdAt]'
+cat "$ORCH_GH_FAKE_STORE"/issues/5/comments/1/{author,association,created}
 cat "$ORCH_GH_FAKE_STORE/next_issue"
 """) == ('OPEN|A title|bug ready-for-agent |Hi.| B o d y \\r \\n|CLOSED|'
-         '["ann","NONE","2026-02-01T00:00:00Z"]\n30\n')
+         'ann\nNONE\n2026-02-01T00:00:00Z\n30\n')
 
 
 def test_the_python_default_branch_seeder_answers_the_bash_fake_byte_for_byte(store):

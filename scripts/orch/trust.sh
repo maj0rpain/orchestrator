@@ -1,45 +1,19 @@
 # shellcheck shell=bash
 # trust.sh - the Trust module: a concept module with no orch.sh noun of its own,
-# owning which comments orch.sh reads and which PRs it takes for its own. A PR
-# is its own when its head branch lives in the repo (isCrossRepository false); a
-# fork PR is dropped (trust_filter_prs). A trusted comment is one whose
-# authorAssociation is OWNER, MEMBER or COLLABORATOR (ADR-0057); every other
-# comment is dropped, once per read, in the domain layer just above the gh
-# adapters, before any marked comment, answer or spec text is read from it.
+# owning which PRs orch.sh takes for its own and which issue authors it trusts.
+# A PR is its own when its head branch lives in the repo (isCrossRepository
+# false); a fork PR is dropped (trust_filter_prs). Which comments orch.sh reads
+# - those whose authorAssociation is OWNER, MEMBER or COLLABORATOR (ADR-0057) -
+# is decided by the Python copy, orch/trust.py's filter_comments.
 # Which issues autopilot runs on is decided by the Python copy, orch/trust.py's
 # issue_check: an issue is trusted when its body and its title both are. The
 # bash copy below (trust_issue_check) has no caller left.
 # Its tests: scripts/test/orch/trust.sh.
 # Sourced by orch.sh, after common.sh.
 
-# The associations of a trusted author, as space-separated words - the one list
-# the comment filter and the issue check share. The filter's JSON array is built
-# from it here, as the module loads, starting no process.
+# The associations of a trusted author, as space-separated words, which the
+# issue check reads.
 TRUST_ASSOCIATIONS="OWNER MEMBER COLLABORATOR"
-_trust_items=""
-for _trust_a in $TRUST_ASSOCIATIONS; do
-  _trust_items="${_trust_items:+$_trust_items, }\"$_trust_a\""
-done
-TRUST_ASSOCIATIONS_JSON="[$_trust_items]"
-unset _trust_a _trust_items
-
-# trust_filter_comments <issue>: the comments JSON array on stdin, each comment
-# carrying its authorAssociation, on stdout without the untrusted ones. When it
-# dropped any, prints one stderr line, `orch: ignored N comment(s) from
-# untrusted authors on #<issue>`. Non-zero, printing nothing, when stdin is not
-# a comment array.
-trust_filter_comments() {
-  local both kept n
-  both="$(jq -c --argjson t "$TRUST_ASSOCIATIONS_JSON" \
-    'if type == "array" then [.[] | select(.authorAssociation | IN($t[]))] as $k
-       | {kept: $k, dropped: (length - ($k | length))}
-     else error("not a comment array") end' 2>/dev/null)" || return 1
-  [ -n "$both" ] || return 1
-  n="$(jq -r .dropped <<<"$both")"
-  kept="$(jq -c .kept <<<"$both")"
-  [ "$n" -eq 0 ] || warn "ignored $n comment(s) from untrusted authors on #$1"
-  printf '%s\n' "$kept"
-}
 
 # trust_filter_prs <subject>: an adapter's PR lines on stdin, each
 # `<number>[\t<field>...]\t<isCrossRepository>`, on stdout as the same lines

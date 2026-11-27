@@ -1,11 +1,10 @@
-"""The Marked comment module (scripts/orch/marked-comment.sh), kept to what
-the issue, review-pass and spec-review nouns and the handoff module's
-comment retire use: the first line a marked comment opens with
-(marked_comment_write, every kind as bash's - the spec review's changelog
-heading, and the retired handoff marker a redo posts);
+"""The Marked comment module, holding what the issue, review-pass and
+spec-review nouns and the handoff module's comment retire use: the first line
+a marked comment opens with (marked_comment_write, every kind - the spec
+review's changelog heading, and the retired handoff marker a redo posts);
 recognising the spec review's changelogs, comments whose first line is the
-`## Spec review` heading, to drop them; the texts of the spec rulings, comments whose first
-line begins `Spec ruling:`, that a review pass reads; and every comment's
+`## Spec review` heading, to drop them; the texts of the spec rulings,
+comments whose first line begins `Spec ruling:`, that a review pass reads; and every comment's
 kind, argument and retired tag (marked_comment_info, the jq prelude's), which
 the issue timeline reads the handoff comments by.
 
@@ -23,7 +22,7 @@ SPEC_REVIEW_OPENING = "## Spec review"
 SPEC_RULING_OPENING = "Spec ruling:"
 _SPEC_REVIEW_LINE = re.compile(re.escape(SPEC_REVIEW_OPENING) + r"[ \t]*")
 
-# The kind registry, as bash's: the hidden-marker kinds, the one kind that can
+# The kind registry, as the bash module had it: the hidden-marker kinds, the one kind that can
 # be retired, the one kind that takes a cause token after its argument and the
 # causes, and the legacy openings of a refusal and a failure stop comment.
 MARKED_COMMENT_KINDS = ("question", "limited", "reentry", "handoff", "refusal", "failure")
@@ -56,11 +55,11 @@ class NotText(ValueError):
 
 def marked_comment_write(kind: str, arg: Optional[str] = None, tag: str = "") -> str:
     """The first line a marked comment of <kind> opens with, newline
-    included, as bash's marked_comment_write prints it: the spec-review and
+    included, as the bash writer printed it: the spec-review and
     spec-ruling kinds' openings, which take no <arg>, and every other
     registered kind's hidden marker, naming <arg> - which must hold no
     whitespace - and <tag>: `retired` on a handoff, or a cause on the caused
-    kind. Dies, as bash's does, on an unknown kind or tag and on an argument
+    kind. Dies, as the bash writer did, on an unknown kind or tag and on an argument
     or tag the kind does not take."""
     if kind in ("spec-review", "spec-ruling"):
         if arg is not None:

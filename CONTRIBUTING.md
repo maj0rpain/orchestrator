@@ -106,10 +106,7 @@ those about `orch.sh` itself (its bash version guard, its death outside a
 checkout and its removed nouns), and `setup.sh` the shared setup and the
 summary. A concept module with no noun gets
 a section file named as the module is, beside the per-noun files: `checkout.sh`
-for `scripts/orch/checkout.sh`, `comments.sh` for `scripts/orch/comments.sh`,
-`issue-timeline.sh` for `scripts/orch/issue-timeline.sh`,
-`marked-comment.sh` for `scripts/orch/marked-comment.sh`, `trust.sh` for
-`scripts/orch/trust.sh`, and,
+for `scripts/orch/checkout.sh`, `trust.sh` for `scripts/orch/trust.sh`, and,
 for the two bash sources outside `scripts/orch/`, `host.sh` for
 `scripts/host.sh` and `triage-labels.sh` for `scripts/triage-labels.sh`. A
 ticket's tests go in the file for the noun it touches; a new
@@ -292,19 +289,15 @@ whole command that makes one - is captured through the gh module's pair
 shell resolves it once (a subshell that resolves first does so for itself and
 cannot hand the memo back). The concept modules with no noun, `checkout.sh`
 (the Checkout module:
-the walk over every checkout), `comments.sh` (the Comments module: reading an
-issue's or a PR's trusted comments once, `comments_trusted_read`, with the
-rendering in `orch/comments.py`),
-`issue-timeline.sh` (the Issue timeline module: one
-issue's comment history, read once and asked in domain terms),
-`marked-comment.sh` (the Marked comment module: writing and recognising
-the issue comments whose first line names their kind), `trust.sh`
-(the Trust module: which comments and which PRs orch.sh reads; which issues
-autopilot runs on is decided by its Python copy, `orch/trust.py`), live among
-the modules too. The Filed finding, Liveness,
-Session log and Standing modules went with the bash autopilot noun: each is a
-Python module only (`orch/filed_finding.py`, `orch/liveness.py`,
-`orch/session_log.py`, `orch/standing.py`).
+the walk over every checkout) and `trust.sh` (the Trust module: which PRs
+orch.sh reads; which comments it reads and which issues autopilot runs on are
+decided by its Python copy, `orch/trust.py`), live among the modules too. The
+Filed finding, Liveness, Session log and Standing modules went with the bash
+autopilot noun, and the Comments, Issue timeline and Marked comment modules
+with the bash handoff noun: each is a Python module only
+(`orch/filed_finding.py`, `orch/liveness.py`, `orch/session_log.py`,
+`orch/standing.py`, `orch/comments.py`, `orch/issue_timeline.py`,
+`orch/marked_comment.py`).
 `scripts/orch/loader.sh` (beside `common.sh`, always loaded) holds the loader:
 the stub table, its per-copy cache under `~/.cache/orchestrator/`, the stub
 dispatch (`orch_stubs`, `orch_stub`), `orch_load`, which sources a module once
@@ -338,7 +331,7 @@ command's entry for a module every run reaches, or before the shared loop, as
 that has the need, so a run that never reaches it loads nothing more; and,
 where that branch itself runs inside a
 subshell, in the main shell behind a guard that tests the same condition, such
-as `if autopilot_active; then orch_load marked-comment; fi` for a load only an
+as `if autopilot_active; then orch_load <module>; fi` for a load only an
 autopilot session needs.
 Two assertions over a load trace belong to one section file each, in its
 preamble: `assert_trace_loads_once <label> <trace>`, in `side-checkout.sh`,
@@ -625,10 +618,7 @@ scripts/orch_py/tests/        the pytest suite: in-process tests of each noun ag
 scripts/orch_py/requirements-dev.txt the pinned dev dependencies: pytest, pytest-xdist, pytest-timeout (the package itself needs none)
 scripts/orch_py/pytest.ini    the pytest settings: the tests folder, the package on the module path, the per-test timeout, no cache directory
 scripts/orch/checkout.sh      the Checkout module, a concept module with no noun: checkouts, the one walk over every checkout
-scripts/orch/comments.sh      the Comments module, a concept module with no noun: reading an issue's or a PR's trusted comments once (comments_trusted_read); the rendering lives in orch/comments.py
-scripts/orch/issue-timeline.sh the Issue timeline module, a concept module with no noun: an issue's comment history, read once and asked for its newest question, latest stop, limit stops, re-entry comments and live handoffs
-scripts/orch/marked-comment.sh the Marked comment module, a concept module with no noun: the kinds of marked issue comment, writing their first line and the jq prelude recognising them
-scripts/orch/trust.sh         the Trust module, a concept module with no noun: which comments and which PRs orch.sh reads - the one filter dropping a comment whose author is not an owner, member or collaborator, and the one filter dropping a fork PR; the issue trust check deciding which issues autopilot runs on is orch/trust.py's, the bash copy left with no caller
+scripts/orch/trust.sh         the Trust module, a concept module with no noun: which PRs orch.sh reads - the one filter dropping a fork PR; the comment filter dropping a comment whose author is not an owner, member or collaborator is orch/trust.py's, and the issue trust check deciding which issues autopilot runs on is orch/trust.py's, the bash copy left with no caller
 scripts/orch/common.sh        the primitives no concept owns (die, capture, ..., and autopilot_active, whether this is an autopilot session, which checkout and handoff ask)
 scripts/orch/loader.sh        the module loader, always loaded beside common.sh: the stub table, its per-copy cache under ~/.cache/orchestrator/, the stub dispatch (orch_stubs, orch_stub), orch_load (once per shell) and the ORCH_LOAD_TRACE load trace
 scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), the capture pair gh_capture and gh_capture_err, every adapter_* operation, the GitHub limit record its limit handler makes in an autopilot process (the GitHub limit pause and a session's hit file, with the pause put, the pause-file paths and the reset cap), the ORCH_GH_ADAPTER hook
@@ -669,9 +659,6 @@ scripts/test/orch/<noun>.sh   one file per orch.sh noun (branch.sh, state.sh, ..
 scripts/test/orch/checkout.sh the Checkout module's sections, named as the module is
 scripts/test/orch/host.sh          the host detector's sections (scripts/host.sh), named as the file is
 scripts/test/orch/triage-labels.sh the triage-label parser's sections (scripts/triage-labels.sh), named as the file is
-scripts/test/orch/comments.sh      the Comments module's sections, named as the module is
-scripts/test/orch/issue-timeline.sh the Issue timeline module's sections, named as the module is
-scripts/test/orch/marked-comment.sh the Marked comment module's sections, named as the module is
 scripts/test/orch/trust.sh          the Trust module's sections, named as the module is
 docs/how-it-works.md          the phases, every command in full, the base branch, hosts, and activation
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
