@@ -1,7 +1,9 @@
 # shellcheck shell=bash
 # autopilot.sh - orch.sh's autopilot command: the clone-scoped autopilot
-# settings, the autopilot-session check and the host gate the watcher's verbs
-# share. Its tests: scripts/test/orch/autopilot.sh.
+# settings and the host gate the watcher's verbs share. The autopilot-session
+# check (autopilot_active) is common.sh's, the plan's block report handoff.sh's
+# and the GitHub limit record, with the pause put and the pause-file paths it
+# writes through, gh.sh's. Its tests: scripts/test/orch/autopilot.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 # The permission modes a headless session may run with, and the numeric
@@ -12,9 +14,6 @@ AUTOPILOT_CAP_DEFAULT=3
 AUTOPILOT_ROUNDS_DEFAULT=2
 AUTOPILOT_BUDGET_DEFAULT=3
 AUTOPILOT_GITHUB_RESERVE_DEFAULT=20
-# The most seconds ahead a recorded GitHub reset is held: GitHub's rate limits
-# reset hourly, so none names a later one (#3684).
-AUTOPILOT_GITHUB_PAUSE_MAX=3600
 
 # The autopilot setting names, in the order show prints them; settings prints
 # the same list, so the two never disagree.
@@ -101,10 +100,6 @@ autopilot_show() {
   done
 }
 
-# autopilot_active: whether this is an autopilot session - the one reader of
-# ORCH_AUTOPILOT, so no skill reads the variable itself.
-autopilot_active() { [ "${ORCH_AUTOPILOT:-}" = 1 ]; }
-
 # autopilot_gate: the host and settings gate tick and watch start with. Dies
 # on any detected host other than Claude Code (or no claude on PATH), then
 # with no permission mode set, naming the key, then on a model or effort
@@ -128,36 +123,6 @@ autopilot_mode_require() {
     die "orchestrator.autopilot.permission-mode is not set - choose how headless sessions run (git config orchestrator.autopilot.permission-mode <${AUTOPILOT_MODES// /|}>)"
 }
 
-# autopilot_block_values <file> <key>: the value of each `<key>: <value>` line
-# in <file>'s `## Autopilot` section, trimmed, one per line.
-autopilot_block_values() {
-  section_body "$1" '## Autopilot' | sed -n "s/^$2:[[:space:]]*\\(.*[^[:space:]]\\)[[:space:]]*\$/\\1/p"
-}
-
-# autopilot_block_report <file>: the plan's `## Autopilot` block, in
-# handoff_report's lines - `ok ## Autopilot`, or one FAIL line per problem -
-# and non-zero when any failed. The block is `Rounds` and `Budget`, each one
-# line holding a whole number of 1 or more.
-autopilot_block_report() {
-  local file="$1" key values failed=0
-  if [ "$(section_count "$file" '## Autopilot')" -eq 0 ]; then
-    printf 'FAIL missing section: ## Autopilot\n'
-    return 1
-  fi
-  for key in Rounds Budget; do
-    values="$(autopilot_block_values "$file" "$key")"
-    if [ -z "$values" ]; then
-      printf 'FAIL ## Autopilot has no %s line (want "%s: <n>")\n' "$key" "$key"; failed=1
-    elif [ "$(wc -l <<<"$values" | tr -d ' ')" -gt 1 ]; then
-      printf 'FAIL ## Autopilot repeats its %s line\n' "$key"; failed=1
-    elif ! is_positive_int "$values"; then
-      printf 'FAIL ## Autopilot %s is %s - it must be a whole number of 1 or more\n' "$key" "$values"; failed=1
-    fi
-  done
-  [ "$failed" = 1 ] || printf 'ok ## Autopilot\n'
-  return "$failed"
-}
-
 # autopilot_plan_value <Rounds|Budget>: the value of that line of the `##
 # Autopilot` block of the flow's issue's newest plan comment, printed as a plain
 # integer. Dies when the issue has no plan handoff or its block has no valid
@@ -175,12 +140,6 @@ autopilot_plan_value() {
   is_positive_int "$value" ||
     die "issue #$issue's plan comment has no valid ## Autopilot $1 line"
   printf '%s\n' "$((10#$value))"
-}
-
-# autopilot_iso_epoch <YYYY-MM-DDTHH:MM:SSZ>: the UTC timestamp as epoch
-# seconds, GNU or BSD date; non-zero for a value neither reads.
-autopilot_iso_epoch() {
-  date -u -d "$1" +%s 2>/dev/null || date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$1" +%s 2>/dev/null
 }
 
 # autopilot_phase_arg <phase> [die-fn]: dies, through die-fn (default die),
@@ -382,18 +341,6 @@ autopilot_questions() {
 #
 # One pass of the watcher, and the wrapper around one headless session. Every
 # write under a claim ends in the Standing module's release.
-
-# autopilot_dir <main-root>: where a clone's autopilot files live - the run
-# records, the session logs, the limit files (limit, github-limit,
-# github-early-<pool>), the housekeeping stamp (housekeeping) and the per-issue
-# hit marks - under its main checkout.
-autopilot_dir() { printf '%s/%s/autopilot\n' "$1" "$ORCH_DIR_NAME"; }
-
-# autopilot_epoch_iso <epoch>: epoch seconds as a UTC timestamp, GNU or BSD
-# date.
-autopilot_epoch_iso() {
-  date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ
-}
 
 # AUTOPILOT_SELF: the absolute path of this orch.sh, fixed once at load, before
 # any change of directory. It derives from the loader's module directory, which
@@ -808,52 +755,6 @@ autopilot_cleanup_stale() {
 # autopilot_usage_pause_file <main>: the usage limit file under <main>.
 autopilot_usage_pause_file() { printf '%s/limit\n' "$(autopilot_dir "$1")"; }
 
-# autopilot_pause_epoch <file>: the reset recorded in the limit file <file> as
-# epoch seconds; 0 when the file is missing or its text does not parse.
-autopilot_pause_epoch() {
-  local text
-  text="$(cat "$1" 2>/dev/null)" || text=""
-  autopilot_iso_epoch "$text" || echo 0
-}
-
-# autopilot_github_pause_file <main>: the GitHub limit file under <main>, the
-# pause a GitHub API rate limit writes (#2577).
-autopilot_github_pause_file() { printf '%s/github-limit\n' "$(autopilot_dir "$1")"; }
-
-# autopilot_github_reset_cap <epoch>: prints <epoch>, or now plus
-# AUTOPILOT_GITHUB_PAUSE_MAX when <epoch> is further ahead. Every GitHub writer
-# caps its reset through it; the usage limit file is never capped.
-autopilot_github_reset_cap() {
-  local max
-  max=$(( $(date +%s) + AUTOPILOT_GITHUB_PAUSE_MAX ))
-  if [ "$1" -gt "$max" ]; then echo "$max"; else echo "$1"; fi
-}
-
-# autopilot_github_limit_record <reset>: in an autopilot process - a tick or the
-# session wrapper, each by a flag of its own, or a session (ORCH_AUTOPILOT=1) -
-# writes the GitHub pause, its reset capped at an hour from now, extended only
-# to the later of two resets; in a
-# session, which has the wrapper's hit file path, writes the reset there too. An
-# interactive call writes and prints nothing. Never fails and never warns: each
-# write that fails prints one clause on stdout, for gh_limit_handle to join onto
-# its one limit line.
-autopilot_github_limit_record() {
-  local main_root reset
-  [ "${ORCH_AUTOPILOT:-}" = 1 ] || [ -n "${ORCH_AUTOPILOT_TICK:-}${ORCH_AUTOPILOT_RUN:-}" ] || return 0
-  reset="$(autopilot_github_reset_cap "$1")"
-  if main_root="$(main_checkout_or_die 2>/dev/null)" && [ -n "$main_root" ]; then
-    autopilot_pause_put "$(autopilot_github_pause_file "$main_root")" "$reset" ||
-      echo "could not write the GitHub limit pause under $main_root"
-  else
-    echo "could not write the GitHub limit pause: the main checkout is unreadable"
-  fi
-  if [ "${ORCH_AUTOPILOT:-}" = 1 ] && [ -n "${ORCH_AUTOPILOT_HIT_FILE:-}" ]; then
-    autopilot_pause_put "$ORCH_AUTOPILOT_HIT_FILE" "$reset" ||
-      echo "could not write the GitHub limit hit file $ORCH_AUTOPILOT_HIT_FILE"
-  fi
-  return 0
-}
-
 # autopilot_github_early_file <main> <pool>: the early GitHub pause's file for
 # <pool> (core or graphql) under <main>: pickup paused, before any limit is hit,
 # while the pool is below the github-reserve (#2577).
@@ -942,19 +843,6 @@ autopilot_pause_until() {
   fi
   rm -f "$file"
   return 1
-}
-
-# autopilot_pause_put <file> <epoch>: records <epoch> (epoch seconds) in <file>
-# as one UTC ISO timestamp, keeping a reset already there that is later and
-# replacing one that is earlier or does not parse. Fails, silently, when the
-# file cannot be written.
-autopilot_pause_put() {
-  local file="$1" new_epoch="$2" old_epoch
-  if [ -f "$file" ]; then
-    old_epoch="$(autopilot_pause_epoch "$file")"
-    [ "$old_epoch" -lt "$new_epoch" ] || return 0
-  fi
-  { mkdir -p "$(dirname "$file")" && autopilot_epoch_iso "$new_epoch" >"$file"; } 2>/dev/null
 }
 
 # autopilot_pause_extend <file> <epoch> <log> [<what>]: records <epoch> as the
@@ -1495,6 +1383,8 @@ autopilot_run() {
   orch_load standing
   orch_load checkout
   orch_load handoff
+  # gh holds autopilot_dir and the pause files, first reached inside a $(...)
+  orch_load gh
   local issue="$1" main_root side recorded phase mode launcher log prompt rc=0 mine name iteration hit usage_before usage flags=()
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"

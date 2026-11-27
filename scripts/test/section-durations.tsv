@@ -66,7 +66,7 @@
 102	109	autopilot tick: the merged-PR close backstop (#2478)	ea4ada816b5b94a61f4043f4de46ab1cbc1c6571
 48	55	autopilot tick: one read of the done issues (#2559)	0c52e73598458458f789e54c6bbe9fba3a655ab9
 12	14	autopilot sync-finish, sync-dropped and sync-fail	0197754e888a81ed101c2975e37e7aa5a6e099a4
-1	23	autopilot tick: the GitHub limit pause (#2577)	ba0e8a1f52c527a851130ec690a1a5816708def4
+21	24	autopilot tick: the GitHub limit pause (#2577)	91f8726e769d96924f00ee8d6464e38995f25d33
 37	41	autopilot tick: a pickup that meets a GitHub limit (#2577)	f82dda0c4eea94455fc9651f71563aa17819010c
 101	116	autopilot tick: stops that cannot land are contained (#3052)	064aa43dc185acd174af31653c2179c4eb10ded8
 16	19	autopilot tick: one read of the claims on origin (#3062)	cbf53c501d152c4b7011da04fc667e0a5c92a710
@@ -122,7 +122,7 @@
 16	18	claim adapter operations (#1454)	faa35fc415d08eda21b71812e5e6e5c46b39b2d4
 3	4	label casing (#1943)	41702561181f22517cb801c3da597ce5b3409ff3
 48	42	gh rate limits (#2577)	5ec09fb0232ccd3ffa97e89312a5ebd0daf1aaba
-14	15	gh rate limits: the GitHub pause and the hit file (#2577)	b4b9c15807b83d1efd54e8267a594d247da1655d
+17	19	gh rate limits: the GitHub pause and the hit file (#2577)	1119e4139cb6643ccc47356d4b53d9e76cb9d94f
 2	3	handoff path	6506b76fc19c8f2e5161f6834d42da7db79b7efb
 14	15	phase table	6a3661c69e2f37c4fdf3adbddede35d88896f08a
 14	16	handoff validate	b411144437c99bdbfb21ef3b6b947928e85eb0ca
@@ -131,17 +131,17 @@
 3	5	handoff templates	d8a35e3d1dd995b7656b4732a2ad1a720cc3d7ea
 9	11	handoff verification	61db1be4e9df7ca88a5e3280c235cf9e55e32059
 21	24	handoff comments (autopilot)	546aa602e64d8d5b250d67077a006b07f4e6ba8f
-45	50	handoff store contract (#1820)	cfa21776ab50a746f0c998c51361ec1ed0547252
+45	51	handoff store contract (#1820)	bbd2e3e49318f3c280763a1e99f36e9919fd75b8
 2	3	handoff post and fetch with no state file	9575adf21ffee7c534f52098f40746563996ffed
 1	2	host detection (host.sh, #281)	810863fbb3e926aaff3a2d2d00c5e6caa68f55d7
 185	223	issue-timeline module	c60c74521e712ce2d67cc0b5fceb0a3a9673363e
 8	9	Liveness module	a3eb853321244ddc291751d37b820bf4e3a80df7
-8	10	orch_load	4ddbec7bee676c378355be9ce3f5288a8d3c3d9a
-12	13	on-demand loading	31da01e9771535101c9099261b1346557c17ffc9
-17	19	stub table cache	7d0507a38c5a850d350bb3bd8522480c8275568c
-1	2	mp-skill	ff0630a9019ddff8fc3b15dd051c433ff958357c
-3	4	bash version guard	750901f6bb23055f6535e8e5c1c6be7c7bcaf348
-1	2	outside a checkout (#931)	369fa1aeaaffc42258b8442cc028f963a55857e8
+9	10	orch_load	a8015cd4b32b847d8cb4db628fcf4875f1825828
+12	13	on-demand loading	57abe7cb4c4c956462d288d8e183c2a39f0f216c
+17	20	stub table cache	adcb99b0833cf7efb04197fab5b31d0fd6678f29
+1	2	mp-skill	6ac734149252de0268b27a22de4050894e49a354
+5	5	bash version guard	a8d2cfe5bbb32166e192820e2b3d83282e7a66ce
+1	2	outside a checkout (#931)	e5c70ed8a90ea1696b300a7a8f75e91707e1690b
 29	25	marked-comment module	f6f5c1a7f89a0d4a6d8a53403309d4f68d4fe0c2
 9	10	repo show	03b579d082d6e4e5353a860b91cb90f1006013d0
 8	9	default-branch	2ab1b9bd03b98654ef71dcf00efa0fd1f0f07c16
@@ -153,7 +153,7 @@
 12	13	archive keeps flow-less directories (#1247)	f0995e89b111d509b904c815f2f1d1688f3ba437
 31	34	side-checkout prune: a covered branch tip (#1906)	6da2f8a896b1813db0dc74fad8e4ea2486f9921a
 10	12	side-checkout prune: fork PRs are not proof (#1979)	7dd8d3fb3cdec8619f1297cefaf131f9989968d2
-131	137	side-checkout prune: the merged-PR close backstop (#2477)	0134953c0f9c6a3ae8c1d53a9c532ea7551b6fa3
+121	126	side-checkout prune: the merged-PR close backstop (#2477)	1f38ca3930b9a0ca00c0bc251b66a94de0435836
 3	4	side_checkout_marker reads the worktree's git pointer	d31a2b3b83c72522f87238dc1d45e73b7a4b6cb5
 7	8	side checkout marker issue: reading without re-classifying (#3073)	8b19c794ef4be0750983ee35fe8f0b9f5a94e529
 4	5	archive reads the flow's slug once	479dab274c7a796a4fb5c4095d6dc3bbf52b3586

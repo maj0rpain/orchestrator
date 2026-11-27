@@ -719,6 +719,15 @@ printf '\n```\n## Autopilot\n\nRounds: 0\nBudget: 9\n```\n' >>"$f"
 printf '\n## Autopilot\n\nRounds: 2\nBudget: 3\n' >>"$f"
 out="$(ORCH_AUTOPILOT=1 "$ORCH" handoff validate "$f" 2>&1)"; st=$?
 assert_status "a fenced example block ahead of the real one is not read" "$st" 0
+# The block check and the autopilot-session test are the handoff module's and
+# common's own: an autopilot validation loads no autopilot module.
+hb_trace="$(mktemp)"
+plan_file "$f" $'Rounds: 0\nBudget: 3'
+out="$(ORCH_LOAD_TRACE="$hb_trace" ORCH_AUTOPILOT=1 "$ORCH" handoff validate "$f" 2>&1)"; st=$?
+assert_status "an autopilot plan with a bad block still fails" "$st" 1
+assert_contains "naming the bad value" "$out" "## Autopilot Rounds is 0 - it must be a whole number of 1 or more"
+assert_trace_names_no "an autopilot plan's validation" "$hb_trace" autopilot
+rm -f "$hb_trace"
 restore_suite_env
 
 # --- handoff post and fetch with no state file --------------------------------

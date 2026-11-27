@@ -116,6 +116,10 @@ float_lt()  { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'; }
 # float_add <a> <b>: prints a + b to three decimal places.
 float_add() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f\n", a + b }'; }
 
+# autopilot_active: whether this is an autopilot session - the one reader of
+# ORCH_AUTOPILOT, so no skill reads the variable itself.
+autopilot_active() { [ "${ORCH_AUTOPILOT:-}" = 1 ]; }
+
 # is_positive_int <v>: whether <v> is a whole number of 1 or more, leading
 # zeros allowed ("08" is 8). Each caller keeps its own reaction to a no.
 is_positive_int() { [[ "$1" =~ ^[0-9]+$ ]] && [ "$((10#$1))" -gt 0 ]; }

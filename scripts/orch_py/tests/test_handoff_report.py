@@ -35,7 +35,6 @@ source "$1"
 source "$2"
 STATE="$3"
 orch_load handoff
-orch_load autopilot
 orch_load state
 ORCH_AUTOPILOT="$4"
 st=0

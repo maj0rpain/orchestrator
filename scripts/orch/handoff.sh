@@ -131,6 +131,36 @@ section_count() {
     END { print n + 0 }' "$1"
 }
 
+# autopilot_block_values <file> <key>: the value of each `<key>: <value>` line
+# in <file>'s `## Autopilot` section, trimmed, one per line.
+autopilot_block_values() {
+  section_body "$1" '## Autopilot' | sed -n "s/^$2:[[:space:]]*\\(.*[^[:space:]]\\)[[:space:]]*\$/\\1/p"
+}
+
+# autopilot_block_report <file>: the plan's `## Autopilot` block, in
+# handoff_report's lines - `ok ## Autopilot`, or one FAIL line per problem -
+# and non-zero when any failed. The block is `Rounds` and `Budget`, each one
+# line holding a whole number of 1 or more.
+autopilot_block_report() {
+  local file="$1" key values failed=0
+  if [ "$(section_count "$file" '## Autopilot')" -eq 0 ]; then
+    printf 'FAIL missing section: ## Autopilot\n'
+    return 1
+  fi
+  for key in Rounds Budget; do
+    values="$(autopilot_block_values "$file" "$key")"
+    if [ -z "$values" ]; then
+      printf 'FAIL ## Autopilot has no %s line (want "%s: <n>")\n' "$key" "$key"; failed=1
+    elif [ "$(wc -l <<<"$values" | tr -d ' ')" -gt 1 ]; then
+      printf 'FAIL ## Autopilot repeats its %s line\n' "$key"; failed=1
+    elif ! is_positive_int "$values"; then
+      printf 'FAIL ## Autopilot %s is %s - it must be a whole number of 1 or more\n' "$key" "$values"; failed=1
+    fi
+  done
+  [ "$failed" = 1 ] || printf 'ok ## Autopilot\n'
+  return "$failed"
+}
+
 # The bash statement of what a valid handoff is: one line per required
 # section, each `ok <heading>` or `FAIL <problem>`. The Python package's copy,
 # handoff_report in scripts/orch_py/orch/handoff.py, which phase advance and

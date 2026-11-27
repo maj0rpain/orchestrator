@@ -1912,5 +1912,21 @@ assert_not_contains "a semicolon in a clause leaves no clause on stdout" "$out" 
 out="$(cat "$ORCH_GH_FAKE_STORE/semi.err")"
 assert_contains "a semicolon inside a clause is kept as it is" "${out%%$'\n'*}" "hit file $hit_semi"
 rmdir "$hit_semi"
+# The limit record is gh's own: recording the pause loads no autopilot module.
+rm -f "$pause_file"
+lr_trace="$(mktemp)"
+ORCH_LOAD_TRACE="$lr_trace" ORCH_AUTOPILOT=1 sourced_orch adapter_issue_body 5 >/dev/null 2>&1
+assert_eq "a session's limit records the pause" "$(on_disk "$pause_file")" present
+assert_trace_names_no "the limit record" "$lr_trace" autopilot
+rm -f "$lr_trace" "$pause_file"
 rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
+# The golden GitHub limit pause the Python limit record writes for a reset of
+# 1800001800 (ADR-0067; scripts/orch_py/tests/test_github_limit_record.py)
+# reads as that reset, and is what the bash pause put writes for it.
+gl_golden="${ORCH%/*}/orch_py/tests/github_pause/github-limit"
+assert_eq "the golden GitHub limit pause reads as its reset" "$(sourced_orch autopilot_pause_epoch "$gl_golden")" 1800001800
+sourced_orch autopilot_pause_put "$pause_file" 1800001800
+assert_eq "and is what the bash pause put writes for that reset" \
+  "$(cmp -s "$pause_file" "$gl_golden" && echo same)" same
+rm -f "$pause_file"
 restore_suite_env
