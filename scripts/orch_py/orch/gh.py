@@ -1174,6 +1174,22 @@ class Gh:
             ["repo", "view", repo, "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"]
         ).rstrip("\n")
 
+    def repo_local_default(self) -> str:
+        """gh's own default repo for this checkout, the first line of the bare
+        OWNER/REPO gh prints even for one off github.com; "" where none is
+        set, which gh says on stderr, exiting 0. Read from local git config,
+        so no network is needed."""
+        return self._gh(["repo", "set-default", "--view"]).split("\n", 1)[0]
+
+    def auth_status(self, host: str) -> None:
+        """Returns where gh's active account on <host> is authenticated;
+        raises GhFailed where it is not, or gh cannot tell, carrying gh's
+        report on both streams - its text is the only signal telling "not
+        authenticated" from "could not connect". Both flags are needed: gh
+        checks every account on every host otherwise, and one stale account
+        fails it."""
+        self._gh(["auth", "status", "--active", "--hostname", host])
+
     # --- sub-issue and dependency operations ---
 
     def issue_parent(self, n: int) -> Optional[int]:

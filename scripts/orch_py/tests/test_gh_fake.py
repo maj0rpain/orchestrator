@@ -377,6 +377,31 @@ def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
     assert gh.repo_default_branch("acme/widgets") == "trunk"
 
 
+def test_the_local_default_the_python_seeder_stores_reads_the_same_in_both_fakes(store):
+    seed = FakeStore(str(store))
+    assert fake(store).repo_local_default() == ""
+    seed.local_default("upstream/widgets")
+
+    assert fake(store).repo_local_default() == "upstream/widgets"
+    assert bash(store, "adapter_repo_local_default") == "upstream/widgets\n"
+
+
+def test_noauth_fails_the_auth_status_with_gh_s_login_report_and_the_rest_as_unauthorised(
+        store):
+    bash(store, "fake_issue 5 open")
+    FakeStore(str(store)).noauth()
+    gh = fake(store)
+
+    with pytest.raises(GhFailed) as status:
+        gh.auth_status("github.com")
+    with pytest.raises(GhFailed) as body:
+        gh.issue_body(5)
+
+    assert (status.value.stderr, body.value.stderr) == (
+        bash(store, "adapter_auth_status github.com 2>&1 || :"),
+        bash(store, "adapter_issue_body 5 2>&1 || :"))
+
+
 @pytest.mark.parametrize("operation, call", [
     ("adapter_issues_labelled_bodies", lambda gh: gh.issues_labelled_bodies("review:nit")),
     ("adapter_issue_state", lambda gh: gh.issue_state(5)),
@@ -418,6 +443,8 @@ def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
     ("adapter_pr_commits_checked", lambda gh: gh.pr_commits_checked(6)),
     ("adapter_run_rerun", lambda gh: gh.run_rerun(4242)),
     ("adapter_job_failed_log", lambda gh: gh.job_failed_log(77)),
+    ("adapter_repo_local_default", lambda gh: gh.repo_local_default()),
+    ("adapter_auth_status", lambda gh: gh.auth_status("github.com")),
 ])
 def test_the_added_operations_fail_under_the_bash_operation_names(store, operation, call):
     bash(store, "fake_issue 5 open review:nit; fake_issue 7 open; fake_default_branch trunk; "

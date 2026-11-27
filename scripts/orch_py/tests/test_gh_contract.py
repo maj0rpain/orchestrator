@@ -632,6 +632,43 @@ def test_a_repo_gh_cannot_resolve_fails_its_default_branch_read(fixture_gh):
     assert failed.value.stderr == gone
 
 
+LOCAL_DEFAULT = ["repo", "set-default", "--view"]
+
+
+def test_repo_local_default_reads_the_first_line_gh_prints(fixture_gh):
+    fixture_gh.reply(LOCAL_DEFAULT, "upstream/widgets\nsecond line\n")
+
+    assert real_gh(fixture_gh).repo_local_default() == "upstream/widgets"
+    assert fixture_gh.calls() == [("fork/widgets", "github.com", LOCAL_DEFAULT)]
+
+
+def test_a_checkout_with_no_gh_default_repo_reads_as_none(fixture_gh):
+    fixture_gh.reply(LOCAL_DEFAULT, stderr="no default repository has been set\n")
+
+    assert real_gh(fixture_gh).repo_local_default() == ""
+
+
+def auth_status_argv(host):
+    return ["auth", "status", "--active", "--hostname", host]
+
+
+def test_auth_status_asks_about_the_active_account_on_the_host(fixture_gh):
+    fixture_gh.reply(auth_status_argv("ghe.example.com"), "Logged in to ghe.example.com\n")
+
+    assert real_gh(fixture_gh).auth_status("ghe.example.com") is None
+    assert fixture_gh.calls() == [
+        ("fork/widgets", "github.com", auth_status_argv("ghe.example.com"))]
+
+
+def test_a_failed_auth_status_passes_gh_s_report_through(fixture_gh):
+    report = "X Failed to log in to github.com account octo\n- dial tcp: i/o timeout\n"
+    fixture_gh.reply(auth_status_argv("github.com"), "github.com\n", stderr=report, exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).auth_status("github.com")
+    assert (failed.value.stdout, failed.value.stderr) == ("github.com\n", report)
+
+
 # --- PR operations -----------------------------------------------------------
 
 

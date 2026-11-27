@@ -38,6 +38,9 @@ COMMENT_AUTHOR = "fake-gh"
 COMMENT_CREATED = "2026-01-01T00:00:00Z"
 OFFLINE = "dial tcp: lookup api.github.com: no such host\n"
 NOAUTH = "HTTP 401: Bad credentials (https://api.github.com/graphql)\n"
+# What the auth status says under noauth, where every other operation answers
+# NOAUTH.
+NOAUTH_STATUS = "You are not logged into any GitHub hosts. To log in, run: gh auth login\n"
 # What the store answers for an issue's creation or a PR's merge time it does
 # not hold, and for a PR's head SHA.
 EPOCH = "1970-01-01T00:00:00Z"
@@ -201,7 +204,7 @@ class FakeGh:
         if os.path.isfile(_store_path(self.store, "offline")):
             return OFFLINE
         if os.path.isfile(_store_path(self.store, "noauth")):
-            return NOAUTH
+            return NOAUTH_STATUS if operation == "adapter_auth_status" else NOAUTH
         fail = _store_path(self.store, "fail", operation)
         stderr = read_raw(fail)
         if stderr is None or _countdown(fail + ".after"):
@@ -531,6 +534,16 @@ class FakeGh:
                 " (repository)\n" % repo
             )
         return answer
+
+    def repo_local_default(self) -> str:
+        """The stored local_default's first line; "" where none is set."""
+        self._failing("adapter_repo_local_default")
+        return _first_line(_store_path(self.store, "local_default"))
+
+    def auth_status(self, host: str) -> None:
+        """Answers, as a logged-in gh does, unless the store fails it -
+        offline, noauth or a seeded failure."""
+        self._failing("adapter_auth_status")
 
     # --- sub-issue and dependency operations ---
 
@@ -1063,6 +1076,11 @@ class FakeStore:
         fake_default_branch seeds it."""
         _write(_store_path(self.store, "default_branch"), answer)
 
+    def local_default(self, name: str) -> None:
+        """gh's own local default repo for the checkout, OWNER/REPO, as the
+        bash suite's fake_local_default seeds it."""
+        _write(_store_path(self.store, "local_default"), name + "\n")
+
     def next_issue(self, n: int) -> None:
         _write(_store_path(self.store, "next_issue"), "%d\n" % n)
 
@@ -1129,6 +1147,11 @@ class FakeStore:
 
     def offline(self) -> None:
         _write(_store_path(self.store, "offline"), "")
+
+    def noauth(self) -> None:
+        """gh is not authenticated: the auth status fails saying so, every
+        other operation as unauthorised; online undoes it."""
+        _write(_store_path(self.store, "noauth"), "")
 
     def online(self) -> None:
         for name in ("offline", "noauth", "ratelimit"):
