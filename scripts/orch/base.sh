@@ -92,8 +92,8 @@ is_branch_name() {
 }
 
 # The base branch in effect now: the checkout's orchestrator.base setting, else
-# the default branch. The one answer every fork, PR target and doctor check
-# asks for - default_branch_into keeps meaning GitHub's default branch alone.
+# the default branch. The one answer every fork and PR target asks for -
+# default_branch_into keeps meaning GitHub's default branch alone.
 # Local git config rather than state.json or a tracked file: it outlives
 # abort and archiving, every worktree of the clone shares it, and it never
 # travels with a push.

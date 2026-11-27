@@ -194,7 +194,7 @@ label_listed() {
 # How a caller reacts to a failed adapter operation. gh_reason cuts gh's stderr
 # to a reason; gh_die is the one place the dying message is built; gh_or_die
 # runs an operation and dies through gh_die when it fails. A site that reacts
-# another way - a warning, a doctor line, a verdict - calls gh_reason itself.
+# another way - a warning, a verdict - calls gh_reason itself.
 
 # gh_reason <stderr>: the reason a failed gh call gives - the first line of
 # its captured stderr, or "gh gave no reason" when that line is empty, so a

@@ -7,7 +7,7 @@ under tmp_path."""
 from __future__ import annotations
 
 import json
-import shutil
+import os
 
 import pytest
 
@@ -1446,6 +1446,14 @@ def claimed(tmp_path):
     return origin, Gh(RepoPin({}, git), {})
 
 
+def origin_gone(origin):
+    """Moves the bare repository at <origin> aside, so its URL no longer
+    resolves: one rename, never a delete, since the pushes into it may have
+    started git's background maintenance there, and a delete racing that
+    maintenance fails on the files it removes."""
+    os.rename(str(origin), "%s.gone" % origin)
+
+
 def claims_on(origin):
     return run_git(origin, "for-each-ref", "--format=%(refname)", "refs/orch/claims/")
 
@@ -1466,7 +1474,7 @@ def test_a_claim_origin_does_not_hold_counts_as_freed(claimed):
 
 def test_any_other_push_failure_fails_the_delete_with_git_s_reason(claimed):
     origin, gh = claimed
-    shutil.rmtree(str(origin))
+    origin_gone(origin)
 
     with pytest.raises(GhFailed) as failed:
         gh.claim_delete(5)
@@ -1526,7 +1534,7 @@ def test_a_claim_message_missing_a_field_reads_it_as_empty(claims):
 
 def test_a_claim_list_origin_cannot_answer_fails_with_git_s_reason(claims):
     origin, _, gh = claims
-    shutil.rmtree(str(origin))
+    origin_gone(origin)
 
     with pytest.raises(GhFailed) as failed:
         gh.claim_list()

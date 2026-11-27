@@ -376,11 +376,11 @@ def handoff_comment_missing(issue: str, stem: str, hint: str = "") -> NoReturn:
 
 
 def _comment_copy_or_die(status: int, path: str, issue: str, stem: str, hint: str = "") -> None:
-    """Reacts to a handoff comment's copy to <path>: exits 1 for <status> 2,
-    a copy not written (its line already on stderr), and with no file at
+    """Reacts to a handoff comment's copy to <path>: exits 1 for <status>
+    COPY_UNWRITTEN, a copy not written (its line already on stderr), and with no file at
     <path> dies naming issue #<issue>'s missing <stem> handoff comment, as
     bash handoff_comment_status does."""
-    if status == 2:
+    if status == COPY_UNWRITTEN:
         raise SystemExit(1)
     if not os.path.isfile(path):
         handoff_comment_missing(issue, stem, hint)
