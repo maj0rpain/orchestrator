@@ -180,18 +180,18 @@ def is_positive_number(text: str) -> bool:
     return is_number(text) and text.strip("0.") != ""
 
 
-def require_poll_knobs(knobs: Sequence[Tuple[str, str]]) -> None:
-    """Dies unless every (name, value) of <knobs> holds a number and the
-    last, the poll interval, one greater than zero, with bash's
-    require_poll_knobs messages: a non-number would make a poll loop's
-    comparisons meaningless, and a zero interval would poll as fast as it
-    can."""
+def require_poll_knobs(knobs: Sequence[Tuple[str, str]], code: int = 1) -> None:
+    """Dies, exit <code> (2 where bash dies through die2), unless every
+    (name, value) of <knobs> holds a number and the last, the poll interval,
+    one greater than zero, with bash's require_poll_knobs messages: a
+    non-number would make a poll loop's comparisons meaningless, and a zero
+    interval would poll as fast as it can."""
     for name, value in knobs:
         if not is_number(value):
-            die("%s is not a number: %s" % (name, value))
+            die("%s is not a number: %s" % (name, value), code)
     name, value = knobs[-1]
     if not is_positive_number(value):
-        die("%s must be greater than zero: %s" % (name, value))
+        die("%s must be greater than zero: %s" % (name, value), code)
 
 
 def file_write_atomic(path: str, text: str, make_directory: bool = True) -> bool:
