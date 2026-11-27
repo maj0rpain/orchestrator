@@ -558,6 +558,48 @@ def test_reenter_with_a_blank_phase_dies_with_the_marker_writer_s_refusal(
     assert snapshot(store) == before
 
 
+@pytest.mark.parametrize("fail, landed", [
+    (("adapter_issue_comment", 0),
+     "could not post the spec question comment on issue #74: HTTP 500 - writes that landed:"
+     " none"),
+    (("adapter_claim_delete", 0),
+     "could not delete the claim ref on issue #74: HTTP 500 - writes that landed: posted the"
+     " spec question comment, added needs-human, removed orch:running"),
+], ids=["its comment", "the claim delete"])
+def test_ask_failing_partway_names_the_writes_that_landed_the_claim_held(
+        seed, capsys, chain_of, fail, landed):
+    tr_seed(seed, 74, "orch:spec", "orch:running")
+    seed.fail_after(*fail, "HTTP 500")
+
+    assert died_of(capsys, lambda: standing_ask(chain_of(74), "spec", "Q", "o")) == (
+        1, "", "orch: %s; the claim stays held\n" % landed)
+    assert seed.claim_held(74) is True
+
+
+@pytest.mark.parametrize("earlier, fail, landed", [
+    (0, ("adapter_issue_comment", 0),
+     "could not post the re-entry comment on issue #75: HTTP 500 - writes that landed: none"),
+    (2, ("adapter_issue_relabel", 0),
+     "could not add needs-human on issue #75: HTTP 500 - writes that landed: posted the review"
+     " question comment"),
+    (0, ("adapter_issue_comments", 0),
+     "could not read issue #75's comments to count the automatic re-entries in a row: HTTP 500"
+     " - writes that landed: none"),
+], ids=["its comment", "the ask path's label", "its comments read"])
+def test_reenter_failing_partway_names_the_writes_that_landed_the_claim_held(
+        seed, capsys, chain_of, earlier, fail, landed):
+    tr_seed(seed, 75, "orch:review", "orch:running")
+    for day in range(earlier):
+        seed.comment(75, "o", "2026-01-0%dT00:00:00Z" % (day + 1),
+                     marker_of("reentry", "review") + "\nr")
+    seed.fail_after(*fail, "HTTP 500")
+
+    assert died_of(capsys, lambda: standing_reenter(chain_of(75), "review", "R",
+                                                    lambda: "o")) == (
+        1, "", "orch: %s; the claim stays held\n" % landed)
+    assert seed.claim_held(75) is True
+
+
 # --- the limit stop -------------------------------------------------------------------
 
 PAUSE = "2026-01-01T01:00:00Z"

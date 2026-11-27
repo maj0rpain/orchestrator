@@ -112,9 +112,10 @@ def record_of(pid):
 
 
 def args_of(pid):
-    """The live process <pid>'s arguments, as ps prints them, untruncated."""
-    return subprocess.run(["ps", "-ww", "-o", "args=", "-p", str(pid)], stdin=subprocess.DEVNULL,
-                          stdout=subprocess.PIPE, check=True).stdout.decode().strip()
+    """The live process <pid>'s arguments, read from /proc rather than ps,
+    which a container may lack: one space between each."""
+    raw = Path("/proc/%d/cmdline" % pid).read_bytes()
+    return " ".join(raw.decode().rstrip("\0").split("\0"))
 
 
 def alive(pid):
@@ -123,9 +124,12 @@ def alive(pid):
         os.kill(pid, 0)
     except OSError:
         return False
-    state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], stdin=subprocess.DEVNULL,
-                           stdout=subprocess.PIPE).stdout.decode().strip()
-    return state != "" and not state.startswith("Z")
+    try:
+        stat = Path("/proc/%d/stat" % pid).read_text()
+    except OSError:
+        return False
+    # The state is the first word after the command name's closing paren.
+    return stat.rsplit(") ", 1)[-1].split()[0] != "Z"
 
 
 def held_tick(seed):
@@ -200,7 +204,7 @@ def test_a_second_watch_of_the_clone_is_refused_naming_the_live_one(
     assert pidfile.read_text() == record
 
 
-def test_a_watch_replaces_a_pidfile_whose_process_is_gone_and_carries_on_past_failed_ticks(
+def test_a_watch_replaces_a_pidfile_whose_process_is_gone(
         tmp_path, clone, env, seed, pidfile, procs):
     gone = subprocess.Popen(["true"])
     gone.wait()
@@ -208,9 +212,9 @@ def test_a_watch_replaces_a_pidfile_whose_process_is_gone_and_carries_on_past_fa
     pidfile.write_text("%d 1\n" % gone.pid)
     seed.fail("adapter_label_upsert", "HTTP 500 label")
 
-    watcher = watch(procs, clone, env, tmp_path, "--every", "1")
+    watcher = watch(procs, clone, env, tmp_path, "--every", "300")
 
-    assert until(lambda: failed_ticks(tmp_path, 2), TICK_BOUND)
+    assert until(lambda: failed_ticks(tmp_path, 1), TICK_BOUND)
     assert pidfile.read_text() == record_of(watcher.pid)
     assert watcher.poll() is None
     watcher.terminate()

@@ -892,15 +892,17 @@ class Gh:
         labelled_limit_warn(self.env, len(rows), label)
         return rows
 
-    def _state_rows(self, labels: Sequence[str]) -> List[StateRow]:
+    def _state_rows(self, labels: Sequence[str], search: str = "") -> List[StateRow]:
         """The open issues carrying every one of <labels> - every open issue
-        with none named - oldest first and cut at the issue-list limit (the
-        newest dropped), with their state and labels."""
+        with none named - and matching the search term <search>, if any,
+        oldest first and cut at the issue-list limit (the newest dropped),
+        with their state and labels."""
         args = ["issue", "list", "--state", "open"]
         for label in labels:
             args += ["--label", label]
+        query = (search + " " if search else "") + "sort:created-asc"
         return parse_state_rows(self._gh(
-            args + ["--search", "sort:created-asc", "--limit", str(issue_list_limit(self.env)),
+            args + ["--search", query, "--limit", str(issue_list_limit(self.env)),
                     "--json", "number,state,labels",
                     "--jq", ".[] | .number, .state, (.labels | length), (.labels[].name)"]
         ))
@@ -926,12 +928,7 @@ class Gh:
         issues_open_rows lists them, one cut across all, warning, naming the
         labels joined by "or", when the cut is reached - bash
         adapter_issues_any_labelled_rows."""
-        rows = parse_state_rows(self._gh(
-            ["issue", "list", "--state", "open", "--search",
-             "label:%s sort:created-asc" % ",".join('"%s"' % label for label in labels),
-             "--limit", str(issue_list_limit(self.env)), "--json", "number,state,labels",
-             "--jq", ".[] | .number, .state, (.labels | length), (.labels[].name)"]
-        ))
+        rows = self._state_rows((), "label:" + ",".join('"%s"' % label for label in labels))
         any_labelled_limit_warn(self.env, len(rows), *labels)
         return rows
 

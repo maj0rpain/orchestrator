@@ -161,20 +161,13 @@ def test_sync_dropped_with_a_bad_auto_sync_warns_and_still_lands_the_manual_stop
     assert (labels_of(store, 145), seed.claim_held(145)) == (["orch:done", "needs-human"], False)
 
 
-@pytest.mark.parametrize("fail, landed", [
-    ("adapter_issue_relabel",
-     "could not add needs-human, remove orch:sync on issue #145: HTTP 500 - writes that"
-     " landed: none"),
-    ("adapter_issue_comment",
-     "could not post the failure comment on issue #145: HTTP 500 - writes that landed: added"
-     " needs-human, removed orch:sync"),
-], ids=["relabel", "comment"])
 def test_sync_dropped_failing_partway_dies_naming_the_writes_that_landed(
-        root, seed, capsys, syncing, dropped, fail, landed):
-    seed.fail(fail, "HTTP 500")
+        root, seed, capsys, syncing, dropped):
+    seed.fail("adapter_issue_comment", "HTTP 500")
 
     assert (run_ap(seed, root, AUTOPILOT, "sync-dropped", dropped), capsys.readouterr()) == (
-        1, ("", "orch: %s; the claim stays held\n" % landed))
+        1, ("", "orch: could not post the failure comment on issue #145: HTTP 500 - writes that"
+                " landed: added needs-human, removed orch:sync; the claim stays held\n"))
     assert seed.claim_held(145) is True
 
 

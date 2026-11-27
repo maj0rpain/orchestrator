@@ -23,8 +23,8 @@ import subprocess
 from typing import Callable, List, Mapping, Optional, Tuple
 
 from orch.autopilot import autopilot_dir
-from orch.common import (dir_stamp, die, mkdir_p_or_die, plain_number, read_raw, read_text, rm_f,
-                         text_file_write, warn)
+from orch.common import (DIR_STAMP_PATTERN, dir_stamp, die, mkdir_p_or_die, plain_number, read_raw,
+                         read_text, rm_f, text_file_write, warn)
 
 
 def proc_start(pid: int, env: Mapping[str, str]) -> Optional[str]:
@@ -241,7 +241,7 @@ def latest_log(main: str, issue: str, phase: str = "") -> str:
 # no setting.
 LOG_RETENTION_SECONDS = 14 * 24 * 60 * 60
 # A session log's name, as log_path writes it.
-LOG_NAME = re.compile(r"[0-9]+-[^-]+-[0-9]{8}-[0-9]{6}\.log")
+LOG_NAME = re.compile(r"[0-9]+-[^-]+-%s\.log" % DIR_STAMP_PATTERN)
 
 
 def logs_prune(main: str, now: float) -> bool:

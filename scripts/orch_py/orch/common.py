@@ -439,6 +439,11 @@ def normalize_slug(text: str) -> str:
     return slug
 
 
+# dir_stamp's shape as a regular expression, owned here beside it so a name
+# test elsewhere (the session log prune) follows a change to it.
+DIR_STAMP_PATTERN = r"[0-9]{8}-[0-9]{6}"
+
+
 def dir_stamp(clock: Callable[[], float] = time.time) -> str:
     """The time <clock> reads, in UTC, as a directory name's stamp:
     %Y%m%d-%H%M%S."""

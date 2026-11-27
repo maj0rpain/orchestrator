@@ -360,11 +360,16 @@ class Chain:
         values = [value for have, value in self._record() if have == key]
         return values[-1] if values else None
 
+    def landed_suffix(self) -> str:
+        """What a death's clause ends with: the writes that landed and that
+        the claim stays held."""
+        return " - writes that landed: %s; the claim stays held" % (
+            ", ".join(self.landed) or "none")
+
     def die(self, clause: str) -> NoReturn:
         """Dies with <clause>, the writes that landed and that the claim
         stays held."""
-        die("%s - writes that landed: %s; the claim stays held"
-            % (clause, ", ".join(self.landed) or "none"))
+        die(clause + self.landed_suffix())
 
     def add(self, write: str) -> None:
         """Notes <write> as landed."""
@@ -427,8 +432,7 @@ class Chain:
             if timeline_has_body(entries, text):
                 self.add(name)
                 return
-        landed = " - writes that landed: %s; the claim stays held" % (
-            ", ".join(self.landed) or "none")
+        landed = self.landed_suffix()
         with temp_text_file(text, "could not create a temp file to " + what + landed,
                             "could not write the temp file to " + what + landed,
                             self.mkstemp) as body:

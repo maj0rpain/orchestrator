@@ -1245,12 +1245,8 @@ def housekeeping(ap: Autopilot, main: str) -> None:
     skipped. The session logs are pruned, a failure warned and never
     failing the step; then the finished sweep /orchestrator:finish runs, its
     report on stderr, a failed sweep warned and never failing the step."""
-    import contextlib
-    import sys
-
     from orch import liveness
-    from orch.common import subshell
-    from orch.side_checkout import side_checkout_prune
+    from orch.side_checkout import finished_sweep
 
     stamp = autopilot_dir(main) + "/housekeeping"
     now = int(ap.clock())
@@ -1265,11 +1261,7 @@ def housekeeping(ap: Autopilot, main: str) -> None:
         warn("could not write the housekeeping stamp %s: housekeeping is skipped" % stamp)
         return
     liveness.logs_prune(main, ap.clock())
-    with contextlib.redirect_stdout(sys.stderr):
-        swept = subshell(lambda: side_checkout_prune([], ap.gh_of(), ap.git, ap.env, ap.root,
-                                                     clock=ap.clock))
-    if swept != 0:
-        warn("the finished sweep failed - carrying on")
+    finished_sweep(ap.gh_of(), ap.git, ap.env, ap.root, clock=ap.clock)
 
 
 # --- pickup ---------------------------------------------------------------------

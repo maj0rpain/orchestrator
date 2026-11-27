@@ -619,6 +619,18 @@ def _archive_main_in_place(git, main_root: str, root: str, clock: Callable[[], f
     return True
 
 
+def finished_sweep(gh, git, env: Mapping[str, str], root: str, here: Optional[str] = None,
+                   clock: Callable[[], float] = time.time, carrying_on: str = "") -> None:
+    """The finished sweep as one step of another command: side_checkout_prune
+    in a subshell, its report on stderr, a failed one warned of as "the
+    finished sweep failed - carrying on<carrying_on>" and never stopping the
+    command it runs in."""
+    with redirect_stdout(sys.stderr):
+        swept = subshell(lambda: side_checkout_prune([], gh, git, env, root, here, clock))
+    if swept != 0:
+        warn("the finished sweep failed - carrying on" + carrying_on)
+
+
 def side_checkout_add(argv: Sequence[str], gh, git, env: Mapping[str, str], root: str,
                       here: Optional[str] = None,
                       clock: Callable[[], float] = time.time) -> str:
@@ -651,10 +663,7 @@ def side_checkout_add(argv: Sequence[str], gh, git, env: Mapping[str, str], root
     # GitHub for the default branch.
     gh, default = _default_once(gh, git, env)
     base = base_in_effect(git, default)
-    with redirect_stdout(sys.stderr):
-        swept = subshell(lambda: side_checkout_prune([], gh, git, env, root, here, clock))
-    if swept != 0:
-        warn("the finished sweep failed - carrying on with add")
+    finished_sweep(gh, git, env, root, here, clock, " with add")
     with _in_main_checkout(main_root):
         path = "%s/%s" % (side_checkouts_dir(main_root), slug)
         if os.path.exists(path):

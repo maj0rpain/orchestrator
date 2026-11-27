@@ -113,9 +113,10 @@ trust_issue_check() {
 
 # trust_writer_text <subject>: after trust_issue_check returned 1, the clause
 # naming the untrusted writer - "<subject>'s <what> was last written by
-# <writer>, who is not an owner, member or collaborator of the repository" -
-# the pickup's refusal's. The attended warning `init --issue` and `issue fetch`
-# print, both converted nouns, words it through orch/trust.py's copy.
+# <writer>, who is not an owner, member or collaborator of the repository".
+# No bash caller is left: the pickup's refusal and the attended warning `init
+# --issue` and `issue fetch` print, all converted nouns, word it through
+# orch/trust.py's copy.
 trust_writer_text() {
   printf "%s's %s was last written by %s, who is not an owner, member or collaborator of the repository" \
     "$1" "$TRUST_WHAT" "$TRUST_WRITER"

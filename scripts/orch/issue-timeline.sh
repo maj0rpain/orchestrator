@@ -24,7 +24,7 @@
 # Its tests: scripts/test/orch/issue-timeline.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block; marked_comment_jq is
 # expanded at call time, so marked-comment.sh may load after it. Layering:
-# Marked comment, then Issue timeline, then Standing, autopilot and handoff.
+# Marked comment, then Issue timeline, then handoff.
 #
 # The rule for a stop lives here: a refusal or a failure comment is a stop (a
 # limit stop is not), the legacy prose-opened ones included, which the Marked

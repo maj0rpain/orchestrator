@@ -181,7 +181,8 @@ gh_limit_handle() {
 # What gh_limit_handle records in an autopilot process: the GitHub limit pause
 # under the main checkout, and a session's hit file. The pause file's format is
 # pinned to the Python limit record by scripts/orch_py/tests/github_pause/. The
-# autopilot noun reads and extends the same files through these helpers.
+# autopilot noun, converted, reads and extends the same files through
+# orch/autopilot.py's pause_* functions.
 
 # The most seconds ahead a recorded GitHub reset is held: GitHub's rate limits
 # reset hourly, so none names a later one (#3684).
@@ -973,8 +974,9 @@ adapter_prs_open_bodies() {
 # adapter_prs_open_mergeability: every open PR, newest first, one per line as
 # `<number>\t<head branch>\t<mergeable>\t<isCrossRepository>` - mergeable is
 # gh's MERGEABLE, CONFLICTING or UNKNOWN, the flag `true` or `false` -
-# unfiltered: the Trust module's trust_filter_prs drops the fork PRs. The
-# autopilot watcher's one read per tick (issue #2325).
+# unfiltered: the Trust module's trust_filter_prs drops the fork PRs. No bash
+# caller is left: the converted autopilot watcher's one read per tick (issue
+# #2325) is orch/gh.py's prs_open_mergeability.
 adapter_prs_open_mergeability() {
   gh pr list --state open --limit "$ISSUE_LIST_LIMIT" --json number,headRefName,mergeable,isCrossRepository \
     --jq '.[] | "\(.number)\t\(.headRefName)\t\(.mergeable)\t\(.isCrossRepository)"'

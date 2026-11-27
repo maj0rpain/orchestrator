@@ -40,7 +40,8 @@ once and copied to the scratch directory to be read as files.
 from __future__ import annotations
 
 import os
-from typing import List, Mapping, NoReturn, Optional, Sequence, Tuple
+from contextlib import contextmanager
+from typing import Iterator, List, Mapping, NoReturn, Optional, Sequence, Tuple
 
 from orch.autopilot import autopilot_active, autopilot_block_report
 from orch.common import (ORCH_DIR_NAME, die, fenced, file_write_atomic, lines_of,
@@ -363,6 +364,25 @@ def handoff_comment_fetch_due(gh, issue: str, phase: str, scratch: str) -> Tuple
     return status, ""
 
 
+@contextmanager
+def handoff_comment_body(name: str, path: str) -> Iterator[str]:
+    """Yields the path of a temp file holding the body of a handoff comment,
+    <name>'s marker then the file at <path>, already validated, and removes
+    it on exit - bash handoff_comment_body. Dies when the temp file cannot
+    be made or written."""
+    unmade = "could not create a temp file for the handoff comment"
+    with temp_text_file(marked_comment_write("handoff", name) + (read_raw(path) or ""),
+                        unmade, unmade) as body:
+        yield body
+
+
+def _post_failed(name: str, issue: str, failed: GhFailed) -> None:
+    """Warns that gh could not post the <name> handoff on issue #<issue>,
+    with gh's reason from <failed>."""
+    warn("gh could not post the %s handoff on issue #%s: %s"
+         % (name, issue, gh_reason(failed.stderr)))
+
+
 def handoff_comment_post(gh, issue: str, name: str, path: str) -> bool:
     """Posts the handoff file at <path>, already validated, silently as a
     new comment on issue #<issue> under <name>'s marker, as bash's
@@ -370,14 +390,11 @@ def handoff_comment_post(gh, issue: str, name: str, path: str) -> bool:
     so a post never edits an earlier one. False, after `orch: gh could not
     post the <name> handoff on issue #<issue>: <reason>` on stderr, when the
     post fails. The temp body is removed on every path."""
-    unmade = "could not create a temp file for the handoff comment"
-    with temp_text_file(marked_comment_write("handoff", name) + (read_raw(path) or ""),
-                        unmade, unmade) as body:
+    with handoff_comment_body(name, path) as body:
         try:
             gh.issue_comment(int(issue), body)
         except GhFailed as failed:
-            warn("gh could not post the %s handoff on issue #%s: %s"
-                 % (name, issue, gh_reason(failed.stderr)))
+            _post_failed(name, issue, failed)
             return False
     return True
 
@@ -389,14 +406,11 @@ def handoff_comment_post_url(gh, issue: str, name: str, path: str) -> Optional[s
     posted comment's URL, "" where gh printed none. None, after `orch: gh
     could not post the <name> handoff on issue #<issue>: <reason>` on
     stderr, when the post fails. The temp body is removed on every path."""
-    unmade = "could not create a temp file for the handoff comment"
-    with temp_text_file(marked_comment_write("handoff", name) + (read_raw(path) or ""),
-                        unmade, unmade) as body:
+    with handoff_comment_body(name, path) as body:
         try:
             return gh.issue_comment_url(int(issue), body)
         except GhFailed as failed:
-            warn("gh could not post the %s handoff on issue #%s: %s"
-                 % (name, issue, gh_reason(failed.stderr)))
+            _post_failed(name, issue, failed)
             return None
 
 

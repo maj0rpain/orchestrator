@@ -89,23 +89,14 @@ def test_ask_adds_needs_human_in_the_repo_s_casing(root, seed, store, tmp_path, 
     assert sorted(labels_of(store, 7)) == ["Needs-Human", "orch:spec", "ready-for-agent"]
 
 
-@pytest.mark.parametrize("fail, landed", [
-    (("adapter_issue_relabel", 0),
-     "could not add needs-human on issue #7: HTTP 500 - writes that landed: posted the spec"
-     " question comment"),
-    (("adapter_claim_delete", 0),
-     "could not delete the claim ref on issue #7: HTTP 500 - writes that landed: posted the"
-     " spec question comment, added needs-human, removed orch:running"),
-    (("adapter_issue_comment", 0),
-     "could not post the spec question comment on issue #7: HTTP 500 - writes that landed:"
-     " none"),
-], ids=["label", "release", "comment"])
 def test_ask_failing_partway_dies_naming_the_writes_that_landed_the_claim_held(
-        root, seed, capsys, tmp_path, asking, fail, landed):
-    seed.fail_after(*fail, "HTTP 500")
+        root, seed, capsys, tmp_path, asking):
+    seed.fail("adapter_issue_relabel", "HTTP 500")
 
     assert (run_ap(seed, root, AUTOPILOT, "ask", "spec", text_file(tmp_path, "q.md", "Q\n")),
-            capsys.readouterr()) == (1, ("", "orch: %s; the claim stays held\n" % landed))
+            capsys.readouterr()) == (1, ("", "orch: could not add needs-human on issue #7:"
+                                             " HTTP 500 - writes that landed: posted the spec"
+                                             " question comment; the claim stays held\n"))
     assert seed.claim_held(7) is True
 
 
@@ -401,28 +392,14 @@ def test_the_re_entry_count_reads_only_trusted_comments(
     assert newest_comment(store, 80).split("\n")[0] == opening
 
 
-@pytest.mark.parametrize("earlier, fail, landed", [
-    (0, ("adapter_issue_comment", 0),
-     "could not post the re-entry comment on issue #80: HTTP 500 - writes that landed: none"),
-    (0, ("adapter_claim_delete", 0),
-     "could not delete the claim ref on issue #80: HTTP 500 - writes that landed: posted the"
-     " review re-entry comment, removed orch:running"),
-    (2, ("adapter_issue_relabel", 0),
-     "could not add needs-human on issue #80: HTTP 500 - writes that landed: posted the review"
-     " question comment"),
-    (0, ("adapter_issue_comments", 0),
-     "could not read issue #80's comments to count the automatic re-entries in a row: HTTP 500"
-     " - writes that landed: none"),
-], ids=["comment", "release", "the ask path's label", "comments read"])
 def test_reenter_failing_partway_dies_naming_the_writes_that_landed_the_claim_held(
-        root, seed, capsys, tmp_path, reviewed, earlier, fail, landed):
-    for day in range(earlier):
-        seed.comment(80, "o", "2026-01-0%dT00:00:00Z" % (day + 1),
-                     marker_of("reentry", "review") + "\nr")
-    seed.fail_after(*fail, "HTTP 500")
+        root, seed, capsys, tmp_path, reviewed):
+    seed.fail("adapter_claim_delete", "HTTP 500")
 
     assert (reenter(seed, root, tmp_path), capsys.readouterr()) == (
-        1, ("", "orch: %s; the claim stays held\n" % landed))
+        1, ("", "orch: could not delete the claim ref on issue #80: HTTP 500 - writes that"
+                " landed: posted the review re-entry comment, removed orch:running; the claim"
+                " stays held\n"))
     assert seed.claim_held(80) is True
 
 

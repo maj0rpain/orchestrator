@@ -169,7 +169,8 @@ autopilot_block_report() {
 # <name> is the handoff file name the sections are looked up by, the file's own
 # basename unless given: an autopilot scratch file is not named as its handoff.
 # The plan's `## Autopilot` block is checked, and required, in an autopilot
-# session or when the third argument is `autopilot` (autopilot start).
+# session or when the third argument is `autopilot`, which no bash caller passes
+# since autopilot start moved to orch/handoff.py's handoff_report.
 handoff_report() {
   local file="$1" base heading required failed=0
   base="${2:-$(basename "$file")}"
