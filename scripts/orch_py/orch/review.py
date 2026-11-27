@@ -69,8 +69,8 @@ from orch.common import (ORCH_DIR_NAME, capture, die, fenced, int_as_test_reads,
                          rm_f_or_die, stdout_write, trim, warn)
 from orch.branch import discard_own_branch_work
 from orch.checkout import checkout_branch_or_rebasing, checkout_kind
-from orch.filed_finding import (FILED_AXES, FILED_SEVERITIES, FindingBody, category_for_axis,
-                                category_label_ensure, filed_severity_label,
+from orch.filed_finding import (FILED_AXES, FILED_SEVERITIES, SPACE, SPACE_CLASS, FindingBody,
+                                category_for_axis, category_label_ensure, filed_severity_label,
                                 finding_body_file_new, finding_body_parse, finding_body_render,
                                 finding_flags_parse, finding_input_check, finding_location_check,
                                 needs_triage_label_ready, severity_label_ensure)
@@ -996,24 +996,18 @@ def _known_items(args: List[str], root: str, git, env: Mapping[str, str], clock,
 
 # --- review standards (#1532) ----------------------------------------------------
 
-# The whitespace awk's and bash's [[:space:]] match, ASCII alone.
-SPACE = " \t\n\v\f\r"
 # A URL's scheme, as bash's ^[A-Za-z][A-Za-z0-9+.-]*: reads one.
 URL_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:")
 # A backticked span, or a Markdown link's target, as grep -oE finds them.
 MENTION = re.compile(r"`[^`]+`|\]\([^)]+\)")
 SPAN = re.compile(r"`[^`]+`")
 # Where a link's target ends: its first whitespace, a title after it.
-BLANK_RUN = re.compile("[%s]" % re.escape(SPACE))
+BLANK_RUN = re.compile(SPACE_CLASS)
 # A heading's closing #s, after whitespace, then any trailing whitespace.
-CLOSING_HASHES = re.compile(r"[%s]+#+[%s]*$" % (re.escape(SPACE), re.escape(SPACE)))
+CLOSING_HASHES = re.compile(r"%s+#+%s*$" % (SPACE_CLASS, SPACE_CLASS))
 # The root files the resolution reads, the second pair only when the repo has
 # neither of the first.
 ROOT_FILES = (("CLAUDE.md", "AGENTS.md"), ("CODING_STANDARDS.md", "CONTRIBUTING.md"))
-
-
-def _blank(line: str) -> bool:
-    return not line.strip(SPACE)
 
 
 def standards_is_heading(line: str) -> bool:
@@ -1029,7 +1023,7 @@ def standards_is_heading(line: str) -> bool:
 def standards_heading_text(line: str) -> str:
     """A heading's text: surrounding whitespace and closing #s trimmed."""
     h = line.lstrip(" ").lstrip("#")
-    return CLOSING_HASHES.sub("", h, count=1).strip(SPACE)
+    return trim(CLOSING_HASHES.sub("", h, count=1))
 
 
 def standards_paragraphs(root: str, relative: str) -> List[Tuple[bool, str]]:
@@ -1051,7 +1045,7 @@ def standards_paragraphs(root: str, relative: str) -> List[Tuple[bool, str]]:
 
     rows = [line[:-1] if line.endswith("\r") else line for line in lines_of(text or "")]
     for line, fence in zip(rows, fenced(rows)):
-        if fence == 2 or (fence == 1 and _blank(line)):
+        if fence == 2 or (fence == 1 and not trim(line)):
             flush()
         elif fence == 1:
             kind = True
@@ -1059,7 +1053,7 @@ def standards_paragraphs(root: str, relative: str) -> List[Tuple[bool, str]]:
         elif standards_is_heading(line):
             flush()
             found.append((False, line))
-        elif _blank(line):
+        elif not trim(line):
             flush()
         else:
             kind = False

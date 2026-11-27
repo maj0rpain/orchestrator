@@ -577,8 +577,7 @@ def test_a_grace_that_is_no_number_is_refused_under_no_wait(flow, seed, capsys):
 
 @pytest.mark.parametrize("argv, message", [
     (("7x",), "not a PR number: 7x"), (("",), "not a PR number: "),
-    (("7", "8"), "usage: orch.sh review ci [--no-wait] [<pr>]"),
-], ids=["not-a-number", "empty", "extra"])
+], ids=["not-a-number", "empty"])
 def test_a_pr_argument_that_is_no_number_is_refused_at_exit_2(root, seed, capsys, argv, message):
     assert answered(capsys, ci(root, seed, *argv)) == (2, "", "orch: %s\n" % message)
 

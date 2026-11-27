@@ -14,11 +14,12 @@ from __future__ import annotations
 import json
 import os
 from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 
 from conftest import (AUTOPILOT, CLAUDE, GH_502, Opens, comments_of, died_of, fake, files_under,
-                      hold_flow, read, snapshot, state_json)
+                      hold_flow, read, record, snapshot, state_json, write)
 from orch import redo
 from orch.git import FakeGit, Worktree
 
@@ -64,23 +65,19 @@ def state_of(root):
     return json.loads(state_json(root).read_text())
 
 
+def dot(*parts):
+    """The path of <parts> under a checkout's .orchestrator/, relative to
+    the checkout, a Path."""
+    return Path(".orchestrator", *parts)
+
+
 def orch(root, *parts):
     """The path of <parts> under <root>'s .orchestrator/, a Path."""
-    return root.joinpath(".orchestrator", *parts)
+    return root / dot(*parts)
 
 
-def write(path, text):
-    """<text> written to <path>, its directories made: <path>."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text)
-    return path
-
-
-def record(root, i, terminal="stop\nCI failed twice."):
-    """Iteration <i>'s review record, its Terminal state section
-    <terminal>: its path."""
-    return write(orch(root, "review", "iteration-%02d.md" % i),
-                 "## Terminal state\n%s\n" % terminal)
+# A review record's lines, its Terminal state a stop on CI.
+STOPPED = ("## Terminal state", "stop", "CI failed twice.")
 
 
 def reviewing(root, seed, iteration=5, budget=5, **state):
@@ -107,9 +104,9 @@ def pr_closed_note(n):
 
 def test_a_stopped_loop_redoes_back_to_implement_retiring_the_attempt(root, seed, store, capsys):
     reviewing(root, seed, flake_rerun_used=True)
-    record(root, 5)
-    write(orch(root, "handoff", "01-plan.md"), "# plan\n")
-    write(orch(root, "handoff", "03-implement.md"), "# implement\n")
+    record(root, 5, *STOPPED)
+    write(root, dot("handoff", "01-plan.md"), "# plan")
+    write(root, dot("handoff", "03-implement.md"), "# implement")
     git = checkout(root, BRANCH)
 
     assert orch_redo(root, seed, git, "review") == 0
@@ -153,14 +150,14 @@ def test_redo_review_takes_no_arguments_even_with_no_flow(root, seed, capsys):
 def test_redo_review_refuses_no_flow_then_an_unreadable_state(root, seed, capsys):
     git = checkout(root)
     assert died_of(capsys, lambda: orch_redo(root, seed, git, "review")) == (1, "", NO_FLOW)
-    write(state_json(root), '{"phase": ')
+    write(root, dot("state.json"), raw='{"phase": ')
     assert died_of(capsys, lambda: orch_redo(root, seed, git, "review")) == (1, "", UNREADABLE)
 
 
 @pytest.mark.parametrize("phase", ["spec", "implement", "done"])
 def test_redo_review_refuses_outside_the_review_phase(root, seed, store, capsys, phase):
     reviewing(root, seed, phase=phase)
-    record(root, 5)
+    record(root, 5, *STOPPED)
     before = untouched(root, store)
 
     assert died_of(capsys, lambda: orch_redo(root, seed, checkout(root, BRANCH), "review")) == (
@@ -190,7 +187,7 @@ def test_redo_review_refuses_every_terminal_state_but_stop_touching_nothing(
         root, seed, store, capsys, host, iteration, budget, records, message):
     reviewing(root, seed, iteration=iteration, budget=budget)
     for terminal in records:
-        record(root, iteration, terminal)
+        record(root, iteration, "## Terminal state", terminal)
     before = untouched(root, store)
 
     assert died_of(capsys, lambda: orch_redo(root, seed, checkout(root, BRANCH), "review",
@@ -202,7 +199,7 @@ def test_redo_review_refuses_every_terminal_state_but_stop_touching_nothing(
 def test_redo_review_refuses_a_malformed_record_quoting_the_rewrite_to_make(
         root, seed, store, capsys):
     reviewing(root, seed)
-    path = record(root, 5, "Stop\nCI failed twice.")
+    path = record(root, 5, "## Terminal state", "Stop", "CI failed twice.")
     before = untouched(root, store)
 
     assert died_of(capsys, lambda: orch_redo(root, seed, checkout(root, BRANCH), "review")) == (
@@ -216,7 +213,7 @@ def test_redo_review_refuses_a_malformed_record_quoting_the_rewrite_to_make(
 def test_redo_review_names_a_review_directory_it_cannot_make(root, seed, store, capsys):
     """#1334: never read as interrupted."""
     reviewing(root, seed)
-    write(orch(root, "review"), "")
+    write(root, dot("review"), raw="")
     before = untouched(root, store)
 
     assert died_of(capsys, lambda: orch_redo(root, seed, checkout(root, BRANCH), "review")) == (
@@ -227,8 +224,8 @@ def test_redo_review_names_a_review_directory_it_cannot_make(root, seed, store, 
 
 def test_redo_review_refuses_while_a_ticket_worktree_is_left(root, seed, store, capsys):
     reviewing(root, seed)
-    record(root, 5)
-    write(orch(root, "handoff", "03-implement.md"), "# implement\n")
+    record(root, 5, *STOPPED)
+    write(root, dot("handoff", "03-implement.md"), "# implement")
     git = checkout(root, BRANCH)
     git.seed("worktree_list", answer=[Worktree(str(root), BRANCH),
                                       Worktree(str(orch(root, "worktrees", "t4")), BRANCH + "--t4")])
@@ -249,7 +246,7 @@ def test_redo_review_requires_the_issue_then_the_branch_then_the_pr(
         root, seed, store, capsys, key, message):
     order = ("issue", "branch", "pr")
     reviewing(root, seed, **{k: None for k in order[order.index(key):]})
-    record(root, 5)
+    record(root, 5, *STOPPED)
     before = untouched(root, store)
 
     assert died_of(capsys, lambda: orch_redo(root, seed, checkout(root, BRANCH), "review")) == (
@@ -266,8 +263,8 @@ def test_an_unknown_op_is_refused_naming_the_ops_it_wants(root, seed, capsys, ar
 def test_a_second_redo_numbers_on_beside_the_first_s_records(root, seed, store, capsys):
     reviewing(root, seed, redo_count=1, pr=31)
     seed.pr(31, "open", BRANCH, "main")
-    write(orch(root, "review", "pre-redo-1", "iteration-05.md"), "the first loop's\n")
-    record(root, 5)
+    record(root, 5, "the first loop's", under="pre-redo-1")
+    record(root, 5, *STOPPED)
     git = checkout(root, BRANCH, redone(1))
 
     assert orch_redo(root, seed, git, "review") == 0
@@ -284,7 +281,7 @@ def test_a_pr_that_will_not_close_fails_the_redo_and_leaves_the_flow_as_it_was(
     # The retry that finishes it is the pr-close case of
     # test_redo_review_resumed_after_a_death_at_any_step_finishes_once.
     reviewing(root, seed, iteration=1, budget=1)
-    flat = record(root, 1)
+    flat = record(root, 1, *STOPPED)
     git = checkout(root, BRANCH)
     seed.fail("adapter_pr_close", GH_502)
     state_before = state_json(root).read_text()
@@ -300,7 +297,7 @@ def test_a_pr_that_will_not_close_fails_the_redo_and_leaves_the_flow_as_it_was(
 @pytest.mark.parametrize("terminal", ["stop - base sync failed.", "stop"])
 def test_a_loop_stopped_short_of_its_budget_redoes(root, seed, store, capsys, terminal):
     reviewing(root, seed, iteration=2, budget=5)
-    record(root, 2, terminal)
+    record(root, 2, "## Terminal state", terminal)
 
     assert orch_redo(root, seed, checkout(root, BRANCH), "review") == 0
     assert capsys.readouterr().out == "1\n"
@@ -312,9 +309,9 @@ def test_redo_review_refuses_a_taken_handoff_destination_never_suffixing_it(
     """#304: the implement handoff retires into exactly the pre-redo-<n>/
     that pairs with review/pre-redo-<n>/."""
     reviewing(root, seed, iteration=1, budget=1)
-    record(root, 1)
-    write(orch(root, "handoff", "pre-redo-1", "03-implement.md"), "# older implement\n")
-    write(orch(root, "handoff", "03-implement.md"), "# implement\n")
+    record(root, 1, *STOPPED)
+    write(root, dot("handoff", "pre-redo-1", "03-implement.md"), "# older implement")
+    write(root, dot("handoff", "03-implement.md"), "# implement")
     git = checkout(root, BRANCH)
     before = untouched(root, store)
 
@@ -332,8 +329,7 @@ def test_a_rerun_after_review_retire_finds_the_stopped_record_and_completes(
     half-finished: redo_count 1 and the branch its -redo-1 name."""
     reviewing(root, seed, iteration=1, budget=1, branch=redone(1), redo_count=1)
     seed.pr(PR, "closed", BRANCH, "main")
-    write(orch(root, "review", "pre-redo-1", "iteration-01.md"),
-          "## Terminal state\nstop\nCI failed twice.\n")
+    record(root, 1, *STOPPED, under="pre-redo-1")
     git = checkout(root, redone(1), pushes=False)
 
     assert orch_redo(root, seed, git, "review") == 0
@@ -349,8 +345,8 @@ def test_a_rerun_after_review_retire_finds_the_stopped_record_and_completes(
 
 def test_a_refused_rerun_on_a_flow_redone_once_reads_its_flat_record(root, seed, capsys):
     reviewing(root, seed, iteration=1, budget=1, redo_count=1)
-    write(orch(root, "review", "pre-redo-1", "iteration-01.md"), "## Terminal state\nstop\n")
-    write(orch(root, "review", "iteration-01.md"), "# Review iteration 1\n")
+    record(root, 1, "## Terminal state", "stop", under="pre-redo-1")
+    record(root, 1, "# Review iteration 1")
 
     assert "has no recorded terminal state" in died_of(
         capsys, lambda: orch_redo(root, seed, checkout(root, BRANCH), "review"))[2]
@@ -360,12 +356,12 @@ def test_redo_review_reopens_exactly_the_tickets_the_implement_phase_closed(
         root, seed, store, capsys):
     """#88: else the redone implement phase's frontier finds nothing."""
     reviewing(root, seed, iteration=1, budget=1)
-    record(root, 1)
+    record(root, 1, *STOPPED)
     for n, state in ((40, "closed"), (41, "closed"), (42, "open")):
         seed.issue(n, state)
         seed.sub_issue(ISSUE, n)
-    write(orch(root, "reports", "40.md"), "landed\n")
-    write(orch(root, "reports", "21.md"), "landed\n")
+    write(root, dot("reports", "40.md"), "landed")
+    write(root, dot("reports", "21.md"), "landed")
 
     assert orch_redo(root, seed, checkout(root, BRANCH), "review") == 0
 
@@ -394,7 +390,7 @@ def handoffs(root, **texts):
     """Each handoff or marker of <texts>, by its name with - for _ and . for
     __, written into <root>'s handoff directory holding its text."""
     for name, text in texts.items():
-        write(orch(root, "handoff", name.replace("__", ".").replace("_", "-")), text)
+        write(root, dot("handoff", name.replace("__", ".").replace("_", "-")), raw=text)
 
 
 def spec_handoffs(root):
@@ -463,7 +459,7 @@ def test_redo_spec_refuses_no_flow_then_an_unreadable_state(root, seed, capsys):
     git = checkout(root)
     assert died_of(capsys, lambda: orch_redo(root, seed, git, "spec", "--bogus")) == (
         1, "", NO_FLOW)
-    write(state_json(root), "not json")
+    write(root, dot("state.json"), raw="not json")
     assert died_of(capsys, lambda: orch_redo(root, seed, git, "spec")) == (1, "", UNREADABLE)
 
 
@@ -721,7 +717,7 @@ def test_redo_spec_in_a_plain_session_refuses_a_taken_folder_then_a_rerun_finish
         root, seed, store, capsys):
     implementing(root, seed, issue=60)
     handoffs(root, **{"02_spec__md": "spec text\n", "03_implement__md": "implement text\n"})
-    write(orch(root, "handoff", SPEC_FOLDER, "02-spec.md"), "# older\n")
+    write(root, dot("handoff", SPEC_FOLDER, "02-spec.md"), "# older")
     before = untouched(root, store)
 
     assert died_of(capsys, lambda: orch_redo(root, seed, checkout(root), "spec",
@@ -746,7 +742,7 @@ def test_redo_review_in_an_autopilot_session_retires_the_implement_comment_once(
         root, seed, store, capsys):
     reviewing(root, seed, iteration=1, budget=1)
     handoff_comment(seed, ISSUE, "03-implement", "implement text")
-    record(root, 1)
+    record(root, 1, *STOPPED)
     git = checkout(root, BRANCH)
     seed.fail("adapter_issue_comment", GH_502)
 
@@ -823,7 +819,7 @@ def test_a_resumed_redo_spec_whose_closing_write_fails_changes_no_state(root, se
 @pytest.mark.skipif(os.geteuid() == 0, reason="root writes into a read-only directory")
 def test_a_resumed_redo_review_whose_closing_write_fails_changes_no_state(root, seed, capsys):
     reviewing(root, seed, branch=redone(1), redo_count=1)
-    record(root, 5)
+    record(root, 5, *STOPPED)
     state_before = state_json(root).read_text()
 
     with state_unwritable(root):
@@ -839,7 +835,7 @@ def test_a_resumed_redo_review_whose_closing_write_fails_changes_no_state(root, 
 def test_redo_review_opens_the_state_file_once_before_its_last_refusal(
         root, seed, capsys, monkeypatch):
     reviewing(root, seed, iteration=1, budget=1, pr=None)
-    record(root, 1)
+    record(root, 1, *STOPPED)
     opens = Opens(monkeypatch, state_json(root))
 
     assert died_of(capsys, lambda: orch_redo(root, seed, checkout(root, BRANCH), "review"))[2] \
@@ -863,7 +859,7 @@ def test_redo_spec_opens_the_state_file_once_before_its_last_refusal(
 # die once; the rerun then finishes the redo as a clean one would.
 
 def _taken_review_folder(root, seed, git):
-    write(orch(root, "review", "pre-redo-1", "iteration-05.md"), "taken\n")
+    record(root, 5, "taken", under="pre-redo-1")
     return lambda: orch(root, "review", "pre-redo-1", "iteration-05.md").unlink()
 
 
@@ -887,7 +883,7 @@ def _rejected_push(root, seed, git):
 def test_redo_review_resumed_after_a_death_at_any_step_finishes_once(
         root, seed, store, capsys, death):
     reviewing(root, seed)
-    record(root, 5)
+    record(root, 5, *STOPPED)
     handoffs(root, **{"03_implement__md": "# implement\n"})
     seed.issue(40, "closed")
     seed.sub_issue(ISSUE, 40)

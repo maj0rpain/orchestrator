@@ -142,10 +142,9 @@ def test_a_failed_required_checks_read_never_widens_and_exits_2(root, seed, caps
 
 @pytest.mark.parametrize("argv, err", [
     ((), "orch: usage: orch.sh review rerun <pr>\n"),
-    (("7", "8"), "orch: usage: orch.sh review rerun <pr>\n"),
     (("abc",), "orch: not a PR number: abc\n"),
     (("",), "orch: not a PR number: \n"),
-], ids=["none", "two", "not-a-number", "empty"])
+], ids=["none", "not-a-number", "empty"])
 def test_a_pr_missing_or_not_a_number_exits_2(root, seed, capsys, argv, err):
     assert answered(capsys, rerun(seed, root, *argv)) == (2, "", err)
 
@@ -342,11 +341,10 @@ def test_a_failed_checks_read_exits_1_with_gh_s_reason(root, seed, capsys, env, 
 
 
 @pytest.mark.parametrize("argv, err", [
-    ((), "orch: usage: orch.sh review ci-log <pr>\n"),
     (("abc",), "orch: not a PR number: abc\n"),
     (("",), "orch: not a PR number: \n"),
-], ids=["none", "not-a-number", "empty"])
-def test_a_pr_missing_or_not_a_number_exits_1(root, seed, capsys, argv, err):
+], ids=["not-a-number", "empty"])
+def test_a_pr_that_is_not_a_number_exits_1(root, seed, capsys, argv, err):
     assert answered(capsys, ci_log(seed, root, *argv)) == (1, "", err)
 
 

@@ -164,9 +164,7 @@ def record(root, i, *lines, raw=None, under="", report=""):
 def write_labels_doc(root, text):
     """Writes <text> as the triage-labels doc of the checkout at <root>, a
     Path, making its directories as needed."""
-    path = root / LABELS_DOC
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text)
+    write(root, LABELS_DOC, raw=text)
 
 
 # The triage-labels doc's role table header: its column names, then its
@@ -424,12 +422,10 @@ def write_staged(root, files):
     """Writes the files named, removes those mapped to None, and stages
     every change."""
     for name, text in files.items():
-        path = root / name
         if text is None:
-            path.unlink()
+            (root / name).unlink()
             continue
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        write(root, name, raw=text)
     run_git(root, "add", "-A")
 
 
