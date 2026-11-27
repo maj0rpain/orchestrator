@@ -446,6 +446,7 @@ def test_the_python_seeder_s_unsupported_sub_issues_read_the_same_in_both_fakes(
     ("adapter_repo_default_branch", lambda gh: gh.repo_default_branch("acme/widgets")),
     ("adapter_issues_open_titles", lambda gh: gh.issues_open_titles()),
     ("adapter_prs_open", lambda gh: gh.prs_open("topic")),
+    ("adapter_prs_merged", lambda gh: gh.prs_merged("topic", "main")),
     ("adapter_pr_body", lambda gh: gh.pr_body(6)),
     ("adapter_pr_comments", lambda gh: gh.pr_comments(6)),
     ("adapter_sub_issues", lambda gh: gh.sub_issues(5)),
@@ -586,6 +587,21 @@ adapter_pr_comments 9 | jq -c '.comments'
     assert bash_lines[7] == " B o d y \\r \\n l i n e \\n \\n"
     assert [json.loads(line) for line in bash_lines[8:10]] == comments
     assert bash_lines[10] == "[]"
+
+
+def test_the_merged_prs_of_a_bash_seeded_store_read_as_the_bash_fake_answers_them(store):
+    bash_answer = bash(store, r"""
+fake_pr 4 merged topic main
+fake_pr 9 merged topic main; fake_pr_cross 9; fake_pr_head 9 abc123
+fake_pr 12 merged topic trunk
+fake_pr 7 open topic main
+fake_pr 8 merged other main
+adapter_prs_merged topic main
+""")
+
+    assert fake(store).prs_merged("topic", "main") == [
+        "9\tabc123\ttrue", "4\t%s\tfalse" % ("0" * 40)]
+    assert bash_answer == "9\tabc123\ttrue\n4\t%s\tfalse\n" % ("0" * 40)
 
 
 def test_a_pr_number_the_store_does_not_hold_fails_as_gh_does(store):

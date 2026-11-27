@@ -90,6 +90,7 @@ COULD_NOT: Dict[str, Any] = {
     "file_diff": None,
     "merge_base": None,
     "is_ancestor": False,
+    "ancestry": None,
     "file_commits": None,
     "first_parent_file_commits": None,
     "file_commits_oldest_first": None,
@@ -357,6 +358,13 @@ class Git:
         """Whether <commit> is <of> or one of its ancestors; False too when
         either names no commit."""
         return self._run_at_top(["merge-base", "--is-ancestor", commit, of]).returncode == 0
+
+    def ancestry(self, commit: str, of: str) -> Optional[bool]:
+        """Whether <commit> is <of> or one of its ancestors, as is_ancestor
+        answers; None where git cannot judge - either names no commit -
+        never read as a no."""
+        code = self._run_at_top(["merge-base", "--is-ancestor", commit, of]).returncode
+        return {0: True, 1: False}.get(code)
 
     def file_commits(self, ref: str, since: str, path: str) -> Optional[List[str]]:
         """The commits of <ref> not in <since> that touch <path>, newest
@@ -913,6 +921,9 @@ class FakeGit:
 
     def is_ancestor(self, commit: str, of: str) -> bool:
         return self._answer("is_ancestor", commit, of)
+
+    def ancestry(self, commit: str, of: str) -> Optional[bool]:
+        return self._answer("ancestry", commit, of)
 
     def file_commits(self, ref: str, since: str, path: str) -> Optional[List[str]]:
         return self._answer("file_commits", ref, since, path)

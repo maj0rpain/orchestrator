@@ -675,6 +675,16 @@ class FakeGh:
                                                  ensure_ascii=False), self._cross(d))
                 for name, d in self._prs("OPEN")]
 
+    def prs_merged(self, head: str, base: str) -> List[str]:
+        """The merged PRs from <head> into <base>, newest first, each
+        `<number><TAB><head SHA><TAB><flag>`, the head SHA as _head_oid
+        reads it, the flag as prs_open answers it."""
+        self._failing("adapter_prs_merged")
+        return ["%s\t%s\t%s" % (name, self._head_oid(int(name)), self._cross(d))
+                for name, d in self._prs("MERGED")
+                if read_text(os.path.join(d, "head")) == head
+                and read_text(os.path.join(d, "base")) == base]
+
     def prs_merged_closing(self, base: str, since: str) -> List[str]:
         """The merged PRs into <base> merged at or after <since>, newest
         first, each `<number><TAB><head><TAB><mergedAt><TAB><closing><TAB>

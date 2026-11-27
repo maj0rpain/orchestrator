@@ -755,6 +755,22 @@ def test_prs_open_lists_each_open_pr_from_the_head_with_its_fork_flag_unfiltered
     assert gh.prs_open("none") == []
 
 
+def prs_merged_argv(head, base):
+    return ["pr", "list", "--head", head, "--base", base, "--state", "merged",
+            "--json", "number,headRefOid,isCrossRepository",
+            "--jq", '.[] | "\\(.number)\\t\\(.headRefOid)\\t\\(.isCrossRepository)"']
+
+
+def test_prs_merged_lists_each_merged_pr_from_the_head_into_the_base_unfiltered(fixture_gh):
+    fixture_gh.reply(prs_merged_argv("quick/12-foo", "main"),
+                     "61\tabc123\ttrue\n62\tdef456\tfalse\n")
+    fixture_gh.reply(prs_merged_argv("none", "main"), "")
+    gh = real_gh(fixture_gh)
+
+    assert gh.prs_merged("quick/12-foo", "main") == ["61\tabc123\ttrue", "62\tdef456\tfalse"]
+    assert gh.prs_merged("none", "main") == []
+
+
 PR_BODY = ["pr", "view", "4", "--json", "body", "--jq", ".body"]
 
 

@@ -1002,6 +1002,19 @@ class Gh:
              "--jq", '.[] | "\\(.number)\\t\\(.body | @json)\\t\\(.isCrossRepository)"']
         ))
 
+    def prs_merged(self, head: str, base: str) -> List[str]:
+        """The PRs from <head> merged into <base>, newest first, one line
+        each as gh prints it, `<number><TAB><head SHA><TAB><flag>`, the flag
+        isCrossRepository - unfiltered: trust_filter_prs drops the fork PRs.
+        The finished check's read for a side checkout with no flow, which
+        records no PR of its own; GitHub reports a squash or rebase merge as
+        merged too, which git ancestry never would."""
+        return _captured_lines(self._gh(
+            ["pr", "list", "--head", head, "--base", base, "--state", "merged",
+             "--json", "number,headRefOid,isCrossRepository",
+             "--jq", '.[] | "\\(.number)\\t\\(.headRefOid)\\t\\(.isCrossRepository)"']
+        ))
+
     def prs_merged_closing(self, base: str, since: str) -> List[str]:
         """Every PR merged into <base> at or after the UTC timestamp
         <since>, newest created first and cut at the issue-list limit, one
