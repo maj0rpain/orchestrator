@@ -726,6 +726,24 @@ def test_an_unseeded_push_on_the_fake_fails_with_no_reason():
     assert FakeGit().push("origin", ":refs/orch/claims/5") == "git gave no reason"
 
 
+def test_a_lease_push_lands_once_and_then_is_refused_while_origin_holds_the_ref(pushed):
+    git = Git(cwd=str(pushed))
+    git_identity(pushed)
+    commit = git.empty_commit("orch claim 5", "host: h")
+
+    assert alike(git, "push_new_ref", "origin", commit, "refs/orch/claims/5") is None
+    other = git.empty_commit("orch claim 5", "host: other")
+    assert "stale info" in alike(git, "push_new_ref", "origin", other, "refs/orch/claims/5")
+    assert run_git(pushed.parent / "origin.git", "log", "-1", "--format=%s%n%b",
+                   "refs/orch/claims/5") == (
+        "orch claim 5\nhost: h")
+
+
+def test_an_unseeded_claim_commit_and_lease_push_on_the_fake_fail():
+    assert FakeGit().empty_commit("s", "b") is None
+    assert FakeGit().push_new_ref("origin", "c", "refs/orch/claims/5") == "git gave no reason"
+
+
 # --- branch retire's operations ----------------------------------------------------
 
 

@@ -880,16 +880,33 @@ class Gh:
         labelled_limit_warn(self.env, len(rows), label)
         return rows
 
+    def _state_rows(self, labels: Sequence[str]) -> List[StateRow]:
+        """The open issues carrying every one of <labels> - every open issue
+        with none named - oldest first and cut at the issue-list limit (the
+        newest dropped), with their state and labels."""
+        args = ["issue", "list", "--state", "open"]
+        for label in labels:
+            args += ["--label", label]
+        return parse_state_rows(self._gh(
+            args + ["--search", "sort:created-asc", "--limit", str(issue_list_limit(self.env)),
+                    "--json", "number,state,labels",
+                    "--jq", ".[] | .number, .state, (.labels | length), (.labels[].name)"]
+        ))
+
     def issues_open_rows(self) -> List[StateRow]:
         """Every open issue, oldest first and cut at the issue-list limit
         (the newest dropped), with its state and labels, warning when the cut
         is reached."""
-        rows = parse_state_rows(self._gh(
-            ["issue", "list", "--state", "open", "--search", "sort:created-asc",
-             "--limit", str(issue_list_limit(self.env)), "--json", "number,state,labels",
-             "--jq", ".[] | .number, .state, (.labels | length), (.labels[].name)"]
-        ))
+        rows = self._state_rows(())
         issue_list_limit_warn(self.env, len(rows), "the open issues")
+        return rows
+
+    def issues_labelled_rows(self, *labels: str) -> List[StateRow]:
+        """The open issues carrying every label named, as issues_open_rows
+        lists them, warning, naming the labels, when the cut is reached -
+        bash adapter_issues_labelled_rows."""
+        rows = self._state_rows(labels)
+        labelled_limit_warn(self.env, len(rows), *labels)
         return rows
 
     def issues_open_titles(self) -> List[Tuple[int, str]]:
@@ -1003,6 +1020,25 @@ class Gh:
         if refs is None:
             raise GhFailed("")
         return [claim_row(ref, message) for ref, message in refs]
+
+    def claim_create(self, n: int, phase: str, pid: int, host: str, started: str) -> bool:
+        """Takes the claim on #n - bash adapter_claim_create, through the
+        repo pin's git adapter, no gh call: a claim commit of the empty tree,
+        its message recording <host>, <pid>, <phase> and <started>, pushed to
+        the claim's ref on origin only where origin holds none. True when it
+        was taken, False when origin already held one - a lost race; any
+        other failure raises GhFailed with git's reason."""
+        git = self.repo_pin.git
+        commit = git.empty_commit("orch claim %d" % n, "host: %s\npid: %s\nphase: %s\nstarted: %s"
+                                  % (host, pid, phase, started))
+        if commit is None:
+            raise GhFailed("could not make the claim commit for issue #%d\n" % n)
+        reason = git.push_new_ref("origin", commit, claim_ref(n))
+        if reason is None:
+            return True
+        if "stale info" in reason or "already exists" in reason:
+            return False
+        raise GhFailed(reason + "\n")
 
     def claim_delete(self, n: int) -> None:
         """Frees the claim on #n - bash adapter_claim_delete: pushes the

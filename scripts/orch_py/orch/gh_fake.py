@@ -412,15 +412,24 @@ class FakeGh:
         real.labelled_limit_warn(self.env, len(rows), label)
         return rows
 
-    def issues_open_rows(self) -> List[StateRow]:
-        self._failing("adapter_issues_open_rows")
-        stale = self._lagging("adapter_issues_open_rows")
+    def _state_rows(self, operation: str, labels: Sequence[str]) -> List[StateRow]:
+        """The state listing <operation> answers: the open issues carrying
+        every one of <labels>, or its stale answer while it lags."""
+        self._failing(operation)
+        stale = self._lagging(operation)
         if stale is not None:
-            rows = real.parse_state_rows(stale)
-        else:
-            rows = [StateRow(n, _first_line(_issue_path(self.store, n, "state")), self._labels(n))
-                    for n in self._labelled_open()]
+            return real.parse_state_rows(stale)
+        return [StateRow(n, _first_line(_issue_path(self.store, n, "state")), self._labels(n))
+                for n in self._labelled_open(*labels)]
+
+    def issues_open_rows(self) -> List[StateRow]:
+        rows = self._state_rows("adapter_issues_open_rows", ())
         real.issue_list_limit_warn(self.env, len(rows), "the open issues")
+        return rows
+
+    def issues_labelled_rows(self, *labels: str) -> List[StateRow]:
+        rows = self._state_rows("adapter_issues_labelled_rows", labels)
+        real.labelled_limit_warn(self.env, len(rows), *labels)
         return rows
 
     def issues_open_titles(self) -> List[Tuple[int, str]]:
@@ -955,6 +964,16 @@ class FakeGh:
                 fields = (line.split("\t") + [""] * 5)[:5]
                 rows.append(real.ClaimRow(*fields))
         return rows
+
+    def claim_create(self, n: int, phase: str, pid: int, host: str, started: str) -> bool:
+        """The claim on #n stored, its line the five fields claim_list
+        reads; False, the store as it was, where it already holds one."""
+        self._failing("adapter_claim_create")
+        path = _store_path(self.store, "claims", n)
+        if os.path.lexists(path):
+            return False
+        _write(path, "%d\t%s\t%s\t%s\t%s\n" % (n, host, pid, phase, started))
+        return True
 
     def claim_delete(self, n: int) -> None:
         """The claim on #n removed from the store; none there is freed all

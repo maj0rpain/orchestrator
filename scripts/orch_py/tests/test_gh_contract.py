@@ -16,7 +16,7 @@ from orch.gh import (Check, ClaimRow, Gh, GhFailed, IssueRow, LabelledBody, Stat
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY, RepoPin
 
-from conftest import died_of, origin_clone, run_git
+from conftest import died_of, git_identity, origin_clone, run_git
 
 FORK = "https://github.com/fork/widgets.git"
 BODY = ["issue", "view", "5", "--json", "body", "--jq", ".body"]
@@ -285,6 +285,43 @@ def test_an_open_rows_listing_at_the_issue_list_limit_warns(fixture_gh, capsys):
         "orch: the open issues reached the issue-list limit of 2"
         " - the newest past it are missing from this list\n"
     )
+
+
+def labelled_rows_argv(*labels, limit="1000"):
+    argv = ["issue", "list", "--state", "open"]
+    for label in labels:
+        argv += ["--label", label]
+    return argv + ["--search", "sort:created-asc", "--limit", limit,
+                   "--json", "number,state,labels", "--jq", OPEN_ROWS_JQ]
+
+
+def test_issues_labelled_rows_lists_the_issues_carrying_every_label_named(fixture_gh, capsys):
+    fixture_gh.reply(labelled_rows_argv("needs-human", "orch:spec"),
+                     "7\nOPEN\n2\nneeds-human\norch:spec\n")
+
+    assert real_gh(fixture_gh).issues_labelled_rows("needs-human", "orch:spec") == [
+        StateRow(7, "OPEN", ["needs-human", "orch:spec"])]
+    assert capsys.readouterr().err == ""
+
+
+def test_a_labelled_rows_listing_at_the_issue_list_limit_warns_naming_its_labels(
+        fixture_gh, capsys):
+    fixture_gh.reply(labelled_rows_argv("needs-human", limit="2"), "1\nOPEN\n0\n2\nOPEN\n0\n")
+
+    assert len(real_gh(fixture_gh, ORCH_ISSUE_LIST_LIMIT="2").issues_labelled_rows(
+        "needs-human")) == 2
+    assert capsys.readouterr().err == (
+        "orch: the open issues labelled needs-human reached the issue-list limit of 2"
+        " - the newest past it are missing from this list\n"
+    )
+
+
+def test_a_labelled_rows_listing_that_does_not_parse_fails(fixture_gh):
+    fixture_gh.reply(labelled_rows_argv("needs-human"), "7\nOPEN\n3\na\n")
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).issues_labelled_rows("needs-human")
+    assert failed.value.stderr == "gh answered a listing that does not parse"
 
 
 def state_argv(number):
@@ -1597,3 +1634,33 @@ def test_gh_issue_not_found_reads_gh_s_missing_issue_reason():
     assert gh_issue_not_found("GraphQL: Could not resolve to an issue or pull request with the"
                               " number of 99. (repository.issue)\n")
     assert not gh_issue_not_found("HTTP 502: Bad Gateway\n")
+
+
+# --- the claim create -------------------------------------------------------------
+
+
+def test_a_claim_create_pushes_a_claim_the_claim_list_reads_back(claims):
+    _, root, gh = claims
+    git_identity(root)
+
+    assert gh.claim_create(7, "review", 42, "thishost", "2026-03-04T05:06:07Z") is True
+    assert ClaimRow("7", "thishost", "42", "review", "2026-03-04T05:06:07Z") in gh.claim_list()
+
+
+def test_a_claim_create_on_an_issue_origin_holds_a_claim_on_loses_the_race(claims):
+    _, root, gh = claims
+    git_identity(root)
+
+    assert gh.claim_create(5, "review", 42, "thishost", "2026-03-04T05:06:07Z") is False
+    assert ClaimRow("5", "otherhost", "5", "spec", "2021-01-01T00:00:00Z") in gh.claim_list()
+
+
+def test_a_claim_create_origin_cannot_take_fails_with_git_s_reason(claims):
+    origin, root, gh = claims
+    git_identity(root)
+    origin_gone(origin)
+
+    with pytest.raises(GhFailed) as failed:
+        gh.claim_create(7, "spec", 1, "thishost", "2026-03-04T05:06:07Z")
+
+    assert failed.value.stderr == "fatal: '%s' does not appear to be a git repository\n" % origin

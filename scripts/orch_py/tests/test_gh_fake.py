@@ -451,6 +451,7 @@ def test_the_python_seeder_s_unsupported_sub_issues_read_back(store):
     ("adapter_blocker_add", lambda gh: gh.blocker_add(5, 7)),
     ("adapter_blocker_remove", lambda gh: gh.blocker_remove(5, 7)),
     ("adapter_claim_delete", lambda gh: gh.claim_delete(5)),
+    ("adapter_issues_labelled_rows", lambda gh: gh.issues_labelled_rows("needs-human")),
     ("adapter_issue_reopen", lambda gh: gh.issue_reopen(5)),
     ("adapter_pr_close", lambda gh: gh.pr_close(6, "Closed.")),
     ("adapter_issue_created_at", lambda gh: gh.issue_created_at(5)),
@@ -1347,3 +1348,48 @@ def test_issues_open_rows_lists_the_open_issues_oldest_first_as_the_bash_fake_do
     assert fake(store, ORCH_ISSUE_LIST_LIMIT="1").issues_open_rows() == [StateRow(1, "OPEN", [])]
     assert capsys.readouterr().err == ("orch: the open issues reached the issue-list limit of 1"
                                        " - the newest past it are missing from this list\n")
+
+
+def test_issues_labelled_rows_lists_the_open_issues_carrying_every_label_as_the_bash_fake_does(
+        store, capsys):
+    bash(store, "fake_issue 3 open needs-human orch:spec\nfake_issue 1 open Needs-Human\n"
+                "fake_issue 2 closed needs-human\nfake_issue 4 open orch:spec\n")
+
+    assert fake(store).issues_labelled_rows("needs-human") == [
+        StateRow(1, "OPEN", ["Needs-Human"]), StateRow(3, "OPEN", ["needs-human", "orch:spec"])]
+    assert fake(store).issues_labelled_rows("needs-human", "orch:spec") == [
+        StateRow(3, "OPEN", ["needs-human", "orch:spec"])]
+    assert fake(store, ORCH_ISSUE_LIST_LIMIT="1").issues_labelled_rows("needs-human") == [
+        StateRow(1, "OPEN", ["Needs-Human"])]
+    assert capsys.readouterr().err == (
+        "orch: the open issues labelled needs-human reached the issue-list limit of 1"
+        " - the newest past it are missing from this list\n")
+
+
+def test_a_claim_the_python_fake_creates_is_held_as_the_bash_fake_writes_one(store):
+    gh = fake(store)
+
+    assert gh.claim_create(5, "review", 42, "thishost", "2026-03-04T05:06:07Z") is True
+    bash(store, "adapter_claim_create 6 review 42 thishost")
+
+    assert bash(store, "fake_claim_held 5") == "held\n"
+    assert (store / "claims" / "5").read_text() == "5\tthishost\t42\treview\t2026-03-04T05:06:07Z\n"
+    assert (store / "claims" / "6").read_text().split("\t")[:4] == ["6", "thishost", "42",
+                                                                    "review"]
+
+
+def test_a_claim_create_on_a_held_claim_loses_the_race_leaving_it_as_it_was(store):
+    bash(store, "fake_claim_seed 5")
+    held = (store / "claims" / "5").read_text()
+
+    assert fake(store).claim_create(5, "review", 42, "thishost", "2026-03-04T05:06:07Z") is False
+    assert (store / "claims" / "5").read_text() == held
+
+
+def test_a_claim_create_fails_as_seeded(store):
+    FakeStore(str(store)).fail("adapter_claim_create", "HTTP 500")
+
+    with pytest.raises(GhFailed) as failed:
+        fake(store).claim_create(5, "spec", 1, "thishost", "2026-03-04T05:06:07Z")
+
+    assert (failed.value.stderr, (store / "claims" / "5").exists()) == ("HTTP 500\n", False)

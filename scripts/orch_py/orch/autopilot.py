@@ -4,10 +4,12 @@ bash noun until every verb is here. run(argv) takes the arguments after
 `autopilot`, as orch.sh will hand them on, and returns the exit code; every
 error dies through orch.common.die. It dispatches every verb, refusing an
 unknown op and each verb's arguments with bash's messages, and runs those
-converted so far - `settings`, `show`, `active`, `rounds`, `budget`, `start`
-and `candidates` - with the bash noun's stdout, exit codes and `orch:`
-messages, in a plain and an autopilot (ORCH_AUTOPILOT=1) session. A verb
-whose body is not yet here is refused (not_ported).
+converted so far - `settings`, `show`, `active`, `rounds`, `budget`, `start`,
+`candidates`, and the question, reply and re-entry verbs `questions`,
+`reply`, `resume`, `ask`, `answer` and `reenter`, over the Standing module's
+transitions - with the bash noun's stdout, exit codes and `orch:` messages,
+in a plain and an autopilot (ORCH_AUTOPILOT=1) session. A verb whose body is
+not yet here is refused (not_ported).
 
 Beside the noun, the concept every Python noun reads: whether this is an
 autopilot session, the plan's `## Autopilot` block, as handoff_report checks
@@ -30,8 +32,8 @@ import time
 from typing import Callable, Dict, List, Mapping, NoReturn, Optional, Tuple
 
 from orch.agent import autopilot_setting_check
-from orch.common import (ORCH_DIR_NAME, die, is_positive_int, plain_number, read_text,
-                         stdout_write, trim)
+from orch.common import (ORCH_DIR_NAME, die, file_write_atomic, is_positive_int, plain_number,
+                         read_raw, read_text, stdout_write, trim)
 from orch.git import Git
 from orch.repo import REPO_REMEDY, RepoPin, owner_name
 from orch.root import checkout_root
@@ -518,6 +520,204 @@ def candidates_verb(ap: Autopilot, mode: str, limit: int, issues: List[int]) -> 
     return 0
 
 
+# --- the question, reply and re-entry verbs --------------------------------------
+
+
+def phase_arg(phase: str, code: int = 1) -> None:
+    """Dies, exit <code>, unless <phase> is a phase a question can be asked
+    in - one flow phase, never done - bash autopilot_phase_arg."""
+    from orch.handoff import PHASES
+
+    if phase not in PHASES:
+        die("not a flow phase: %s (want %s)" % (phase, "|".join(PHASES)), code)
+    if phase == "done":
+        die("a done flow asks no question", code)
+
+
+def file_text(what: str, path: str) -> str:
+    """<path>'s text, exactly; dies, naming <what>, when it is no file, and
+    when it cannot be read - bash autopilot_file_text."""
+    if not os.path.isfile(path):
+        die("%s file not found: %s" % (what, path))
+    text = read_raw(path)
+    if text is None:
+        die("could not read " + path)
+    return text.replace("\0", "")
+
+
+def flow_issue(ap: Autopilot, code: int = 1) -> str:
+    """The flow's recorded issue, read in one state read; dies, exit
+    <code>, as require_issue does."""
+    from orch.flow_state import flow_state_file, require_issue
+
+    return require_issue(flow_state_file(ap.root), ap.env, code=code)["issue"]
+
+
+def handle_of(ap: Autopilot) -> str:
+    """The handle a question @mentions: the handle setting's value."""
+    return ap.setting("handle")[0]
+
+
+def ask_verb(ap: Autopilot, phase: str, path: str) -> int:
+    """`autopilot ask <phase> <file>`: <file> posted as <phase>'s question
+    comment on the flow's issue, the handle @mentioned, needs-human added,
+    the claim released."""
+    from orch.standing import Chain, standing_ask
+
+    phase_arg(phase)
+    text = file_text("question", path)
+    issue = flow_issue(ap)
+    handle = handle_of(ap)
+    standing_ask(Chain(ap.gh_of(), issue), phase, text, handle)
+    return 0
+
+
+def reenter_verb(ap: Autopilot, phase: str, path: str) -> int:
+    """`autopilot reenter <phase> <file>`: the automatic re-entry of a
+    review loop whose stop asks nothing - <file> posted as a re-entry
+    comment, the claim released; the third in a row asks instead. Only the
+    review phase re-enters, refused before any write."""
+    from orch.standing import Chain, standing_reenter
+
+    if phase != "review":
+        die("only the review phase re-enters automatically, got: " + phase)
+    text = file_text("re-entry", path)
+    issue = flow_issue(ap)
+    standing_reenter(Chain(ap.gh_of(), issue), phase, text, lambda: handle_of(ap))
+    return 0
+
+
+def answer_verb(ap: Autopilot, phase: str, path: str) -> int:
+    """`autopilot answer <phase> <file>`: <phase>'s newest question comment,
+    marker stripped, and each reply after it behind a `---` line, written to
+    <file>. Exits 1, writing nothing, when no reply follows the question or
+    the phase was re-entered automatically since - the caller re-asks, or
+    carries on - and 2 on any other failure, so a failed read is never taken
+    for no reply."""
+    from orch.issue_timeline import (timeline_answers, timeline_body, timeline_question,
+                                     timeline_read, timeline_reentered, timeline_replied)
+    from orch.gh import gh_die
+    from orch.repo import REPO_REMEDY
+
+    phase_arg(phase, 2)
+    issue = flow_issue(ap, 2)
+    gh = ap.gh_of()
+    if not gh.pin():
+        die(REPO_REMEDY, 2)
+    entries, reason = timeline_read(gh, issue)
+    if entries is None:
+        if not reason:
+            die("could not read issue #%s's comments" % issue, 2)
+        gh_die("read the comments of issue #" + issue, reason, code=2)
+    if timeline_reentered(entries, phase):
+        die("issue #%s was re-entered automatically in %s - no reply to read" % (issue, phase))
+    question = timeline_question(entries, phase)
+    if question is None:
+        die("issue #%s has no %s question comment" % (issue, phase), 2)
+    if not timeline_replied(entries, phase):
+        die("no reply to the %s question on issue #%s yet" % (phase, issue))
+    text = (timeline_body(entries, question) + (timeline_answers(entries, phase) or "")).rstrip(
+        "\n")
+    if not file_write_atomic(path, text + "\n"):
+        die("could not write " + path, 2)
+    return 0
+
+
+def resume_verb(ap: Autopilot, issue: str) -> int:
+    """`autopilot resume <issue>`: needs-human removed from an open issue
+    carrying it, and nothing else."""
+    from orch.gh import gh_die
+    from orch.standing import STANDING_HUMAN_LABEL, standing_human_guard, standing_resume
+
+    if not is_positive_int(issue):
+        die("not an issue number: " + issue)
+    gh = ap.gh_of()
+    standing_human_guard(gh, issue)
+    reason = standing_resume(gh, issue)
+    if reason:
+        gh_die("remove %s from issue #%s" % (STANDING_HUMAN_LABEL, issue), reason)
+    return 0
+
+
+def reply_verb(ap: Autopilot, issue: str, path: str) -> int:
+    """`autopilot reply <issue> <file>`: <file> posted as a comment on the
+    issue, then needs-human removed - refused unless the label is still on
+    and no reply follows the issue's newest question comment."""
+    from orch.gh import gh_or_die
+    from orch.issue_timeline import timeline_die, timeline_question, timeline_read, \
+        timeline_replied
+    from orch.standing import STANDING_HUMAN_LABEL, standing_human_guard, standing_resume
+
+    if not is_positive_int(issue):
+        die("not an issue number: " + issue)
+    if not os.path.isfile(path):
+        die("reply file not found: " + path)
+    if not os.path.getsize(path):
+        die("reply file is empty: " + path)
+    gh = ap.gh_of()
+    standing_human_guard(gh, issue)
+    entries, reason = timeline_read(gh, issue)
+    if entries is None:
+        timeline_die(issue, reason)
+    if timeline_question(entries) is None:
+        die("issue #%s has no question comment to reply to" % issue)
+    if timeline_replied(entries):
+        die("a reply already follows the newest question on issue #%s" % issue)
+    gh_or_die("post the reply on issue #" + issue, gh.issue_comment, int(issue), path)
+    reason = standing_resume(gh, issue)
+    if reason:
+        die("the reply comment landed on issue #%s, but %s could not be removed: %s"
+            % (issue, STANDING_HUMAN_LABEL, reason))
+    return 0
+
+
+def questions_verb(ap: Autopilot) -> int:
+    """`autopilot questions`: one tab-separated line per open needs-human
+    issue carrying a phase label other than orch:done, or sitting at
+    orch:done stopped by a sync (phase sync) - the issue, its kind
+    (question, replied or stop), the phase, and the URL of the comment the
+    kind is about. The newer of the issue's newest question comment and its
+    latest stop decides the kind. One line saying so when nothing is listed;
+    every read comes first, so a failed one dies printing nothing."""
+    from orch.gh import gh_or_die
+    from orch.issue_timeline import (timeline_die, timeline_question, timeline_read,
+                                     timeline_replied, timeline_stop, timeline_url)
+    from orch.standing import STANDING_HUMAN_LABEL, STANDING_SYNC_PHASE, standing_of
+
+    gh = ap.gh_of()
+    rows = gh_or_die("list the %s issues" % STANDING_HUMAN_LABEL, gh.issues_labelled_rows,
+                     STANDING_HUMAN_LABEL)
+    lines = []
+    for row in sorted(rows, key=lambda row: row.number):
+        standing = standing_of(row.state, row.labels)
+        entries, reason = timeline_read(gh, str(row.number))
+        if entries is None:
+            timeline_die(str(row.number), reason)
+        question, stop = timeline_question(entries), timeline_stop(entries)
+        q_phase = entries[question].info.arg if question is not None else ""
+        stop_phase = entries[stop].info.arg if stop is not None else ""
+        phase = standing.phase
+        if not phase:
+            # A done issue is listed only when a sync stopped it: orch:sync
+            # still on it (a failure stop), or its newest stop a sync stop.
+            if not standing.is_done() or not (standing.is_sync()
+                                              or stop_phase == STANDING_SYNC_PHASE):
+                continue
+            phase = q_phase = stop_phase = STANDING_SYNC_PHASE
+        if question is not None and (stop is None or question > stop):
+            kind = "replied" if timeline_replied(entries) else "question"
+            lines.append((row.number, kind, q_phase, timeline_url(entries, question)))
+        elif stop is not None:
+            lines.append((row.number, "stop", stop_phase, timeline_url(entries, stop)))
+        else:
+            lines.append((row.number, "stop", phase, ""))
+    if not lines:
+        stdout_write("nothing pending: no open %s issue of an autopilot flow\n"
+                     % STANDING_HUMAN_LABEL)
+    stdout_write("".join("%d\t%s\t%s\t%s\n" % line for line in lines))
+    return 0
+
+
 # The verbs taking a fixed number of arguments that are converted, each
 # called with the run and its arguments.
 VERBS: Mapping[str, Callable[..., int]] = {
@@ -527,6 +727,12 @@ VERBS: Mapping[str, Callable[..., int]] = {
     "rounds": lambda ap: plan_value(ap, "Rounds"),
     "budget": lambda ap: plan_value(ap, "Budget"),
     "start": start_verb,
+    "questions": questions_verb,
+    "reply": reply_verb,
+    "resume": resume_verb,
+    "ask": ask_verb,
+    "answer": answer_verb,
+    "reenter": reenter_verb,
 }
 
 

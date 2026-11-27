@@ -350,14 +350,14 @@ def recorded_pr(value: str) -> Union[int, str]:
 
 
 def require_issue(state_file: str, env: Mapping[str, str],
-                  keys: Sequence[str] = ()) -> Dict[str, str]:
+                  keys: Sequence[str] = (), code: int = 1) -> Dict[str, str]:
     """The state read of <state_file>, its recorded issue and any further
-    <keys> a caller reads with it, in one read; dies, in bash
-    require_issue's order, when there is no state file (naming the host's
-    start command from <env>), when it cannot be read, and when no issue is
-    recorded."""
-    state = require_state_read(state_file, env, ("issue",) + tuple(keys), 1)
-    require_value("issue", state["issue"])
+    <keys> a caller reads with it, in one read; dies, exit <code> - 2 where
+    bash's caller died through die2 - in bash require_issue's order, when
+    there is no state file (naming the host's start command from <env>),
+    when it cannot be read, and when no issue is recorded."""
+    state = require_state_read(state_file, env, ("issue",) + tuple(keys), code)
+    require_value("issue", state["issue"], code)
     return state
 
 

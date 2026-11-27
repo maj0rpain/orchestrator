@@ -110,6 +110,8 @@ COULD_NOT: Dict[str, Any] = {
     "git_common_dir": None,
     "current_branch": None,
     "push": "git gave no reason",
+    "empty_commit": None,
+    "push_new_ref": "git gave no reason",
     "fetch_prune": "git gave no reason",
     "refs_contents": None,
     "origin_has_branch": None,
@@ -615,6 +617,25 @@ class Git:
         landed, else the reason its stderr gives (git_push_reason)."""
         return self._push([remote, refspec])
 
+    # The claim create's operations, run where the adapter runs, as bash's
+    # adapter_claim_create runs its git.
+
+    def empty_commit(self, subject: str, body: str) -> Optional[str]:
+        """A commit of the empty tree with no parent, its message <subject>
+        then <body> as two -m paragraphs: its name; None when git cannot make
+        it."""
+        tree = self._run(["hash-object", "-t", "tree", "--stdin"], data=b"")
+        if tree.returncode != 0:
+            return None
+        return self._output(["commit-tree", tree.stdout.decode().strip(), "-m", subject,
+                             "-m", body]) or None
+
+    def push_new_ref(self, remote: str, commit: str, ref: str) -> Optional[str]:
+        """`git push --force-with-lease=<ref>: <remote> <commit>:<ref>`: the
+        push lands only where <remote> holds no <ref>. None when it landed,
+        else its reason (git_push_reason)."""
+        return self._push(["--force-with-lease=%s:" % ref, remote, "%s:%s" % (commit, ref)])
+
     # The claim list's operations, run where the adapter runs, as bash's
     # adapter_claim_list runs its git.
 
@@ -1060,6 +1081,12 @@ class FakeGit:
 
     def push(self, remote: str, refspec: str) -> Optional[str]:
         return self._answer("push", remote, refspec)
+
+    def empty_commit(self, subject: str, body: str) -> Optional[str]:
+        return self._answer("empty_commit", subject, body)
+
+    def push_new_ref(self, remote: str, commit: str, ref: str) -> Optional[str]:
+        return self._answer("push_new_ref", remote, commit, ref)
 
     def fetch_prune(self, remote: str, refspec: str) -> Optional[str]:
         return self._answer("fetch_prune", remote, refspec)
