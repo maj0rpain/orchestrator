@@ -254,23 +254,23 @@ def finding_body_file_rewrite(path: str, body: str) -> None:
     text_file_write(path, body, _BODY_UNWRITTEN)
 
 
-def finding_body_render(finding: str, axis: str, severity: str, reason: str, file: str,
-                        line: str, sha: str, pr: str, why: str, question: str = "") -> str:
+def finding_body_render(finding: str, fields: FindingBody) -> str:
     """A filed finding's issue body: the finding text <finding>, its NULs
     and trailing newlines dropped as bash's $(cat) drops them, a blank line,
-    then each labelled line followed by a blank line, so GitHub shows each as
-    its own paragraph - the spec question's only when there is one. The
+    then each labelled line of <fields> followed by a blank line, so GitHub
+    shows each as its own paragraph - the spec question's only when there is
+    one. Its pr_number goes unused: the PR line carries the URL alone. The
     labelled lines are the closer's, byte for byte, so a body filed before
     rendering existed parses as one rendered now does."""
-    axis = axis.lower()
+    axis = fields.axis.lower()
     parts = [finding.replace("\0", "").rstrip("\n"),
              "**Axis:** " + axis[:1].upper() + axis[1:],
-             "**Severity:** %s - %s" % (severity, reason),
-             "**Location:** `%s:%s` at %s" % (file, line, sha),
-             "**PR:** " + pr,
-             "**Why not fixed in the loop:** " + why]
-    if question:
-        parts.append("**Spec question:** " + question)
+             "**Severity:** %s - %s" % (fields.severity, fields.reason),
+             "**Location:** `%s:%s` at %s" % (fields.file, fields.line, fields.sha),
+             "**PR:** " + fields.pr,
+             "**Why not fixed in the loop:** " + fields.why]
+    if fields.question:
+        parts.append("**Spec question:** " + fields.question)
     return "".join(part + "\n\n" for part in parts)
 
 

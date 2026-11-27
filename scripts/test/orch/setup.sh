@@ -563,8 +563,7 @@ healthy_repo() {
 
 # fresh_flow <slug>: a section's own starting point - a healthy_repo with a
 # flow named <slug> just started in it, at the spec phase, cwd inside it. A
-# section that needs a later phase arranges it with state_fixture, or
-# review_flow for the review phase.
+# section that needs a later phase arranges it with state_fixture.
 fresh_flow() { healthy_repo; "$ORCH" init "$1" >/dev/null; }
 
 # fake_flow <slug>: a section's starting point on the store-backed GitHub fake

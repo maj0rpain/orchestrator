@@ -12,7 +12,7 @@ The phase writers are the internal writers of `state.phase`. The Python
 ones, `phase_write` and `phase_write_try` in
 `scripts/orch_py/orch/flow_state.py`, serve `init`, now a Python noun, which
 stamps its seed's phase through `phase_write`, and the Python `phase` noun:
-`phase advance`, and `review ready`'s finish through `phase_finish` and,
+`phase advance`, and `review ready`'s in-process `finish` and,
 under autopilot, `standing_finish`, and the Python `redo` noun, whose
 closing write (`redo_step_back`) goes through it. The bash `phase_write`
 in `scripts/orch/state.sh` makes the same membership check against the bash

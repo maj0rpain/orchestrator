@@ -4,11 +4,10 @@ handoffs. `phase advance`: every refusal in its guard order, each per-phase
 field check, the open-tickets refusal, a clean advance per phase, and the
 autopilot advance - the label moved, the phase recorded, the claim released
 and the note printed. `phase boundary`: the block in each host's own words.
-And phase_finish, the orch_python_call bridge to the finished phase's close
-that bash review ready reached through, before review ready came to call
-finish in process: in a plain session the next phase recorded and nothing
-else, in an autopilot one the issue checked, then the label moved, the phase
-recorded and the claim released."""
+And finish, the finished phase's close review ready calls in process: in a
+plain session the next phase recorded and nothing else, in an autopilot one
+the issue checked, then the label moved, the phase recorded and the claim
+released."""
 from __future__ import annotations
 
 import json
@@ -18,7 +17,6 @@ import pytest
 
 from conftest import CLAUDE, died_of, fake, flow_state, hold_flow, labels_of, snapshot, state_json
 from orch import phase
-from orch.__main__ import main
 from orch.git import FakeGit
 from orch.handoff import PHASE_TABLE
 
@@ -27,11 +25,12 @@ AUTOPILOT = {"ORCH_AUTOPILOT": "1"}
 CLOCK = 1767323045.0
 
 
-def phase_finish(root, seed, *args, env=None):
-    """phase_finish(<args>) in the checkout at <root> under <env> (a plain
-    session's when None), on <seed>'s store."""
-    return phase.phase_finish(list(args), gh=fake(seed), git=FakeGit(toplevel=str(root)),
-                              env={} if env is None else env, clock=lambda: CLOCK)
+def finish(root, seed, next_phase, reason, issue, env=None):
+    """finish(<next_phase>, <reason>, <issue>) on the state file of the
+    checkout at <root> under <env> (a plain session's when None), on <seed>'s
+    store."""
+    return phase.finish(next_phase, reason, issue, str(state_json(root)), lambda: fake(seed),
+                        {} if env is None else env, lambda: CLOCK)
 
 
 def state_of(root, key="phase"):
@@ -52,7 +51,7 @@ def test_a_plain_session_records_the_next_phase_and_touches_nothing_on_github(
         root, seed, store, capsys, reviewing):
     before = snapshot(store)
 
-    assert phase_finish(root, seed, "done", "marked PR #9 ready", "7") is None
+    assert finish(root, seed, "done", "marked PR #9 ready", "7") is None
     assert capsys.readouterr() == ("", "")
     assert state_of(root) == "done"
     assert snapshot(store) == before
@@ -62,14 +61,14 @@ def test_a_plain_session_s_failed_phase_write_dies_leaving_the_flow_unchanged(
         root, seed, capsys, reviewing):
     state_json(root).write_text("not json")
 
-    assert died_of(capsys, lambda: phase_finish(root, seed, "done", "r", "7")) == (
+    assert died_of(capsys, lambda: finish(root, seed, "done", "r", "7")) == (
         1, "", "orch: could not record phase in %s - the flow is unchanged\n" % state_json(root))
     assert state_json(root).read_text() == "not json"
 
 
 def test_an_autopilot_session_moves_the_label_records_the_phase_and_releases_the_claim(
         root, seed, store, capsys, reviewing):
-    assert phase_finish(root, seed, "done", "marked PR #9 ready", "7", env=AUTOPILOT) is None
+    assert finish(root, seed, "done", "marked PR #9 ready", "7", env=AUTOPILOT) is None
     assert capsys.readouterr() == ("", "")
     assert labels_of(store, 7) == ["ready-for-agent", "orch:done"]
     assert state_of(root) == "done"
@@ -80,7 +79,7 @@ def test_an_autopilot_session_s_failure_dies_with_the_reason_seeding_the_writes_
         root, seed, store, capsys, reviewing):
     seed.fail("adapter_claim_delete", "HTTP 500")
 
-    assert died_of(capsys, lambda: phase_finish(
+    assert died_of(capsys, lambda: finish(
         root, seed, "done", "marked PR #9 ready", "7", env=AUTOPILOT)) == (
         1, "", "orch: could not delete the claim ref on issue #7: HTTP 500 - writes that landed:"
                " marked PR #9 ready, moved the phase label to orch:done, recorded phase done,"
@@ -92,21 +91,10 @@ def test_an_autopilot_session_with_no_issue_dies_before_any_write(
         root, seed, store, capsys, reviewing):
     before = snapshot(store)
 
-    assert died_of(capsys, lambda: phase_finish(root, seed, "done", "r", "", env=AUTOPILOT)) == (
+    assert died_of(capsys, lambda: finish(root, seed, "done", "r", "", env=AUTOPILOT)) == (
         1, "", "orch: no issue recorded in state - the spec phase must publish one first\n")
     assert state_of(root) == "review"
     assert snapshot(store) == before
-
-
-@pytest.mark.parametrize("args", [(), ("done", "r"), ("done", "r", "7", "x")])
-def test_phase_finish_refuses_any_count_of_arguments_but_three(root, seed, capsys, args):
-    assert died_of(capsys, lambda: phase_finish(root, seed, *args)) == (
-        1, "", "orch: usage: orch_python_call phase phase_finish <next> <reason> <issue>\n")
-
-
-def test_call_mode_reaches_the_phase_module_s_phase_finish(capsys):
-    assert died_of(capsys, lambda: main(["--call", "--as", "review", "phase", "phase_finish"])) \
-        == (1, "", "orch: usage: orch_python_call phase phase_finish <next> <reason> <issue>\n")
 
 
 # --- the noun: phase advance and phase boundary --------------------------

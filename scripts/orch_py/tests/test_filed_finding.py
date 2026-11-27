@@ -123,9 +123,9 @@ def test_the_axes_are_the_axis_table_s_in_order():
 
 def test_the_rendered_body_is_the_finding_then_each_labelled_line_a_paragraph():
     body = filed_finding.finding_body_render(
-        "The reviewer said this.\n\nIt spans two paragraphs.\n\n\n\n", "standards", "major",
-        "Misleads a reader", "scripts/a.sh", "12", "abc1234",
-        "https://ghe.example.com/x/y/pull/7", "found in the final iteration")
+        "The reviewer said this.\n\nIt spans two paragraphs.\n\n\n\n", FindingBody(
+            "standards", "major", "Misleads a reader", "scripts/a.sh", "12", "abc1234",
+            "https://ghe.example.com/x/y/pull/7", "", "found in the final iteration", ""))
 
     assert body == lines(
         "The reviewer said this.", "", "It spans two paragraphs.", "", "**Axis:** Standards", "",
@@ -135,8 +135,8 @@ def test_the_rendered_body_is_the_finding_then_each_labelled_line_a_paragraph():
 
 
 def test_a_spec_question_renders_its_line_last_and_the_axis_capitalised():
-    body = filed_finding.finding_body_render(
-        "Text.", "SPEC", "nit", "r", "a.sh", "1-2", "ab", URL, "why", "Should it?")
+    body = filed_finding.finding_body_render("Text.", FindingBody(
+        "SPEC", "nit", "r", "a.sh", "1-2", "ab", URL, "", "why", "Should it?"))
 
     assert body == lines(
         "Text.", "", "**Axis:** Spec", "", "**Severity:** nit - r", "",
@@ -145,9 +145,9 @@ def test_a_spec_question_renders_its_line_last_and_the_axis_capitalised():
 
 
 def test_a_rendered_body_with_every_part_parses_back_to_them():
-    body = filed_finding.finding_body_render(
-        "Text.", "standards", "nit", "a reason.", "src/app.sh", "7", SHA, URL,
-        "found in the final iteration.")
+    body = filed_finding.finding_body_render("Text.", FindingBody(
+        "standards", "nit", "a reason.", "src/app.sh", "7", SHA, URL, "",
+        "found in the final iteration.", ""))
 
     assert finding_body_parse(body) == FindingBody(
         "standards", "nit", "a reason.", "src/app.sh", "7", SHA, URL, "42",

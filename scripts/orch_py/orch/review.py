@@ -69,7 +69,7 @@ from orch.common import (ORCH_DIR_NAME, capture, die, fenced, int_as_test_reads,
                          rm_f_or_die, stdout_write, trim, warn)
 from orch.branch import discard_own_branch_work
 from orch.checkout import checkout_branch_or_rebasing, checkout_kind
-from orch.filed_finding import (FILED_AXES, FILED_SEVERITIES, category_for_axis,
+from orch.filed_finding import (FILED_AXES, FILED_SEVERITIES, FindingBody, category_for_axis,
                                 category_label_ensure, filed_severity_label,
                                 finding_body_file_new, finding_body_parse, finding_body_render,
                                 finding_flags_parse, finding_input_check, finding_location_check,
@@ -921,16 +921,15 @@ def _file(args: List[str], root: str, git, env: Mapping[str, str], clock,
     if not HEX.fullmatch(sha):
         die("not a sha: %s (want a hex commit SHA)" % sha)
 
-    body = finding_body_render(read_raw(finding) or "", axis, severity, reason, file, line, sha,
-                               url, why, question)
+    # The PR's number is left out: the parser reads it off the URL.
+    parts = FindingBody(axis, severity, reason, file, line, sha, url, "", why, question)
+    body = finding_body_render(read_raw(finding) or "", parts)
     with finding_body_file_new(body) as body_file:
-        got = finding_body_parse(body)
-        for field, value in (("axis", axis), ("severity", severity), ("reason", reason),
-                             ("file", file), ("line", line), ("sha", sha), ("pr", url),
-                             ("why", why), ("question", question)):
-            if getattr(got, field) != value:
+        got = finding_body_parse(body)._replace(pr_number="")
+        for field, value, parsed in zip(FindingBody._fields, parts, got):
+            if parsed != value:
                 die("the rendered body does not parse back: %s (given '%s', parsed '%s')"
-                    % (field, value, getattr(got, field)))
+                    % (field, value, parsed))
         severity_label_ensure(gh, severity)
         triage = needs_triage_label_ready(gh, TriageLabels(lambda: root))
         category_label_ensure(gh, category)

@@ -2,10 +2,7 @@
 current phase once the handoff it writes for the next one is valid and the
 state the next one needs is recorded, and `phase boundary`, the block that
 ends a phase's session. Beside them finish, the finished phase's close,
-which phase advance runs and review ready calls in process, and
-phase_finish, its orch_python_call bridge (`orch_python_call --as review
-phase phase_finish ...`), which bash review ready reached through and which
-no caller outside its own tests now reaches, bash review ready gone.
+which phase advance runs and review ready calls in process.
 
 run(argv) takes the arguments after `phase`, as orch.sh hands them on, and
 returns the exit code; every error dies through orch.common.die. It keeps
@@ -56,7 +53,7 @@ def advance(args: List[str], root: str, gh_of, env: Mapping[str, str],
     table; then a missing or invalid handoff of the one this phase writes
     for the next - checked before the state fields, so a missing handoff,
     the likelier gap, is the one reported - then a state field the next
-    phase needs. Past them it finishes the phase (phase_finish) and prints
+    phase needs. Past them it finishes the phase (finish) and prints
     the boundary block, or in an autopilot session the note naming the
     watcher."""
     if args:
@@ -130,34 +127,15 @@ def run(
     return 0
 
 
-def phase_finish(
-    args: List[str],
-    gh=None,
-    git=None,
-    env: Optional[Mapping[str, str]] = None,
-    clock: Callable[[], float] = time.time,
-) -> None:
-    """`phase_finish <next> <reason> <issue>`: records <next> as the flow's
-    phase in the checkout's state file, updated stamped with the time
-    <clock> reads. In an autopilot session it first checks <issue>, the
-    flow's issue the caller holds, with require_value, then runs
-    standing_finish - the issue's phase label moved, the phase recorded, the
-    claim released - <reason> naming what was done. It reads no state and
-    prints nothing. The real adapters and the process's environment unless a
-    test hands in others."""
-    if len(args) != 3:
-        die("usage: orch_python_call phase phase_finish <next> <reason> <issue>")
-    next_phase, reason, issue = args
-    env = os.environ if env is None else env
-    git = Git() if git is None else git
-    finish(next_phase, reason, issue, flow_state_file(checkout_root(git, env)),
-           adapter_of(gh, env), env, clock)
-
-
 def finish(next_phase: str, reason: str, issue: str, state_file: str, gh_of,
            env: Mapping[str, str], clock: Callable[[], float]) -> None:
-    """phase_finish's close, on the state file at <state_file> and the gh
-    adapter <gh_of> makes."""
+    """The finished phase's close: records <next_phase> as the flow's phase
+    in the state file at <state_file>, updated stamped with the time <clock>
+    reads. In an autopilot session it first checks <issue>, the flow's issue
+    the caller holds, with require_value, then runs standing_finish on the gh
+    adapter <gh_of> makes - the issue's phase label moved, the phase
+    recorded, the claim released - <reason> naming what was done. It reads
+    no state and prints nothing."""
     if autopilot_active(env):
         require_value("issue", issue)
         # Imported on call: a plain session never loads the chain.
