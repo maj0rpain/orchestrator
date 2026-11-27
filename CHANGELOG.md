@@ -1,5 +1,17 @@
 # Changelog
 
+## 6.12.12
+
+`orch.sh side-checkout` now runs as a Python converted noun, from
+`scripts/orch_py/orch/side_checkout.py`: `add`, `list`, `remove`, `prune` and
+`issue`. Their usage lines, messages and exit codes are unchanged. `branch
+create`'s discard refusal in an interactive flow's main checkout now tells the
+main checkout by its path rather than by a side-checkout marker. The bash
+`side-checkout` module and its test section are deleted, along with the
+bash-to-Python bridge (`orch_python_call`, the bootstrap's `--call` path and
+`cli.call_func`) and the bash helpers the conversion left with no caller, and
+the flow-less entries classification check moves to pytest.
+
 ## 6.12.11
 
 `orch.sh handoff` now runs as a Python converted noun, from
