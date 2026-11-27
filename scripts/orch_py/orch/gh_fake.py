@@ -521,6 +521,13 @@ class FakeGh:
                        if line.split("\t", 1)[0] != name)
         _write(labels, "%s%s\t%s\t%s\n" % (kept, name, colour, description))
 
+    def labels(self, limit: int) -> List[str]:
+        """The stored labels' names, the first <limit> of them; none where
+        the store holds no labels."""
+        self._failing("adapter_labels")
+        names = [line.split("\t", 1)[0] for line in _lines(_store_path(self.store, "labels"))]
+        return [name for name in names if name][:limit]
+
     # --- repo operations ---
 
     def repo_default_branch(self, repo: str) -> str:
@@ -564,6 +571,14 @@ class FakeGh:
         """How many of #n's stored blockers are still open."""
         return sum(1 for b in self._blockers(n)
                    if _first_line(_issue_path(self.store, b, "state")) == "OPEN")
+
+    def sub_issues_supported(self) -> Optional[bool]:
+        """None where the store holds no issue; False where no_sub_issues is
+        present; True otherwise."""
+        self._failing("adapter_sub_issues_supported")
+        if not _numbered(_store_path(self.store, "issues")):
+            return None
+        return not os.path.exists(_store_path(self.store, "no_sub_issues"))
 
     def sub_issues(self, parent: int) -> List[real.SubIssue]:
         """The stored sub-issues, in link order, each with its stored state
@@ -1080,6 +1095,16 @@ class FakeStore:
         """gh's own local default repo for the checkout, OWNER/REPO, as the
         bash suite's fake_local_default seeds it."""
         _write(_store_path(self.store, "local_default"), name + "\n")
+
+    def label_names(self, *names: str) -> None:
+        """The repo's labels: exactly <names>, with no colour or description,
+        as the bash suite's fake_label_names seeds them."""
+        _write(_store_path(self.store, "labels"), "".join("%s\t\t\n" % name for name in names))
+
+    def no_sub_issues(self) -> None:
+        """The sub-issues endpoint refuses every issue, as on a GitHub that
+        does not support them."""
+        _write(_store_path(self.store, "no_sub_issues"), "")
 
     def next_issue(self, n: int) -> None:
         _write(_store_path(self.store, "next_issue"), "%d\n" % n)

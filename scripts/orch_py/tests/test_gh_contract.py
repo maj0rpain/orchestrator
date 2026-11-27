@@ -669,6 +669,72 @@ def test_a_failed_auth_status_passes_gh_s_report_through(fixture_gh):
     assert (failed.value.stdout, failed.value.stderr) == ("github.com\n", report)
 
 
+def labels_argv(limit):
+    return ["label", "list", "--limit", str(limit), "--json", "name", "--jq", ".[].name"]
+
+
+def test_labels_lists_the_repo_s_label_names_up_to_the_limit(fixture_gh):
+    fixture_gh.reply(labels_argv(1000), "needs triage\nReady-For-Agent\n")
+
+    assert real_gh(fixture_gh).labels(1000) == ["needs triage", "Ready-For-Agent"]
+    assert fixture_gh.calls() == [("fork/widgets", "github.com", labels_argv(1000))]
+
+
+def test_a_repo_with_no_labels_lists_none(fixture_gh):
+    fixture_gh.reply(labels_argv(1000), "")
+
+    assert real_gh(fixture_gh).labels(1000) == []
+
+
+def test_a_failed_label_listing_passes_gh_s_stderr_through(fixture_gh):
+    fixture_gh.reply(labels_argv(1000), stderr="HTTP 403: Forbidden\n", exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).labels(1000)
+    assert failed.value.stderr == "HTTP 403: Forbidden\n"
+
+
+NEWEST_ISSUE = ["issue", "list", "--state", "all", "--limit", "1", "--json", "number", "--jq",
+                ".[0].number // empty"]
+PROBED_SUB_ISSUES = ["api", "repos/{owner}/{repo}/issues/41/sub_issues"]
+
+
+def test_sub_issue_support_asks_the_endpoint_of_the_newest_issue(fixture_gh):
+    fixture_gh.reply(NEWEST_ISSUE, "41\n")
+    fixture_gh.reply(PROBED_SUB_ISSUES, "[]\n")
+
+    assert real_gh(fixture_gh).sub_issues_supported() is True
+    assert fixture_gh.calls() == [("fork/widgets", "github.com", NEWEST_ISSUE),
+                                  ("fork/widgets", "github.com", PROBED_SUB_ISSUES)]
+
+
+def test_an_endpoint_answering_404_has_no_sub_issue_support(fixture_gh):
+    fixture_gh.reply(NEWEST_ISSUE, "41\n")
+    fixture_gh.reply(PROBED_SUB_ISSUES, stderr="gh: Not Found (HTTP 404)\n", exit=1)
+
+    assert real_gh(fixture_gh).sub_issues_supported() is False
+
+
+def test_a_repo_with_no_issue_cannot_be_probed_for_sub_issue_support(fixture_gh):
+    fixture_gh.reply(NEWEST_ISSUE, "")
+
+    assert real_gh(fixture_gh).sub_issues_supported() is None
+    assert fixture_gh.calls() == [("fork/widgets", "github.com", NEWEST_ISSUE)]
+
+
+@pytest.mark.parametrize("replies", [
+    [(NEWEST_ISSUE, "", "HTTP 502: Bad Gateway\n", 1)],
+    [(NEWEST_ISSUE, "41\n", "", 0), (PROBED_SUB_ISSUES, "", "HTTP 502: Bad Gateway\n", 1)],
+])
+def test_a_sub_issue_probe_failing_any_other_way_passes_gh_s_stderr_through(fixture_gh, replies):
+    for argv, stdout, stderr, code in replies:
+        fixture_gh.reply(argv, stdout, stderr=stderr, exit=code)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).sub_issues_supported()
+    assert failed.value.stderr == "HTTP 502: Bad Gateway\n"
+
+
 # --- PR operations -----------------------------------------------------------
 
 

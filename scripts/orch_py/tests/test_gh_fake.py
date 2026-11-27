@@ -29,6 +29,7 @@ BASH_HELPERS = {
         "fake_pr", "fake_pr_comment", "fake_pr_cross", "fake_labels",
         "fake_default_branch", "fake_claim_seed", "fake_claim_held",
         "fake_pr_draft", "fake_pr_head", "fake_pr_merged", "fake_issue_created", "iso_of",
+        "fake_label_names",
         "iso_ago", "fake_next_pr", "fake_checks", "fake_pr_base_of", "fake_pr_body_of",
     ],
     SCRIPTS / "test" / "orch" / "state.sh": ["fake_pr_draft_of"],
@@ -402,6 +403,42 @@ def test_noauth_fails_the_auth_status_with_gh_s_login_report_and_the_rest_as_una
         bash(store, "adapter_issue_body 5 2>&1 || :"))
 
 
+def test_the_label_names_the_python_seeder_stores_list_the_same_in_both_fakes(store):
+    assert fake(store).labels(1000) == []
+    FakeStore(str(store)).label_names("needs triage", "Ready-For-Agent", "wontfix")
+
+    assert fake(store).labels(2) == ["needs triage", "Ready-For-Agent"]
+    assert bash(store, "adapter_labels 2") == "needs triage\nReady-For-Agent\n"
+
+
+def test_label_names_the_bash_seeder_stores_list_the_same(store):
+    bash(store, "fake_label_names bug 'needs info'")
+
+    assert fake(store).labels(1000) == ["bug", "needs info"]
+
+
+@pytest.mark.parametrize("seeding, answer", [
+    ("", None),
+    ("fake_issue 1 open", True),
+    ("fake_issue 1 open; : >\"$ORCH_GH_FAKE_STORE/no_sub_issues\"", False),
+])
+def test_sub_issue_support_answers_as_the_bash_fake_does(store, seeding, answer):
+    bash(store, seeding)
+
+    assert fake(store).sub_issues_supported() is answer
+    assert bash(store, "adapter_sub_issues_supported") == {
+        None: "", True: "yes\n", False: "no\n"}[answer]
+
+
+def test_the_python_seeder_s_unsupported_sub_issues_read_the_same_in_both_fakes(store):
+    seed = FakeStore(str(store))
+    seed.issue(1, "open")
+    seed.no_sub_issues()
+
+    assert fake(store).sub_issues_supported() is False
+    assert bash(store, "adapter_sub_issues_supported") == "no\n"
+
+
 @pytest.mark.parametrize("operation, call", [
     ("adapter_issues_labelled_bodies", lambda gh: gh.issues_labelled_bodies("review:nit")),
     ("adapter_issue_state", lambda gh: gh.issue_state(5)),
@@ -445,6 +482,8 @@ def test_noauth_fails_the_auth_status_with_gh_s_login_report_and_the_rest_as_una
     ("adapter_job_failed_log", lambda gh: gh.job_failed_log(77)),
     ("adapter_repo_local_default", lambda gh: gh.repo_local_default()),
     ("adapter_auth_status", lambda gh: gh.auth_status("github.com")),
+    ("adapter_labels", lambda gh: gh.labels(1000)),
+    ("adapter_sub_issues_supported", lambda gh: gh.sub_issues_supported()),
 ])
 def test_the_added_operations_fail_under_the_bash_operation_names(store, operation, call):
     bash(store, "fake_issue 5 open review:nit; fake_issue 7 open; fake_default_branch trunk; "

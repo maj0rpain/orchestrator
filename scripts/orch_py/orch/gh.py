@@ -1163,6 +1163,13 @@ class Gh:
         self._gh(["label", "create", name, "--force", "--color", colour,
                   "--description", description])
 
+    def labels(self, limit: int) -> List[str]:
+        """The names of the repo's labels, at most <limit> of them, in
+        GitHub's order; none for a repo with none."""
+        answer = self._gh(["label", "list", "--limit", str(limit), "--json", "name",
+                           "--jq", ".[].name"])
+        return [name for name in answer.split("\n") if name]
+
     # --- repo operations ---
 
     def repo_default_branch(self, repo: str) -> str:
@@ -1191,6 +1198,24 @@ class Gh:
         self._gh(["auth", "status", "--active", "--hostname", host])
 
     # --- sub-issue and dependency operations ---
+
+    def sub_issues_supported(self) -> Optional[bool]:
+        """Whether this GitHub answers the sub-issues endpoint, asked of the
+        repo's most recent issue: True where it answers, False only where it
+        answers HTTP 404, None where the repo has no issue to ask it of.
+        Every other failure - of the issue listing, or of the endpoint with
+        any other status or no connection - passes gh's stderr through."""
+        newest = self._gh(["issue", "list", "--state", "all", "--limit", "1", "--json",
+                           "number", "--jq", ".[0].number // empty"]).rstrip("\n")
+        if not newest:
+            return None
+        try:
+            self._gh(["api", "repos/{owner}/{repo}/issues/%s/sub_issues" % newest])
+        except GhFailed as failed:
+            if "HTTP 404" in failed.stderr:
+                return False
+            raise
+        return True
 
     def issue_parent(self, n: int) -> Optional[int]:
         """The number of the issue #n is a sub-issue of, or None. Read from
