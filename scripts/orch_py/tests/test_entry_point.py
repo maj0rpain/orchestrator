@@ -252,6 +252,19 @@ def test_review_path_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_pat
     assert (tmp_path / ".orchestrator" / "review").is_dir()
 
 
+@pytest.mark.parametrize("noun", ["doctor", "health"])
+def test_doctor_and_health_writing_into_a_closed_pipe_die_of_sigpipe_silently(
+        tmp_path, seed, monkeypatch, noun):
+    """`orch.sh doctor | head` ended silently as bash's printf did, under
+    either spelling: so does the Python doctor's report."""
+    git_repo(tmp_path, "https://github.com/acme/widgets.git")
+    monkeypatch.setenv("ORCH_GH_FAKE_STORE", seed.store)
+
+    run = into_a_closed_pipe(tmp_path, noun)
+
+    assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
+
+
 @pytest.mark.parametrize("call", [["route", "show"], ["--call", "route", "run", "show"]],
                          ids=["noun", "call-mode"])
 def test_a_noun_converted_earlier_keeps_its_flush_failure_on_a_closed_pipe(tmp_path, call):
@@ -283,7 +296,7 @@ def test_the_spec_review_noun_is_routed_to_its_module(capsys):
 def test_call_mode_below_python_3_9_dies_naming_the_noun(monkeypatch, capsys):
     monkeypatch.setattr(sys, "version_info", (3, 8, 10, "final", 0))
 
-    assert died_of(capsys, lambda: main(["--call", "agent", "check_settings"])) == (
+    assert died_of(capsys, lambda: main(["--call", "agent", "name_shapes"])) == (
         1, "",
         "orch: orch.sh agent needs python3 3.9 or newer (found 3.8.10)"
         " - run orch.sh doctor\n",
@@ -326,3 +339,16 @@ def test_call_mode_refuses_missing_args_unknown_noun_and_unknown_or_private_func
         1, "", "orch: unknown route function: no_such_fn\n")
     assert died_of(capsys, lambda: main(["--call", "route", "_private"])) == (
         1, "", "orch: unknown route function: _private\n")
+
+
+@pytest.mark.parametrize("noun, func", [
+    ("review", "doctor_terminal"),
+    ("review", "doctor_ci"),
+    ("review", "doctor_standards"),
+    ("agent", "check_settings"),
+    ("ticket-worktree", "worktrees_left"),
+])
+def test_call_mode_refuses_the_former_doctor_bridges(capsys, noun, func):
+    # Doctor reads these answers in process now, so no bridge stays callable.
+    assert died_of(capsys, lambda: main(["--call", "--as", "doctor", noun, func])) == (
+        1, "", "orch: unknown %s function: %s\n" % (noun, func))

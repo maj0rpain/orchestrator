@@ -13,8 +13,10 @@ wrong. `validate_adopted_issue` (adoption's one-time precondition check;
 bash `validate_adopted_issue` when this was decided, Python init's now, in
 `scripts/orch_py/orch/init.py`, reading through `open_issue_read`) calls
 `die` to abort the whole command immediately; `check_flow_issue` (a
-`doctor` check) calls `d_fail` to record a non-fatal finding and keep
-checking everything else. A shared helper general enough to cover both either
+`doctor` check; bash `check_flow_issue` when this was decided, Python
+doctor's now, in `scripts/orch_py/orch/doctor.py`, reading through
+`Doctor.issue_read` and `standing_read`) records a non-fatal finding - with
+`d_fail` then, `d.fail` now - and keeps checking everything else. A shared helper general enough to cover both either
 takes a callback/mode argument for how to report failure, or leaves one
 caller still open-coding its own version — in both cases the indirection
 costs more to read than the two or three lines of duplication it would

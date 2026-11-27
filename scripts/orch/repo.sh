@@ -5,21 +5,19 @@
 
 # repo_resolve: resolves the Repo once per shell and memoises the whole answer
 # in plain (never exported) shell variables, repo_resolve their one writer:
-# REPO_NAME and REPO_SOURCE (GH_REPO or origin; read by repo show
-# and doctor.sh), REPO_ORIGIN_SSH (1 when the Repo came from an
-# origin in an SSH form, else empty), REPO_MEMO_STATUS (the outcome, 0 or 1, a
-# failed resolution too; empty until the first resolve) and REPO_MEMO_HOST (the
-# host the repo pins). The memo lives in the shell that resolves: a later
-# resolve there, or in a subshell forked from it afterwards, returns the same
-# answer and status without starting a process. A subshell's own resolve dies
-# with it and never reaches its parent.
+# REPO_NAME and REPO_SOURCE (GH_REPO or origin; read by repo show),
+# REPO_MEMO_STATUS (the outcome, 0 or 1, a failed resolution too; empty until
+# the first resolve) and REPO_MEMO_HOST (the host the repo pins). The memo
+# lives in the shell that resolves: a later resolve there, or in a subshell
+# forked from it afterwards, returns the same answer and status without
+# starting a process. A subshell's own resolve dies with it and never reaches
+# its parent.
 # shellcheck disable=SC2034
 repo_resolve() {
   local url
   if [ -n "${REPO_MEMO_STATUS:-}" ]; then return "$REPO_MEMO_STATUS"; fi
   REPO_NAME=""
   REPO_SOURCE=""
-  REPO_ORIGIN_SSH=""
   REPO_MEMO_HOST=""
   if [ -n "${GH_REPO:-}" ]; then
     REPO_NAME="$GH_REPO"
@@ -31,7 +29,6 @@ repo_resolve() {
   if url="$(git remote get-url origin 2>/dev/null)" \
     && REPO_NAME="$(repo_from_url "$url")"; then
     REPO_SOURCE=origin
-    if [ "$(repo_url_form "$url")" = ssh ]; then REPO_ORIGIN_SSH=1; fi
     REPO_MEMO_HOST="$(repo_host "$REPO_NAME")"
     REPO_MEMO_HOST="${REPO_MEMO_HOST:-github.com}"
     REPO_MEMO_STATUS=0
@@ -153,9 +150,9 @@ repo_from_url() {
 # repo_gh_host: the GitHub host gh targets for the resolved repo (not the
 # glossary's Host, the agent CLI), read from the memo
 # repo_resolve memoises. The one rule, followed by the gh guard's pin, doctor's
-# GitHub probe and repo show --host: the repo's pinned host (repo_pinned_host);
-# else (a user-set OWNER/REPO GH_REPO) the user's GH_HOST, or github.com when
-# unset, as gh does.
+# GitHub probe (orch/doctor.py, through orch.repo) and repo show --host: the
+# repo's pinned host (repo_pinned_host); else (a user-set OWNER/REPO GH_REPO)
+# the user's GH_HOST, or github.com when unset, as gh does.
 repo_gh_host() {
   local host
   host="$(repo_pinned_host)"

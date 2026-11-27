@@ -29,9 +29,10 @@ BASH_HELPERS = {
         "fake_pr", "fake_pr_comment", "fake_pr_cross", "fake_labels",
         "fake_default_branch", "fake_claim_seed", "fake_claim_held",
         "fake_pr_draft", "fake_pr_head", "fake_pr_merged", "fake_issue_created", "iso_of",
-        "iso_ago", "fake_next_pr", "fake_checks", "fake_pr_base_of", "fake_pr_body_of",
+        "fake_label_names",
+        "iso_ago", "fake_next_pr", "fake_pr_base_of", "fake_pr_body_of",
     ],
-    SCRIPTS / "test" / "orch" / "state.sh": ["fake_pr_draft_of"],
+    SCRIPTS / "test" / "orch" / "state.sh": ["fake_pr_draft_of", "fake_checks"],
     SCRIPTS / "test" / "orch" / "gh.sh": ["fake_ratelimit", "fake_duplicate_of",
                                           "fake_issue_body", "fake_pr_comments_of"],
     SCRIPTS / "test" / "orch" / "autopilot.sh": ["fake_reason_of"],
@@ -377,6 +378,62 @@ def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
     assert gh.repo_default_branch("acme/widgets") == "trunk"
 
 
+def test_the_local_default_the_python_seeder_stores_reads_back(store):
+    seed = FakeStore(str(store))
+    assert fake(store).repo_local_default() == ""
+    seed.local_default("upstream/widgets")
+
+    assert fake(store).repo_local_default() == "upstream/widgets"
+
+
+def test_noauth_fails_the_auth_status_with_gh_s_login_report_and_the_rest_as_unauthorised(
+        store):
+    bash(store, "fake_issue 5 open")
+    FakeStore(str(store)).noauth()
+    gh = fake(store)
+
+    with pytest.raises(GhFailed) as status:
+        gh.auth_status("github.com")
+    with pytest.raises(GhFailed) as body:
+        gh.issue_body(5)
+
+    assert (status.value.stderr, body.value.stderr) == (
+        "You are not logged into any GitHub hosts. To log in, run: gh auth login\n",
+        bash(store, "adapter_issue_body 5 2>&1 || :"))
+
+
+def test_the_label_names_the_python_seeder_stores_list_back_up_to_the_limit(store):
+    assert fake(store).labels(1000) == []
+    FakeStore(str(store)).label_names("needs triage", "Ready-For-Agent", "wontfix")
+
+    assert fake(store).labels(2) == ["needs triage", "Ready-For-Agent"]
+
+
+def test_label_names_the_bash_seeder_stores_list_the_same(store):
+    bash(store, "fake_label_names bug 'needs info'")
+
+    assert fake(store).labels(1000) == ["bug", "needs info"]
+
+
+@pytest.mark.parametrize("seeding, answer", [
+    ("", None),
+    ("fake_issue 1 open", True),
+    ("fake_issue 1 open; : >\"$ORCH_GH_FAKE_STORE/no_sub_issues\"", False),
+])
+def test_sub_issue_support_answers_from_a_bash_seeded_store(store, seeding, answer):
+    bash(store, seeding)
+
+    assert fake(store).sub_issues_supported() is answer
+
+
+def test_the_python_seeder_s_unsupported_sub_issues_read_back(store):
+    seed = FakeStore(str(store))
+    seed.issue(1, "open")
+    seed.no_sub_issues()
+
+    assert fake(store).sub_issues_supported() is False
+
+
 @pytest.mark.parametrize("operation, call", [
     ("adapter_issues_labelled_bodies", lambda gh: gh.issues_labelled_bodies("review:nit")),
     ("adapter_issue_state", lambda gh: gh.issue_state(5)),
@@ -384,6 +441,7 @@ def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
     ("adapter_repo_default_branch", lambda gh: gh.repo_default_branch("acme/widgets")),
     ("adapter_issues_open_titles", lambda gh: gh.issues_open_titles()),
     ("adapter_prs_open", lambda gh: gh.prs_open("topic")),
+    ("adapter_prs_merged", lambda gh: gh.prs_merged("topic", "main")),
     ("adapter_pr_body", lambda gh: gh.pr_body(6)),
     ("adapter_pr_comments", lambda gh: gh.pr_comments(6)),
     ("adapter_sub_issues", lambda gh: gh.sub_issues(5)),
@@ -418,6 +476,10 @@ def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
     ("adapter_pr_commits_checked", lambda gh: gh.pr_commits_checked(6)),
     ("adapter_run_rerun", lambda gh: gh.run_rerun(4242)),
     ("adapter_job_failed_log", lambda gh: gh.job_failed_log(77)),
+    ("adapter_repo_local_default", lambda gh: gh.repo_local_default()),
+    ("adapter_auth_status", lambda gh: gh.auth_status("github.com")),
+    ("adapter_labels", lambda gh: gh.labels(1000)),
+    ("adapter_sub_issues_supported", lambda gh: gh.sub_issues_supported()),
 ])
 def test_the_added_operations_fail_under_the_bash_operation_names(store, operation, call):
     bash(store, "fake_issue 5 open review:nit; fake_issue 7 open; fake_default_branch trunk; "
@@ -520,6 +582,21 @@ adapter_pr_comments 9 | jq -c '.comments'
     assert bash_lines[7] == " B o d y \\r \\n l i n e \\n \\n"
     assert [json.loads(line) for line in bash_lines[8:10]] == comments
     assert bash_lines[10] == "[]"
+
+
+def test_the_merged_prs_of_a_bash_seeded_store_read_as_the_bash_fake_answers_them(store):
+    bash_answer = bash(store, r"""
+fake_pr 4 merged topic main
+fake_pr 9 merged topic main; fake_pr_cross 9; fake_pr_head 9 abc123
+fake_pr 12 merged topic trunk
+fake_pr 7 open topic main
+fake_pr 8 merged other main
+adapter_prs_merged topic main
+""")
+
+    assert fake(store).prs_merged("topic", "main") == [
+        "9\tabc123\ttrue", "4\t%s\tfalse" % ("0" * 40)]
+    assert bash_answer == "9\tabc123\ttrue\n4\t%s\tfalse\n" % ("0" * 40)
 
 
 def test_a_pr_number_the_store_does_not_hold_fails_as_gh_does(store):

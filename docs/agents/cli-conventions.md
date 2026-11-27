@@ -46,7 +46,9 @@ behavior - run `orch.sh help` for the live list.
 ## Exceptions
 
 Two kinds of command don't take this shape, deliberately (and `health` is an
-alias of `doctor`: the same command, whose messages keep saying `doctor`):
+alias of `doctor`: the same command, whose messages keep saying `doctor`,
+but for the refusal without a usable python3, `orch.sh health needs python3
+3.9 or newer ...`, which names `health`):
 
 - **Bare global commands** with no noun to act on: `doctor`, `init`, `slug`,
   `status`, `archive`, `help`, `default-branch`. Each is already

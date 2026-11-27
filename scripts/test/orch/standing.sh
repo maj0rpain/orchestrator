@@ -95,13 +95,6 @@ assert_eq "an issue whose only phase label is done is not pickable" "$(pickable 
 fake_issue 15 open orch:spec orch:limited
 assert_eq "a limited issue is pickable: the limit pause is the tick's own check" "$(pickable 15)" "rc=0"
 
-# label verdict
-verdict() { sourced_orch_script 'standing_label_verdict "$1" "$2" v t; echo "$v|$t"' "$(printf "%b" "$1")" "$2"; }
-assert_eq "no phase label gives none and no text" "$(verdict 'bug' review)" "none|"
-assert_eq "the recorded phase's label alone agrees" "$(verdict 'bug\norch:review' review)" "agrees|orch:review"
-assert_eq "another phase's label disagrees" "$(verdict 'orch:spec' review)" "disagrees|orch:spec"
-assert_eq "two phase labels disagree, in table order" "$(verdict 'orch:review\norch:spec' review)" "disagrees|orch:spec orch:review"
-
 # phase labels text (#1563)
 out="$(sourced_orch standing_phase_labels_text "$(printf 'bug\nready-for-agent')" 2>&1)"
 assert_eq "no phase label prints nothing" "$out" ""

@@ -1173,6 +1173,50 @@ def test_review_dies_pointing_at_doctor_without_python3(tmp_path, repo, seed):
                 " - run orch.sh doctor\n", 1)
 
 
+# --- doctor and health -------------------------------------------------------
+
+INSTALL_PYTHON3 = "install it: brew install python3, or your platform's package manager"
+
+
+@pytest.mark.parametrize("path_of, found", [
+    (lambda tmp_path: path_without(tmp_path, "python3"), "none"),
+    (py38_path, "3.8.10"),
+], ids=["missing", "below-3.9"])
+def test_doctor_and_health_refuse_without_a_usable_python3_naming_the_install(
+        tmp_path, repo, seed, path_of, found):
+    path = path_of(tmp_path)
+
+    answers = [orch_sh(tmp_path, repo, seed, noun, path=path)
+               for noun in ("doctor", "health", "help")]
+
+    assert answers == [
+        ("", "orch: orch.sh doctor needs python3 3.9 or newer (found %s) - %s\n"
+             % (found, INSTALL_PYTHON3), 1),
+        ("", "orch: orch.sh health needs python3 3.9 or newer (found %s) - %s\n"
+             % (found, INSTALL_PYTHON3), 1),
+        ("", "orch: orch.sh help needs python3 3.9 or newer (found %s) - run orch.sh doctor\n"
+             % found, 1),
+    ]
+
+
+def test_orch_sh_doctor_env_reports_the_bash_that_ran_it(tmp_path, repo, seed):
+    """`ok    bash <version>` names the bash running orch.sh, trimmed of its
+    `(1)-release` tail, never a bash found on PATH."""
+    other = tmp_path / "other-bash"
+    other.mkdir()
+    (other / "bash").write_text('#!/bin/sh\ncase "$*" in *BASH_VERSION*) echo 0.0.1; exit 0 ;; '
+                                'esac\nexec /bin/bash "$@"\n')
+    (other / "bash").chmod(0o755)
+    banner = subprocess.run(["/bin/bash", "--version"], stdout=subprocess.PIPE,
+                            stdin=subprocess.DEVNULL, check=True).stdout.decode()
+    version = re.match(r"GNU bash, version ([^(\s]+)\(", banner).group(1)
+
+    out, _, _ = orch_sh(tmp_path, repo, seed, "doctor", "--env",
+                        path="%s%s%s" % (other, os.pathsep, os.environ["PATH"]))
+
+    assert "\nok    bash %s\n" % version in out
+
+
 # --- orch_python_call bootstrap ----------------------------------------------
 
 
@@ -1207,12 +1251,12 @@ def test_orch_python_call_runs_without_exec_and_returns_exit_code(tmp_path, repo
 def test_orch_python_call_drops_empty_sys_path_entry_so_cwd_modules_cannot_shadow(
         tmp_path, repo, module):
     (repo / module).write_text("import sys\nsys.stderr.write('shadowed\\n')\nsys.exit(7)\n")
-    script = 'source "$1"\norch_python_call agent check_settings\n'
+    git_config(tmp_path, repo, "orchestrator.route", "quick")
+    script = 'source "$1"\norch_python_call route run show\n'
 
     out, err, code = source_orch_sh(tmp_path, repo, script, unset=GLOBAL_CONFIG)
 
-    assert (err, code) == ("", 0)
-    assert out.startswith("ok\tagent implementer: model inherit (inherit), effort inherit (inherit)\0")
+    assert (out, err, code) == ("quick\n", "", 0)
 
 
 @pytest.mark.parametrize("given", [None, "", "/the/caller/s/path"],
@@ -1229,17 +1273,17 @@ def test_orch_python_call_restores_callers_pythonpath_for_subprocesses(tmp_path,
         'exec "%s" "$@"\n' % (log, real_git)
     )
     shim.chmod(0o755)
+    git_config(tmp_path, repo, "orchestrator.route", "quick")
     script = (
         'source "$1"\n'
-        'PATH="%s:$PATH" orch_python_call agent check_settings\n' % shim_dir
+        'PATH="%s:$PATH" orch_python_call route run show\n' % shim_dir
     )
     knobs = {} if given is None else {"PYTHONPATH": given}
     unset = GLOBAL_CONFIG + (("PYTHONPATH",) if given is None else ())
 
     out, err, code = source_orch_sh(tmp_path, repo, script, knobs=knobs, unset=unset)
 
-    assert (err, code) == ("", 0)
-    assert out.startswith("ok\tagent implementer: model inherit (inherit), effort inherit (inherit)\0")
+    assert (out, err, code) == ("quick\n", "", 0)
     seen = log.read_text().splitlines()
     assert seen and all(line == ("unset" if given is None else given) for line in seen)
 

@@ -11,7 +11,7 @@ import os
 import pytest
 
 from conftest import died_of, fake, hold_flow, labels_of
-from orch.standing import phase_labels_in, standing_finish
+from orch.standing import Standing, phase_labels_in, standing_finish, standing_read
 
 # A clock reading 2026-01-02T03:04:05Z.
 CLOCK = 1767323045.0
@@ -125,3 +125,21 @@ def test_a_finish_failing_on_its_phase_write_leaves_the_label_one_step_ahead_the
     assert labels_of(store, 50) == ["orch:implement"]
     assert seed.claim_held(50) is False
     assert phase_of(state) == "implement"
+
+
+# --- the read ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("labels, standing", [
+    (("Orch:Implement", "orch:running", "needs-human", "bug"),
+     Standing("OPEN", ["Orch:Implement", "orch:running", "needs-human", "bug"], "implement",
+              "orch:implement", True, True, False, False)),
+    (("orch:done", "orch:sync", "orch:limited"),
+     Standing("OPEN", ["orch:done", "orch:sync", "orch:limited"], "", "orch:done", False, False,
+              True, True)),
+    ((), Standing("OPEN", [], "", "", False, False, False, False)),
+])
+def test_the_standing_read_fills_the_label_half_from_one_issue_read(seed, labels, standing):
+    seed.issue(7, "open", *labels)
+
+    assert standing_read(fake(seed), 7) == (standing, "")

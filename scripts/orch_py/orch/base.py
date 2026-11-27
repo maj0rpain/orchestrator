@@ -13,7 +13,7 @@ gh call - falls through to the next (#465).
 """
 from __future__ import annotations
 
-from typing import NamedTuple, Optional
+from typing import Callable, NamedTuple, Optional
 
 from orch.gh import GhFailed
 
@@ -45,6 +45,13 @@ def default_branch(gh, git, pin) -> DefaultBranch:
             answer = ""
         if answer and git.is_branch_name(answer):
             return DefaultBranch(answer, GITHUB)
+    return default_branch_local(git)
+
+
+def default_branch_local(git) -> DefaultBranch:
+    """The default branch without asking GitHub, the lookup's local
+    fallback: the branch origin/HEAD names in the checkout <git> reads, else
+    main."""
     head = git.origin_head_branch()
     if head and git.is_branch_name(head):
         return DefaultBranch(head, ORIGIN_HEAD)
@@ -67,17 +74,34 @@ def base_setting(git) -> str:
     return git.config_value("orchestrator.base") or ""
 
 
+def base_in_effect(git, default: Callable[[], str]) -> str:
+    """The base branch in effect now: the base setting, else the default
+    branch the callable <default> answers, asked only when the setting is
+    unset. The one home of that rule."""
+    return base_setting(git) or default()
+
+
 def base_branch_into(gh, git, pin) -> str:
-    """The base branch in effect now, bash base_branch_into: the base
-    setting, else the default branch (default_branch, through the gh adapter
-    <gh> and the repo pin <pin>). Never fails."""
-    return base_setting(git) or default_branch(gh, git, pin).name
+    """The base branch in effect now, bash base_branch_into: base_in_effect,
+    the default branch read by default_branch, through the gh adapter <gh>
+    and the repo pin <pin>. Never fails."""
+    return base_in_effect(git, lambda: default_branch(gh, git, pin).name)
 
 
 def recorded_base_into(gh, git, pin, branch: str) -> str:
+    """The base branch <branch> belongs to: recorded_base_of, the default
+    branch read by default_branch, through the gh adapter <gh> and the repo
+    pin <pin>. Never fails."""
+    return recorded_base_of(git, branch, lambda: default_branch(gh, git, pin).name)
+
+
+def recorded_base_of(git, branch: str, default: Callable[[], str]) -> str:
     """The base branch <branch> belongs to: the one recorded for it, else
-    the base branch in effect now (base_branch_into). Never fails."""
+    the base branch in effect now (base_in_effect), the default branch the
+    callable <default> answers - for a caller that already holds it, as
+    bash's seeded default-branch memo is, so the rule asks GitHub nothing of
+    its own."""
     recorded = branch_base_get(git, branch)
     if recorded is not None:
         return recorded
-    return base_branch_into(gh, git, pin)
+    return base_in_effect(git, default)

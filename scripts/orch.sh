@@ -50,7 +50,7 @@ unset ORCH_BASH_JUDGED
 
 # A tool manager's shim (mise) can print a status line on stdout ahead of the
 # tool's own output, which then lands in every `$(gh ...)` capture (#465).
-# Silence it for every command this script runs, doctor.sh's checks included.
+# Silence it for every command this script runs, the Python nouns' included.
 # Where mise is absent this does nothing.
 export MISE_QUIET=1
 
@@ -74,8 +74,9 @@ readonly ORCH_SOURCE ORCH_SCRIPTS ORCH_PLUGIN
 source "$ORCH_SCRIPTS/flow-state.sh"
 readonly ORCH_DIR_NAME
 # The directories the plugin writes to and keeps out of git status: its flow
-# state, and .scratch/, where planning drafts land. The one list both
-# exclude_orch_dirs and doctor's exclude check read.
+# state, and .scratch/, where planning drafts land. The one bash list, which
+# exclude_orch_dirs reads; orch.common's EXCLUDED_DIRS is its Python copy,
+# which doctor's exclude check reads.
 readonly EXCLUDED_DIRS=("$ORCH_DIR_NAME/" ".scratch/")
 # The most issues or PRs one list call asks gh for, where gh needs a bare
 # --limit. Three kinds of listing pass it. The search-backed issue listings run
@@ -98,9 +99,9 @@ readonly ISSUE_SEARCH_CAP=1000
 # repo, which in a fork is the upstream. repo_resolve sets REPO_NAME to
 # [HOST/]OWNER/REPO and REPO_SOURCE to GH_REPO or origin, printing nothing; it
 # returns non-zero, with both empty, when nothing resolves. A caller that must
-# have a repo dies with REPO_REMEDY; doctor reports REPO_CAUSE, giving the
-# remedy on a line of its own, and names the bare REPO_MISSING on its skipped
-# line.
+# have a repo dies with REPO_REMEDY. orch.repo holds the Python copies, which
+# doctor reports: REPO_CAUSE, giving the remedy on a line of its own, and the
+# bare REPO_MISSING on its skipped line.
 REPO_MISSING="no GitHub repo to work on"
 REPO_CAUSE="$REPO_MISSING: origin is missing or not a GitHub owner/name"
 REPO_REMEDY="$REPO_CAUSE - set GH_REPO=<owner>/<repo>"
@@ -146,13 +147,6 @@ readonly HANDOFF_SCRATCH_DIR="$ORCH/scratch"
 # a command, each on first call of one of its functions; sourced plainly, all
 # of them in the C-locale order of their names without .sh. No module is named
 # here.
-# doctor.sh is one of the noun modules, with one rule more: the dependency runs
-# one way, doctor.sh calling into this file and the other modules, which call
-# nothing doctor.sh defines but cmd_doctor, from main(), and the reporters d_ok,
-# d_warn, d_fail and d_remedy, from a check living in the module of the concept
-# it serves (none does today: check_standards_declaration, check_agent_settings
-# and check_glossary are doctor's own) (scripts/test/orch/doctor.sh holds
-# this).
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   orch_stubs
 else
@@ -189,11 +183,17 @@ runpy.run_module("orch", run_name="__main__", alter_sys=True)
 
 # orch_python_require <noun>: checks that python3 is on PATH; warns and returns
 # 1 when absent (exit 1 even for a verb that reserves 1 for a "no", the
-# carve-out in coding-standards rule 2). The package's entry point checks the
-# 3.9+ version itself.
+# carve-out in coding-standards rule 2). The refusal points at orch.sh doctor,
+# but for doctor and health themselves, which name the install instead, as
+# the package's entry point does on the other side: it checks the 3.9+
+# version itself.
 orch_python_require() {
   if ! command -v python3 >/dev/null 2>&1; then
-    warn "orch.sh ${1:-} needs python3 3.9 or newer (found none) - run orch.sh doctor"
+    local remedy="run orch.sh doctor"
+    case "${1:-}" in
+      doctor|health) remedy="install it: brew install python3, or your platform's package manager" ;;
+    esac
+    warn "orch.sh ${1:-} needs python3 3.9 or newer (found none) - $remedy"
     return 1
   fi
 }
@@ -212,7 +212,8 @@ orch_python() {
 # function of a converted noun in a child Python process, routed through
 # orch.__main__ so bash callers receive stdout, stderr and the exit code. A
 # python3 missing or older than 3.9 is refused naming `orch.sh <command>`, the
-# command the user ran (default <noun>), on both sides of the bridge.
+# command the user ran (default <noun>), on both sides of the bridge, with
+# orch_python_require's remedy for that command.
 orch_python_call() {
   local usage="usage: orch_python_call [--as <command>] <noun> <func> [<arg>...]"
   local as="${1:-}"
@@ -232,13 +233,15 @@ main() {
   case "$cmd" in
     # The nouns converted to Python, the one place naming them: each runs
     # through orch_python, and has no module of its own here. Among them
-    # init, phase, redo, ticket, ticket-worktree, pr and review, and the bare
-    # global commands slug, status, archive and help, help with its option
-    # spellings, which the Python entry point runs as help; a bare orch.sh is
-    # help too.
-    issue|finding-triage|verification|audit|review-pass|spec-review|spec|breakdown|glossary|parallel|route|agent|slug|status|archive|help|-h|--help|init|phase|redo|ticket|ticket-worktree|pr|review)
+    # init, phase, redo, ticket, ticket-worktree, pr, review and doctor with
+    # its alias health, and the bare global commands slug, status, archive and
+    # help, help with its option spellings, which the Python entry point runs
+    # as help; a bare orch.sh is help too. Doctor's bash check reports the bash
+    # running this script, which Python cannot see: it is handed on as
+    # ORCH_RUNNING_BASH, trimmed of its "(1)-release" tail.
+    issue|finding-triage|verification|audit|review-pass|spec-review|spec|breakdown|glossary|parallel|route|agent|slug|status|archive|help|-h|--help|init|phase|redo|ticket|ticket-worktree|pr|review|doctor|health)
+      case "$cmd" in doctor|health) export ORCH_RUNNING_BASH="${BASH_VERSION%%(*}" ;; esac
       orch_python "$cmd" "$@" ;;
-    doctor|health) cmd_doctor "$@" ;;
     default-branch) cmd_default_branch "$@" ;;
     base)          cmd_base "$@" ;;
     autopilot)     cmd_autopilot "$@" ;;

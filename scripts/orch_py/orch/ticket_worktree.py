@@ -9,8 +9,8 @@ ticket-worktree module is gone: each helper keeps the name it had there, with
 its messages and its order of steps. ticket_worktrees_under and
 refuse_ticket_worktrees are orch.checkout's, their bash copies in the bash
 Checkout module, where side-checkout's per-checkout walk runs them with no
-Python process. worktrees_left is the bridge doctor's leftover-ticket-worktree
-check calls through orch_python_call.
+Python process. Doctor's leftover-ticket-worktree check (orch/doctor.py) reads
+orch.checkout's ticket_worktrees_under in process, as `list` does.
 
 A ticket worktree is a ticket's own worktree on its own ticket branch, so the
 ticket subagents of one breakdown can build at once without sharing a
@@ -282,17 +282,6 @@ def remove(args: List[str], git, root: str) -> None:
 VERBS = {"add": add, "list": list_, "remove": remove}
 # Every op of the ticket-worktree noun, as its unknown-op refusal names them.
 OPS = "add|list|remove"
-
-
-def worktrees_left(args: List[str], git=None, env: Optional[Mapping[str, str]] = None) -> None:
-    """Bridge for doctor's leftover-ticket-worktree check, once per run:
-    prints the <n> <path> lines `ticket-worktree list` prints, from the same
-    root, this checkout's. It takes no arguments. The real git adapter and
-    the process's environment unless a test hands in others."""
-    if args:
-        die("usage: orch_python_call ticket-worktree worktrees_left")
-    git = Git() if git is None else git
-    _listing(git, checkout_root(git, os.environ if env is None else env))
 
 
 def run(argv: List[str], git=None, env: Optional[Mapping[str, str]] = None) -> int:

@@ -5,14 +5,15 @@
 # Reads this repo's triage-labels doc: the table mapping each canonical
 # triage role to the repo's local label name. Needs only ROOT defined, so any
 # script that needs the repo's triage labels can source it alone, without
-# orch.sh's shared mechanism (#575). Its readers are doctor.sh's checks and
-# hook-grilling.sh; the Python init noun reads the doc through its own copy
-# (orch/triage_labels.py).
+# orch.sh's shared mechanism (#575). Its readers are the bash modules that
+# label issues (autopilot.sh, filed-finding.sh, standing.sh) and
+# hook-grilling.sh; the Python nouns, doctor and init among them, read the doc
+# through its own copy (orch/triage_labels.py).
 #
 # LABELS_DOC is assigned plainly here, its one home: orch.sh sources this
-# module and marks it readonly right after, and doctor.sh, sourced after
-# orch.sh, does not source this module again - a second assignment of a
-# readonly LABELS_DOC would fail.
+# module and marks it readonly right after, and no module sourced after
+# orch.sh sources this module again - a second assignment of a readonly
+# LABELS_DOC would fail.
 
 LABELS_DOC="docs/agents/triage-labels.md"
 
@@ -20,12 +21,12 @@ LABELS_DOC="docs/agents/triage-labels.md"
 # where it starts and ends, which rows belong to it, and how to clean a cell
 # once split out. Emits "role<TAB>name" for every valid data row - the left
 # column (the canonical triage role name) and the right column (this repo's
-# local label for it) - so triage_labels and triage_label_for always agree on
-# what the table contains. Only the role table is read: the first table of
-# three or more columns that holds a row whose left cell is a canonical triage
-# role, and only its rows that name a role. A table of under three columns is
-# never read, a table before the role table whose left column names no role is
-# skipped, and nothing after the role table ends is read (#39, #3051).
+# local label for it) - so every lookup agrees on what the table contains.
+# Only the role table is read: the first table of three or more columns that
+# holds a row whose left cell is a canonical triage role, and only its rows
+# that name a role. A table of under three columns is never read, a table
+# before the role table whose left column names no role is skipped, and
+# nothing after the role table ends is read (#39, #3051).
 triage_table_rows() {
   [ -f "$ROOT/$LABELS_DOC" ] || return 0
   awk -F'|' -v roles="$TRIAGE_ROLES" '
@@ -87,22 +88,13 @@ triage_table_rows() {
     }' "$ROOT/$LABELS_DOC"
 }
 
-# Parsed, never hardcoded. That file documents its right-hand column as
-# editable, so a hardcoded list of the five canonical names would make doctor
-# confidently wrong in exactly the repos that customised themselves - the worst
-# thing a diagnostic can be. A thin filter over triage_table_rows: every row's
-# local label name, skipping rows that left it blank.
-triage_labels() {
-  triage_table_rows | awk -F'\t' '$2 != "" { print $2 }'
-}
-
 # The local name for one of the five triage roles - the right-hand column of
 # the row whose left-hand column names it. A repo that customised its
 # vocabulary customised this, and filing under the canonical name there would
 # create a second label the repo's triage never reads. The role name itself is
-# the answer where the doc is missing or does not list it. Also a thin filter
-# over triage_table_rows, so it shares triage_labels' rule that only the role
-# table is read, never a second table elsewhere in the doc.
+# the answer where the doc is missing or does not list it. A thin filter over
+# triage_table_rows, so only the role table is read, never a second table
+# elsewhere in the doc.
 triage_label_for() {
   local name=""
   triage_label_into name "$1"
@@ -119,7 +111,7 @@ TRIAGE_TABLE=""
 # triage_label_for prints for <role>: no subshell and, after the first lookup,
 # no external command. The role name itself is the answer where the doc is
 # missing or does not list it. Filters the kept table in bash, so it shares
-# triage_labels' rule that only the role table is read.
+# triage_table_rows' rule that only the role table is read.
 triage_label_into() {
   local __tli_role="$2" __tli_rest __tli_line __tli_name=""
   if [ "$TRIAGE_TABLE_KEY" != "$ROOT/$LABELS_DOC" ]; then
@@ -141,11 +133,3 @@ triage_label_into() {
 # The five canonical triage roles, each also the label name a repo with no
 # labels doc uses (ADR-0028: setup is optional).
 TRIAGE_ROLES="needs-triage needs-info ready-for-agent ready-for-human wontfix"
-
-# The label names this repo is expected to carry, one per line: the doc's when
-# it is present, the canonical names when it is not. A present doc that parses
-# to nothing yields nothing - check_labels_doc reports that one.
-triage_expected_labels() {
-  if [ -f "$ROOT/$LABELS_DOC" ]; then triage_labels; return 0; fi
-  printf '%s\n' $TRIAGE_ROLES
-}

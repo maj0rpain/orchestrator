@@ -367,6 +367,15 @@ def test_merge_bases_read_the_same_from_a_real_repo_and_the_fake(history, where)
     assert fails_alike(git, "is_ancestor", MISSING, MAIN) is False
 
 
+def test_an_ancestry_that_cannot_be_judged_reads_apart_from_none_from_both(history, where):
+    _, root, sha = history
+    git = adapter(root, where)
+
+    assert alike(git, "ancestry", sha["t1"], MAIN) is True
+    assert alike(git, "ancestry", sha["s1"], MAIN) is False
+    assert fails_alike(git, "ancestry", MISSING, MAIN) is None
+
+
 # The commit-list logs: (operation, commits of main since c1 touching f.txt,
 # by name). The merge m touches f.txt against its first parent alone.
 FILE_LOGS = [

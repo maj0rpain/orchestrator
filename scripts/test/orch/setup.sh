@@ -273,9 +273,6 @@ clash_commits() {
 on_disk() { if [ -e "$1" ]; then echo present; else echo absent; fi; }
 # branch_presence <ref>: present or gone, whether the branch <ref> exists.
 branch_presence() { if git rev-parse --verify --quiet "$1" >/dev/null 2>&1; then echo present; else echo gone; fi; }
-# exclude_count <line>: how many times <line> appears whole in the current
-# clone's shared exclude file, the one every checkout of it reads.
-exclude_count() { grep -cxF "$1" "$(git rev-parse --git-common-dir)/info/exclude" || true; }
 
 writeln() { printf '%s\n' "$@"; }
 # write_ssh_stub <command run for github-work> <exit status>: an ssh at
@@ -513,7 +510,7 @@ layer_upcalls() {
   layer_calls "${defs[@]}" -- "$dir/orch/$file"
 }
 
-# --- doctor harness ---------------------------------------------------------
+# --- the healthy repo and the fresh flow ------------------------------------
 
 # The documented triage-label table, in the shape the setup skill writes it:
 # a header row, a separator row, and backticked labels in the second column.
@@ -543,20 +540,23 @@ seeded_home() {
   return 0
 }
 
-# A repo where every --env check passes, so a test can break exactly one thing
-# and attribute the result to it.
+# healthy_repo: a new_repo set up as the setup skill leaves one - a GitHub
+# origin, a triage-labels doc, a full verification line, the orchestrator's
+# folders git-excluded - with the fixture gh, CLAUDE_PLUGIN_ROOT set and a
+# throwaway HOME, cwd inside it: fresh_flow's repo, and the side-checkout
+# sections' fresh walk.
 healthy_repo() {
   new_repo >/dev/null
   git remote set-url origin https://github.com/acme/widgets.git
   labels_doc docs/agents/triage-labels.md
-  # The verification lines check warns of a repo naming no full verification.
+  # The full verification line a set-up repo names.
   writeln 'Full verification: true test' >CLAUDE.md
   git add CLAUDE.md && git commit -qm 'instructions'
   printf '%s\n' ".orchestrator/" ".scratch/" >>.git/info/exclude
   gh_fixture
   export CLAUDE_PLUGIN_ROOT="$PWD"
-  # A throwaway HOME, so no skill store on the machine running the tests
-  # reaches doctor's checks.
+  # A throwaway HOME, so nothing under the real one - a skill store, a cache -
+  # reaches the commands a section runs.
   seeded_home
 }
 
@@ -688,16 +688,6 @@ fake_issue_relabel() {
 # fake_comments_clear <n>: issue #n holds no comments.
 fake_comments_clear() { rm -rf "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
 
-# orch_no_repo <args>...: runs orch.sh with <args> in a fresh origin-less copy
-# of the current directory (the section's test repo), over the fixture gh the
-# caller made with gh_fixture; orch.sh's output and status pass through. Fails,
-# running nothing, when no gh_fixture was made.
-orch_no_repo() {
-  [ -n "${GH_FIXTURE:-}" ] || { echo "orch_no_repo: make a gh_fixture first" >&2; return 1; }
-  (cd "$(mktemp -d)" && cp -R "$OLDPWD/." . && git remote remove origin \
-    && PATH="$GH_FIXTURE/bin:$PATH" ORCH_GH_ADAPTER='' "$ORCH" "$@")
-}
-
 # fake_comment <n> <author> <created-at> <body> [<association>]: seeds a comment
 # on issue #n, after any it has; its association is OWNER unless given.
 fake_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/$1/comments" "$2" "$3" "$4" "${5-}"; }
@@ -710,16 +700,6 @@ handoff_missing_msg() {
     printf 'orch: issue #%s has no %s handoff comment%s' "$2" "$3" "${4:+ - post it with handoff post $4}"
   else
     printf 'orch: handoff not found: %s/.orchestrator/handoff/%s.md%s' "$PWD" "$3" "${4:+ - write it $4}"
-  fi
-}
-
-# handoff_doctor_missing_msg <mode> <issue> <name>: doctor's finding for the
-# missing handoff <name>.
-handoff_doctor_missing_msg() {
-  if [ "$1" = comment ]; then
-    printf 'handoff %s comment is missing on issue #%s - the phase that writes it has already run.' "$3" "$2"
-  else
-    printf 'handoff %s.md is missing - the phase that writes it has already run.' "$3"
   fi
 }
 
@@ -848,10 +828,6 @@ fake_fail() {
   fi
 }
 
-# fake_comment_reads: how many comment-list reads (adapter_issue_comments)
-# the fake has answered or refused - 0 for none.
-fake_comment_reads() { log_count "$ORCH_GH_FAKE_STORE/comment_reads"; }
-
 # The seeded two-line gh stderr whose first line a death must carry.
 GH_502=$'HTTP 502: Bad Gateway\nsecond line'
 
@@ -886,28 +862,12 @@ fake_lag() {
   if [ $# -ge 3 ]; then printf '%s\n' "$3" >"$ORCH_GH_FAKE_STORE/lag/$1.stale"; fi
 }
 
-# fake_checks <n> <required|all> <answer>...: scripts PR #n's checks for the
-# scope, answered one per call, the last repeating: green, failing (build
-# fails, Actions run 4242; lint passes), cancel (build cancelled, run 5150),
-# external (a failing outside-CI check, ext-ci, ahead of build failing in run
-# 4242), tworuns (build run 4242, test run 4343), onerun (build and test both
-# in run 4242), mixed (build run 4242, then failing ext-ci), comma (one
-# failing check named `build (linux, x64)`), pending, none (no checks
-# reported) or boom (a connection error). An unscripted scope has no checks.
-fake_checks() {
-  local d="$ORCH_GH_FAKE_STORE/checks/$1" scope="$2"
-  shift 2
-  mkdir -p "$d"
-  printf '%s\n' "$@" >"$d/$scope"
-  rm -f "$d/$scope.n"
-}
-
 # fake_default_branch <answer>: seeds gh's answer to the repo's default branch,
 # byte for byte, so a test can seed a polluted or empty one.
 fake_default_branch() { printf '%s' "$1" >"$ORCH_GH_FAKE_STORE/default_branch"; }
 
 # fake_offline: every operation fails with a connection error, as with GitHub
-# unreachable. fake_online undoes it, and doctor.sh's fake_noauth too.
+# unreachable. fake_online undoes it, and the store's noauth too.
 fake_offline() { : >"$ORCH_GH_FAKE_STORE/offline"; }
 # fake_online: GitHub reachable and authenticated again.
 fake_online()  { rm -f "$ORCH_GH_FAKE_STORE/offline" "$ORCH_GH_FAKE_STORE/noauth" "$ORCH_GH_FAKE_STORE/ratelimit"; }
@@ -985,39 +945,11 @@ GH_FAILING="$(gh_fixture && printf '%s\n' "$GH_FIXTURE/bin")"
 # on PATH.
 orch_gh_failing() { PATH="$GH_FAILING:$PATH" "$ORCH" "$@"; }
 
-# assert_loads_once <label> <cmd> [args...]: runs <cmd> with the load trace on
-# and asserts the trace names no module twice, in the main shell or a subshell.
-# The command's own status and output are not judged.
-assert_loads_once() {
-  local label="$1" load_trace
-  shift
-  load_trace="$(mktemp)"
-  ORCH_LOAD_TRACE="$load_trace" "$@" >/dev/null 2>&1 || true
-  assert_trace_loads_once "$label" "$load_trace"
-  rm -f "$load_trace"
-}
 # assert_trace_loads_once <label> <trace file>: asserts a load trace, written by
 # a run that had ORCH_LOAD_TRACE=<file> on, names no module twice.
 assert_trace_loads_once() {
   assert_eq "$1: the load trace names no module twice" \
     "$(awk '{print $1}' "$2" | sort | uniq -d | tr '\n' ' ')" ""
-}
-
-# assert_trace_names_no <label> <trace file> <module>...: asserts a load trace,
-# written by a run that had ORCH_LOAD_TRACE=<file> on, names none of the given
-# modules - a module the run must not load at all.
-assert_trace_names_no() {
-  local label="$1" trace="$2" mod line n
-  shift 2
-  local -a lines=()
-  mapfile -t lines <"$trace"
-  for mod in "$@"; do
-    n=0
-    for line in "${lines[@]}"; do
-      [ "${line%%[[:space:]]*}" = "$mod" ] && n=$((n + 1))
-    done
-    assert_eq "$label: the load trace names no $mod" "$n" "0"
-  done
 }
 
 # sc_add <slug> [args...]: makes a fixture side checkout quietly. add runs the

@@ -947,20 +947,19 @@ def _check_sync_drift(
         records.append(("remedy", "orch.sh agent sync"))
 
 
-def check_settings(
-    args: Optional[List[str]] = None,
-    git=None,
-    env: Optional[Mapping[str, str]] = None,
+def settings_report(
+    git,
+    root: str,
+    env: Mapping[str, str],
     plugin_root: Optional[str] = None,
-) -> int:
-    """Bridge for doctor.sh's check_agent_settings: runs all four agent
-    settings sub-checks and emits NUL-delimited `<kind>\\t<message>\\0`
-    records (`ok`, `warn`, `fail`, `remedy`)."""
-    if args:
-        die("usage: orch_python_call agent check_settings")
-    env = os.environ if env is None else env
-    git = Git() if git is None else git
-    root = checkout_root(git, env)
+) -> List[Tuple[str, str]]:
+    """Doctor's agent settings check, as data: the four sub-checks' records,
+    each a kind (`ok`, `warn`, `fail` or `remedy`) and its message, in
+    report order - the default host's settings, the Junie session and the
+    models Junie did not recognise, then each other host's settings and,
+    for a host that syncs copies, its copies' drift - for the checkout at
+    <root>, read through the git adapter <git>, Junie's files under <env>'s
+    HOME."""
     home = env.get("HOME", "")
     cache = ConfigCache(git)
     records: List[Tuple[str, str]] = []
@@ -973,10 +972,5 @@ def check_settings(
         _check_host_settings(cache, host_name, records)
         if spec.syncs_copies:
             _check_sync_drift(cache, root, plugin_root, host_name, records)
-    # Some message text is copied verbatim from Junie's log; a NUL in it would
-    # split a record, so every NUL is dropped - no reported line holds one.
-    stdout_write("".join(
-        "%s\t%s\0" % (kind.replace("\0", ""), message.replace("\0", ""))
-        for kind, message in records
-    ))
-    return 0
+    return records
+

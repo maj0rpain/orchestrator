@@ -41,6 +41,10 @@ marked_ticket_worktree() {
   printf '%s\n' "$path"
 }
 
+# exclude_count <line>: how many times <line> appears whole in the current
+# clone's shared exclude file, the one every checkout of it reads.
+exclude_count() { grep -cxF "$1" "$(git rev-parse --git-common-dir)/info/exclude" || true; }
+
 # --- side-checkout (#722) -----------------------------------------------------
 # A side checkout: a worktree the plugin makes under the main checkout's
 # .orchestrator/checkouts/<slug>, on no branch at origin/<base>, carrying the
@@ -1514,8 +1518,8 @@ restore_suite_env
 # --- side checkout marker issue: reading without re-classifying (#3073) -------
 # side_checkout_marker_issue_into reads the issue a marker records for a path
 # the caller holds as a side checkout, starting nothing; the loops over the walk
-# (side_checkout_for_issue, side-checkout list, doctor) cost no more per side
-# checkout than their own content needs.
+# (side_checkout_for_issue, side-checkout list) cost no more per side checkout
+# than their own content needs.
 echo
 echo "side_checkout_marker_issue_into"
 healthy_repo
@@ -1598,25 +1602,6 @@ assert_eq "list starts one more git process for each added side checkout" \
   "$(counting_starts "$mi_git" git)" "$((mi_git2 + 3))"
 assert_eq "and no more cat with five than with two" "$(counting_starts "$mi_cat" cat)" "$mi_cat2"
 restore_suite_env
-
-# doctor --env: an autopilot side flow whose marker records no plain issue gets
-# no phase-label verdict.
-echo
-echo "doctor --env beside side flows with unusable markers"
-tick_fixture
-fake_issue 7 open ready-for-agent orch:implement
-mi_flow() { # <name> <marker printf format>: a side checkout with a flow and that marker
-  local p
-  p="$(mi_wt "$1" "$2")"
-  (cd "$p" && "$ORCH" init "$1" --issue 7 >/dev/null 2>&1)
-}
-mi_flow empty-marker ''
-mi_flow bad-marker '7x\n'
-out="$("$ORCH" doctor --env 2>&1)"
-assert_not_contains "an empty marker's side flow gets no phase-label verdict" "$out" "empty-marker"
-assert_not_contains "a non-numeric marker's side flow gets none either" "$out" "bad-marker"
-assert_not_contains "and no label verdict for the issue" "$out" "phase label of #7"
-restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- archive reads the flow's slug once ---------------------------------------
 echo

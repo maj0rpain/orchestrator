@@ -493,16 +493,27 @@ def exclude_missing(lines: Sequence[str], git) -> List[str]:
     return [line for line in lines if line and line not in present]
 
 
-def require_clean_tree(git, path: str, dirty: str) -> None:
-    """bash require_clean_tree: returns when the working tree at <path> is
-    clean, read through the git adapter <git>'s status_at. Dies with
-    <dirty> when it is dirty, and naming git's first error line when git
-    status cannot run, as bash tree_status words it: that must refuse,
-    never read as a clean tree."""
+def tree_status(git, path: str) -> Tuple[Optional[str], str]:
+    """bash tree_status: the working tree at <path>'s `git status
+    --porcelain` text, read through the git adapter <git>'s status_at -
+    empty when it is clean - and "". A git status that cannot run must never
+    read as a clean tree, so instead (None, the line saying why, naming
+    git's first error line)."""
     status = git.status_at(path)
     if not isinstance(status, str):
-        die("git status failed - cannot check the working tree: "
-            + status.stderr.split("\n", 1)[0])
+        return None, ("git status failed - cannot check the working tree: "
+                      + status.stderr.split("\n", 1)[0])
+    return status, ""
+
+
+def require_clean_tree(git, path: str, dirty: str) -> None:
+    """bash require_clean_tree: returns when the working tree at <path> is
+    clean (tree_status). Dies with <dirty> when it is dirty, and with
+    tree_status's own line when git status cannot run: that must refuse,
+    never read as a clean tree."""
+    status, why = tree_status(git, path)
+    if status is None:
+        die(why)
     if status:
         die(dirty)
 

@@ -13,6 +13,22 @@ state_write_fails_bin() { fails_bin mktemp '*state.json.*'; }
 # fake_pr_draft_of <n>: whether the store's PR #n is a draft, yes or no.
 fake_pr_draft_of() { [ -f "$ORCH_GH_FAKE_STORE/prs/$1/draft" ] && echo yes || echo no; }
 
+# fake_checks <n> <required|all> <answer>...: scripts PR #n's checks for the
+# scope, answered one per call, the last repeating: green, failing (build
+# fails, Actions run 4242; lint passes), cancel (build cancelled, run 5150),
+# external (a failing outside-CI check, ext-ci, ahead of build failing in run
+# 4242), tworuns (build run 4242, test run 4343), onerun (build and test both
+# in run 4242), mixed (build run 4242, then failing ext-ci), comma (one
+# failing check named `build (linux, x64)`), pending, none (no checks
+# reported) or boom (a connection error). An unscripted scope has no checks.
+fake_checks() {
+  local d="$ORCH_GH_FAKE_STORE/checks/$1" scope="$2"
+  shift 2
+  mkdir -p "$d"
+  printf '%s\n' "$@" >"$d/$scope"
+  rm -f "$d/$scope.n"
+}
+
 # --- state ------------------------------------------------------------------
 echo
 echo "state"

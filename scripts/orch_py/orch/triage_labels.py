@@ -15,6 +15,8 @@ import os
 import re
 from typing import Callable, Dict, List, Optional, Tuple
 
+from orch.common import read_raw
+
 LABELS_DOC = os.path.join("docs", "agents", "triage-labels.md")
 
 # The five canonical triage roles, in the bash TRIAGE_ROLES order.
@@ -59,6 +61,17 @@ def table_rows(text: str) -> List[Tuple[str, str]]:
         in_role = True
         rows.append((left, right))
     return rows
+
+
+def expected_labels(root: str) -> List[str]:
+    """The label names the checkout at <root> is expected to carry, in
+    order: the doc's labels, every role-table row with one, when the doc is
+    present - none when it parses to none, which doctor's labels doc check
+    reports - else the canonical role names (ADR-0028)."""
+    path = os.path.join(root, LABELS_DOC)
+    if not os.path.isfile(path):
+        return list(TRIAGE_ROLES)
+    return [label for _, label in table_rows(read_raw(path) or "") if label]
 
 
 class TriageLabels:

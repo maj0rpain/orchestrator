@@ -38,6 +38,9 @@ COMMENT_AUTHOR = "fake-gh"
 COMMENT_CREATED = "2026-01-01T00:00:00Z"
 OFFLINE = "dial tcp: lookup api.github.com: no such host\n"
 NOAUTH = "HTTP 401: Bad credentials (https://api.github.com/graphql)\n"
+# What the auth status says under noauth, where every other operation answers
+# NOAUTH.
+NOAUTH_STATUS = "You are not logged into any GitHub hosts. To log in, run: gh auth login\n"
 # What the store answers for an issue's creation or a PR's merge time it does
 # not hold, and for a PR's head SHA.
 EPOCH = "1970-01-01T00:00:00Z"
@@ -201,7 +204,7 @@ class FakeGh:
         if os.path.isfile(_store_path(self.store, "offline")):
             return OFFLINE
         if os.path.isfile(_store_path(self.store, "noauth")):
-            return NOAUTH
+            return NOAUTH_STATUS if operation == "adapter_auth_status" else NOAUTH
         fail = _store_path(self.store, "fail", operation)
         stderr = read_raw(fail)
         if stderr is None or _countdown(fail + ".after"):
@@ -518,6 +521,13 @@ class FakeGh:
                        if line.split("\t", 1)[0] != name)
         _write(labels, "%s%s\t%s\t%s\n" % (kept, name, colour, description))
 
+    def labels(self, limit: int) -> List[str]:
+        """The stored labels' names, the first <limit> of them; none where
+        the store holds no labels."""
+        self._failing("adapter_labels")
+        names = [line.split("\t", 1)[0] for line in _lines(_store_path(self.store, "labels"))]
+        return [name for name in names if name][:limit]
+
     # --- repo operations ---
 
     def repo_default_branch(self, repo: str) -> str:
@@ -531,6 +541,16 @@ class FakeGh:
                 " (repository)\n" % repo
             )
         return answer
+
+    def repo_local_default(self) -> str:
+        """The stored local_default's first line; "" where none is set."""
+        self._failing("adapter_repo_local_default")
+        return _first_line(_store_path(self.store, "local_default"))
+
+    def auth_status(self, host: str) -> None:
+        """Answers, as a logged-in gh does, unless the store fails it -
+        offline, noauth or a seeded failure."""
+        self._failing("adapter_auth_status")
 
     # --- sub-issue and dependency operations ---
 
@@ -551,6 +571,14 @@ class FakeGh:
         """How many of #n's stored blockers are still open."""
         return sum(1 for b in self._blockers(n)
                    if _first_line(_issue_path(self.store, b, "state")) == "OPEN")
+
+    def sub_issues_supported(self) -> Optional[bool]:
+        """None where the store holds no issue; False where no_sub_issues is
+        present; True otherwise."""
+        self._failing("adapter_sub_issues_supported")
+        if not _numbered(_store_path(self.store, "issues")):
+            return None
+        return not os.path.exists(_store_path(self.store, "no_sub_issues"))
 
     def sub_issues(self, parent: int) -> List[real.SubIssue]:
         """The stored sub-issues, in link order, each with its stored state
@@ -646,6 +674,16 @@ class FakeGh:
         return ["%s\t%s\t%s" % (name, json.dumps(read_raw(os.path.join(d, "body")) or "",
                                                  ensure_ascii=False), self._cross(d))
                 for name, d in self._prs("OPEN")]
+
+    def prs_merged(self, head: str, base: str) -> List[str]:
+        """The merged PRs from <head> into <base>, newest first, each
+        `<number><TAB><head SHA><TAB><flag>`, the head SHA as _head_oid
+        reads it, the flag as prs_open answers it."""
+        self._failing("adapter_prs_merged")
+        return ["%s\t%s\t%s" % (name, self._head_oid(int(name)), self._cross(d))
+                for name, d in self._prs("MERGED")
+                if read_text(os.path.join(d, "head")) == head
+                and read_text(os.path.join(d, "base")) == base]
 
     def prs_merged_closing(self, base: str, since: str) -> List[str]:
         """The merged PRs into <base> merged at or after <since>, newest
@@ -884,6 +922,18 @@ class FakeGh:
 
     # --- claim operations ---
 
+    def claim_list(self) -> List[real.ClaimRow]:
+        """Every stored claim, by issue number, each its line's five
+        tab-separated fields."""
+        self._failing("adapter_claim_list")
+        directory = _store_path(self.store, "claims")
+        rows = []
+        for name in _numbered(directory):
+            for line in _lines(os.path.join(directory, name)):
+                fields = (line.split("\t") + [""] * 5)[:5]
+                rows.append(real.ClaimRow(*fields))
+        return rows
+
     def claim_delete(self, n: int) -> None:
         """The claim on #n removed from the store; none there is freed all
         the same."""
@@ -1063,14 +1113,30 @@ class FakeStore:
         fake_default_branch seeds it."""
         _write(_store_path(self.store, "default_branch"), answer)
 
+    def local_default(self, name: str) -> None:
+        """gh's own local default repo for the checkout, OWNER/REPO."""
+        _write(_store_path(self.store, "local_default"), name + "\n")
+
+    def label_names(self, *names: str) -> None:
+        """The repo's labels: exactly <names>, with no colour or description,
+        as the bash suite's fake_label_names seeds them."""
+        _write(_store_path(self.store, "labels"), "".join("%s\t\t\n" % name for name in names))
+
+    def no_sub_issues(self) -> None:
+        """The sub-issues endpoint refuses every issue, as on a GitHub that
+        does not support them."""
+        _write(_store_path(self.store, "no_sub_issues"), "")
+
     def next_issue(self, n: int) -> None:
         _write(_store_path(self.store, "next_issue"), "%d\n" % n)
 
-    def claim(self, n: int) -> None:
-        """A claim on issue #n, held by this host with pid 1, a start long
+    def claim(self, n: int, host: Optional[str] = None, pid: int = 1,
+              started: str = "2026-01-01T00:00:00Z", phase: str = "spec") -> None:
+        """A claim on issue #n, held by <host> (this host when None) with
+        <pid>, from <started> at <phase> - by default pid 1, a start long
         past and the spec phase, as fake_claim_seed seeds it."""
-        _write(_store_path(self.store, "claims", n),
-               "%d\t%s\t1\tspec\t2026-01-01T00:00:00Z\n" % (n, socket.gethostname()))
+        _write(_store_path(self.store, "claims", n), "%d\t%s\t%d\t%s\t%s\n" % (
+            n, socket.gethostname() if host is None else host, pid, phase, started))
 
     def claim_held(self, n: int) -> bool:
         """Whether the store holds a claim on issue #n, as fake_claim_held
@@ -1129,6 +1195,11 @@ class FakeStore:
 
     def offline(self) -> None:
         _write(_store_path(self.store, "offline"), "")
+
+    def noauth(self) -> None:
+        """gh is not authenticated: the auth status fails saying so, every
+        other operation as unauthorised; online undoes it."""
+        _write(_store_path(self.store, "noauth"), "")
 
     def online(self) -> None:
         for name in ("offline", "noauth", "ratelimit"):

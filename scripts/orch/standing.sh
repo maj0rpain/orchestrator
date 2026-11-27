@@ -156,20 +156,6 @@ standing_phase_text() {
   if [ "$1" = "$STANDING_SYNC_PHASE" ]; then printf 'the sync'; else printf 'the %s phase' "$1"; fi
 }
 
-# standing_label_verdict <labels> <phase> <verdict-var> <text-var>: whether the
-# phase labels among <labels> agree with the recorded <phase>: none when there
-# is no phase label, agrees when the one carried is the label of <phase>, else
-# disagrees. The phase-label text goes into <text-var>.
-standing_label_verdict() {
-  local text
-  text="$(standing_phase_labels_text "$1")"
-  printf -v "$4" '%s' "$text"
-  if [ -z "$text" ]; then printf -v "$3" none
-  elif [ "$text" = "$(standing_phase_label "$2")" ]; then printf -v "$3" agrees
-  else printf -v "$3" disagrees
-  fi
-}
-
 # STANDING_REDO_PAIRS: the one source of the phase-redo rule - space-separated
 # rows `labelled:recorded:redo`, the redo being the `orch.sh redo` argument for
 # a flow labelled <labelled> whose checkout last moved to <recorded>. Read at

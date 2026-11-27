@@ -1,18 +1,18 @@
 """Contract tests of the real gh adapter (ADR-0033): each gh operation run
 against a fixture gh on PATH that answers by exact argv, proving the argv it
 hands gh, how it reads the answer, the repo pin and its remedy, the rate-limit
-handling and the `gh could not <action>` death. The claim delete, the one
-git-backed operation, runs instead against a real bare origin under
-tmp_path."""
+handling and the `gh could not <action>` death. The claim list and the claim
+delete, the two git-backed operations, run instead against a real bare origin
+under tmp_path."""
 from __future__ import annotations
 
 import json
-import shutil
+import os
 
 import pytest
 
-from orch.gh import (Check, Gh, GhFailed, IssueRow, LabelledBody, SubIssue, Unparsed, gh_die,
-                     gh_or_die)
+from orch.gh import (Check, ClaimRow, Gh, GhFailed, IssueRow, LabelledBody, SubIssue, Unparsed,
+                     gh_die, gh_or_die)
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY, RepoPin
 
@@ -632,6 +632,109 @@ def test_a_repo_gh_cannot_resolve_fails_its_default_branch_read(fixture_gh):
     assert failed.value.stderr == gone
 
 
+LOCAL_DEFAULT = ["repo", "set-default", "--view"]
+
+
+def test_repo_local_default_reads_the_first_line_gh_prints(fixture_gh):
+    fixture_gh.reply(LOCAL_DEFAULT, "upstream/widgets\nsecond line\n")
+
+    assert real_gh(fixture_gh).repo_local_default() == "upstream/widgets"
+    assert fixture_gh.calls() == [("fork/widgets", "github.com", LOCAL_DEFAULT)]
+
+
+def test_a_checkout_with_no_gh_default_repo_reads_as_none(fixture_gh):
+    fixture_gh.reply(LOCAL_DEFAULT, stderr="no default repository has been set\n")
+
+    assert real_gh(fixture_gh).repo_local_default() == ""
+
+
+def auth_status_argv(host):
+    return ["auth", "status", "--active", "--hostname", host]
+
+
+def test_auth_status_asks_about_the_active_account_on_the_host(fixture_gh):
+    fixture_gh.reply(auth_status_argv("ghe.example.com"), "Logged in to ghe.example.com\n")
+
+    assert real_gh(fixture_gh).auth_status("ghe.example.com") is None
+    assert fixture_gh.calls() == [
+        ("fork/widgets", "github.com", auth_status_argv("ghe.example.com"))]
+
+
+def test_a_failed_auth_status_passes_gh_s_report_through(fixture_gh):
+    report = "X Failed to log in to github.com account octo\n- dial tcp: i/o timeout\n"
+    fixture_gh.reply(auth_status_argv("github.com"), "github.com\n", stderr=report, exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).auth_status("github.com")
+    assert (failed.value.stdout, failed.value.stderr) == ("github.com\n", report)
+
+
+def labels_argv(limit):
+    return ["label", "list", "--limit", str(limit), "--json", "name", "--jq", ".[].name"]
+
+
+def test_labels_lists_the_repo_s_label_names_up_to_the_limit(fixture_gh):
+    fixture_gh.reply(labels_argv(1000), "needs triage\nReady-For-Agent\n")
+
+    assert real_gh(fixture_gh).labels(1000) == ["needs triage", "Ready-For-Agent"]
+    assert fixture_gh.calls() == [("fork/widgets", "github.com", labels_argv(1000))]
+
+
+def test_a_repo_with_no_labels_lists_none(fixture_gh):
+    fixture_gh.reply(labels_argv(1000), "")
+
+    assert real_gh(fixture_gh).labels(1000) == []
+
+
+def test_a_failed_label_listing_passes_gh_s_stderr_through(fixture_gh):
+    fixture_gh.reply(labels_argv(1000), stderr="HTTP 403: Forbidden\n", exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).labels(1000)
+    assert failed.value.stderr == "HTTP 403: Forbidden\n"
+
+
+NEWEST_ISSUE = ["issue", "list", "--state", "all", "--limit", "1", "--json", "number", "--jq",
+                ".[0].number // empty"]
+PROBED_SUB_ISSUES = ["api", "repos/{owner}/{repo}/issues/41/sub_issues"]
+
+
+def test_sub_issue_support_asks_the_endpoint_of_the_newest_issue(fixture_gh):
+    fixture_gh.reply(NEWEST_ISSUE, "41\n")
+    fixture_gh.reply(PROBED_SUB_ISSUES, "[]\n")
+
+    assert real_gh(fixture_gh).sub_issues_supported() is True
+    assert fixture_gh.calls() == [("fork/widgets", "github.com", NEWEST_ISSUE),
+                                  ("fork/widgets", "github.com", PROBED_SUB_ISSUES)]
+
+
+def test_an_endpoint_answering_404_has_no_sub_issue_support(fixture_gh):
+    fixture_gh.reply(NEWEST_ISSUE, "41\n")
+    fixture_gh.reply(PROBED_SUB_ISSUES, stderr="gh: Not Found (HTTP 404)\n", exit=1)
+
+    assert real_gh(fixture_gh).sub_issues_supported() is False
+
+
+def test_a_repo_with_no_issue_cannot_be_probed_for_sub_issue_support(fixture_gh):
+    fixture_gh.reply(NEWEST_ISSUE, "")
+
+    assert real_gh(fixture_gh).sub_issues_supported() is None
+    assert fixture_gh.calls() == [("fork/widgets", "github.com", NEWEST_ISSUE)]
+
+
+@pytest.mark.parametrize("replies", [
+    [(NEWEST_ISSUE, "", "HTTP 502: Bad Gateway\n", 1)],
+    [(NEWEST_ISSUE, "41\n", "", 0), (PROBED_SUB_ISSUES, "", "HTTP 502: Bad Gateway\n", 1)],
+])
+def test_a_sub_issue_probe_failing_any_other_way_passes_gh_s_stderr_through(fixture_gh, replies):
+    for argv, stdout, stderr, code in replies:
+        fixture_gh.reply(argv, stdout, stderr=stderr, exit=code)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).sub_issues_supported()
+    assert failed.value.stderr == "HTTP 502: Bad Gateway\n"
+
+
 # --- PR operations -----------------------------------------------------------
 
 
@@ -650,6 +753,22 @@ def test_prs_open_lists_each_open_pr_from_the_head_with_its_fork_flag_unfiltered
     assert gh.prs_open("topic") == ["12\ttrue", "4\tfalse"]
     assert gh.prs_open("topic", "main") == ["4\tfalse"]
     assert gh.prs_open("none") == []
+
+
+def prs_merged_argv(head, base):
+    return ["pr", "list", "--head", head, "--base", base, "--state", "merged",
+            "--json", "number,headRefOid,isCrossRepository",
+            "--jq", '.[] | "\\(.number)\\t\\(.headRefOid)\\t\\(.isCrossRepository)"']
+
+
+def test_prs_merged_lists_each_merged_pr_from_the_head_into_the_base_unfiltered(fixture_gh):
+    fixture_gh.reply(prs_merged_argv("quick/12-foo", "main"),
+                     "61\tabc123\ttrue\n62\tdef456\tfalse\n")
+    fixture_gh.reply(prs_merged_argv("none", "main"), "")
+    gh = real_gh(fixture_gh)
+
+    assert gh.prs_merged("quick/12-foo", "main") == ["61\tabc123\ttrue", "62\tdef456\tfalse"]
+    assert gh.prs_merged("none", "main") == []
 
 
 PR_BODY = ["pr", "view", "4", "--json", "body", "--jq", ".body"]
@@ -1327,6 +1446,14 @@ def claimed(tmp_path):
     return origin, Gh(RepoPin({}, git), {})
 
 
+def origin_gone(origin):
+    """Moves the bare repository at <origin> aside, so its URL no longer
+    resolves: one rename, never a delete, since the pushes into it may have
+    started git's background maintenance there, and a delete racing that
+    maintenance fails on the files it removes."""
+    os.rename(str(origin), "%s.gone" % origin)
+
+
 def claims_on(origin):
     return run_git(origin, "for-each-ref", "--format=%(refname)", "refs/orch/claims/")
 
@@ -1347,9 +1474,70 @@ def test_a_claim_origin_does_not_hold_counts_as_freed(claimed):
 
 def test_any_other_push_failure_fails_the_delete_with_git_s_reason(claimed):
     origin, gh = claimed
-    shutil.rmtree(str(origin))
+    origin_gone(origin)
 
     with pytest.raises(GhFailed) as failed:
         gh.claim_delete(5)
 
     assert failed.value.stderr == "fatal: '%s' does not appear to be a git repository\n" % origin
+
+
+# --- the claim list -------------------------------------------------------------
+
+
+def claim_pushed(root, n, host, pid, phase, started):
+    """A claim on issue #<n> pushed to origin from the clone at <root>, its
+    commit message as adapter_claim_create writes it."""
+    run_git(root, "commit", "-q", "--allow-empty", "-m", "orch claim %d" % n, "-m",
+            "host: %s\npid: %s\nphase: %s\nstarted: %s" % (host, pid, phase, started))
+    run_git(root, "push", "-q", "origin", "HEAD:refs/orch/claims/%d" % n)
+
+
+@pytest.fixture
+def claims(tmp_path):
+    """A clone of a bare origin under tmp_path, origin holding claims on
+    #12, #5 and #9, made in that order: (origin's path, the clone's path,
+    the real adapter on the clone)."""
+    origin, root = tmp_path / "origin.git", tmp_path / "clone"
+    git = origin_clone(origin, root)
+    claim_pushed(root, 12, "thirdhost", 7, "review", "2020-01-01T00:00:00Z")
+    claim_pushed(root, 5, "otherhost", 5, "spec", "2021-01-01T00:00:00Z")
+    claim_pushed(root, 9, "myhost", 1, "implement", "2022-01-01T00:00:00Z")
+    return origin, root, Gh(RepoPin({}, git), {})
+
+
+def test_the_claim_list_reads_each_claim_s_message_in_issue_order(claims):
+    _, _, gh = claims
+
+    assert gh.claim_list() == [
+        ClaimRow("5", "otherhost", "5", "spec", "2021-01-01T00:00:00Z"),
+        ClaimRow("9", "myhost", "1", "implement", "2022-01-01T00:00:00Z"),
+        ClaimRow("12", "thirdhost", "7", "review", "2020-01-01T00:00:00Z"),
+    ]
+
+
+def test_the_claim_list_prunes_a_claim_freed_since_the_last_fetch(claims):
+    origin, root, gh = claims
+    gh.claim_list()
+    run_git(origin, "update-ref", "-d", "refs/orch/claims/9")
+
+    assert [row.issue for row in gh.claim_list()] == ["5", "12"]
+
+
+def test_a_claim_message_missing_a_field_reads_it_as_empty(claims):
+    _, root, gh = claims
+    run_git(root, "commit", "-q", "--allow-empty", "-m", "orch claim 3", "-m", "host: lone")
+    run_git(root, "push", "-q", "origin", "HEAD:refs/orch/claims/3")
+
+    assert gh.claim_list()[0] == ClaimRow("3", "lone", "", "", "")
+
+
+def test_a_claim_list_origin_cannot_answer_fails_with_git_s_reason(claims):
+    origin, _, gh = claims
+    origin_gone(origin)
+
+    with pytest.raises(GhFailed) as failed:
+        gh.claim_list()
+
+    assert failed.value.stderr.startswith(
+        "fatal: '%s' does not appear to be a git repository\n" % origin)

@@ -473,7 +473,7 @@ fake_lag adapter_issue_body 2
 lagging adapter_issue_body; assert_status "a lagged operation answers stale" "$?" 0
 lagging adapter_issue_body; assert_status "for as many calls as fake_lag asked" "$?" 0
 lagging adapter_issue_body; assert_status "and current after them" "$?" 1
-lagging adapter_labels; assert_status "an operation with no lag is current" "$?" 1
+lagging adapter_labels_detail; assert_status "an operation with no lag is current" "$?" 1
 # The fake takes the real adapter's argument grammar (#664): an unknown option,
 # or one missing its value, exits 2 with a message on stderr - parsed before
 # fake_failing, so even a seeded failure does not mask it. No converted caller
@@ -1407,51 +1407,6 @@ assert_status "repo default branch: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" \
   "GraphQL: Could not resolve to a Repository with the name 'acme/gone'. (repository)"
 
-# The doctor-only operations (#551). Each case that asks gh the same argv as
-# another runs in its own command substitution, with its own fixture gh, since
-# the fixture answers one reply per argv.
-gh_reply 0 $'github.com\n  Logged in to github.com account acme (keyring)\n' '' auth status --active --hostname github.com
-out="$(contract adapter_auth_status github.com 2>&1)"; st=$?
-assert_status "auth status: succeeds where gh is authenticated" "$st" 0
-assert_contains "printing gh's own report" "$out" "Logged in to github.com"
-assert_contains "pinned to the resolved repo" "$(cat "$GH_FIXTURE/env.log")" \
-  "GH_REPO=acme/widgets GH_HOST=<unset> auth status --active --hostname github.com"
-out="$(gh_fixture; gh_reply 1 '' 'You are not logged into any GitHub hosts. To log in, run: gh auth login' auth status --active --hostname github.com
-  contract adapter_auth_status github.com 2>&1)"; st=$?
-assert_status "auth status: an unauthenticated gh fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "You are not logged into any GitHub hosts. To log in, run: gh auth login"
-out="$(gh_fixture; gh_reply 0 'ghe ok' '' auth status --active --hostname ghe.example.com
-  contract adapter_auth_status ghe.example.com 2>&1)"; st=$?
-assert_status "auth status: asks the enterprise host it is given" "$st" 0
-assert_eq "passing the enterprise report" "$out" "ghe ok"
-
-gh_reply 0 $'upstream/widgets\n' '' repo set-default --view
-out="$(contract adapter_repo_local_default 2>&1)"; st=$?
-assert_status "repo local default: reads gh's local default repo" "$st" 0
-assert_eq "printing its owner/name" "$out" "upstream/widgets"
-# gh 2.102.0 answers "none set" on stderr, exit 0.
-out="$(gh_fixture; gh_reply 0 '' 'X No default remote repository has been set.' repo set-default --view
-  contract adapter_repo_local_default 2>/dev/null)"; st=$?
-assert_status "repo local default: none set succeeds" "$st" 0
-assert_eq "printing nothing at all" "$out" ""
-out="$(gh_fixture; gh_reply 1 '' 'not a git repository' repo set-default --view
-  contract adapter_repo_local_default 2>&1)"; st=$?
-assert_status "repo local default: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "not a git repository"
-
-gh_reply 0 $'bug\nneeds-triage\n' '' label list --limit 1000 --json name --jq '.[].name'
-out="$(contract adapter_labels 1000 2>&1)"; st=$?
-assert_status "labels: lists the repo's label names" "$st" 0
-assert_eq "one name per line" "$out" "$(writeln bug needs-triage)"
-gh_reply 0 '' '' label list --limit 5 --json name --jq '.[].name'
-out="$(contract adapter_labels 5 2>&1)"; st=$?
-assert_status "labels: a repo with none succeeds" "$st" 0
-assert_eq "printing nothing at all" "$out" ""
-gh_reply 1 '' 'HTTP 502: Bad Gateway' label list --limit 7 --json name --jq '.[].name'
-out="$(contract adapter_labels 7 2>&1)"; st=$?
-assert_status "labels: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
-
 rl_jq='.resources | {core, graphql} | to_entries[] | [.key, .value.remaining, .value.limit, .value.reset] | @tsv'
 gh_reply 0 $'core\t4999\t5000\t1700000000\ngraphql\t0\t5000\t1700003600\n' '' api rate_limit --jq "$rl_jq"
 out="$(contract adapter_rate_limit 2>&1)"; st=$?
@@ -1463,37 +1418,6 @@ out="$(contract adapter_rate_limit 2>&1)"; st=$?
 assert_status "rate limit: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 
-probe_list=(issue list --state all --limit 1 --json number --jq '.[0].number // empty')
-gh_reply 0 $'7\n' '' "${probe_list[@]}"
-gh_reply 0 '[]' '' api "repos/{owner}/{repo}/issues/7/sub_issues"
-out="$(contract adapter_sub_issues_supported 2>&1)"; st=$?
-assert_status "sub-issues supported: probes the sub-issues endpoint on an issue" "$st" 0
-assert_eq "yes where it answers" "$out" "yes"
-out="$(gh_fixture; gh_reply 0 $'8\n' '' "${probe_list[@]}"
-  gh_reply 1 '' 'HTTP 404: Not Found' api "repos/{owner}/{repo}/issues/8/sub_issues"
-  contract adapter_sub_issues_supported 2>/dev/null)"; st=$?
-assert_status "sub-issues supported: an endpoint that refuses succeeds" "$st" 0
-assert_eq "printing no" "$out" "no"
-out="$(gh_fixture; gh_reply 0 $'8\n' '' "${probe_list[@]}"
-  gh_reply 1 '' 'HTTP 502: Bad Gateway' api "repos/{owner}/{repo}/issues/8/sub_issues"
-  contract adapter_sub_issues_supported 2>&1)"; st=$?
-assert_status "sub-issues supported: a 502 from the endpoint fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
-out="$(gh_fixture; gh_reply 0 $'8\n' '' "${probe_list[@]}"
-  gh_reply 1 '' 'HTTP 403: Forbidden' api "repos/{owner}/{repo}/issues/8/sub_issues"
-  contract adapter_sub_issues_supported 2>&1)"; st=$?
-assert_status "sub-issues supported: a 403 from the endpoint fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "HTTP 403: Forbidden"
-out="$(gh_fixture; gh_reply 0 '' '' "${probe_list[@]}"; contract adapter_sub_issues_supported 2>&1)"; st=$?
-assert_status "sub-issues supported: a repo with no issue succeeds" "$st" 0
-assert_eq "printing nothing at all" "$out" ""
-out="$(gh_fixture; gh_reply 1 '' 'HTTP 502: Bad Gateway' "${probe_list[@]}"
-  contract adapter_sub_issues_supported 2>&1)"; st=$?
-assert_status "sub-issues supported: a gh failure listing issues fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
-assert_eq "every doctor operation was pinned to the resolved repo" \
-  "$(grep -E ' (auth status|repo set-default|label list|issue list --state all|api repos/[{]owner[}]/[{]repo[}]/issues/7/)' "$GH_FIXTURE/env.log" \
-    | grep -cv '^GH_REPO=acme/widgets GH_HOST=<unset> ')" "0"
 # The fixture gh itself: a later reply for the same argv replaces the earlier,
 # and an argv with no reply fails loudly.
 out="$(gh_fixture; gh_reply 0 'first' '' issue view 9 --json title

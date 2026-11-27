@@ -51,8 +51,9 @@ bash ~/.gemini/config/plugins/orchestrator/scripts/orch.sh doctor
 
 `orch.sh doctor` reports the capabilities Antigravity CLI currently falls back
 on or leaves unverified, checks for stray skills-only copies in
-`~/.gemini/config/skills`, and verifies `git`, `gh`, `jq`, `python3`, and repo
-config.
+`~/.gemini/config/skills`, and verifies `git`, `gh`, `jq` and repo config. It
+runs on `python3` 3.9 or newer, reporting the one it runs on; without one, it
+dies naming the install.
 
 ## Current fallbacks
 

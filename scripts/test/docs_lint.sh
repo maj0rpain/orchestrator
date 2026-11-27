@@ -2288,9 +2288,10 @@ check "every gh call in an agent or skill passes -R" "$(scan_unpinned_gh "$PLUGI
 # --- flow commands in script messages -----------------------------------------
 echo
 echo "flow commands in script messages"
-# orch.sh's and doctor.sh's messages reach the model on every host, so they
-# name a flow command only through flow_cmd, which adds the orch-flow section
-# for a host with no plugin commands - and every section it names must exist.
+# orch.sh's and its bash modules' messages reach the model on every host, so
+# they name a flow command only through flow_cmd, which adds the orch-flow
+# section for a host with no plugin commands - and every section it names must
+# exist.
 # Both forms of a literal flow command are caught: /orchestrator:<cmd> written
 # outside flow_cmd, and a remedy naming `orch.sh redo` or `orch.sh abort`,
 # which works on no host as a flow step. A `usage:` string for redo or abort

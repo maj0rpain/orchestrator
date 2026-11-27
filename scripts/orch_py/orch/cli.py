@@ -3,12 +3,12 @@ once its interpreter check has passed.
 
 main(argv) takes `<noun> <verb> ...` as orch.sh hands them on. A noun not in
 NOUNS dies as orch.sh dies on an unknown command; `-h` and `--help`, help's
-option spellings, run help, through ALIASES rather than NOUNS, since call_func
-finds a noun's module by its name.
+option spellings, run help, and `health` runs doctor, through ALIASES rather
+than NOUNS, since call_func finds a noun's module by its name.
 
-main ends a run of a noun in SIGPIPE_NOUNS whose stdout pipe is closed before
-it is all written as SIGPIPE ended bash's printf and cat: silently, with no
-Python traceback or flush warning. Every other noun, and every call_func
+main ends a run of a noun in SIGPIPE_NOUNS (an alias by the noun it runs)
+whose stdout pipe is closed before it is all written as SIGPIPE ended bash's
+printf and cat: silently, with no Python traceback or flush warning. Every other noun, and every call_func
 bridge, ends such a run as it did before those nouns were converted.
 """
 from __future__ import annotations
@@ -155,6 +155,12 @@ def _review(argv: List[str]) -> int:
     return run(argv)
 
 
+def _doctor(argv: List[str]) -> int:
+    from orch.doctor import run
+
+    return run(argv)
+
+
 def _help(argv: List[str]) -> int:
     from orch.help import run
 
@@ -186,17 +192,19 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "ticket-worktree": _ticket_worktree,
     "pr": _pr,
     "review": _review,
+    "doctor": _doctor,
     "help": _help,
 }
 
-# The option spellings main runs as a noun: orch.sh hands them on as given.
-ALIASES: Dict[str, str] = {"-h": "help", "--help": "help"}
+# The other spellings main runs as a noun - help's option spellings and
+# doctor's alias health: orch.sh hands them on as given.
+ALIASES: Dict[str, str] = {"-h": "help", "--help": "help", "health": "doctor"}
 
 # The nouns converted with init and after it, each keeping its bash noun's
 # silent SIGPIPE death on a closed stdout pipe; a noun converted before them
 # keeps its flush failure there, as it always ended.
 SIGPIPE_NOUNS = frozenset({"init", "slug", "status", "archive", "help", "phase", "redo",
-                           "ticket", "ticket-worktree", "pr", "review"})
+                           "ticket", "ticket-worktree", "pr", "review", "doctor"})
 
 
 def _sigpipe_as_bash(run: Callable[[List[str]], int], argv: List[str]) -> int:
@@ -230,7 +238,10 @@ def call_func(argv: List[str]) -> int:
     `--as <command>` already taken off by orch.__main__: runs the named
     function of a converted noun's module with `<arg>...`, returning its exit
     code (0 when it returns None). The noun is a converted one. Refuses an
-    unknown noun or a missing or private function."""
+    unknown noun or a missing or private function. Its callers are the bash
+    nouns left (autopilot and side-checkout, each naming itself by `--as`);
+    doctor, a converted noun, reads every answer in process and calls
+    none."""
     if len(argv) < 2:
         die("usage: orch_python_call [--as <command>] <noun> <func> [<arg>...]")
     noun, name, args = argv[0], argv[1], argv[2:]

@@ -9,9 +9,9 @@ parse as the operation's JSON raises Unparsed. A caller dies through gh_or_die
 or gh_die, or reacts another way through gh_reason. The CI-evidence reads take
 gh api's whole answer, as gh.sh's ci_api_read did while the bash review noun
 stood, and read it here the way its jq expression did, so an error body GitHub
-answers with is read too. The claim delete is the
-one operation the real adapter makes through git rather than gh, as bash's
-adapter_claim_delete is: the claim is a ref on origin.
+answers with is read too. The claim list and the claim delete are the
+two operations the real adapter makes through git rather than gh, as bash's
+adapter_claim_list and adapter_claim_delete are: a claim is a ref on origin.
 
 The real adapter, Gh, reproduces gh.sh's guard: every call is pinned to the
 repo (orch.repo), dying with the remedy when none resolves, and a failed call
@@ -116,6 +116,18 @@ PR_COMMITS_CHECKED_QUERY = (
 # GitHub holds no base ref - then each commit's SHA and its "yes" or "no",
 # oldest first, as text: a caller judges an answer that is neither.
 CommitsChecked = Tuple[str, List[Tuple[str, str]]]
+
+
+class ClaimRow(NamedTuple):
+    """One claim on origin, as its claim commit's message records it: the
+    issue it claims, and the host, pid, phase and start time - each "" where
+    the message holds no such line."""
+
+    issue: str
+    host: str
+    pid: str
+    phase: str
+    started: str
 
 
 class Check(NamedTuple):
@@ -644,11 +656,29 @@ class Limits:
 
 # --- claims -------------------------------------------------------------------
 
+# Where the claims live on origin, and the refspec a claim list fetches them by.
+CLAIMS_PREFIX = "refs/orch/claims/"
+CLAIMS_REFSPEC = "+%s*:%s*" % (CLAIMS_PREFIX, CLAIMS_PREFIX)
+# The fields a claim commit's message records, one `<field>: <value>` line each.
+CLAIM_FIELDS = ("host", "pid", "phase", "started")
+
+
+def claim_row(ref: str, message: str) -> ClaimRow:
+    """The claim the ref <ref>'s commit <message> records, as bash
+    adapter_claim_list reads it: the issue from the ref's last part, each
+    field the first `<field>: ` line after the subject."""
+    body = "\n" + message
+    values = []
+    for field in CLAIM_FIELDS:
+        found = re.search("\n%s: ([^\n]*)" % field, body)
+        values.append(found.group(1) if found else "")
+    return ClaimRow(ref.rsplit("/", 1)[-1], *values)
+
 
 def claim_ref(n: int) -> str:
     """The ref on origin that holds the claim on issue #n - bash
     adapter_claim_ref."""
-    return "refs/orch/claims/%d" % n
+    return "%s%d" % (CLAIMS_PREFIX, n)
 
 
 # --- the real adapter --------------------------------------------------------
@@ -901,6 +931,22 @@ class Gh:
 
     # --- claim operations ---
 
+    def claim_list(self) -> List[ClaimRow]:
+        """The claims on origin, by issue number - bash adapter_claim_list,
+        through the repo pin's git adapter, no gh call: refs/orch/claims/*
+        fetched first, pruning the local copies of claims since freed, then
+        each claim commit's message read. Raises GhFailed with git's reason
+        where origin cannot be read, and with none where the refs cannot be
+        listed."""
+        git = self.repo_pin.git
+        reason = git.fetch_prune("origin", CLAIMS_REFSPEC)
+        if reason is not None:
+            raise GhFailed(reason if reason.endswith("\n") else reason + "\n")
+        refs = git.refs_contents(CLAIMS_PREFIX)
+        if refs is None:
+            raise GhFailed("")
+        return [claim_row(ref, message) for ref, message in refs]
+
     def claim_delete(self, n: int) -> None:
         """Frees the claim on #n - bash adapter_claim_delete: pushes the
         delete of its ref to origin through the repo pin's git adapter, no gh
@@ -954,6 +1000,19 @@ class Gh:
             ["pr", "list", "--state", "open", "--limit", str(issue_list_limit(self.env)),
              "--json", "number,body,isCrossRepository",
              "--jq", '.[] | "\\(.number)\\t\\(.body | @json)\\t\\(.isCrossRepository)"']
+        ))
+
+    def prs_merged(self, head: str, base: str) -> List[str]:
+        """The PRs from <head> merged into <base>, newest first, one line
+        each as gh prints it, `<number><TAB><head SHA><TAB><flag>`, the flag
+        isCrossRepository - unfiltered: trust_filter_prs drops the fork PRs.
+        The finished check's read for a side checkout with no flow, which
+        records no PR of its own; GitHub reports a squash or rebase merge as
+        merged too, which git ancestry never would."""
+        return _captured_lines(self._gh(
+            ["pr", "list", "--head", head, "--base", base, "--state", "merged",
+             "--json", "number,headRefOid,isCrossRepository",
+             "--jq", '.[] | "\\(.number)\\t\\(.headRefOid)\\t\\(.isCrossRepository)"']
         ))
 
     def prs_merged_closing(self, base: str, since: str) -> List[str]:
@@ -1163,6 +1222,13 @@ class Gh:
         self._gh(["label", "create", name, "--force", "--color", colour,
                   "--description", description])
 
+    def labels(self, limit: int) -> List[str]:
+        """The names of the repo's labels, at most <limit> of them, in
+        GitHub's order; none for a repo with none."""
+        answer = self._gh(["label", "list", "--limit", str(limit), "--json", "name",
+                           "--jq", ".[].name"])
+        return [name for name in answer.split("\n") if name]
+
     # --- repo operations ---
 
     def repo_default_branch(self, repo: str) -> str:
@@ -1174,7 +1240,41 @@ class Gh:
             ["repo", "view", repo, "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"]
         ).rstrip("\n")
 
+    def repo_local_default(self) -> str:
+        """gh's own default repo for this checkout, the first line of the bare
+        OWNER/REPO gh prints even for one off github.com; "" where none is
+        set, which gh says on stderr, exiting 0. Read from local git config,
+        so no network is needed."""
+        return self._gh(["repo", "set-default", "--view"]).split("\n", 1)[0]
+
+    def auth_status(self, host: str) -> None:
+        """Returns where gh's active account on <host> is authenticated;
+        raises GhFailed where it is not, or gh cannot tell, carrying gh's
+        report on both streams - its text is the only signal telling "not
+        authenticated" from "could not connect". Both flags are needed: gh
+        checks every account on every host otherwise, and one stale account
+        fails it."""
+        self._gh(["auth", "status", "--active", "--hostname", host])
+
     # --- sub-issue and dependency operations ---
+
+    def sub_issues_supported(self) -> Optional[bool]:
+        """Whether this GitHub answers the sub-issues endpoint, asked of the
+        repo's most recent issue: True where it answers, False only where it
+        answers HTTP 404, None where the repo has no issue to ask it of.
+        Every other failure - of the issue listing, or of the endpoint with
+        any other status or no connection - passes gh's stderr through."""
+        newest = self._gh(["issue", "list", "--state", "all", "--limit", "1", "--json",
+                           "number", "--jq", ".[0].number // empty"]).rstrip("\n")
+        if not newest:
+            return None
+        try:
+            self._gh(["api", "repos/{owner}/{repo}/issues/%s/sub_issues" % newest])
+        except GhFailed as failed:
+            if "HTTP 404" in failed.stderr:
+                return False
+            raise
+        return True
 
     def issue_parent(self, n: int) -> Optional[int]:
         """The number of the issue #n is a sub-issue of, or None. Read from

@@ -161,8 +161,8 @@ state_write_many() {
 STATE_UNREADABLE_MSG="state.json cannot be read - run orch.sh doctor --flow"
 
 # require_state_exists [die2]: dies unless an active flow's state file exists,
-# for doctor --flow and abort, which must still run on a state.json that does
-# not parse.
+# for cmd_state, whose bare get still prints a state.json that does not parse,
+# and for require_state_read, which checks parsing after it.
 require_state_exists() {
   [ -f "$STATE" ] || "${1:-die}" "no active flow ($ORCH_DIR_NAME/state.json not found). Run $(flow_cmd start) first."
 }

@@ -19,6 +19,23 @@ orch_modules_list() {
 # a running bash of <version>.
 guard_line_for() { echo "orch: bash $1 is too old - orch.sh needs bash 4.2 or newer: brew install bash"; }
 
+# assert_trace_names_no <label> <trace file> <module>...: asserts a load trace,
+# written by a run that had ORCH_LOAD_TRACE=<file> on, names none of the given
+# modules - a module the run must not load at all.
+assert_trace_names_no() {
+  local label="$1" trace="$2" mod line n
+  shift 2
+  local -a lines=()
+  mapfile -t lines <"$trace"
+  for mod in "$@"; do
+    n=0
+    for line in "${lines[@]}"; do
+      [ "${line%%[[:space:]]*}" = "$mod" ] && n=$((n + 1))
+    done
+    assert_eq "$label: the load trace names no $mod" "$n" "0"
+  done
+}
+
 # --- orch_load ----------------------------------------------------------------
 echo
 echo "orch_load"
