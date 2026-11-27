@@ -23,7 +23,7 @@ import pytest
 from orch import audit, issue, pr, review, review_pass, spec_review, ticket_worktree, verification
 from orch.gh import Unparsed
 from orch.gh_fake import FakeGh, FakeStore
-from orch.git import FakeGit, Git
+from orch.git import FakeGit, Git, Worktree
 from orch.repo import RepoPin
 from orch.triage_labels import LABELS_DOC
 
@@ -421,6 +421,61 @@ def archived(main, slug):
     """The directory <slug>'s flow is archived to under the archive of the
     main checkout at <main>, at archive_clock's time."""
     return main / ".orchestrator" / "archive" / ("%s-%s" % (ARCHIVE_STAMP, slug))
+
+
+def linked_worktree(tmp_path, path, marker=None):
+    """A linked worktree of the clone at <path>, a Path: its git pointer
+    naming a git folder under tmp_path/git-dir/worktrees that holds a HEAD
+    and, where <marker> is given, the side-checkout ownership marker holding
+    it, its name the path's below tmp_path. Its path, as a str."""
+    gitdir = tmp_path / "git-dir" / "worktrees" / "-".join(path.relative_to(tmp_path).parts)
+    gitdir.mkdir(parents=True)
+    (gitdir / "HEAD").write_text("ref: refs/heads/x\n")
+    if marker is not None:
+        (gitdir / "orchestrator-side-checkout").write_text(marker)
+    path.mkdir(parents=True)
+    (path / ".git").write_text("gitdir: %s\n" % gitdir)
+    return str(path)
+
+
+class SideCheckouts:
+    """The checkout at tmp_path and its side checkouts, each added by add:
+    <git>, a FakeGit rooted at tmp_path, listing them all, every tree clean,
+    and each branch's tip a commit of its own."""
+
+    def __init__(self, tmp_path, git):
+        self.tmp_path = tmp_path
+        self.git = git
+        self.worktrees = [Worktree(str(tmp_path), "main")]
+        self.git.seed("worktree_list", answer=self.worktrees)
+
+    def add(self, name, branch, tip=None, marker="7\n"):
+        """Side checkout <name> on <branch>, its tip <tip> (a SHA made from
+        the name when None): its path."""
+        path = linked_worktree(self.tmp_path, self.tmp_path / ".orchestrator" / "checkouts" / name,
+                               marker)
+        self.worktrees.append(Worktree(path, branch))
+        self.git.seed("status_at", path, answer="")
+        self.git.seed("branch_at", path, answer=branch)
+        self.tip(branch, tip or sha_of(name))
+        return path
+
+    def tip(self, branch, sha):
+        """<branch>'s tip <sha>, a commit the clone holds."""
+        self.git.seed("resolve_commit", "refs/heads/" + branch, answer=sha)
+        self.git.commits[sha] = {}
+
+    def merged(self, seed, n, branch, head, base="main"):
+        """PR #n merged from <branch> into <base>, its head <head>, a commit
+        the clone holds."""
+        seed.pr(n, "merged", branch, base)
+        seed.pr_head(n, head)
+        self.git.commits[head] = {}
+
+
+def sha_of(name):
+    """A full SHA made from <name>, the same for the same name."""
+    return (name.encode().hex() * 40)[:40]
 
 
 def write_staged(root, files):

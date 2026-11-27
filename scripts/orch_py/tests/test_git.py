@@ -1148,6 +1148,43 @@ def test_an_unseeded_worktree_delete_on_the_fake_fails_with_no_stderr():
     assert FakeGit().worktree_delete("/main/.orchestrator/worktrees/t5") == GitFailure(1, "")
 
 
+# --- side-checkout add's operations, run in the main checkout they name ----------
+
+
+def test_the_base_fetch_in_a_named_checkout_moves_its_remote_ref_the_same_from_both(
+        forking, tmp_path):
+    run_git(forking, "update-ref", "-d", "refs/remotes/origin/" + PARENT)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    assert alike(Git(cwd=str(elsewhere)), "fetch_branch_at", str(forking), PARENT) is True
+    assert run_git(forking, "rev-parse", "refs/remotes/origin/" + PARENT) == \
+        run_git(forking, "rev-parse", PARENT)
+    assert fails_alike(Git(cwd=str(elsewhere)), "fetch_branch_at", str(forking), "nowhere") \
+        is False
+
+
+def test_a_detached_worktree_is_added_at_a_ref_the_same_from_a_real_repo_and_the_fake(
+        forking, tmp_path):
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    path = forking / ".orchestrator" / "checkouts" / "alpha"
+
+    assert alike(Git(cwd=str(elsewhere)), "worktree_add_detached_at", str(forking), str(path),
+                 "refs/remotes/origin/" + PARENT) is None
+    assert run_git(path, "branch", "--show-current") == ""
+    assert run_git(path, "rev-parse", "HEAD") == run_git(forking, "rev-parse", PARENT)
+
+
+def test_a_detached_worktree_git_refuses_to_add_gives_its_status_and_stderr(forking):
+    path = forking / ".orchestrator" / "checkouts" / "alpha"
+    failed = Git().worktree_add_detached_at(str(forking), str(path), "refs/remotes/origin/nope")
+
+    assert failed.code == 128 and failed.stderr.startswith("fatal: ")
+    assert not path.exists()
+    assert FakeGit().worktree_add_detached_at(str(forking), str(path), "x") == GitFailure(1, "")
+
+
 @pytest.fixture
 def landing(forking):
     """<forking> with TICKET forked from PARENT and checked out in its ticket

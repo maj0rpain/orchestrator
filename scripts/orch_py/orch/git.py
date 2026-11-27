@@ -11,7 +11,8 @@ checkout the verification noun reads, the common directory the git exclude
 writer (orch.common) appends under, the current branch a review pass
 starts on, the worktree list, another checkout's branch and its git folder
 the checkout scan (orch.checkout) reads, the worktree removal a side
-checkout's teardown (orch.side_checkout) makes, the push the gh adapter's claim
+checkout's teardown (orch.side_checkout) makes, and the base fetch and
+detached worktree add that side-checkout add makes, the push the gh adapter's claim
 delete makes, branch retire's
 local branch reads and rename, origin probe, tracking push and remote
 delete (orch.branch), the dirty paths the planning allowlist's flow-start scan
@@ -115,6 +116,8 @@ COULD_NOT: Dict[str, Any] = {
     "push_set_upstream": "git gave no reason",
     "remote_delete": "git gave no reason",
     "worktree_remove": "git gave no reason",
+    "fetch_branch_at": False,
+    "worktree_add_detached_at": GitFailure(1, ""),
     "dirty_paths": "git gave no reason",
     "worktree_add": GitFailure(1, ""),
     "worktree_delete": GitFailure(1, ""),
@@ -562,6 +565,24 @@ class Git:
             return None
         return run.stderr.decode("utf-8", "surrogateescape").split("\n", 1)[0]
 
+    # Side-checkout add's operations, run in the main checkout they name, as
+    # bash's add runs them after its `cd "$main_root"`: the sweep before them
+    # may have removed the checkout the command ran in.
+
+    def fetch_branch_at(self, checkout: str, branch: str) -> bool:
+        """`git -C <checkout> fetch --quiet origin
+        +refs/heads/<branch>:refs/remotes/origin/<branch>`: origin's <branch>
+        fetched into its remote ref, forced. Whether it did."""
+        refspec = "+refs/heads/%s:refs/remotes/origin/%s" % (branch, branch)
+        return self._run(["-C", checkout, "fetch", "--quiet", "origin", refspec]).returncode == 0
+
+    def worktree_add_detached_at(self, checkout: str, path: str, ref: str
+                                 ) -> Optional[GitFailure]:
+        """`git -C <checkout> worktree add -q --detach <path> <ref>`: a new
+        worktree at <path>, on no branch, at the commit <ref> names. None
+        when it was added, else git's status and stderr."""
+        return self._failure(["-C", checkout, "worktree", "add", "-q", "--detach", path, ref])
+
 
     # The git exclude writer's operation, run where the adapter runs, as the
     # bash writer's `git rev-parse` is.
@@ -990,6 +1011,13 @@ class FakeGit:
 
     def worktree_remove(self, checkout: str, path: str) -> Optional[str]:
         return self._answer("worktree_remove", checkout, path)
+
+    def fetch_branch_at(self, checkout: str, branch: str) -> bool:
+        return self._answer("fetch_branch_at", checkout, branch)
+
+    def worktree_add_detached_at(self, checkout: str, path: str, ref: str
+                                 ) -> Optional[GitFailure]:
+        return self._answer("worktree_add_detached_at", checkout, path, ref)
 
     def worktree_add(self, path: str, branch: str) -> Optional[GitFailure]:
         return self._answer("worktree_add", path, branch)

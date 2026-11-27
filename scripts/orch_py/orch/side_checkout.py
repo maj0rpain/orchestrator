@@ -3,7 +3,12 @@ converted nouns need it: the ownership marker that makes a worktree a side
 checkout, where a flow is archived, the archive itself, and the side
 checkout's teardown - archived first, then removed (ADR-0037) - as the bash
 side's side-checkout.sh makes them, and the finished check, the sweep's
-own, that doctor reports a side checkout left standing by. A side checkout is
+own, that doctor reports a side checkout left standing by. It holds too the
+side-checkout verbs Python autopilot reaches, which the side-checkout
+conversion will call: add, with the name a picked-up issue's side checkout
+is made under, the finished sweep (prune), with its merged-PR close calling
+the pr module's close_missed_finish in-process, the side checkouts directory
+and the side checkout an issue's marker records. A side checkout is
 a worktree the plugin makes under the main checkout's .orchestrator/checkouts/
 (ADR-0037); the marker in the worktree's own git folder - which git deletes
 with the worktree - is what makes it one, never a flow's state file, since a
@@ -15,17 +20,23 @@ from __future__ import annotations
 import errno
 import os
 import shutil
+import sys
 import time
-from typing import Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple
+from contextlib import contextmanager, redirect_stdout
+from typing import (Callable, Dict, Iterator, List, Mapping, NamedTuple, Optional, Sequence,
+                    Tuple)
 
-from orch.checkout import (checkout_gitdir_into, checkout_has_flow, checkout_kind,
+from orch.base import base_in_effect, default_branch, recorded_base_of
+from orch.branch import branch_issue_of
+from orch.checkout import (checkout_branch, checkout_gitdir_into, checkout_has_flow,
+                           checkout_kind, checkouts, main_checkout_or_die,
                            refuse_ticket_worktrees)
-from orch.base import recorded_base_of
-from orch.checkout import checkout_branch
-from orch.common import (ORCH_DIR_NAME, capture, die, dir_stamp, mkdir_p_or_die, plain_number,
-                         state_word, stdout_write, tree_status, warn)
+from orch.common import (ORCH_DIR_NAME, capture, die, dir_stamp, err_line, exclude_orch_dirs,
+                         first_line, mkdir_p_or_die, normalize_slug, plain_number, state_word,
+                         stderr_write, stdout_write, subshell, tree_status, warn)
 from orch.flow_state import flow_state_file, flow_state_get_many, recorded_pr
 from orch.gh import GhFailed, Unparsed, gh_reason
+from orch.repo import RepoPin
 from orch.trust import trust_filter_prs
 
 # The ownership marker's file name, in the worktree's own git folder.
@@ -72,6 +83,63 @@ def side_checkout_marker_issue(git, path: str) -> Optional[str]:
     except OSError:
         return None
     return value if plain_number(value) else None
+
+
+def side_checkouts_dir(main_root: str) -> str:
+    """Where the side checkouts of the main checkout at <main_root> live."""
+    return "%s/%s/checkouts" % (main_root, ORCH_DIR_NAME)
+
+
+def side_checkout_for_issue(git, issue: str) -> Optional[str]:
+    """The path of the side checkout whose marker records <issue>, read
+    through the git adapter <git>'s checkout scan - bash
+    side_checkout_for_issue; None when there is none, the scan failing
+    included."""
+    found = checkouts(git)
+    for checkout in found or ():
+        if checkout.kind == "side" and side_checkout_marker_issue(git, checkout.path) == issue:
+            return checkout.path
+    return None
+
+
+# The longest short slug a side checkout is named for: whole words of the
+# issue title up to it.
+SHORT_SLUG_MAX = 40
+
+
+def short_slug(title: str) -> str:
+    """The normalised <title> as whole hyphen-separated words of at most
+    SHORT_SLUG_MAX characters in all - bash autopilot_short_slug. A first
+    word over the limit on its own is cut at it, so the slug is never empty;
+    a title that normalises to nothing gives `untitled`."""
+    norm, _, _ = capture(lambda: normalize_slug(title))
+    if not norm:
+        return "untitled"
+    slug = ""
+    for word in norm.split("-"):
+        longer = slug + "-" + word if slug else word
+        if len(longer) > SHORT_SLUG_MAX:
+            return slug or word[:SHORT_SLUG_MAX]
+        slug = longer
+    return slug
+
+
+def side_checkout_free_slug(main_root: str, title: str, issue: str) -> str:
+    """The name the side checkout for issue <issue>, titled <title>, is made
+    under in the main checkout at <main_root> - bash
+    autopilot_pickup_side_add's: its short slug, else <slug>-<issue>, else
+    <slug>-<issue>-2, -3 and so on, the first with no entry of that name in
+    the side checkouts directory, a plain file counting as a clash."""
+    directory = side_checkouts_dir(main_root)
+    slug = short_slug(title)
+    if not os.path.exists(os.path.join(directory, slug)):
+        return slug
+    stem = slug = "%s-%s" % (slug, issue)
+    n = 1
+    while os.path.exists(os.path.join(directory, slug)):
+        n += 1
+        slug = "%s-%d" % (stem, n)
+    return slug
 
 
 # --- the finished check ---
@@ -174,38 +242,49 @@ def side_checkout_finished(gh, git, path: str, default: Callable[[], str],
                            read_state: StateRead) -> Verdict:
     """Whether the side checkout at <path> is finished - bash
     side_checkout_finished, the sweep's own test and the glossary's
-    **Finished**: a clean tree, and either a finished flow (finished_flow),
-    or no flow and a PR merged from its checked-out branch into the base
-    branch recorded for it (recorded_base_of, the default branch <default>
-    names) - and the branch's tip held by a merged PR (tip_covered), so the
-    sweep's branch -D never drops a commit. Read through the gh adapter <gh>
-    and the git adapter <git>, a flow's state by <read_state>. A git status
-    that cannot run is unread, as an unreadable GitHub is, so nothing is
-    removed on a tree that could not be read."""
+    **Finished**: the verdict side_checkout_verdict gives, without its
+    branch."""
+    return side_checkout_verdict(gh, git, path, default, read_state)[0]
+
+
+def side_checkout_verdict(gh, git, path: str, default: Callable[[], str],
+                          read_state: StateRead) -> Tuple[Verdict, str]:
+    """Whether the side checkout at <path> is finished, and the branch the
+    sweep deletes when it is - "" where none was read: a clean tree, and
+    either a finished flow (finished_flow, its recorded branch), or no flow
+    and a PR merged from its checked-out branch into the base branch
+    recorded for it (recorded_base_of, the default branch <default> names) -
+    and the branch's tip held by a merged PR (tip_covered), so the sweep's
+    branch -D never drops a commit. Read through the gh adapter <gh> and the
+    git adapter <git>, a flow's state by <read_state>. A git status that
+    cannot run is unread, as an unreadable GitHub is, so nothing is removed
+    on a tree that could not be read."""
     status, why = tree_status(git, path)
     if status is None:
-        return Verdict(UNREAD, why)
+        return Verdict(UNREAD, why), ""
     if status:
-        return _not_finished("uncommitted changes or untracked files")
+        return _not_finished("uncommitted changes or untracked files"), ""
     if checkout_has_flow(path):
         verdict, branch, merged = finished_flow(gh, flow_state_file(path), default, read_state)
-        return verdict if verdict.code != FINISHED else tip_covered(git, branch, merged)
+        if verdict.code != FINISHED:
+            return verdict, branch
+        return tip_covered(git, branch, merged), branch
     branch = checkout_branch(git, path)
     if branch is None:
-        return _not_finished("no branch")
+        return _not_finished("no branch"), ""
     base = recorded_base_of(git, branch, default)
     try:
         raw = gh.prs_merged(branch, base)
     except GhFailed as failed:
-        return Verdict(UNREAD, "could not read GitHub: " + gh_reason(failed.stderr))
+        return Verdict(UNREAD, "could not read GitHub: " + gh_reason(failed.stderr)), branch
     try:
         prs = trust_filter_prs(branch, raw)
     except Unparsed:
         return Verdict(UNREAD, "could not read GitHub: the merged PRs from %s into %s"
-                       % (branch, base))
+                       % (branch, base)), branch
     if not prs:
-        return _not_finished("no merged PR from %s into %s" % (branch, base))
-    return tip_covered(git, branch, prs)
+        return _not_finished("no merged PR from %s into %s" % (branch, base)), branch
+    return tip_covered(git, branch, prs), branch
 
 
 def archive_root(git, root: str) -> Optional[str]:
@@ -354,3 +433,255 @@ def side_checkout_archive_and_remove_or_exit(git, path: str, main_root: str, her
         head, found, rest = archive_out.partition("orch: ")
         die(rest if found else head)
     return status
+
+
+# --- the finished sweep and add -------------------------------------------------
+#
+# The side-checkout verbs Python autopilot reaches, as bash side-checkout.sh's
+# cmd_side_checkout_prune and cmd_side_checkout_add make them: each takes the
+# verb's arguments, the gh and git adapters, the environment, the root of the
+# checkout the command runs in (an archive's directory is shown from it) and,
+# for a test, the directory it runs in and the clock. Each prints what the
+# bash verb prints, and dies as it dies. Neither starts orch.sh.
+
+PRUNE_USAGE = "usage: orch.sh side-checkout prune"
+ADD_USAGE = "usage: orch.sh side-checkout add <slug> [--issue N]"
+
+
+def _here() -> str:
+    """The directory the command runs in, as bash's `pwd -P` reads it; ""
+    where it is gone."""
+    try:
+        return os.path.realpath(os.getcwd())
+    except OSError:
+        return ""
+
+
+@contextmanager
+def _in_main_checkout(main_root: str) -> Iterator[None]:
+    """Runs the body from the main checkout at <main_root>, as bash's `cd
+    "$main_root"`, so removing the checkout the command ran in leaves it
+    somewhere to stand; dies when it cannot enter it. The directory the
+    command ran in is entered again afterwards, as bash's subshell leaves
+    it, while it still exists."""
+    try:
+        before: Optional[str] = os.getcwd()
+    except OSError:
+        before = None
+    try:
+        os.chdir(main_root)
+    except OSError:
+        die("could not enter the main checkout " + main_root)
+    try:
+        yield
+    finally:
+        if before is not None:
+            try:
+                os.chdir(before)
+            except OSError:
+                pass
+
+
+def _default_once(gh, git, env: Mapping[str, str]) -> Tuple[object, Callable[[], str]]:
+    """<gh> with its default-branch answer asked of GitHub once (pr's
+    DefaultOnce), and the default branch read through it - bash's memo of
+    the default branch, which a sweep, its merged-PR closes and add share."""
+    from orch.pr import DefaultOnce
+
+    once = DefaultOnce(gh)
+    pin = RepoPin(env, git)
+    return once, lambda: default_branch(once, git, pin).name
+
+
+def side_checkout_close_missed(gh, git, env: Mapping[str, str], path: str, branch: str,
+                               clock: Callable[[], float] = time.time) -> None:
+    """The merged-PR backstop (#2477) for a checkout the sweep judged
+    finished, run before it is archived or removed - bash
+    side_checkout_close_missed. A flow's issue and PR are the ones its state
+    records; a flow-less checkout's PR is the newest merged from <branch>
+    and its issue the one a `quick/<issue>-` branch names - any other branch
+    is skipped. Reads the issue's state through gh's state-and-labels read,
+    and closes it, when open, through pr's close_missed_finish, in-process,
+    at <clock>'s time. A failed read or close warns and never fails the
+    sweep: a death in the close is the close's alone."""
+    from orch.pr import close_missed_finish
+
+    if checkout_has_flow(path):
+        state = flow_state_get_many(flow_state_file(path), ("issue", "pr"))
+        if state is None or not state["issue"] or not state["pr"]:
+            return
+        issue, pr = state["issue"], state["pr"]
+    else:
+        issue = branch_issue_of(branch) if branch.startswith("quick/") else None
+        if issue is None:
+            return
+        pr = ""
+    # state set refuses an issue that is no plain number, so a flow's never
+    # is one: there is nothing to read.
+    if not plain_number(issue):
+        return
+    try:
+        state_read, _ = gh.issue_state_labels(int(issue))
+    except GhFailed as failed:
+        warn("could not read issue #%s: %s - the merged-PR close skips it"
+             % (issue, gh_reason(failed.stderr)))
+        return
+    if state_read != "OPEN":
+        return
+    subshell(lambda: close_missed_finish([issue, pr, branch], gh=gh, git=git, env=env,
+                                         now=clock))
+
+
+def side_checkout_prune(argv: Sequence[str], gh, git, env: Mapping[str, str], root: str,
+                        here: Optional[str] = None,
+                        clock: Callable[[], float] = time.time) -> int:
+    """`side-checkout prune`, the sweep behind /orchestrator:finish - bash
+    cmd_side_checkout_prune. Every verdict is read first, so a GitHub that
+    cannot be read removes nothing at all. Then each finished side checkout,
+    in git's order, has its merged-PR close run, its flow archived into the
+    main checkout, its worktree removed - never with force - and its local
+    branch deleted with -D, which -d would refuse for a squash merge; a
+    failure is reported, that checkout left as it stands, and the sweep
+    moves on. The main checkout's finished flow is archived in place, its
+    branch left checked out. A hand-made worktree holding a flow is reported
+    and left alone. Its status: 0, or 1 when any finished checkout failed;
+    it dies when a verdict could not be read."""
+    if argv:
+        die(PRUNE_USAGE)
+    here = _here() if here is None else here
+    walk = checkouts(git)
+    if not walk:
+        die("could not read the checkouts - nothing was removed")
+    main_root = walk[0].path
+    gh, default = _default_once(gh, git, env)
+    with _in_main_checkout(main_root):
+        finished: List[Tuple[str, str]] = []
+        unread = 0
+        for checkout in walk:
+            if checkout.kind == "main":
+                if not checkout.flow:
+                    continue
+                verdict, branch, _ = finished_flow(gh, flow_state_file(checkout.path), default,
+                                                   flow_state_get_many)
+            elif checkout.kind == "side":
+                verdict, branch = side_checkout_verdict(gh, git, checkout.path, default,
+                                                        flow_state_get_many)
+            else:
+                if checkout.flow:
+                    stdout_write("%s: not a side checkout, left alone\n" % checkout.path)
+                continue
+            if verdict.code == FINISHED:
+                finished.append((checkout.path, branch))
+            elif verdict.code == NOT_FINISHED:
+                stdout_write("skipped %s: %s\n" % (checkout.path, verdict.reason))
+            else:
+                warn("could not check %s: %s" % (checkout.path, verdict.reason))
+                unread += 1
+        if unread:
+            die("%d checkout(s) could not be checked - nothing was removed" % unread)
+        if not finished:
+            stdout_write("no finished side checkouts\n")
+            return 0
+        failed = False
+        for path, branch in finished:
+            side_checkout_close_missed(gh, git, env, path, branch, clock)
+            if path == main_root:
+                failed = not _archive_main_in_place(git, main_root, root, clock) or failed
+                continue
+            status, archive_out = side_checkout_archive_and_remove(
+                git, path, main_root, here, "warn", root, clock)
+            if status == 2:
+                warn("could not archive the flow in side checkout %s: %s - left as it stands"
+                     % (path, err_line(archive_out)))
+            if status != 0:
+                failed = True
+                continue
+            refused = git.branch_delete(branch)
+            if refused is not None:
+                warn("could not delete branch %s: %s" % (branch, first_line(refused.stderr)))
+                failed = True
+                continue
+            stdout_write("deleted branch %s\n" % branch)
+    return 1 if failed else 0
+
+
+def _archive_main_in_place(git, main_root: str, root: str, clock: Callable[[], float]) -> bool:
+    """The sweep's step for the main checkout's finished flow: archived in
+    place, its branch left checked out, each noted; a failed archive warned
+    of with one prefix. Whether it was archived."""
+    shown, err, code = capture(lambda: archive_flow(git, main_root, main_root, root, clock))
+    if code != 0:
+        warn("could not archive the main checkout's flow: " + err_line(err))
+        return False
+    stdout_write(shown + "\n")
+    stdout_write("archived the main checkout's flow in place - %s is still checked out\n"
+                 % (checkout_branch(git, main_root) or ""))
+    return True
+
+
+def side_checkout_add(argv: Sequence[str], gh, git, env: Mapping[str, str], root: str,
+                      here: Optional[str] = None,
+                      clock: Callable[[], float] = time.time) -> str:
+    """`side-checkout add <slug> [--issue N]` - bash cmd_side_checkout_add:
+    the finished sweep first, its report on stderr, a failed one warned of
+    and never stopping add; then a worktree under the main checkout's side
+    checkouts directory, on no branch at origin/<base>, the base branch in
+    effect, freshly fetched - git refuses one branch in two worktrees, and
+    the main checkout usually holds the base - carrying the ownership
+    marker, with --issue's number written into it, so a session opened
+    there picks up the quick implementation's issue. Prints the new path,
+    alone, on stdout, and gives it. A bad command line or a failed fetch
+    dies before any worktree exists; a failed marker write takes the fresh
+    worktree back out."""
+    if not argv or not argv[0]:
+        die(ADD_USAGE)
+    slug, rest, issue = argv[0], list(argv[1:]), ""
+    while rest:
+        if rest[0] != "--issue":
+            die("unknown side-checkout add flag: %s (want --issue)" % rest[0])
+        issue = rest[1] if len(rest) > 1 else ""
+        if not issue:
+            die(ADD_USAGE)
+        if not plain_number(issue):
+            die("--issue wants a plain issue number, got: " + issue)
+        rest = rest[2:]
+    slug = normalize_slug(slug)
+    main_root = main_checkout_or_die(git)
+    # The base is read before the sweep, so the sweep shares its one ask of
+    # GitHub for the default branch.
+    gh, default = _default_once(gh, git, env)
+    base = base_in_effect(git, default)
+    with redirect_stdout(sys.stderr):
+        swept = subshell(lambda: side_checkout_prune([], gh, git, env, root, here, clock))
+    if swept != 0:
+        warn("the finished sweep failed - carrying on with add")
+    with _in_main_checkout(main_root):
+        path = "%s/%s" % (side_checkouts_dir(main_root), slug)
+        if os.path.exists(path):
+            die("side checkout %s already exists" % path)
+        exclude_orch_dirs(git)
+        if not git.fetch_branch_at(main_root, base):
+            die("could not fetch base branch %s from origin - no side checkout was made" % base)
+        refused = git.worktree_add_detached_at(main_root, path, "refs/remotes/origin/" + base)
+        if refused is not None:
+            stderr_write(refused.stderr)
+            die("could not add side checkout " + path)
+        gitdir = git.absolute_git_dir_at(path)
+        if gitdir is None or not _marker_written(gitdir, issue):
+            # A freshly added worktree holds nothing of anyone's, so no force
+            # is needed.
+            git.worktree_remove(main_root, path)
+            die("could not write the side-checkout marker - removed %s again" % path)
+    stdout_write(path + "\n")
+    return path
+
+
+def _marker_written(gitdir: str, issue: str) -> bool:
+    """Whether the ownership marker was written into the git folder
+    <gitdir>: empty, or <issue> on a line of its own."""
+    try:
+        with open(os.path.join(gitdir, SIDE_CHECKOUT_MARKER), "w") as marker:
+            marker.write(issue + "\n" if issue else "")
+    except OSError:
+        return False
+    return True

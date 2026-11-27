@@ -1,6 +1,7 @@
 """The side-checkout concept module's archive and teardown - archive_root,
-archive_flow, and archive-then-remove with its or-exit wrapper - against real
-repositories under tmp_path: git's worktree semantics are git's, so no fake
+archive_flow, and archive-then-remove with its or-exit wrapper - and one round
+of add, the issue lookup and the sweep, against real repositories under
+tmp_path: git's worktree semantics are git's, so no fake
 models them. Each message is bash side-checkout.sh's, verbatim."""
 from __future__ import annotations
 
@@ -10,14 +11,17 @@ from pathlib import Path
 
 import pytest
 
-from conftest import (ARCHIVE_STAMP, archive_clock, archive_main, archived, died_of, done_flow,
-                      run_git, side_checkout, worktree_add)
+from conftest import (ARCHIVE_STAMP, archive_clock, archive_main, archived, committed, died_of,
+                      done_flow, fake, origin_clone, run_git, side_checkout, worktree_add)
 from orch.git import Git
 from orch.side_checkout import (
     FLOW_LESS_ENTRIES,
     archive_flow,
     archive_root,
+    side_checkout_add,
     side_checkout_archive_and_remove_or_exit,
+    side_checkout_for_issue,
+    side_checkout_prune,
 )
 
 SIDE_CHECKOUT_SH = Path(__file__).resolve().parents[2] / "orch" / "side-checkout.sh"
@@ -218,3 +222,32 @@ def test_a_flow_with_a_ticket_worktree_left_is_not_archived(main, capsys):
         " them:\n       %s (orch.sh ticket-worktree remove 6)\n"
         "     Remove each with orch.sh ticket-worktree remove <n> first.\n" % (main, t6)))
     assert not (main / ".orchestrator" / "archive").exists()
+
+
+def test_a_side_checkout_added_for_an_issue_is_found_for_it_then_swept_once_merged(
+        tmp_path, seed, capsys):
+    origin, main = tmp_path / "origin.git", tmp_path.resolve() / "clone"
+    origin_clone(origin, main, "main")
+    run_git(main, "checkout", "-qb", "main")
+    committed(main, {"a.txt": "a\n"}, "first")
+    run_git(main, "push", "-q", "origin", "main")
+    seed.default_branch("main\n")
+    git, gh = Git(cwd=str(main)), fake(seed)
+
+    path = side_checkout_add(["alpha", "--issue", "5"], gh, git, {}, str(main))
+
+    assert capsys.readouterr().out == path + "\n"
+    assert (run_git(path, "branch", "--show-current"), run_git(path, "rev-parse", "HEAD")) \
+        == ("", run_git(main, "rev-parse", "refs/remotes/origin/main"))
+    assert side_checkout_for_issue(git, "5") == path == str(main / ".orchestrator/checkouts/alpha")
+    run_git(path, "checkout", "-qb", "quick/5-alpha")
+    run_git(path, "commit", "-q", "--allow-empty", "-m", "work")
+    seed.pr(9, "merged", "quick/5-alpha", "main")
+    seed.pr_head(9, run_git(path, "rev-parse", "HEAD"))
+    seed.issue(5, "closed")
+
+    assert side_checkout_prune([], gh, git, {}, str(main)) == 0
+    assert capsys.readouterr() == (
+        "removed side checkout %s\ndeleted branch quick/5-alpha\n" % path, "")
+    assert side_checkout_for_issue(git, "5") is None
+    assert not os.path.exists(path)

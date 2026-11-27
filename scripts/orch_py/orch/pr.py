@@ -19,13 +19,15 @@ pr_close_missed, the merged-closing read and the newest-merge pick, behind
 two bridges: close_missed_tick, which autopilot's tick calls at most once a
 tick, never once per issue, and close_missed_finish, which side-checkout's
 sweep calls once per finished checkout, each call carrying that checkout's
-one issue. Each exits 0 whatever its reads and closes did, after their
+one issue - the bash sweep through its bridge, orch/side_checkout.py's
+in-process. Each exits 0 whatever its reads and closes did, after their
 warnings; only a usage error dies.
 
 Bash cached the default branch for its process, so pr open's base fallback
 and its issue-line check - and pr publish's recorded base and its check, and
 pr release's base and default branch - share one ask of GitHub; one run here
-shares it the same way (_DefaultOnce). The open-tickets refusal is
+shares it the same way (DefaultOnce), as side_checkout.py's sweep shares it
+with the closes it makes. The open-tickets refusal is
 orch.ticket's require_no_open_tickets, called directly.
 
 pr draft and pr ready (#967) turn the current branch's open PR into a draft,
@@ -114,7 +116,7 @@ def current_open_pr(gh, git, code: int) -> Optional[int]:
 # --- one run ------------------------------------------------------------------
 
 
-class _DefaultOnce:
+class DefaultOnce:
     """The gh adapter <gh>, its default-branch answer - or failure - asked
     of GitHub once and kept, as bash's default_branch_resolve keeps it for
     the process. Every other operation is <gh>'s own."""
@@ -141,7 +143,7 @@ class _DefaultOnce:
 class _Run:
     """One pr command's adapters: the git adapter, the environment, the
     repo pin resolved once, and the gh adapter, made at its first call and
-    kept (_DefaultOnce)."""
+    kept (DefaultOnce)."""
 
     def __init__(self, gh, git, env: Mapping[str, str]) -> None:
         self.git = git
@@ -152,7 +154,7 @@ class _Run:
 
     def gh(self):
         if self._gh is None:
-            self._gh = _DefaultOnce(self._gh_of())
+            self._gh = DefaultOnce(self._gh_of())
         return self._gh
 
     def default(self) -> str:
@@ -330,8 +332,9 @@ def close_missed_finish(
     env: Optional[Mapping[str, str]] = None,
     now: Callable[[], float] = time.time,
 ) -> None:
-    """Bridge for side-checkout's sweep, once per finished checkout whose
-    issue is open: `close_missed_finish <issue> <pr> <branch>`, <pr> the
+    """Bridge for side-checkout's sweep - and called in-process by
+    side_checkout.py's - once per finished checkout whose issue is open:
+    `close_missed_finish <issue> <pr> <branch>`, <pr> the
     flow's recorded PR or empty. The merged-PR backstop (#2477): reads the
     PRs merged into the default branch since <issue> was created and closes
     <issue> through the newest merge among them that is PR <pr>, or, with
