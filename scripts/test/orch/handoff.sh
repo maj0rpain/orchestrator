@@ -57,16 +57,6 @@ literal_handoff() {
 # the fake has answered or refused - 0 for none.
 fake_comment_reads() { log_count "$ORCH_GH_FAKE_STORE/comment_reads"; }
 
-# handoff_doctor_missing_msg <mode> <issue> <name>: doctor's finding for the
-# missing handoff <name>.
-handoff_doctor_missing_msg() {
-  if [ "$1" = comment ]; then
-    printf 'handoff %s comment is missing on issue #%s - the phase that writes it has already run.' "$3" "$2"
-  else
-    printf 'handoff %s.md is missing - the phase that writes it has already run.' "$3"
-  fi
-}
-
 # --- handoff path -----------------------------------------------------------
 echo
 echo "handoff path"
@@ -582,7 +572,7 @@ restore_suite_env
 # the Python redo noun's, tested in scripts/orch_py/tests/test_redo.py.
 
 handoff_store_contract() {
-  local adapter="$1" out st p
+  local adapter="$1" st p
   echo
   echo "handoff store contract ($adapter adapter)"
   fake_flow "handoff-store-$adapter"
@@ -622,11 +612,6 @@ handoff_store_contract() {
   # retired reads as missing
   handoff_orch "$adapter" handoff path spec >/dev/null 2>&1; st=$?
   assert_status "$adapter: a retired handoff is missing at handoff path" "$st" 1
-
-  # doctor: the missing-handoff finding is the adapter's (01-plan was retired)
-  out="$(handoff_orch "$adapter" doctor --flow 2>&1)"; st=$?
-  assert_status "$adapter: doctor --flow fails on a missing handoff" "$st" 1
-  assert_contains "$adapter: with the adapter's finding" "$out" "$(handoff_doctor_missing_msg "$adapter" 7 01-plan)"
   restore_suite_env
 }
 
@@ -689,10 +674,6 @@ assert_status "comment: an unreadable sibling fetch dies" "$st" 1
 assert_contains "comment: showing the gh reason with a sibling due" "$out" "HTTP 503 read"
 assert_eq "comment: after exactly one comment read" "$(( $(fake_comment_reads) - reads_before ))" 1
 assert_eq "comment: leaving no sibling copy" "$(on_disk "$scratch/01-plan.md")" absent
-fake_flow handoff-store-ready-comment
-out="$(handoff_orch comment doctor --flow 2>&1)"
-assert_contains "comment: no recorded issue is today's finding" "$out" \
-  "autopilot session, but no issue is recorded - the handoff comments cannot be read."
 restore_suite_env
 
 echo
@@ -703,10 +684,6 @@ export ORCHESTRATOR_HOST=claude
 fake_issue 7 open
 out="$(handoff_orch file handoff path spec 2>/dev/null)"
 assert_eq "file: a missing handoff prints only the write target" "$out" "$PWD/.orchestrator/handoff/01-plan.md"
-fake_flow handoff-store-ready-file
-out="$(handoff_orch file doctor --flow 2>&1)"
-assert_not_contains "file: readiness passes with no recorded issue" "$out" "no issue is recorded"
-assert_contains "file: and the missing handoff is reported" "$out" "$(handoff_doctor_missing_msg file 7 01-plan)"
 restore_suite_env
 
 echo

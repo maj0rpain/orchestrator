@@ -1508,6 +1508,32 @@ def test_a_branch_tracking_its_own_origin_branch_reports_its_upstream(capsys, se
     assert "ok    upstream: origin/orch/9-x\n" in run.out
 
 
+def test_a_pushed_branch_beside_a_local_origin_branch_still_reports_its_upstream(
+        capsys, seed, tmp_path):
+    """A local branch named origin/<branch> makes the upstream's short name
+    ambiguous (#1331). It is made after the push, since made first it makes
+    `git push -u` itself fail."""
+    bare = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True,
+                   stdin=subprocess.DEVNULL)
+    root = tmp_path.resolve() / "repo"
+    root.mkdir()
+    git = git_repo(root, origin=ORIGIN)
+    exclude_orchestrator(root)
+    run_git(root, "config", "remote.origin.pushurl", str(bare))
+    run_git(root, "checkout", "-q", "-b", "orch/11-x")
+    run_git(root, "commit", "-q", "--allow-empty", "-m", "first")
+    run_git(root, "push", "-q", "-u", "origin", "orch/11-x")
+    run_git(root, "branch", "-q", "origin/orch/11-x")
+    seed.issue(11, "open")
+    flow(root, phase="implement", issue=11, branch="orch/11-x")
+
+    run = orch_doctor(capsys, seed, root, "--flow", git=git, env=flow_env(tmp_path))
+
+    assert "ok    upstream: origin/orch/11-x" in flow_lines(run)
+    assert "git push -u origin" not in run.out
+
+
 @pytest.mark.parametrize("local", [False, True])
 def test_a_done_flow_s_branch_gone_is_the_routine_end_of_a_flow(capsys, seed, tmp_path, local):
     seed.issue(11, "closed")
@@ -1873,6 +1899,18 @@ def test_each_phase_listed_check_runs_only_in_its_phases(capsys, seed, tmp_path,
     assert phase_reports(capsys, seed, tmp_path, phase) == reported
 
 
+@pytest.mark.parametrize("phases, phase", [("implemnt+", "implement"), ("reveiw", "review")],
+                         ids=["plus-element", "plain-element"])
+def test_a_phase_list_naming_a_phase_the_table_lacks_dies_naming_its_entry(
+        capsys, phases, phase):
+    entry = doctor.Check("a", lambda d: None, phases)
+
+    code, _, err = died_of(capsys, lambda: doctor.entries_at([entry], phase))
+
+    assert (code, err) == (1, "orch: a:%s: no such phase in the phase table: %s\n"
+                           % (phases, phases.rstrip("+")))
+
+
 # --- the autopilot phase label ----------------------------------------------------
 
 
@@ -1962,6 +2000,7 @@ def test_a_missing_handoff_fails_with_the_redo_remedy(capsys, seed, tmp_path):
         "FAIL  handoff 01-plan.md is missing - the phase that writes it has already run.",
         INDENT + REDO,
         "ok    handoff 02-spec.md complete"]
+    assert "no issue is recorded" not in run.out
     assert run.code == 1
 
 
@@ -2043,6 +2082,17 @@ def test_a_handoff_comment_missing_fails_naming_the_issue(capsys, seed, tmp_path
         " already run.",
         INDENT + REDO,
         "ok    handoff 02-spec.md complete"]
+    assert run.code == 1
+
+
+def test_a_retired_handoff_comment_reads_as_missing(capsys, seed, tmp_path):
+    autopilot_flow(seed, tmp_path)
+    handoff_comment(seed, "01-plan retired", "Retired by a redo.", created="2030-01-01T00:00:00Z")
+
+    run = autopilot_doctor(capsys, seed, tmp_path)
+
+    assert ("FAIL  handoff 01-plan comment is missing on issue #7 - the phase that writes it has"
+            " already run.\n") in run.out
     assert run.code == 1
 
 

@@ -22,8 +22,8 @@ from orch.checkout import (checkout_gitdir_into, checkout_has_flow, checkout_kin
                            refuse_ticket_worktrees)
 from orch.base import recorded_base_of
 from orch.checkout import checkout_branch
-from orch.common import (ORCH_DIR_NAME, capture, die, dir_stamp, mkdir_p_or_die, state_word,
-                         stdout_write, tree_status, warn)
+from orch.common import (ORCH_DIR_NAME, capture, die, dir_stamp, mkdir_p_or_die, plain_number,
+                         state_word, stdout_write, tree_status, warn)
 from orch.flow_state import flow_state_file, flow_state_get_many, recorded_pr
 from orch.gh import GhFailed, Unparsed, gh_reason
 from orch.trust import trust_filter_prs
@@ -71,7 +71,7 @@ def side_checkout_marker_issue(git, path: str) -> Optional[str]:
             value = f.read().decode("utf-8", "surrogateescape").rstrip("\n")
     except OSError:
         return None
-    return value if value and value.isascii() and value.isdigit() else None
+    return value if plain_number(value) else None
 
 
 # --- the finished check ---

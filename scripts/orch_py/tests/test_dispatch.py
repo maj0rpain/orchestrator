@@ -1199,22 +1199,6 @@ def test_doctor_and_health_refuse_without_a_usable_python3_naming_the_install(
     ]
 
 
-TALLY = re.compile(r"[0-9]+ ok, [0-9]+ warn, [0-9]+ FAIL")
-
-
-@pytest.mark.parametrize("argv", [("doctor",), ("doctor", "--env"), ("doctor", "--flow"),
-                                  ("health",)],
-                         ids=["doctor", "doctor-env", "doctor-flow", "health"])
-def test_doctor_and_health_run_the_python_doctor_s_report(tmp_path, repo, seed, argv):
-    flow_state(repo, "spec", 12, "orch/12-x")
-    seed.issue(12, "open")
-
-    out, err, code = orch_sh(tmp_path, repo, seed, *argv, path=python3_shim(tmp_path))
-
-    assert TALLY.fullmatch(out.rstrip("\n").split("\n")[-1])
-    assert (tmp_path / "shim.log").read_text() == "ran\n"
-
-
 def test_orch_sh_doctor_env_reports_the_bash_that_ran_it(tmp_path, repo, seed):
     """`ok    bash <version>` names the bash running orch.sh, trimmed of its
     `(1)-release` tail, never a bash found on PATH."""

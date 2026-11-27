@@ -1,5 +1,5 @@
 """The three review reads doctor's review checks take in process, each called
-directly in a real repository under tmp_path, the gh fake on its store, and
+directly on a plain directory under tmp_path, the gh fake on its store, and
 checked by exactly the data doctor reads: review_terminal_report's
 classification word, its detail and, for malformed, the record path;
 ci_probe's verdict and detail lines over the required checks; and
@@ -9,20 +9,18 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import fake, git_repo, hold_flow, record, write
+from conftest import fake, hold_flow, record, write
 from orch.review import MALFORMED_SHAPE, ci_probe, review_terminal_report, standards_resolve_source
 
 INDENT = "      "
 
 
 @pytest.fixture
-def checkout(tmp_path, monkeypatch):
-    """A real repository at tmp_path/repo, resolved, its origin on GitHub,
-    the process inside it, as doctor runs: its root."""
+def checkout(tmp_path):
+    """The checkout's root, a plain directory at tmp_path/repo, resolved:
+    the reads take the root and start no git."""
     root = tmp_path.resolve() / "repo"
     root.mkdir()
-    git_repo(root, origin="https://github.com/acme/widgets.git")
-    monkeypatch.chdir(str(root))
     return root
 
 

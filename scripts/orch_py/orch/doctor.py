@@ -335,9 +335,10 @@ class Check(NamedTuple):
 Entry = Union[Head, Check]
 
 
-def checks(*functions: Callable[[Doctor], None]) -> List[Check]:
-    """A registry's checks, each named by its function."""
-    return [Check(function.__name__, function) for function in functions]
+def checks(*functions: Callable[[Doctor], None], phases: str = "") -> List[Check]:
+    """A registry's checks, each named by its function, all run in <phases>
+    ("" for every phase)."""
+    return [Check(function.__name__, function, phases) for function in functions]
 
 
 def phase_list(entry: Check) -> List[str]:
@@ -1237,7 +1238,9 @@ def check_flow_review_terminal(d: Doctor) -> None:
     lines = d.answer_or_fail(lambda: review_terminal_report(d.root, i, budget))
     if lines is None:
         return
-    # As bash's $(...) read the bridge's lines: trailing newlines dropped.
+    # The unreadable answer's detail keeps its orch: message's newline as a
+    # last, empty line; stripping the joined answer's trailing newlines keeps
+    # that blank tail out of the FAIL line.
     word, _, detail = "\n".join(lines).rstrip("\n").partition("\n")
     if word == "none":
         d.ok("review loop: not started yet")
@@ -1460,12 +1463,11 @@ def check_ticket_worktrees_left(d: Doctor) -> None:
 FLOW_CHECKS: List[Entry] = [
     Head(FLOW_HEAD),
     *checks(check_state_phase, check_flow_issue, check_flow_branch),
-    Check("check_flow_upstream", check_flow_upstream, "implement+"),
+    *checks(check_flow_upstream, phases="implement+"),
     *checks(check_flow_pr),
-    Check("check_flow_review_terminal", check_flow_review_terminal, "review"),
-    Check("check_flow_review_budget", check_flow_review_budget, "review"),
-    Check("check_flow_review_ci", check_flow_review_ci, "review"),
-    Check("check_flow_review_draft", check_flow_review_draft, "review+"),
+    *checks(check_flow_review_terminal, check_flow_review_budget, check_flow_review_ci,
+            phases="review"),
+    *checks(check_flow_review_draft, phases="review+"),
     *checks(check_flow_handoffs, check_flow_autopilot_label),
 ]
 
