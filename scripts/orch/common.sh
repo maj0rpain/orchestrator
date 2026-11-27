@@ -473,8 +473,8 @@ exclude_missing() {
 }
 
 # Prints, one per line, each EXCLUDED_DIRS entry the clone's shared
-# info/exclude lacks - every entry when the file is missing. doctor's
-# check_git_exclude reports exactly this.
+# info/exclude lacks - every entry when the file is missing, as doctor's
+# exclude check (orch/doctor.py) reports it.
 orch_dirs_unexcluded() { exclude_missing "$(printf '%s\n' "${EXCLUDED_DIRS[@]}")"; }
 # Prints, one per line, every path with tracked modifications or untracked
 # files in this working tree that falls outside the planning allowlist. -z
@@ -539,7 +539,7 @@ require_clean_tree() {
 # otherwise. A caller uses the result to gate its own tests - headings,
 # sections, paragraph breaks - and decides itself what to do with a fence's
 # lines, delimiters included. State is fence_-prefixed.
-# shellcheck disable=SC2034 # used by the doctor and handoff modules
+# shellcheck disable=SC2034 # used by the handoff module
 FENCE_AWK='
   function fence_run(s, c,   n) { n = 0; while (substr(s, n + 1, 1) == c) n++; return n }
   function fenced(line,   s, c, n) {

@@ -41,6 +41,10 @@ marked_ticket_worktree() {
   printf '%s\n' "$path"
 }
 
+# exclude_count <line>: how many times <line> appears whole in the current
+# clone's shared exclude file, the one every checkout of it reads.
+exclude_count() { grep -cxF "$1" "$(git rev-parse --git-common-dir)/info/exclude" || true; }
+
 # --- side-checkout (#722) -----------------------------------------------------
 # A side checkout: a worktree the plugin makes under the main checkout's
 # .orchestrator/checkouts/<slug>, on no branch at origin/<base>, carrying the

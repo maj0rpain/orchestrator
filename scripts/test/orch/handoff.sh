@@ -53,6 +53,20 @@ literal_handoff() {
   esac
 }
 
+# fake_comment_reads: how many comment-list reads (adapter_issue_comments)
+# the fake has answered or refused - 0 for none.
+fake_comment_reads() { log_count "$ORCH_GH_FAKE_STORE/comment_reads"; }
+
+# handoff_doctor_missing_msg <mode> <issue> <name>: doctor's finding for the
+# missing handoff <name>.
+handoff_doctor_missing_msg() {
+  if [ "$1" = comment ]; then
+    printf 'handoff %s comment is missing on issue #%s - the phase that writes it has already run.' "$3" "$2"
+  else
+    printf 'handoff %s.md is missing - the phase that writes it has already run.' "$3"
+  fi
+}
+
 # --- handoff path -----------------------------------------------------------
 echo
 echo "handoff path"

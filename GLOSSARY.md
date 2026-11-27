@@ -397,8 +397,9 @@ An `orch.sh` noun whose code has moved from bash to the plugin's Python
 package, one noun at a time. `orch.sh` stays its one entry point, and the noun
 keeps its arguments, output, exit codes and messages, so no skill, agent or
 hook calling it changes; its bash code and bash tests are gone, and its tests
-are the pytest suite's. It needs `python3` 3.9 or newer, and dies saying so,
-pointing at `orch.sh doctor`, without one. `issue` is the first.
+are the pytest suite's. It needs `python3` 3.9 or newer, and dies saying so
+without one, pointing at `orch.sh doctor` - or, for doctor itself, naming the
+install. `issue` is the first.
 _Avoid_: Python noun, ported noun.
 
 ### Quick implementation and blueprint

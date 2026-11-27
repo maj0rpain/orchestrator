@@ -1,6 +1,6 @@
-"""orch.sh's doctor noun (ADR-0067), so far reached through doctor.run and
-`python3 -m orch doctor` alone: diagnostics for the orchestrator plugin, as
-the bash doctor module reports them. Scopes are named for the content they
+"""orch.sh's doctor noun (ADR-0067), and its alias health: diagnostics for
+the orchestrator plugin, reported as the bash doctor module reported them.
+Scopes are named for the content they
 cover, never for the caller that asks - `--env` and `--flow` - so a check's
 home does not move when a caller changes. The flow scope is the flow state
 group, each check in the phases it runs in (a registry entry's phase list),

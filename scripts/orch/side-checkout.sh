@@ -111,8 +111,8 @@ tip_covered() {
 # so the sweep's branch -D never drops a commit. A git status that cannot run
 # returns 2, as an unreadable GitHub does, so the sweep removes nothing on a
 # tree it could not read.
-# verdict is read by its callers, side-checkout prune, below, and
-# doctor.sh.
+# verdict is read by its caller, side-checkout prune, below; doctor's
+# finished check is orch/side_checkout.py's copy.
 # shellcheck disable=SC2034
 side_checkout_finished() {
   local path="$1" base raw prs st err merged_prs=""

@@ -18,7 +18,8 @@ when no planning close agreed the test seams.
 
 - Claude Code, the Junie CLI, or the Antigravity CLI (see [Install](#install)).
 - `gh`, `jq`, `git` and `python3` 3.9 or newer, with `gh` signed in to the
-  repo's GitHub.
+  repo's GitHub. `orch.sh doctor` checks the rest, and runs on that
+  `python3`: without one, it dies naming the install.
 - bash 4.2 or newer. macOS ships 3.2 as `/bin/bash`: run `brew install bash`.
 - Little per-repo setup, all optional but the triage labels: the five
   canonical triage label names (`needs-triage`, `needs-info`,

@@ -5,8 +5,8 @@
 
 # repo_resolve: resolves the Repo once per shell and memoises the whole answer
 # in plain (never exported) shell variables, repo_resolve their one writer:
-# REPO_NAME and REPO_SOURCE (GH_REPO or origin; read by repo show
-# and doctor.sh), REPO_ORIGIN_SSH (1 when the Repo came from an
+# REPO_NAME and REPO_SOURCE (GH_REPO or origin; read by repo show),
+# REPO_ORIGIN_SSH (1 when the Repo came from an
 # origin in an SSH form, else empty), REPO_MEMO_STATUS (the outcome, 0 or 1, a
 # failed resolution too; empty until the first resolve) and REPO_MEMO_HOST (the
 # host the repo pins). The memo lives in the shell that resolves: a later
@@ -153,9 +153,9 @@ repo_from_url() {
 # repo_gh_host: the GitHub host gh targets for the resolved repo (not the
 # glossary's Host, the agent CLI), read from the memo
 # repo_resolve memoises. The one rule, followed by the gh guard's pin, doctor's
-# GitHub probe and repo show --host: the repo's pinned host (repo_pinned_host);
-# else (a user-set OWNER/REPO GH_REPO) the user's GH_HOST, or github.com when
-# unset, as gh does.
+# GitHub probe (orch/doctor.py, through orch.repo) and repo show --host: the
+# repo's pinned host (repo_pinned_host); else (a user-set OWNER/REPO GH_REPO)
+# the user's GH_HOST, or github.com when unset, as gh does.
 repo_gh_host() {
   local host
   host="$(repo_pinned_host)"

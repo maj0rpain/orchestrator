@@ -24,12 +24,13 @@ same way.
 
 Adding a host means adding a column here, teaching `scripts/host.sh` to detect
 it (`host_detect` for a host told apart by its environment,
-`host_from_project_path` for one told apart by its hook payload), and teaching
-`doctor.sh` to name its install
-methods (#132). Fill a cell only with a verified fact,
-and write "unverified" for anything not yet confirmed. The Junie CLI column
-comes from the documentation bundled with Junie CLI 3419.7 and from tool calls
-observed in Junie CLI 3419.7 sessions (recorded under `~/.junie/sessions`),
+`host_from_project_path` for one told apart by its hook payload) and
+`host_detect`'s Python copy in `scripts/orch_py/orch/host.py`, and teaching
+doctor (`scripts/orch_py/orch/doctor.py`) to name its install methods (#132).
+Fill a cell only with a verified fact, and write "unverified" for anything not
+yet confirmed. The Junie CLI column comes from the documentation bundled with
+Junie CLI 3419.7 and from tool calls observed in Junie CLI 3419.7 sessions
+(recorded under `~/.junie/sessions`),
 which count as verified facts. The Antigravity CLI column comes from live
 probes against Antigravity CLI (`agy 1.5.13`) and its bundled plugin
 documentation.

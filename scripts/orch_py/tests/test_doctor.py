@@ -154,6 +154,35 @@ def test_the_cli_runs_doctor_with_its_arguments(capsys):
         1, "", "orch: unknown doctor flag: --nonsense (want --env or --flow)\n")
 
 
+def cli_answer(capsys, argv):
+    """cli.main(<argv>)'s exit code, a SystemExit's included, stdout and
+    stderr."""
+    try:
+        code = cli.main(argv)
+    except SystemExit as died:
+        code = died.code
+    out, err = capsys.readouterr()
+    return code, out, err
+
+
+@pytest.mark.parametrize("argv", [["--env"], ["--flow"], ["--nonsense"], ["--env", "--flow"]],
+                         ids=["env", "flow", "unknown-flag", "extra-argument"])
+def test_health_answers_every_argument_as_doctor_does(capsys, seed, tmp_path, monkeypatch, argv):
+    healthy(seed)
+    repo = tmp_path / "repo"
+    git_repo(repo, ORIGIN)
+    hold_flow(repo, slug="x", phase="spec", issue=1)
+    monkeypatch.chdir(str(repo))
+    for name, value in (("ORCH_GH_FAKE_STORE", seed.store), ("HOME", str(tmp_path / HOME)),
+                        ("ORCH_RUNNING_BASH", RUNNING_BASH)):
+        monkeypatch.setenv(name, value)
+
+    doctor_said = cli_answer(capsys, ["doctor", *argv])
+
+    assert doctor_said[0] in (0, 1) and (doctor_said[1] or doctor_said[2])
+    assert cli_answer(capsys, ["health", *argv]) == doctor_said
+
+
 @pytest.mark.parametrize("argv", [[], [""], ["--env"]])
 def test_doctor_and_doctor_env_run_the_environment_groups(capsys, seed, tmp_path, argv):
     healthy(seed)

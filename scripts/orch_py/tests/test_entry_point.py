@@ -252,6 +252,19 @@ def test_review_path_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_pat
     assert (tmp_path / ".orchestrator" / "review").is_dir()
 
 
+@pytest.mark.parametrize("noun", ["doctor", "health"])
+def test_doctor_and_health_writing_into_a_closed_pipe_die_of_sigpipe_silently(
+        tmp_path, seed, monkeypatch, noun):
+    """`orch.sh doctor | head` ended silently as bash's printf did, under
+    either spelling: so does the Python doctor's report."""
+    git_repo(tmp_path, "https://github.com/acme/widgets.git")
+    monkeypatch.setenv("ORCH_GH_FAKE_STORE", seed.store)
+
+    run = into_a_closed_pipe(tmp_path, noun)
+
+    assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
+
+
 @pytest.mark.parametrize("call", [["route", "show"], ["--call", "route", "run", "show"]],
                          ids=["noun", "call-mode"])
 def test_a_noun_converted_earlier_keeps_its_flush_failure_on_a_closed_pipe(tmp_path, call):

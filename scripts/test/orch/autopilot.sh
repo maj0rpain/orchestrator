@@ -91,6 +91,28 @@ assert_no_repo_refused() {
   assert_not_contains "$label is not the remedy" "$out" "$repo_missing"
 }
 
+# assert_loads_once <label> <cmd> [args...]: runs <cmd> with the load trace on
+# and asserts the trace names no module twice, in the main shell or a subshell.
+# The command's own status and output are not judged.
+assert_loads_once() {
+  local label="$1" load_trace
+  shift
+  load_trace="$(mktemp)"
+  ORCH_LOAD_TRACE="$load_trace" "$@" >/dev/null 2>&1 || true
+  assert_trace_loads_once "$label" "$load_trace"
+  rm -f "$load_trace"
+}
+
+# orch_no_repo <args>...: runs orch.sh with <args> in a fresh origin-less copy
+# of the current directory (the section's test repo), over the fixture gh the
+# caller made with gh_fixture; orch.sh's output and status pass through. Fails,
+# running nothing, when no gh_fixture was made.
+orch_no_repo() {
+  [ -n "${GH_FIXTURE:-}" ] || { echo "orch_no_repo: make a gh_fixture first" >&2; return 1; }
+  (cd "$(mktemp -d)" && cp -R "$OLDPWD/." . && git remote remove origin \
+    && PATH="$GH_FIXTURE/bin:$PATH" ORCH_GH_ADAPTER='' "$ORCH" "$@")
+}
+
 # --- autopilot ---------------------------------------------------------------
 # The clone-scoped autopilot settings and the autopilot-session check.
 echo

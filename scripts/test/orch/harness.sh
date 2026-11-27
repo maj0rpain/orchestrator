@@ -856,7 +856,7 @@ assert_eq "says on stderr that it lists the selectable sections" "$(cat "$filter
 rm -f "$filter_err"
 assert_eq "lists the sections from isolation on" "$(printf '%s\n' "$out" | sed -n 1p)" "isolation"
 assert_eq "lists a sub-section as a title of its own" \
-  "$(count_lines -xF 'doctor: host (#128)' "$out")" "1"
+  "$(count_lines -xF 'branch: unknown op' "$out")" "1"
 assert_eq "lists titles without trailing dashes" "$(count_lines -- '-$' "$out")" "0"
 assert_eq "lists no shared-setup header" \
   "$(count_lines -E 'doctor harness|fixture gh' "$out")" "0"
@@ -4743,7 +4743,7 @@ tr_init "$af"
 tr_put "$af" scripts/test/orch/branch.sh 'x=1' '# --- branch create ---' '# --- branch (x.y) retire ---'
 tr_put "$af" scripts/test/orch/state.sh '# --- state ---'
 tr_put "$af" scripts/test/orch/common.sh '# --- common one ---'
-for af_f in autopilot base doctor init redo review side-checkout; do
+for af_f in autopilot base host init redo review side-checkout triage-labels; do
   tr_put "$af" "scripts/test/orch/$af_f.sh" "# --- $af_f s ---"
 done
 for af_f in scripts/orch.sh scripts/orch/common.sh scripts/orch/branch.sh \
@@ -4857,7 +4857,7 @@ af_row "a markdown lens-bench fixture selects the lens bench suite" scripts/dev/
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
 af_row "a markdown lens-bench test fixture selects the lens bench suite" scripts/test/lens-bench/run-1/map.md \
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
-af_py_s="autopilot s,base s,$af_branch_titles,doctor s,side-checkout s"
+af_py_s="autopilot s,base s,$af_branch_titles,side-checkout s"
 af_row "a Python package module selects the sections of the nouns that run a converted noun's verb, the hooks suite and the side-checkout ones, not the full suite" \
   scripts/orch_py/orch/cli.py "$TR_GATE,$af_py_s,hooks_test.sh,docs_lint.sh"
 af_row "the pytest suite's wrapper selects the harness sections, and shellchecks itself" \
@@ -4908,14 +4908,14 @@ assert_eq "the common module's section file selects its own sections alone" "$(t
 af_hooks_s="hooks_test.sh,docs_lint.sh"
 af_row "flow-state.sh selects the core set and the state and side-checkout sections" scripts/flow-state.sh \
   "$TR_GATE,$TR_HARNESS,loader one,side-checkout s,state,$af_core_s,scripts/flow-state.sh"
-af_row "host.sh selects the core set and the doctor sections" scripts/host.sh \
-  "$TR_GATE,doctor s,$TR_HARNESS,loader one,$af_core_s,scripts/host.sh"
+af_row "host.sh selects the core set and the host sections" scripts/host.sh \
+  "$TR_GATE,$TR_HARNESS,host s,loader one,$af_core_s,scripts/host.sh"
 af_row "bash-walk.sh selects the hooks suite" scripts/bash-walk.sh "$TR_GATE,$af_hooks_s,scripts/bash-walk.sh"
 af_row "paste-guard.sh selects the hooks suite" scripts/paste-guard.sh "$TR_GATE,$af_hooks_s,scripts/paste-guard.sh"
-af_row "planning-allowlist.sh selects the hooks suite and the doctor sections" scripts/planning-allowlist.sh \
-  "$TR_GATE,doctor s,$af_hooks_s,scripts/planning-allowlist.sh"
-af_row "triage-labels.sh selects the hooks suite and the doctor sections" scripts/triage-labels.sh \
-  "$TR_GATE,doctor s,$af_hooks_s,scripts/triage-labels.sh"
+af_row "planning-allowlist.sh selects the hooks suite" scripts/planning-allowlist.sh \
+  "$TR_GATE,$af_hooks_s,scripts/planning-allowlist.sh"
+af_row "triage-labels.sh selects the hooks suite and the triage-labels sections" scripts/triage-labels.sh \
+  "$TR_GATE,triage-labels s,$af_hooks_s,scripts/triage-labels.sh"
 af_row "a dev script other than the lens bench selects the harness sections" scripts/dev/other.sh \
   "$TR_GATE,$TR_HARNESS,docs_lint.sh,scripts/dev/other.sh"
 af_row "the edit width hook selects the harness sections and the hooks suite" scripts/dev/hook-edit-width.sh \

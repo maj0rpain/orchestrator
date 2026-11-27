@@ -593,9 +593,8 @@ DEFAULT_BUDGET = "5"
 
 def review_budget_fallback(raw: str) -> str:
     """The budget read from state, <raw>, or DEFAULT_BUDGET where it is
-    empty or not a plain number - as bash's review_budget_fallback was, its
-    bash copy gone; doctor.sh's d_budget_fallback is the one bash copy
-    left."""
+    empty or not a plain number - as bash's review_budget_fallback and
+    doctor's d_budget_fallback were, both bash copies gone."""
     return raw if plain_number(raw) else DEFAULT_BUDGET
 
 

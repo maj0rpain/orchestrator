@@ -40,22 +40,21 @@
 #                                     lens_bench_test.sh (wins over *.md)
 #   flow-state.sh                     the core set, plus the state and
 #                                     side-checkout sections
-#   host.sh                           the core set, plus the doctor sections
-#   bash-walk.sh, paste-guard.sh      hooks_test.sh
-#   planning-allowlist.sh             hooks_test.sh, plus the doctor sections
-#   triage-labels.sh                  hooks_test.sh, plus the doctor sections
+#   host.sh                           the core set, plus the host sections
+#   bash-walk.sh, paste-guard.sh, planning-allowlist.sh
+#                                     hooks_test.sh
+#   triage-labels.sh                  hooks_test.sh, plus the triage-labels
+#                                     sections
 #   scripts/dev/ other than the lens bench, hook-edit-width.sh, width.sh
 #                                     the harness section file's sections
 #   the Python package (scripts/orch_py/), its tests and dev files included
-#                                     the base, branch, autopilot and doctor
+#                                     the base, branch and autopilot
 #                                     sections, which call a converted noun's
 #                                     own verbs through the dispatch (base's
 #                                     pr open and branch's pr publish
-#                                     fixtures, doctor's glossary terms) or a
-#                                     Python bridge via orch_python_call
-#                                     (doctor, its three review checks among
-#                                     them, and autopilot, its merged-PR
-#                                     close among them),
+#                                     fixtures) or a Python bridge via
+#                                     orch_python_call (autopilot, its
+#                                     merged-PR close among them),
 #                                     and hooks_test.sh, whose paste guard
 #                                     rows run spec-review check through it,
 #                                     plus the side-checkout sections, whose
@@ -452,10 +451,9 @@ classify() {
   elif ! listed "$f" "${CORE_FILES[@]}"; then
     case "$f" in
       scripts/flow-state.sh) core=1; sections_of state side-checkout ;;
-      scripts/host.sh) core=1; sections_of doctor ;;
-      scripts/bash-walk.sh | scripts/paste-guard.sh) want+=(hooks_test.sh) ;;
-      scripts/planning-allowlist.sh) want+=(hooks_test.sh); sections_of doctor ;;
-      scripts/triage-labels.sh) want+=(hooks_test.sh); sections_of doctor ;;
+      scripts/host.sh) core=1; sections_of host ;;
+      scripts/bash-walk.sh | scripts/paste-guard.sh | scripts/planning-allowlist.sh) want+=(hooks_test.sh) ;;
+      scripts/triage-labels.sh) want+=(hooks_test.sh); sections_of triage-labels ;;
       scripts/orch/*.sh)
         if [ "$state" != deleted ]; then
           [ -f "scripts/test/orch/$file_name" ] || unnamed
@@ -475,7 +473,7 @@ classify() {
       scripts/dev/hook-edit-width.sh | scripts/dev/width.sh | scripts/test/shell_code.awk)
         want+=(hooks_test.sh); sections_of harness ;;
       scripts/dev/*) sections_of harness ;;
-      scripts/orch_py/*) want+=(hooks_test.sh); sections_of base branch autopilot doctor side-checkout ;;
+      scripts/orch_py/*) want+=(hooks_test.sh); sections_of base branch autopilot side-checkout ;;
       scripts/test/orch_py_test.sh) sections_of harness ;;
       docker/* | .dockerignore) want+=(autopilot_container_test.sh autopilot_up_test.sh) ;;
       .claude-plugin/*) want+=(version_bump_test.sh autopilot_up_test.sh) ;;
