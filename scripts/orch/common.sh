@@ -19,20 +19,6 @@ list_has() {
   [[ $2 != *$'\n'* ]] && [[ $'\n'"$1"$'\n' == *$'\n'"$2"$'\n'* ]]
 }
 
-# path_last_into <var> <path> [<suffix>]: sets <var> to <path>'s last
-# component, <suffix> stripped when that component ends in it and is not all of
-# it, as basename gives it, without starting basename. Sets the variable in the
-# caller's shell with printf -v.
-path_last_into() {
-  local _pl_p="$2"
-  while [[ $_pl_p == ?*/ ]]; do _pl_p="${_pl_p%/}"; done
-  if [[ $_pl_p != / ]]; then
-    _pl_p="${_pl_p##*/}"
-    if [[ -n ${3:-} && $_pl_p == ?*"$3" ]]; then _pl_p="${_pl_p%"$3"}"; fi
-  fi
-  printf -v "$1" '%s' "$_pl_p"
-}
-
 # list_join <list>: the newline-separated <list>'s non-empty lines joined with
 # ", ", then a newline - a list reads better in a sentence. The one newline-list
 # join, beside list_has; an item containing a comma stays whole.
@@ -53,8 +39,8 @@ word_listed() {
 }
 
 die()  { printf 'orch: %s\n' "$*" >&2; exit 1; }
-# die for commands that reserve exit 1 for a meaningful "no" (side-checkout
-# issue: no issue recorded), so their failures exit with status 2 instead.
+# die for commands that reserve exit 1 for a meaningful "no", so their
+# failures exit with status 2 instead.
 die2() { printf 'orch: %s\n' "$*" >&2; exit 2; }
 
 # die_opt_check <caller> <argc> <option> [value]: the one rule for die_hinted's
@@ -90,16 +76,6 @@ die_hinted() {
 # own status, or a warning the command carries on past.
 warn() { printf 'orch: %s\n' "$*" >&2; }
 note() { printf '%s\n' "$*"; }
-# err_line <err>: a captured error's first line, everything through its first
-# `orch: ` dropped, for quoting inside a message of our own.
-err_line() {
-  local err="${1#*orch: }"
-  printf '%s' "${err%%$'\n'*}"
-}
-# The one timestamp shape for .orchestrator/ directory names: compact, UTC, and
-# colon-free so the path is valid on Windows too. now(), in flow-state.sh, stays
-# ISO-8601: it is a field value, never a path segment.
-dir_stamp() { date -u +%Y%m%d-%H%M%S; }
 
 # Float comparison and addition, in awk, because the poll loops' timings are
 # overridable and the tests turn them down to fractions of a second; bash
@@ -338,18 +314,6 @@ file_read() {
   return 1
 }
 
-# state_word <var> <state>: GitHub's uppercase issue or PR <state> into <var>
-# as the lowercase word a message prints. Any other value is passed through
-# unchanged.
-state_word() {
-  case "$2" in
-    OPEN) printf -v "$1" '%s' open ;;
-    CLOSED) printf -v "$1" '%s' closed ;;
-    MERGED) printf -v "$1" '%s' merged ;;
-    *) printf -v "$1" '%s' "$2" ;;
-  esac
-}
-
 # newlines_strip <var>: drops every trailing newline from the named
 # variable's value, as $(...) drops them from a command's output.
 newlines_strip() {
@@ -365,21 +329,6 @@ file_read_text() {
   printf -v "$1" '%s' ""
   file_read "$1" "$2" || :
   newlines_strip "$1"
-}
-
-# The one normalisation a slug gets: lowercase, non-alphanumeric runs collapsed
-# to a single hyphen, trimmed, dying if nothing survives. `side-checkout add`
-# and `side-checkout remove` call this rather than carrying their own copy of
-# the sed expression and the empty-result check. `init`, `orch.sh slug` and
-# autopilot's short slug, converted nouns, run the Python copy,
-# orch.common.normalize_slug, which keeps this one's rule (ADR-0067) - and a
-# caller outside this file (the quick-implement skill) reaches it through
-# `orch.sh slug` instead of re-deriving the algorithm as prose.
-normalize_slug() {
-  local slug
-  slug="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
-  [ -n "$slug" ] || die "slug is empty after normalisation"
-  printf '%s\n' "$slug"
 }
 
 # plugin_cmd <command> <fallback>: names a plugin command so any host can act
@@ -413,7 +362,8 @@ flow_cmd() {
 # without touching a tracked .gitignore, so running the orchestrator in an
 # unfamiliar repo never dirties its working tree. A line already present is
 # never written again. The file is the clone's shared one (the common dir),
-# the only info/exclude git reads, so a linked worktree writes it too.
+# the only info/exclude git reads, so a linked worktree writes it too. No bash
+# caller is left: the converted nouns write it through orch/common.py's copy.
 exclude_orch_dirs() { exclude_line "$(printf '%s\n' "${EXCLUDED_DIRS[@]}")"; }
 
 # exclude_line <lines>: makes sure each of the newline-separated <lines> is a

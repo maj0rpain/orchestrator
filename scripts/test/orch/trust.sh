@@ -83,8 +83,8 @@ assert_contains "and still returns 0" "$tr_failed" "rc=0"
 fake_unfail
 
 # The PR filter's own rules (trust_filter_prs), on lines as the adapter gives
-# them. The command using it (side-checkout.sh) tests only its own exit codes
-# and verdicts.
+# them. No bash command calls it: the converted nouns filter through
+# orch/trust.py's copy.
 tr_pf() { printf '%b' "$1" | sourced_orch trust_filter_prs "$2" 2>"$tr_file"; }
 assert_eq "a same-repo PR is kept, without its flag" "$(tr_pf '5\tfalse\n' x)" "5"
 assert_eq "a fork PR is dropped" "$(tr_pf '5\ttrue\n' x)" ""

@@ -424,8 +424,7 @@ seeded_home() {
 # healthy_repo: a new_repo set up as the setup skill leaves one - a GitHub
 # origin, a triage-labels doc, a full verification line, the orchestrator's
 # folders git-excluded - with the fixture gh, CLAUDE_PLUGIN_ROOT set and a
-# throwaway HOME, cwd inside it: fresh_flow's repo, and the side-checkout
-# sections' fresh walk.
+# throwaway HOME, cwd inside it: fresh_flow's repo.
 healthy_repo() {
   new_repo >/dev/null
   git remote set-url origin https://github.com/acme/widgets.git
@@ -492,9 +491,6 @@ fake_pr() {
   printf '%s\n' "$3" >"$d/head"
   printf '%s\n' "$4" >"$d/base"
 }
-
-# fake_pr_draft <n>: seeds PR #n as a draft.
-fake_pr_draft() { : >"$ORCH_GH_FAKE_STORE/prs/$1/draft"; }
 
 # fake_next_pr <n>: the number the next PR opened takes.
 fake_next_pr() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_pr"; }

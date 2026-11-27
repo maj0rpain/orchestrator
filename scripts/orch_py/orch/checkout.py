@@ -7,9 +7,9 @@ refusal, and the discard rule's pieces (ADR-0054): the flow-branch proof,
 the work to discard, the discard sequence in a checkout and the flow-branch
 discard - as the bash side's checkout.sh reads them, and its ticket-worktree
 module did until the ticket nouns were converted. The bash copies of those
-bash modules still call stay (ADR-0067); the scan and the kind
-classification are this module's alone, their bash copies gone with the bash
-side-checkout noun.
+bash modules still call stay (ADR-0067); the scan, the kind classification,
+what a checkout holds and the ticket-worktree listing and refusal are this
+module's alone, their bash copies gone with the bash side-checkout noun.
 """
 from __future__ import annotations
 

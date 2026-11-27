@@ -2,10 +2,9 @@
 # state.sh - orch.sh's state command (state get and state set), with the state
 # helpers every module calls (state_get, state_write, require_state_exists,
 # require_state_read, require_value).
-# Two readers, each with a many-key form: state_get and
-# state_get_many, the unguarded own-checkout readers, and state_get_in and
-# state_get_many_in, the guarded shared ones; the guarded one-key reader costs
-# one jq. A command's entry read is require_state_read: the two refusals and
+# The readers: state_get and state_get_many, the unguarded own-checkout
+# readers, and state_get_many_in, the guarded shared one, which costs one jq.
+# A command's entry read is require_state_read: the two refusals and
 # every key it needs in one jq. require_value checks a required field on a
 # value the caller already holds.
 # Its tests: scripts/test/orch/state.sh.
@@ -41,26 +40,7 @@ state_get() {
   state_read "$STATE" "$1"
 }
 
-# The shared reader, guarded: reads <key> from the state file <file> of any
-# checkout, not only this one's, in one jq (flow_state_get_many with its one
-# key). A failed read tells the causes apart, readability first: an unreadable
-# <file> returns status 2 and prints nothing - no jq text, so a caller
-# scanning other checkouts can skip it, a key outside the table included - and
-# a key outside the table beside a readable file dies "unknown state key"; a
-# failed read on a readable file returns 1 and prints nothing.
-state_get_in() {
-  local __sgi_v __sgi_rc
-  flow_state_get_many "$1" __sgi_v="$2" 2>/dev/null && {
-    printf '%s\n' "$__sgi_v"
-    return 0
-  }
-  __sgi_rc=$?
-  flow_state_readable "$1" || return 2
-  state_many_recheck __sgi_v="$2"
-  return "$__sgi_rc"
-}
-
-# state_read <file> <key>: the unguarded read both readers share - the Flow
+# state_read <file> <key>: the unguarded read state_get makes - the Flow
 # state module's reader. The key is looked up only on a failed read, to pick the
 # message: a key outside the table dies, and any other failure returns the
 # read's own status (jq's), never a lookup's.
@@ -89,8 +69,8 @@ state_get_many() {
 }
 
 # state_get_many_in <file> <var>=<key>...: state_get_many on the state file
-# <file> of any checkout, guarded as state_get_in is: a file that cannot be
-# read returns 2 and prints nothing, with no separate flow_state_readable run.
+# <file> of any checkout, guarded: a file that cannot be read returns 2 and
+# prints nothing, so a caller reading another checkout's state can skip it.
 # A failed read rechecks the arguments as state_get_many does; any other
 # status is a failed read, 2.
 state_get_many_in() {

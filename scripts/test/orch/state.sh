@@ -16,6 +16,9 @@ fake_flow() { new_repo >/dev/null; fake_github; "$ORCH" init "$1" >/dev/null; }
 # chmod a-w, it also fails as root.
 state_write_fails_bin() { fails_bin mktemp '*state.json.*'; }
 
+# fake_pr_draft <n>: seeds PR #n as a draft.
+fake_pr_draft() { : >"$ORCH_GH_FAKE_STORE/prs/$1/draft"; }
+
 # fake_pr_draft_of <n>: whether the store's PR #n is a draft, yes or no.
 fake_pr_draft_of() { [ -f "$ORCH_GH_FAKE_STORE/prs/$1/draft" ] && echo yes || echo no; }
 
@@ -263,14 +266,8 @@ status 0"
 assert_eq "flow_state_file strips one trailing / from a root" \
   "$(fs_run 'flow_state_file /r/')" "/r/.orchestrator/state.json
 status 0"
-printf '{"slug":"s"}' >"$fs_dir/object.json"
 printf 'not json' >"$fs_dir/invalid.json"
 printf '[1]' >"$fs_dir/array.json"
-printf '{"a":1}{"b":2}' >"$fs_dir/twoobjects.json"
-for pair in object:0 absent:1 invalid:1 array:1 twoobjects:1; do
-  assert_eq "flow_state_readable answers ${pair#*:} for a ${pair%%:*} file, printing nothing" \
-    "$(fs_run "flow_state_readable ${pair%%:*}.json")" "status ${pair#*:}"
-done
 printf '{"slug":"s","iteration":null,"budget":null,"host_fallbacks":false}' >"$fs_dir/read.json"
 for pair in slug:s iteration:0 redo_count:0 budget: flake_rerun_used:false host_fallbacks:false; do
   assert_eq "flow_state_get reads ${pair%%:*} as '${pair#*:}'" \
@@ -470,8 +467,8 @@ status 0"
 assert_eq "flow_state_get reads one key of it" \
   "$(fs_run 'flow_state_get python-seeded/state.json base')" "rélease/2.0
 status 0"
-assert_eq "flow_state_readable and flow_state_active both answer yes for it" \
-  "$(fs_run 'flow_state_readable python-seeded/state.json && flow_state_active python-seeded/state.json')" \
+assert_eq "flow_state_active answers yes for it" \
+  "$(fs_run 'flow_state_active python-seeded/state.json')" \
   "status 0"
 restore_suite_env
 
@@ -490,16 +487,13 @@ assert_eq "and leaves no state.json behind" "$([ -e .orchestrator/state.json ] &
 restore_suite_env
 
 # --- the shared and own-checkout readers on a truncated state.json -----------
-# state_get_in guards: an unreadable file returns 2 and prints nothing, a
+# state_get_many_in guards: an unreadable file returns 2 and prints nothing, a
 # readable one reads as ever. state_get stays unguarded: jq's text comes
 # through.
 echo
 echo "state readers on an unreadable state.json"
 fresh_flow readers
 rd_file="$PWD/.orchestrator/state.json"
-out="$(sourced_orch state_get_in "$rd_file" nonsense 2>&1)"; st=$?
-assert_status "state_get_in of an unknown key on a readable file dies" "$st" 1
-assert_eq "as an unknown state key" "$out" "orch: unknown state key: nonsense"
 out="$(sourced_orch state_get_many_in "$rd_file" a=nonsense 2>&1)"; st=$?
 assert_status "state_get_many_in of an unknown key dies" "$st" 1
 assert_eq "as an unknown state key" "$out" "orch: unknown state key: nonsense"
@@ -518,9 +512,6 @@ rd_jq="$(counting_bin jq)"
 PATH="$rd_jq:$PATH" sourced_orch state_get_many_in "$rd_file" a=slug b=phase c=issue d=pr e=budget >/dev/null
 assert_eq "state_get_many_in reading five keys starts exactly one jq" "$(counting_starts "$rd_jq" jq)" "1"
 state_truncate
-out="$(sourced_orch state_get_in "$rd_file" phase 2>&1)"; st=$?
-assert_status "state_get_in on a truncated file returns 2" "$st" 2
-assert_eq "and prints nothing" "$out" ""
 out="$(sourced_orch state_get_many_in "$rd_file" a=phase 2>&1)"; st=$?
 assert_status "state_get_many_in on a truncated file returns 2" "$st" 2
 assert_eq "and prints nothing" "$out" ""
@@ -598,35 +589,6 @@ out="$(sourced_orch require_value nonsense "" 2>&1)"; st=$?
 assert_status "require_value on a key with no message exits 2" "$st" 2
 out="$(sourced_orch require_value nonsense 7 2>&1)"; st=$?
 assert_status "require_value on a key with no message exits 2 with a value too" "$st" 2
-"$ORCH" state set issue 7 >/dev/null
-: >"$rs_jq/jq.log"
-rs_mktempbin="$(counting_bin mktemp)"
-rs_rmbin="$(counting_bin rm)"
-out="$(PATH="$rs_jq:$rs_mktempbin:$rs_rmbin:$PATH" sourced_orch state_get_in "$rs_file" issue 2>&1)"
-assert_eq "state_get_in reads a key" "$out" "7"
-assert_eq "state_get_in starts exactly one jq" "$(counting_starts "$rs_jq" jq)" "1"
-assert_eq "state_get_in starts no mktemp" "$(counting_starts "$rs_mktempbin" mktemp)" "0"
-assert_eq "state_get_in starts no rm" "$(counting_starts "$rs_rmbin" rm)" "0"
-rs_nosentinel="$(mktemp -d)"
-printf '#!/bin/sh\nprintf "7\\0"\n' >"$rs_nosentinel/jq"
-chmod +x "$rs_nosentinel/jq"
-out="$(PATH="$rs_nosentinel:$PATH" sourced_orch state_get_in "$rs_file" issue 2>&1)"; st=$?
-assert_status "state_get_in of a failed read on a readable file returns non-zero" "$st" 1
-assert_eq "printing nothing" "$out" ""
-rs_gi_dir="$(mktemp -d)"
-printf '{"slug":"a\\tb\\nc\\\\d"}' >"$rs_gi_dir/bytes.json"
-out="$(sourced_orch state_get_in "$rs_gi_dir/bytes.json" slug | od -An -c | tr -s ' ')"
-assert_eq "state_get_in reads tab, newline and backslash byte for byte" "$out" " a \\t b \\n c \\ d \\n"
-printf 'null' >"$rs_gi_dir/null.json"
-printf '{"slug":"s"} trailing' >"$rs_gi_dir/trailing.json"
-printf '{"a":1}{"b":2}' >"$rs_gi_dir/two.json"
-: >"$rs_gi_dir/empty.json"
-for f in null trailing empty two; do
-  out="$(sourced_orch state_get_in "$rs_gi_dir/$f.json" slug 2>&1)"; st=$?
-  assert_status "state_get_in on a $f file returns 2" "$st" 2
-  assert_eq "state_get_in on a $f file prints nothing" "$out" ""
-done
-rm -rf "$rs_gi_dir"
 rm -f "$rs_file"
 out="$(sourced_orch require_state_read a=phase 2>&1)"; st=$?
 assert_status "require_state_read with no state file dies" "$st" 1
@@ -639,7 +601,4 @@ out="$(sourced_orch require_state_read a=phase 2>&1)"; st=$?
 assert_state_unreadable "require_state_read" 1 "$out" "$st"
 out="$(sourced_orch require_state_read die2 a=phase 2>&1)"; st=$?
 assert_state_unreadable "require_state_read through die2" 2 "$out" "$st"
-out="$(sourced_orch state_get_in "$PWD/.orchestrator/state.json" nonsense 2>&1)"; st=$?
-assert_status "state_get_in of a key outside the table on a truncated file returns 2" "$st" 2
-assert_eq "printing nothing" "$out" ""
 restore_suite_env

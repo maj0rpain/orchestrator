@@ -9,18 +9,14 @@
 fresh_dir() { (cd "$(mktemp -d)" && pwd -P); }
 
 # --- checkout (#1078) ---------------------------------------------------------
-# The Checkout module's reads of the repo's checkouts: the main checkout, and
-# what a checkout holds. Checked against real temporary checkouts, through what
-# each prints.
+# The Checkout module's reads of the repo's checkouts: the main checkout.
+# Checked against real temporary checkouts, through what each prints.
 echo
 echo "checkout"
 sc_clone
 top="$(pwd -P)"
 git checkout -q -b orch/1-feature
 side="$(sc_add alpha)"
-flowed="$(fresh_dir)/flowed"
-git worktree add -q -b flowed "$flowed"
-mkdir -p "$flowed/.orchestrator" && echo '{}' >"$flowed/.orchestrator/state.json"
 
 assert_eq "main_checkout prints the main checkout from a side checkout" \
   "$(cd "$side" && sourced_orch main_checkout)" "$top"
@@ -45,12 +41,6 @@ assert_eq "main_checkout spawns one git process" \
 out="$(PATH="$worktree_list_fails:$PATH" sourced_orch main_checkout 2>/dev/null)"; st=$?
 assert_status "main_checkout fails on a failed walk" "$st" 1
 assert_eq "and main_checkout prints nothing" "$out" ""
-
-# checkout_holding shows a checkout whose state.json cannot be parsed plainly,
-# with no jq text.
-(cd "$flowed" && state_truncate 1)
-out="$(sourced_orch checkout_holding "$flowed" 2>&1)"
-assert_eq "checkout_holding: an unreadable state.json is shown plainly" "$out" "flow (state.json cannot be read)"
 
 # checkout_gitdir_into and the rebase checks on a linked worktree mid-rebase,
 # called on its own path and on a subdirectory of it.

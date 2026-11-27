@@ -21,7 +21,8 @@ TRUST_ASSOCIATIONS="OWNER MEMBER COLLABORATOR"
 # is the branch or `#<issue>` the PRs were looked up for. When it dropped any,
 # prints one stderr line, `orch: ignored N PR(s) from forks for <subject>`.
 # Non-zero, printing nothing, when a line's first field is not a PR number or
-# its last is neither `true` nor `false`.
+# its last is neither `true` nor `false`. No bash caller is left: the converted
+# nouns filter through orch/trust.py's copy.
 trust_filter_prs() {
   local kept_and_count n kept
   kept_and_count="$(awk -F'\t' -v OFS='\t' '

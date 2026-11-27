@@ -412,7 +412,7 @@ helper_copies() {
 
 # The multi-field gh ops gh_op_placement looks for outside the gh module,
 # space-separated, and the trust read it also lets the Trust module name.
-GH_MULTI_FIELD_OPS="adapter_issue_state_labels adapter_issue_title_labels adapter_pr_state_draft adapter_pr_refs"
+GH_MULTI_FIELD_OPS="adapter_issue_title_labels"
 GH_TRUST_READ_OPS="adapter_issue_authorship"
 
 # The gh op placement rule, as gh_op_placement's message states it.
@@ -3360,10 +3360,10 @@ assert_eq "two heredocs opened on one line both print whole" \
   "$(printf '%s\n' "cat <<A <<'B' " '# first body' 'A' '# second body' 'B' 'y=1 ')"
 
 plant_file "$shell_code_dir" names.sh <<'PLANTED'
-  trap 'noun_fn' EXIT; x="adapter_pr_refs" # cut
+  trap 'noun_fn' EXIT; x="adapter_issue_title_labels" # cut
 PLANTED
 assert_eq "a name inside a single- or double-quoted string is kept" \
-  "$(shell_code "$shell_code_dir/names.sh")" "trap 'noun_fn' EXIT; x=\"adapter_pr_refs\" "
+  "$(shell_code "$shell_code_dir/names.sh")" "trap 'noun_fn' EXIT; x=\"adapter_issue_title_labels\" "
 
 printf '%s\n' 's="open' '# inside' >"$shell_code_dir/open-quote.sh"
 printf '%s\n' 'cat <<EOF' '# inside' >"$shell_code_dir/open-heredoc.sh"
@@ -3847,41 +3847,41 @@ fi
 gh_op_dir="$(tree_copy scripts)"
 plant_file "$gh_op_dir/orch" zz-command.sh <<'PLANTED'
   planted_read() {
-    adapter_pr_refs "$1"
+    adapter_issue_title_labels "$1"
   }
 PLANTED
 out="$(gh_op_placement "$gh_op_dir")"; st=$?
 assert_status "an op as a command word fails" "$st" 1
 assert_eq "naming the file, the op and the rule" "$out" \
-  "scripts/orch/zz-command.sh names adapter_pr_refs. $GH_OP_PLACEMENT_RULE"
+  "scripts/orch/zz-command.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE"
 rm -rf "${gh_op_dir%/scripts}"
 
 gh_op_dir="$(tree_copy scripts)"
 plant_file "$gh_op_dir/orch" zz-capture.sh <<'PLANTED'
-  if ! capture out err adapter_issue_state_labels "$n"; then :; fi
+  if ! capture out err adapter_issue_title_labels "$n"; then :; fi
 PLANTED
 out="$(gh_op_placement "$gh_op_dir")"; st=$?
 assert_status "an op as an argument to capture fails" "$st" 1
 assert_eq "naming the file and the op" "$out" \
-  "scripts/orch/zz-capture.sh names adapter_issue_state_labels. $GH_OP_PLACEMENT_RULE"
+  "scripts/orch/zz-capture.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE"
 rm -rf "${gh_op_dir%/scripts}"
 
 gh_op_dir="$(tree_copy scripts)"
 plant_file "$gh_op_dir" zz-die.sh <<'PLANTED'
-  gh_or_die --out state "could not read #$n" adapter_pr_state_draft "$n"
+  gh_or_die --out title "could not read #$n" adapter_issue_title_labels "$n"
 PLANTED
 out="$(gh_op_placement "$gh_op_dir")"; st=$?
 assert_status "an op as an argument to gh_or_die fails" "$st" 1
 assert_eq "naming the file and the op" "$out" \
-  "scripts/zz-die.sh names adapter_pr_state_draft. $GH_OP_PLACEMENT_RULE"
+  "scripts/zz-die.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE"
 rm -rf "${gh_op_dir%/scripts}"
 
 gh_op_dir="$(tree_copy scripts)"
 plant_file "$gh_op_dir/orch" zz-keep.sh <<'PLANTED'
   # adapter_issue_title_labels in a comment, as issue_title_labels_read reads it
-  x=1  # and adapter_pr_refs after code
-  planted_adapter_pr_refs() { my_adapter_issue_title_labels_x; }
-  adapter_pr_state_draft_read n st dr err
+  x=1  # and adapter_issue_title_labels after code
+  planted_adapter_issue_title_labels() { my_adapter_issue_title_labels_x; }
+  adapter_issue_title_labels_read n title labels err
 PLANTED
 printf '%s\n' 'planted_gh() { adapter_issue_title_labels "$1"; }' \
   >>"$gh_op_dir/orch/gh.sh"
@@ -3893,13 +3893,13 @@ rm -rf "${gh_op_dir%/scripts}"
 gh_op_dir="$(tree_copy scripts)"
 plant_file "$gh_op_dir/orch" zz-multiline.sh <<'PLANTED'
   x="a string opened here
-  # and closed on this line" adapter_pr_refs "$n"
+  # and closed on this line" adapter_issue_title_labels "$n"
 PLANTED
 plant_file "$gh_op_dir/orch" zz-param.sh <<'PLANTED'
-  y=${x#pat} adapter_issue_state_labels "$n"
+  y=${x#pat} adapter_issue_title_labels "$n"
 PLANTED
 plant_file "$gh_op_dir/orch" zz-ansi.sh <<'PLANTED'
-  y=$'it\'s # no comment' adapter_pr_state_draft "$n"
+  y=$'it\'s # no comment' adapter_issue_title_labels "$n"
 PLANTED
 plant_file "$gh_op_dir/orch" zz-heredoc.sh <<'PLANTED'
   cat <<EOF
@@ -3908,17 +3908,17 @@ plant_file "$gh_op_dir/orch" zz-heredoc.sh <<'PLANTED'
 PLANTED
 plant_file "$gh_op_dir/orch" zz-literal.sh <<'PLANTED'
   trap 'adapter_issue_title_labels' EXIT
-  echo "adapter_pr_refs"
+  echo "adapter_issue_authorship"
 PLANTED
 out="$(gh_op_placement "$gh_op_dir")"; st=$?
 assert_status "an op after a # in \${...}, in \$'...', on a heredoc body line or inside a multi-line string, or in a quoted literal, fails" "$st" 1
 assert_eq "naming each file and op" "$out" \
-  "scripts/orch/zz-ansi.sh names adapter_pr_state_draft. $GH_OP_PLACEMENT_RULE
+  "scripts/orch/zz-ansi.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE
 scripts/orch/zz-heredoc.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE
+scripts/orch/zz-literal.sh names adapter_issue_authorship. $GH_OP_PLACEMENT_RULE
 scripts/orch/zz-literal.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE
-scripts/orch/zz-literal.sh names adapter_pr_refs. $GH_OP_PLACEMENT_RULE
-scripts/orch/zz-multiline.sh names adapter_pr_refs. $GH_OP_PLACEMENT_RULE
-scripts/orch/zz-param.sh names adapter_issue_state_labels. $GH_OP_PLACEMENT_RULE"
+scripts/orch/zz-multiline.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE
+scripts/orch/zz-param.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE"
 rm -rf "${gh_op_dir%/scripts}"
 
 gh_op_dir="$(tree_copy scripts)"

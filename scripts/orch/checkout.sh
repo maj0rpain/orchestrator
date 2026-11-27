@@ -1,10 +1,9 @@
 # shellcheck shell=bash
 # checkout.sh - the Checkout module: a concept module with no orch.sh noun of
-# its own, holding the facts about the repo's checkouts - the main checkout,
-# ticket worktrees and the branch a checkout holds - that every other module
-# reads, and the ticket-worktree listing and refusal (ticket_worktrees_under,
-# refuse_ticket_worktrees). The checkout scan and kind classification are
-# orch/checkout.py's, read by the converted nouns.
+# its own, holding the facts about the repo's checkouts - the main checkout and
+# the branch a checkout holds - that every other module reads. The checkout
+# scan, kind classification and ticket-worktree listing are orch/checkout.py's,
+# read by the converted nouns.
 # Its tests: scripts/test/orch/checkout.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -22,20 +21,6 @@ checkout_parse() {
       "branch refs/heads/"*) branches[${#branches[@]} - 1]="${line#branch refs/heads/}" ;;
     esac
   done <<<"$list"
-}
-
-# checkout_ticket_path <path> <checkout>...: whether <path> is a ticket
-# worktree's path - t<n>, n a positive integer with no leading zero, directly
-# under one <checkout>'s .orchestrator/worktrees.
-checkout_ticket_path() {
-  local path="$1" name="${1##*/}" root
-  shift
-  case "$name" in t[1-9]*) ;; *) return 1 ;; esac
-  case "${name#t}" in *[!0-9]*) return 1 ;; esac
-  for root in "$@"; do
-    [ "${path%/*}" = "$root/$ORCH_DIR_NAME/worktrees" ] && return 0
-  done
-  return 1
 }
 
 # The main checkout: the first entry git worktree list prints, unclassified -
@@ -57,58 +42,6 @@ main_checkout_or_die() {
   main_checkout || checkouts_unreadable
 }
 
-# Prints <n> <path> for every ticket worktree under the checkout at <root>;
-# dies when the checkouts cannot be read, never reading that as none.
-ticket_worktrees_under() {
-  local path name paths=()
-  # shellcheck disable=SC2034 # checkout_parse fills it
-  local branches=()
-  checkout_parse || checkouts_unreadable
-  for path in "${paths[@]}"; do
-    checkout_ticket_path "$path" "$1" || continue
-    name="${path##*/}"
-    note "${name#t} $path"
-  done
-}
-
-# refuse_ticket_worktrees <root> <reason>: dies, naming every ticket worktree
-# under the checkout at <root> and the command that removes each, when any is
-# left. <reason>, required, is the clause after the dash: why the caller
-# cannot proceed.
-refuse_ticket_worktrees() {
-  local left reason="$2"
-  # Its die exits only the substitution, so its status is carried out here.
-  left="$(ticket_worktrees_under "$1")" || exit $?
-  [ -n "$left" ] || return 0
-  die "ticket worktrees are left under $1 - $reason:
-$(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)\n' "$path" "$n"; done <<<"$left")
-     Remove each with orch.sh ticket-worktree remove <n> first."
-}
-
-# Whether the checkout at <path> holds a flow.
-checkout_has_flow() { [ -f "$(flow_state_file "$1")" ]; }
-
-# What the checkout at <path> holds: its flow (flow <slug> <phase> #<issue>),
-# else its checked-out branch (branch <name>), else (no branch).
-checkout_holding() {
-  local state issue slug phase issue_label branch rc=0
-  state="$(flow_state_file "$1")"
-  if [ -f "$state" ]; then
-    state_get_many_in "$state" issue=issue slug=slug phase=phase || rc=$?
-    if [ "$rc" -eq 2 ]; then
-      note "flow (state.json cannot be read)"
-      return 0
-    fi
-    [ "$rc" -eq 0 ] || return "$rc"
-    if [ -n "$issue" ]; then issue_label="#$issue"; else issue_label="(no issue)"; fi
-    note "flow $slug $phase $issue_label"
-  elif branch="$(checkout_branch "$1")"; then
-    note "branch $branch"
-  else
-    note "(no branch)"
-  fi
-}
-
 # checkout_branch [<path>]: prints the branch checked out in the checkout at
 # <path> (default: the current directory); returns 1 on a detached HEAD. The
 # one place `git symbolic-ref --quiet HEAD` is spelled: the ref is read in full
@@ -125,6 +58,7 @@ checkout_branch() {
 # (detached HEAD)" and <suffix>. Called as a bare statement, so the die stops
 # the caller.
 current_branch_or_die() {
+  # shellcheck disable=SC2034 # the caller's, scoped dynamically
   branch="$(checkout_branch)" || die "not on a branch (detached HEAD)${1-}"
 }
 

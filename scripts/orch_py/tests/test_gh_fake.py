@@ -25,7 +25,7 @@ BASH_HELPERS = {
     SCRIPTS / "test" / "orch" / "setup.sh": [
         "fake_issue", "fake_issue_relabel",
         "fake_fail", "fake_unfail", "fake_pr",
-        "fake_default_branch", "fake_pr_draft",
+        "fake_default_branch",
         "fake_next_pr", "fake_pr_base_of", "fake_pr_body_of",
     ],
     SCRIPTS / "test" / "orch" / "gh.sh": ["fake_lag", "fake_ratelimit", "fake_duplicate_of",
@@ -36,7 +36,7 @@ BASH_HELPERS = {
                                           "fake_comments_of", "fake_offline", "fake_online",
                                           "fake_pr_head", "iso_of", "fake_comment_bodies"],
     SCRIPTS / "test" / "orch" / "trust.sh": ["fake_issue_authorship"],
-    SCRIPTS / "test" / "orch" / "state.sh": ["fake_pr_draft_of", "fake_checks"],
+    SCRIPTS / "test" / "orch" / "state.sh": ["fake_pr_draft", "fake_pr_draft_of", "fake_checks"],
 }
 # The issue reads and the next-issue seeder the bash review suite defined: the
 # suite went with the bash review noun, and these write-back cases still read
