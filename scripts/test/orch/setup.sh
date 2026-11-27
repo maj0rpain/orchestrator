@@ -393,12 +393,13 @@ state_fixture_drop() {
 # table does not hold, validate reports no section, and it fails and writes no
 # file.
 complete_handoff() {
-  local empty headings heading
-  empty="$(mktemp -d)/$(basename "$1")" || return 1
+  local dir empty headings heading
+  dir="$(mktemp -d)" || return 1
+  empty="$dir/${1##*/}"
   : >"$empty"
   headings="$(env -u ORCH_AUTOPILOT "$ORCH" handoff validate "$empty" 2>/dev/null \
     | sed -n 's/^FAIL  missing section: //p')"
-  rm -rf "$(dirname "$empty")"
+  rm -rf "$dir"
   [ -n "$headings" ] || return 1
   grep -qxF '## Host fallbacks' <<<"$headings" || headings="$headings"$'\n''## Host fallbacks'
   while IFS= read -r heading; do

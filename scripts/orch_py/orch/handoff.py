@@ -328,20 +328,25 @@ def handoff_fetched(env: Mapping[str, str], root: str, name: str) -> Tuple[str, 
     return path, os.path.isfile(path)
 
 
+# handoff_comment_write's three answers: the copy written; no live comment to
+# copy; the copy unwritten, its line on stderr.
+WRITTEN, NO_LIVE_COMMENT, UNWRITTEN = 0, 1, 2
+
+
 def handoff_comment_write(entries: List[Entry], name: str, path: str) -> int:
     """Writes the body of the newest comment tagged for <name> in the
-    timeline <entries>, marker stripped, to <path>: 0; 1, <path> untouched,
-    when there is none or the newest is retired; 2, <path> untouched, after
-    one `orch: could not write <path>` line on stderr, when the write fails.
-    Never dies."""
+    timeline <entries>, marker stripped, to <path>: WRITTEN; NO_LIVE_COMMENT,
+    <path> untouched, when there is none or the newest is retired; UNWRITTEN,
+    <path> untouched, after one `orch: could not write <path>` line on stderr,
+    when the write fails. Never dies."""
     index = timeline_handoff(entries, name)
     if index is None:
-        return 1
+        return NO_LIVE_COMMENT
     raw = timeline_body(entries, index).rstrip("\n")
     if not file_write_atomic(path, raw + "\n" if raw else ""):
         warn("could not write " + path)
-        return 2
-    return 0
+        return UNWRITTEN
+    return WRITTEN
 
 
 def handoff_comment_fetch_due(gh, issue: str, phase: str, scratch: str) -> Tuple[int, str]:
@@ -359,7 +364,8 @@ def handoff_comment_fetch_due(gh, issue: str, phase: str, scratch: str) -> Tuple
         return COMMENTS_UNREAD, reason
     status = FETCHED
     for handoff in due:
-        if handoff_comment_write(entries, _stem(handoff), "%s/%s" % (scratch, handoff)) == 2:
+        path = "%s/%s" % (scratch, handoff)
+        if handoff_comment_write(entries, _stem(handoff), path) == UNWRITTEN:
             status = COPY_UNWRITTEN
     return status, ""
 
@@ -429,11 +435,11 @@ def handoff_comment_missing(issue: str, stem: str, hint: str = "") -> NoReturn:
 
 
 def _comment_copy_or_die(status: int, path: str, issue: str, stem: str, hint: str = "") -> None:
-    """Reacts to a handoff comment's copy to <path>: exits 1 for <status>
-    COPY_UNWRITTEN, a copy not written (its line already on stderr), and with no file at
-    <path> dies naming issue #<issue>'s missing <stem> handoff comment, as
-    bash handoff_comment_status did."""
-    if status == COPY_UNWRITTEN:
+    """Reacts to handoff_comment_write's <status> for a copy to <path>: exits 1
+    for UNWRITTEN, a copy not written (its line already on stderr), and with no
+    file at <path> dies naming issue #<issue>'s missing <stem> handoff comment,
+    as bash handoff_comment_status did."""
+    if status == UNWRITTEN:
         raise SystemExit(1)
     if not os.path.isfile(path):
         handoff_comment_missing(issue, stem, hint)
@@ -646,9 +652,9 @@ def fetch_verb(argv: List[str], gh_of, env: Mapping[str, str], root: str) -> int
     handoff_name_check(name)
     issue = require_issue(flow_state_file(root), env)["issue"]
     status = handoff_comment_write(timeline_read_or_die(gh_of(), issue), name, path)
-    if status == 1:
+    if status == NO_LIVE_COMMENT:
         handoff_comment_missing(issue, name)
-    return 0 if status == 0 else 1
+    return 0 if status == WRITTEN else 1
 
 
 def validate_verb(argv: List[str], env: Mapping[str, str], root: str) -> int:

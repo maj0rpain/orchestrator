@@ -418,22 +418,22 @@ GH_TRUST_READ_OPS="adapter_issue_authorship"
 # The gh op placement rule, as gh_op_placement's message states it.
 GH_OP_PLACEMENT_RULE="The rule: only the gh module, scripts/orch/gh.sh, names a multi-field gh op (${GH_MULTI_FIELD_OPS// /, }); every other script reads one through its reader, which decodes its fields - and adapter_issue_authorship is also named by the Trust module, scripts/orch/trust.sh, whose reader it is."
 
-# name_placement <dir> <rule> <verb> <names> <owner-path>...: checks every shell
+# name_placement <dir> <rule> <names> <owner-path>...: checks every shell
 # script under <dir> (a scripts/ tree) outside the owner paths (find's ./ form,
 # e.g. ./orch/gh.sh) and test/ for a name of <names> (space-separated), and
 # prints one line per file and name, sorted, naming the file (as
-# scripts/<path>),
-# <verb>, the name and <rule>; returns 1 when it printed any. A name counts as a
+# scripts/<path>), the name after `names`, and <rule>; returns 1 when it
+# printed any. A name counts as a
 # whole word anywhere in code - a command word, an argument to any runner, or a
 # word inside a string; each line is read through SHELL_CODE_AWK's code view, so
 # its comment is dropped first, and a name inside a longer name is no match.
 name_placement() {
-  local dir="$1" rule="$2" verb="$3" names="$4" out p
+  local dir="$1" rule="$2" names="$3" out p
   local owners=()
-  shift 4
+  shift 3
   for p in "$@"; do owners+=(! -path "$p"); done
   out="$(cd "$dir" && find . -name '*.sh' "${owners[@]}" ! -path './test/*' \
-    -exec awk -v rule="$rule" -v verb="$verb" -v namelist="$names" "$SHELL_CODE_AWK"'
+    -exec awk -v rule="$rule" -v namelist="$names" "$SHELL_CODE_AWK"'
     BEGIN { nnames = split(namelist, name, " ") }
     {
       shell_code_line($0)
@@ -443,7 +443,7 @@ name_placement() {
         while (match(t, name[k])) {
           before = substr(t, RSTART - 1, 1); after = substr(t, RSTART + RLENGTH, 1)
           if (before !~ /[A-Za-z0-9_]/ && after !~ /[A-Za-z0-9_]/) {
-            printf "%s %s %s. %s\n", file, verb, name[k], rule; break
+            printf "%s names %s. %s\n", file, name[k], rule; break
           }
           t = substr(t, RSTART + 1)
         }
@@ -467,7 +467,7 @@ name_placement_pairs() {
     rc=0
     # owners is a space-separated path list: split it into arguments
     # shellcheck disable=SC2086
-    part="$(name_placement "$dir" "$rule" names "$names" $owners)" || rc=$?
+    part="$(name_placement "$dir" "$rule" "$names" $owners)" || rc=$?
     [ "$rc" -ne 2 ] || return 2
     [ -z "$part" ] || out="${out:+$out
 }$part"

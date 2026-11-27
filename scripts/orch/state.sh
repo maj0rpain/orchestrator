@@ -1,13 +1,13 @@
 # shellcheck shell=bash
 # state.sh - orch.sh's state command (state get and state set), with the state
 # helpers every module calls (state_get, state_write, require_state_exists,
-# require_state_read, require_value, require_field, require_issue).
+# require_state_read, require_value).
 # Two readers, each with a many-key form: state_get and
 # state_get_many, the unguarded own-checkout readers, and state_get_in and
 # state_get_many_in, the guarded shared ones; the guarded one-key reader costs
 # one jq. A command's entry read is require_state_read: the two refusals and
 # every key it needs in one jq. require_value checks a required field on a
-# value the caller already holds; require_field reads one key and checks it.
+# value the caller already holds.
 # Its tests: scripts/test/orch/state.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -204,25 +204,6 @@ require_value() {
   state_required_msg "$1" || die2 "no required-field message for state key: $1"
   [ -n "$2" ] || "${3:-die}" "$__rv_msg"
 }
-
-# require_field <var> <key> [die2]: one guarded one-key read into the caller's
-# <var>, then require_value: one jq and no subshell, refusing in order with no
-# state file, an unreadable one, and an empty value. Call it as a bare
-# statement on its own line - `local pr; require_field pr pr` - never folded
-# into `$(...)`: the out-param is assigned in the caller's own shell, and `die`
-# runs there too, so `set -e` stops it instead of the caller carrying on with an
-# empty value. A caller-named out-param is a `printf -v`, not a nameref, which
-# needs bash 4.3. The third argument, die2, dies through die2, for a command
-# that reserves exit 1 for a meaningful "no".
-require_field() {
-  require_state_read "${3:-die}" "$1=$2"
-  require_value "$2" "${!1}" "${3:-die}"
-}
-
-# The spec issue number, for the handoff ops that need it before touching
-# GitHub. A second argument, die2, is passed on to
-# require_field.
-require_issue() { require_field "$1" issue "${2:-die}"; }
 
 # flow_base_fallback_into <var> <raw>: sets <var> to the base read from state,
 # or the default branch when <raw> is empty - a flow started before base was
