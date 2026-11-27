@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import AUTOPILOT, CLAUDE, NOW, SESSIONS, answered, orch_review
+from conftest import AUTOPILOT, CLAUDE, GITHUB_ORIGIN, NOW, SESSIONS, answered, orch_review
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY
 
@@ -184,7 +184,7 @@ def limited(seed, root, main, env, reset=NOW + 1800):
     seed.checks(7, "all", "failing")
     seed.ratelimit()
     seed.quota("core", 0, 5000, int(reset))
-    git = FakeGit({"origin": "https://github.com/acme/widgets.git"}, toplevel=str(root))
+    git = FakeGit(GITHUB_ORIGIN, toplevel=str(root))
     git.seed("main_checkout", answer=str(main))
     return rerun(seed, root, "7", env=env, git=git)
 

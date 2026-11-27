@@ -12,15 +12,14 @@ from pathlib import Path
 
 import pytest
 
-from conftest import (ARCHIVE_STAMP, GH_502, archived, committed, done_flow, git_repo, hold_flow,
-                      labels_doc, orch_review_pass, run_git, side_checkout, snapshot, state_json,
-                      write_labels_doc)
+from conftest import (ARCHIVE_STAMP, GH_502, GITHUB_ORIGIN, archived, committed, done_flow,
+                      git_repo, hold_flow, labels_doc, orch_review_pass, run_git, side_checkout,
+                      snapshot, state_json, write_labels_doc)
 from orch import flow_state, init
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit, Git
 from orch.repo import RepoPin
 
-ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
 CLAUDE = {"CLAUDECODE": "1"}
 # The clock the seed golden files were made with: 2026-01-02T03:04:05Z,
 # archive_clock's time, so a done flow init archives is stamped ARCHIVE_STAMP.
@@ -32,7 +31,7 @@ def checkout_git(root, dirty=(), base="main"):
     """A FakeGit at <root>, its origin a GitHub repo: <dirty> the paths its
     status finds changed, <root>/.git its common directory, and <base> its
     orchestrator.base setting when one is given."""
-    git = FakeGit(ORIGIN, toplevel=str(root))
+    git = FakeGit(GITHUB_ORIGIN, toplevel=str(root))
     git.seed("dirty_paths", answer=list(dirty))
     git.seed("git_common_dir", answer=str(root / ".git"))
     if base is not None:

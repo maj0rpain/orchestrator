@@ -10,9 +10,8 @@ import pytest
 
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY, RepoPin
-from conftest import GH_502, UnparsedPrComments, orch_review_pass
+from conftest import GH_502, GITHUB_ORIGIN, UnparsedPrComments, orch_review_pass
 
-ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
 BRANCH = "quick/21-foo"
 USAGE = "usage: orch.sh review-pass known-items <issue> <path> [--deviations <file>]"
 RULING = "Spec ruling:"
@@ -29,7 +28,7 @@ def git(tmp_path):
     with a GitHub origin."""
     root = tmp_path / "repo"
     root.mkdir()
-    adapter = FakeGit(ORIGIN, toplevel=str(root))
+    adapter = FakeGit(GITHUB_ORIGIN, toplevel=str(root))
     adapter.seed("current_branch", answer=BRANCH)
     return adapter
 
@@ -306,7 +305,7 @@ def test_an_open_pr_listing_that_does_not_parse_stops_the_run(seed, git, pr, kep
 
 
 def test_a_detached_head_stops_the_run(seed, kept, issue, capsys):
-    detached = FakeGit(ORIGIN, toplevel=str(kept.parent))
+    detached = FakeGit(GITHUB_ORIGIN, toplevel=str(kept.parent))
 
     assert known_items(seed, detached, "21", str(kept)) == 1
     assert capsys.readouterr() == ("", "orch: not on a branch (detached HEAD)\n")

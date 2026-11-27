@@ -25,8 +25,8 @@ from typing import Callable, List, Mapping, Optional, Sequence, Tuple
 from orch.branch import branch_name_redo, branch_retire
 from orch.checkout import refuse_ticket_worktrees
 from orch.common import die, dir_stamp, int_as_test_reads, stdout_write
-from orch.flow_state import (flow_state_file, phase_write, recorded_pr, require_state_read,
-                             require_value, state_write_many)
+from orch.flow_state import (flow_state_file, phase_write, require_state_read, require_value,
+                             state_write_many)
 from orch.gh import adapter_of, gh_or_die
 from orch.git import Git
 from orch.handoff import handoff_file_retire, handoff_retire, handoffs_written_from
@@ -112,7 +112,7 @@ def redo_retire_attempt(state_file: str, git, gh_of, issue: str, slug: str, n: s
     new_branch = branch_name_redo(issue, slug, n)
     if pr:
         gh = gh_of()
-        gh_or_die("close PR #" + pr, gh.pr_close, recorded_pr(pr), pr_closed_note(new_branch))
+        gh_or_die("close PR #" + pr, gh.pr_close, int(pr), pr_closed_note(new_branch))
     # branch retire's printed name is bash's `>/dev/null`'d stdout.
     with contextlib.redirect_stdout(io.StringIO()):
         branch_retire(git, branch, new_branch)

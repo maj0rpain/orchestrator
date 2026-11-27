@@ -208,6 +208,37 @@ def test_begin_on_an_iteration_that_is_no_number_dies_recording_nothing(root, ca
     assert state.read_text() == before
 
 
+def test_begin_on_an_empty_iteration_counts_on_from_0_leaving_the_flake_rerun_spent(
+        root, capsys, seed):
+    # Bash's `$(( prior + 1 ))` read an empty iteration as 0, and its `-eq 0`
+    # refused it, so the iteration after it was no loop's first; the record
+    # path of the empty iteration died in its command substitution.
+    flow(root, iteration="", budget=5, flake_rerun_used=True)
+
+    assert answered(capsys, orch_review(seed, root, "begin")) == (
+        0, "1\n", "orch: not an iteration number: \n")
+    assert (state_of(root)["iteration"], state_of(root)["flake_rerun_used"]) == (1, True)
+
+
+@pytest.mark.parametrize("iteration", ["08", "09"])
+def test_begin_on_a_zero_led_iteration_no_octal_number_dies_recording_nothing(root, capsys,
+                                                                              iteration, seed):
+    state = flow(root, iteration=iteration, budget=20)
+    before = state.read_text()
+
+    assert answered(capsys, orch_review(seed, root, "begin")) == (
+        1, "", 'orch: %s: value too great for base (error token is "%s")\n'
+        % (iteration, iteration))
+    assert state.read_text() == before
+
+
+def test_begin_reads_a_zero_led_iteration_as_octal_as_bash_s_arithmetic(root, capsys, seed):
+    flow(root, iteration="010", budget=20)
+
+    assert answered(capsys, orch_review(seed, root, "begin")) == (0, "9\n", "")
+    assert state_of(root)["iteration"] == 9
+
+
 # --- review path --------------------------------------------------------------
 
 

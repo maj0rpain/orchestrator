@@ -13,13 +13,12 @@ import subprocess
 
 import pytest
 
-from conftest import (AUTOPILOT, CLAUDE, NOW, SESSIONS, FakeClock, answered, hold_flow,
-                      orch_review, snapshot)
+from conftest import (AUTOPILOT, CLAUDE, GITHUB_ORIGIN, NOW, SESSIONS, FakeClock, answered,
+                      hold_flow, orch_review, snapshot)
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY
 
-ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
 # review_ci_flow's short knobs.
 KNOBS = {"ORCH_CI_GRACE": "0.3", "ORCH_CI_TIMEOUT": "1", "ORCH_CI_INTERVAL": "0.05"}
 HEAD = "a" * 40
@@ -31,7 +30,7 @@ INDENT = "      "
 
 def checkout(root):
     """The FakeGit of the checkout at <root>, its origin on GitHub."""
-    return FakeGit(ORIGIN, toplevel=str(root))
+    return FakeGit(GITHUB_ORIGIN, toplevel=str(root))
 
 
 def ci(root, seed, *argv, env=None, clock=None, git=None, gh=None):
@@ -222,7 +221,7 @@ def evidence_git(root, head=HEAD, workflows=()):
     """The checkout's git adapter holding commit <head>, pushed 60 seconds
     before NOW, whose tree lists <workflows> under .github/workflows/ - its
     listing unreadable where None."""
-    git = FakeGit(ORIGIN, toplevel=str(root), commits={head: {}})
+    git = FakeGit(GITHUB_ORIGIN, toplevel=str(root), commits={head: {}})
     pushed(git, head, 60)
     git.seed("tree_names", head, ".github/workflows/",
              answer=None if workflows is None else list(workflows))
@@ -265,7 +264,7 @@ def test_with_no_evidence_of_ci_anywhere_none_arrives_without_the_grace(bare_flo
 def test_evidence_of_ci_keeps_the_grace_and_none_still_comes_after_it(flow, seed, capsys):
     seed.pr_head(7, HEAD)
     seed.checks(7, "all", "none")
-    git = FakeGit(ORIGIN, toplevel=str(flow), commits={HEAD: {}})
+    git = FakeGit(GITHUB_ORIGIN, toplevel=str(flow), commits={HEAD: {}})
     git.seed("tree_names", HEAD, ".github/workflows/", answer=[])
 
     assert answered(capsys, ci(flow, seed, git=git)) == (0, GRACE_OUT, "")
@@ -304,7 +303,7 @@ def test_a_workflow_file_in_the_head_s_tree_keeps_the_grace(evidence_flow, seed,
 
 
 def test_a_head_this_clone_does_not_hold_keeps_the_grace(evidence_flow, seed, capsys):
-    git = FakeGit(ORIGIN, toplevel=str(evidence_flow))
+    git = FakeGit(GITHUB_ORIGIN, toplevel=str(evidence_flow))
     pushed(git, HEAD, 60)
 
     assert no_ci(evidence_flow, seed, capsys, git=git) == (0, "green\n", "")

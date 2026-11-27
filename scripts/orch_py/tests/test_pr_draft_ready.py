@@ -12,9 +12,9 @@ import pytest
 from orch.flow_state import STATE_UNREADABLE_MSG
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY
-from conftest import GH_502, SESSIONS, hold_flow, orch_pr, read, snapshot, state_json
+from conftest import (GH_502, GITHUB_ORIGIN, SESSIONS, hold_flow, orch_pr, read, snapshot,
+                      state_json)
 
-ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
 BRANCH = "quick/12-foo"
 # Both verbs, each case of their shared front run through each; every one of
 # them also runs under ORCH_AUTOPILOT=1 (SESSIONS), answering as the plain run.
@@ -27,7 +27,7 @@ FORK_LINE = "orch: ignored 1 PR(s) from forks for %s\n" % BRANCH
 def git(root):
     """The checkout's git adapter: its toplevel <root>, on BRANCH, with a
     GitHub origin."""
-    adapter = FakeGit(ORIGIN, toplevel=str(root))
+    adapter = FakeGit(GITHUB_ORIGIN, toplevel=str(root))
     adapter.seed("current_branch", answer=BRANCH)
     return adapter
 
@@ -286,7 +286,7 @@ def test_an_argument_exits_2_with_the_usage(seed, git, mine, verb, env, capsys):
 @SESSIONS
 @VERBS
 def test_a_detached_head_exits_2(seed, root, mine, verb, env, capsys):
-    detached = FakeGit(ORIGIN, toplevel=str(root))
+    detached = FakeGit(GITHUB_ORIGIN, toplevel=str(root))
 
     assert orch_pr(seed, detached, verb, env=env) == 2
 

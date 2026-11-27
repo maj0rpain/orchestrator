@@ -240,6 +240,9 @@ def review_retire(root: str, n: str) -> str:
 
 # The indent of a classification's detail lines, like doctor's remedies.
 CI_DETAIL_INDENT = "      "
+# The buckets of a failed or cancelled check: what ci_classify calls failing,
+# and what review rerun and review ci-log act on.
+FAILING_BUCKETS = ("fail", "cancel")
 
 
 def ci_unreachable(detail: str) -> List[str]:
@@ -258,7 +261,7 @@ def ci_classify(checks: Optional[List[Check]], stderr: str) -> List[str]:
         return ci_unreachable(gh_reason(stderr))
     if not checks:
         return ["none"]
-    failed = [c.name for c in checks if c.bucket in ("fail", "cancel") and c.name]
+    failed = [c.name for c in checks if c.bucket in FAILING_BUCKETS and c.name]
     if failed:
         return ["failing"] + [CI_DETAIL_INDENT + name for name in failed]
     if any(c.bucket == "pending" for c in checks):
@@ -440,7 +443,7 @@ class _CiCall:
         flow's PR, whose unread refs only key its total by PR, goes on."""
         if self.unread is None or not self.given:
             return False
-        ci_print(ci_unreachable("could not read PR #%s: %s" % (self.pr, gh_reason(self.unread))))
+        lines_print(ci_unreachable("could not read PR #%s: %s" % (self.pr, gh_reason(self.unread))))
         return True
 
     def context(self, start: int) -> None:
@@ -484,19 +487,20 @@ class _CiCall:
                 detail = NO_CI_SIGNALS % (self.base, self.base)
             else:
                 detail = "nothing reported before the %ss grace ran out" % self.grace
-            ci_print(lines + [CI_DETAIL_INDENT + detail])
+            lines_print(lines + [CI_DETAIL_INDENT + detail])
             return 0
         if verdict in ("green", "failing", "unreachable"):
-            ci_print(lines)
+            lines_print(lines)
             return 0 if verdict == "green" else 1
         # Unreachable while ci_classify answers one of the five words: the arm
         # that keeps an unrecognised answer from spinning the waiting form.
-        ci_print(ci_unreachable("unrecognised answer from gh pr checks: " + verdict))
+        lines_print(ci_unreachable("unrecognised answer from gh pr checks: " + verdict))
         return 1
 
 
-def ci_print(lines: List[str]) -> None:
-    """A verdict's lines on stdout."""
+def lines_print(lines: List[str]) -> None:
+    """<lines> on stdout, each ended by a newline - a verdict's, a
+    classification's, a log's tail."""
     stdout_write("".join(line + "\n" for line in lines))
 
 
@@ -513,11 +517,11 @@ def review_ci_once(call: _CiCall, clock: Callable[[], float]) -> int:
     call.context(start)
     lines, grace_none = call.probe(0)
     if grace_none:
-        ci_print(["pending"])
+        lines_print(["pending"])
         return 0
     status = call.deliver(lines)
     if status is None:
-        ci_print(lines)
+        lines_print(lines)
         status = 0
     return status
 
@@ -566,7 +570,7 @@ def review_ci_wait(call: _CiCall, root: str, env: Mapping[str, str],
             # Still pending at the cap is an answer we do not have, not a
             # green one: the loop stops rather than marking a PR ready over
             # something nothing ever verified.
-            ci_print(ci_unreachable("checks were still pending after %ss" % timeout))
+            lines_print(ci_unreachable("checks were still pending after %ss" % timeout))
             status = 1
         break
     # Every terminal verdict leaves the loop with its status, so the stored
@@ -626,19 +630,45 @@ def _begin(args: List[str], root: str, git, env: Mapping[str, str], clock,
     state_file = flow_state_file(root)
     state = require_state_read(state_file, env, ["iteration", "budget"], 1)
     prior = state["iteration"]
-    recorded = int_as_test_reads(prior)
-    if recorded is None:
-        die("not an iteration number: %s" % prior)
-    n = recorded + 1
+    n = _iteration_as_arithmetic_reads(prior) + 1
     budget = review_budget_fallback(state["budget"])
     if n > int(budget, 10):
         die("budget of %s iterations spent - stop the loop and report, do not start another"
             % budget)
     pairs: List[Pair] = [("iteration", str(n))]
-    if recorded == 0 or _terminal_recorded(root, prior):
+    # test's reading, not arithmetic's: an empty iteration is no loop's first.
+    if int_as_test_reads(prior) == 0 or _terminal_recorded(root, prior):
         pairs.append(("flake_rerun_used", "false"))
     state_write_many(state_file, pairs, clock)
     stdout_write("%d\n" % n)
+
+
+# An iteration as bash's `$(( prior + 1 ))` read one that test could read too:
+# any run of whitespace, a sign and ASCII digits, then any run of whitespace.
+_ARITHMETIC_INTEGER = re.compile(r"[ \t\n]*([+-]?)([0-9]+)[ \t\n]*")
+
+
+def _iteration_as_arithmetic_reads(prior: str) -> int:
+    """The recorded iteration <prior> as `review begin`'s bash arithmetic read
+    it: one of only whitespace as 0, a zero-led number as octal, any other
+    number as decimal. A zero-led number that is no octal one dies as bash's
+    arithmetic did, exit 1; anything else dies as no iteration number, exit
+    1 where bash's arithmetic died on it too (a word on an unbound
+    variable)."""
+    if not prior.strip(" \t\n"):
+        return 0
+    match = _ARITHMETIC_INTEGER.fullmatch(prior)
+    if match is None:
+        die("not an iteration number: %s" % prior)
+    sign, digits = match.groups()
+    if digits.startswith("0") and len(digits) > 1:
+        if not re.fullmatch(r"[0-7]+", digits):
+            die('%s: value too great for base (error token is "%s")'
+                % (prior.strip(" \t\n"), digits))
+        value = int(digits, 8)
+    else:
+        value = int(digits, 10)
+    return -value if sign == "-" else value
 
 
 def _terminal_recorded(root: str, i: str) -> bool:
@@ -718,7 +748,7 @@ def _terminal(args: List[str], root: str, git, env: Mapping[str, str], clock,
         die("usage: orch.sh review terminal")
     lines, status = review_terminal_state(root, state["iteration"],
                                           review_budget_fallback(state["budget"]), state)
-    stdout_write("".join(line + "\n" for line in lines))
+    lines_print(lines)
     return status
 
 
@@ -757,7 +787,7 @@ def doctor_terminal(args: List[str], git=None, env: Optional[Mapping[str, str]] 
     lines, _ = review_terminal_state(root, i, budget, state)
     if lines[0] == "malformed":
         lines.append(review_terminal_record(root, i, state))
-    stdout_write("".join(line + "\n" for line in lines))
+    lines_print(lines)
 
 
 def doctor_ci(args: List[str], gh=None, git=None, env: Optional[Mapping[str, str]] = None) -> None:
@@ -768,7 +798,7 @@ def doctor_ci(args: List[str], gh=None, git=None, env: Optional[Mapping[str, str
         die("usage: orch_python_call review doctor_ci <pr>")
     env = os.environ if env is None else env
     git = Git() if git is None else git
-    ci_print(ci_probe(adapter_of(gh, env, pin=RepoPin(env, git))(), args[0], "required"))
+    lines_print(ci_probe(adapter_of(gh, env, pin=RepoPin(env, git))(), args[0], "required"))
 
 
 # The exit doctor_standards ends with on a rejected declaration, apart from
@@ -1203,7 +1233,6 @@ JOB_SEGMENT = "/job/"
 RUN_LINK = re.compile(re.escape(RUNS_SEGMENT) + "[0-9]")
 JOB_LINK = re.compile(re.escape(RUNS_SEGMENT) + "[0-9].*" + re.escape(JOB_SEGMENT) + "[0-9]")
 JOB_ID = re.compile("[0-9]*")
-FAILING_BUCKETS = ("fail", "cancel")
 # How many of a job log's last lines review ci-log prints.
 LOG_TAIL = 200
 
@@ -1245,7 +1274,7 @@ def _ci_log(args: List[str], root: str, git, env: Mapping[str, str], clock,
         stdout_write("check %s: failed-step log of job %s\n" % (check.name, job))
         if len(rows) > LOG_TAIL:
             stdout_write("[cut: %d earlier lines of %d]\n" % (len(rows) - LOG_TAIL, len(rows)))
-        stdout_write("".join(row + "\n" for row in rows[-LOG_TAIL:]))
+        lines_print(rows[-LOG_TAIL:])
 
 
 def _rerun(args: List[str], root: str, git, env: Mapping[str, str], clock,
@@ -1287,22 +1316,22 @@ def _rerun(args: List[str], root: str, git, env: Mapping[str, str], clock,
                  % (check.name, pr))
             unrerunnable = True
             continue
-        run = check.link.rpartition(RUNS_SEGMENT)[2].partition("/")[0]
-        if not plain_number(run):
+        run_id = check.link.rpartition(RUNS_SEGMENT)[2].partition("/")[0]
+        if not plain_number(run_id):
             warn("check %s on PR #%s links no Actions run id - nothing to rerun"
                  % (check.name, pr))
             unrerunnable = True
             continue
-        if run not in runs:
-            runs.append(run)
+        if run_id not in runs:
+            runs.append(run_id)
     if not failing:
         die("PR #%s has no failed or cancelled check to rerun" % pr, 2)
     if unrerunnable:
         return 1
-    for run in runs:
-        gh_or_die("rerun the failed jobs of Actions run %s" % run, gh.run_rerun, int(run),
+    for run_id in runs:
+        gh_or_die("rerun the failed jobs of Actions run %s" % run_id, gh.run_rerun, int(run_id),
                   code=2)
-        stdout_write(run + "\n")
+        stdout_write(run_id + "\n")
     return None
 
 

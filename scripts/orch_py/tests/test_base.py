@@ -9,9 +9,7 @@ from orch.gh_fake import FakeGh
 from orch.git import FakeGit
 from orch.repo import RepoPin
 
-from conftest import GH_502
-
-ORIGIN = {"origin": "https://github.com/acme/widgets.git"}
+from conftest import GH_502, GITHUB_ORIGIN
 
 
 def lookup(seed, git, pin=None):
@@ -24,7 +22,7 @@ def lookup(seed, git, pin=None):
 def branches(*names):
     """A checkout with the acme/widgets origin, where each of <names> is a
     valid branch name."""
-    git = FakeGit(ORIGIN)
+    git = FakeGit(GITHUB_ORIGIN)
     for name in names:
         git.seed("is_branch_name", name, answer=True)
     return git
