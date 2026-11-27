@@ -521,8 +521,8 @@ def test_a_call_losing_the_rename_attaches_to_the_winner(repo, tmp_path, capsys,
 
 
 def proc_record(pid):
-    """The liveness record of <pid> as bash's liveness_record_write writes
-    it: the pid and field 22 of its /proc stat."""
+    """The liveness record of <pid> as orch/liveness.py's record_of builds
+    it and record_write writes it: the pid and field 22 of its /proc stat."""
     with open("/proc/%d/stat" % pid) as f:
         start = f.read().rsplit(") ", 1)[1].split()[19]
     return "%d %s\n" % (pid, start)

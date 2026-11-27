@@ -212,29 +212,6 @@ AUTOPILOT_SETTING_NAMES = ("permission-mode", "cap", "handle", "rounds", "budget
 # The seconds watch waits between ticks unless --every names others.
 AUTOPILOT_WATCH_EVERY_DEFAULT = 60
 
-# Each verb that takes a fixed number of arguments: that number, and what its
-# usage line names after the verb.
-ARITY = {
-    "settings": (0, ""),
-    "show": (0, ""),
-    "active": (0, ""),
-    "rounds": (0, ""),
-    "budget": (0, ""),
-    "start": (2, " <issue> <plan-file>"),
-    "tick": (0, ""),
-    "run": (1, " <issue>"),
-    "questions": (0, ""),
-    "reply": (2, " <issue> <file>"),
-    "resume": (1, " <issue>"),
-    "sync": (1, " <issue>"),
-    "sync-finish": (0, ""),
-    "sync-dropped": (1, " <file>"),
-    "sync-fail": (1, " <reason>"),
-    "reenter": (2, " <phase> <file>"),
-    "ask": (2, " <phase> <file>"),
-    "answer": (2, " <phase> <file>"),
-}
-
 # The git config section every setting lives under, and the pattern that
 # reads them all.
 SETTING_PREFIX = "orchestrator.autopilot."
@@ -347,17 +324,16 @@ def watch_every(args: List[str]) -> int:
 def dispatch(ap: Autopilot, op: str, args: List[str]) -> int:
     """Runs the verb <op> on <args>, its exit code; refuses an unknown op
     and arguments the verb does not take, as bash's cmd_autopilot does."""
-    if op in ARITY:
-        count, tail = ARITY[op]
+    if op in VERBS:
+        count, tail, verb = VERBS[op]
         if len(args) != count:
             die("usage: orch.sh autopilot %s%s" % (op, tail))
-    elif op == "watch":
+        return verb(ap, *args)
+    if op == "watch":
         return watch_verb(ap, watch_every(args))
-    elif op == "candidates":
+    if op == "candidates":
         return candidates_verb(ap, *candidates_args(args))
-    else:
-        die("unknown autopilot op: %s (want %s)" % (op or "<none>", OPS))
-    return VERBS[op](ap, *args)
+    die("unknown autopilot op: %s (want %s)" % (op or "<none>", OPS))
 
 
 def candidates_args(args: List[str]) -> Tuple[str, int, List[int]]:
@@ -602,19 +578,14 @@ def answer_verb(ap: Autopilot, phase: str, path: str) -> int:
     carries on - and 2 on any other failure, so a failed read is never taken
     for no reply."""
     from orch.issue_timeline import (timeline_answers, timeline_body, timeline_question,
-                                     timeline_read, timeline_reentered, timeline_replied)
-    from orch.gh import gh_die
+                                     timeline_read_or_die, timeline_reentered, timeline_replied)
 
     phase_arg(phase, 2)
     issue = flow_issue(ap, 2)
     gh = ap.gh_of()
     if not gh.pin():
         die(REPO_REMEDY, 2)
-    entries, reason = timeline_read(gh, issue)
-    if entries is None:
-        if not reason:
-            die("could not read issue #%s's comments" % issue, 2)
-        gh_die("read the comments of issue #" + issue, reason, code=2)
+    entries = timeline_read_or_die(gh, issue, code=2)
     if timeline_reentered(entries, phase):
         die("issue #%s was re-entered automatically in %s - no reply to read" % (issue, phase))
     question = timeline_question(entries, phase)
@@ -1970,27 +1941,28 @@ def run_session(ap: Autopilot, main: str, side: str, issue: str, recorded: str,
     return session_end(ap, main, issue, phase, log, rc, mine)
 
 
-# The verbs taking a fixed number of arguments, each called with the run and
+# Each verb that takes a fixed number of arguments: that number, what its
+# usage line names after the verb, and the function called with the run and
 # its arguments.
-VERBS: Mapping[str, Callable[..., int]] = {
-    "settings": settings_verb,
-    "show": show_verb,
-    "active": active_verb,
-    "rounds": lambda ap: plan_value(ap, "Rounds"),
-    "budget": lambda ap: plan_value(ap, "Budget"),
-    "start": start_verb,
-    "questions": questions_verb,
-    "reply": reply_verb,
-    "resume": resume_verb,
-    "sync": sync_verb,
-    "sync-finish": sync_finish_verb,
-    "sync-dropped": sync_dropped_verb,
-    "sync-fail": sync_fail_verb,
-    "ask": ask_verb,
-    "answer": answer_verb,
-    "reenter": reenter_verb,
-    "run": run_verb,
-    "tick": tick_verb,
+VERBS: Mapping[str, Tuple[int, str, Callable[..., int]]] = {
+    "settings": (0, "", settings_verb),
+    "show": (0, "", show_verb),
+    "active": (0, "", active_verb),
+    "rounds": (0, "", lambda ap: plan_value(ap, "Rounds")),
+    "budget": (0, "", lambda ap: plan_value(ap, "Budget")),
+    "start": (2, " <issue> <plan-file>", start_verb),
+    "tick": (0, "", tick_verb),
+    "run": (1, " <issue>", run_verb),
+    "questions": (0, "", questions_verb),
+    "reply": (2, " <issue> <file>", reply_verb),
+    "resume": (1, " <issue>", resume_verb),
+    "sync": (1, " <issue>", sync_verb),
+    "sync-finish": (0, "", sync_finish_verb),
+    "sync-dropped": (1, " <file>", sync_dropped_verb),
+    "sync-fail": (1, " <reason>", sync_fail_verb),
+    "reenter": (2, " <phase> <file>", reenter_verb),
+    "ask": (2, " <phase> <file>", ask_verb),
+    "answer": (2, " <phase> <file>", answer_verb),
 }
 
 

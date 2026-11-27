@@ -41,21 +41,22 @@ def timeline_read(gh, issue: str) -> Tuple[Optional[List[Entry]], str]:
         return None, ""
 
 
-def timeline_die(issue: str, reason: str) -> None:
+def timeline_die(issue: str, reason: str, code: int = 1) -> None:
     """Dies for the timeline read that just failed, with gh's <reason>, or
     with `could not read issue #<n>'s comments` when gh succeeded but its
-    answer was not a comment list."""
+    answer was not a comment list; exit <code>, 2 where the bash verb died
+    through die2."""
     if not reason:
-        die("could not read issue #%s's comments" % issue)
-    gh_die("read the comments of issue #" + issue, reason)
+        die("could not read issue #%s's comments" % issue, code)
+    gh_die("read the comments of issue #" + issue, reason, code=code)
 
 
-def timeline_read_or_die(gh, issue: str) -> List[Entry]:
-    """timeline_read's entries for issue <issue>, else timeline_die, bash
-    timeline_read_or_die."""
+def timeline_read_or_die(gh, issue: str, code: int = 1) -> List[Entry]:
+    """timeline_read's entries for issue <issue>, else timeline_die with
+    exit <code>, bash timeline_read_or_die."""
     entries, reason = timeline_read(gh, issue)
     if entries is None:
-        timeline_die(issue, reason)
+        timeline_die(issue, reason, code)
     return entries
 
 
