@@ -493,8 +493,10 @@ def handoff_invalid(name: str, hint: str, env: Mapping[str, str], root: str,
 
 
 def handoff_path(phase: str, gh, env: Mapping[str, str], root: str) -> Tuple[str, bool]:
-    """`handoff path <phase>`: the path of the handoff <phase> consumes, as
-    the adapter resolves it, and whether it is there. The file adapter
+    """The reader of the handoff <phase> consumes, for a caller that reads
+    it rather than prints it (spec-review's): its path, as the adapter
+    resolves it, and whether it is there. Not the `handoff path` verb,
+    path_verb, which calls it only for the file adapter. The file adapter
     answers False for a missing file; the comment adapter, which requires the
     recorded issue, dies instead - on a failed comments read with gh's
     reason, exit 1 alone after a copy not written, and naming the issue's

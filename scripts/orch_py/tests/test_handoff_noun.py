@@ -431,6 +431,17 @@ def test_fetch_with_no_live_comment_dies_leaving_an_existing_file_as_it_was(
     assert got.read_text() == "keep\n"
 
 
+def test_fetch_of_a_missing_comment_dies_leaving_no_file_behind(root, seed, capsys, tmp_path):
+    flow_state(root, "spec", 7)
+    on_issue(seed)
+    got = tmp_path / "got.md"
+
+    assert died_of(capsys, lambda: orch_handoff(
+        root, seed, "fetch", "01-plan", str(got), env=AUTOPILOT)) == (
+        1, "", "orch: issue #7 has no 01-plan handoff comment\n")
+    assert not got.exists()
+
+
 def test_fetch_dies_with_gh_s_reason_when_the_comments_cannot_be_read(
         root, seed, capsys, tmp_path):
     flow_state(root, "spec", 7)
