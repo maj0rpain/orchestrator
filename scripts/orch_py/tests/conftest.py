@@ -20,7 +20,8 @@ from pathlib import Path
 
 import pytest
 
-from orch import audit, issue, pr, review, review_pass, spec_review, ticket_worktree, verification
+from orch import (audit, autopilot, issue, pr, review, review_pass, spec_review, ticket_worktree,
+                  verification)
 from orch.gh import Unparsed
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit, Git, Worktree
@@ -665,6 +666,20 @@ def orch_pr(seed, git, *argv, env=None, gh=None):
         gh = FakeGh(seed.store, env, pin=RepoPin(env, git), sleep=lambda _: None)
     try:
         return pr.run(list(argv), gh=gh, git=git, env=env)
+    except SystemExit as died:
+        return died.code
+
+
+def orch_autopilot(seed, git, env, *argv, gh=None, **extra):
+    """`orch.sh autopilot <argv>` in-process, in the checkout of the git
+    adapter <git>, under <env>, with the gh adapter <gh> - the gh fake on
+    <seed>'s store pinned to <git>'s origin, its retries never sleeping,
+    when None - and autopilot.run's clock, starter and sleep in <extra>
+    where a case hands them in: its exit code, a SystemExit's included."""
+    if gh is None:
+        gh = FakeGh(seed.store, env, pin=RepoPin(env, git), sleep=lambda _: None)
+    try:
+        return autopilot.run(list(argv), gh=gh, git=git, env=env, **extra)
     except SystemExit as died:
         return died.code
 

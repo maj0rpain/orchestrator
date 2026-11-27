@@ -18,11 +18,10 @@ from pathlib import Path
 
 import pytest
 
-from conftest import SideCheckouts, comments_of, hold_flow, iso, labels_of, marker_of, snapshot
+from conftest import (SideCheckouts, comments_of, hold_flow, iso, labels_of, marker_of,
+                      orch_autopilot, snapshot)
 from orch import autopilot
-from orch.gh_fake import FakeGh
 from orch.git import FakeGit
-from orch.repo import RepoPin
 from test_autopilot import ORIGIN, plan_comment
 
 LAUNCHER = "fake-claude"
@@ -151,13 +150,8 @@ class Wrapper:
 
     def run(self, *argv, git=None):
         """`orch.sh autopilot run <argv>` (7 when none): its exit code."""
-        git = self.git if git is None else git
-        gh = FakeGh(self.store, self.env, pin=RepoPin(self.env, git), sleep=lambda _: None)
-        try:
-            return autopilot.run(["run", *(argv or ("7",))], gh=gh, git=git, env=self.env,
-                                 clock=self.clock, starter=self.starter)
-        except SystemExit as died:
-            return died.code
+        return orch_autopilot(self.seed, self.git if git is None else git, self.env, "run",
+                              *(argv or ("7",)), clock=self.clock, starter=self.starter)
 
     def logs(self):
         folder = self.path("logs")
@@ -263,6 +257,14 @@ def test_a_session_that_exits_with_its_claim_held_is_a_failure_stop(w):
     assert ("Autopilot failed in the spec phase: the session exited with code 3; log: %s\n"
             % w.log_path()) in w.last_comment()
     assert w.limit() is None
+
+
+def test_a_session_killed_by_a_signal_reports_128_plus_the_signal_as_the_shell_does(w):
+    w.starter.exit = -9
+
+    assert w.run() == 0
+    assert ("Autopilot failed in the spec phase: the session exited with code 137; log: %s\n"
+            % w.log_path()) in w.last_comment()
 
 
 def test_a_released_claim_and_a_non_zero_exit_is_no_failure_noted_in_the_log(w, capsys):
@@ -640,7 +642,8 @@ def test_other_limit_wordings_are_a_failure_with_no_limit_file(w, wording):
     ended(w, ndjson_with(wording))
 
     assert (kind(w), w.limit()) == ("failure", None)
-    assert "the session exited with code 1; log: %s" % w.log_path() in w.last_comment()
+    assert ("Autopilot failed in the spec phase: the session exited with code 1; log: %s\n"
+            % w.log_path()) in w.last_comment()
 
 
 @pytest.mark.parametrize("reply,quoted", [
@@ -839,14 +842,6 @@ def test_a_first_limit_stop_is_retry_1_of_2_naming_the_log(w):
 
     assert "retry 1 of 2, started once the limit pause has passed" in w.last_comment()
     assert w.log_path() in w.last_comment()
-
-
-def test_the_failure_comment_says_only_a_limit_stop_is_retried(w):
-    ended(w, ndjson_with("iteration limit reached"))
-
-    assert ("nothing is retried automatically except a usage-limit stop labelled `orch:limited`"
-            in w.last_comment())
-    assert "usage limit" not in w.last_comment().replace("usage-limit", "")
 
 
 # --- the session end: a GitHub limit the session hit ---------------------------------

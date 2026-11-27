@@ -27,29 +27,35 @@ the GitHub limit pause under the main checkout and a session's hit file, in
 the format and at the path the bash gh adapter's limit record writes them
 too (pinned by tests/github_pause/, ADR-0067).
 
-The gh, handoff, flow-state, standing, trust, filed-finding, liveness and
-side-checkout modules the verbs call are imported inside them: each imports
-this module's concept part at its own import, so importing them here at the
-top would be a cycle; the session-log module is imported with them.
+The gh, handoff, flow-state, standing, trust, filed-finding, liveness,
+side-checkout, checkout, PR, branch and issue-timeline modules the verbs
+call are imported inside them: each imports this module's concept part at
+its own import, or imports a module that does, so importing them here at
+the top would be a cycle; the session-log module is imported with them.
 """
 from __future__ import annotations
 
 import calendar
+import contextlib
+import io
 import os
 import shutil
 import signal
 import subprocess
+import sys
+import tempfile
 import time
 from typing import Callable, Dict, List, Mapping, Optional, Tuple
 
 from orch.agent import autopilot_setting_check, default_plugin_root
-from orch.common import (ORCH_DIR_NAME, UTC_STAMP_FORMAT, die, file_write_atomic, is_positive_int,
-                         plain_number, read_raw, read_text, rm_f, stderr_write, stdout_write, trim,
-                         warn)
+from orch.common import (ORCH_DIR_NAME, UTC_STAMP_FORMAT, capture, die, exit_status,
+                         file_write_atomic, is_positive_int, plain_number, read_raw, read_text,
+                         rm_f, stderr_write, stdout_write, subshell, temp_text_file, trim, warn)
 from orch.git import Git
-from orch.host import host_detect
+from orch.host import host_detect, plugin_cmd
 from orch.repo import REPO_REMEDY, RepoPin, owner_name
 from orch.root import checkout_root
+from orch.triage_labels import TriageLabels
 
 # A GitHub pause is never recorded further ahead than this many seconds:
 # no GitHub limit names a later reset.
@@ -439,7 +445,6 @@ def start_verb(ap: Autopilot, issue: str, plan_file: str) -> int:
     checkout's flow state."""
     from orch.flow_state import flow_state_file
     from orch.standing import standing_start
-    from orch.triage_labels import TriageLabels
 
     ready = TriageLabels(lambda: ap.root).label("ready-for-agent")
     standing_start(ap.gh_of(), issue, plan_file, ready, flow_state_file(ap.root), ap.env)
@@ -502,7 +507,6 @@ def candidates_verb(ap: Autopilot, mode: str, limit: int, issues: List[int]) -> 
     k eligible lines. Every read comes before the first line is printed, so
     a failed read leaves no partial list. It writes nothing."""
     from orch.gh import gh_or_die
-    from orch.triage_labels import TriageLabels
 
     gh = ap.gh_of()
     triage = TriageLabels(lambda: ap.root)
@@ -600,7 +604,6 @@ def answer_verb(ap: Autopilot, phase: str, path: str) -> int:
     from orch.issue_timeline import (timeline_answers, timeline_body, timeline_question,
                                      timeline_read, timeline_reentered, timeline_replied)
     from orch.gh import gh_die
-    from orch.repo import REPO_REMEDY
 
     phase_arg(phase, 2)
     issue = flow_issue(ap, 2)
@@ -828,20 +831,17 @@ class Watch:
 
     def tick_status(self) -> int:
         """Starts one tick, a fresh `orch.sh autopilot tick` with stdin from
-        /dev/null and stdout dropped, as bash's background job has them, and
-        waits for it: its exit status as bash's wait gives it - 128 plus the
-        signal that killed it, 127 for an orch.sh that is missing and 126
-        for one that cannot be run."""
-        try:
-            self.tick = self.ap.starter([orch_sh(), "autopilot", "tick"],
-                                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
-        except FileNotFoundError:
-            return 127
-        except OSError:
-            return 126
-        code = self.tick.wait()
+        /dev/null and stdout dropped, as bash's background job has them,
+        held as the tick it waits on, and waits for it: its exit status as
+        bash's wait gives it (started)."""
+        code = started(self.ap, [orch_sh(), "autopilot", "tick"], hold=self.hold,
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
         self.tick = None
-        return code if code >= 0 else 128 - code
+        return code
+
+    def hold(self, tick) -> None:
+        """Holds <tick> as the tick the watch waits on, for stop_tick."""
+        self.tick = tick
 
     def stop_tick(self) -> None:
         """The watch's INT/TERM step for the tick it waits on, bash
@@ -1068,7 +1068,6 @@ def stop_contained(ap: Autopilot, issue: str, tail: str, kind: str, phase: str,
     the tick (the next tick is the retry). The stop's own failure line
     reaches stderr; when it fails, warns "could not stop issue #<issue> -
     its claim stays held; <tail>" and is False."""
-    from orch.common import subshell
     from orch.standing import Chain, standing_stop
 
     chain = Chain(ap.gh_of(), issue)
@@ -1159,7 +1158,6 @@ def close_missed(ap: Autopilot, gh, table: List[List[str]]) -> List[List[str]]:
     it closed. A failed close keeps just that issue, and a failed read - or
     a death in the close - the whole table, after its warning: the tick
     never stops on it."""
-    from orch.common import subshell
     from orch.pr import close_missed_rows
 
     kept = [table]
@@ -1317,10 +1315,6 @@ def contained(kind: str, detail: str, call: Callable[[], object]) -> object:
     """Runs the in-process step <call> contained, bash
     autopilot_pickup_contained: its stdout dropped, its stderr captured, a
     death in it failing only the step (settled). Its answer."""
-    import contextlib
-    import io
-
-    from orch.common import capture
 
     with contextlib.redirect_stdout(io.StringIO()):
         answer, err, code = capture(call)
@@ -1332,8 +1326,6 @@ def orch_in(ap: Autopilot, side: str, kind: str, detail: str, *args: str) -> Non
     """The step running `orch.sh <args>` as a child in the side checkout
     <side> under ORCH_AUTOPILOT=1, bash autopilot_orch_in: stdout dropped,
     stderr captured for the failure's reason (settled)."""
-    import tempfile
-
     try:
         err_file = tempfile.TemporaryFile()
     except OSError:
@@ -1373,10 +1365,6 @@ def post_minimal_plan(ap: Autopilot, gh, issue: str) -> None:
     comment, bash autopilot_post_minimal_plan. Dies, the reason on stderr,
     where the comments cannot be read, the plan does not validate or its
     post fails."""
-    import contextlib
-    import sys
-
-    from orch.common import temp_text_file
     from orch.flow_state import flow_state_file
     from orch.handoff import handoff_check, handoff_comment_post
     from orch.issue_timeline import timeline_die, timeline_handoff, timeline_read
@@ -1444,7 +1432,6 @@ def pickup_steps(ap: Autopilot, gh, main: str, issue: str, phase: str, limited: 
     first step that fails or refuses raises PickupStop."""
     from orch.checkout import checkout_has_flow
     from orch.flow_state import flow_state_file, flow_state_get_many
-    from orch.host import plugin_cmd
     from orch.side_checkout import side_checkout_for_issue
     from orch.standing import (STANDING_SYNC_PHASE, phase_label, redo_phase, redo_rule,
                                standing_begin)
@@ -1705,9 +1692,6 @@ def stop_attempts(ap: Autopilot, issue: str, log: str, closing: str,
     when the last fails, 1, one backstop line written to <log> - the stop's
     kind, its first line and <closing>, the clause that ends it - for stale
     cleanup to quote."""
-    import tempfile
-
-    from orch.common import subshell
     from orch.standing import Chain
 
     try:
@@ -1799,16 +1783,22 @@ def github_usage(before: Optional[str], after: Optional[str]) -> Optional[str]:
     return ", ".join(parts)
 
 
-def started(ap: Autopilot, argv: List[str], **how) -> int:
-    """<argv> started through the process starter and waited for: its exit
-    code; 127, or 126, when it cannot be started, as a shell reports a
-    command it could not find or run."""
-    import errno
-
+def started(ap: Autopilot, argv: List[str], hold: Optional[Callable[[object], None]] = None,
+            **how) -> int:
+    """<argv> started through the process starter, handed to <hold> once
+    started when one is given, and waited for: its exit status as the shell
+    reports it - its exit code, 128 plus the signal that killed it, and 127,
+    or 126, when it cannot be started, as for a command the shell could not
+    find or run."""
     try:
-        return ap.starter(argv, **how).wait()
-    except OSError as failed:
-        return 127 if failed.errno == errno.ENOENT else 126
+        child = ap.starter(argv, **how)
+    except FileNotFoundError:
+        return 127
+    except OSError:
+        return 126
+    if hold is not None:
+        hold(child)
+    return exit_status(child.wait())
 
 
 def session_end(ap: Autopilot, main: str, issue: str, phase: str, log: str, rc: int,
@@ -1909,7 +1899,6 @@ def run_session(ap: Autopilot, main: str, side: str, issue: str, recorded: str,
                 mode: str) -> int:
     """run_verb's part under the run record."""
     from orch import liveness
-    from orch.common import capture
     from orch.gh import gh_die
     from orch.standing import claim_of, claims_read_or_die, standing_read, standing_stop
 

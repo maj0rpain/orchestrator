@@ -109,6 +109,7 @@ from orch.checkout import main_checkout_or_die, ticket_path
 from orch.common import (
     ORCH_DIR_NAME,
     die,
+    exit_status,
     file_write_atomic,
     is_positive_number,
     mkdir_p_or_die,
@@ -575,12 +576,6 @@ def run(argv: List[str], git=None, env: Optional[Mapping[str, str]] = None) -> i
 
 
 # --- the runner ---------------------------------------------------------------
-
-
-def exit_status(code: int) -> int:
-    """A waited command's exit status as bash's $? gives it: 128 plus the
-    signal for one a signal ended."""
-    return 128 - code if code < 0 else code
 
 
 def token_path(root: str) -> str:

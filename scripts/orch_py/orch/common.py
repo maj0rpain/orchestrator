@@ -541,6 +541,12 @@ def capture(call: Callable[[], Any]) -> Tuple[Any, str, int]:
     return answer, err.getvalue(), 0
 
 
+def exit_status(code: int) -> int:
+    """A waited command's exit status as bash's $? gives it: 128 plus the
+    signal for one a signal ended."""
+    return 128 - code if code < 0 else code
+
+
 def subshell(call: Callable[[], Optional[int]]) -> int:
     """bash's `(<call>) || st=$?`: runs <call>, its output let through, and
     gives the status it ended with - what it returned (None read as 0), or

@@ -16,11 +16,9 @@ import subprocess
 
 import pytest
 
-from conftest import stat_of
+from conftest import orch_autopilot, stat_of
 from orch import autopilot
-from orch.gh_fake import FakeGh
 from orch.git import FakeGit
-from orch.repo import RepoPin
 
 ORIGIN = "https://github.com/o/r.git"
 MODE_KEY = "orchestrator.autopilot.permission-mode"
@@ -143,12 +141,7 @@ def raising(signum):
 def watch(seed, git, env, starter, sleep, *args):
     """`orch.sh autopilot watch <args>` in-process: its exit code, a
     SystemExit's included."""
-    gh = FakeGh(seed.store, env, pin=RepoPin(env, git), sleep=lambda _: None)
-    try:
-        return autopilot.run(["watch", *args], gh=gh, git=git, env=env,
-                             starter=starter, sleep=sleep)
-    except SystemExit as died:
-        return died.code
+    return orch_autopilot(seed, git, env, "watch", *args, starter=starter, sleep=sleep)
 
 
 # --- --every ---------------------------------------------------------------------

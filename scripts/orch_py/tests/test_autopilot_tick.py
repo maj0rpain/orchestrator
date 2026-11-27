@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import comments_of, hold_flow, iso, labels_of, read, stat_of
+from conftest import comments_of, hold_flow, iso, labels_of, orch_autopilot, read, stat_of
 from orch import autopilot
 from orch.gh_fake import FakeGh
 from orch.repo import RepoPin
@@ -192,11 +192,8 @@ class Ticker:
         <gh_class> when given): its exit code."""
         self.gh = (gh_class or CountingGh)(self.store, self.env, pin=RepoPin(self.env, self.git),
                              sleep=lambda _: None, now=self.clock)
-        try:
-            return autopilot.run(["tick", *argv], gh=self.gh, git=self.git, env=self.env,
-                                 clock=self.clock, starter=self.children)
-        except SystemExit as died:
-            return died.code
+        return orch_autopilot(self.seed, self.git, self.env, "tick", *argv, gh=self.gh,
+                              clock=self.clock, starter=self.children)
 
     def labels(self, n):
         return sorted(labels_of(self.store, n))

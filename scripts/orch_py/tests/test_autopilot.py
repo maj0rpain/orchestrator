@@ -16,12 +16,11 @@ import tempfile
 import pytest
 
 from conftest import (CLAUDE, GH_502, SESSIONS, comments_of, died_of, flow_state, labels_doc,
-                      labels_of, snapshot, write_labels_doc)
+                      labels_of, orch_autopilot, snapshot, write_labels_doc)
 from orch import autopilot
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit
 from orch.handoff import PHASE_TABLE
-from orch.repo import RepoPin
 
 ORIGIN = "https://github.com/o/r.git"
 VERBS = ("show|settings|active|rounds|budget|start|candidates|tick|watch|run|ask|answer|reenter"
@@ -35,24 +34,13 @@ def checkout(root, local=None, global_=None, origin=ORIGIN):
     return FakeGit(remotes, toplevel=str(root), local_config=local, global_config=global_)
 
 
-def ap(seed, git, env, *argv):
-    """`orch.sh autopilot <argv>` in-process in the checkout of <git>, under
-    <env>, on the gh fake on <seed>'s store pinned to <git>'s origin: its exit
-    code, a SystemExit's included."""
-    gh = FakeGh(seed.store, env, pin=RepoPin(env, git), sleep=lambda _: None)
-    try:
-        return autopilot.run(list(argv), gh=gh, git=git, env=env)
-    except SystemExit as died:
-        return died.code
-
-
 # --- dispatch -------------------------------------------------------------------
 
 
 @SESSIONS
 @pytest.mark.parametrize("op", ["bogus", ""])
 def test_an_unknown_op_is_refused_listing_every_verb(root, seed, capsys, env, op):
-    code = ap(seed, checkout(root), env, *([op] if op else []))
+    code = orch_autopilot(seed, checkout(root), env, *([op] if op else []))
 
     assert (code, capsys.readouterr()) == (
         1, ("", "orch: unknown autopilot op: %s (want %s)\n" % (op or "<none>", VERBS)))
@@ -97,7 +85,7 @@ def test_each_verb_refuses_arguments_it_does_not_take_with_its_usage_line(
         root, seed, store, capsys, env, argv, usage):
     before = snapshot(store)
 
-    assert (ap(seed, checkout(root), env, *argv), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, checkout(root), env, *argv), capsys.readouterr()) == (
         1, ("", "orch: %s\n" % usage))
     assert snapshot(store) == before
 
@@ -123,7 +111,7 @@ def test_the_setting_names_are_held_in_show_order():
 
 @SESSIONS
 def test_settings_prints_the_setting_names_in_order_with_nothing_set(root, seed, capsys, env):
-    assert (ap(seed, checkout(root), env, "settings"), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, checkout(root), env, "settings"), capsys.readouterr()) == (
         0, ("".join(name + "\n" for name in SETTING_NAMES), ""))
 
 
@@ -137,7 +125,8 @@ def shown(name, value, source):
 
 @SESSIONS
 def test_show_prints_every_setting_s_default_with_nothing_set(root, seed, capsys, env):
-    assert (ap(seed, checkout(root), env, "show"), capsys.readouterr()) == (0, ("".join([
+    assert (orch_autopilot(seed, checkout(root), env, "show"),
+            capsys.readouterr()) == (0, ("".join([
         shown("permission-mode", "(none)", "unset"),
         shown("cap", "3", "default"),
         shown("handle", "o", "default"),
@@ -157,7 +146,8 @@ def test_show_prints_set_values_with_their_source_the_integers_plain(root, seed,
              key("auto-sync"): "false", key("github-reserve"): "099"}
     global_ = {key("effort"): "inherit", key("cap"): "9", key("rounds"): "8"}
 
-    assert (ap(seed, checkout(root, local, global_), env, "show"), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, checkout(root, local, global_), env, "show"),
+            capsys.readouterr()) == (
         0, ("".join([
             shown("permission-mode", "acceptEdits", "local"),
             shown("cap", "5", "local"),
@@ -177,7 +167,7 @@ def test_show_prints_set_values_with_their_source_the_integers_plain(root, seed,
 ], ids=["GH_REPO", "host-qualified origin"])
 def test_the_handle_defaults_to_the_owner_of_the_repo_the_pin_resolves(
         root, seed, capsys, env, origin, owner):
-    ap(seed, checkout(root, origin=origin), env, "show")
+    orch_autopilot(seed, checkout(root, origin=origin), env, "show")
 
     assert shown("handle", owner, "default") in capsys.readouterr().out
 
@@ -185,7 +175,8 @@ def test_the_handle_defaults_to_the_owner_of_the_repo_the_pin_resolves(
 @SESSIONS
 def test_with_no_repo_an_unset_handle_dies_with_the_remedy_and_its_own_fix(
         root, seed, capsys, env):
-    assert (ap(seed, checkout(root, origin=None), env, "show"), capsys.readouterr().err) == (
+    assert (orch_autopilot(seed, checkout(root, origin=None), env, "show"),
+            capsys.readouterr().err) == (
         1, "orch: no GitHub repo to work on: origin is missing or not a GitHub owner/name - set"
            " GH_REPO=<owner>/<repo> (the handle defaults to the repo's owner; or git config"
            " orchestrator.autopilot.handle <handle>)\n")
@@ -195,14 +186,14 @@ def test_with_no_repo_an_unset_handle_dies_with_the_remedy_and_its_own_fix(
 def test_with_no_repo_a_set_handle_resolves_nothing(root, seed, capsys, env):
     git = checkout(root, {key("handle"): "octo"}, origin=None)
 
-    assert ap(seed, git, env, "show") == 0
+    assert orch_autopilot(seed, git, env, "show") == 0
     assert shown("handle", "octo", "local") in capsys.readouterr().out
 
 
 @SESSIONS
 @pytest.mark.parametrize("mode", ["default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"])
 def test_every_permission_mode_is_accepted(root, seed, capsys, env, mode):
-    assert ap(seed, checkout(root, {key("permission-mode"): mode}), env, "show") == 0
+    assert orch_autopilot(seed, checkout(root, {key("permission-mode"): mode}), env, "show") == 0
     assert shown("permission-mode", mode, "local") in capsys.readouterr().out
 
 
@@ -256,7 +247,7 @@ def test_a_refused_model_or_effort_dies_in_process_starting_no_child(
     monkeypatch.setattr(subprocess, "Popen", no_child)
     git = checkout(root, {key(name): value})
 
-    assert (ap(seed, git, env, "show"), capsys.readouterr().err) == (
+    assert (orch_autopilot(seed, git, env, "show"), capsys.readouterr().err) == (
         1, "orch: orchestrator.autopilot.%s is %s - %s\n" % (name, value, want))
 
 
@@ -267,7 +258,8 @@ def test_a_refused_model_or_effort_dies_in_process_starting_no_child(
 ], ids=["ORCH_AUTOPILOT=1", "unset", "ORCH_AUTOPILOT=0"])
 def test_active_exits_0_in_an_autopilot_session_alone_printing_nothing(
         root, seed, capsys, env, code):
-    assert (ap(seed, checkout(root), env, "active"), capsys.readouterr()) == (code, ("", ""))
+    assert (orch_autopilot(seed, checkout(root), env, "active"),
+            capsys.readouterr()) == (code, ("", ""))
 
 
 # --- rounds and budget ---------------------------------------------------------
@@ -303,13 +295,13 @@ def test_rounds_and_budget_print_the_newest_plan_comment_s_values(
     plan_comment(seed, 7, "Rounds: 06\nBudget:  5  ")
     git = checkout(root)
 
-    assert (ap(seed, git, env, "rounds"), capsys.readouterr()) == (0, ("6\n", ""))
-    assert (ap(seed, git, env, "budget"), capsys.readouterr()) == (0, ("5\n", ""))
+    assert (orch_autopilot(seed, git, env, "rounds"), capsys.readouterr()) == (0, ("6\n", ""))
+    assert (orch_autopilot(seed, git, env, "budget"), capsys.readouterr()) == (0, ("5\n", ""))
 
 
 @SESSIONS
 def test_rounds_with_no_plan_comment_dies_naming_it(root, seed, capsys, env, planned):
-    assert (ap(seed, checkout(root), env, "rounds"), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, checkout(root), env, "rounds"), capsys.readouterr()) == (
         1, ("", "orch: issue #7 has no 01-plan handoff comment\n"))
 
 
@@ -321,7 +313,7 @@ def test_rounds_dies_on_a_block_with_no_valid_rounds_line(
         root, seed, capsys, env, planned, block):
     plan_comment(seed, 7, block)
 
-    assert (ap(seed, checkout(root), env, "rounds"), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, checkout(root), env, "rounds"), capsys.readouterr()) == (
         1, ("", "orch: issue #7's plan comment has no valid ## Autopilot Rounds line\n"))
 
 
@@ -329,7 +321,7 @@ def test_rounds_dies_on_a_block_with_no_valid_rounds_line(
 def test_budget_dies_on_a_plan_comment_with_no_block(root, seed, capsys, env, planned):
     plan_comment(seed, 7, None)
 
-    assert (ap(seed, checkout(root), env, "budget"), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, checkout(root), env, "budget"), capsys.readouterr()) == (
         1, ("", "orch: issue #7's plan comment has no valid ## Autopilot Budget line\n"))
 
 
@@ -337,7 +329,7 @@ def test_budget_dies_on_a_plan_comment_with_no_block(root, seed, capsys, env, pl
 def test_a_failed_comments_read_dies_with_gh_s_reason(root, seed, capsys, env, planned):
     seed.fail("adapter_issue_comments", GH_502)
 
-    assert (ap(seed, checkout(root), env, "budget"), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, checkout(root), env, "budget"), capsys.readouterr()) == (
         1, ("", "orch: gh could not read the comments of issue #7: HTTP 502: Bad Gateway\n"))
 
 
@@ -345,7 +337,7 @@ def test_a_failed_comments_read_dies_with_gh_s_reason(root, seed, capsys, env, p
 def test_rounds_with_no_issue_recorded_dies_before_any_read(root, seed, store, capsys, env):
     flow_state(root, "spec", None)
 
-    assert (ap(seed, checkout(root), env, "rounds"), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, checkout(root), env, "rounds"), capsys.readouterr()) == (
         1, ("", "orch: no issue recorded in state - the spec phase must publish one first\n"))
     assert read_count(store) == 0
 
@@ -374,7 +366,8 @@ def test_start_posts_the_plan_comment_then_adds_the_first_phase_label(
         root, seed, store, capsys, env, plan):
     seed.issue(7, "open", "ready-for-agent")
 
-    assert (ap(seed, checkout(root), env, "start", "7", str(plan)), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, checkout(root), env, "start", "7", str(plan)),
+            capsys.readouterr()) == (
         0, ("posted the plan comment on issue #7: https://github.com/o/r/issues/7#issuecomment-1\n"
             "added orch:spec to issue #7\n", ""))
     assert comments_of(store, 7) == [PLAN_MARKER + plan.read_text()]
@@ -387,7 +380,8 @@ def test_start_with_no_url_from_gh_ends_its_first_line_at_the_issue(
     seed.issue(13, "open", "ready-for-agent")
     (store / "no_comment_url").write_text("")
 
-    assert (ap(seed, checkout(root), env, "start", "13", str(plan)), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, checkout(root), env, "start", "13", str(plan)),
+            capsys.readouterr()) == (
         0, ("posted the plan comment on issue #13\nadded orch:spec to issue #13\n", ""))
 
 
@@ -403,7 +397,8 @@ def test_start_refuses_an_issue_that_is_not_ready_or_already_started_writing_not
     seed.issue(int(issue), "open", *labels)
     before = snapshot(store)
 
-    assert (ap(seed, checkout(root), env, "start", issue, str(plan)), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, checkout(root), env, "start", issue, str(plan)),
+            capsys.readouterr()) == (
         1, ("", "orch: %s\n" % message))
     assert snapshot(store) == before
 
@@ -413,7 +408,7 @@ def test_start_names_the_ready_label_in_the_repo_s_own_words(root, seed, capsys,
     write_labels_doc(root, labels_doc(("ready-for-agent", "agent-ok")))
     seed.issue(7, "open", "agent-ok")
 
-    assert ap(seed, checkout(root), env, "start", "7", str(plan)) == 0
+    assert orch_autopilot(seed, checkout(root), env, "start", "7", str(plan)) == 0
     assert capsys.readouterr().out.endswith("added orch:spec to issue #7\n")
 
 
@@ -423,7 +418,8 @@ def test_start_on_a_failed_issue_read_dies_in_one_line_with_gh_s_reason(
     seed.issue(9, "open", "ready-for-agent")
     seed.fail("adapter_issue_state_labels", GH_502)
 
-    assert (ap(seed, checkout(root), env, "start", "9", str(plan)), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, checkout(root), env, "start", "9", str(plan)),
+            capsys.readouterr()) == (
         1, ("", "orch: gh could not read issue #9: HTTP 502: Bad Gateway\n"))
 
 
@@ -435,7 +431,8 @@ def test_start_refuses_a_plan_with_no_autopilot_block_posting_nothing(
     bad.write_text(plan_text())
     before = snapshot(store)
 
-    assert (ap(seed, checkout(root), env, "start", "9", str(bad)), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, checkout(root), env, "start", "9", str(bad)),
+            capsys.readouterr()) == (
         1, ("", "FAIL  missing section: ## Autopilot\n"
                 "orch: plan %s is not valid - nothing posted\n" % bad))
     assert snapshot(store) == before
@@ -448,7 +445,8 @@ def test_start_refuses_a_plan_with_no_autopilot_block_posting_nothing(
 ], ids=["not a number", "empty"])
 def test_start_refuses_an_issue_that_is_not_a_plain_number(
         root, seed, capsys, env, plan, issue, message):
-    assert (ap(seed, checkout(root), env, "start", issue, str(plan)), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, checkout(root), env, "start", issue, str(plan)),
+            capsys.readouterr()) == (
         1, ("", "orch: %s\n" % message))
 
 
@@ -457,7 +455,8 @@ def test_start_refuses_a_missing_plan_file(root, seed, capsys, env, tmp_path):
     seed.issue(7, "open", "ready-for-agent")
     missing = tmp_path / "nope.md"
 
-    assert (ap(seed, checkout(root), env, "start", "7", str(missing)), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, checkout(root), env, "start", "7", str(missing)),
+            capsys.readouterr()) == (
         1, ("", "orch: plan file not found: %s\n" % missing))
 
 
@@ -470,7 +469,8 @@ def test_a_failed_plan_post_dies_with_the_reason_adding_no_label_and_leaving_no_
     temp.mkdir()
     monkeypatch.setattr(tempfile, "tempdir", str(temp))
 
-    assert (ap(seed, checkout(root), env, "start", "7", str(plan)), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, checkout(root), env, "start", "7", str(plan)),
+            capsys.readouterr()) == (
         1, ("", "orch: gh could not post the 01-plan handoff on issue #7: HTTP 502 post\n"))
     assert labels_of(store, 7) == ["ready-for-agent"]
     assert list(temp.iterdir()) == []
@@ -483,7 +483,7 @@ def test_a_failed_label_add_dies_naming_the_comment_posted_and_a_re_run_labels_i
     seed.fail("adapter_issue_relabel", "HTTP 502")
     git = checkout(root)
 
-    assert (ap(seed, git, env, "start", "7", str(plan)), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, git, env, "start", "7", str(plan)), capsys.readouterr()) == (
         1, ("", "orch: posted the 01-plan comment on issue #7 but adding orch:spec failed:"
                 " HTTP 502 - the issue is unlabelled, so no watcher picks it up; re-run"
                 " autopilot start\n"))
@@ -493,13 +493,13 @@ def test_a_failed_label_add_dies_naming_the_comment_posted_and_a_re_run_labels_i
     seed.unfail()
     plan.write_text(plan_text("Rounds: 6\nBudget: 5"))
 
-    assert (ap(seed, git, env, "start", "7", str(plan)), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, git, env, "start", "7", str(plan)), capsys.readouterr()) == (
         0, ("posted the plan comment on issue #7: https://github.com/o/r/issues/7#issuecomment-2\n"
             "added orch:spec to issue #7\n", ""))
     assert len(comments_of(store, 7)) == 2
     assert labels_of(store, 7) == ["ready-for-agent", "orch:spec"]
     flow_state(root, "spec", 7)
-    assert (ap(seed, git, env, "rounds"), capsys.readouterr()) == (0, ("6\n", ""))
+    assert (orch_autopilot(seed, git, env, "rounds"), capsys.readouterr()) == (0, ("6\n", ""))
 
 
 # --- candidates ------------------------------------------------------------------
@@ -526,12 +526,7 @@ class CountingGh(FakeGh):
 def candidates(seed, root, env, *args, gh=None):
     """`autopilot candidates <args>` on the gh adapter <gh> (the gh fake on
     <seed>'s store when None): its exit code."""
-    git = checkout(root)
-    gh = FakeGh(seed.store, env, pin=RepoPin(env, git), sleep=lambda _: None) if gh is None else gh
-    try:
-        return autopilot.run(["candidates"] + list(args), gh=gh, git=git, env=env)
-    except SystemExit as died:
-        return died.code
+    return orch_autopilot(seed, checkout(root), env, "candidates", *args, gh=gh)
 
 
 @pytest.fixture

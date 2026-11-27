@@ -12,11 +12,11 @@ from __future__ import annotations
 import pytest
 
 from conftest import (AUTOPILOT, CLAUDE, SESSIONS, comments_of, hold_flow, labels_of, marker_of,
-                      snapshot)
+                      orch_autopilot, snapshot)
 from orch import autopilot
 from orch.gh import Gh
 from orch.repo import REPO_REMEDY, RepoPin
-from test_autopilot import ap, checkout
+from test_autopilot import checkout
 from test_autopilot_questions import held, run_ap, text_file
 
 AUTO_SYNC = "orchestrator.autopilot.auto-sync"
@@ -144,7 +144,8 @@ def test_sync_dropped_posts_the_intents_with_the_auto_sync_wording_and_releases(
         root, seed, store, capsys, syncing, dropped, local, wording):
     git = checkout(root, local=local)
 
-    assert (ap(seed, git, AUTOPILOT, "sync-dropped", dropped), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, git, AUTOPILOT, "sync-dropped", dropped),
+            capsys.readouterr()) == (
         0, ("", ""))
     assert comments_of(store, 145) == [dropped_comment("- dropped thing\n", wording)]
     assert labels_of(store, 145) == ["orch:done", "needs-human"]
@@ -155,7 +156,8 @@ def test_sync_dropped_with_a_bad_auto_sync_warns_and_still_lands_the_manual_stop
         root, seed, store, capsys, syncing, dropped):
     git = checkout(root, local={AUTO_SYNC: "maybe"})
 
-    assert (ap(seed, git, AUTOPILOT, "sync-dropped", dropped), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, git, AUTOPILOT, "sync-dropped", dropped),
+            capsys.readouterr()) == (
         0, ("", "orch: orchestrator.autopilot.auto-sync is maybe - it must be true or false"
                 " (git config orchestrator.autopilot.auto-sync true|false)\n"))
     assert comments_of(store, 145) == [dropped_comment("- dropped thing\n", MANUAL_WORDING)]

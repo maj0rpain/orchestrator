@@ -24,7 +24,7 @@ from typing import Callable, List, Mapping, Optional, Tuple
 
 from orch.autopilot import autopilot_dir
 from orch.common import (DIR_STAMP_PATTERN, dir_stamp, die, file_write_atomic, mkdir_p_or_die,
-                         plain_number, read_raw, read_text, rm_f, text_file_write, warn)
+                         plain_number, read_raw, read_text, rm_f, warn)
 
 
 def proc_start(pid: int, env: Mapping[str, str]) -> Optional[str]:
@@ -87,7 +87,7 @@ def issue_record(main: str, issue: str) -> str:
     else its tick record's, else "" - bash liveness_issue_record; "" too for
     a record that cannot be read."""
     for kind in ("pid", "tick"):
-        path = "%s/%s.%s" % (run_dir(main), issue, kind)
+        path = _issue_file(main, issue, kind)
         if os.path.isfile(path):
             return read_raw(path) or ""
     return ""
@@ -305,7 +305,8 @@ def watch_begin(pidfile: str, env: Mapping[str, str]) -> bool:
     if record is None:
         warn("could not read the start time of pid %d" % os.getpid())
         return False
-    text_file_write(pidfile, record, "could not write " + pidfile)
+    if not file_write_atomic(pidfile, record, make_directory=False):
+        die("could not write " + pidfile)
     return True
 
 

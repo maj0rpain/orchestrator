@@ -13,11 +13,11 @@ import os
 import pytest
 
 from conftest import (AUTOPILOT, CLAUDE, GH_502, SESSIONS, comments_of, flow_state, hold_flow,
-                      labels_of, marker_of, read, snapshot, state_json)
+                      labels_of, marker_of, orch_autopilot, read, snapshot, state_json)
 from orch import autopilot
 from orch.gh import Gh
 from orch.repo import REPO_REMEDY, RepoPin
-from test_autopilot import ap, checkout
+from test_autopilot import checkout
 
 QUESTION = "1. Keep it? Recommended: yes\n\nReply like `1: A`.\n"
 REPLY_FORMAT = ("Reply in one comment like `1: A, 2: recommended, 3: <free text>`"
@@ -43,7 +43,7 @@ def held(seed, n, *labels):
 
 
 def run_ap(seed, root, env, *argv):
-    return ap(seed, checkout(root), env, *argv)
+    return orch_autopilot(seed, checkout(root), env, *argv)
 
 
 # --- ask ------------------------------------------------------------------------
@@ -71,7 +71,8 @@ def test_ask_posts_the_marked_question_to_the_handle_adds_needs_human_and_releas
 def test_ask_mentions_the_handle_setting_when_one_is_set(root, seed, store, tmp_path, asking):
     git = checkout(root, local={"orchestrator.autopilot.handle": "maintainer"})
 
-    assert ap(seed, git, AUTOPILOT, "ask", "spec", text_file(tmp_path, "q.md", "Q\n")) == 0
+    assert orch_autopilot(seed, git, AUTOPILOT, "ask", "spec",
+                          text_file(tmp_path, "q.md", "Q\n")) == 0
     assert comments_of(store, 7)[0].split("\n")[1] == "@maintainer"
 
 
@@ -247,7 +248,8 @@ def test_answer_with_no_repo_exits_2_with_the_remedy_alone_calling_no_gh(
     flow_state(root, "spec", 7)
     ans = text_file(tmp_path, "ans.md", "old answer\n")
 
-    assert (ap(seed, no_repo(root), CLAUDE, "answer", "spec", ans), capsys.readouterr()) == (
+    assert (orch_autopilot(seed, no_repo(root), CLAUDE, "answer", "spec", ans),
+            capsys.readouterr()) == (
         2, ("", "orch: %s\n" % REPO_REMEDY))
     assert (comment_reads(store), open(ans).read()) == (0, "old answer\n")
 
@@ -264,7 +266,8 @@ def test_with_no_repo_answer_s_own_refusal_wins_over_the_remedy(
     if state is not None:
         hold_flow(root, **state)
 
-    assert ap(seed, no_repo(root), CLAUDE, "answer", phase, text_file(tmp_path, "a.md", "")) == 2
+    assert orch_autopilot(seed, no_repo(root), CLAUDE, "answer", phase,
+                          text_file(tmp_path, "a.md", "")) == 2
     err = capsys.readouterr().err
     assert err.startswith("orch: " + refusal) and REPO_REMEDY not in err
 

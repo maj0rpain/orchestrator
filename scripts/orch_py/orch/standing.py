@@ -12,7 +12,7 @@ makes and a finished phase's close (standing_finish, with its label move),
 which the phase noun's finish runs for phase advance and for review ready.
 Each keeps the writes, order and messages of the bash standing_ function it
 was ported from; label_verdict, standing_pause, standing_finish and
-standing_move_label never had a bash copy.
+standing_move_label had no bash copy left before standing.sh went.
 
 A phase label, `orch:<phase>`, records an autopilot flow's phase on its
 issue. PHASES is the flow's phases in order, read from the handoff module
