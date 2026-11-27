@@ -42,6 +42,7 @@ from conftest import (
     path_without,
     read,
     run_git,
+    side_checkout,
     until,
     verification_records,
     verification_store,
@@ -1136,10 +1137,7 @@ def test_side_checkout_list_into_a_pipe_already_closed_dies_of_sigpipe(tmp_path,
     """The pipe's reader is gone before orch.sh starts, so list's first line
     stops it, silently, as SIGPIPE stopped bash's printf."""
     committed(repo, {"a.txt": "a\n"}, "first")
-    side = repo / ".orchestrator" / "checkouts" / "alpha"
-    run_git(repo, "worktree", "add", "-q", "-b", "alpha", str(side))
-    (Path(run_git(side, "rev-parse", "--absolute-git-dir")) / "orchestrator-side-checkout") \
-        .write_text("")
+    side_checkout(repo, "alpha")
     reader, writer = os.pipe()
     os.close(reader)
     try:

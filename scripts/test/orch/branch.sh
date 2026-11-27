@@ -82,18 +82,18 @@ state_write_fails_after_first_bin() {
 # branch_presence <ref>: present or gone, whether the branch <ref> exists.
 branch_presence() { if git rev-parse --verify --quiet "$1" >/dev/null 2>&1; then echo present; else echo gone; fi; }
 
-# break_index / restore_index [<checkout>]: make a checkout's working tree
-# (default: the current directory) unreadable - git status fails on a garbage
-# index - and put the index back. They return non-zero, touching no file, when
-# the checkout's git directory cannot be resolved.
+# break_index / restore_index: make the current directory's working tree
+# unreadable - git status fails on a garbage index - and put the index back.
+# They return non-zero, touching no file, when its git directory cannot be
+# resolved.
 break_index() {
   local idx
-  idx="$(git -C "${1:-.}" rev-parse --absolute-git-dir)/index" || return 1
+  idx="$(git rev-parse --absolute-git-dir)/index" || return 1
   cp "$idx" "$idx.bak" && echo garbage >"$idx"
 }
 restore_index() {
   local idx
-  idx="$(git -C "${1:-.}" rev-parse --absolute-git-dir)/index" || return 1
+  idx="$(git rev-parse --absolute-git-dir)/index" || return 1
   mv "$idx.bak" "$idx"
 }
 

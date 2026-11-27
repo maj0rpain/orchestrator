@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from conftest import (ARCHIVE_STAMP, archive_clock, archive_main, archived, done_flow, hold_flow,
-                      run_git, side_checkout, worktree_add)
+from conftest import (ARCHIVE_STAMP, archive_clock, archive_main, archived, done_flow, has_branch,
+                      hold_flow, run_git, side_checkout, worktree_add)
 from orch import side_checkout as module
 from orch.git import FakeGit, Git
 
@@ -176,10 +176,6 @@ def test_issue_refuses_any_argument_with_exit_2_before_judging_the_checkout(
 # --- remove --------------------------------------------------------------------
 
 REMOVE_USAGE = "orch: usage: orch.sh side-checkout remove <slug>\n"
-
-
-def has_branch(main, branch):
-    return run_git(main, "branch", "--list", branch) != ""
 
 
 def test_remove_archives_the_flow_into_the_main_checkout_removes_the_worktree_and_keeps_the_branch(

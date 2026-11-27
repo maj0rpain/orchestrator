@@ -47,8 +47,8 @@ it falls back to the full suite.
 far are `issue`, `finding-triage`, `verification`, `audit`, `review-pass`,
 `spec-review`, `spec`, `breakdown`, `glossary`, `parallel`, `route`, `agent`,
 `phase`, `handoff`, `redo`, `ticket`, `ticket-worktree`, `pr`, `review`,
-`autopilot`, `doctor` with its alias `health`, and the bare global commands
-`init`, `slug`, `status`, `archive` and `help`; a
+`autopilot`, `side-checkout`, `doctor` with its alias `health`, and the bare
+global commands `init`, `slug`, `status`, `archive` and `help`; a
 helper a converted noun needs is copied into the package module of the concept
 it serves, under its bash name, and its bash copy stays while a bash caller
 remains. `orch.sh` stays the one entry point: main's one case naming the
@@ -290,8 +290,9 @@ shell resolves it once (a subshell that resolves first does so for itself and
 cannot hand the memo back). The concept modules with no noun, `checkout.sh`
 (the Checkout module: the main checkout and a checkout's branch; the walk over
 every checkout is its Python copy's, `orch/checkout.py`) and `trust.sh` (the
-Trust module: which PRs orch.sh reads; which comments it reads and which
-issues autopilot runs on are decided by its Python copy, `orch/trust.py`),
+Trust module: its fork-PR filter and issue trust check are kept with no bash
+caller; which PRs and comments orch.sh reads and which issues autopilot runs on
+are decided by its Python copy, `orch/trust.py`),
 live among the modules too. The
 Filed finding, Liveness, Session log and Standing modules went with the bash
 autopilot noun, and the Comments, Issue timeline and Marked comment modules
@@ -617,7 +618,7 @@ scripts/orch_py/tests/        the pytest suite: in-process tests of each noun ag
 scripts/orch_py/requirements-dev.txt the pinned dev dependencies: pytest, pytest-xdist, pytest-timeout (the package itself needs none)
 scripts/orch_py/pytest.ini    the pytest settings: the tests folder, the package on the module path, the per-test timeout, no cache directory
 scripts/orch/checkout.sh      the Checkout module, a concept module with no noun: the main checkout and a checkout's branch; the checkout scan and the ticket-worktree listing and refusal are orch/checkout.py's
-scripts/orch/trust.sh         the Trust module, a concept module with no noun: which PRs orch.sh reads - the one filter dropping a fork PR; the comment filter dropping a comment whose author is not an owner, member or collaborator is orch/trust.py's, and the issue trust check deciding which issues autopilot runs on is orch/trust.py's, the bash copy left with no caller
+scripts/orch/trust.sh         the Trust module, a concept module with no noun: its fork-PR filter (trust_filter_prs) and issue trust check (trust_issue_check), both kept with no bash caller; which PRs orch.sh reads - the filter dropping a fork PR - is orch/trust.py's, as are the comment filter dropping a comment whose author is not an owner, member or collaborator and the issue trust check deciding which issues autopilot runs on
 scripts/orch/common.sh        the primitives no concept owns (die, capture, ..., and autopilot_active, whether this is an autopilot session, which checkout and the gh adapter ask)
 scripts/orch/loader.sh        the module loader, always loaded beside common.sh: the stub table, its per-copy cache under ~/.cache/orchestrator/, the stub dispatch (orch_stubs, orch_stub), orch_load (once per shell) and the ORCH_LOAD_TRACE load trace
 scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), the capture pair gh_capture and gh_capture_err, every adapter_* operation, the GitHub limit record its limit handler makes in an autopilot process (the GitHub limit pause and a session's hit file, with the pause put, the pause-file paths and the reset cap), the ORCH_GH_ADAPTER hook

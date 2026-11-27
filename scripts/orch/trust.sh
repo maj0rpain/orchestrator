@@ -1,10 +1,12 @@
 # shellcheck shell=bash
-# trust.sh - the Trust module: a concept module with no orch.sh noun of its own,
-# owning which PRs orch.sh takes for its own and which issue authors it trusts.
-# A PR is its own when its head branch lives in the repo (isCrossRepository
-# false); a fork PR is dropped (trust_filter_prs). Which comments orch.sh reads
-# - those whose authorAssociation is OWNER, MEMBER or COLLABORATOR (ADR-0057) -
-# is decided by orch/trust.py's filter_comments.
+# trust.sh - the Trust module: a concept module with no orch.sh noun of its own.
+# Its fork-PR filter and issue trust check are kept here with no bash caller;
+# the Python copy, orch/trust.py, decides which PRs orch.sh takes for its own
+# and which issue authors it trusts. A PR is its own when its head branch lives
+# in the repo (isCrossRepository false); a fork PR is dropped (orch/trust.py's
+# trust_filter_prs, the bash copy below kept beside it). Which comments
+# orch.sh reads - those whose authorAssociation is OWNER, MEMBER or
+# COLLABORATOR (ADR-0057) - is decided by orch/trust.py's filter_comments.
 # Which issues autopilot runs on is decided by the Python copy, orch/trust.py's
 # issue_check: an issue is trusted when its body and its title both are. The
 # bash copy below (trust_issue_check) has no caller left.

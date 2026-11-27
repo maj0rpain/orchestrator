@@ -256,14 +256,14 @@ work_to_discard() {
 # failed abort, reset or clean dies (exit 1) naming the step. Called as a bare
 # statement, so the die stops the caller.
 discard_flow_branch_work() {
-  local merging="" rebasing="" dirty top main cmds=""
+  local merging="" rebasing="" dirty top main_root cmds=""
   work_to_discard merging rebasing dirty || return 0
   if ! autopilot_active; then
     if ! top="$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null)" ||
-      ! main="$(cd "$top" && main_checkout)"; then
+      ! main_root="$(cd "$top" && main_checkout)"; then
       die "could not tell whether $ROOT is the main checkout - nothing was discarded"
     fi
-    if [ "$top" = "$main" ]; then
+    if [ "$top" = "$main_root" ]; then
       [ -z "$merging" ] || cmds="git -C \"$ROOT\" merge --abort; "
       [ -z "$rebasing" ] || cmds="${cmds}git -C \"$ROOT\" rebase --abort; "
       die "uncommitted or in-progress work on the flow's branch in the main checkout - discard it yourself ($(list_join "$dirty")${merging:+ merge in progress}): ${cmds}git -C \"$ROOT\" reset --hard && git -C \"$ROOT\" clean -fd"

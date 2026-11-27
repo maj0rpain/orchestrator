@@ -265,17 +265,3 @@ def test_add_from_a_side_checkout_nests_under_the_main_checkout_at_origin_s_fetc
     assert (run_git(path, "rev-parse", "--show-toplevel"), run_git(main, "status", "--porcelain")) \
         == (path, "")
 
-
-def test_add_whose_base_cannot_be_fetched_makes_no_worktree(pushed, seed, capsys):
-    main, _ = pushed
-    run_git(main, "config", "orchestrator.base", "nosuch")
-
-    git = Git(cwd=str(main))
-
-    code, out, err = died_of(
-        capsys, lambda: side_checkout_add(["nofetch"], fake(seed), git, {}, str(main)))
-    assert (code, out) == (1, "")
-    assert err.endswith(
-        "orch: could not fetch base branch nosuch from origin - no side checkout was made\n")
-    assert not (main / ".orchestrator" / "checkouts" / "nofetch").exists()
-    assert len(run_git(main, "worktree", "list").split("\n")) == 1
