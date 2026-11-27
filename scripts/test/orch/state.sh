@@ -157,57 +157,6 @@ for key in slug phase issue base branch pr base_sha created updated; do
 done
 restore_suite_env
 
-# --- the state writer accepts exactly the table's phases --------------------
-# phase_write, the bash writer of state.phase, accepts the phase table's phases
-# and refuses any other, leaving the recorded phase as it was.
-# Optional trailing key/value pairs are written with the phase, or not at all.
-echo
-echo "state phase writer"
-fake_flow phase-writer
-for p in implement review "done" spec; do
-  out="$(sourced_orch phase_write "$p" 2>&1)"; st=$?
-  assert_status "the state writer accepts $p" "$st" 0
-  assert_eq "and writes it" "$("$ORCH" state get phase)" "$p"
-done
-out="$(sourced_orch phase_write plan 2>&1)"; st=$?
-assert_status "the state writer refuses a phase outside the table" "$st" 1
-assert_eq "with today's message" "$out" \
-  "orch: not a flow phase: plan (want one of: spec implement review done)"
-assert_eq "leaving the recorded phase unchanged" "$("$ORCH" state get phase)" "spec"
-out="$(sourced_orch phase_write "spec implement" 2>&1)"; st=$?
-assert_status "the state writer refuses two adjacent phases" "$st" 1
-assert_eq "with today's message for them too" "$out" \
-  "orch: not a flow phase: spec implement (want one of: spec implement review done)"
-assert_eq "leaving the recorded phase unchanged after them" "$("$ORCH" state get phase)" "spec"
-out="$(sourced_orch phase_write review budget 9 --string base_sha 77 2>&1)"; st=$?
-assert_status "phase_write with pairs succeeds" "$st" 0
-assert_eq "writing the phase and the keys" "$(jq -c '[.phase, .budget, .base_sha]' .orchestrator/state.json)" '["review",9,"77"]'
-before="$(cat .orchestrator/state.json)"
-out="$(sourced_orch phase_write plan budget 1 2>&1)"; st=$?
-assert_status "phase_write refuses a phase outside the table, with pairs" "$st" 1
-assert_eq "writing neither phase nor keys" "$(cat .orchestrator/state.json)" "$before"
-phase_write_fails_bin="$(state_write_fails_bin)"
-out="$(PATH="$phase_write_fails_bin:$PATH" sourced_orch phase_write 'done' budget 1 2>&1)"; st=$?
-assert_status "phase_write with pairs dies on a failed write" "$st" 1
-assert_contains "with its wording" "$out" "orch: could not record phase, budget in $PWD/.orchestrator/state.json - the flow is unchanged"
-assert_eq "writing neither phase nor keys on it" "$(cat .orchestrator/state.json)" "$before"
-out="$(PATH="$phase_write_fails_bin:$PATH" sourced_orch phase_write 'done' budget 1 --string branch b budget 2 2>&1)"; st=$?
-assert_status "phase_write with several pairs exits 1 on a failed write" "$st" 1
-assert_contains "phase_write names each key once, in order, never --string" "$out" "orch: could not record phase, budget, branch in $PWD/.orchestrator/state.json - the flow is unchanged"
-assert_eq "a failed several-pairs write leaves state.json unchanged" "$(cat .orchestrator/state.json)" "$before"
-out="$(PATH="$phase_write_fails_bin:$PATH" sourced_orch phase_write 'done' 2>&1)"; st=$?
-assert_contains "phase_write with no pairs names phase alone" "$out" "orch: could not record phase in $PWD/.orchestrator/state.json - the flow is unchanged"
-assert_status "phase_write with no pairs exits 1 on a failed write" "$st" 1
-assert_eq "a failed no-pairs write leaves state.json unchanged" "$(cat .orchestrator/state.json)" "$before"
-out="$(sourced_orch phase_write 'done' budget 2>&1)"; st=$?
-assert_status "phase_write with a key and no value exits 1" "$st" 1
-assert_eq "naming the malformed write" "$out" "orch: malformed state write: phase done budget"
-out="$(sourced_orch phase_write 'done' --string 2>&1)"; st=$?
-assert_status "phase_write with a dangling --string exits 1" "$st" 1
-assert_eq "phase_write with a dangling --string is malformed" "$out" "orch: malformed state write: phase done --string"
-assert_eq "a malformed write leaves state.json unchanged" "$(cat .orchestrator/state.json)" "$before"
-restore_suite_env
-
 # --- state.json schema ------------------------------------------------------
 # What a fresh init writes, pinned: every key it seeds reads back through
 # state get, and the raw file holds exactly these keys, in this order, with

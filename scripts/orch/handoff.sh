@@ -31,11 +31,10 @@ phase_list() {
   printf '%s\n' "$list"
 }
 
-# The flow's phases, space-separated in flow order: read inside functions only
-# (the state writer's phase guard). Set when this
-# module is sourced, from the phase table above.
+# The flow's phases, space-separated in flow order, set when this module is
+# sourced, from the phase table above.
 PHASES="$(phase_list)"
-# shellcheck disable=SC2034 # read by other modules, each calling orch_load handoff first
+# shellcheck disable=SC2034 # read by this module's tests alone
 readonly PHASES
 
 # phase_cell <column> <phase>: <phase>'s cell in <column> of the table, the

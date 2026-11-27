@@ -7,10 +7,10 @@
 # scripts/orch_py/orch/flow_state.py, copies flow_state_get_many's rules and
 # the key table's key, default and seed columns, and writes a new flow's seed
 # for Python init, the only writer that creates the file, then stamps the
-# seed's spec phase through its own phase_write copy, which checks it against
-# handoff.py's copy of the phase table. The Python phase writers also record
-# every phase move phase advance and review ready make; bash writes every
-# other change. The
+# seed's spec phase through the Python phase writer, which checks it against
+# handoff.py's copy of the phase table. The Python phase writers record every
+# phase move - init's, phase advance's, review ready's and the redos'; bash
+# writes every other change. The
 # golden state.json files in scripts/orch_py/tests/flow_state/ pin the two:
 # those under read/ and refused/ the readers, which the state section reads
 # through flow_state_get_many too, and those under seed/, which only pytest
@@ -83,7 +83,7 @@ ORCH_DIR_NAME=".orchestrator"
 # owner: - for a key state set may write (state_key_settable); otherwise the
 #   reason it refuses, printed as "state set refuses <key>: <owner>".
 STATE_KEYS='slug||arg|init seeds it
-# phase_write spec sets the phase straight after init seeds it.
+# init records the spec phase straight after it seeds the file.
 phase||null|use phase advance (review ready and redo also move it)
 # Seeded from --issue when given; state.json carries no field for whether it
 # was adopted or published - nothing downstream needs that distinction

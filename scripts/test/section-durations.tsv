@@ -118,7 +118,6 @@
 14	15	state	0c580f49e511758e838f9ddd6af8e775b042e6be
 14	13	a flow from before the budget shipped	2a2d0365f8f384fb0837404a0af8dff641cda76a
 7	7	state get reads every key with its default	2beca9f0a4a08ccb856a99d7fb0056e432afbf81
-7	8	the state writer accepts exactly the table's phases	c294b589ad632808c54530a64901248b4934de6a
 5	6	state.json schema	40e081f38f1f25ff4badc944f8aab349e89d4698
 3	4	state set on a corrupt state.json	d8cad746c8502f5fea3e7003401ee6ad6859a890
 14	15	the Flow state module, sourced alone	9cd9486fa3618710e55886a16c4daf11fd93a9ac

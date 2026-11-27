@@ -141,8 +141,7 @@ state_write_string() {
 # malformed pair list dies "malformed state write: <args>". A failed write
 # dies naming each key given once, in order (never a --string marker), as
 # state_write's does, or naming no key when a value will not convert or the
-# object's keys cannot be read. phase_write reports through it, so a failed
-# phase_write dies the same way; both no-key failure paths share the one
+# object's keys cannot be read. Both no-key failure paths share the one
 # fall-through die.
 state_write_many() {
   local obj keys
@@ -233,28 +232,6 @@ require_field() {
 # GitHub. A second argument, die2, is passed on to
 # require_field.
 require_issue() { require_field "$1" issue "${2:-die}"; }
-
-# The bash writer of state.phase: phase_write, which dies on a failed write.
-# Every bash write of state.phase goes through it; phase advance, review
-# ready's finish, the redos' closing write and Python init record the phase
-# through the Python copies, phase_write and
-# phase_write_try in orch_py/orch/flow_state.py, which check it against
-# handoff.py's copy of the phase table (ADR-0067). It knows only which phases
-# exist: every caller keeps its own guard on which transition it may make, so
-# a step back needs no handoff check here. Optional trailing <key> <value>
-# pairs are written with the phase in one write, after require_flow_phase: the
-# phase and the keys are recorded together or not at all. It dies as
-# state_write_many does (a malformed pair list "malformed state write:
-# <args>", a failed write naming phase and each key once).
-phase_write() {
-  require_flow_phase "$1"
-  state_write_many phase "$@"
-}
-# phase_write's PHASES guard: dies unless <phase> is a flow phase.
-require_flow_phase() {
-  orch_load handoff
-  word_listed "$PHASES" "$1" || die "not a flow phase: $1 (want one of: $PHASES)"
-}
 
 # flow_base_fallback_into <var> <raw>: sets <var> to the base read from state,
 # or the default branch when <raw> is empty - a flow started before base was
