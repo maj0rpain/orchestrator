@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import AUTOPILOT, CLAUDE, answered, orch_review
+from conftest import AUTOPILOT, CLAUDE, answered, orch_review, write
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 
@@ -28,15 +28,6 @@ def printed(seed, root, capsys):
     code, out, err = standards(seed, root, capsys)
     assert (code, err) == (0, "")
     return out
-
-
-def write(root, relative, *lines, raw=None):
-    """<lines>, each ending in a newline - or <raw> as it is - written to
-    <root>/<relative>, its directories made."""
-    path = root / relative
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("".join(line + "\n" for line in lines) if raw is None else raw)
-    return path
 
 
 @pytest.fixture

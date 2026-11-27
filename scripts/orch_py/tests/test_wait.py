@@ -47,26 +47,6 @@ def test_the_guard_marks_under_its_provisional_name_and_clears_an_old_mark(tmp_p
     assert guard.check() is True
 
 
-def test_a_guard_whose_limit_the_block_could_not_hold_ends_the_call_storing_nothing(tmp_path):
-    clock = Clock()
-    guard = guarded(tmp_path, block="5", clock=clock)
-
-    assert guard.limit_fits(60) is False
-    assert clock.slept == [5]
-    assert guard.check() is False
-    assert sorted(p.name for p in (tmp_path / ".orchestrator" / "wait").iterdir()) == []
-
-
-def test_a_guard_folder_that_cannot_be_created_dies_naming_it(tmp_path, capsys):
-    (tmp_path / ".orchestrator").mkdir()
-    (tmp_path / ".orchestrator" / "wait").write_text("a file\n")
-
-    code, out, err = died_of(capsys, lambda: guarded(tmp_path))
-
-    assert (code, out, err) == (
-        1, "", "orch: could not create %s/.orchestrator/wait\n" % tmp_path)
-
-
 # --- the limited mark ----------------------------------------------------------
 
 

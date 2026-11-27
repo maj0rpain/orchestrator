@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import git_repo, hold_flow
+from conftest import git_repo, hold_flow, record, write
 from orch import cli
 from orch.review import MALFORMED_SHAPE
 
@@ -37,16 +37,6 @@ def bridge(capsys, func, *args):
         code = died.code
     out, err = capsys.readouterr()
     return code, out, err
-
-
-def record(root, i, *lines, under=""):
-    """Iteration <i>'s review record, holding <lines>, in the review
-    directory or its <under> folder."""
-    directory = root / ".orchestrator" / "review" / under
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / ("iteration-%02d.md" % i)
-    path.write_text("".join(line + "\n" for line in lines))
-    return path
 
 
 # --- the terminal-state bridge ------------------------------------------------
@@ -153,12 +143,6 @@ def test_ci_bridge_dies_with_its_usage_on_wrong_arguments(github, capsys, args):
 
 
 # --- the Standards bridge -----------------------------------------------------
-
-
-def write(root, relative, *lines):
-    path = root / relative
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("".join(line + "\n" for line in lines))
 
 
 def standards(capsys):

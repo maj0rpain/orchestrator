@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 
 from conftest import (AUTOPILOT, SESSIONS, TICKET_PARENT, FakeClock, Opens, answered, committed,
-                      died_of, hold_flow, orch_review, rebasing, run_git, state_json,
-                      worktree_add)
+                      died_of, hold_flow, orch_review, rebasing, record, run_git, state_json,
+                      worktree_add, write)
 from orch import review
 from orch.common import exclude_orch_dirs
 from orch.git import FakeGit, Git
@@ -114,14 +114,6 @@ def state_of(root):
     return json.loads(state_json(root).read_text())
 
 
-def record(root, i, text):
-    """Iteration <i>'s review record in <root>, holding <text>: its path."""
-    path = root / ".orchestrator" / "review" / ("iteration-%02d.md" % i)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text)
-    return path
-
-
 SPENT = ("orch: budget of %s iterations spent - stop the loop and report, do not start"
          " another\n")
 
@@ -165,7 +157,7 @@ def test_a_loop_s_first_iteration_renews_its_flake_rerun_in_the_same_write(root,
 def test_the_iteration_after_a_recorded_terminal_state_starts_a_loop_renewing_the_rerun(
         root, capsys, seed):
     flow(root, iteration=2, budget=5, flake_rerun_used=True)
-    record(root, 2, "## Terminal state\nstop - CI failing.\n")
+    record(root, 2, raw="## Terminal state\nstop - CI failing.\n")
 
     assert orch_review(seed, root, "begin") == 0
     assert capsys.readouterr() == ("3\n", "")
@@ -176,7 +168,7 @@ def test_the_iteration_after_a_recorded_terminal_state_starts_a_loop_renewing_th
                          ids=["no-section", "empty-section"])
 def test_a_record_with_no_terminal_state_leaves_the_flake_rerun_spent(root, capsys, text, seed):
     flow(root, iteration=2, budget=5, flake_rerun_used=True)
-    record(root, 2, text)
+    record(root, 2, raw=text)
 
     assert orch_review(seed, root, "begin") == 0
     assert capsys.readouterr() == ("3\n", "")
@@ -377,9 +369,7 @@ def test_the_fallback_on_its_own_reads_its_state_in_one_read(root, monkeypatch):
 def records(root, *names):
     """Each of <names> written empty under <root>'s review directory."""
     for name in names:
-        path = review_dir(root) / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("")
+        write(review_dir(root), name, raw="")
 
 
 def review_files(root):
@@ -447,7 +437,7 @@ def resuming(ticket_repo):
     left by a dead run: its root."""
     exclude_orch_dirs(Git())
     flow(ticket_repo, branch=TICKET_PARENT, iteration=2, budget=5)
-    record(ticket_repo, 1, "## Findings\nNone\n")
+    record(ticket_repo, 1, raw="## Findings\nNone\n")
     records(ticket_repo, "iteration-02-spec.md", "iteration-02-standards.md")
     return ticket_repo
 
@@ -477,7 +467,7 @@ def test_resume_with_no_record_clears_the_dead_run_s_reports_and_reruns_it(resum
 
 
 def test_resume_with_a_record_short_of_the_budget_goes_on_to_the_next(resuming, capsys, seed):
-    record(resuming, 2, "## Findings\nNone\n")
+    record(resuming, 2, raw="## Findings\nNone\n")
     before = state_json(resuming).read_text()
 
     assert orch_resume(seed, resuming) == 0
@@ -488,7 +478,7 @@ def test_resume_with_a_record_short_of_the_budget_goes_on_to_the_next(resuming, 
 
 def test_resume_with_a_record_at_the_budget_terminates(resuming, capsys, seed):
     flow(resuming, branch=TICKET_PARENT, iteration=2, budget=2)
-    record(resuming, 2, "## Findings\nNone\n")
+    record(resuming, 2, raw="## Findings\nNone\n")
     before = state_json(resuming).read_text()
 
     assert orch_resume(seed, resuming) == 0
@@ -506,7 +496,7 @@ def test_resume_refuses_a_loop_that_is_not_pending_or_interrupted_touching_nothi
         resuming, capsys, iteration, text, word, seed):
     flow(resuming, branch=TICKET_PARENT, iteration=iteration, budget=5)
     if text is not None:
-        record(resuming, 2, text)
+        record(resuming, 2, raw=text)
     (resuming / "README.md").write_text("hand edit\n")
     before = facts(resuming)
 
@@ -626,7 +616,7 @@ def test_a_dirty_tree_in_a_side_checkout_is_discarded_in_a_plain_session(resumin
 ], ids=["begin", "path", "path-given", "terminal", "resume", "retire"])
 def test_each_verb_reads_its_flow_state_once(root, capsys, monkeypatch, argv, code, out, err, seed):
     flow(root, iteration=1, budget=1)
-    record(root, 1, "## Terminal state\nstop\nCI failed twice.\n")
+    record(root, 1, raw="## Terminal state\nstop\nCI failed twice.\n")
     opens = Opens(monkeypatch, state_json(root))
 
     assert orch_review(seed, root, *argv) == code

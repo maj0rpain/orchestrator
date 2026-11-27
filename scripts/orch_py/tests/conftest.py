@@ -143,6 +143,24 @@ def flow_state(root, phase, issue, branch=None):
     return hold_flow(root, slug="x", phase=phase, issue=issue, branch=branch)
 
 
+def write(root, relative, *lines, raw=None):
+    """<lines>, each ending in a newline - or <raw> as it is - written to
+    <root>/<relative>, a Path's, its directories made: its path."""
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(line + "\n" for line in lines) if raw is None else raw)
+    return path
+
+
+def record(root, i, *lines, raw=None, under="", report=""):
+    """Iteration <i>'s review record in <root>, holding <lines> or <raw> as
+    write takes them, in the review directory or its <under> folder - or,
+    with <report>, its iteration-NN-<report>.md reviewer's report: its
+    path."""
+    name = "iteration-%02d%s.md" % (i, "-" + report if report else "")
+    return write(root, Path(".orchestrator", "review", under, name), *lines, raw=raw)
+
+
 def write_labels_doc(root, text):
     """Writes <text> as the triage-labels doc of the checkout at <root>, a
     Path, making its directories as needed."""

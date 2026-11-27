@@ -11,7 +11,7 @@ import os
 
 import pytest
 
-from conftest import AUTOPILOT, CLAUDE, GH_502, answered, hold_flow, orch_review
+from conftest import AUTOPILOT, CLAUDE, GH_502, answered, hold_flow, orch_review, record, write
 
 
 def lines(*text):
@@ -26,41 +26,29 @@ IMPLEMENT = lines("## PR", "#7", "## Deviations", "", "- Built the key from the 
                   "ok")
 
 
-def write(root, relative, text):
-    """<text> written to <root>/<relative>, its directories made: its path."""
-    path = root / relative
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text)
-    return path
-
-
-def record(root, name, text):
-    return write(root, ".orchestrator/review/" + name, text)
-
-
 @pytest.fixture
 def known(root):
     """A flow on issue #7 holding the plan and implement handoffs and three
     review records, with a reviewer's report and an empty one beside the
     third: the known-items path, holding stale content."""
     hold_flow(root, slug="x", phase="review", issue=7)
-    write(root, ".orchestrator/handoff/01-plan.md", PLAN)
-    write(root, ".orchestrator/handoff/03-implement.md", IMPLEMENT)
-    record(root, "iteration-01.md", lines(
+    write(root, ".orchestrator/handoff/01-plan.md", raw=PLAN)
+    write(root, ".orchestrator/handoff/03-implement.md", raw=IMPLEMENT)
+    record(root, 1, raw=lines(
         "# Review iteration 1", "## Waiting to be filed", "",
         "- Standards/nit: `a.sh:3` an old loop nit - final iteration", "## Filed", "",
         "- #41 nit: a.sh:3 old loop nit"))
-    record(root, "iteration-02.md", lines(
+    record(root, 2, raw=lines(
         "# Review iteration 2", "## Waiting to be filed", "None", "## Filed", "None."))
-    record(root, "iteration-03.md", lines(
+    record(root, 3, raw=lines(
         "# Review iteration 3", "## Waiting to be filed", "",
         "- Spec/major: `b.sh:10` the parser is duplicated - needs a decision",
         "- Standards/nit: - the name reads oddly - not mechanical", "## Filed", "",
         "- #99 major: b.sh:1 never read below the boundary"))
-    record(root, "iteration-03-spec.md", "")
-    record(root, "iteration-03-standards.md", lines(
+    record(root, 3, report="spec", raw="")
+    record(root, 3, report="standards", raw=lines(
         "## Waiting to be filed", "- Standards/nit: `x.sh:1` a report, not a record - x"))
-    return write(root, "known.md", "stale content\n")
+    return write(root, "known.md", raw="stale content\n")
 
 
 def test_every_source_lands_under_its_heading_with_its_tag_overwriting_the_file(root, seed,
@@ -95,14 +83,14 @@ def test_the_boundary_is_read_in_base_10(root, seed, known):
 
 
 def test_a_filed_entry_with_no_issue_number_is_tagged_filed_alone(root, seed, known):
-    record(root, "iteration-02.md", lines("## Filed", "- nit: never filed by number"))
+    record(root, 2, raw=lines("## Filed", "- nit: never filed by number"))
 
     assert orch_review(seed, root, "known-items", str(known), "3") == 0
     assert "- nit: never filed by number - filed\n" in known.read_text()
 
 
 def test_a_sites_bullet_waiting_to_be_filed_is_one_whole_known_item(root, seed, known):
-    record(root, "iteration-04.md", lines(
+    record(root, 4, raw=lines(
         "# Review iteration 4", "## Waiting to be filed", "",
         "- Standards/nit: `a.sh:3` the helper is copied per script Sites: `a.sh:3`, `b.sh:9`."
         " - needs a decision (`a.sh:3`); loop-authored lines (`b.sh:9`)",
@@ -115,7 +103,7 @@ def test_a_sites_bullet_waiting_to_be_filed_is_one_whole_known_item(root, seed, 
 
 
 def test_a_fenced_heading_does_not_cut_a_filed_entry_short(root, seed, known):
-    record(root, "iteration-04.md", lines(
+    record(root, 4, raw=lines(
         "# Review iteration 4", "## Filed", "", "- #41 nit: quoted template", "```",
         "## Heading", "```", "- #42 nit: next"))
 
@@ -126,8 +114,8 @@ def test_a_fenced_heading_does_not_cut_a_filed_entry_short(root, seed, known):
 
 
 def test_sources_that_all_say_none_read_none_under_both_headings(root, seed, known):
-    write(root, ".orchestrator/handoff/01-plan.md", lines("## Rejected alternatives", "None."))
-    write(root, ".orchestrator/handoff/03-implement.md", lines("## Deviations", "- None"))
+    write(root, ".orchestrator/handoff/01-plan.md", raw=lines("## Rejected alternatives", "None."))
+    write(root, ".orchestrator/handoff/03-implement.md", raw=lines("## Deviations", "- None"))
     for name in ("iteration-01.md", "iteration-03.md"):
         os.remove(str(root / ".orchestrator/review" / name))
 
@@ -137,8 +125,8 @@ def test_sources_that_all_say_none_read_none_under_both_headings(root, seed, kno
 
 def test_a_flow_with_no_review_directory_reads_no_record(root, seed, capsys):
     hold_flow(root, slug="x", phase="review", issue=7)
-    write(root, ".orchestrator/handoff/01-plan.md", PLAN)
-    write(root, ".orchestrator/handoff/03-implement.md", lines("## Deviations", "None"))
+    write(root, ".orchestrator/handoff/01-plan.md", raw=PLAN)
+    write(root, ".orchestrator/handoff/03-implement.md", raw=lines("## Deviations", "None"))
     path = root / "known.md"
 
     assert orch_review(seed, root, "known-items", str(path), "0") == 0
@@ -184,8 +172,8 @@ def test_a_failed_write_dies_leaving_the_existing_file_as_it_was(root, seed, kno
 
 
 def test_the_records_are_read_in_name_order(root, seed, known):
-    record(root, "iteration-10.md", lines("## Waiting to be filed", "- ten"))
-    record(root, "iteration-04.md", lines("## Waiting to be filed", "- four"))
+    record(root, 10, raw=lines("## Waiting to be filed", "- ten"))
+    record(root, 4, raw=lines("## Waiting to be filed", "- four"))
 
     assert orch_review(seed, root, "known-items", str(known), "3") == 0
     text = known.read_text()

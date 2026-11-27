@@ -1204,14 +1204,15 @@ check_flow_review_budget() {
 # asks once and reports what it sees now; the grace/timeout widening in `review
 # ci` belongs to the live loop deciding whether to keep polling, which a
 # snapshot has no business doing. required, not all: branch protection's
-# required set is what the loop itself waits on once one is named. A failed
-# call is one FAIL, and doctor goes on.
+# required set is what the loop itself waits on once one is named. The call
+# reaches GitHub, so it is captured through gh_capture. A failed call is one
+# FAIL, and doctor goes on.
 check_flow_review_ci() {
   local pr res err verdict detail reason
   pr="$D_FLOW_PR"
   [ -n "$pr" ] || return 0
   d_gh_gate || return 0
-  if ! capture res err orch_python_call --as doctor review doctor_ci "$pr" </dev/null; then
+  if ! gh_capture res err orch_python_call --as doctor review doctor_ci "$pr" </dev/null; then
     d_fail_err "$err" "CI checks could not be read"
     return 0
   fi
