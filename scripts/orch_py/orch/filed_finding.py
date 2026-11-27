@@ -29,6 +29,11 @@ FINDING_TRIAGE_ROLES = ("ready-for-agent", "ready-for-human", "wontfix")
 # severity table's order. Blocking is always fixed in the loop, never filed.
 FILED_SEVERITIES = ("major", "nit")
 
+# The review axes a finding is filed on, in the bash axis table's order: a
+# Spec finding misses what was asked for, a Standards finding improves how it
+# was built.
+FILED_AXES = ("spec", "standards")
+
 # The category table: each category a finding is filed under, with its
 # label's colour and description - GitHub's own defaults - in the bash
 # table's order.

@@ -1,6 +1,6 @@
 """The checkout concept's module, as far as a converted noun needs it: the
-main checkout, the current branch and a checkout's branch, the checkout a
-branch is checked out in, whether a path is a ticket worktree's, the
+main checkout, the current branch and a checkout's branch, the branch a
+rebase in progress is rebasing, the checkout a branch is checked out in, whether a path is a ticket worktree's, the
 checkout scan, one checkout's kind, what a checkout holds, whether a merge
 or a rebase is in progress, the ticket-worktree refusal, the busy-checkout
 refusal, and the discard rule's pieces (ADR-0054): the flow-branch proof,
@@ -16,7 +16,7 @@ from typing import List, Mapping, NamedTuple, Optional, Tuple
 
 from orch.autopilot import autopilot_active
 from orch.branch import branch_is_retired, branch_pr_get, branch_records_base
-from orch.common import ORCH_DIR_NAME, die, list_join, plain_positive_number
+from orch.common import ORCH_DIR_NAME, die, list_join, plain_positive_number, read_raw
 from orch.flow_state import flow_state_file, flow_state_get_many
 from orch.git import Worktree
 from orch.host import flow_cmd
@@ -73,6 +73,26 @@ def checkout_branch(git, path: Optional[str] = None) -> Optional[str]:
     its refs/heads/ taken off, never through --short; None on a detached
     HEAD."""
     return git.current_branch() if path is None else git.branch_at(path)
+
+
+def checkout_branch_or_rebasing(git, path: str) -> Optional[str]:
+    """checkout_branch of the checkout at <path>, but a rebase in progress -
+    which detaches HEAD - yields the branch it is rebasing, read from git's
+    own rebase-merge or rebase-apply head-name record - bash
+    checkout_branch_or_rebasing. None on a detached HEAD with no rebase in
+    progress."""
+    branch = checkout_branch(git, path)
+    if branch is not None:
+        return branch
+    gitdir = checkout_gitdir_into(git, path)
+    if gitdir is None:
+        return None
+    for record in ("rebase-merge", "rebase-apply"):
+        ref = read_raw(os.path.join(gitdir, record, "head-name"))
+        ref = "" if ref is None else ref.rstrip("\n")
+        if ref.startswith("refs/heads/") and len(ref) > len("refs/heads/"):
+            return ref[len("refs/heads/"):]
+    return None
 
 
 def branch_checkout(git, branch: str) -> Optional[str]:
