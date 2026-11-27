@@ -250,7 +250,7 @@ autopilot_github_reset_cap() {
 # its one limit line.
 autopilot_github_limit_record() {
   local main_root reset
-  [ "${ORCH_AUTOPILOT:-}" = 1 ] || [ -n "${ORCH_AUTOPILOT_TICK:-}${ORCH_AUTOPILOT_RUN:-}" ] || return 0
+  autopilot_active || [ -n "${ORCH_AUTOPILOT_TICK:-}${ORCH_AUTOPILOT_RUN:-}" ] || return 0
   reset="$(autopilot_github_reset_cap "$1")"
   if main_root="$(main_checkout_or_die 2>/dev/null)" && [ -n "$main_root" ]; then
     autopilot_pause_put "$(autopilot_github_pause_file "$main_root")" "$reset" ||
@@ -258,7 +258,7 @@ autopilot_github_limit_record() {
   else
     echo "could not write the GitHub limit pause: the main checkout is unreadable"
   fi
-  if [ "${ORCH_AUTOPILOT:-}" = 1 ] && [ -n "${ORCH_AUTOPILOT_HIT_FILE:-}" ]; then
+  if autopilot_active && [ -n "${ORCH_AUTOPILOT_HIT_FILE:-}" ]; then
     autopilot_pause_put "$ORCH_AUTOPILOT_HIT_FILE" "$reset" ||
       echo "could not write the GitHub limit hit file $ORCH_AUTOPILOT_HIT_FILE"
   fi

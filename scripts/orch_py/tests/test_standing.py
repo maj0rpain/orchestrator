@@ -6,7 +6,8 @@ the single writes (begin, sync request, resume) and the chain transitions
 phase's close), each failure dying with the writes that landed and the claim
 held, and the resumable chain's landed record - the cases the deleted bash
 Standing sections held. Ask and re-entry are driven through
-autopilot.run in test_autopilot_questions.py, their marker refusals here."""
+autopilot.run in test_autopilot_questions.py, their marker refusals, partway
+failures and ask's temp body file here."""
 from __future__ import annotations
 
 import json
@@ -15,10 +16,9 @@ import socket
 
 import pytest
 
-from conftest import comments_of, died_of, fake, hold_flow, labels_of, snapshot
+from conftest import comments_of, died_of, fake, hold_flow, labels_of, marker_of, snapshot
 from orch.gh import ClaimRow, GhFailed
 from orch.gh_fake import FakeGh
-from orch.marked_comment import marked_comment_write
 from orch.standing import (Chain, Standing, claim_of, claims_read, claims_read_or_die,
                            label_entries, phase_labels_in, phase_labels_text, phase_text,
                            redo_phase, redo_rule, standing_ask, standing_begin,
@@ -206,11 +206,8 @@ def test_the_phase_redo_rule_steps_back_only_from_review_and_implement(labelled,
     assert redo_phase(labelled, recorded) == redo
 
 
-def test_the_redo_rule_reads_as_a_sentence_from_whatever_table_it_is_given():
+def test_the_redo_rule_reads_as_a_sentence_naming_each_step_back():
     assert redo_rule() == "a step back from review to implement or from implement to spec"
-    table = (("done", "review", "review"),)
-    assert (redo_phase("done", "review", table), redo_phase("implement", "review", table),
-            redo_rule(table)) == ("review", None, "a step back from review to done")
 
 
 @pytest.mark.parametrize("labels, text", [
@@ -358,10 +355,6 @@ def test_a_failed_begin_hands_back_the_step_s_wording(seed, store, capsys, after
 
 
 # --- the chain transitions ----------------------------------------------------------
-
-
-def marker_of(kind, phase, tag=""):
-    return marked_comment_write(kind, phase, tag).rstrip("\n")
 
 
 @pytest.fixture
@@ -574,6 +567,22 @@ def test_ask_failing_partway_names_the_writes_that_landed_the_claim_held(
     assert died_of(capsys, lambda: standing_ask(chain_of(74), "spec", "Q", "o")) == (
         1, "", "orch: %s; the claim stays held\n" % landed)
     assert seed.claim_held(74) is True
+
+
+@pytest.mark.parametrize("fail", [None, "adapter_issue_comment"], ids=["posted", "failed post"])
+def test_ask_leaves_no_temp_body_file_behind(seed, capsys, chain_of, tmp_path, monkeypatch, fail):
+    tr_seed(seed, 76, "orch:spec", "orch:running")
+    temp = tmp_path / "temp"
+    temp.mkdir()
+    monkeypatch.setattr("tempfile.tempdir", str(temp))
+
+    if fail:
+        seed.fail(fail, "HTTP 500")
+        assert died_of(capsys, lambda: standing_ask(chain_of(76), "spec", "Q", "o"))[0] == 1
+    else:
+        standing_ask(chain_of(76), "spec", "Q", "o")
+
+    assert os.listdir(str(temp)) == []
 
 
 @pytest.mark.parametrize("earlier, fail, landed", [

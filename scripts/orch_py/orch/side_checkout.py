@@ -32,8 +32,8 @@ from orch.checkout import (checkout_branch, checkout_gitdir_into, checkout_has_f
                            checkout_kind, checkouts, main_checkout_or_die,
                            refuse_ticket_worktrees)
 from orch.common import (ORCH_DIR_NAME, capture, die, dir_stamp, err_line, exclude_orch_dirs,
-                         first_line, mkdir_p_or_die, normalize_slug, plain_number, state_word,
-                         stderr_write, stdout_write, subshell, tree_status, warn)
+                         file_write_atomic, first_line, mkdir_p_or_die, normalize_slug, plain_number,
+                         state_word, stderr_write, stdout_write, subshell, tree_status, warn)
 from orch.flow_state import flow_state_file, flow_state_get_many, recorded_pr
 from orch.gh import GhFailed, Unparsed, gh_reason
 from orch.repo import RepoPin
@@ -688,9 +688,5 @@ def side_checkout_add(argv: Sequence[str], gh, git, env: Mapping[str, str], root
 def _marker_written(gitdir: str, issue: str) -> bool:
     """Whether the ownership marker was written into the git folder
     <gitdir>: empty, or <issue> on a line of its own."""
-    try:
-        with open(os.path.join(gitdir, SIDE_CHECKOUT_MARKER), "w") as marker:
-            marker.write(issue + "\n" if issue else "")
-    except OSError:
-        return False
-    return True
+    return file_write_atomic(os.path.join(gitdir, SIDE_CHECKOUT_MARKER), issue + "\n" if issue else "",
+                             make_directory=False)

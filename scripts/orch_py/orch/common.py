@@ -39,6 +39,9 @@ from typing import (Any, Callable, Iterable, Iterator, List, NoReturn, Optional,
 
 # The directory every checkout keeps the orchestrator's own files in.
 ORCH_DIR_NAME = ".orchestrator"
+# The one format of a UTC timestamp the plugin writes: ISO-8601, to the
+# second, as bash's `date -u +%Y-%m-%dT%H:%M:%SZ` prints it.
+UTC_STAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 # The directories the plugin writes to and keeps out of git status: its own,
 # and .scratch/, where planning drafts land.
 EXCLUDED_DIRS = (ORCH_DIR_NAME + "/", ".scratch/")

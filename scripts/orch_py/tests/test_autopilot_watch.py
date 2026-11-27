@@ -16,6 +16,7 @@ import subprocess
 
 import pytest
 
+from conftest import stat_of
 from orch import autopilot
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit
@@ -29,13 +30,6 @@ OTHER = 4321
 TICK = [os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(autopilot.__file__))))), "scripts", "orch.sh"),
     "autopilot", "tick"]
-
-
-def stat_of(pid, start):
-    """A /proc/<pid>/stat line whose field 22, the process start, is
-    <start>."""
-    fields = ["S"] + [str(n) for n in range(4, 22)] + [start] + ["0"] * 10
-    return "%d (python3 x) %s\n" % (pid, " ".join(fields))
 
 
 @pytest.fixture

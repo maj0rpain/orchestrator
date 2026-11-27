@@ -43,8 +43,9 @@ import time
 from typing import Callable, Dict, List, Mapping, Optional, Tuple
 
 from orch.agent import autopilot_setting_check, default_plugin_root
-from orch.common import (ORCH_DIR_NAME, die, file_write_atomic, is_positive_int, plain_number,
-                         read_raw, read_text, rm_f, stderr_write, stdout_write, trim, warn)
+from orch.common import (ORCH_DIR_NAME, UTC_STAMP_FORMAT, die, file_write_atomic, is_positive_int,
+                         plain_number, read_raw, read_text, rm_f, stderr_write, stdout_write, trim,
+                         warn)
 from orch.git import Git
 from orch.host import host_detect
 from orch.repo import REPO_REMEDY, RepoPin, owner_name
@@ -53,8 +54,6 @@ from orch.root import checkout_root
 # A GitHub pause is never recorded further ahead than this many seconds:
 # no GitHub limit names a later reset.
 AUTOPILOT_GITHUB_PAUSE_MAX = 3600
-
-ISO_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 # The `## Autopilot` block's keys, in the order its report checks them.
 AUTOPILOT_BLOCK_KEYS = ("Rounds", "Budget")
@@ -111,14 +110,14 @@ def autopilot_block_report(text: str) -> Tuple[List[str], int]:
 
 def epoch_iso(epoch: int) -> str:
     """Epoch seconds as a UTC timestamp, bash autopilot_epoch_iso."""
-    return time.strftime(ISO_FORMAT, time.gmtime(epoch))
+    return time.strftime(UTC_STAMP_FORMAT, time.gmtime(epoch))
 
 
 def iso_epoch(text: str) -> Optional[int]:
     """The UTC timestamp <text>, YYYY-MM-DDTHH:MM:SSZ, as epoch seconds, or
     None for a value that does not read - bash autopilot_iso_epoch."""
     try:
-        return calendar.timegm(time.strptime(text, ISO_FORMAT))
+        return calendar.timegm(time.strptime(text, UTC_STAMP_FORMAT))
     except ValueError:
         return None
 
@@ -147,13 +146,7 @@ def pause_put(path: str, epoch: int) -> bool:
     when the file cannot be written."""
     if os.path.isfile(path) and not pause_epoch(path) < epoch:
         return True
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as f:
-            f.write(epoch_iso(epoch) + "\n")
-    except OSError:
-        return False
-    return True
+    return file_write_atomic(path, epoch_iso(epoch) + "\n")
 
 
 def github_reset_cap(epoch: int, now: float) -> int:
@@ -931,11 +924,7 @@ def pause_held(path: str, now: float, capped: bool) -> Optional[str]:
     if capped:
         cut = github_reset_cap(epoch, now)
         if cut != epoch:
-            try:
-                with open(path, "w") as f:
-                    f.write(epoch_iso(cut) + "\n")
-            except OSError:
-                pass
+            file_write_atomic(path, epoch_iso(cut) + "\n", make_directory=False)
             shown = epoch_iso(cut)
             warn("the GitHub pause until %s is more than an hour away, which no GitHub limit"
                  " names; it is cut to %s" % (epoch_iso(epoch), shown))
@@ -1253,11 +1242,7 @@ def housekeeping(ap: Autopilot, main: str) -> None:
     text = read_text(stamp) or ""
     if is_positive_int(text) and int(text) <= now and now - int(text) <= HOUSEKEEPING_EVERY:
         return
-    try:
-        os.makedirs(os.path.dirname(stamp), exist_ok=True)
-        with open(stamp, "w") as f:
-            f.write("%d\n" % now)
-    except OSError:
+    if not file_write_atomic(stamp, "%d\n" % now):
         warn("could not write the housekeeping stamp %s: housekeeping is skipped" % stamp)
         return
     liveness.logs_prune(main, ap.clock())

@@ -11,12 +11,13 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import AUTOPILOT, CLAUDE, SESSIONS, comments_of, hold_flow, labels_of, snapshot
+from conftest import (AUTOPILOT, CLAUDE, SESSIONS, comments_of, hold_flow, labels_of, marker_of,
+                      snapshot)
 from orch import autopilot
 from orch.gh import Gh
 from orch.repo import REPO_REMEDY, RepoPin
 from test_autopilot import ap, checkout
-from test_autopilot_questions import held, marker_of, run_ap, text_file
+from test_autopilot_questions import held, run_ap, text_file
 
 AUTO_SYNC = "orchestrator.autopilot.auto-sync"
 

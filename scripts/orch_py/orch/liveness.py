@@ -23,8 +23,8 @@ import subprocess
 from typing import Callable, List, Mapping, Optional, Tuple
 
 from orch.autopilot import autopilot_dir
-from orch.common import (DIR_STAMP_PATTERN, dir_stamp, die, mkdir_p_or_die, plain_number, read_raw,
-                         read_text, rm_f, text_file_write, warn)
+from orch.common import (DIR_STAMP_PATTERN, dir_stamp, die, file_write_atomic, mkdir_p_or_die,
+                         plain_number, read_raw, read_text, rm_f, text_file_write, warn)
 
 
 def proc_start(pid: int, env: Mapping[str, str]) -> Optional[str]:
@@ -110,10 +110,7 @@ def record_write(pid: int, path: str, env: Mapping[str, str]) -> bool:
     if record is None:
         warn("could not read the start time of pid %d" % pid)
         return False
-    try:
-        with open(path, "w") as f:
-            f.write(record)
-    except OSError:
+    if not file_write_atomic(path, record, make_directory=False):
         warn("could not write " + path)
         return False
     return True
@@ -139,14 +136,9 @@ def tick_begin(main: Optional[str], issue: str, pid: int, env: Mapping[str, str]
     it cannot be read), over an older one. A failed write warns and carries
     on: with no record, the claim's process counts as gone."""
     record = record_of(pid, env)
-    if main is not None and record is not None:
-        try:
-            os.makedirs(run_dir(main), exist_ok=True)
-            with open(_issue_file(main, issue, "tick"), "w") as f:
-                f.write(record)
-            return
-        except OSError:
-            pass
+    if (main is not None and record is not None
+            and file_write_atomic(_issue_file(main, issue, "tick"), record)):
+        return
     warn("could not write the tick record for issue #%s" % issue)
 
 

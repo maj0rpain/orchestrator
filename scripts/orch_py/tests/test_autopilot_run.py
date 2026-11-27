@@ -18,11 +18,10 @@ from pathlib import Path
 
 import pytest
 
-from conftest import SideCheckouts, comments_of, hold_flow, labels_of, snapshot
+from conftest import SideCheckouts, comments_of, hold_flow, iso, labels_of, marker_of, snapshot
 from orch import autopilot
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit
-from orch.marked_comment import marked_comment_write
 from orch.repo import RepoPin
 from test_autopilot import ORIGIN, plan_comment
 
@@ -41,10 +40,6 @@ HUMAN = ["needs-human", "orch:spec", "ready-for-agent"]
 LIMITED = ["orch:limited", "orch:spec", "ready-for-agent"]
 RUNNING = ["orch:running", "orch:spec", "ready-for-agent"]
 API_LIMIT = "API rate limit exceeded for user ID 1."
-
-
-def iso(epoch):
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
 
 
 def epoch_of(text):
@@ -201,10 +196,6 @@ def file_text(path):
 @pytest.fixture
 def w(tmp_path, store, seed):
     return Wrapper(tmp_path, store, seed)
-
-
-def marker_of(kind, phase, tag=""):
-    return marked_comment_write(kind, phase, tag).rstrip("\n")
 
 
 # --- the session ----------------------------------------------------------------

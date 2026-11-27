@@ -24,6 +24,7 @@ from orch import audit, issue, pr, review, review_pass, spec_review, ticket_work
 from orch.gh import Unparsed
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit, Git, Worktree
+from orch.marked_comment import marked_comment_write
 from orch.repo import RepoPin
 from orch.triage_labels import LABELS_DOC
 
@@ -103,6 +104,24 @@ def snapshot(store):
 
 def labels_of(store, n):
     return (read(store, "issues", n, "labels") or "").split("\n")[:-1]
+
+
+def marker_of(kind, phase, tag=""):
+    """The hidden marker line a comment of <kind> in <phase> opens with,
+    without its newline."""
+    return marked_comment_write(kind, phase, tag).rstrip("\n")
+
+
+def iso(epoch):
+    """Epoch seconds as the UTC timestamp a pause file or a claim holds."""
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
+
+
+def stat_of(pid, start):
+    """A /proc/<pid>/stat line whose field 22, the process start, is
+    <start>."""
+    fields = ["S"] + [str(n) for n in range(4, 22)] + [start] + ["0"] * 10
+    return "%d (python3 x) %s\n" % (pid, " ".join(fields))
 
 
 def comments_of(store, n, kind="issues"):

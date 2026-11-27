@@ -299,8 +299,9 @@ rendering in `orch/comments.py`),
 issue's comment history, read once and asked in domain terms),
 `marked-comment.sh` (the Marked comment module: writing and recognising
 the issue comments whose first line names their kind), `trust.sh`
-(the Trust module: which comments and which PRs orch.sh reads and which issues
-autopilot runs on), live among the modules too. The Filed finding, Liveness,
+(the Trust module: which comments and which PRs orch.sh reads; which issues
+autopilot runs on is decided by its Python copy, `orch/trust.py`), live among
+the modules too. The Filed finding, Liveness,
 Session log and Standing modules went with the bash autopilot noun: each is a
 Python module only (`orch/filed_finding.py`, `orch/liveness.py`,
 `orch/session_log.py`, `orch/standing.py`).
@@ -627,7 +628,7 @@ scripts/orch/checkout.sh      the Checkout module, a concept module with no noun
 scripts/orch/comments.sh      the Comments module, a concept module with no noun: reading an issue's or a PR's trusted comments once (comments_trusted_read); the rendering lives in orch/comments.py
 scripts/orch/issue-timeline.sh the Issue timeline module, a concept module with no noun: an issue's comment history, read once and asked for its newest question, latest stop, limit stops, re-entry comments and live handoffs
 scripts/orch/marked-comment.sh the Marked comment module, a concept module with no noun: the kinds of marked issue comment, writing their first line and the jq prelude recognising them
-scripts/orch/trust.sh         the Trust module, a concept module with no noun: which comments and which PRs orch.sh reads and which issues autopilot runs on - the one filter dropping a comment whose author is not an owner, member or collaborator, the one filter dropping a fork PR, and the issue trust check
+scripts/orch/trust.sh         the Trust module, a concept module with no noun: which comments and which PRs orch.sh reads - the one filter dropping a comment whose author is not an owner, member or collaborator, and the one filter dropping a fork PR; the issue trust check deciding which issues autopilot runs on is orch/trust.py's, the bash copy left with no caller
 scripts/orch/common.sh        the primitives no concept owns (die, capture, ..., and autopilot_active, whether this is an autopilot session, which checkout and handoff ask)
 scripts/orch/loader.sh        the module loader, always loaded beside common.sh: the stub table, its per-copy cache under ~/.cache/orchestrator/, the stub dispatch (orch_stubs, orch_stub), orch_load (once per shell) and the ORCH_LOAD_TRACE load trace
 scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), the capture pair gh_capture and gh_capture_err, every adapter_* operation, the GitHub limit record its limit handler makes in an autopilot process (the GitHub limit pause and a session's hit file, with the pause put, the pause-file paths and the reset cap), the ORCH_GH_ADAPTER hook

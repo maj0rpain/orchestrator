@@ -36,7 +36,7 @@ from typing import (Any, Callable, Dict, List, Mapping, NamedTuple, Optional, Se
                     Union)
 
 from orch.base import default_branch
-from orch.common import ORCH_DIR_NAME, die, file_write_atomic, plain_number
+from orch.common import ORCH_DIR_NAME, UTC_STAMP_FORMAT, die, file_write_atomic, plain_number
 from orch.host import flow_cmd
 
 # The key, default and seed columns of the bash state key table (STATE_KEYS
@@ -79,7 +79,7 @@ def flow_state_file(root: str) -> str:
 def now(clock: Callable[[], float] = time.time) -> str:
     """The time <clock> reads as the created and updated stamp: ISO-8601,
     UTC, to the second, as bash's now prints it."""
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(clock()))
+    return time.strftime(UTC_STAMP_FORMAT, time.gmtime(clock()))
 
 
 def _state_text(state: Mapping[str, Any]) -> str:

@@ -45,7 +45,7 @@ import time
 from typing import (Callable, List, Mapping, NamedTuple, NoReturn, Optional, Sequence, Tuple)
 
 from orch.common import die, plain_number, read_raw, stdout_write, temp_text_file
-from orch.flow_state import phase_write_try
+from orch.flow_state import now, phase_write_try
 from orch.gh import ClaimRow, GhFailed, gh_die, gh_reason, label_listed
 from orch.handoff import PHASES, handoff_check, handoff_comment_post_url
 from orch.issue_timeline import (timeline_has_body, timeline_limit_count, timeline_read,
@@ -127,21 +127,20 @@ def label_verdict(labels: Sequence[str], phase: str) -> Tuple[str, str]:
 REDO_PAIRS = (("implement", "review", "review"), ("spec", "implement", "spec"))
 
 
-def redo_phase(labelled: str, recorded: str,
-               pairs: Sequence[Tuple[str, str, str]] = REDO_PAIRS) -> Optional[str]:
+def redo_phase(labelled: str, recorded: str) -> Optional[str]:
     """The phase-redo rule, bash standing_redo_phase: the `orch.sh redo`
     argument that steps a flow labelled <labelled> back to that phase from
-    the <recorded> phase its checkout last moved to, per <pairs>; None for
+    the <recorded> phase its checkout last moved to, per REDO_PAIRS; None for
     any other pair, which is no redo."""
-    return next((redo for pair_labelled, pair_recorded, redo in pairs
+    return next((redo for pair_labelled, pair_recorded, redo in REDO_PAIRS
                  if (pair_labelled, pair_recorded) == (labelled, recorded)), None)
 
 
-def redo_rule(pairs: Sequence[Tuple[str, str, str]] = REDO_PAIRS) -> str:
-    """The phase-redo rule as one clause, from <pairs>, each pair reading
+def redo_rule() -> str:
+    """The phase-redo rule as one clause, from REDO_PAIRS, each pair reading
     "from <recorded> to <labelled>" - bash standing_redo_rule."""
     return "a step back " + " or ".join(
-        "from %s to %s" % (recorded, labelled) for labelled, recorded, _ in pairs)
+        "from %s to %s" % (recorded, labelled) for labelled, recorded, _ in REDO_PAIRS)
 
 
 def host_id(env: Mapping[str, str]) -> str:
@@ -263,9 +262,8 @@ def standing_claim(gh, issue, phase: str, pid: int, env: Mapping[str, str],
     """Creates the claim on issue <issue> at <phase> for <pid>, recording
     this host's id and the time <clock> reads - bash standing_claim: (0,
     "") taken, (2, "") a lost race, (1, the reason) any other failure."""
-    started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(clock()))
     try:
-        taken = gh.claim_create(int(issue), phase, pid, host_id(env), started)
+        taken = gh.claim_create(int(issue), phase, pid, host_id(env), now(clock))
     except GhFailed as failed:
         return 1, gh_reason(failed.stderr)
     return (0, "") if taken else (2, "")

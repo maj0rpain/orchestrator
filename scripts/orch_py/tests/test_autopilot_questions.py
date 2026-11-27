@@ -13,22 +13,15 @@ import os
 import pytest
 
 from conftest import (AUTOPILOT, CLAUDE, GH_502, SESSIONS, comments_of, flow_state, hold_flow,
-                      labels_of, read, snapshot, state_json)
+                      labels_of, marker_of, read, snapshot, state_json)
 from orch import autopilot
 from orch.gh import Gh
-from orch.marked_comment import marked_comment_write
 from orch.repo import REPO_REMEDY, RepoPin
 from test_autopilot import ap, checkout
 
 QUESTION = "1. Keep it? Recommended: yes\n\nReply like `1: A`.\n"
 REPLY_FORMAT = ("Reply in one comment like `1: A, 2: recommended, 3: <free text>`"
                 " (`all: recommended` accepts everything).\n")
-
-
-def marker_of(kind, phase, tag=""):
-    """The hidden marker line a comment of <kind> in <phase> opens with,
-    without its newline."""
-    return marked_comment_write(kind, phase, tag).rstrip("\n")
 
 
 def text_file(tmp_path, name, text):
@@ -98,32 +91,6 @@ def test_ask_failing_partway_dies_naming_the_writes_that_landed_the_claim_held(
                                              " HTTP 500 - writes that landed: posted the spec"
                                              " question comment; the claim stays held\n"))
     assert seed.claim_held(7) is True
-
-
-def test_ask_whose_temp_body_file_cannot_be_made_dies_before_any_write(
-        root, seed, store, capsys, tmp_path, monkeypatch, asking):
-    q = text_file(tmp_path, "q.md", "Q\n")
-    monkeypatch.setattr("tempfile.tempdir", str(tmp_path / "missing"))
-
-    assert (run_ap(seed, root, AUTOPILOT, "ask", "spec", q), capsys.readouterr()) == (
-        1, ("", "orch: could not create a temp file to post the spec question comment - writes"
-                " that landed: none; the claim stays held\n"))
-    assert (seed.claim_held(7), comments_of(store, 7), labels_of(store, 7)) == (
-        True, [], ["ready-for-agent", "orch:spec", "orch:running"])
-
-
-@pytest.mark.parametrize("fail", [None, "adapter_issue_comment"], ids=["posted", "failed post"])
-def test_ask_leaves_no_temp_body_file_behind(root, seed, tmp_path, monkeypatch, asking, fail):
-    q = text_file(tmp_path, "q.md", "Q\n")
-    temp = tmp_path / "temp"
-    temp.mkdir()
-    monkeypatch.setattr("tempfile.tempdir", str(temp))
-    if fail:
-        seed.fail(fail, "HTTP 500")
-
-    run_ap(seed, root, AUTOPILOT, "ask", "spec", q)
-
-    assert os.listdir(str(temp)) == []
 
 
 @SESSIONS
