@@ -96,7 +96,7 @@
 #                     how many calls the script has answered
 #                     (this cursor, comment_reads, prs/<n>/evidence_reads and
 #                     checks/<n>/reads are read-side bookkeeping:
-#                     fake_snapshot in the shared test setup leaves them out)
+#                     fake_snapshot in gh.sh's test preamble leaves them out)
 #   checks/<n>/reads  one line per read of PR #n's checks, scripted scope or
 #                     not; rescripting a scope never resets it
 #   job_logs/<job>    the failed-step log of Actions job <job>; absent, the

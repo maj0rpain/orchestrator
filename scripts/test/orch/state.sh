@@ -5,6 +5,12 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# fake_flow <slug>: a section's starting point on the store-backed GitHub fake
+# - a bare new_repo, fake_github, and a flow named <slug> just started in it,
+# cwd inside it. Unlike fresh_flow it brings no healthy_repo environment; the
+# section still ends with its own restore_suite_env.
+fake_flow() { new_repo >/dev/null; fake_github; "$ORCH" init "$1" >/dev/null; }
+
 # state_write_fails_bin: a fails_bin for mktemp that fails a state.json.*
 # template - the temp file every state write makes - and nothing else. Unlike
 # chmod a-w, it also fails as root.

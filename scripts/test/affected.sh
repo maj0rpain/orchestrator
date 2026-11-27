@@ -59,9 +59,9 @@
 #                                     and whose merged-PR close is a bridge
 #                                     (the pytest suite runs on every call);
 #                                     not every section that reaches the
-#                                     package - fake_flow's init and the
+#                                     package - a flow's init and the
 #                                     status and help calls reach it from
-#                                     most - which CI's whole run covers
+#                                     many - which CI's whole run covers
 #   the pytest suite's wrapper (scripts/test/orch_py_test.sh)
 #                                     the harness section file's sections
 #   hook-edit-width.sh, width.sh, shell_code.awk

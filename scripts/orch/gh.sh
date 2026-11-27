@@ -374,8 +374,8 @@ gh_or_die() {
 # --- gh adapter -------------------------------------------------------------
 #
 # The seam between orch.sh's decision logic and the `gh` CLI. A caller like
-# handoff.sh's handoff_comment_post calls an adapter operation, never
-# `gh` itself, so a test can replace one in-process function instead of faking a
+# base.sh's default-branch lookup calls an adapter operation, never `gh`
+# itself, so a test can replace one in-process function instead of faking a
 # `gh` binary on PATH. Every GitHub call in orch.sh and its modules goes
 # through one. History: begun with labels (#91), issues (#92); all since #280.
 #

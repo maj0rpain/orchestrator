@@ -26,7 +26,7 @@
 6	7	orch_load before cross-module reads (#2868)	9a752b83593092eed6592dea7b4e85f674d0020d
 5	6	on-demand sourcing variable (#2820)	55ebad34e6cbb6fd92a04c8b34d7cb3711a5c5a1
 1	2	declaration substitutions (#1327)	cf0474c9dc7b799bbe5968124f48b985252e12f8
-10	17	the helper index (#1144)	f535f096a482f389583a190b68850b432defbe47
+11	17	the helper index (#1144)	4a292a82ebf3efdaed87e5764e5561d4340d4cf9
 1	2	stand-in adapter (#2465)	38a29d6536ea5102be82db7260f9f9c0ebccc414
 1	2	git env clear (#1905)	64958e7bc2b0f051cea3d43dbe91c697309d306f
 5	5	runner git isolation (#1905)	28098952d366c4c255cc3a0fb936718ca1550b66
@@ -72,26 +72,16 @@
 1	2	capture_err and capture without a temp file (#1780)	fc19f584557286e04c9abe1748bf4408b90215bf
 7	9	capture, capture_err and file_read	15f31dc392fbcce33a8210b2b13e103e6a539901
 0	1	die_hinted and die_opt_check	a31d5ea9ef99f315cf022f51ad5894482feffb9e
-28	29	every gh call pinned to the repo (#520)	4fa8832de74902bcafa26bccd975138b4148c426
-3	3	gh_reason and capture_err (#846)	f20408bfddf4dac7c2497b9bf990691b4790d7fb
-1	3	label_listed	f93f04da27ae9419f632ccb983146270f908e702
-18	20	gh failure verb and readers (#1022)	6f022f0ce48d6088c2ed4a85b305e626cca6bfdb
-19	24	gh fake (#280)	75336c30f4a126f71facd914436a0a655ec0821b
-91	103	gh adapter contract (#280)	1f24df2afea253d1b89bbef2bc9cf914660dcefb
-17	18	claim adapter operations (#1454)	0a5502657c5c6656f23909bbbf7cf9cb5df2ce69
-4	5	label casing (#1943)	8967c4cca4f59fc47bcee920bac6f8582eb5085c
-53	46	gh rate limits (#2577)	bed904bd846745aa245c00b5213595b70703ed0e
-19	20	gh rate limits: the GitHub pause and the hit file (#2577)	1b93ca0d971a12570038ed11505b654d9d0af815
-2	4	handoff path	562d06102a381584416150c44fc7141836c111de
-14	15	phase table	15ffd7135edb899371ac8cea6584cd0d822cfaca
-14	15	handoff validate	cf9177592c5a544f6e56fb49ce135d6b78eac712
-7	9	handoff section	1caad378aa2fa53c185cedb516a5c4762044a9ca
-6	6	spec handoff	40d9ac0f7fd8058e1bcee0438f7f8f4a48a36010
-4	5	handoff templates	f3aa4d96b0cca171848d0169f4376c209f1e6b1d
-10	11	handoff verification	697fa47400914e54d5a62644701cf0e1dbac529f
-22	25	handoff comments (autopilot)	0861e5acff943feea7df7c705ab58296669b8ab7
-47	55	handoff store contract (#1820)	d9b92d8aeb28fbf29569327cc79195f7a3de364e
-2	4	handoff post and fetch with no state file	90de4751ecc7b294a7f59a55542dbef845beb36e
+28	31	every gh call pinned to the repo (#520)	a67f77254a7d3c4bd54410e4269dc6556144bd6a
+2	2	gh_reason and capture_err (#846)	58a2e7e65ea477f1e87ffcd7ed48e390ac55d879
+1	2	label_listed	cf6a4f0c40eebe56871168f1bfd7b5040c92b77e
+17	19	gh failure verb and readers (#1022)	b910d0575406af9bdc96f4ad370ed036cb79a0b0
+18	23	gh fake (#280)	a835af0b98f560c9271ed8526386c78f6b4706a6
+89	100	gh adapter contract (#280)	82fa67f06779021423ced5d3eb16f595089af239
+15	17	claim adapter operations (#1454)	ee8e4abbf30a177a807e0b5bb9da02463d39876f
+3	5	label casing (#1943)	2feeb4e2f314b9ec6fd4db9d942c6e1b41cfe055
+51	44	gh rate limits (#2577)	d2f456ea30f6d5044a01281f0fab427a57351708
+18	19	gh rate limits: the GitHub pause and the hit file (#2577)	ae5774c587564fdd1c9190be8c122a34d3267f39
 1	2	host detection (host.sh, #281)	810863fbb3e926aaff3a2d2d00c5e6caa68f55d7
 90	102	issue-timeline module	9b38701552a254104ef11a1f06337834aa7b019b
 6	7	orch_load	b7690e1c2206cbbb9683deef992bff879a329c86
@@ -115,16 +105,16 @@
 7	9	side checkout marker issue: reading without re-classifying (#3073)	5cd6f6c69819c5aee84b37d42b6ba8d85edea4d8
 5	6	archive reads the flow's slug once	970a924e38db49678ce547a21682e81433b39ad6
 10	12	side-checkout: the default branch is asked for only when needed	7ed16999cc8a02472634165947ceedd335ab0e2b
-14	15	state	0c580f49e511758e838f9ddd6af8e775b042e6be
-14	13	a flow from before the budget shipped	2a2d0365f8f384fb0837404a0af8dff641cda76a
-7	7	state get reads every key with its default	2beca9f0a4a08ccb856a99d7fb0056e432afbf81
-5	6	state.json schema	40e081f38f1f25ff4badc944f8aab349e89d4698
-3	4	state set on a corrupt state.json	d8cad746c8502f5fea3e7003401ee6ad6859a890
-14	15	the Flow state module, sourced alone	9cd9486fa3618710e55886a16c4daf11fd93a9ac
-3	4	commands on a truncated state.json (#1929)	f55f68abc6b0c18b0cbfb0a39a7f29641cd8aacb
-4	5	the shared and own-checkout readers on a truncated state.json	7b84632d5d5dd45bf88c2f3d5df24b2ba2f6179a
-4	5	state set with a failed write (#1931)	82669eee93bd1e9a868a8de7da255df518db5bf2
-12	13	the entry read and the required-field helpers	9a232bcb9d4b7188901cd615e76836895fa1ae50
+15	16	state	8b77ff1868f1356d60ce1799238eabcbe1577955
+21	19	a flow from before the budget shipped	7fbb5fb1def3fa9540d2e878f1a0d56c07f2e25e
+9	10	state get reads every key with its default	389ad4cacf6ad6824b47085c58b47c8aa3989a21
+6	7	state.json schema	7e9787bf56e9d51707ecf8e569aa827712e3992e
+3	5	state set on a corrupt state.json	26f88375dccd370dc3eddbabadae383ffbe8a04f
+16	17	the Flow state module, sourced alone	ac980e873ba23afeadf8c0206cb5e21c217433c0
+3	5	commands on a truncated state.json (#1929)	5a4a879550262477332333e4784d3373703b786c
+5	6	the shared and own-checkout readers on a truncated state.json	d7e0601fa4a4a65bf6388c503ef8804d88f53bed
+5	6	state set with a failed write (#1931)	66ac26360bdade59684a39e2807100da88249a45
+13	14	the entry read and the required-field helpers	a21d58d9af73409ad17978f1a87393fd70cb5fb2
 1	2	triage_label_into: parse once, later lookups start no command	ba2dc83098993a7a23392d37d31c6a721b76254e
 22	25	trust module	9d785dc96704a7bd94d104fb14fe34b7c4775710
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594

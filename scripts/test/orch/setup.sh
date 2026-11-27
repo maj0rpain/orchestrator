@@ -389,14 +389,20 @@ state_fixture_drop() {
 }
 
 # complete_handoff <file>: a complete handoff at <file>, holding every section
-# the Handoff module's phase table requires for its name - read through
-# handoff_required in a shell that sourced orch.sh, so the fixture cannot drift
-# from the validator - each with a placeholder body, plus Host fallbacks
-# whatever the state says. When handoff_required fails, on a name the table
-# does not hold, it fails and writes no file.
+# the phase table requires for its name - read from the missing sections
+# `orch.sh handoff validate` reports for an empty file of that name, outside
+# autopilot, so the fixture cannot drift from the validator - each with a
+# placeholder body, plus Host fallbacks whatever the state says. On a name the
+# table does not hold, validate reports no section, and it fails and writes no
+# file.
 complete_handoff() {
-  local headings heading
-  headings="$(sourced_orch handoff_required "$(basename "$1")")" || return 1
+  local empty headings heading
+  empty="$(mktemp -d)/$(basename "$1")" || return 1
+  : >"$empty"
+  headings="$(env -u ORCH_AUTOPILOT "$ORCH" handoff validate "$empty" 2>/dev/null \
+    | sed -n 's/^FAIL  missing section: //p')"
+  rm -rf "$(dirname "$empty")"
+  [ -n "$headings" ] || return 1
   grep -qxF '## Host fallbacks' <<<"$headings" || headings="$headings"$'\n''## Host fallbacks'
   while IFS= read -r heading; do
     writeln "$heading" "Placeholder for ${heading#\#\# }." ''
@@ -505,12 +511,6 @@ healthy_repo() {
 # flow named <slug> just started in it, at the spec phase, cwd inside it. A
 # section that needs a later phase arranges it with state_fixture.
 fresh_flow() { healthy_repo; "$ORCH" init "$1" >/dev/null; }
-
-# fake_flow <slug>: a section's starting point on the store-backed GitHub fake
-# - a bare new_repo, fake_github, and a flow named <slug> just started in it,
-# cwd inside it. Unlike fresh_flow it brings no healthy_repo environment; the
-# section still ends with its own restore_suite_env.
-fake_flow() { new_repo >/dev/null; fake_github; "$ORCH" init "$1" >/dev/null; }
 
 # --- the store-backed gh fake (#280) ------------------------------------------
 #
@@ -623,18 +623,6 @@ LAUNCHER
   PATH="$tickbin:$PATH"
 }
 
-# dir_snapshot <dir>: every file under <dir>, by its path from <dir>, with its
-# checksum, in a fixed order - for a byte-identical comparison with another
-# snapshot of the same directory.
-dir_snapshot() { (cd "$1" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r cksum); }
-
-# fake_snapshot: a digest of the whole store, so a test asserts a read-only
-# command left it as it was. The read-side files are reads, never writes, so
-# they are left out: comment_reads, each PR's evidence_reads, each PR's
-# checks/<n>/reads and each checks/<n>/<scope>.n cursor. The fail/ and lag/
-# countdowns stay in: a test seeds them, and any operation consumes them.
-fake_snapshot() { dir_snapshot "$ORCH_GH_FAKE_STORE" | sed -E '/ \.\/(comment_reads|prs\/[^\/]+\/evidence_reads|checks\/[^\/]+\/(reads|[^\/]+\.n))$/d'; }
-
 # fake_pr <n> <state> <head> <base>: seeds PR #n afresh, open, closed or
 # merged, from the head branch into the base - no body, comments or commits,
 # and not a draft.
@@ -679,16 +667,6 @@ GH_502=$'HTTP 502: Bad Gateway\nsecond line'
 
 # fake_unfail: every operation fake_fail named succeeds again.
 fake_unfail() { rm -rf "$ORCH_GH_FAKE_STORE/fail"; }
-
-# fake_lag <operation> <n> [stale]: the next n calls of the named operation
-# answer stale, as GitHub does for a moment after a write; the call after them
-# is current again. An operation that reads answers the stale text given, in
-# its own documented shape - or, given none, an empty one.
-fake_lag() {
-  mkdir -p "$ORCH_GH_FAKE_STORE/lag"
-  printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/lag/$1"
-  if [ $# -ge 3 ]; then printf '%s\n' "$3" >"$ORCH_GH_FAKE_STORE/lag/$1.stale"; fi
-}
 
 # fake_default_branch <answer>: seeds gh's answer to the repo's default branch,
 # byte for byte, so a test can seed a polluted or empty one.

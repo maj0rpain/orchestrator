@@ -307,6 +307,15 @@ def require_state(state_file: str, env: Mapping[str, str]) -> None:
         die(STATE_UNREADABLE_MSG)
 
 
+def require_state_readable(state_file: str) -> None:
+    """Dies with STATE_UNREADABLE_MSG when a state file exists at
+    <state_file> but is not exactly one JSON object, as bash's
+    require_state_readable did. A missing file passes: the caller settles
+    whether a flow must exist."""
+    if os.path.isfile(state_file) and _state_object(state_file) is None:
+        die(STATE_UNREADABLE_MSG)
+
+
 def require_state_read(state_file: str, env: Mapping[str, str], keys: Sequence[str],
                        code: int) -> Dict[str, str]:
     """A command's entry read, bash require_state_read: every one of <keys>

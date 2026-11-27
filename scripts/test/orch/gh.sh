@@ -5,6 +5,28 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# dir_snapshot <dir>: every file under <dir>, by its path from <dir>, with its
+# checksum, in a fixed order - for a byte-identical comparison with another
+# snapshot of the same directory.
+dir_snapshot() { (cd "$1" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r cksum); }
+
+# fake_snapshot: a digest of the whole store, so a test asserts a read-only
+# command left it as it was. The read-side files are reads, never writes, so
+# they are left out: comment_reads, each PR's evidence_reads, each PR's
+# checks/<n>/reads and each checks/<n>/<scope>.n cursor. The fail/ and lag/
+# countdowns stay in: a test seeds them, and any operation consumes them.
+fake_snapshot() { dir_snapshot "$ORCH_GH_FAKE_STORE" | sed -E '/ \.\/(comment_reads|prs\/[^\/]+\/evidence_reads|checks\/[^\/]+\/(reads|[^\/]+\.n))$/d'; }
+
+# fake_lag <operation> <n> [stale]: the next n calls of the named operation
+# answer stale, as GitHub does for a moment after a write; the call after them
+# is current again. An operation that reads answers the stale text given, in
+# its own documented shape - or, given none, an empty one.
+fake_lag() {
+  mkdir -p "$ORCH_GH_FAKE_STORE/lag"
+  printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/lag/$1"
+  if [ $# -ge 3 ]; then printf '%s\n' "$3" >"$ORCH_GH_FAKE_STORE/lag/$1.stale"; fi
+}
+
 # gh_reply <exit> <stdout> <stderr> <argv...>: the canned reply the fixture gh
 # answers to exactly that argv, replacing any earlier reply for it.
 gh_reply() {
