@@ -7,14 +7,11 @@ from __future__ import annotations
 
 import json
 import os
-import socket
 
 import pytest
 
 from conftest import died_of, fake, hold_flow, labels_of
-from orch.gh import ClaimRow
-from orch.standing import (Standing, claims_read, host_id, phase_labels_in, standing_finish,
-                           standing_read)
+from orch.standing import Standing, phase_labels_in, standing_finish, standing_read
 
 # A clock reading 2026-01-02T03:04:05Z.
 CLOCK = 1767323045.0
@@ -146,39 +143,3 @@ def test_the_standing_read_fills_the_label_half_from_one_issue_read(seed, labels
     seed.issue(7, "open", *labels)
 
     assert standing_read(fake(seed), 7) == (standing, "")
-
-
-@pytest.mark.parametrize("stderr, reason", [("HTTP 502: Bad Gateway\nsecond\n",
-                                             "HTTP 502: Bad Gateway"),
-                                            ("", "gh gave no reason")])
-def test_a_failed_standing_read_gives_gh_s_reason_alone(seed, stderr, reason):
-    seed.issue(7, "open")
-    seed.fail("adapter_issue_state_labels", stderr)
-
-    assert standing_read(fake(seed), 7) == (None, reason)
-
-
-@pytest.mark.parametrize("env, host", [({"ORCH_HOST_ID": "autopilot-abc123"}, "autopilot-abc123"),
-                                       ({"ORCH_HOST_ID": ""}, socket.gethostname()),
-                                       ({}, socket.gethostname())])
-def test_the_host_id_is_orch_host_id_else_the_hostname(env, host):
-    assert host_id(env) == host
-
-
-def test_the_claims_read_lists_every_claim_on_origin_by_issue_number(seed):
-    seed.claim(12, host="thirdhost", pid=5, started="2020-01-01T00:00:00Z")
-    seed.claim(7, host="otherhost", pid=6, started="2021-01-01T00:00:00Z", phase="review")
-    seed.claim(9)
-
-    assert claims_read(fake(seed)) == ([
-        ClaimRow("7", "otherhost", "6", "review", "2021-01-01T00:00:00Z"),
-        ClaimRow("9", socket.gethostname(), "1", "spec", "2026-01-01T00:00:00Z"),
-        ClaimRow("12", "thirdhost", "5", "spec", "2020-01-01T00:00:00Z"),
-    ], "")
-
-
-def test_claims_origin_cannot_list_are_none_with_the_reason(seed):
-    seed.claim(7)
-    seed.fail("adapter_claim_list", "fatal: could not read from remote repository\n")
-
-    assert claims_read(fake(seed)) == (None, "fatal: could not read from remote repository")

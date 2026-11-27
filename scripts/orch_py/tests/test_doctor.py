@@ -2824,13 +2824,15 @@ def test_with_the_main_checkout_unreadable_only_other_hosts_claims_are_named(
         " 2020-01-01T00:00:00Z - more than a day."]
 
 
-def test_without_orch_host_id_this_host_is_its_hostname(capsys, seed, tmp_path):
+@pytest.mark.parametrize("extra", [{}, {"ORCH_HOST_ID": ""}])
+def test_without_orch_host_id_or_with_it_empty_this_host_is_its_hostname(
+        capsys, seed, tmp_path, extra):
     import socket
 
     healthy(seed)
     seed.claim(9)
     seed.claim(6, host=ME, started="2020-01-01T00:00:00Z")
-    env = doctor_env(tmp_path)
+    env = doctor_env(tmp_path, **extra)
 
     run = orch_doctor(capsys, seed, tmp_path, "--env", git=claims_git(tmp_path), env=env)
 
