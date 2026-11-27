@@ -5,8 +5,8 @@ review's changelog heading, and the retired handoff marker a redo posts);
 recognising the spec review's changelogs, comments whose first line is the
 `## Spec review` heading, to drop them; the texts of the spec rulings,
 comments whose first line begins `Spec ruling:`, that a review pass reads; and every comment's
-kind, argument and retired tag (marked_comment_info, the jq prelude's), which
-the issue timeline reads the handoff comments by.
+kind, argument and retired tag (marked_comment_info, as the bash jq
+prelude's was), which the issue timeline reads the handoff comments by.
 
 No other marked kind can open with the heading or with `Spec ruling:`, so
 recognising the opening alone is enough there.
@@ -123,8 +123,8 @@ def marked_comment_texts(comments: List[dict]) -> List[str]:
 
 def marked_comment_info(comment: dict) -> MarkedInfo:
     """The comment's MarkedInfo, read from its first line less a trailing CR
-    as the jq prelude's marked_comment_info reads it: a hidden marker of a
-    registered kind, retired only on a handoff and with a cause only on a
+    as the bash jq prelude's marked_comment_info read it: a hidden marker of
+    a registered kind, retired only on a handoff and with a cause only on a
     limited comment, else the spec review's heading, else a spec ruling's
     opening, else a legacy stop's opening. NotText for a body that is no
     text."""

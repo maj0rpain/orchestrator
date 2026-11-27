@@ -19,10 +19,11 @@ holds answers to (ADR-0029), STATE_UNREADABLE_MSG, the refusal an unreadable
 state.json earns, require_state_exists, the refusal when there is no flow,
 require_state, the refusal of no flow or an unreadable one (its bash copy
 gone with the bash review noun, its one bash caller),
-require_state_read, a command's entry read of the keys it needs,
-require_value, the refusal of a required field left empty, and
-require_issue, the entry read of the flow's issue a command that needs one
-makes; then what the base reads as when a flow never recorded it,
+require_state_readable, the refusal of a state file that exists but cannot
+be read, which handoff validate makes, require_state_read, a command's entry
+read of the keys it needs, require_value, the refusal of a required field
+left empty, and require_issue, the entry read of the flow's issue a command
+that needs one makes; then what the base reads as when a flow never recorded it,
 flow_base_fallback_into, whose bash copy stays for the bash nouns that read
 it. The review budget's fallback is the review noun's (orch.review), its bash
 copy gone with its last bash reader.
@@ -176,7 +177,7 @@ def state_write_many(path: str, pairs: Sequence[Pair],
 
 def _phase_pairs(phase: str, pairs: Sequence[Pair]) -> List[Pair]:
     """The pairs a phase write records: phase first, then <pairs>. Dies
-    unless <phase> is a flow phase, bash's require_flow_phase."""
+    unless <phase> is a flow phase, as bash's require_flow_phase did."""
     # Imported here: the handoff module reads this one at its own import.
     from orch.handoff import PHASES
     if phase not in PHASES:
@@ -303,8 +304,7 @@ def require_state(state_file: str, env: Mapping[str, str]) -> None:
     bash's require_state was, its bash copy gone: for a command that needs a
     flow but reads no key."""
     require_state_exists(state_file, env)
-    if _state_object(state_file) is None:
-        die(STATE_UNREADABLE_MSG)
+    require_state_readable(state_file)
 
 
 def require_state_readable(state_file: str) -> None:
@@ -362,8 +362,8 @@ def require_issue(state_file: str, env: Mapping[str, str],
                   keys: Sequence[str] = (), code: int = 1) -> Dict[str, str]:
     """The state read of <state_file>, its recorded issue and any further
     <keys> a caller reads with it, in one read; dies, exit <code> - 2 where
-    bash's caller died through die2 - in bash require_issue's order, when
-    there is no state file (naming the host's start command from <env>),
+    bash's caller died through die2 - in the order bash's require_issue had,
+    when there is no state file (naming the host's start command from <env>),
     when it cannot be read, and when no issue is recorded."""
     state = require_state_read(state_file, env, ("issue",) + tuple(keys), code)
     require_value("issue", state["issue"], code)

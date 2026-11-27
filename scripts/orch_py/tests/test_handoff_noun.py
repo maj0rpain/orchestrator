@@ -178,6 +178,16 @@ def test_validate_fails_naming_a_missing_section(root, seed, capsys):
         "ok    ## Spec issue\nFAIL  missing section: ## Host fallbacks\n", "")
 
 
+def test_validate_reports_a_whitespace_only_required_section_as_empty(root, seed, capsys):
+    hold_flow(root, phase="implement", host_fallbacks=True)
+    path = handoff_file(root, "02-spec.md", lines("## Spec issue", "   ", "## Host fallbacks",
+                                                  "None."))
+
+    assert orch_handoff(root, seed, "validate", str(path)) == 1
+    assert capsys.readouterr() == (
+        "FAIL  empty section: ## Spec issue\nok    ## Host fallbacks\n", "")
+
+
 def test_validate_of_a_file_that_does_not_exist_is_one_fail_line_and_exit_1(root, seed, capsys):
     missing = root / "02-spec.md"
 
