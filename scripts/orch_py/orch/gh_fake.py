@@ -683,15 +683,29 @@ class FakeGh:
         self._pr_known(n)
         return _lines(_pr_path(self.store, n, "labels"))
 
+    def _head_oid(self, n: int) -> str:
+        """PR #n's head SHA, the store's one head rule: its head_oid as
+        stored, empty included (GitHub's null head), forty zeros where
+        absent."""
+        oid = read_text(_pr_path(self.store, n, "head_oid"))
+        return NO_HEAD_OID if oid is None else oid
+
     def pr_refs(self, n: int) -> Tuple[str, str, str]:
-        """The stored head SHA - its head_oid as stored, empty included
-        (GitHub's null head), forty zeros where absent - head and base."""
+        """The stored head SHA (_head_oid), head and base."""
         self._failing("adapter_pr_refs")
         self._pr_known(n)
-        oid = read_text(_pr_path(self.store, n, "head_oid"))
-        return (NO_HEAD_OID if oid is None else oid,
+        return (self._head_oid(n),
                 read_text(_pr_path(self.store, n, "head")) or "",
                 read_text(_pr_path(self.store, n, "base")) or "")
+
+    def pr_url_head(self, n: int) -> Tuple[str, str]:
+        """The stored url - https://github.com/o/r/pull/<n> where none is
+        stored - and the head SHA (_head_oid)."""
+        self._failing("adapter_pr_url_head")
+        self._pr_known(n)
+        url = _pr_path(self.store, n, "url")
+        stored = _first_line(url) if os.path.isfile(url) else "https://github.com/o/r/pull/%d" % n
+        return stored, self._head_oid(n)
 
     def pr_state_draft(self, n: int) -> Tuple[str, bool]:
         self._failing("adapter_pr_state_draft")
@@ -787,6 +801,70 @@ class FakeGh:
         self._comment_append(_pr_path(self.store, n, "comments"), comment)
         _write(_pr_path(self.store, n, "state"), "CLOSED\n")
 
+    # --- CI-evidence operations ---
+
+    def _stored_lines(self, *parts: object) -> List[str]:
+        """The lines of the store file at <parts>, as the bash fake's `cat`
+        prints them and a capture reads them; none where it is absent."""
+        return real.lines_of((read_raw(_store_path(self.store, *parts)) or "").rstrip("\n"))
+
+    def branch_required_checks(self, branch: str) -> List[str]:
+        """The contexts stored under protection/<branch>; none for an
+        unprotected branch."""
+        self._failing("adapter_branch_required_checks")
+        return self._stored_lines("protection", branch)
+
+    def branch_rules(self, branch: str) -> List[str]:
+        """The rule types stored under rules/<branch>; none for none."""
+        self._failing("adapter_branch_rules")
+        return self._stored_lines("rules", branch)
+
+    def pr_commits_checked(self, n: int) -> real.CommitsChecked:
+        """The base tip's answer, then each commit's: a ref has a check run
+        or a status where check_runs or statuses lists it, the base tip
+        being the PR's stored base branch name. The PR's commits are its
+        stored commits, else its head alone where that is not empty. Each
+        read is logged in evidence_reads; the PR's evidence_raw, where
+        stored, is the whole answer in the lines the real read's jq prints;
+        no_base_ref leaves the base tip's answer empty."""
+        self._failing("adapter_pr_commits_checked")
+        self._pr_known(n)
+        _write(_pr_path(self.store, n, "evidence_reads"), "read\n", "ab")
+        raw = read_raw(_pr_path(self.store, n, "evidence_raw"))
+        if raw is not None:
+            return real.parse_commits_checked(raw)
+        listed = file_lines(_store_path(self.store, "check_runs"))
+        listed += file_lines(_store_path(self.store, "statuses"))
+
+        def checked(ref: str) -> str:
+            return "yes" if ref in listed else "no"
+
+        if os.path.isfile(_pr_path(self.store, n, "no_base_ref")):
+            base = ""
+        else:
+            base = checked(read_text(_pr_path(self.store, n, "base")) or "")
+        if os.path.isfile(_pr_path(self.store, n, "commits")):
+            commits = self._stored_lines("prs", n, "commits")
+        else:
+            commits = [self._head_oid(n)] if self._head_oid(n) else []
+        return base, [(sha, checked(sha)) for sha in commits]
+
+    # --- GitHub Actions operations ---
+
+    def run_rerun(self, run: int) -> None:
+        """The run appended to reruns."""
+        self._failing("adapter_run_rerun")
+        _write(_store_path(self.store, "reruns"), "%d\n" % run, "ab")
+
+    def job_failed_log(self, job: int) -> str:
+        """The log stored under job_logs/<job>; a job with none stored fails,
+        as gh does for a log it cannot read."""
+        self._failing("adapter_job_failed_log")
+        log = read_raw(_store_path(self.store, "job_logs", job))
+        if log is None:
+            raise GhFailed("log not found\n")
+        return log
+
     # --- claim operations ---
 
     def claim_delete(self, n: int) -> None:
@@ -871,9 +949,60 @@ class FakeStore:
         """PR #n's labels: exactly <labels>, one a line, in order."""
         _write(_pr_path(self.store, n, "labels"), "".join(label + "\n" for label in labels))
 
-    def pr_head(self, n: int, oid: str) -> None:
-        """PR #n's head SHA, as fake_pr_head seeds it with no commits."""
+    def pr_head(self, n: int, oid: str, *commits: str) -> None:
+        """PR #n's head SHA and its commits, oldest first, as fake_pr_head
+        seeds them - given none, the head alone, or none when the head is
+        empty."""
         _write(_pr_path(self.store, n, "head_oid"), oid + "\n")
+        path = _pr_path(self.store, n, "commits")
+        if os.path.lexists(path):
+            os.remove(path)
+        if commits:
+            _write(path, "".join(sha + "\n" for sha in commits))
+
+    def pr_url(self, n: int, url: str) -> None:
+        """PR #n's canonical URL, the one pr_url_head answers."""
+        _write(_pr_path(self.store, n, "url"), url + "\n")
+
+    def required_checks(self, branch: str, *contexts: str) -> None:
+        """Classic branch protection on <branch>, requiring the checks
+        named."""
+        _write(_store_path(self.store, "protection", branch),
+               "".join(context + "\n" for context in contexts))
+
+    def rules(self, branch: str, *types: str) -> None:
+        """The rules the repo's rulesets apply to <branch>, by type."""
+        _write(_store_path(self.store, "rules", branch), "".join(t + "\n" for t in types))
+
+    def check_run(self, ref: str) -> None:
+        """<ref> - a SHA, or a branch name for its tip - has a check run."""
+        _write(_store_path(self.store, "check_runs"), ref + "\n", "ab")
+
+    def status(self, ref: str) -> None:
+        """<ref> - a SHA, or a branch name for its tip - has a commit
+        status."""
+        _write(_store_path(self.store, "statuses"), ref + "\n", "ab")
+
+    def no_base_ref(self, n: int) -> None:
+        """PR #n's evidence read has no answer for the base tip."""
+        _write(_pr_path(self.store, n, "no_base_ref"), "")
+
+    def evidence_raw(self, n: int, *lines: str) -> None:
+        """PR #n's evidence read answers <lines>, as its jq prints them, in
+        place of the answer the store would build."""
+        _write(_pr_path(self.store, n, "evidence_raw"), "".join(line + "\n" for line in lines))
+
+    def evidence_reads(self, n: int) -> int:
+        """How many times PR #n's evidence read was made."""
+        return len(file_lines(_pr_path(self.store, n, "evidence_reads")))
+
+    def job_log(self, job: int, log: str) -> None:
+        """Actions job <job>'s failed-step log, byte for byte."""
+        _write(_store_path(self.store, "job_logs", job), log)
+
+    def reruns(self) -> List[str]:
+        """The Actions run ids rerun, in order."""
+        return file_lines(_store_path(self.store, "reruns"))
 
     def pr_diff(self, n: int, diff: str) -> None:
         _write(_pr_path(self.store, n, "diff"), diff)

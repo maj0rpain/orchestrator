@@ -25,6 +25,9 @@ status the clean-tree check (orch.common) reads there, and the
 merge-in-progress probe, merge abort, hard reset and clean of the
 discard sequence (orch.checkout). A ticket branch's ref verify is
 branch_exists, and the toplevel read at its worktree's path toplevel_at.
+`review ci`'s push-time and no-CI-evidence checks read a ref's verify, a
+remote-tracking reflog with its unix dates, a commit's existence
+(has_commit) and a full-tree name listing under a path.
 There is no generic run: each later noun adds the operations it needs, each
 with a test run against a real repository and against FakeGit, asserting the
 same answers. The scan's, Lines fate's and the lookup's operations run at the
@@ -78,6 +81,9 @@ class FileDiff(NamedTuple):
 # and what FakeGit answers for a call nothing was seeded for.
 COULD_NOT: Dict[str, Any] = {
     "resolve_commit": None,
+    "ref_exists": False,
+    "reflog_dates": None,
+    "tree_names": None,
     "fetch_pr_head": False,
     "fetch_default_branch": False,
     "path_exists_at": False,
@@ -268,6 +274,41 @@ class Git:
     def has_commit(self, sha: str) -> bool:
         """Whether the clone holds commit <sha>."""
         return self._run(["cat-file", "-e", sha + "^{commit}"]).returncode == 0
+
+    # review ci's push-time and no-CI-evidence reads, run where the adapter
+    # runs, as bash's review ci runs its git; each a "could not" value on a
+    # git failure.
+
+    def ref_exists(self, ref: str) -> bool:
+        """Whether the full ref <ref> names an object: `rev-parse -q
+        --verify`."""
+        return self._run(["rev-parse", "-q", "--verify", ref]).returncode == 0
+
+    def reflog_dates(self, ref: str) -> Optional[List[Tuple[str, int]]]:
+        """Each entry of <ref>'s reflog, newest first: the SHA it set the ref
+        to and the unix second it did; None when the reflog cannot be read -
+        a ref with none included."""
+        run = self._run(["reflog", "show", "--date=unix", "--format=%H %gd", ref, "--"])
+        if run.returncode != 0:
+            return None
+        entries = []
+        for line in run.stdout.decode("utf-8", "surrogateescape").splitlines():
+            sha, _, selector = line.partition(" ")
+            date = selector.rpartition("@{")[2][:-1] if selector.endswith("}") else ""
+            if date.isdigit():
+                entries.append((sha, int(date)))
+        return entries
+
+    def tree_names(self, rev: str, path: str) -> Optional[List[str]]:
+        """The names `ls-tree --full-tree --name-only <rev> -- <path>` lists -
+        <path> read from the top level whatever the directory, so a directory
+        given with its slash lists its entries, a sub-tree by its own name -
+        each as it is, never quoted; None when <rev> names no tree the clone
+        holds."""
+        run = self._run(["ls-tree", "-z", "--full-tree", "--name-only", rev, "--", path])
+        if run.returncode != 0:
+            return None
+        return [name for name in run.stdout.decode("utf-8", "surrogateescape").split("\0") if name]
 
     # The scan's, Lines fate's and the default-branch lookup's operations, each
     # run at the top level, each a "could not" value on a git failure.
@@ -819,6 +860,15 @@ class FakeGit:
 
     def resolve_commit(self, rev: str) -> Optional[str]:
         return self._answer("resolve_commit", rev)
+
+    def ref_exists(self, ref: str) -> bool:
+        return self._answer("ref_exists", ref)
+
+    def reflog_dates(self, ref: str) -> Optional[List[Tuple[str, int]]]:
+        return self._answer("reflog_dates", ref)
+
+    def tree_names(self, rev: str, path: str) -> Optional[List[str]]:
+        return self._answer("tree_names", rev, path)
 
     def fetch_pr_head(self, pr: str) -> bool:
         return self._answer("fetch_pr_head", pr)

@@ -150,6 +150,60 @@ def test_head_and_commit_presence_read_the_same_from_a_real_repo_and_the_fake(au
     assert (fake.has_commit(base), fake.has_commit(missing)) == (True, False)
 
 
+# --- review ci's push-time and no-CI-evidence reads ----------------------------
+
+
+@pytest.fixture
+def tracked(tmp_path):
+    """A repository whose commit one holds two workflows, one of them named
+    outside ASCII, a nested one and a file in sub/; commit two adds a README. origin/topic's remote-tracking
+    ref was updated to one at unix second 1700000060, then to two at
+    1700000120, then back to one at 1700000180. Its root and the two SHAs."""
+    root = tmp_path / "repo"
+    git_repo(root)
+    one = committed(root, {".github/workflows/ci.yml": "on: push\n",
+                           ".github/workflows/ci-\u00fc.yml": "on: push\n",
+                           ".github/workflows/nested/x.yaml": "x\n",
+                           ".github/README.md": "r\n", "sub/keep.txt": "k\n"}, "one")
+    two = committed(root, {"README.md": "r\n"}, "two")
+    for when, sha in ((60, one), (120, two), (180, one)):
+        stamp = "@%d +0000" % (1700000000 + when)
+        run_git(root, "update-ref", "-m", "update by push", "refs/remotes/origin/topic", sha,
+                env=dict(os.environ, GIT_COMMITTER_DATE=stamp))
+    return root, one, two
+
+
+TOPIC = "refs/remotes/origin/topic"
+
+
+def test_a_ref_s_verify_reads_the_same_from_a_real_repo_and_the_fake(tracked, where):
+    root, _, _ = tracked
+    git = adapter(root, where)
+
+    assert alike(git, "ref_exists", TOPIC) is True
+    assert fails_alike(git, "ref_exists", "refs/remotes/origin/gone") is False
+
+
+def test_a_remote_tracking_reflog_reads_newest_first_with_unix_dates_from_both(tracked, where):
+    root, one, two = tracked
+    git = adapter(root, where)
+
+    assert alike(git, "reflog_dates", TOPIC) == [
+        (one, 1700000180), (two, 1700000120), (one, 1700000060)]
+    assert fails_alike(git, "reflog_dates", "refs/remotes/origin/gone") is None
+
+
+def test_a_full_tree_listing_under_a_path_reads_the_same_from_both_from_any_directory(
+        tracked, where):
+    root, one, two = tracked
+    git = adapter(root, where)
+
+    assert alike(git, "tree_names", one, ".github/workflows/") == [
+        ".github/workflows/ci-\u00fc.yml", ".github/workflows/ci.yml", ".github/workflows/nested"]
+    assert alike(git, "tree_names", two, "docs/") == []
+    assert fails_alike(git, "tree_names", "deadbeef" * 5, ".github/workflows/") is None
+
+
 # --- the scan's, Lines fate's and the default-branch lookup's operations -----
 #
 # One history, built once for this file, its commits dated a minute apart so

@@ -383,6 +383,12 @@ def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
     ("adapter_prs_merged_closing",
      lambda gh: gh.prs_merged_closing("main", "2026-01-01T00:00:00Z")),
     ("adapter_prs_merged_bodies", lambda gh: gh.prs_merged_bodies("main")),
+    ("adapter_pr_url_head", lambda gh: gh.pr_url_head(6)),
+    ("adapter_branch_required_checks", lambda gh: gh.branch_required_checks("main")),
+    ("adapter_branch_rules", lambda gh: gh.branch_rules("main")),
+    ("adapter_pr_commits_checked", lambda gh: gh.pr_commits_checked(6)),
+    ("adapter_run_rerun", lambda gh: gh.run_rerun(4242)),
+    ("adapter_job_failed_log", lambda gh: gh.job_failed_log(77)),
 ])
 def test_the_added_operations_fail_under_the_bash_operation_names(store, operation, call):
     bash(store, "fake_issue 5 open review:nit; fake_issue 7 open; fake_default_branch trunk; "
@@ -1023,6 +1029,130 @@ cat "$ORCH_GH_FAKE_STORE/next_pr"
         + "pass\tbuild\thttps://github.com/acme/widgets/actions/runs/1/job/1\n" * 2
         + "50\n"
     )
+
+
+# --- the review noun's reads and its rerun -------------------------------------
+
+HEAD = "a" * 40
+EARLIER = "b" * 40
+# The bash fake's evidence read calls common.sh's list_has and file_read, as
+# it does inside orch.sh.
+COMMON = 'source "%s"\n' % (SCRIPTS / "orch" / "common.sh")
+
+
+def test_the_review_reads_of_a_bash_seeded_store_read_as_the_bash_fake_answers_them(store):
+    # The store as the review suite's fake_* seeders write it, raw.
+    bash_answer = bash(store, COMMON + r"""
+s="$ORCH_GH_FAKE_STORE"
+fake_pr 7 open topic main; fake_pr_head 7 %(head)s %(earlier)s %(head)s
+printf 'https://ghe.example.com/x/y/pull/7\n' >"$s/prs/7/url"
+fake_pr 8 open other next
+fake_pr 9 open bare main; fake_pr_head 9 ''
+mkdir -p "$s/protection" "$s/rules" "$s/job_logs"
+printf 'build\nlint\n' >"$s/protection/main"
+printf 'deletion\nrequired_status_checks\n' >"$s/rules/main"
+printf 'main\n%(earlier)s\n' >"$s/check_runs"; printf 'next\n' >"$s/statuses"
+printf 'build\tstep\tline one\n' >"$s/job_logs/77"
+adapter_pr_url_head 7; adapter_pr_url_head 8; echo '|'
+adapter_branch_required_checks main; adapter_branch_required_checks open; echo '|'
+adapter_branch_rules main; adapter_branch_rules bare; echo '|'
+adapter_pr_commits_checked 7; adapter_pr_commits_checked 8; adapter_pr_commits_checked 9; echo '|'
+adapter_job_failed_log 77
+""" % {"head": HEAD, "earlier": EARLIER})
+    gh = fake(store)
+
+    assert gh.pr_url_head(7) == ("https://ghe.example.com/x/y/pull/7", HEAD)
+    assert gh.pr_url_head(8) == ("https://github.com/o/r/pull/8", "0" * 40)
+    assert gh.branch_required_checks("main") == ["build", "lint"]
+    assert gh.branch_required_checks("open") == []
+    assert gh.branch_rules("main") == ["deletion", "required_status_checks"]
+    assert gh.branch_rules("bare") == []
+    assert gh.pr_commits_checked(7) == ("yes", [(EARLIER, "yes"), (HEAD, "no")])
+    assert gh.pr_commits_checked(8) == ("yes", [("0" * 40, "no")])
+    assert gh.pr_commits_checked(9) == ("yes", [])
+    assert gh.job_failed_log(77) == "build\tstep\tline one\n"
+    assert bash_answer == (
+        "https://ghe.example.com/x/y/pull/7\n%(head)s\n"
+        "https://github.com/o/r/pull/8\n%(zeros)s\n|\n"
+        "build\nlint\n|\ndeletion\nrequired_status_checks\n|\n"
+        "yes\n%(earlier)s\tyes\n%(head)s\tno\n"
+        "yes\n%(zeros)s\tno\nyes\n|\n"
+        "build\tstep\tline one\n" % {"head": HEAD, "earlier": EARLIER, "zeros": "0" * 40})
+
+
+def test_python_seeded_review_reads_read_back_through_the_bash_fake(store):
+    seed = FakeStore(str(store))
+    seed.pr(7, "open", "topic", "main")
+    seed.pr_head(7, HEAD, EARLIER, HEAD)
+    seed.pr(8, "open", "other", "next")
+    seed.pr_head(8, HEAD, EARLIER)
+    seed.pr_head(8, "")
+    seed.pr_url(7, "https://ghe.example.com/x/y/pull/7")
+    seed.required_checks("main", "build", "lint")
+    seed.rules("main", "required_status_checks")
+    seed.check_run(EARLIER)
+    seed.status("main")
+    seed.job_log(77, "log line 1\nlog line 2\n")
+    gh = fake(store)
+
+    assert bash(store, COMMON + r"""
+adapter_pr_url_head 7 | paste -sd ' ' -
+adapter_branch_required_checks main | paste -sd ' ' -
+adapter_branch_rules main
+adapter_pr_commits_checked 7 | paste -sd ' ' -
+adapter_pr_commits_checked 8 | paste -sd ' ' -
+adapter_job_failed_log 77
+""") == ("https://ghe.example.com/x/y/pull/7 %(head)s\nbuild lint\nrequired_status_checks\n"
+         "yes %(earlier)s\tyes %(head)s\tno\nno\nlog line 1\nlog line 2\n"
+         % {"head": HEAD, "earlier": EARLIER})
+    assert gh.pr_commits_checked(7) == ("yes", [(EARLIER, "yes"), (HEAD, "no")])
+    assert gh.pr_commits_checked(8) == ("no", [])
+
+
+def test_a_pr_s_evidence_read_is_logged_and_its_raw_answer_or_missing_base_ref_honoured(store):
+    seed = FakeStore(str(store))
+    seed.pr(7, "open", "topic", "main")
+    seed.pr_head(7, HEAD)
+    seed.pr(8, "open", "other", "main")
+    seed.check_run("main")
+    seed.no_base_ref(7)
+    seed.evidence_raw(8, "no", EARLIER + "\tmaybe", "not-a-sha")
+    gh = fake(store)
+
+    assert gh.pr_commits_checked(7) == ("", [(HEAD, "no")])
+    assert gh.pr_commits_checked(8) == ("no", [(EARLIER, "maybe"), ("not-a-sha", "")])
+    assert gh.pr_commits_checked(8) == ("no", [(EARLIER, "maybe"), ("not-a-sha", "")])
+    assert (seed.evidence_reads(7), seed.evidence_reads(8)) == (1, 2)
+    assert bash(store, COMMON + "adapter_pr_commits_checked 7; adapter_pr_commits_checked 8") == (
+        "\n%s\tno\nno\n%s\tmaybe\nnot-a-sha\n" % (HEAD, EARLIER))
+
+
+def test_a_review_read_of_a_pr_the_store_lacks_fails_as_gh_does(store):
+    gh = fake(store)
+
+    for call in (lambda: gh.pr_url_head(5), lambda: gh.pr_commits_checked(5)):
+        with pytest.raises(GhFailed) as failed:
+            call()
+        assert "Could not resolve to a PullRequest with the number of 5" in failed.value.stderr
+
+
+def test_python_reruns_read_back_in_order_through_the_bash_fake(store):
+    seed = FakeStore(str(store))
+    gh = fake(store)
+
+    gh.run_rerun(4242)
+    gh.run_rerun(4343)
+    bash(store, "adapter_run_rerun 5150")
+
+    assert seed.reruns() == ["4242", "4343", "5150"]
+
+
+def test_a_job_log_the_store_lacks_cannot_be_read(store):
+    with pytest.raises(GhFailed) as failed:
+        fake(store).job_failed_log(78)
+
+    assert failed.value.stderr == "log not found\n"
+    assert bash(store, "adapter_job_failed_log 78 2>&1 || echo failed") == "log not found\nfailed\n"
 
 
 def test_a_pr_create_carrying_a_label_gives_up_at_a_first_secondary_limit(store, tmp_path):

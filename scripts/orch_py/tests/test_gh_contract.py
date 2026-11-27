@@ -726,6 +726,28 @@ def test_pr_refs_reads_the_head_sha_head_branch_and_base_each_empty_where_unset(
     assert gh.pr_refs(5) == ("", "topic", "")
 
 
+def url_head_argv(number):
+    return ["pr", "view", str(number), "--json", "url,headRefOid",
+            "--jq", '(.url // ""), (.headRefOid // "")']
+
+
+def test_pr_url_head_reads_the_url_then_the_head_sha_each_empty_where_unset(fixture_gh):
+    fixture_gh.reply(url_head_argv(57), "https://github.com/acme/widgets/pull/57\nbbbb\n")
+    fixture_gh.reply(url_head_argv(58), "\n\n")
+    gh = real_gh(fixture_gh)
+
+    assert gh.pr_url_head(57) == ("https://github.com/acme/widgets/pull/57", "bbbb")
+    assert gh.pr_url_head(58) == ("", "")
+
+
+def test_a_failed_pr_url_head_read_passes_gh_s_stderr_through(fixture_gh):
+    fixture_gh.reply(url_head_argv(58), stderr="HTTP 502: Bad Gateway\n", exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).pr_url_head(58)
+    assert failed.value.stderr == "HTTP 502: Bad Gateway\n"
+
+
 def state_draft_argv(number):
     return ["pr", "view", str(number), "--json", "state,isDraft", "--jq", ".state, .isDraft"]
 
@@ -876,6 +898,170 @@ def test_a_failed_pr_checks_read_passes_gh_s_stderr_through(fixture_gh):
     with pytest.raises(GhFailed) as failed:
         real_gh(fixture_gh).pr_checks(4, "all")
     assert failed.value.stderr == "HTTP 502: Bad Gateway\n"
+
+
+# --- the CI-evidence reads ---------------------------------------------------
+
+API_UNPARSED = "gh api answered with something jq could not read\n"
+
+
+def protection_argv(branch):
+    return ["api", "repos/{owner}/{repo}/branches/%s/protection/required_status_checks" % branch]
+
+
+def test_branch_required_checks_lists_each_required_context_once_sorted(fixture_gh):
+    fixture_gh.reply(protection_argv("main"),
+                     '{"strict":false,"contexts":["lint","build"],'
+                     '"checks":[{"context":"build","app_id":null},{"context":"test"}]}\n')
+    fixture_gh.reply(protection_argv("loose"), '{"strict":true}\n')
+    gh = real_gh(fixture_gh)
+
+    assert gh.branch_required_checks("main") == ["build", "lint", "test"]
+    assert gh.branch_required_checks("loose") == []
+
+
+@pytest.mark.parametrize("stdout, stderr", [
+    ('{"message":"Branch not protected","status":"404"}', "gh: Branch not protected (HTTP 404)\n"),
+    ("", "gh: Branch not protected (HTTP 404)\n"),
+    ('{"message":"Branch not protected","status":"404"}', ""),
+], ids=["both", "stderr-alone", "stdout-alone"])
+def test_an_unprotected_branch_requires_no_checks(fixture_gh, stdout, stderr):
+    fixture_gh.reply(protection_argv("open"), stdout, stderr, exit=1)
+
+    assert real_gh(fixture_gh).branch_required_checks("open") == []
+
+
+def test_a_bare_not_found_fails_the_required_checks_read_with_gh_s_stderr(fixture_gh):
+    fixture_gh.reply(protection_argv("hidden"), '{"message":"Not Found","status":"404"}',
+                     "gh: Not Found (HTTP 404)\n", exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).branch_required_checks("hidden")
+    assert failed.value.stderr == "gh: Not Found (HTTP 404)\n"
+
+
+def rules_argv(branch):
+    return ["api", "repos/{owner}/{repo}/rules/branches/%s" % branch]
+
+
+def test_branch_rules_lists_the_type_of_each_rule_on_the_branch(fixture_gh):
+    fixture_gh.reply(rules_argv("main"),
+                     '[{"type":"deletion"},{"type":"required_status_checks","parameters":{}}]\n')
+    fixture_gh.reply(rules_argv("bare"), "[]\n")
+    gh = real_gh(fixture_gh)
+
+    assert gh.branch_rules("main") == ["deletion", "required_status_checks"]
+    assert gh.branch_rules("bare") == []
+
+
+def test_a_failed_branch_rules_read_passes_gh_s_stderr_through(fixture_gh):
+    fixture_gh.reply(rules_argv("down"), stderr="HTTP 502: Bad Gateway\n", exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).branch_rules("down")
+    assert failed.value.stderr == "HTTP 502: Bad Gateway\n"
+
+
+COMMITS_CHECKED_QUERY = (
+    "query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner,"
+    " name: $name) { pullRequest(number: $number) { baseRef { target { ... on Commit {"
+    " statusCheckRollup { contexts { totalCount } } } } } commits(first: 100) { nodes {"
+    " commit { oid statusCheckRollup { contexts { totalCount } } } } } } } }"
+)
+
+
+def commits_checked_argv(number):
+    return ["api", "graphql", "-F", "owner={owner}", "-F", "name={repo}",
+            "-F", "number=%d" % number, "-f", "query=" + COMMITS_CHECKED_QUERY]
+
+
+def rollup(count):
+    return "null" if count is None else '{"contexts":{"totalCount":%d}}' % count
+
+
+def commits_checked_answer(base, *commits):
+    """The GraphQL answer for a base ref whose tip's rollup counts <base>
+    contexts ("none" for no base ref), then each (oid, count) commit."""
+    base_ref = "null" if base == "none" else '{"target":{"statusCheckRollup":%s}}' % rollup(base)
+    nodes = ",".join('{"commit":{"oid":"%s","statusCheckRollup":%s}}' % (oid, rollup(count))
+                     for oid, count in commits)
+    return ('{"data":{"repository":{"pullRequest":{"baseRef":%s,"commits":{"nodes":[%s]}}}}}\n'
+            % (base_ref, nodes))
+
+
+def test_pr_commits_checked_answers_the_base_tip_then_each_commit_in_one_graphql_read(fixture_gh):
+    fixture_gh.reply(commits_checked_argv(31),
+                     commits_checked_answer(None, ("aaaa", None), ("bbbb", 0), ("cccc", 4)))
+
+    assert real_gh(fixture_gh).pr_commits_checked(31) == (
+        "no", [("aaaa", "no"), ("bbbb", "no"), ("cccc", "yes")])
+    assert fixture_gh.argvs() == [commits_checked_argv(31)]
+
+
+def test_a_base_tip_with_a_check_is_yes_and_a_pr_with_no_base_ref_answers_empty(fixture_gh):
+    fixture_gh.reply(commits_checked_argv(31), commits_checked_answer(2))
+    fixture_gh.reply(commits_checked_argv(32), commits_checked_answer("none", ("aaaa", None)))
+    gh = real_gh(fixture_gh)
+
+    assert gh.pr_commits_checked(31) == ("yes", [])
+    assert gh.pr_commits_checked(32) == ("", [("aaaa", "no")])
+
+
+def test_a_failed_pr_commits_checked_read_passes_gh_s_stderr_through(fixture_gh):
+    fixture_gh.reply(commits_checked_argv(31), stderr="gh: Server Error (HTTP 502)\n", exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).pr_commits_checked(31)
+    assert failed.value.stderr == "gh: Server Error (HTTP 502)\n"
+
+
+@pytest.mark.parametrize("call, argv", [
+    (lambda gh: gh.branch_required_checks("main"), protection_argv("main")),
+    (lambda gh: gh.branch_rules("main"), rules_argv("main")),
+    (lambda gh: gh.pr_commits_checked(31), commits_checked_argv(31)),
+], ids=["required-checks", "rules", "commits-checked"])
+@pytest.mark.parametrize("answer", ["not json\n", '"a string"\n'], ids=["not-json", "no-object"])
+def test_a_ci_evidence_answer_that_does_not_parse_fails(fixture_gh, call, argv, answer):
+    fixture_gh.reply(argv, answer)
+
+    with pytest.raises(GhFailed) as failed:
+        call(real_gh(fixture_gh))
+    assert failed.value.stderr == API_UNPARSED
+
+
+# --- Actions runs ------------------------------------------------------------
+
+
+def test_run_rerun_reruns_the_run_s_failed_jobs_and_answers_nothing(fixture_gh):
+    fixture_gh.reply(["run", "rerun", "4242", "--failed"], "✓ Requested rerun of failed jobs\n")
+
+    assert real_gh(fixture_gh).run_rerun(4242) is None
+    assert fixture_gh.argvs() == [["run", "rerun", "4242", "--failed"]]
+
+
+def test_a_refused_run_rerun_passes_gh_s_stderr_through(fixture_gh):
+    fixture_gh.reply(["run", "rerun", "4243", "--failed"],
+                     stderr="HTTP 403: Resource not accessible by integration\n", exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).run_rerun(4243)
+    assert failed.value.stderr == "HTTP 403: Resource not accessible by integration\n"
+
+
+def test_job_failed_log_is_the_failed_steps_log_as_gh_prints_it(fixture_gh):
+    fixture_gh.reply(["run", "view", "--job", "77", "--log-failed"],
+                     "build\tstep\tline one\r\nline two\n\n")
+
+    assert real_gh(fixture_gh).job_failed_log(77) == "build\tstep\tline one\r\nline two\n\n"
+
+
+def test_a_job_log_gh_cannot_read_passes_gh_s_stderr_through(fixture_gh):
+    fixture_gh.reply(["run", "view", "--job", "78", "--log-failed"],
+                     stderr="failed to get run log: log not found\n", exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).job_failed_log(78)
+    assert failed.value.stderr == "failed to get run log: log not found\n"
 
 
 # --- rate limits -------------------------------------------------------------
