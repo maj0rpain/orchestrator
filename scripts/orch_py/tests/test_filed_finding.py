@@ -8,6 +8,7 @@ import pytest
 
 from orch import filed_finding
 from orch.filed_finding import FindingBody, finding_body_parse
+from orch.triage_labels import TriageLabels
 from conftest import fake, lines
 
 SHA = "0123456789abcdef0123456789abcdef01234567"
@@ -51,6 +52,24 @@ def test_the_filed_severities_are_major_and_nit_in_order():
 ])
 def test_a_filed_severity_label_is_a_review_label_at_a_filed_severity(labels, filed):
     assert filed_finding.has_filed_severity_label(labels) is filed
+
+
+@pytest.mark.parametrize("labels, review, untriaged", [
+    (["bug", "Review:Nit"], True, True),
+    (["review:"], False, False),
+    (["nit"], False, False),
+    (["review:major"], True, True),
+    (["review:major", "Ready-For-Human"], True, False),
+    (["review:major", "wontfix"], True, False),
+])
+def test_a_review_label_in_any_casing_marks_a_finding_until_a_triage_role_label_ends_untriaged(
+        labels, review, untriaged):
+    """The cases of the deleted bash filed-finding section: a bare review:
+    or another label marks no finding, and a label of a role finding triage
+    applies, in any casing, ends it untriaged."""
+    assert (bool(filed_finding.review_labels(labels)),
+            filed_finding.finding_untriaged(labels, TriageLabels(lambda: None))) == (
+        review, untriaged)
 
 
 @pytest.mark.parametrize("category, other", [

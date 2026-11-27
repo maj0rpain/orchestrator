@@ -5,6 +5,9 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# fake_comments_clear <n>: issue #n holds no comments.
+fake_comments_clear() { rm -rf "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
+
 # --- issue-timeline module --------------------------------------------------
 # The Issue timeline module's queries, called through a sourced orch.sh over
 # comment histories seeded in the gh fake. Each case reads the history, then

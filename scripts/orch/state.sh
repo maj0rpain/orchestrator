@@ -229,8 +229,8 @@ require_field() {
   require_value "$2" "${!1}" "${3:-die}"
 }
 
-# The spec issue number, for the handoff, autopilot and standing ops that need
-# it before touching GitHub. A second argument, die2, is passed on to
+# The spec issue number, for the handoff ops that need it before touching
+# GitHub. A second argument, die2, is passed on to
 # require_field.
 require_issue() { require_field "$1" issue "${2:-die}"; }
 

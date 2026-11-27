@@ -14,8 +14,9 @@ fail/<operation>.times countdowns, offline, ratelimit and noauth. A failure
 goes through the real adapter's rate-limit handling (orch.gh.Limits), the
 rate_limit read answering from the store's quota. The reads the bash fake
 lets lag (lag/<operation>, .after and .stale) lag here too, the stale answer
-read in the shape the real operation reads gh's. Not honoured: hold/, a fifo
-that parks a bash call.
+read in the shape the real operation reads gh's. A fifo at hold/<operation>
+parks the call as it parks a bash one: the calling process's pid is written
+to `held`, and the call waits until something is written to the fifo.
 
 FakeStore seeds and reads back the store as the bash suite's fake_* helpers
 do, for a test that runs orch.sh on it.
@@ -26,12 +27,13 @@ import json
 import os
 import shutil
 import socket
+import stat
 import time
 from typing import Callable, List, Mapping, Optional, Sequence, Tuple
 
 from orch import gh as real
 from orch.common import file_lines, plain_number, read_raw, read_text
-from orch.gh import Check, Checks, GhFailed, IssueRow, LabelledBody, Limits
+from orch.gh import Check, Checks, GhFailed, IssueRow, LabelledBody, Limits, StateRow
 
 # The author and timestamp of every comment the fake's own operations write.
 COMMENT_AUTHOR = "fake-gh"
@@ -76,6 +78,14 @@ def _write(path: str, text: str, mode: str = "wb") -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, mode) as f:
         f.write(text.encode("utf-8", "surrogateescape"))
+
+
+def _mode(path: str) -> int:
+    """The file's mode, os.stat's; 0 where it is missing."""
+    try:
+        return os.stat(path).st_mode
+    except OSError:
+        return 0
 
 
 def _first_line(path: str) -> str:
@@ -218,7 +228,20 @@ class FakeGh:
                 _write(fail + ".times", "%d\n" % (real.number_of(times) - 1))
         return stderr
 
+    def _hold(self, operation: str) -> None:
+        """A fifo at hold/<operation> parks the call, as the bash fake's
+        does: it writes this process's pid to the store's `held` file and
+        waits until something is written to the fifo, or its writer closes
+        it."""
+        fifo = _store_path(self.store, "hold", operation)
+        if not stat.S_ISFIFO(_mode(fifo)):
+            return
+        _write(_store_path(self.store, "held"), "%d\n" % os.getpid())
+        with open(fifo, "rb") as held:
+            held.readline()
+
     def _fail_raw(self, operation: str) -> None:
+        self._hold(operation)
         stderr = self._seeded_failure(operation)
         if stderr is not None:
             raise GhFailed(stderr)
@@ -297,12 +320,12 @@ class FakeGh:
                 numbers.append(int(name))
         return numbers
 
-    def _labelled_open(self, *labels: str) -> List[int]:
-        """The open issues carrying every label, cut at the search limit as a
-        labelled listing is."""
+    def _labelled_open(self, *labels: str, match: Callable[..., bool] = all) -> List[int]:
+        """The open issues carrying every label - with <match> any, any of
+        them - cut at the search limit as a labelled listing is."""
         limit = min(real.issue_list_limit(self.env), real.ISSUE_SEARCH_CAP)
         return [n for n in self._open_numbers()
-                if all(real.label_listed(self._labels(n), label) for label in labels)][:limit]
+                if match(real.label_listed(self._labels(n), label) for label in labels)][:limit]
 
     def _next_number(self, counter_name: str = "next_issue") -> int:
         """The number a new issue takes - or a new PR, under next_pr - the
@@ -412,6 +435,33 @@ class FakeGh:
         real.labelled_limit_warn(self.env, len(rows), label)
         return rows
 
+    def _state_rows(self, operation: str, labels: Sequence[str],
+                    match: Callable[..., bool] = all) -> List[StateRow]:
+        """The state listing <operation> answers: the open issues carrying
+        every one of <labels> - with <match> any, any of them - or its stale
+        answer while it lags."""
+        self._failing(operation)
+        stale = self._lagging(operation)
+        if stale is not None:
+            return real.parse_state_rows(stale)
+        return [StateRow(n, _first_line(_issue_path(self.store, n, "state")), self._labels(n))
+                for n in self._labelled_open(*labels, match=match)]
+
+    def issues_open_rows(self) -> List[StateRow]:
+        rows = self._state_rows("adapter_issues_open_rows", ())
+        real.issue_list_limit_warn(self.env, len(rows), "the open issues")
+        return rows
+
+    def issues_labelled_rows(self, *labels: str) -> List[StateRow]:
+        rows = self._state_rows("adapter_issues_labelled_rows", labels)
+        real.labelled_limit_warn(self.env, len(rows), *labels)
+        return rows
+
+    def issues_any_labelled_rows(self, *labels: str) -> List[StateRow]:
+        rows = self._state_rows("adapter_issues_any_labelled_rows", labels, any)
+        real.any_labelled_limit_warn(self.env, len(rows), *labels)
+        return rows
+
     def issues_open_titles(self) -> List[Tuple[int, str]]:
         self._failing("adapter_issues_open_titles")
         return [(n, read_text(_issue_path(self.store, n, "title")) or "")
@@ -449,6 +499,17 @@ class FakeGh:
         self._failing("adapter_issue_comment")
         self._known(n)
         self._comment_append(_issue_path(self.store, n, "comments"), read_raw(body_file) or "")
+
+    def issue_comment_url(self, n: int, body_file: str) -> str:
+        """The comment appended, and its URL - "" where the store holds
+        no_comment_url, as a gh that printed none."""
+        self._failing("adapter_issue_comment_url")
+        self._known(n)
+        directory = _issue_path(self.store, n, "comments")
+        self._comment_append(directory, read_raw(body_file) or "")
+        if os.path.exists(_store_path(self.store, "no_comment_url")):
+            return ""
+        return "https://github.com/o/r/issues/%d#issuecomment-%s" % (n, _numbered(directory)[-1])
 
     def issue_relabel(
         self, n: int, add: Sequence[str] = (), remove: Sequence[str] = ()
@@ -527,6 +588,13 @@ class FakeGh:
         self._failing("adapter_labels")
         names = [line.split("\t", 1)[0] for line in _lines(_store_path(self.store, "labels"))]
         return [name for name in names if name][:limit]
+
+    def labels_detail(self, limit: int) -> List[Tuple[str, str, str]]:
+        """The stored labels, the first <limit> of them, each (name, colour,
+        description); none where the store holds no labels."""
+        self._failing("adapter_labels_detail")
+        lines = _lines(_store_path(self.store, "labels"))[:limit]
+        return real.parse_label_details("\n".join(lines))
 
     # --- repo operations ---
 
@@ -673,6 +741,15 @@ class FakeGh:
         self._failing("adapter_prs_open_bodies")
         return ["%s\t%s\t%s" % (name, json.dumps(read_raw(os.path.join(d, "body")) or "",
                                                  ensure_ascii=False), self._cross(d))
+                for name, d in self._prs("OPEN")]
+
+    def prs_open_mergeability(self) -> List[str]:
+        """Every open PR, newest first, each `<number><TAB><head><TAB>
+        <mergeable><TAB><flag>`, the mergeable the stored mergeable file
+        (UNKNOWN where unset), the flag as prs_open answers it."""
+        self._failing("adapter_prs_open_mergeability")
+        return ["\t".join([name, read_text(os.path.join(d, "head")) or "",
+                           read_text(os.path.join(d, "mergeable")) or "UNKNOWN", self._cross(d)])
                 for name, d in self._prs("OPEN")]
 
     def prs_merged(self, head: str, base: str) -> List[str]:
@@ -934,6 +1011,16 @@ class FakeGh:
                 rows.append(real.ClaimRow(*fields))
         return rows
 
+    def claim_create(self, n: int, phase: str, pid: int, host: str, started: str) -> bool:
+        """The claim on #n stored, its line the five fields claim_list
+        reads; False, the store as it was, where it already holds one."""
+        self._failing("adapter_claim_create")
+        path = _store_path(self.store, "claims", n)
+        if os.path.lexists(path):
+            return False
+        _write(path, "%d\t%s\t%s\t%s\t%s\n" % (n, host, pid, phase, started))
+        return True
+
     def claim_delete(self, n: int) -> None:
         """The claim on #n removed from the store; none there is freed all
         the same."""
@@ -1116,6 +1203,16 @@ class FakeStore:
     def local_default(self, name: str) -> None:
         """gh's own local default repo for the checkout, OWNER/REPO."""
         _write(_store_path(self.store, "local_default"), name + "\n")
+
+    def label(self, name: str, colour: str, description: str) -> None:
+        """One more repo label, as fake_label appends it."""
+        _write(_store_path(self.store, "labels"), "%s\t%s\t%s\n" % (name, colour, description),
+               "ab")
+
+    def pr_mergeable(self, n: int, value: str) -> None:
+        """PR #n's mergeability - MERGEABLE, CONFLICTING or UNKNOWN, which a
+        PR never seeded reports."""
+        _write(_pr_path(self.store, n, "mergeable"), value + "\n")
 
     def label_names(self, *names: str) -> None:
         """The repo's labels: exactly <names>, with no colour or description,

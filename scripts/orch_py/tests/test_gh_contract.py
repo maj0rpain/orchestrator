@@ -11,12 +11,12 @@ import os
 
 import pytest
 
-from orch.gh import (Check, ClaimRow, Gh, GhFailed, IssueRow, LabelledBody, SubIssue, Unparsed,
-                     gh_die, gh_or_die)
+from orch.gh import (Check, ClaimRow, Gh, GhFailed, IssueRow, LabelledBody, StateRow, SubIssue,
+                     Unparsed, gh_die, gh_issue_not_found, gh_or_die)
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY, RepoPin
 
-from conftest import died_of, origin_clone, run_git
+from conftest import died_of, git_identity, origin_clone, run_git
 
 FORK = "https://github.com/fork/widgets.git"
 BODY = ["issue", "view", "5", "--json", "body", "--jq", ".body"]
@@ -248,6 +248,108 @@ def test_the_issue_list_limit_stops_at_github_s_search_cap(fixture_gh, capsys):
     real_gh(fixture_gh, ORCH_ISSUE_LIST_LIMIT="5000").issues_titled_rows("ready")
 
     assert capsys.readouterr().err == ""
+
+
+OPEN_ROWS_JQ = ".[] | .number, .state, (.labels | length), (.labels[].name)"
+
+
+def open_rows_argv(limit="1000"):
+    return ["issue", "list", "--state", "open", "--search", "sort:created-asc", "--limit", limit,
+            "--json", "number,state,labels", "--jq", OPEN_ROWS_JQ]
+
+
+def test_issues_open_rows_reads_each_count_marked_record(fixture_gh, capsys):
+    fixture_gh.reply(open_rows_argv(), "7\nOPEN\n2\nready-for-agent\nbug\n012\nCLOSED\n0\n")
+
+    assert real_gh(fixture_gh).issues_open_rows() == [
+        StateRow(7, "OPEN", ["ready-for-agent", "bug"]),
+        StateRow(12, "CLOSED", []),
+    ]
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("answer", ["x\nOPEN\n0\n", "7\nOPEN\n3\na\n", "7\n"])
+def test_an_open_rows_listing_that_does_not_parse_fails(fixture_gh, answer):
+    fixture_gh.reply(open_rows_argv(), answer)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).issues_open_rows()
+    assert failed.value.stderr == "gh answered a listing that does not parse"
+
+
+def test_an_open_rows_listing_at_the_issue_list_limit_warns(fixture_gh, capsys):
+    fixture_gh.reply(open_rows_argv("2"), "1\nOPEN\n0\n2\nOPEN\n0\n")
+
+    assert len(real_gh(fixture_gh, ORCH_ISSUE_LIST_LIMIT="2").issues_open_rows()) == 2
+    assert capsys.readouterr().err == (
+        "orch: the open issues reached the issue-list limit of 2"
+        " - the newest past it are missing from this list\n"
+    )
+
+
+def labelled_rows_argv(*labels, limit="1000"):
+    argv = ["issue", "list", "--state", "open"]
+    for label in labels:
+        argv += ["--label", label]
+    return argv + ["--search", "sort:created-asc", "--limit", limit,
+                   "--json", "number,state,labels", "--jq", OPEN_ROWS_JQ]
+
+
+def test_issues_labelled_rows_lists_the_issues_carrying_every_label_named(fixture_gh, capsys):
+    fixture_gh.reply(labelled_rows_argv("needs-human", "orch:spec"),
+                     "7\nOPEN\n2\nneeds-human\norch:spec\n")
+
+    assert real_gh(fixture_gh).issues_labelled_rows("needs-human", "orch:spec") == [
+        StateRow(7, "OPEN", ["needs-human", "orch:spec"])]
+    assert capsys.readouterr().err == ""
+
+
+def test_a_labelled_rows_listing_at_the_issue_list_limit_warns_naming_its_labels(
+        fixture_gh, capsys):
+    fixture_gh.reply(labelled_rows_argv("needs-human", limit="2"), "1\nOPEN\n0\n2\nOPEN\n0\n")
+
+    assert len(real_gh(fixture_gh, ORCH_ISSUE_LIST_LIMIT="2").issues_labelled_rows(
+        "needs-human")) == 2
+    assert capsys.readouterr().err == (
+        "orch: the open issues labelled needs-human reached the issue-list limit of 2"
+        " - the newest past it are missing from this list\n"
+    )
+
+
+def test_a_labelled_rows_listing_that_does_not_parse_fails(fixture_gh):
+    fixture_gh.reply(labelled_rows_argv("needs-human"), "7\nOPEN\n3\na\n")
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).issues_labelled_rows("needs-human")
+    assert failed.value.stderr == "gh answered a listing that does not parse"
+
+
+def any_labelled_rows_argv(*labels, limit="1000"):
+    return ["issue", "list", "--state", "open",
+            "--search", "label:%s sort:created-asc" % ",".join('"%s"' % l for l in labels),
+            "--limit", limit, "--json", "number,state,labels", "--jq", OPEN_ROWS_JQ]
+
+
+def test_issues_any_labelled_rows_lists_the_issues_carrying_any_label_named(fixture_gh, capsys):
+    fixture_gh.reply(any_labelled_rows_argv("orch:spec", "orch:sync"),
+                     "7\nOPEN\n1\norch:spec\n9\nOPEN\n2\norch:done\norch:sync\n")
+
+    assert real_gh(fixture_gh).issues_any_labelled_rows("orch:spec", "orch:sync") == [
+        StateRow(7, "OPEN", ["orch:spec"]), StateRow(9, "OPEN", ["orch:done", "orch:sync"])]
+    assert capsys.readouterr().err == ""
+
+
+def test_an_any_labelled_listing_at_the_issue_list_limit_warns_naming_its_labels_by_or(
+        fixture_gh, capsys):
+    fixture_gh.reply(any_labelled_rows_argv("orch:spec", "orch:sync", limit="2"),
+                     "1\nOPEN\n0\n2\nOPEN\n0\n")
+
+    assert len(real_gh(fixture_gh, ORCH_ISSUE_LIST_LIMIT="2").issues_any_labelled_rows(
+        "orch:spec", "orch:sync")) == 2
+    assert capsys.readouterr().err == (
+        "orch: the open issues labelled orch:spec or orch:sync reached the issue-list limit of 2"
+        " - the newest past it are missing from this list\n"
+    )
 
 
 def state_argv(number):
@@ -522,6 +624,19 @@ def test_issue_body_edit_and_comment_pass_the_file(fixture_gh):
     assert fixture_gh.argvs() == [BODY_EDIT, COMMENT]
 
 
+@pytest.mark.parametrize("answer,url", [
+    ("https://github.com/o/r/issues/5#issuecomment-9\nmore\n",
+     "https://github.com/o/r/issues/5#issuecomment-9"),
+    ("", ""),
+], ids=["a URL", "none"])
+def test_issue_comment_url_posts_the_file_and_answers_the_first_line_gh_printed(
+        fixture_gh, answer, url):
+    fixture_gh.reply(COMMENT, answer)
+
+    assert real_gh(fixture_gh).issue_comment_url(5, "c.md") == url
+    assert fixture_gh.argvs() == [COMMENT]
+
+
 def test_issue_relabel_is_one_edit_and_none_with_nothing_named(fixture_gh):
     argv = ["issue", "edit", "5", "--remove-label", "wip", "--remove-label", "needs-triage",
             "--add-label", "ready-for-agent"]
@@ -605,6 +720,34 @@ def test_a_failed_label_upsert_passes_gh_s_stderr_through(fixture_gh):
     with pytest.raises(GhFailed) as failed:
         real_gh(fixture_gh).label_upsert(
             "review:major", "d93f0b", "Review finding filed at major severity")
+    assert failed.value.stderr == "HTTP 502: Bad Gateway\n"
+
+
+def labels_detail_argv(limit):
+    return ["label", "list", "--limit", str(limit), "--json", "name,color,description",
+            "--jq", '.[] | [.name, .color, (.description // "")] | @tsv']
+
+
+def test_labels_detail_lists_each_label_s_name_colour_and_description(fixture_gh):
+    fixture_gh.reply(labels_detail_argv(1000),
+                     "orch:spec\t1d76db\tAutopilot flow: spec phase next\nbare\tededed\t\n")
+
+    assert real_gh(fixture_gh).labels_detail(1000) == [
+        ("orch:spec", "1d76db", "Autopilot flow: spec phase next"), ("bare", "ededed", "")]
+    assert fixture_gh.argvs() == [labels_detail_argv(1000)]
+
+
+def test_a_repo_with_no_labels_details_none(fixture_gh):
+    fixture_gh.reply(labels_detail_argv(1000), "")
+
+    assert real_gh(fixture_gh).labels_detail(1000) == []
+
+
+def test_a_failed_label_detail_listing_passes_gh_s_stderr_through(fixture_gh):
+    fixture_gh.reply(labels_detail_argv(1000), stderr="HTTP 502: Bad Gateway\n", exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).labels_detail(1000)
     assert failed.value.stderr == "HTTP 502: Bad Gateway\n"
 
 
@@ -946,6 +1089,24 @@ def test_prs_open_bodies_lists_every_open_pr_its_body_json_encoded_unfiltered(fi
     assert real_gh(fixture_gh).prs_open_bodies() == ['12\t"Refs #3\\r\\n\\nBody"\ttrue',
                                                      '4\t""\tfalse']
     assert real_gh(fixture_gh, ORCH_ISSUE_LIST_LIMIT="7").prs_open_bodies() == []
+
+
+def open_mergeability_argv(limit="1000"):
+    return ["pr", "list", "--state", "open", "--limit", limit,
+            "--json", "number,headRefName,mergeable,isCrossRepository",
+            "--jq", '.[] | "\\(.number)\\t\\(.headRefName)\\t\\(.mergeable)'
+                    '\\t\\(.isCrossRepository)"']
+
+
+def test_prs_open_mergeability_lists_every_open_pr_s_head_and_mergeability_unfiltered(
+        fixture_gh):
+    fixture_gh.reply(open_mergeability_argv(), "12\torch/3-x\tCONFLICTING\ttrue\n"
+                                               "4\torch/5-y\tUNKNOWN\tfalse\n")
+    fixture_gh.reply(open_mergeability_argv("7"), "")
+
+    assert real_gh(fixture_gh).prs_open_mergeability() == [
+        "12\torch/3-x\tCONFLICTING\ttrue", "4\torch/5-y\tUNKNOWN\tfalse"]
+    assert real_gh(fixture_gh, ORCH_ISSUE_LIST_LIMIT="7").prs_open_mergeability() == []
 
 
 MERGED_CLOSING_JQ = ('.[] | "\\(.number)\\t\\(.headRefName)\\t\\(.mergedAt)\\t'
@@ -1541,3 +1702,39 @@ def test_a_claim_list_origin_cannot_answer_fails_with_git_s_reason(claims):
 
     assert failed.value.stderr.startswith(
         "fatal: '%s' does not appear to be a git repository\n" % origin)
+
+
+def test_gh_issue_not_found_reads_gh_s_missing_issue_reason():
+    assert gh_issue_not_found("GraphQL: Could not resolve to an issue or pull request with the"
+                              " number of 99. (repository.issue)\n")
+    assert not gh_issue_not_found("HTTP 502: Bad Gateway\n")
+
+
+# --- the claim create -------------------------------------------------------------
+
+
+def test_a_claim_create_pushes_a_claim_the_claim_list_reads_back(claims):
+    _, root, gh = claims
+    git_identity(root)
+
+    assert gh.claim_create(7, "review", 42, "thishost", "2026-03-04T05:06:07Z") is True
+    assert ClaimRow("7", "thishost", "42", "review", "2026-03-04T05:06:07Z") in gh.claim_list()
+
+
+def test_a_claim_create_on_an_issue_origin_holds_a_claim_on_loses_the_race(claims):
+    _, root, gh = claims
+    git_identity(root)
+
+    assert gh.claim_create(5, "review", 42, "thishost", "2026-03-04T05:06:07Z") is False
+    assert ClaimRow("5", "otherhost", "5", "spec", "2021-01-01T00:00:00Z") in gh.claim_list()
+
+
+def test_a_claim_create_origin_cannot_take_fails_with_git_s_reason(claims):
+    origin, root, gh = claims
+    git_identity(root)
+    origin_gone(origin)
+
+    with pytest.raises(GhFailed) as failed:
+        gh.claim_create(7, "spec", 1, "thishost", "2026-03-04T05:06:07Z")
+
+    assert failed.value.stderr == "fatal: '%s' does not appear to be a git repository\n" % origin

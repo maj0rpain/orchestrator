@@ -14,8 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from conftest import (GH_502, died_of, exclude_orchestrator, git_repo, hold_flow, labels_doc,
-                      record, run_git, write, write_labels_doc)
+from conftest import (GH_502, SideCheckouts, died_of, exclude_orchestrator, git_repo, hold_flow,
+                      labels_doc, linked_worktree, record, run_git, sha_of, write,
+                      write_labels_doc)
 from orch import cli, doctor
 from orch.autopilot import epoch_iso
 from orch.gh_fake import FakeGh
@@ -2486,60 +2487,6 @@ def test_agent_settings_that_cannot_be_read_are_the_check_s_one_fail(capsys, see
 # --- repo config: finished side checkouts ---------------------------------------
 
 
-def linked_worktree(tmp_path, path, marker=None):
-    """A linked worktree of the clone at <path>, a Path: its git pointer
-    naming a git folder under tmp_path/git-dir/worktrees that holds a HEAD
-    and, where <marker> is given, the side-checkout ownership marker holding
-    it, its name the path's below tmp_path. Its path, as a str."""
-    gitdir = tmp_path / "git-dir" / "worktrees" / "-".join(path.relative_to(tmp_path).parts)
-    gitdir.mkdir(parents=True)
-    (gitdir / "HEAD").write_text("ref: refs/heads/x\n")
-    if marker is not None:
-        (gitdir / "orchestrator-side-checkout").write_text(marker)
-    path.mkdir(parents=True)
-    (path / ".git").write_text("gitdir: %s\n" % gitdir)
-    return str(path)
-
-
-class SideCheckouts:
-    """The checkout at tmp_path and its side checkouts, each added by add:
-    a FakeGit listing them all, every tree clean, and each branch's tip a
-    commit of its own."""
-
-    def __init__(self, tmp_path, **kwargs):
-        self.tmp_path = tmp_path
-        self.git = checkout_git(tmp_path, **kwargs)
-        self.worktrees = [Worktree(str(tmp_path), "main")]
-        self.git.seed("worktree_list", answer=self.worktrees)
-
-    def add(self, name, branch, tip=None, marker="7\n"):
-        """Side checkout <name> on <branch>, its tip <tip> (a SHA made from
-        the name when None): its path."""
-        path = linked_worktree(self.tmp_path, self.tmp_path / ".orchestrator" / "checkouts" / name,
-                               marker)
-        self.worktrees.append(Worktree(path, branch))
-        self.git.seed("status_at", path, answer="")
-        self.git.seed("branch_at", path, answer=branch)
-        self.tip(branch, tip or sha_of(name))
-        return path
-
-    def tip(self, branch, sha):
-        """<branch>'s tip <sha>, a commit the clone holds."""
-        self.git.seed("resolve_commit", "refs/heads/" + branch, answer=sha)
-        self.git.commits[sha] = {}
-
-    def merged(self, seed, n, branch, head, base="main"):
-        """PR #n merged from <branch> into <base>, its head <head>, a commit
-        the clone holds."""
-        seed.pr(n, "merged", branch, base)
-        seed.pr_head(n, head)
-        self.git.commits[head] = {}
-
-
-def sha_of(name):
-    return (name.encode().hex() * 40)[:40]
-
-
 def finished_lines(run):
     """The report's lines naming a side checkout, and each one's remedy."""
     lines = run.out.split("\n")
@@ -2558,7 +2505,7 @@ def finished_warn(tmp_path, name):
 def test_finished_side_checkouts_warn_with_their_remove_command_and_others_say_nothing(
         capsys, seed, tmp_path):
     healthy(seed)
-    sides = SideCheckouts(tmp_path)
+    sides = SideCheckouts(tmp_path, checkout_git(tmp_path))
     sides.add("dfin", "quick/20-dfin")
     sides.merged(seed, 60, "quick/20-dfin", sha_of("dfin"))
     sides.add("dopen", "quick/21-dopen")
@@ -2582,7 +2529,7 @@ def test_finished_side_checkouts_warn_with_their_remove_command_and_others_say_n
 def test_a_tip_an_ancestor_of_a_merged_head_is_finished_and_one_never_pushed_is_not(
         capsys, seed, tmp_path):
     healthy(seed)
-    sides = SideCheckouts(tmp_path)
+    sides = SideCheckouts(tmp_path, checkout_git(tmp_path))
     sides.add("behind", "quick/30-behind")
     sides.merged(seed, 70, "quick/30-behind", sha_of("behind-head"))
     sides.git.seed("ancestry", sha_of("behind"), sha_of("behind-head"), answer=True)
@@ -2600,7 +2547,7 @@ def test_a_dirty_tree_is_not_finished_and_one_git_cannot_read_is_warned_unchecke
     from orch.git import GitFailure
 
     healthy(seed)
-    sides = SideCheckouts(tmp_path)
+    sides = SideCheckouts(tmp_path, checkout_git(tmp_path))
     dirty = sides.add("dirty", "quick/40-dirty")
     sides.merged(seed, 80, "quick/40-dirty", sha_of("dirty"))
     sides.git.seed("status_at", dirty, answer="?? new.txt\n")
@@ -2617,7 +2564,7 @@ def test_a_dirty_tree_is_not_finished_and_one_git_cannot_read_is_warned_unchecke
 
 def test_a_side_checkout_github_cannot_answer_for_is_warned_unchecked(capsys, seed, tmp_path):
     healthy(seed)
-    sides = SideCheckouts(tmp_path)
+    sides = SideCheckouts(tmp_path, checkout_git(tmp_path))
     sides.add("quick", "quick/50-quick")
     flowing = sides.add("flowing", "orch/51-flowing")
     hold_flow(Path(flowing), slug="flowing", phase="done", branch="orch/51-flowing", pr="90")
@@ -2636,7 +2583,7 @@ def test_a_side_checkout_github_cannot_answer_for_is_warned_unchecked(capsys, se
 
 def test_a_flow_with_no_recorded_base_is_held_to_the_default_branch(capsys, seed, tmp_path):
     healthy(seed)
-    sides = SideCheckouts(tmp_path)
+    sides = SideCheckouts(tmp_path, checkout_git(tmp_path))
     into_main = sides.add("into-main", "orch/60-main")
     hold_flow(Path(into_main), slug="m", phase="done", branch="orch/60-main", pr="91")
     sides.merged(seed, 91, "orch/60-main", sha_of("into-main"))
@@ -2655,7 +2602,7 @@ def test_a_flow_with_no_recorded_base_is_held_to_the_default_branch(capsys, seed
 
 def test_a_fork_pr_from_the_branch_never_finishes_a_side_checkout(capsys, seed, tmp_path):
     healthy(seed)
-    sides = SideCheckouts(tmp_path)
+    sides = SideCheckouts(tmp_path, checkout_git(tmp_path))
     sides.add("forked", "quick/70-forked")
     sides.merged(seed, 95, "quick/70-forked", sha_of("forked"))
     seed.pr_cross(95)
@@ -2682,7 +2629,7 @@ def test_checkouts_that_cannot_be_listed_fail_the_finished_check(capsys, seed, t
 def test_without_jq_a_side_checkout_holding_a_flow_could_not_be_checked(
         capsys, seed, tmp_path):
     healthy(seed)
-    sides = SideCheckouts(tmp_path)
+    sides = SideCheckouts(tmp_path, checkout_git(tmp_path))
     dflow = sides.add("dflow", "orch/dflow-flow")
     hold_flow(Path(dflow), slug="dflow-flow", phase="done", branch="orch/dflow-flow", pr="62")
     sides.merged(seed, 62, "orch/dflow-flow", sha_of("dflow"))
@@ -2706,7 +2653,7 @@ def test_offline_a_side_checkout_is_one_more_skipped_github_check(capsys, seed, 
     healthy(seed)
     seed.offline()
     without = skipped_github(orch_doctor(capsys, seed, tmp_path, "--env"))
-    sides = SideCheckouts(tmp_path)
+    sides = SideCheckouts(tmp_path, checkout_git(tmp_path))
     sides.add("dfin", "quick/20-dfin")
     sides.merged(seed, 60, "quick/20-dfin", sha_of("dfin"))
 
@@ -2723,7 +2670,7 @@ def test_offline_a_side_checkout_is_one_more_skipped_github_check(capsys, seed, 
 def test_with_side_checkouts_doctor_s_only_default_branch_read_is_its_probe_s(
         capsys, seed, tmp_path, prepare):
     prepare(seed)
-    sides = SideCheckouts(tmp_path)
+    sides = SideCheckouts(tmp_path, checkout_git(tmp_path))
     for name, n in (("one", 60), ("two", 61)):
         dflow = sides.add(name, "orch/%s" % name)
         hold_flow(Path(dflow), slug=name, phase="done", branch="orch/" + name, pr=str(n))
@@ -2901,7 +2848,7 @@ def test_a_side_checkout_flow_s_phase_label_is_held_to_its_recorded_phase(
         capsys, seed, tmp_path, labels, lines):
     healthy(seed)
     seed.issue(7, "open", "ready-for-agent", *labels)
-    sides = SideCheckouts(tmp_path)
+    sides = SideCheckouts(tmp_path, checkout_git(tmp_path))
     side_flow(tmp_path, sides)
 
     run = orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git, env=flow_env(tmp_path))
@@ -2914,7 +2861,7 @@ def test_a_side_flow_labelled_one_step_back_gets_the_redo_the_watcher_will_run(
         capsys, seed, tmp_path):
     healthy(seed)
     seed.issue(7, "open", "orch:spec")
-    sides = SideCheckouts(tmp_path)
+    sides = SideCheckouts(tmp_path, checkout_git(tmp_path))
     side_flow(tmp_path, sides, phase="implement")
 
     run = orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git, env=flow_env(tmp_path))
@@ -2928,7 +2875,7 @@ def test_a_side_flow_labelled_one_step_back_gets_the_redo_the_watcher_will_run(
 def test_side_flows_that_cannot_be_judged_are_passed_over_silently(capsys, seed, tmp_path):
     healthy(seed)
     seed.issue(7, "open", "orch:implement")
-    sides = SideCheckouts(tmp_path)
+    sides = SideCheckouts(tmp_path, checkout_git(tmp_path))
     side_flow(tmp_path, sides, name="truncated", state='{"phase": "spec", "issue"')
     side_flow(tmp_path, sides, name="unmarked", issue="")
     misread = sides.add("misread", "orch/misread", marker="7x\n")
@@ -2948,7 +2895,7 @@ def test_side_flows_that_cannot_be_judged_are_passed_over_silently(capsys, seed,
 def test_without_jq_side_flows_are_passed_over_unread(capsys, seed, tmp_path):
     healthy(seed)
     seed.issue(7, "open", "orch:implement")
-    sides = SideCheckouts(tmp_path)
+    sides = SideCheckouts(tmp_path, checkout_git(tmp_path))
     side_flow(tmp_path, sides)
 
     run = orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git,
@@ -2962,7 +2909,7 @@ def test_doctor_in_a_side_checkout_leaves_its_own_flow_to_the_flow_checks(
         capsys, seed, tmp_path):
     healthy(seed)
     seed.issue(7, "open", "orch:implement")
-    sides = SideCheckouts(tmp_path)
+    sides = SideCheckouts(tmp_path, checkout_git(tmp_path))
     path = side_flow(tmp_path, sides)
     sides.git.root = path
 
@@ -2975,7 +2922,7 @@ def test_doctor_in_a_side_checkout_leaves_its_own_flow_to_the_flow_checks(
 def test_offline_side_flows_are_one_more_skipped_github_check(capsys, seed, tmp_path):
     healthy(seed)
     seed.offline()
-    sides = SideCheckouts(tmp_path)
+    sides = SideCheckouts(tmp_path, checkout_git(tmp_path))
     without = skipped_github(orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git))
     side_flow(tmp_path, sides)
     side_flow(tmp_path, sides, name="8-other", issue="8")
@@ -3046,7 +2993,7 @@ def test_bare_doctor_prints_every_group_and_the_repo_config_tail_in_today_s_orde
         capsys, seed, tmp_path):
     healthy(seed)
     seed.offline()
-    sides = SideCheckouts(tmp_path)
+    sides = SideCheckouts(tmp_path, checkout_git(tmp_path))
     sides.git.seed("main_checkout", answer=str(tmp_path))
     side_flow(tmp_path, sides)
     seed.claim(9, host="otherhost", pid=5, started="2020-01-01T00:00:00Z")
@@ -3063,7 +3010,7 @@ def test_the_repo_config_group_ends_on_agents_side_checkouts_claims_and_side_flo
         capsys, seed, tmp_path):
     healthy(seed)
     seed.issue(7, "open", "orch:implement")
-    sides = SideCheckouts(tmp_path)
+    sides = SideCheckouts(tmp_path, checkout_git(tmp_path))
     sides.git.seed("main_checkout", answer=str(tmp_path))
     side_flow(tmp_path, sides)
     sides.add("dfin", "quick/20-dfin")

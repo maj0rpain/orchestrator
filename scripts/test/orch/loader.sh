@@ -15,10 +15,6 @@ orch_modules_list() {
   done | LC_ALL=C sort
 }
 
-# guard_line_for <version>: the line orch.sh's bash version guard prints for
-# a running bash of <version>.
-guard_line_for() { echo "orch: bash $1 is too old - orch.sh needs bash 4.2 or newer: brew install bash"; }
-
 # assert_trace_names_no <label> <trace file> <module>...: asserts a load trace,
 # written by a run that had ORCH_LOAD_TRACE=<file> on, names none of the given
 # modules - a module the run must not load at all.
@@ -35,6 +31,10 @@ assert_trace_names_no() {
     assert_eq "$label: the load trace names no $mod" "$n" "0"
   done
 }
+
+# guard_line_for <version>: the line orch.sh's bash version guard prints for
+# a running bash of <version>.
+guard_line_for() { echo "orch: bash $1 is too old - orch.sh needs bash 4.2 or newer: brew install bash"; }
 
 # --- orch_load ----------------------------------------------------------------
 echo
@@ -75,7 +75,7 @@ trace="$(mktemp)"
 run_traced() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash "$ORCH" "$@" >/dev/null 2>&1 || true; }
 
 run_traced state get phase
-assert_trace_names_no "state get loads the state module and never the autopilot's" "$trace" autopilot
+assert_trace_names_no "state get loads the state module and never the side checkout's" "$trace" side-checkout
 assert_contains "state get loads the state module" "$(cat "$trace")" "state 0"
 assert_eq "no module loads twice at depth 0" \
   "$(awk '$2 == 0 {print $1}' "$trace" | sort | uniq -d)" ""
@@ -93,13 +93,13 @@ assert_status "and its exit status" "$status2" "$status"
 src_run() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash -c "$1" _ "$ORCH" 2>&1; }
 lazy_pre='ORCH_SOURCE_LAZY=1; source "$1"; shift; '
 
-src_run "$lazy_pre"'(has_review_label review:major); true'
-assert_eq "a stub called in a subshell loads its module there only" "$(cat "$trace")" "filed-finding 1"
+src_run "$lazy_pre"'(is_branch_name main); true'
+assert_eq "a stub called in a subshell loads its module there only" "$(cat "$trace")" "base 1"
 
 # A stub passes its arguments and returns the real function's status.
-out="$(src_run "$lazy_pre"'st=0; has_review_label review:major || st=$?; echo "st=$st"')"
-assert_eq "a stub passes its arguments and returns the real function's status for a review label" "$out" "st=0"
-out="$(src_run "$lazy_pre"'st=0; has_review_label nonesuch || st=$?; echo "st=$st"')"
+out="$(src_run "$lazy_pre"'st=0; is_branch_name main || st=$?; echo "st=$st"')"
+assert_eq "a stub passes its arguments and returns the real function's status for a valid branch name" "$out" "st=0"
+out="$(src_run "$lazy_pre"'st=0; is_branch_name "a..b" || st=$?; echo "st=$st"')"
 assert_contains "and returns a failing status" "$out" "st=1"
 
 # A stub whose module no longer defines the function: one the function moved
@@ -154,7 +154,7 @@ out="$(src_run 'source "$1"; cmd_state() { echo replaced; }; cmd_state')"
 assert_eq "a function replaced after source stays replaced" "$out" "replaced"
 
 src_run 'ORCH_SOURCE_LAZY=1; source "$1"' >/dev/null
-assert_trace_names_no "a plain ORCH_SOURCE_LAZY=1 loads on demand" "$trace" autopilot
+assert_trace_names_no "a plain ORCH_SOURCE_LAZY=1 loads on demand" "$trace" side-checkout
 out="$(src_run 'ORCH_SOURCE_LAZY=1; source "$1"; echo "${ORCH_SOURCE_LAZY-unset}"')"
 assert_eq "and is unset after the source" "$out" "unset"
 out="$(src_run 'export ORCH_SOURCE_LAZY=1; source "$1"; echo "${ORCH_SOURCE_LAZY-unset}"')"
@@ -166,7 +166,7 @@ assert_eq "and loads every module" "$(awk '{print $1}' "$trace")" "$(orch_module
 
 : >"$trace"
 ORCH_LOAD_TRACE="$trace" sourced_orch branch_records_base orch/40-flowing || true
-assert_trace_names_no "sourced_orch loads on demand" "$trace" autopilot
+assert_trace_names_no "sourced_orch loads on demand" "$trace" side-checkout
 : >"$trace"
 ORCH_LOAD_TRACE="$trace" sourced_orch eval 'true'
 assert_eq "sourced_orch eval loads every module" "$(awk '{print $1}' "$trace")" "$(orch_modules_list)"

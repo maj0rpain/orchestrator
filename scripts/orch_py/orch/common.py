@@ -39,6 +39,9 @@ from typing import (Any, Callable, Iterable, Iterator, List, NoReturn, Optional,
 
 # The directory every checkout keeps the orchestrator's own files in.
 ORCH_DIR_NAME = ".orchestrator"
+# The one format of a UTC timestamp the plugin writes: ISO-8601, to the
+# second, as bash's `date -u +%Y-%m-%dT%H:%M:%SZ` prints it.
+UTC_STAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 # The directories the plugin writes to and keeps out of git status: its own,
 # and .scratch/, where planning drafts land.
 EXCLUDED_DIRS = (ORCH_DIR_NAME + "/", ".scratch/")
@@ -439,6 +442,11 @@ def normalize_slug(text: str) -> str:
     return slug
 
 
+# dir_stamp's shape as a regular expression, owned here beside it so a name
+# test elsewhere (the session log prune) follows a change to it.
+DIR_STAMP_PATTERN = r"[0-9]{8}-[0-9]{6}"
+
+
 def dir_stamp(clock: Callable[[], float] = time.time) -> str:
     """The time <clock> reads, in UTC, as a directory name's stamp:
     %Y%m%d-%H%M%S."""
@@ -531,6 +539,12 @@ def capture(call: Callable[[], Any]) -> Tuple[Any, str, int]:
         code = died.code if isinstance(died.code, int) else 1
         return None, err.getvalue(), code
     return answer, err.getvalue(), 0
+
+
+def exit_status(code: int) -> int:
+    """A waited command's exit status as bash's $? gives it: 128 plus the
+    signal for one a signal ended."""
+    return 128 - code if code < 0 else code
 
 
 def subshell(call: Callable[[], Optional[int]]) -> int:

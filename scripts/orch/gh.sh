@@ -2,8 +2,9 @@
 # gh.sh - the gh adapter layer (ADR-0033): gh(), the guard every GitHub call
 # goes through, the failure contract its callers die by (gh_reason, gh_die,
 # gh_or_die, gh_capture, gh_capture_err), every adapter_*
-# operation, the out-variable readers over the multi-field ones, and the JQ
-# constants they read. It does not render: rendering happens in the Comments
+# operation, the out-variable readers over the multi-field ones, the JQ
+# constants they read, and the GitHub limit record its limit handler makes in
+# an autopilot process. It does not render: rendering happens in the Comments
 # module, after the Trust filter.
 # It stays whole, whoever calls each operation, and ends with the
 # ORCH_GH_ADAPTER hook, so a test adapter overrides the real operations.
@@ -54,7 +55,7 @@ gh() {
 # gh_capture <out-var> <err-var> <command...> and gh_capture_err <err-var>
 # <command...>: capture and capture_err for a GitHub operation - an adapter_*
 # operation, gh itself, or a function or whole command whose first GitHub call
-# would otherwise resolve the Repo in the capture's subshell (standing_claim).
+# would otherwise resolve the Repo in the capture's subshell.
 # Each runs the memoising resolver (repo_resolve) in the caller's shell first,
 # ignoring its status, so the Repo is resolved once for the shell that calls
 # it, rather than once per subshell the call runs in; a failed resolution is
@@ -175,6 +176,95 @@ gh_limit_handle() {
   return 1
 }
 
+# --- the GitHub limit record (#2577) -----------------------------------------
+#
+# What gh_limit_handle records in an autopilot process: the GitHub limit pause
+# under the main checkout, and a session's hit file. The pause file's format is
+# pinned to the Python limit record by scripts/orch_py/tests/github_pause/. The
+# autopilot noun, converted, reads and extends the same files through
+# orch/autopilot.py's pause_* functions.
+
+# The most seconds ahead a recorded GitHub reset is held: GitHub's rate limits
+# reset hourly, so none names a later one (#3684).
+AUTOPILOT_GITHUB_PAUSE_MAX=3600
+
+# autopilot_dir <main-root>: where a clone's autopilot files live - the run
+# records, the session logs, the limit files (limit, github-limit,
+# github-early-<pool>), the housekeeping stamp (housekeeping) and the per-issue
+# hit marks - under its main checkout.
+autopilot_dir() { printf '%s/%s/autopilot\n' "$1" "$ORCH_DIR_NAME"; }
+
+# autopilot_epoch_iso <epoch>: epoch seconds as a UTC timestamp, GNU or BSD
+# date.
+autopilot_epoch_iso() {
+  date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ
+}
+
+# autopilot_iso_epoch <YYYY-MM-DDTHH:MM:SSZ>: the UTC timestamp as epoch
+# seconds, GNU or BSD date; non-zero for a value neither reads.
+autopilot_iso_epoch() {
+  date -u -d "$1" +%s 2>/dev/null || date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$1" +%s 2>/dev/null
+}
+
+# autopilot_pause_epoch <file>: the reset recorded in the limit file <file> as
+# epoch seconds; 0 when the file is missing or its text does not parse.
+autopilot_pause_epoch() {
+  local text
+  text="$(cat "$1" 2>/dev/null)" || text=""
+  autopilot_iso_epoch "$text" || echo 0
+}
+
+# autopilot_pause_put <file> <epoch>: records <epoch> (epoch seconds) in <file>
+# as one UTC ISO timestamp, keeping a reset already there that is later and
+# replacing one that is earlier or does not parse. Fails, silently, when the
+# file cannot be written.
+autopilot_pause_put() {
+  local file="$1" new_epoch="$2" old_epoch
+  if [ -f "$file" ]; then
+    old_epoch="$(autopilot_pause_epoch "$file")"
+    [ "$old_epoch" -lt "$new_epoch" ] || return 0
+  fi
+  { mkdir -p "$(dirname "$file")" && autopilot_epoch_iso "$new_epoch" >"$file"; } 2>/dev/null
+}
+
+# autopilot_github_pause_file <main>: the GitHub limit file under <main>, the
+# pause a GitHub API rate limit writes (#2577).
+autopilot_github_pause_file() { printf '%s/github-limit\n' "$(autopilot_dir "$1")"; }
+
+# autopilot_github_reset_cap <epoch>: prints <epoch>, or now plus
+# AUTOPILOT_GITHUB_PAUSE_MAX when <epoch> is further ahead. Every GitHub writer
+# caps its reset through it; the usage limit file is never capped.
+autopilot_github_reset_cap() {
+  local max
+  max=$(( $(date +%s) + AUTOPILOT_GITHUB_PAUSE_MAX ))
+  if [ "$1" -gt "$max" ]; then echo "$max"; else echo "$1"; fi
+}
+
+# autopilot_github_limit_record <reset>: in an autopilot process - a tick or the
+# session wrapper, each by a flag of its own, or a session (ORCH_AUTOPILOT=1) -
+# writes the GitHub pause, its reset capped at an hour from now, extended only
+# to the later of two resets; in a
+# session, which has the wrapper's hit file path, writes the reset there too. An
+# interactive call writes and prints nothing. Never fails and never warns: each
+# write that fails prints one clause on stdout, for gh_limit_handle to join onto
+# its one limit line.
+autopilot_github_limit_record() {
+  local main_root reset
+  autopilot_active || [ -n "${ORCH_AUTOPILOT_TICK:-}${ORCH_AUTOPILOT_RUN:-}" ] || return 0
+  reset="$(autopilot_github_reset_cap "$1")"
+  if main_root="$(main_checkout_or_die 2>/dev/null)" && [ -n "$main_root" ]; then
+    autopilot_pause_put "$(autopilot_github_pause_file "$main_root")" "$reset" ||
+      echo "could not write the GitHub limit pause under $main_root"
+  else
+    echo "could not write the GitHub limit pause: the main checkout is unreadable"
+  fi
+  if autopilot_active && [ -n "${ORCH_AUTOPILOT_HIT_FILE:-}" ]; then
+    autopilot_pause_put "$ORCH_AUTOPILOT_HIT_FILE" "$reset" ||
+      echo "could not write the GitHub limit hit file $ORCH_AUTOPILOT_HIT_FILE"
+  fi
+  return 0
+}
+
 # label_listed <labels> <label>: whether <label> is one of the newline-separated
 # <labels>, matched whole-line, literally and case-insensitively: GitHub's label
 # names are case-insensitive, and it attaches a label in the repo's existing
@@ -284,7 +374,7 @@ gh_or_die() {
 # --- gh adapter -------------------------------------------------------------
 #
 # The seam between orch.sh's decision logic and the `gh` CLI. A caller like
-# autopilot.sh's autopilot_labels_ensure calls an adapter operation, never
+# handoff.sh's handoff_comment_post calls an adapter operation, never
 # `gh` itself, so a test can replace one in-process function instead of faking a
 # `gh` binary on PATH. Every GitHub call in orch.sh and its modules goes
 # through one. History: begun with labels (#91), issues (#92); all since #280.
@@ -884,8 +974,9 @@ adapter_prs_open_bodies() {
 # adapter_prs_open_mergeability: every open PR, newest first, one per line as
 # `<number>\t<head branch>\t<mergeable>\t<isCrossRepository>` - mergeable is
 # gh's MERGEABLE, CONFLICTING or UNKNOWN, the flag `true` or `false` -
-# unfiltered: the Trust module's trust_filter_prs drops the fork PRs. The
-# autopilot watcher's one read per tick (issue #2325).
+# unfiltered: the Trust module's trust_filter_prs drops the fork PRs. No bash
+# caller is left: the converted autopilot watcher's one read per tick (issue
+# #2325) is orch/gh.py's prs_open_mergeability.
 adapter_prs_open_mergeability() {
   gh pr list --state open --limit "$ISSUE_LIST_LIMIT" --json number,headRefName,mergeable,isCrossRepository \
     --jq '.[] | "\(.number)\t\(.headRefName)\t\(.mergeable)\t\(.isCrossRepository)"'

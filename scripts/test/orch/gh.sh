@@ -66,6 +66,65 @@ fake_issue_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/body"; }
 # store, in order, one blank line between.
 fake_pr_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/prs/$1/comments"; }
 
+# fake_fail_after <operation> <n> [stderr]: fake_fail, but the next n calls of
+# the operation still succeed - a run of writes that dies part-way. The stderr
+# passes through to fake_fail as given, omitted or empty.
+fake_fail_after() {
+  fake_fail "$1" "${@:3}"
+  printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/fail/$1.after"
+}
+
+# fake_fail_times <operation> <n> [stderr]: the next n calls of the operation
+# fail, then it succeeds again - a transient failure. It writes the fail file
+# itself rather than through fake_fail, so stderr defaults to empty, not to
+# fake_fail's message: a failure a retry absorbs leaves nothing a test reads.
+fake_fail_times() {
+  mkdir -p "$ORCH_GH_FAKE_STORE/fail"
+  printf '%s' "${3-}" >"$ORCH_GH_FAKE_STORE/fail/$1"
+  printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/fail/$1.times"
+}
+
+# fake_issue_title <n> <title>: seeds issue #n's title.
+fake_issue_title() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/title"; }
+
+# fake_label <name> <colour> <description>: seeds a label the repo already
+# has. An unseeded store has no labels.
+fake_label() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$ORCH_GH_FAKE_STORE/labels"; }
+
+# fake_label_names <name>...: the repo's labels are exactly the names given,
+# each with no colour or description - none given, the repo has no labels.
+# shellcheck disable=SC2120 # none passed here; test_gh_fake.py passes names
+fake_label_names() {
+  : >"$ORCH_GH_FAKE_STORE/labels"
+  [ $# -eq 0 ] || printf '%s\t\t\n' "$@" >"$ORCH_GH_FAKE_STORE/labels"
+}
+
+# fake_labels: the store's labels read back, sorted, one per line as
+# "<name><TAB><colour><TAB><description>".
+fake_labels() { LC_ALL=C sort "$ORCH_GH_FAKE_STORE/labels" 2>/dev/null || true; }
+
+# fake_quota <pool> <remaining> <limit> <reset-epoch>: the pool's line in the
+# rate_limit read's answer; the other pool, if unset, is no line at all.
+fake_quota() { printf '%s\t%s\t%s\t%s\n' "$@" >>"$ORCH_GH_FAKE_STORE/quota"; }
+
+# gh_calls: how many calls the fixture gh on PATH has answered or refused - 0
+# for none. A behaviour test on the store-backed fake asserts it stays 0, so
+# no command reached a gh subprocess.
+gh_calls() { log_count "$GH_FIXTURE/env.log"; }
+
+# pause_near <file> <seconds>: "near" when <file> holds now + <seconds>, +-10s;
+# "unreadable" when it holds no timestamp, else "far: <got> vs <want>".
+pause_near() {
+  local want got iso
+  want="$(( $(date +%s) + $2 ))"; iso="$(cat "$1" 2>/dev/null)"
+  got="$(date -u -d "$iso" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$iso" +%s 2>/dev/null)" || { echo unreadable; return; }
+  if [ "$(( got - want ))" -ge -10 ] && [ "$(( got - want ))" -le 10 ]; then echo near; else echo "far: $got vs $want"; fi
+}
+
+# fake_labels_of <n>: issue #n's labels read back from the store, sorted,
+# space-separated, one trailing space.
+fake_labels_of() { LC_ALL=C sort "$ORCH_GH_FAKE_STORE/issues/$1/labels" 2>/dev/null | tr '\n' ' '; }
+
 # --- every gh call pinned to the repo (#520) ----------------------------------
 # A fork whose gh default points upstream: origin is the fork, GH_REPO unset,
 # ORCH_GH_ADAPTER unset so the real adapter operations run, against the fixture
@@ -1912,5 +1971,18 @@ assert_not_contains "a semicolon in a clause leaves no clause on stdout" "$out" 
 out="$(cat "$ORCH_GH_FAKE_STORE/semi.err")"
 assert_contains "a semicolon inside a clause is kept as it is" "${out%%$'\n'*}" "hit file $hit_semi"
 rmdir "$hit_semi"
+rm -f "$pause_file"
+ORCH_AUTOPILOT=1 sourced_orch adapter_issue_body 5 >/dev/null 2>&1
+assert_eq "a session's limit records the pause" "$(on_disk "$pause_file")" present
+rm -f "$pause_file"
 rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
+# The golden GitHub limit pause the Python limit record writes for a reset of
+# 1800001800 (ADR-0067; scripts/orch_py/tests/test_github_limit_record.py)
+# reads as that reset, and is what the bash pause put writes for it.
+gl_golden="${ORCH%/*}/orch_py/tests/github_pause/github-limit"
+assert_eq "the golden GitHub limit pause reads as its reset" "$(sourced_orch autopilot_pause_epoch "$gl_golden")" 1800001800
+sourced_orch autopilot_pause_put "$pause_file" 1800001800
+assert_eq "and is what the bash pause put writes for that reset" \
+  "$(cmp -s "$pause_file" "$gl_golden" && echo same)" same
+rm -f "$pause_file"
 restore_suite_env

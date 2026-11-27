@@ -4,7 +4,7 @@
 # the concept it serves, whichever modules call it, and common.sh calls nothing
 # a noun module defines; its test section checks this. A concept with no noun
 # has a module of its own too, such as the Checkout module (checkout.sh) and
-# the Filed finding module (filed-finding.sh). Sourced by orch.sh ahead of the
+# the Trust module (trust.sh). Sourced by orch.sh ahead of the
 # ROOT block, which dies through die when run outside a git repository, and
 # ahead of every noun module.
 
@@ -53,8 +53,8 @@ word_listed() {
 }
 
 die()  { printf 'orch: %s\n' "$*" >&2; exit 1; }
-# die for commands that reserve exit 1 for a meaningful "no" (autopilot answer:
-# no reply to the question yet), so their failures exit with status 2 instead.
+# die for commands that reserve exit 1 for a meaningful "no" (side-checkout
+# issue: no issue recorded), so their failures exit with status 2 instead.
 die2() { printf 'orch: %s\n' "$*" >&2; exit 2; }
 
 # die_opt_check <caller> <argc> <option> [value]: the one rule for die_hinted's
@@ -100,10 +100,6 @@ err_line() {
 # colon-free so the path is valid on Windows too. now(), in flow-state.sh, stays
 # ISO-8601: it is a field value, never a path segment.
 dir_stamp() { date -u +%Y%m%d-%H%M%S; }
-# DIR_STAMP_PATTERN: dir_stamp's shape as an extended regex, owned here beside
-# it so a name test elsewhere (the session log prune) follows a change to it.
-# shellcheck disable=SC2034 # used by the liveness module
-DIR_STAMP_PATTERN='[0-9]{8}-[0-9]{6}'
 
 # Float comparison and addition, in awk, because the poll loops' timings are
 # overridable and the tests turn them down to fractions of a second; bash
@@ -115,6 +111,10 @@ DIR_STAMP_PATTERN='[0-9]{8}-[0-9]{6}'
 float_lt()  { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'; }
 # float_add <a> <b>: prints a + b to three decimal places.
 float_add() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f\n", a + b }'; }
+
+# autopilot_active: whether this is an autopilot session - the one reader of
+# ORCH_AUTOPILOT, so no skill reads the variable itself.
+autopilot_active() { [ "${ORCH_AUTOPILOT:-}" = 1 ]; }
 
 # is_positive_int <v>: whether <v> is a whole number of 1 or more, leading
 # zeros allowed ("08" is 8). Each caller keeps its own reaction to a no.
@@ -386,9 +386,9 @@ file_read_text() {
 
 # The one normalisation a slug gets: lowercase, non-alphanumeric runs collapsed
 # to a single hyphen, trimmed, dying if nothing survives. `side-checkout add`
-# and `side-checkout remove` and autopilot's short slug call this rather than
-# carrying their own copy of the sed expression and the empty-result check.
-# `init` and `orch.sh slug`, converted nouns, run the Python copy,
+# and `side-checkout remove` call this rather than carrying their own copy of
+# the sed expression and the empty-result check. `init`, `orch.sh slug` and
+# autopilot's short slug, converted nouns, run the Python copy,
 # orch.common.normalize_slug, which keeps this one's rule (ADR-0067) - and a
 # caller outside this file (the quick-implement skill) reaches it through
 # `orch.sh slug` instead of re-deriving the algorithm as prose.

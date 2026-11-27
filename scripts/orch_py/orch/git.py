@@ -11,9 +11,11 @@ checkout the verification noun reads, the common directory the git exclude
 writer (orch.common) appends under, the current branch a review pass
 starts on, the worktree list, another checkout's branch and its git folder
 the checkout scan (orch.checkout) reads, the worktree removal a side
-checkout's teardown (orch.side_checkout) makes, the push the gh adapter's claim
-delete makes, branch retire's
-local branch reads and rename, origin probe, tracking push and remote
+checkout's teardown (orch.side_checkout) makes, and the base fetch and
+detached worktree add that side-checkout add makes, the push the gh
+adapter's claim delete makes, the empty commit and its lease push the claim
+create makes, branch retire's local branch reads and rename, origin probe,
+tracking push and remote
 delete (orch.branch), the dirty paths the planning allowlist's flow-start scan
 judges, the scoped git config reads, writes and unsets
 (`config_regexp`, `config_set`, `config_unset`) the agent noun uses, and what
@@ -109,12 +111,16 @@ COULD_NOT: Dict[str, Any] = {
     "git_common_dir": None,
     "current_branch": None,
     "push": "git gave no reason",
+    "empty_commit": None,
+    "push_new_ref": "git gave no reason",
     "fetch_prune": "git gave no reason",
     "refs_contents": None,
     "origin_has_branch": None,
     "push_set_upstream": "git gave no reason",
     "remote_delete": "git gave no reason",
     "worktree_remove": "git gave no reason",
+    "fetch_branch_at": False,
+    "worktree_add_detached_at": GitFailure(1, ""),
     "dirty_paths": "git gave no reason",
     "worktree_add": GitFailure(1, ""),
     "worktree_delete": GitFailure(1, ""),
@@ -562,6 +568,24 @@ class Git:
             return None
         return run.stderr.decode("utf-8", "surrogateescape").split("\n", 1)[0]
 
+    # Side-checkout add's operations, run in the main checkout they name, as
+    # bash's add runs them after its `cd "$main_root"`: the sweep before them
+    # may have removed the checkout the command ran in.
+
+    def fetch_branch_at(self, checkout: str, branch: str) -> bool:
+        """`git -C <checkout> fetch --quiet origin
+        +refs/heads/<branch>:refs/remotes/origin/<branch>`: origin's <branch>
+        fetched into its remote ref, forced. Whether it did."""
+        refspec = "+refs/heads/%s:refs/remotes/origin/%s" % (branch, branch)
+        return self._run(["-C", checkout, "fetch", "--quiet", "origin", refspec]).returncode == 0
+
+    def worktree_add_detached_at(self, checkout: str, path: str, ref: str
+                                 ) -> Optional[GitFailure]:
+        """`git -C <checkout> worktree add -q --detach <path> <ref>`: a new
+        worktree at <path>, on no branch, at the commit <ref> names. None
+        when it was added, else git's status and stderr."""
+        return self._failure(["-C", checkout, "worktree", "add", "-q", "--detach", path, ref])
+
 
     # The git exclude writer's operation, run where the adapter runs, as the
     # bash writer's `git rev-parse` is.
@@ -593,6 +617,25 @@ class Git:
         """`git push <remote> <refspec>` - bash git_push: None when it
         landed, else the reason its stderr gives (git_push_reason)."""
         return self._push([remote, refspec])
+
+    # The claim create's operations, run where the adapter runs, as bash's
+    # adapter_claim_create runs its git.
+
+    def empty_commit(self, subject: str, body: str) -> Optional[str]:
+        """A commit of the empty tree with no parent, its message <subject>
+        then <body> as two -m paragraphs: its name; None when git cannot make
+        it."""
+        tree = self._run(["hash-object", "-t", "tree", "--stdin"], data=b"")
+        if tree.returncode != 0:
+            return None
+        return self._output(["commit-tree", tree.stdout.decode().strip(), "-m", subject,
+                             "-m", body]) or None
+
+    def push_new_ref(self, remote: str, commit: str, ref: str) -> Optional[str]:
+        """`git push --force-with-lease=<ref>: <remote> <commit>:<ref>`: the
+        push lands only where <remote> holds no <ref>. None when it landed,
+        else its reason (git_push_reason)."""
+        return self._push(["--force-with-lease=%s:" % ref, remote, "%s:%s" % (commit, ref)])
 
     # The claim list's operations, run where the adapter runs, as bash's
     # adapter_claim_list runs its git.
@@ -991,6 +1034,13 @@ class FakeGit:
     def worktree_remove(self, checkout: str, path: str) -> Optional[str]:
         return self._answer("worktree_remove", checkout, path)
 
+    def fetch_branch_at(self, checkout: str, branch: str) -> bool:
+        return self._answer("fetch_branch_at", checkout, branch)
+
+    def worktree_add_detached_at(self, checkout: str, path: str, ref: str
+                                 ) -> Optional[GitFailure]:
+        return self._answer("worktree_add_detached_at", checkout, path, ref)
+
     def worktree_add(self, path: str, branch: str) -> Optional[GitFailure]:
         return self._answer("worktree_add", path, branch)
 
@@ -1032,6 +1082,12 @@ class FakeGit:
 
     def push(self, remote: str, refspec: str) -> Optional[str]:
         return self._answer("push", remote, refspec)
+
+    def empty_commit(self, subject: str, body: str) -> Optional[str]:
+        return self._answer("empty_commit", subject, body)
+
+    def push_new_ref(self, remote: str, commit: str, ref: str) -> Optional[str]:
+        return self._answer("push_new_ref", remote, commit, ref)
 
     def fetch_prune(self, remote: str, refspec: str) -> Optional[str]:
         return self._answer("fetch_prune", remote, refspec)

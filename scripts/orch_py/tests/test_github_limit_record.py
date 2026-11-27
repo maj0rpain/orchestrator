@@ -4,9 +4,10 @@ pause under the main checkout, replacing an earlier or unreadable reset
 recorded, and in a session the wrapper's hit file too, each failed write
 joined onto the one limit line after " - ". Met through the gh fake on its
 store, the main checkout a FakeGit's, the clock handed in - and the pause
-file pinned to github_pause/github-limit, a golden file autopilot's bash
-tick section reads too (ADR-0067): the reset NOW + 1800 as the pause file
-holds it. Which processes write the pause and the hit file, the reset capped
+file pinned to github_pause/github-limit, a golden file the bash gh
+module's "gh rate limits pause" section (scripts/test/orch/gh.sh) reads and
+compares with the bash pause put's file too (ADR-0067): the reset NOW + 1800
+as the pause file holds it. Which processes write the pause and the hit file, the reset capped
 at an hour and a later reset already recorded kept are test_review_rerun.py's
 cases, met through `review rerun`."""
 from __future__ import annotations

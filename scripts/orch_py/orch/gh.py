@@ -9,9 +9,10 @@ parse as the operation's JSON raises Unparsed. A caller dies through gh_or_die
 or gh_die, or reacts another way through gh_reason. The CI-evidence reads take
 gh api's whole answer, as gh.sh's ci_api_read did while the bash review noun
 stood, and read it here the way its jq expression did, so an error body GitHub
-answers with is read too. The claim list and the claim delete are the
-two operations the real adapter makes through git rather than gh, as bash's
-adapter_claim_list and adapter_claim_delete are: a claim is a ref on origin.
+answers with is read too. The claim list, the claim create and the claim
+delete are the three operations the real adapter makes through git rather
+than gh, as bash's adapter_claim_list, adapter_claim_create and
+adapter_claim_delete are: a claim is a ref on origin.
 
 The real adapter, Gh, reproduces gh.sh's guard: every call is pinned to the
 repo (orch.repo), dying with the remedy when none resolves, and a failed call
@@ -80,6 +81,16 @@ class IssueRow(NamedTuple):
     number: int
     state: str
     title: str
+    labels: List[str]
+
+
+class StateRow(NamedTuple):
+    """One issue of a state listing: its number, its state as GitHub
+    answered it (never assumed from the listing's open-only filter) and its
+    labels."""
+
+    number: int
+    state: str
     labels: List[str]
 
 
@@ -181,6 +192,12 @@ def gh_reason(stderr: str) -> str:
     return stderr.split("\n", 1)[0] or "gh gave no reason"
 
 
+def gh_issue_not_found(stderr: str) -> bool:
+    """Whether a failed issue read's <stderr> says GitHub holds no such
+    issue."""
+    return "Could not resolve to an issue or pull request with the number of" in stderr
+
+
 def gh_die(what: str, stderr: str, hint: str = "", code: int = 1) -> NoReturn:
     """Dies with "gh could not <what>: <reason>", then " - <hint>" when a
     hint is given; exit <code>, 2 where the bash verb died through die2."""
@@ -264,17 +281,32 @@ def issue_list_limit(env: Mapping[str, str]) -> int:
     return int(env.get("ORCH_ISSUE_LIST_LIMIT", "") or 1000)
 
 
-def labelled_limit_warn(env: Mapping[str, str], count: int, *labels: str) -> None:
-    """Warns when a listing of the open issues carrying every one of
-    <labels> returned <count> rows, reaching its effective limit - the lesser
-    of the issue-list limit and GitHub's search cap - naming that limit and
-    the labels, joined by " and "."""
+def issue_list_limit_warn(env: Mapping[str, str], count: int, what: str) -> None:
+    """Warns when a listing of <what> returned <count> rows, reaching its
+    effective limit - the lesser of the issue-list limit and GitHub's search
+    cap - naming that limit."""
     limit = min(issue_list_limit(env), ISSUE_SEARCH_CAP)
     if count >= limit:
-        warn(
-            "the open issues labelled %s reached the issue-list limit of %d"
-            " - the newest past it are missing from this list" % (" and ".join(labels), limit)
-        )
+        warn("%s reached the issue-list limit of %d - the newest past it are missing from this"
+             " list" % (what, limit))
+
+
+def labelled_limit_warn(env: Mapping[str, str], count: int, *labels: str) -> None:
+    """issue_list_limit_warn for a listing of the open issues carrying every
+    one of <labels>, joined by " and "."""
+    issue_list_limit_warn(env, count, "the open issues labelled " + " and ".join(labels))
+
+
+def any_labels_phrase(labels: Sequence[str]) -> str:
+    """The labels named, joined by " or ", for a message about a listing
+    of the open issues carrying any of them - bash issues_any_labels_phrase."""
+    return " or ".join(labels)
+
+
+def any_labelled_limit_warn(env: Mapping[str, str], count: int, *labels: str) -> None:
+    """issue_list_limit_warn for a listing of the open issues carrying any
+    of <labels>, joined by " or "."""
+    issue_list_limit_warn(env, count, "the open issues labelled " + any_labels_phrase(labels))
 
 
 def _captured_lines(text: str) -> List[str]:
@@ -293,10 +325,12 @@ def _label_block(lines: List[str], i: int, count: str) -> Tuple[List[str], int]:
     return labels, i + int(count)
 
 
-def parse_titled_rows(text: str) -> List[IssueRow]:
-    """The count-marked records of a titled listing: number, state and title
-    joined by a tab, label count, then one label per line. Raises GhFailed
-    "gh answered a listing that does not parse" on a record that is not."""
+def _field_rows(text: str) -> List[Tuple[int, str, List[str]]]:
+    """The count-marked records of a listing whose second line is one field:
+    number, that field, label count, then one label per line - each as its
+    number, field and labels. Raises GhFailed "gh answered a listing that
+    does not parse" on a record that is not, as bash's issues_rows_read_via
+    does."""
     lines = _captured_lines(text)
     rows = []
     i = 0
@@ -307,9 +341,38 @@ def parse_titled_rows(text: str) -> List[IssueRow]:
         if not (plain_number(number) and field and plain_number(count)):
             raise GhFailed(LISTING_UNPARSED)
         labels, i = _label_block(lines, i + 3, count)
-        state, _, title = field.partition("\t")
-        rows.append(IssueRow(int(number), state, title, labels))
+        rows.append((int(number), field, labels))
     return rows
+
+
+def parse_titled_rows(text: str) -> List[IssueRow]:
+    """The count-marked records of a titled listing: number, state and title
+    joined by a tab, label count, then one label per line. Raises GhFailed
+    "gh answered a listing that does not parse" on a record that is not."""
+    rows = []
+    for number, field, labels in _field_rows(text):
+        state, _, title = field.partition("\t")
+        rows.append(IssueRow(number, state, title, labels))
+    return rows
+
+
+def parse_label_details(text: str) -> List[Tuple[str, str, str]]:
+    """The label rows of a detailed label listing, one per non-empty line:
+    name, colour and description, tab-separated as gh's @tsv prints them, a
+    missing field read as ""."""
+    rows = []
+    for line in text.split("\n"):
+        if line:
+            name, colour, description = (line.split("\t") + ["", ""])[:3]
+            rows.append((name, colour, description))
+    return rows
+
+
+def parse_state_rows(text: str) -> List[StateRow]:
+    """The count-marked records of a state listing: number, state, label
+    count, then one label per line. Raises GhFailed "gh answered a listing
+    that does not parse" on a record that is not."""
+    return [StateRow(*row) for row in _field_rows(text)]
 
 
 def parse_labelled_bodies(text: str) -> List[LabelledBody]:
@@ -842,6 +905,46 @@ class Gh:
         labelled_limit_warn(self.env, len(rows), label)
         return rows
 
+    def _state_rows(self, labels: Sequence[str], search: str = "") -> List[StateRow]:
+        """The open issues carrying every one of <labels> - every open issue
+        with none named - and matching the search term <search>, if any,
+        oldest first and cut at the issue-list limit (the newest dropped),
+        with their state and labels."""
+        args = ["issue", "list", "--state", "open"]
+        for label in labels:
+            args += ["--label", label]
+        query = (search + " " if search else "") + "sort:created-asc"
+        return parse_state_rows(self._gh(
+            args + ["--search", query, "--limit", str(issue_list_limit(self.env)),
+                    "--json", "number,state,labels",
+                    "--jq", ".[] | .number, .state, (.labels | length), (.labels[].name)"]
+        ))
+
+    def issues_open_rows(self) -> List[StateRow]:
+        """Every open issue, oldest first and cut at the issue-list limit
+        (the newest dropped), with its state and labels, warning when the cut
+        is reached."""
+        rows = self._state_rows(())
+        issue_list_limit_warn(self.env, len(rows), "the open issues")
+        return rows
+
+    def issues_labelled_rows(self, *labels: str) -> List[StateRow]:
+        """The open issues carrying every label named, as issues_open_rows
+        lists them, warning, naming the labels, when the cut is reached -
+        bash adapter_issues_labelled_rows."""
+        rows = self._state_rows(labels)
+        labelled_limit_warn(self.env, len(rows), *labels)
+        return rows
+
+    def issues_any_labelled_rows(self, *labels: str) -> List[StateRow]:
+        """The open issues carrying any of the labels named, as
+        issues_open_rows lists them, one cut across all, warning, naming the
+        labels joined by "or", when the cut is reached - bash
+        adapter_issues_any_labelled_rows."""
+        rows = self._state_rows((), "label:" + ",".join('"%s"' % label for label in labels))
+        any_labelled_limit_warn(self.env, len(rows), *labels)
+        return rows
+
     def issues_open_titles(self) -> List[Tuple[int, str]]:
         """Every open issue, pull requests left out, as its number and title,
         newest first as GitHub lists them - every page, never cut at the
@@ -888,6 +991,13 @@ class Gh:
     def issue_comment(self, n: int, body_file: str) -> None:
         """Posts the file's contents as a comment on the issue."""
         self._gh(["issue", "comment", str(n), "--body-file", body_file])
+
+    def issue_comment_url(self, n: int, body_file: str) -> str:
+        """Posts the file's contents as a comment on the issue, as
+        issue_comment does, and answers the URL gh printed for it - the first
+        line it printed, "" where it printed none."""
+        out = self._gh(["issue", "comment", str(n), "--body-file", body_file])
+        return out.split("\n", 1)[0]
 
     def issue_relabel(
         self, n: int, add: Sequence[str] = (), remove: Sequence[str] = ()
@@ -947,6 +1057,25 @@ class Gh:
             raise GhFailed("")
         return [claim_row(ref, message) for ref, message in refs]
 
+    def claim_create(self, n: int, phase: str, pid: int, host: str, started: str) -> bool:
+        """Takes the claim on #n - bash adapter_claim_create, through the
+        repo pin's git adapter, no gh call: a claim commit of the empty tree,
+        its message recording <host>, <pid>, <phase> and <started>, pushed to
+        the claim's ref on origin only where origin holds none. True when it
+        was taken, False when origin already held one - a lost race; any
+        other failure raises GhFailed with git's reason."""
+        git = self.repo_pin.git
+        commit = git.empty_commit("orch claim %d" % n, "host: %s\npid: %s\nphase: %s\nstarted: %s"
+                                  % (host, pid, phase, started))
+        if commit is None:
+            raise GhFailed("could not make the claim commit for issue #%d\n" % n)
+        reason = git.push_new_ref("origin", commit, claim_ref(n))
+        if reason is None:
+            return True
+        if "stale info" in reason or "already exists" in reason:
+            return False
+        raise GhFailed(reason + "\n")
+
     def claim_delete(self, n: int) -> None:
         """Frees the claim on #n - bash adapter_claim_delete: pushes the
         delete of its ref to origin through the repo pin's git adapter, no gh
@@ -1000,6 +1129,19 @@ class Gh:
             ["pr", "list", "--state", "open", "--limit", str(issue_list_limit(self.env)),
              "--json", "number,body,isCrossRepository",
              "--jq", '.[] | "\\(.number)\\t\\(.body | @json)\\t\\(.isCrossRepository)"']
+        ))
+
+    def prs_open_mergeability(self) -> List[str]:
+        """Every open PR, newest first and cut at the issue-list limit, one
+        line each as gh prints it, `<number><TAB><head branch><TAB>
+        <mergeable><TAB><flag>` - mergeable gh's MERGEABLE, CONFLICTING or
+        UNKNOWN, the flag isCrossRepository - unfiltered: trust_filter_prs
+        drops the fork PRs. Sync detection's one read a tick (#2325)."""
+        return _captured_lines(self._gh(
+            ["pr", "list", "--state", "open", "--limit", str(issue_list_limit(self.env)),
+             "--json", "number,headRefName,mergeable,isCrossRepository",
+             "--jq", '.[] | "\\(.number)\\t\\(.headRefName)\\t\\(.mergeable)'
+                     '\\t\\(.isCrossRepository)"']
         ))
 
     def prs_merged(self, head: str, base: str) -> List[str]:
@@ -1228,6 +1370,16 @@ class Gh:
         answer = self._gh(["label", "list", "--limit", str(limit), "--json", "name",
                            "--jq", ".[].name"])
         return [name for name in answer.split("\n") if name]
+
+    def labels_detail(self, limit: int) -> List[Tuple[str, str, str]]:
+        """The repo's labels, at most <limit> of them, in GitHub's order,
+        each (name, colour, description) as gh's @tsv prints them - the
+        colour without a leading #, the description possibly empty; none for
+        a repo with none. The tick's label check reads them once."""
+        answer = self._gh(["label", "list", "--limit", str(limit),
+                           "--json", "name,color,description",
+                           "--jq", '.[] | [.name, .color, (.description // "")] | @tsv'])
+        return parse_label_details(answer)
 
     # --- repo operations ---
 

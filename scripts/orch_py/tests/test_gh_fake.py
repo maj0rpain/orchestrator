@@ -5,13 +5,16 @@ files inject failures under the bash adapter's operation names."""
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
 
-from orch.gh import Check, Gh, GhFailed, IssueRow, LabelledBody, SubIssue, adapter
+from conftest import until
+from orch.gh import Check, Gh, GhFailed, IssueRow, LabelledBody, StateRow, SubIssue, adapter
 from orch.gh_fake import FakeGh, FakeStore
 from orch.git import FakeGit
 from orch.repo import RepoPin
@@ -21,21 +24,23 @@ BASH_FAKE = SCRIPTS / "test" / "gh_adapter_fake.sh"
 # The bash suite's store helpers, by the file that defines each.
 BASH_HELPERS = {
     SCRIPTS / "test" / "orch" / "setup.sh": [
-        "fake_issue", "fake_issue_authorship", "fake_issue_relabel", "fake_issue_title",
-        "fake_comment_seed", "fake_comment", "fake_comment_bodies", "fake_label",
-        "fake_fail", "fake_fail_after", "fake_fail_times",
-        "fake_unfail", "fake_offline", "fake_online", "fake_quota", "fake_lag",
-        "fake_state_of", "fake_labels_of", "fake_comments_of",
-        "fake_pr", "fake_pr_comment", "fake_pr_cross", "fake_labels",
-        "fake_default_branch", "fake_claim_seed", "fake_claim_held",
-        "fake_pr_draft", "fake_pr_head", "fake_pr_merged", "fake_issue_created", "iso_of",
-        "fake_label_names",
-        "iso_ago", "fake_next_pr", "fake_pr_base_of", "fake_pr_body_of",
+        "fake_issue", "fake_issue_relabel",
+        "fake_comment_seed", "fake_comment", "fake_comment_bodies",
+        "fake_fail", "fake_unfail", "fake_offline", "fake_online", "fake_lag",
+        "fake_comments_of", "fake_pr", "fake_pr_comment",
+        "fake_default_branch", "fake_pr_draft", "fake_pr_head", "iso_of",
+        "fake_next_pr", "fake_pr_base_of", "fake_pr_body_of",
     ],
-    SCRIPTS / "test" / "orch" / "state.sh": ["fake_pr_draft_of", "fake_checks"],
     SCRIPTS / "test" / "orch" / "gh.sh": ["fake_ratelimit", "fake_duplicate_of",
-                                          "fake_issue_body", "fake_pr_comments_of"],
-    SCRIPTS / "test" / "orch" / "autopilot.sh": ["fake_reason_of"],
+                                          "fake_issue_body", "fake_pr_comments_of",
+                                          "fake_issue_title", "fake_label", "fake_labels",
+                                          "fake_label_names", "fake_labels_of",
+                                          "fake_fail_after", "fake_fail_times", "fake_quota"],
+    SCRIPTS / "test" / "orch" / "side-checkout.sh": ["fake_state_of", "fake_pr_cross",
+                                                     "fake_pr_merged", "fake_issue_created",
+                                                     "iso_ago"],
+    SCRIPTS / "test" / "orch" / "trust.sh": ["fake_issue_authorship"],
+    SCRIPTS / "test" / "orch" / "state.sh": ["fake_pr_draft_of", "fake_checks"],
 }
 # The issue reads and the next-issue seeder the bash review suite defined: the
 # suite went with the bash review noun, and these write-back cases still read
@@ -44,6 +49,18 @@ ISSUE_READS = r"""
 fake_title_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/title" 2>/dev/null; }
 fake_body_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/body" 2>/dev/null; }
 fake_next_issue() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_issue"; }
+"""
+# The claim seeder and reader and the closing-reason read the bash autopilot
+# and Standing suites used: they went with the bash autopilot noun, and these
+# cases still seed and read the store through them.
+CLAIM_READS = r"""
+fake_claim_seed() {
+  mkdir -p "$ORCH_GH_FAKE_STORE/claims"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$1" "${2:-$(hostname)}" "${3:-1}" "${5:-spec}" "${4:-2026-01-01T00:00:00Z}" \
+    >"$ORCH_GH_FAKE_STORE/claims/$1"
+}
+fake_claim_held() { [ -f "$ORCH_GH_FAKE_STORE/claims/$1" ] && echo held || echo free; }
+fake_reason_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/reason" 2>/dev/null; }
 """
 SECONDARY = "You have exceeded a secondary rate limit."
 NOW = 1_900_000_000
@@ -70,7 +87,7 @@ def bash_definitions(path, names):
 
 
 HELPERS = "\n".join(bash_definitions(path, names) for path, names in BASH_HELPERS.items()) + (
-    ISSUE_READS)
+    ISSUE_READS + CLAIM_READS)
 
 
 def bash(store, script):
@@ -367,6 +384,27 @@ def test_a_label_upsert_seeded_to_fail_writes_nothing(store, seed):
     assert not (store / "labels").exists()
 
 
+def test_a_fifo_at_hold_parks_the_operation_until_a_line_is_written_to_it(store):
+    """As the bash fake's: a call of the operation writes its process's pid
+    to `held` and waits, before touching the store, until something is
+    written to the fifo hold/<operation>."""
+    (store / "hold").mkdir()
+    os.mkfifo(str(store / "hold" / "adapter_label_upsert"))
+    call = threading.Thread(target=fake(store).label_upsert, args=("nit", "c5def5", "Small"),
+                            daemon=True)
+    call.start()
+
+    assert until(lambda: (store / "held").is_file()
+                 and (store / "held").read_text() == "%d\n" % os.getpid())
+    assert call.is_alive() and not (store / "labels").exists()
+    with open(str(store / "hold" / "adapter_label_upsert"), "w") as release:
+        release.write("x\n")
+    call.join(5)
+
+    assert not call.is_alive()
+    assert (store / "labels").read_text() == "nit\tc5def5\tSmall\n"
+
+
 def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
     gh = fake(store)
     with pytest.raises(GhFailed) as failed:
@@ -451,6 +489,8 @@ def test_the_python_seeder_s_unsupported_sub_issues_read_back(store):
     ("adapter_blocker_add", lambda gh: gh.blocker_add(5, 7)),
     ("adapter_blocker_remove", lambda gh: gh.blocker_remove(5, 7)),
     ("adapter_claim_delete", lambda gh: gh.claim_delete(5)),
+    ("adapter_issues_labelled_rows", lambda gh: gh.issues_labelled_rows("needs-human")),
+    ("adapter_issues_any_labelled_rows", lambda gh: gh.issues_any_labelled_rows("needs-human")),
     ("adapter_issue_reopen", lambda gh: gh.issue_reopen(5)),
     ("adapter_pr_close", lambda gh: gh.pr_close(6, "Closed.")),
     ("adapter_issue_created_at", lambda gh: gh.issue_created_at(5)),
@@ -479,6 +519,8 @@ def test_the_python_seeder_s_unsupported_sub_issues_read_back(store):
     ("adapter_repo_local_default", lambda gh: gh.repo_local_default()),
     ("adapter_auth_status", lambda gh: gh.auth_status("github.com")),
     ("adapter_labels", lambda gh: gh.labels(1000)),
+    ("adapter_labels_detail", lambda gh: gh.labels_detail(1000)),
+    ("adapter_prs_open_mergeability", lambda gh: gh.prs_open_mergeability()),
     ("adapter_sub_issues_supported", lambda gh: gh.sub_issues_supported()),
 ])
 def test_the_added_operations_fail_under_the_bash_operation_names(store, operation, call):
@@ -1024,6 +1066,39 @@ adapter_prs_merged_bodies main
         open_bodies + ["|"] + merged + ["|", "Refs #8", "", "Closes #5", ""])
 
 
+def test_the_label_details_and_open_mergeability_of_a_bash_seeded_store_read_as_bash_s(store):
+    bash_answer = bash(store, r"""
+fake_label Bug d73a4a 'Something is wrong'; fake_label bare ededed ''
+fake_pr 4 open orch/3-x main; printf 'CONFLICTING\n' >"$ORCH_GH_FAKE_STORE/prs/4/mergeable"
+fake_pr 9 open fork main; fake_pr_cross 9
+fake_pr 6 closed orch/6-z main; printf 'CONFLICTING\n' >"$ORCH_GH_FAKE_STORE/prs/6/mergeable"
+adapter_labels_detail 1; echo '|'
+adapter_labels_detail 1000; echo '|'
+adapter_prs_open_mergeability
+""")
+    gh = fake(store)
+
+    one = [("Bug", "d73a4a", "Something is wrong")]
+    both = one + [("bare", "ededed", "")]
+    mergeability = ["9\tfork\tUNKNOWN\ttrue", "4\torch/3-x\tCONFLICTING\tfalse"]
+    assert (gh.labels_detail(1), gh.labels_detail(1000)) == (one, both)
+    assert gh.prs_open_mergeability() == mergeability
+    assert bash_answer == "\n".join(["\t".join(row) for row in one] + ["|"]
+                                    + ["\t".join(row) for row in both] + ["|"]
+                                    + mergeability) + "\n"
+
+
+def test_the_python_seeders_write_a_label_and_a_pr_s_mergeability_as_the_bash_fake_reads_them(
+        store, seed):
+    seed.label("orch:spec", "1d76db", "Autopilot flow: spec phase next")
+    seed.pr(4, "open", "orch/3-x", "main")
+    seed.pr_mergeable(4, "CONFLICTING")
+
+    assert bash(store, "adapter_labels_detail 1000; adapter_prs_open_mergeability") == (
+        "orch:spec\t1d76db\tAutopilot flow: spec phase next\n"
+        "4\torch/3-x\tCONFLICTING\tfalse\n")
+
+
 RUNS = "https://github.com/acme/widgets/actions/runs"
 EXT_CI = "https://ci.example.com/build/9"
 # What each scripted checks answer reads as, in adapter_pr_checks's TSV shape:
@@ -1323,3 +1398,90 @@ def test_the_fake_pins_as_the_repo_pin_it_is_given(store):
     assert FakeGh(str(store), {}, pin=with_origin).pin() is True
     assert FakeGh(str(store), {}, pin=without).pin() is False
     assert FakeGh(str(store), {}).pin() is True
+
+
+def test_issue_comment_url_answers_the_posted_comment_s_url_as_the_bash_fake_does(
+        store, tmp_path):
+    bash(store, "fake_issue 5 open\nfake_comment 5 alice 2026-01-01T00:00:00Z first\n")
+    note = tmp_path / "note.md"
+    note.write_text("A note.")
+    gh = fake(store)
+
+    assert gh.issue_comment_url(5, str(note)) == "https://github.com/o/r/issues/5#issuecomment-2"
+    (store / "no_comment_url").write_text("")
+    assert gh.issue_comment_url(5, str(note)) == ""
+    assert bash(store, "fake_comments_of 5") == "first\n\nA note.\n\nA note."
+
+
+def test_issues_open_rows_lists_the_open_issues_oldest_first_as_the_bash_fake_does(
+        store, capsys):
+    bash(store, "fake_issue 3 open bug\nfake_issue 1 open\nfake_issue 2 closed\n")
+
+    assert fake(store).issues_open_rows() == [StateRow(1, "OPEN", []),
+                                              StateRow(3, "OPEN", ["bug"])]
+    assert fake(store, ORCH_ISSUE_LIST_LIMIT="1").issues_open_rows() == [StateRow(1, "OPEN", [])]
+    assert capsys.readouterr().err == ("orch: the open issues reached the issue-list limit of 1"
+                                       " - the newest past it are missing from this list\n")
+
+
+def test_issues_labelled_rows_lists_the_open_issues_carrying_every_label_as_the_bash_fake_does(
+        store, capsys):
+    bash(store, "fake_issue 3 open needs-human orch:spec\nfake_issue 1 open Needs-Human\n"
+                "fake_issue 2 closed needs-human\nfake_issue 4 open orch:spec\n")
+
+    assert fake(store).issues_labelled_rows("needs-human") == [
+        StateRow(1, "OPEN", ["Needs-Human"]), StateRow(3, "OPEN", ["needs-human", "orch:spec"])]
+    assert fake(store).issues_labelled_rows("needs-human", "orch:spec") == [
+        StateRow(3, "OPEN", ["needs-human", "orch:spec"])]
+    assert fake(store, ORCH_ISSUE_LIST_LIMIT="1").issues_labelled_rows("needs-human") == [
+        StateRow(1, "OPEN", ["Needs-Human"])]
+    assert capsys.readouterr().err == (
+        "orch: the open issues labelled needs-human reached the issue-list limit of 1"
+        " - the newest past it are missing from this list\n")
+
+
+def test_issues_any_labelled_rows_lists_the_open_issues_carrying_any_label_as_the_bash_fake_does(
+        store, capsys):
+    bash_answer = bash(store, "fake_issue 3 open orch:spec\nfake_issue 1 open Orch:Sync orch:done\n"
+                              "fake_issue 2 closed orch:spec\nfake_issue 4 open bug\n"
+                              # the limits orch.sh's gh module sets
+                              "ISSUE_LIST_LIMIT=1000 ISSUE_SEARCH_CAP=1000\n"
+                              "adapter_issues_any_labelled_rows orch:spec orch:sync\n")
+
+    assert fake(store).issues_any_labelled_rows("orch:spec", "orch:sync") == [
+        StateRow(1, "OPEN", ["Orch:Sync", "orch:done"]), StateRow(3, "OPEN", ["orch:spec"])]
+    assert bash_answer == "1\nOPEN\n2\nOrch:Sync\norch:done\n3\nOPEN\n1\norch:spec\n"
+    assert fake(store, ORCH_ISSUE_LIST_LIMIT="1").issues_any_labelled_rows(
+        "orch:spec", "orch:sync") == [StateRow(1, "OPEN", ["Orch:Sync", "orch:done"])]
+    assert capsys.readouterr().err == (
+        "orch: the open issues labelled orch:spec or orch:sync reached the issue-list limit of 1"
+        " - the newest past it are missing from this list\n")
+
+
+def test_a_claim_the_python_fake_creates_is_held_as_the_bash_fake_writes_one(store):
+    gh = fake(store)
+
+    assert gh.claim_create(5, "review", 42, "thishost", "2026-03-04T05:06:07Z") is True
+    bash(store, "adapter_claim_create 6 review 42 thishost")
+
+    assert bash(store, "fake_claim_held 5") == "held\n"
+    assert (store / "claims" / "5").read_text() == "5\tthishost\t42\treview\t2026-03-04T05:06:07Z\n"
+    assert (store / "claims" / "6").read_text().split("\t")[:4] == ["6", "thishost", "42",
+                                                                    "review"]
+
+
+def test_a_claim_create_on_a_held_claim_loses_the_race_leaving_it_as_it_was(store):
+    bash(store, "fake_claim_seed 5")
+    held = (store / "claims" / "5").read_text()
+
+    assert fake(store).claim_create(5, "review", 42, "thishost", "2026-03-04T05:06:07Z") is False
+    assert (store / "claims" / "5").read_text() == held
+
+
+def test_a_claim_create_fails_as_seeded(store):
+    FakeStore(str(store)).fail("adapter_claim_create", "HTTP 500")
+
+    with pytest.raises(GhFailed) as failed:
+        fake(store).claim_create(5, "spec", 1, "thishost", "2026-03-04T05:06:07Z")
+
+    assert (failed.value.stderr, (store / "claims" / "5").exists()) == ("HTTP 500\n", False)

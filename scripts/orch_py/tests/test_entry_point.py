@@ -265,6 +265,21 @@ def test_doctor_and_health_writing_into_a_closed_pipe_die_of_sigpipe_silently(
     assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
 
 
+def test_autopilot_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_path):
+    """`orch.sh autopilot settings | head` ended silently as bash's printf
+    did: so does the Python autopilot noun."""
+    git_repo(tmp_path)
+
+    run = into_a_closed_pipe(tmp_path, "autopilot", "settings")
+
+    assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
+
+
+def test_the_autopilot_noun_is_converted(capsys):
+    assert died_of(capsys, lambda: main(["autopilot", "run"]))[2] == \
+        "orch: usage: orch.sh autopilot run <issue>\n"
+
+
 @pytest.mark.parametrize("call", [["route", "show"], ["--call", "route", "run", "show"]],
                          ids=["noun", "call-mode"])
 def test_a_noun_converted_earlier_keeps_its_flush_failure_on_a_closed_pipe(tmp_path, call):
@@ -307,15 +322,16 @@ def test_call_mode_below_python_3_9_dies_naming_the_command_given_by_as(monkeypa
     monkeypatch.setattr(sys, "version_info", (3, 8, 10, "final", 0))
 
     assert died_of(capsys, lambda: main(
-        ["--call", "--as", "autopilot", "agent", "validate_autopilot"])) == (
+        ["--call", "--as", "side-checkout", "pr", "close_missed_finish"])) == (
         1, "",
-        "orch: orch.sh autopilot needs python3 3.9 or newer (found 3.8.10)"
+        "orch: orch.sh side-checkout needs python3 3.9 or newer (found 3.8.10)"
         " - run orch.sh doctor\n",
     )
 
 
 def test_call_mode_with_as_dispatches_the_noun_after_it(capsys):
-    assert died_of(capsys, lambda: main(["--call", "--as", "autopilot", "issue", "run", "labels"])) == (
+    assert died_of(capsys, lambda: main(
+        ["--call", "--as", "side-checkout", "issue", "run", "labels"])) == (
         1, "", "orch: usage: orch.sh issue labels <n>...\n")
 
 
@@ -331,7 +347,7 @@ def test_call_mode_refuses_missing_args_unknown_noun_and_unknown_or_private_func
     assert died_of(capsys, lambda: main(["--call"])) == (1, "", usage)
     assert died_of(capsys, lambda: main(["--call", "route"])) == (1, "", usage)
     assert died_of(capsys, lambda: main(["--call", "--as"])) == (1, "", usage)
-    assert died_of(capsys, lambda: main(["--call", "--as", "autopilot", "route"])) == (
+    assert died_of(capsys, lambda: main(["--call", "--as", "side-checkout", "route"])) == (
         1, "", usage)
     assert died_of(capsys, lambda: main(["--call", "no-such-noun", "run"])) == (
         1, "", "orch: unknown command: no-such-noun (run 'orch.sh help')\n")
@@ -351,4 +367,15 @@ def test_call_mode_refuses_missing_args_unknown_noun_and_unknown_or_private_func
 def test_call_mode_refuses_the_former_doctor_bridges(capsys, noun, func):
     # Doctor reads these answers in process now, so no bridge stays callable.
     assert died_of(capsys, lambda: main(["--call", "--as", "doctor", noun, func])) == (
+        1, "", "orch: unknown %s function: %s\n" % (noun, func))
+
+
+@pytest.mark.parametrize("noun, func", [
+    ("agent", "validate_autopilot"),
+    ("pr", "close_missed_tick"),
+])
+def test_call_mode_refuses_the_former_autopilot_bridges(capsys, noun, func):
+    # Autopilot checks its settings and closes merged PRs in process now, so
+    # neither bridge stays callable.
+    assert died_of(capsys, lambda: main(["--call", noun, func])) == (
         1, "", "orch: unknown %s function: %s\n" % (noun, func))

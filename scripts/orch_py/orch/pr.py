@@ -16,16 +16,18 @@ run dies with bash's "unknown pr op" refusal, naming every op.
 
 The merged-PR backstop (#2477, #2478) lives here alone: PR_CLOSE_GRACE,
 pr_close_missed, the merged-closing read and the newest-merge pick, behind
-two bridges: close_missed_tick, which autopilot's tick calls at most once a
-tick, never once per issue, and close_missed_finish, which side-checkout's
-sweep calls once per finished checkout, each call carrying that checkout's
-one issue. Each exits 0 whatever its reads and closes did, after their
-warnings; only a usage error dies.
+two entries: close_missed_rows, which autopilot's tick calls in process at
+most once a tick, never once per issue, and close_missed_finish, which
+side-checkout's sweep calls once per finished checkout, each call carrying
+that checkout's one issue - the bash sweep through its bridge,
+orch/side_checkout.py's in-process. Each ends whatever its reads and closes
+did, after their warnings; only the bridge's usage error dies.
 
 Bash cached the default branch for its process, so pr open's base fallback
 and its issue-line check - and pr publish's recorded base and its check, and
 pr release's base and default branch - share one ask of GitHub; one run here
-shares it the same way (_DefaultOnce). The open-tickets refusal is
+shares it the same way (DefaultOnce), as side_checkout.py's sweep shares it
+with the closes it makes. The open-tickets refusal is
 orch.ticket's require_no_open_tickets, called directly.
 
 pr draft and pr ready (#967) turn the current branch's open PR into a draft,
@@ -114,7 +116,7 @@ def current_open_pr(gh, git, code: int) -> Optional[int]:
 # --- one run ------------------------------------------------------------------
 
 
-class _DefaultOnce:
+class DefaultOnce:
     """The gh adapter <gh>, its default-branch answer - or failure - asked
     of GitHub once and kept, as bash's default_branch_resolve keeps it for
     the process. Every other operation is <gh>'s own."""
@@ -141,7 +143,7 @@ class _DefaultOnce:
 class _Run:
     """One pr command's adapters: the git adapter, the environment, the
     repo pin resolved once, and the gh adapter, made at its first call and
-    kept (_DefaultOnce)."""
+    kept (DefaultOnce)."""
 
     def __init__(self, gh, git, env: Mapping[str, str]) -> None:
         self.git = git
@@ -152,7 +154,7 @@ class _Run:
 
     def gh(self):
         if self._gh is None:
-            self._gh = _DefaultOnce(self._gh_of())
+            self._gh = DefaultOnce(self._gh_of())
         return self._gh
 
     def default(self) -> str:
@@ -260,64 +262,37 @@ def pr_lines_by_prefix(lines: Sequence[str], prefix: str) -> List[str]:
     return [text for text in lines if "\t" in text and text.split("\t")[1].startswith(prefix)]
 
 
-TICK_USAGE = "usage: orch_python_call pr close_missed_tick <table>"
-
-
-def _done_rows(table: str) -> List[List[str]]:
-    """The done table's rows, `<issue> <running> <sync> <human>` each, as
-    their four fields, blank lines skipped; dies with TICK_USAGE on a row
-    of another shape: not four fields, an issue that is no plain number, or
-    a flag other than 0 or 1."""
-    rows = []
-    for text in table.split("\n"):
-        fields = text.split()
-        if not fields:
-            continue
-        if len(fields) != 4 or not plain_number(fields[0]) \
-                or any(flag not in ("0", "1") for flag in fields[1:]):
-            die(TICK_USAGE)
-        rows.append(fields)
-    return rows
-
-
-def close_missed_tick(
-    args: List[str],
-    gh=None,
-    git=None,
-    env: Optional[Mapping[str, str]] = None,
-    now: Callable[[], float] = time.time,
-) -> None:
-    """Bridge for autopilot's tick, once per tick and only on a done table
-    that is not empty: `close_missed_tick <table>`, the done table
-    autopilot_done_read took, its `<issue> <running> <sync> <human>` lines
-    oldest issue first. The merged-PR backstop (#2478): reads the PRs merged
-    into the default branch since the first issue not carrying orch:running
-    was created - once, and not at all when every issue carries it - and
-    closes each issue not carrying it whose newest merged PR from
-    `orch/<issue>-` should have closed it; orch:sync and needs-human do not
-    stop it. Prints the table less every issue it closed: the whole table
-    when the read fails. A failed read or close warns and skips, never
-    failing the bridge. The real adapters, the process's environment and
-    clock unless a test hands in others."""
-    if len(args) != 1:
-        die(TICK_USAGE)
-    rows = _done_rows(args[0])
-    kept = rows
+def close_missed_rows(rows: List[List[str]], gh=None, git=None,
+                      env: Optional[Mapping[str, str]] = None,
+                      now: Callable[[], float] = time.time) -> List[List[str]]:
+    """The tick's merged-PR backstop (#2478), on the done table's <rows>,
+    `[<issue>, <running>, <sync>, <human>]` each, oldest issue first -
+    called in-process by autopilot's tick, once a tick and only on rows that
+    are not empty. Reads the PRs merged into the default branch since the
+    first issue not carrying orch:running was created - once, and not at
+    all when every issue carries it - and closes each issue not carrying it
+    whose newest merged PR from `orch/<issue>-` should have closed it;
+    orch:sync and needs-human do not stop it. The rows less every issue it
+    closed: all of them when the read fails. A failed read or close warns
+    and skips. The real adapters, the process's environment and clock unless
+    a caller hands in others."""
     bound = next((row[0] for row in rows if row[1] == "0"), None)
-    if bound is not None:
-        cmd = _Run(gh, Git() if git is None else git, os.environ if env is None else env)
-        read = pr_merged_closing_read(cmd, "no merged-PR close this tick", bound)
-        if read is not None:
-            default, prs = read
-            at = now()
-            kept = []
-            for row in rows:
-                if row[1] == "0":
-                    picked = pr_lines_by_prefix(prs, branch_name_flow(row[0], ""))
-                    if pr_close_newest(cmd.gh(), row[0], default, picked, at)[0] == 0:
-                        continue
-                kept.append(row)
-    stdout_write("".join(" ".join(row) + "\n" for row in kept))
+    if bound is None:
+        return rows
+    cmd = _Run(gh, Git() if git is None else git, os.environ if env is None else env)
+    read = pr_merged_closing_read(cmd, "no merged-PR close this tick", bound)
+    if read is None:
+        return rows
+    default, prs = read
+    at = now()
+    kept = []
+    for row in rows:
+        if row[1] == "0":
+            picked = pr_lines_by_prefix(prs, branch_name_flow(row[0], ""))
+            if pr_close_newest(cmd.gh(), row[0], default, picked, at)[0] == 0:
+                continue
+        kept.append(row)
+    return kept
 
 
 FINISH_USAGE = "usage: orch_python_call pr close_missed_finish <issue> <pr> <branch>"
@@ -330,8 +305,9 @@ def close_missed_finish(
     env: Optional[Mapping[str, str]] = None,
     now: Callable[[], float] = time.time,
 ) -> None:
-    """Bridge for side-checkout's sweep, once per finished checkout whose
-    issue is open: `close_missed_finish <issue> <pr> <branch>`, <pr> the
+    """Bridge for side-checkout's sweep - and called in-process by
+    side_checkout.py's - once per finished checkout whose issue is open:
+    `close_missed_finish <issue> <pr> <branch>`, <pr> the
     flow's recorded PR or empty. The merged-PR backstop (#2477): reads the
     PRs merged into the default branch since <issue> was created and closes
     <issue> through the newest merge among them that is PR <pr>, or, with

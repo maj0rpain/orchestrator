@@ -36,7 +36,7 @@ from typing import (Any, Callable, Dict, List, Mapping, NamedTuple, Optional, Se
                     Union)
 
 from orch.base import default_branch
-from orch.common import ORCH_DIR_NAME, die, file_write_atomic, plain_number
+from orch.common import ORCH_DIR_NAME, UTC_STAMP_FORMAT, die, file_write_atomic, plain_number
 from orch.host import flow_cmd
 
 # The key, default and seed columns of the bash state key table (STATE_KEYS
@@ -79,7 +79,7 @@ def flow_state_file(root: str) -> str:
 def now(clock: Callable[[], float] = time.time) -> str:
     """The time <clock> reads as the created and updated stamp: ISO-8601,
     UTC, to the second, as bash's now prints it."""
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(clock()))
+    return time.strftime(UTC_STAMP_FORMAT, time.gmtime(clock()))
 
 
 def _state_text(state: Mapping[str, Any]) -> str:
@@ -350,14 +350,14 @@ def recorded_pr(value: str) -> Union[int, str]:
 
 
 def require_issue(state_file: str, env: Mapping[str, str],
-                  keys: Sequence[str] = ()) -> Dict[str, str]:
+                  keys: Sequence[str] = (), code: int = 1) -> Dict[str, str]:
     """The state read of <state_file>, its recorded issue and any further
-    <keys> a caller reads with it, in one read; dies, in bash
-    require_issue's order, when there is no state file (naming the host's
-    start command from <env>), when it cannot be read, and when no issue is
-    recorded."""
-    state = require_state_read(state_file, env, ("issue",) + tuple(keys), 1)
-    require_value("issue", state["issue"])
+    <keys> a caller reads with it, in one read; dies, exit <code> - 2 where
+    bash's caller died through die2 - in bash require_issue's order, when
+    there is no state file (naming the host's start command from <env>),
+    when it cannot be read, and when no issue is recorded."""
+    state = require_state_read(state_file, env, ("issue",) + tuple(keys), code)
+    require_value("issue", state["issue"], code)
     return state
 
 

@@ -20,10 +20,12 @@ from pathlib import Path
 
 import pytest
 
-from orch import audit, issue, pr, review, review_pass, spec_review, ticket_worktree, verification
+from orch import (audit, autopilot, issue, pr, review, review_pass, spec_review, ticket_worktree,
+                  verification)
 from orch.gh import Unparsed
 from orch.gh_fake import FakeGh, FakeStore
-from orch.git import FakeGit, Git
+from orch.git import FakeGit, Git, Worktree
+from orch.marked_comment import marked_comment_write
 from orch.repo import RepoPin
 from orch.triage_labels import LABELS_DOC
 
@@ -103,6 +105,54 @@ def snapshot(store):
 
 def labels_of(store, n):
     return (read(store, "issues", n, "labels") or "").split("\n")[:-1]
+
+
+def marker_of(kind, phase, tag=""):
+    """The hidden marker line a comment of <kind> in <phase> opens with,
+    without its newline."""
+    return marked_comment_write(kind, phase, tag).rstrip("\n")
+
+
+def iso(epoch):
+    """Epoch seconds as the UTC timestamp a pause file or a claim holds."""
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
+
+
+def stat_of(pid, start):
+    """A /proc/<pid>/stat line whose field 22, the process start, is
+    <start>."""
+    fields = ["S"] + [str(n) for n in range(4, 22)] + [start] + ["0"] * 10
+    return "%d (python3 x) %s\n" % (pid, " ".join(fields))
+
+
+# The process start the fake /proc of the proc fixture gives this process.
+PROC_START = "424242"
+
+
+def proc_add(proc, pid, start):
+    """Process <pid>, started at <start>, added to the fake /proc <proc>."""
+    (proc / str(pid)).mkdir(parents=True)
+    (proc / str(pid) / "stat").write_text(stat_of(pid, start))
+
+
+@pytest.fixture
+def proc(tmp_path):
+    """A fake /proc, tmp_path/proc, holding this process, started at
+    PROC_START: its path, for ORCH_PROC_DIR."""
+    path = tmp_path / "proc"
+    proc_add(path, os.getpid(), PROC_START)
+    return path
+
+
+@pytest.fixture
+def claude_bin(tmp_path):
+    """tmp_path/bin, a directory holding an executable `claude` that exits
+    0: its path, for PATH."""
+    path = tmp_path / "bin"
+    path.mkdir()
+    (path / "claude").write_text("#!/bin/sh\nexit 0\n")
+    (path / "claude").chmod(0o755)
+    return path
 
 
 def comments_of(store, n, kind="issues"):
@@ -423,6 +473,61 @@ def archived(main, slug):
     return main / ".orchestrator" / "archive" / ("%s-%s" % (ARCHIVE_STAMP, slug))
 
 
+def linked_worktree(tmp_path, path, marker=None):
+    """A linked worktree of the clone at <path>, a Path: its git pointer
+    naming a git folder under tmp_path/git-dir/worktrees that holds a HEAD
+    and, where <marker> is given, the side-checkout ownership marker holding
+    it, its name the path's below tmp_path. Its path, as a str."""
+    gitdir = tmp_path / "git-dir" / "worktrees" / "-".join(path.relative_to(tmp_path).parts)
+    gitdir.mkdir(parents=True)
+    (gitdir / "HEAD").write_text("ref: refs/heads/x\n")
+    if marker is not None:
+        (gitdir / "orchestrator-side-checkout").write_text(marker)
+    path.mkdir(parents=True)
+    (path / ".git").write_text("gitdir: %s\n" % gitdir)
+    return str(path)
+
+
+class SideCheckouts:
+    """The checkout at tmp_path and its side checkouts, each added by add:
+    <git>, a FakeGit rooted at tmp_path, listing them all, every tree clean,
+    and each branch's tip a commit of its own."""
+
+    def __init__(self, tmp_path, git):
+        self.tmp_path = tmp_path
+        self.git = git
+        self.worktrees = [Worktree(str(tmp_path), "main")]
+        self.git.seed("worktree_list", answer=self.worktrees)
+
+    def add(self, name, branch, tip=None, marker="7\n"):
+        """Side checkout <name> on <branch>, its tip <tip> (a SHA made from
+        the name when None): its path."""
+        path = linked_worktree(self.tmp_path, self.tmp_path / ".orchestrator" / "checkouts" / name,
+                               marker)
+        self.worktrees.append(Worktree(path, branch))
+        self.git.seed("status_at", path, answer="")
+        self.git.seed("branch_at", path, answer=branch)
+        self.tip(branch, tip or sha_of(name))
+        return path
+
+    def tip(self, branch, sha):
+        """<branch>'s tip <sha>, a commit the clone holds."""
+        self.git.seed("resolve_commit", "refs/heads/" + branch, answer=sha)
+        self.git.commits[sha] = {}
+
+    def merged(self, seed, n, branch, head, base="main"):
+        """PR #n merged from <branch> into <base>, its head <head>, a commit
+        the clone holds."""
+        seed.pr(n, "merged", branch, base)
+        seed.pr_head(n, head)
+        self.git.commits[head] = {}
+
+
+def sha_of(name):
+    """A full SHA made from <name>, the same for the same name."""
+    return (name.encode().hex() * 40)[:40]
+
+
 def write_staged(root, files):
     """Writes the files named, removes those mapped to None, and stages
     every change."""
@@ -591,6 +696,20 @@ def orch_pr(seed, git, *argv, env=None, gh=None):
         gh = FakeGh(seed.store, env, pin=RepoPin(env, git), sleep=lambda _: None)
     try:
         return pr.run(list(argv), gh=gh, git=git, env=env)
+    except SystemExit as died:
+        return died.code
+
+
+def orch_autopilot(seed, git, env, *argv, gh=None, **extra):
+    """`orch.sh autopilot <argv>` in-process, in the checkout of the git
+    adapter <git>, under <env>, with the gh adapter <gh> - the gh fake on
+    <seed>'s store pinned to <git>'s origin, its retries never sleeping,
+    when None - and autopilot.run's clock, starter and sleep in <extra>
+    where a case hands them in: its exit code, a SystemExit's included."""
+    if gh is None:
+        gh = FakeGh(seed.store, env, pin=RepoPin(env, git), sleep=lambda _: None)
+    try:
+        return autopilot.run(list(argv), gh=gh, git=git, env=env, **extra)
     except SystemExit as died:
         return died.code
 

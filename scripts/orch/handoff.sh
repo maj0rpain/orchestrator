@@ -32,7 +32,7 @@ phase_list() {
 }
 
 # The flow's phases, space-separated in flow order: read inside functions only
-# (the state writer, autopilot's and standing's phase walks). Set when this
+# (the state writer's phase guard). Set when this
 # module is sourced, from the phase table above.
 PHASES="$(phase_list)"
 # shellcheck disable=SC2034 # read by other modules, each calling orch_load handoff first
@@ -131,6 +131,36 @@ section_count() {
     END { print n + 0 }' "$1"
 }
 
+# autopilot_block_values <file> <key>: the value of each `<key>: <value>` line
+# in <file>'s `## Autopilot` section, trimmed, one per line.
+autopilot_block_values() {
+  section_body "$1" '## Autopilot' | sed -n "s/^$2:[[:space:]]*\\(.*[^[:space:]]\\)[[:space:]]*\$/\\1/p"
+}
+
+# autopilot_block_report <file>: the plan's `## Autopilot` block, in
+# handoff_report's lines - `ok ## Autopilot`, or one FAIL line per problem -
+# and non-zero when any failed. The block is `Rounds` and `Budget`, each one
+# line holding a whole number of 1 or more.
+autopilot_block_report() {
+  local file="$1" key values failed=0
+  if [ "$(section_count "$file" '## Autopilot')" -eq 0 ]; then
+    printf 'FAIL missing section: ## Autopilot\n'
+    return 1
+  fi
+  for key in Rounds Budget; do
+    values="$(autopilot_block_values "$file" "$key")"
+    if [ -z "$values" ]; then
+      printf 'FAIL ## Autopilot has no %s line (want "%s: <n>")\n' "$key" "$key"; failed=1
+    elif [ "$(wc -l <<<"$values" | tr -d ' ')" -gt 1 ]; then
+      printf 'FAIL ## Autopilot repeats its %s line\n' "$key"; failed=1
+    elif ! is_positive_int "$values"; then
+      printf 'FAIL ## Autopilot %s is %s - it must be a whole number of 1 or more\n' "$key" "$values"; failed=1
+    fi
+  done
+  [ "$failed" = 1 ] || printf 'ok ## Autopilot\n'
+  return "$failed"
+}
+
 # The bash statement of what a valid handoff is: one line per required
 # section, each `ok <heading>` or `FAIL <problem>`. The Python package's copy,
 # handoff_report in scripts/orch_py/orch/handoff.py, which phase advance and
@@ -139,7 +169,8 @@ section_count() {
 # <name> is the handoff file name the sections are looked up by, the file's own
 # basename unless given: an autopilot scratch file is not named as its handoff.
 # The plan's `## Autopilot` block is checked, and required, in an autopilot
-# session or when the third argument is `autopilot` (autopilot start).
+# session or when the third argument is `autopilot`, which no bash caller passes
+# since autopilot start moved to orch/handoff.py's handoff_report.
 handoff_report() {
   local file="$1" base heading required failed=0
   base="${2:-$(basename "$file")}"
@@ -232,8 +263,9 @@ handoff_comment_post() {
 
 # handoff_comment_post_url <issue> <name> <file> <url-var>: the post of
 # handoff_comment_post through adapter_issue_comment_url, assigning the posted
-# comment's URL to <url-var>, empty where gh printed none. `autopilot start`
-# (standing_start) is its only caller. Same failure contract as
+# comment's URL to <url-var>, empty where gh printed none. Its one caller, the
+# bash `autopilot start`, went with the bash autopilot noun; the Python one
+# posts through orch/handoff.py's copy. Same failure contract as
 # handoff_comment_post.
 handoff_comment_post_url() {
   local issue="$1" name="$2" file="$3" body gh_err posted_url=""

@@ -1,15 +1,15 @@
 """The Filed finding module: an issue a review loop filed carries a
 review:<severity> label until finding triage gives it one of its own labels
 (ADR-0031). The issue and finding-triage nouns read it - issue triage and
-finding triage: its filed severities and their label test, its categories
-with each one's label, the create that makes a missing label, and its issue
-body parsed back into its fields. It also holds the filing checks audit file
-and review file make: the flag parse, the input and location checks, the
+finding triage: its filed severities and their label test, its categories with
+each one's label, the create that makes a missing label, and its issue body
+parsed back into its fields. It also holds the filing checks audit file and
+review file make: the flag parse, the input and location checks, the
 needs-triage label made ready, and the body temp file; and what review file
-alone needs - each severity's label and its upsert, the category a review
-axis starts in, and the body rendered from its parts. The bash
-filed-finding.sh keeps only the review label test and the untriaged-finding
-check, for autopilot's gate.
+alone needs - each severity's label and its upsert, the category a review axis
+starts in, and the body rendered from its parts, and the untriaged finding
+check autopilot's candidates verdict and issue triage make. It is the one
+copy: the bash filed-finding.sh went with the bash autopilot noun.
 """
 from __future__ import annotations
 

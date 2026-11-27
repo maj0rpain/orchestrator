@@ -1,13 +1,14 @@
 # shellcheck shell=bash
 # trust.sh - the Trust module: a concept module with no orch.sh noun of its own,
-# owning which comments orch.sh reads, which PRs it takes for its own and which
-# issues autopilot runs on. A PR is its own when its head branch lives in the
-# repo (isCrossRepository false); a fork PR is dropped (trust_filter_prs). A
-# trusted comment is one whose authorAssociation is OWNER, MEMBER or
-# COLLABORATOR (ADR-0057); every other comment is dropped, once per read, in the
-# domain layer just above the gh adapters, before any marked comment, answer or
-# spec text is read from it. An issue is trusted when its body and its title
-# both are (trust_issue_check).
+# owning which comments orch.sh reads and which PRs it takes for its own. A PR
+# is its own when its head branch lives in the repo (isCrossRepository false); a
+# fork PR is dropped (trust_filter_prs). A trusted comment is one whose
+# authorAssociation is OWNER, MEMBER or COLLABORATOR (ADR-0057); every other
+# comment is dropped, once per read, in the domain layer just above the gh
+# adapters, before any marked comment, answer or spec text is read from it.
+# Which issues autopilot runs on is decided by the Python copy, orch/trust.py's
+# issue_check: an issue is trusted when its body and its title both are. The
+# bash copy below (trust_issue_check) has no caller left.
 # Its tests: scripts/test/orch/trust.sh.
 # Sourced by orch.sh, after common.sh.
 
@@ -77,7 +78,9 @@ trust_issue_read() {
 TRUST_WRITER=""
 TRUST_WHAT=""
 TRUST_REASON=""
-# shellcheck disable=SC2034 # the TRUST_ results are read by pickup
+# The TRUST_ results were read by the bash pickup, gone with the bash
+# autopilot noun.
+# shellcheck disable=SC2034
 
 # trust_issue_check <n>: whether issue <n> is trusted. The author is trusted
 # when its association is OWNER, MEMBER or COLLABORATOR. The body is trusted
@@ -111,9 +114,10 @@ trust_issue_check() {
 
 # trust_writer_text <subject>: after trust_issue_check returned 1, the clause
 # naming the untrusted writer - "<subject>'s <what> was last written by
-# <writer>, who is not an owner, member or collaborator of the repository" -
-# the pickup's refusal's. The attended warning `init --issue` and `issue fetch`
-# print, both converted nouns, words it through orch/trust.py's copy.
+# <writer>, who is not an owner, member or collaborator of the repository".
+# No bash caller is left: the pickup's refusal and the attended warning `init
+# --issue` and `issue fetch` print, all converted nouns, word it through
+# orch/trust.py's copy.
 trust_writer_text() {
   printf "%s's %s was last written by %s, who is not an owner, member or collaborator of the repository" \
     "$1" "$TRUST_WHAT" "$TRUST_WRITER"
