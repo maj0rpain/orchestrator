@@ -215,7 +215,7 @@ restore_suite_env GH_HOST GH_FIXTURE
 echo
 echo "gh_reason and capture_err"
 new_repo >/dev/null
-# Sourced rather than run, as is_filed_severity is: both are helpers every gh
+# Sourced rather than run: gh_reason and capture_err are helpers every gh
 # death goes through, and sourcing orch.sh defines them without running main.
 reason() { sourced_orch gh_reason "$1"; }
 assert_eq "gh_reason gives only the first line of gh's stderr" \
@@ -1879,28 +1879,6 @@ assert_status "and the retry meeting it again fails the call" "$st" 1
 assert_contains "with the handler's message" "$out" "orch: GitHub API rate limit reached"
 assert_eq "the secondary wording is not passed through" \
   "$(grep -c 'secondary rate limit' <<<"$out")" "0"
-rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
-# While a re-callable wait is open (WAIT_MARK set), a first limit wait the
-# call's block cannot hold is not retried early: the rest of the block is slept,
-# the call's mark is left and the guard gives up quietly, so the poll loop ends
-# the call as still running (exit 75, total kept).
-fake_ratelimit "$secondary_wording"
-gl_wf="$(mktemp)"
-SECONDS=0
-out="$(ORCH_WAIT_BLOCK=1 ORCH_GH_LIMIT_WAIT=30 sourced_orch_script 'WAIT_MARK=$1.limited; adapter_issue_body 5' "$gl_wf" 2>&1)"; st=$?
-assert_status "a secondary limit a wait's block cannot hold fails the guarded call" "$st" 1
-assert_status "its mark for the poll loop is left" "$([ -e "$gl_wf.limited" ] && echo 0 || echo 1)" 0
-assert_eq "with no limit message, nothing being given up" "$(grep -c 'rate limit reached' <<<"$out")" "0"
-assert_status "and it waits the block, not ORCH_GH_LIMIT_WAIT" "$((SECONDS < 20 ? 0 : 1))" 0
-rm -f "$gl_wf" "$gl_wf.limited" "$ORCH_GH_FAKE_STORE/ratelimit"
-# Under NO_WAIT_CALL (review ci --no-wait) a first secondary limit is given up
-# on at once: the limit message, no ORCH_GH_LIMIT_WAIT sleep.
-fake_ratelimit "$secondary_wording"
-SECONDS=0
-out="$(NO_WAIT_CALL=1 ORCH_GH_LIMIT_WAIT=30 sourced_orch_script 'adapter_issue_body 5' 2>&1)"; st=$?
-assert_status "under NO_WAIT_CALL a first secondary limit fails the call" "$st" 1
-assert_contains "with the limit message" "$out" "orch: GitHub API rate limit reached"
-assert_status "at once, with no ORCH_GH_LIMIT_WAIT sleep" "$((SECONDS < 20 ? 0 : 1))" 0
 rm -f "$ORCH_GH_FAKE_STORE/ratelimit"
 # A quota read that itself meets rate-limit wording is made once: never retried,
 # no limit message, no wait. The second call would succeed, so a retry shows.

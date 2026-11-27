@@ -1,7 +1,7 @@
 """The Filed finding module's additions for finding triage: the filed
 severities and their label test, the category table and its label create,
-the other category, and the body parse, read as the bash filed-finding.sh
-reads a filed finding's issue body."""
+the other category, and the body parse of a filed finding's issue body,
+rendered or written by hand in the closer's format."""
 from __future__ import annotations
 
 import pytest

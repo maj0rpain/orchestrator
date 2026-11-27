@@ -576,8 +576,8 @@ class Limits:
     wait fits in what is left of its block - when it does not, the call
     fails with no message and nothing recorded, the wait's mark left for
     its checks to end the call as still running; and <no_wait>, set by a
-    call that never waits (`review ci --no-wait`, bash's NO_WAIT_CALL),
-    which gives a first secondary limit up at once.
+    call that never waits (`review ci --no-wait`), which gives a first
+    secondary limit up at once.
     """
 
     def __init__(

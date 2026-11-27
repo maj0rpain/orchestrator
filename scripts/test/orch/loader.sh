@@ -76,13 +76,13 @@ assert_status "and its exit status" "$status2" "$status"
 src_run() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash -c "$1" _ "$ORCH" 2>&1; }
 lazy_pre='ORCH_SOURCE_LAZY=1; source "$1"; shift; '
 
-src_run "$lazy_pre"'(is_filed_severity major major); true'
+src_run "$lazy_pre"'(has_review_label review:major); true'
 assert_eq "a stub called in a subshell loads its module there only" "$(cat "$trace")" "filed-finding 1"
 
 # A stub passes its arguments and returns the real function's status.
-out="$(src_run "$lazy_pre"'st=0; is_filed_severity major || st=$?; echo "st=$st"')"
-assert_eq "a stub passes its arguments and returns the real function's status for a filed severity" "$out" "st=0"
-out="$(src_run "$lazy_pre"'st=0; is_filed_severity nonesuch || st=$?; echo "st=$st"')"
+out="$(src_run "$lazy_pre"'st=0; has_review_label review:major || st=$?; echo "st=$st"')"
+assert_eq "a stub passes its arguments and returns the real function's status for a review label" "$out" "st=0"
+out="$(src_run "$lazy_pre"'st=0; has_review_label nonesuch || st=$?; echo "st=$st"')"
 assert_contains "and returns a failing status" "$out" "st=1"
 
 # A stub whose module no longer defines the function: one the function moved

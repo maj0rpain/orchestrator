@@ -3,10 +3,10 @@
 # text and working-tree helpers and the like. A helper lives in the module of
 # the concept it serves, whichever modules call it, and common.sh calls nothing
 # a noun module defines; its test section checks this. A concept with no noun
-# has a module of its own too: the Checkout module (checkout.sh), the Filed
-# finding module (filed-finding.sh) and the Known items module
-# (known-items.sh). Sourced by orch.sh ahead of the ROOT block, which dies
-# through die when run outside a git repository, and ahead of every noun module.
+# has a module of its own too, such as the Checkout module (checkout.sh) and
+# the Filed finding module (filed-finding.sh). Sourced by orch.sh ahead of the
+# ROOT block, which dies through die when run outside a git repository, and
+# ahead of every noun module.
 
 # list_has <list> <item>: whether <item> is one of the newline-separated
 # <list>, matched whole-line, literally and case-sensitively. The one
@@ -539,7 +539,7 @@ require_clean_tree() {
 # otherwise. A caller uses the result to gate its own tests - headings,
 # sections, paragraph breaks - and decides itself what to do with a fence's
 # lines, delimiters included. State is fence_-prefixed.
-# shellcheck disable=SC2034 # used by the doctor, handoff, known-items and review modules
+# shellcheck disable=SC2034 # used by the doctor and handoff modules
 FENCE_AWK='
   function fence_run(s, c,   n) { n = 0; while (substr(s, n + 1, 1) == c) n++; return n }
   function fenced(line,   s, c, n) {

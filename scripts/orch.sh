@@ -252,5 +252,5 @@ main() {
 }
 
 # Run as a command, not when sourced: a test sources this file to reach a
-# helper such as is_filed_severity directly.
+# helper such as has_review_label directly.
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then main "$@"; fi

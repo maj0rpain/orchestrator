@@ -1,15 +1,15 @@
-"""The Filed finding module, as the bash side's filed-finding.sh holds it: an
-issue a review loop filed carries a review:<severity> label until finding
-triage gives it one of its own labels (ADR-0031). The issue and
-finding-triage nouns read it - issue triage and finding triage: its filed
-severities and their label test, its categories with each one's label, the
-create that makes a missing label, and its issue body parsed back into its
-fields. It also holds the filing checks audit file and review file make,
-under their bash names: the flag parse, the input and location checks, the
+"""The Filed finding module: an issue a review loop filed carries a
+review:<severity> label until finding triage gives it one of its own labels
+(ADR-0031). The issue and finding-triage nouns read it - issue triage and
+finding triage: its filed severities and their label test, its categories
+with each one's label, the create that makes a missing label, and its issue
+body parsed back into its fields. It also holds the filing checks audit file
+and review file make: the flag parse, the input and location checks, the
 needs-triage label made ready, and the body temp file; and what review file
 alone needs - each severity's label and its upsert, the category a review
-axis starts in, and the body rendered from its parts. The bash side's copy
-still serves the CLI's review file until the review noun's cutover.
+axis starts in, and the body rendered from its parts. The bash
+filed-finding.sh keeps only the review label test and the untriaged-finding
+check, for autopilot's gate.
 """
 from __future__ import annotations
 
@@ -30,15 +30,14 @@ FINDING_TRIAGE_ROLES = ("ready-for-agent", "ready-for-human", "wontfix")
 
 # The severity table: each severity a filed finding carries as
 # review:<severity> - the ones `review file` files - with its label's colour,
-# in the bash severity table's order. Blocking is always fixed in the loop,
-# never filed.
+# in order. Blocking is always fixed in the loop, never filed.
 FILED_SEVERITY_TABLE = (("major", "d93f0b"), ("nit", "c5def5"))
 
 # The filed severities alone, in the table's order.
 FILED_SEVERITIES = tuple(severity for severity, _ in FILED_SEVERITY_TABLE)
 
 # The axis table: each review axis a finding is filed on, with the category a
-# finding filed on it starts in, in the bash axis table's order. A Spec
+# finding filed on it starts in, in order. A Spec
 # finding misses what was asked for, so it is a bug; a Standards finding
 # improves how it was built.
 FILED_AXIS_TABLE = (("spec", "bug"), ("standards", "enhancement"))
@@ -47,8 +46,7 @@ FILED_AXIS_TABLE = (("spec", "bug"), ("standards", "enhancement"))
 FILED_AXES = tuple(axis for axis, _ in FILED_AXIS_TABLE)
 
 # The category table: each category a finding is filed under, with its
-# label's colour and description - GitHub's own defaults - in the bash
-# table's order.
+# label's colour and description - GitHub's own defaults - in order.
 FILED_CATEGORIES = (
     ("bug", "d73a4a", "Something isn't working"),
     ("enhancement", "a2eeef", "New feature or request"),
@@ -178,8 +176,8 @@ def severity_label_ensure(gh, severity: str) -> None:
 
 def needs_triage_label_ready(gh, triage: TriageLabels) -> str:
     """The repo's needs-triage label, read through <triage>, made through
-    label_ensure where it is missing, with bash's triage_label_ensure colour
-    and description: the label is the repo's, so it is never rewritten."""
+    label_ensure where it is missing, with the triage label's colour and
+    description: the label is the repo's, so it is never rewritten."""
     label = triage.label("needs-triage")
     label_ensure(gh, label, "e4e669", "Not yet triaged")
     return label

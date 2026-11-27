@@ -74,9 +74,7 @@ gh_capture_err() {
 # temp files, through the limit retry protocol (#2724) - the one copy of it: a
 # failed call goes through gh_limit_handle, a first secondary limit (status 2)
 # is retried once, a limit given up on (status 1) fails the call with the
-# handler's message in place of the command's stderr - or with nothing on
-# stderr, for the silent give-up of a re-callable wait (the mark
-# the Wait module's wait_limit_fits leaves) - and any other failure
+# handler's message in place of the command's stderr - and any other failure
 # keeps its stderr as it is. The command's status passes through, and so does
 # the stdout of the deciding attempt alone - the one whose outcome the call
 # returns - byte for byte from its file, never through a shell variable; an
@@ -111,9 +109,7 @@ gh_limit_retry() {
 #
 # gh_limit_handle is the one limit handler: the guard calls it on a failed
 # call, and the test fake's failing operations call it too. It never dies: the
-# failed call returns its own status, with the distinct message on stderr -
-# except the silent give-up of a re-callable wait, which leaves a mark and no
-# message.
+# failed call returns its own status, with the distinct message on stderr.
 
 # gh_limit_kind <stderr>: secondary for GitHub's secondary-limit wording,
 # "submitted too quickly" or an HTTP 429; primary for its primary-limit
@@ -153,13 +149,7 @@ gh_limit_reset() {
 # Status 0: no limit - the caller passes its failure through untouched.
 # Status 2: a first secondary limit, waited out (ORCH_GH_LIMIT_WAIT seconds,
 # default 60) - the caller retries once and calls this again with
-# <retry spent> 1. While a re-callable wait is open and wait_limit_fits says
-# what is left of ORCH_WAIT_BLOCK cannot hold that wait (the Wait module alone
-# decides from WAIT_MARK, and leaves its own mark there), the status is 1
-# with no message, nothing recorded: the wait is not over, and the Wait
-# module's checks end the call as still running.
-# While NO_WAIT_CALL is set (review ci --no-wait) a first secondary limit
-# is given up on at once too, as a primary one.
+# <retry spent> 1.
 # Status 1: a limit to give up on - a primary one, a secondary one met again
 # after the retry, or a first secondary one on a compound write (never
 # retried, so called with <retry spent> 1), handled as a primary one. The
@@ -168,13 +158,11 @@ gh_limit_reset() {
 # (autopilot_github_limit_record), and a failed write is part of that same one
 # line, after " - " with its clauses joined by "; ", so gh_reason keeps it.
 gh_limit_handle() {
-  local kind reset nap clauses="" clause msg
+  local kind reset clauses="" clause msg
   kind="$(gh_limit_kind "$1")"
   [ -n "$kind" ] || return 0
-  if [ "$kind" = secondary ] && [ "$2" = 0 ] && [ -z "${NO_WAIT_CALL:-}" ]; then
-    nap="${ORCH_GH_LIMIT_WAIT:-60}"
-    wait_limit_fits "$nap" || return 1
-    sleep "$nap"
+  if [ "$kind" = secondary ] && [ "$2" = 0 ]; then
+    sleep "${ORCH_GH_LIMIT_WAIT:-60}"
     return 2
   fi
   reset="$(gh_limit_reset)"
@@ -296,7 +284,7 @@ gh_or_die() {
 # --- gh adapter -------------------------------------------------------------
 #
 # The seam between orch.sh's decision logic and the `gh` CLI. A caller like
-# filed-finding.sh's severity_label_ensure calls an adapter operation, never
+# autopilot.sh's autopilot_labels_ensure calls an adapter operation, never
 # `gh` itself, so a test can replace one in-process function instead of faking a
 # `gh` binary on PATH. Every GitHub call in orch.sh and its modules goes
 # through one. History: begun with labels (#91), issues (#92); all since #280.
@@ -608,8 +596,7 @@ issues_any_labelled_limit_warn() {
 # (<err_var> "gh answered a listing that does not parse"). Warns through
 # issues_labelled_limit_warn when the listing reaches the issue-list limit. Dies
 # when an array name is not a declared associative array. Elements are assigned
-# by eval on a validated name, the value by reference, as finding_body_parse
-# does.
+# by eval on a validated name, the value by reference (assoc_pairs_assign).
 issues_labelled_rows_read() {
   issues_rows_read_via issues_labelled_rows_read adapter_issues_labelled_rows issues_labelled_limit_warn "$@"
 }
