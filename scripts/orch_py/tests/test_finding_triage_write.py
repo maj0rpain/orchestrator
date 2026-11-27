@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from conftest import (GH_502, checkout, comments_of, labels_doc, labels_of, read, snapshot,
-                      write_labels_doc)
+from conftest import (GH_502, checkout, comments_of, labels_doc, labels_of, outcome, read,
+                      snapshot, write_labels_doc)
 from orch import finding_triage
 from orch.gh_fake import FakeGh
 from orch.repo import RepoPin
@@ -49,13 +49,8 @@ class Noun:
         """(exit code, stdout, stderr) of `orch.sh finding-triage <argv>`."""
         pin = RepoPin(self.env, self.git)
         gh = self.gh_class(self.seed.store, self.env, pin=pin, sleep=lambda _: None)
-        try:
-            code = finding_triage.run(list(argv), gh=gh, git=self.git, env=self.env, pin=pin,
-                                      mkstemp=self.mkstemp)
-        except SystemExit as died:
-            code = died.code
-        out, err = self.capsys.readouterr()
-        return code, out, err
+        return outcome(self.capsys, lambda: finding_triage.run(
+            list(argv), gh=gh, git=self.git, env=self.env, pin=pin, mkstemp=self.mkstemp))
 
     def leftovers(self):
         """The temporary files the verbs left behind."""

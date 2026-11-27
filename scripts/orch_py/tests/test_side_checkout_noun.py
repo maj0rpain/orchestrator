@@ -126,7 +126,7 @@ def test_issue_exits_1_printing_nothing_for_a_marker_recording_no_plain_number(
 
 
 def test_issue_exits_1_printing_nothing_in_a_worktree_with_no_marker(
-        capsys, monkeypatch, main, tmp_path):
+        capsys, monkeypatch, main):
     alpha = side_checkout(main, "alpha")
     mark_side(alpha).unlink()
 

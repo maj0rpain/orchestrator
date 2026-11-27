@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from conftest import (GH_502, SideCheckouts, died_of, exclude_orchestrator, git_repo, hold_flow,
-                      labels_doc, linked_worktree, record, run_git, sha_of, write,
+                      labels_doc, linked_worktree, outcome, record, run_git, sha_of, write,
                       write_labels_doc)
 from orch import cli, doctor
 from orch.autopilot import epoch_iso
@@ -157,17 +157,6 @@ def test_the_cli_runs_doctor_with_its_arguments(capsys):
         1, "", "orch: unknown doctor flag: --nonsense (want --env or --flow)\n")
 
 
-def cli_answer(capsys, argv):
-    """cli.main(<argv>)'s exit code, a SystemExit's included, stdout and
-    stderr."""
-    try:
-        code = cli.main(argv)
-    except SystemExit as died:
-        code = died.code
-    out, err = capsys.readouterr()
-    return code, out, err
-
-
 @pytest.mark.parametrize("argv", [["--env"], ["--flow"], ["--nonsense"], ["--env", "--flow"]],
                          ids=["env", "flow", "unknown-flag", "extra-argument"])
 def test_health_answers_every_argument_as_doctor_does(capsys, seed, tmp_path, monkeypatch, argv):
@@ -177,10 +166,10 @@ def test_health_answers_every_argument_as_doctor_does(capsys, seed, tmp_path, mo
     for name, value in doctor_env(tmp_path, ORCH_GH_FAKE_STORE=str(seed.store)).items():
         monkeypatch.setenv(name, value)
 
-    doctor_said = cli_answer(capsys, ["doctor", *argv])
+    doctor_said = outcome(capsys, lambda: cli.main(["doctor", *argv]))
 
     assert doctor_said[0] in (0, 1) and (doctor_said[1] or doctor_said[2])
-    assert cli_answer(capsys, ["health", *argv]) == doctor_said
+    assert outcome(capsys, lambda: cli.main(["health", *argv])) == doctor_said
 
 
 @pytest.mark.parametrize("argv", [[], [""], ["--env"]])
