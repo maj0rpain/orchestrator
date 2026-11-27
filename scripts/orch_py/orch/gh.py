@@ -1095,6 +1095,19 @@ class Gh:
              "--jq", '.[] | "\\(.number)\\t\\(.body | @json)\\t\\(.isCrossRepository)"']
         ))
 
+    def prs_open_mergeability(self) -> List[str]:
+        """Every open PR, newest first and cut at the issue-list limit, one
+        line each as gh prints it, `<number><TAB><head branch><TAB>
+        <mergeable><TAB><flag>` - mergeable gh's MERGEABLE, CONFLICTING or
+        UNKNOWN, the flag isCrossRepository - unfiltered: trust_filter_prs
+        drops the fork PRs. Sync detection's one read a tick (#2325)."""
+        return _captured_lines(self._gh(
+            ["pr", "list", "--state", "open", "--limit", str(issue_list_limit(self.env)),
+             "--json", "number,headRefName,mergeable,isCrossRepository",
+             "--jq", '.[] | "\\(.number)\\t\\(.headRefName)\\t\\(.mergeable)'
+                     '\\t\\(.isCrossRepository)"']
+        ))
+
     def prs_merged(self, head: str, base: str) -> List[str]:
         """The PRs from <head> merged into <base>, newest first, one line
         each as gh prints it, `<number><TAB><head SHA><TAB><flag>`, the flag
@@ -1321,6 +1334,21 @@ class Gh:
         answer = self._gh(["label", "list", "--limit", str(limit), "--json", "name",
                            "--jq", ".[].name"])
         return [name for name in answer.split("\n") if name]
+
+    def labels_detail(self, limit: int) -> List[Tuple[str, str, str]]:
+        """The repo's labels, at most <limit> of them, in GitHub's order,
+        each (name, colour, description) as gh's @tsv prints them - the
+        colour without a leading #, the description possibly empty; none for
+        a repo with none. The tick's label check reads them once."""
+        answer = self._gh(["label", "list", "--limit", str(limit),
+                           "--json", "name,color,description",
+                           "--jq", '.[] | [.name, .color, (.description // "")] | @tsv'])
+        rows = []
+        for line in answer.split("\n"):
+            if line:
+                name, colour, description = (line.split("\t") + ["", ""])[:3]
+                rows.append((name, colour, description))
+        return rows
 
     # --- repo operations ---
 

@@ -559,6 +559,16 @@ class FakeGh:
         names = [line.split("\t", 1)[0] for line in _lines(_store_path(self.store, "labels"))]
         return [name for name in names if name][:limit]
 
+    def labels_detail(self, limit: int) -> List[Tuple[str, str, str]]:
+        """The stored labels, the first <limit> of them, each (name, colour,
+        description); none where the store holds no labels."""
+        self._failing("adapter_labels_detail")
+        rows = []
+        for line in _lines(_store_path(self.store, "labels"))[:limit]:
+            name, colour, description = (line.split("\t") + ["", ""])[:3]
+            rows.append((name, colour, description))
+        return rows
+
     # --- repo operations ---
 
     def repo_default_branch(self, repo: str) -> str:
@@ -704,6 +714,15 @@ class FakeGh:
         self._failing("adapter_prs_open_bodies")
         return ["%s\t%s\t%s" % (name, json.dumps(read_raw(os.path.join(d, "body")) or "",
                                                  ensure_ascii=False), self._cross(d))
+                for name, d in self._prs("OPEN")]
+
+    def prs_open_mergeability(self) -> List[str]:
+        """Every open PR, newest first, each `<number><TAB><head><TAB>
+        <mergeable><TAB><flag>`, the mergeable the stored mergeable file
+        (UNKNOWN where unset), the flag as prs_open answers it."""
+        self._failing("adapter_prs_open_mergeability")
+        return ["\t".join([name, read_text(os.path.join(d, "head")) or "",
+                           read_text(os.path.join(d, "mergeable")) or "UNKNOWN", self._cross(d)])
                 for name, d in self._prs("OPEN")]
 
     def prs_merged(self, head: str, base: str) -> List[str]:
@@ -1157,6 +1176,16 @@ class FakeStore:
     def local_default(self, name: str) -> None:
         """gh's own local default repo for the checkout, OWNER/REPO."""
         _write(_store_path(self.store, "local_default"), name + "\n")
+
+    def label(self, name: str, colour: str, description: str) -> None:
+        """One more repo label, as fake_label appends it."""
+        _write(_store_path(self.store, "labels"), "%s\t%s\t%s\n" % (name, colour, description),
+               "ab")
+
+    def pr_mergeable(self, n: int, value: str) -> None:
+        """PR #n's mergeability - MERGEABLE, CONFLICTING or UNKNOWN, which a
+        PR never seeded reports."""
+        _write(_pr_path(self.store, n, "mergeable"), value + "\n")
 
     def label_names(self, *names: str) -> None:
         """The repo's labels: exactly <names>, with no colour or description,

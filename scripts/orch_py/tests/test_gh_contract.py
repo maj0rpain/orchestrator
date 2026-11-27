@@ -695,6 +695,34 @@ def test_a_failed_label_upsert_passes_gh_s_stderr_through(fixture_gh):
     assert failed.value.stderr == "HTTP 502: Bad Gateway\n"
 
 
+def labels_detail_argv(limit):
+    return ["label", "list", "--limit", str(limit), "--json", "name,color,description",
+            "--jq", '.[] | [.name, .color, (.description // "")] | @tsv']
+
+
+def test_labels_detail_lists_each_label_s_name_colour_and_description(fixture_gh):
+    fixture_gh.reply(labels_detail_argv(1000),
+                     "orch:spec\t1d76db\tAutopilot flow: spec phase next\nbare\tededed\t\n")
+
+    assert real_gh(fixture_gh).labels_detail(1000) == [
+        ("orch:spec", "1d76db", "Autopilot flow: spec phase next"), ("bare", "ededed", "")]
+    assert fixture_gh.argvs() == [labels_detail_argv(1000)]
+
+
+def test_a_repo_with_no_labels_details_none(fixture_gh):
+    fixture_gh.reply(labels_detail_argv(1000), "")
+
+    assert real_gh(fixture_gh).labels_detail(1000) == []
+
+
+def test_a_failed_label_detail_listing_passes_gh_s_stderr_through(fixture_gh):
+    fixture_gh.reply(labels_detail_argv(1000), stderr="HTTP 502: Bad Gateway\n", exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).labels_detail(1000)
+    assert failed.value.stderr == "HTTP 502: Bad Gateway\n"
+
+
 # --- repo operations ---------------------------------------------------------
 
 
@@ -1033,6 +1061,24 @@ def test_prs_open_bodies_lists_every_open_pr_its_body_json_encoded_unfiltered(fi
     assert real_gh(fixture_gh).prs_open_bodies() == ['12\t"Refs #3\\r\\n\\nBody"\ttrue',
                                                      '4\t""\tfalse']
     assert real_gh(fixture_gh, ORCH_ISSUE_LIST_LIMIT="7").prs_open_bodies() == []
+
+
+def open_mergeability_argv(limit="1000"):
+    return ["pr", "list", "--state", "open", "--limit", limit,
+            "--json", "number,headRefName,mergeable,isCrossRepository",
+            "--jq", '.[] | "\\(.number)\\t\\(.headRefName)\\t\\(.mergeable)'
+                    '\\t\\(.isCrossRepository)"']
+
+
+def test_prs_open_mergeability_lists_every_open_pr_s_head_and_mergeability_unfiltered(
+        fixture_gh):
+    fixture_gh.reply(open_mergeability_argv(), "12\torch/3-x\tCONFLICTING\ttrue\n"
+                                               "4\torch/5-y\tUNKNOWN\tfalse\n")
+    fixture_gh.reply(open_mergeability_argv("7"), "")
+
+    assert real_gh(fixture_gh).prs_open_mergeability() == [
+        "12\torch/3-x\tCONFLICTING\ttrue", "4\torch/5-y\tUNKNOWN\tfalse"]
+    assert real_gh(fixture_gh, ORCH_ISSUE_LIST_LIMIT="7").prs_open_mergeability() == []
 
 
 MERGED_CLOSING_JQ = ('.[] | "\\(.number)\\t\\(.headRefName)\\t\\(.mergedAt)\\t'

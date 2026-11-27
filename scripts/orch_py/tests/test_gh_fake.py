@@ -480,6 +480,8 @@ def test_the_python_seeder_s_unsupported_sub_issues_read_back(store):
     ("adapter_repo_local_default", lambda gh: gh.repo_local_default()),
     ("adapter_auth_status", lambda gh: gh.auth_status("github.com")),
     ("adapter_labels", lambda gh: gh.labels(1000)),
+    ("adapter_labels_detail", lambda gh: gh.labels_detail(1000)),
+    ("adapter_prs_open_mergeability", lambda gh: gh.prs_open_mergeability()),
     ("adapter_sub_issues_supported", lambda gh: gh.sub_issues_supported()),
 ])
 def test_the_added_operations_fail_under_the_bash_operation_names(store, operation, call):
@@ -1023,6 +1025,39 @@ adapter_prs_merged_bodies main
     assert gh.prs_merged_bodies("main") == "Refs #8\n\nCloses #5\n"
     assert bash_answer == "\n".join(
         open_bodies + ["|"] + merged + ["|", "Refs #8", "", "Closes #5", ""])
+
+
+def test_the_label_details_and_open_mergeability_of_a_bash_seeded_store_read_as_bash_s(store):
+    bash_answer = bash(store, r"""
+fake_label Bug d73a4a 'Something is wrong'; fake_label bare ededed ''
+fake_pr 4 open orch/3-x main; printf 'CONFLICTING\n' >"$ORCH_GH_FAKE_STORE/prs/4/mergeable"
+fake_pr 9 open fork main; fake_pr_cross 9
+fake_pr 6 closed orch/6-z main; printf 'CONFLICTING\n' >"$ORCH_GH_FAKE_STORE/prs/6/mergeable"
+adapter_labels_detail 1; echo '|'
+adapter_labels_detail 1000; echo '|'
+adapter_prs_open_mergeability
+""")
+    gh = fake(store)
+
+    one = [("Bug", "d73a4a", "Something is wrong")]
+    both = one + [("bare", "ededed", "")]
+    mergeability = ["9\tfork\tUNKNOWN\ttrue", "4\torch/3-x\tCONFLICTING\tfalse"]
+    assert (gh.labels_detail(1), gh.labels_detail(1000)) == (one, both)
+    assert gh.prs_open_mergeability() == mergeability
+    assert bash_answer == "\n".join(["\t".join(row) for row in one] + ["|"]
+                                    + ["\t".join(row) for row in both] + ["|"]
+                                    + mergeability) + "\n"
+
+
+def test_the_python_seeders_write_a_label_and_a_pr_s_mergeability_as_the_bash_fake_reads_them(
+        store, seed):
+    seed.label("orch:spec", "1d76db", "Autopilot flow: spec phase next")
+    seed.pr(4, "open", "orch/3-x", "main")
+    seed.pr_mergeable(4, "CONFLICTING")
+
+    assert bash(store, "adapter_labels_detail 1000; adapter_prs_open_mergeability") == (
+        "orch:spec\t1d76db\tAutopilot flow: spec phase next\n"
+        "4\torch/3-x\tCONFLICTING\tfalse\n")
 
 
 RUNS = "https://github.com/acme/widgets/actions/runs"

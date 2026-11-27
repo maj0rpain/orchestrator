@@ -16,12 +16,13 @@ run dies with bash's "unknown pr op" refusal, naming every op.
 
 The merged-PR backstop (#2477, #2478) lives here alone: PR_CLOSE_GRACE,
 pr_close_missed, the merged-closing read and the newest-merge pick, behind
-two bridges: close_missed_tick, which autopilot's tick calls at most once a
-tick, never once per issue, and close_missed_finish, which side-checkout's
-sweep calls once per finished checkout, each call carrying that checkout's
-one issue - the bash sweep through its bridge, orch/side_checkout.py's
-in-process. Each exits 0 whatever its reads and closes did, after their
-warnings; only a usage error dies.
+two entries: close_missed_rows, which autopilot's tick calls at most once a
+tick, never once per issue - Python autopilot's in-process, the bash tick
+through its bridge close_missed_tick - and close_missed_finish, which
+side-checkout's sweep calls once per finished checkout, each call carrying
+that checkout's one issue - the bash sweep through its bridge,
+orch/side_checkout.py's in-process. Each ends whatever its reads and closes
+did, after their warnings; only a bridge's usage error dies.
 
 Bash cached the default branch for its process, so pr open's base fallback
 and its issue-line check - and pr publish's recorded base and its check, and
@@ -282,6 +283,39 @@ def _done_rows(table: str) -> List[List[str]]:
     return rows
 
 
+def close_missed_rows(rows: List[List[str]], gh=None, git=None,
+                      env: Optional[Mapping[str, str]] = None,
+                      now: Callable[[], float] = time.time) -> List[List[str]]:
+    """The tick's merged-PR backstop (#2478), on the done table's <rows>,
+    `[<issue>, <running>, <sync>, <human>]` each, oldest issue first -
+    called in-process by autopilot's tick, once a tick and only on rows that
+    are not empty. Reads the PRs merged into the default branch since the
+    first issue not carrying orch:running was created - once, and not at
+    all when every issue carries it - and closes each issue not carrying it
+    whose newest merged PR from `orch/<issue>-` should have closed it;
+    orch:sync and needs-human do not stop it. The rows less every issue it
+    closed: all of them when the read fails. A failed read or close warns
+    and skips. The real adapters, the process's environment and clock unless
+    a caller hands in others."""
+    bound = next((row[0] for row in rows if row[1] == "0"), None)
+    if bound is None:
+        return rows
+    cmd = _Run(gh, Git() if git is None else git, os.environ if env is None else env)
+    read = pr_merged_closing_read(cmd, "no merged-PR close this tick", bound)
+    if read is None:
+        return rows
+    default, prs = read
+    at = now()
+    kept = []
+    for row in rows:
+        if row[1] == "0":
+            picked = pr_lines_by_prefix(prs, branch_name_flow(row[0], ""))
+            if pr_close_newest(cmd.gh(), row[0], default, picked, at)[0] == 0:
+                continue
+        kept.append(row)
+    return kept
+
+
 def close_missed_tick(
     args: List[str],
     gh=None,
@@ -289,36 +323,14 @@ def close_missed_tick(
     env: Optional[Mapping[str, str]] = None,
     now: Callable[[], float] = time.time,
 ) -> None:
-    """Bridge for autopilot's tick, once per tick and only on a done table
-    that is not empty: `close_missed_tick <table>`, the done table
-    autopilot_done_read took, its `<issue> <running> <sync> <human>` lines
-    oldest issue first. The merged-PR backstop (#2478): reads the PRs merged
-    into the default branch since the first issue not carrying orch:running
-    was created - once, and not at all when every issue carries it - and
-    closes each issue not carrying it whose newest merged PR from
-    `orch/<issue>-` should have closed it; orch:sync and needs-human do not
-    stop it. Prints the table less every issue it closed: the whole table
-    when the read fails. A failed read or close warns and skips, never
-    failing the bridge. The real adapters, the process's environment and
-    clock unless a test hands in others."""
+    """Bridge for the bash autopilot's tick, once per tick and only on a
+    done table that is not empty: `close_missed_tick <table>`, the done
+    table autopilot_done_read took, its `<issue> <running> <sync> <human>`
+    lines oldest issue first. Prints close_missed_rows' rows, the table less
+    every issue it closed, never failing the bridge."""
     if len(args) != 1:
         die(TICK_USAGE)
-    rows = _done_rows(args[0])
-    kept = rows
-    bound = next((row[0] for row in rows if row[1] == "0"), None)
-    if bound is not None:
-        cmd = _Run(gh, Git() if git is None else git, os.environ if env is None else env)
-        read = pr_merged_closing_read(cmd, "no merged-PR close this tick", bound)
-        if read is not None:
-            default, prs = read
-            at = now()
-            kept = []
-            for row in rows:
-                if row[1] == "0":
-                    picked = pr_lines_by_prefix(prs, branch_name_flow(row[0], ""))
-                    if pr_close_newest(cmd.gh(), row[0], default, picked, at)[0] == 0:
-                        continue
-                kept.append(row)
+    kept = close_missed_rows(_done_rows(args[0]), gh, git, env, now)
     stdout_write("".join(" ".join(row) + "\n" for row in kept))
 
 

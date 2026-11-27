@@ -8,11 +8,13 @@ converted so far - `settings`, `show`, `active`, `rounds`, `budget`, `start`,
 `candidates`, `watch`, the question, reply and re-entry verbs `questions`,
 `reply`, `resume`, `ask`, `answer` and `reenter`, and the Sync request verbs
 `sync`, `sync-finish`, `sync-dropped` and `sync-fail`, over the Standing
-module's transitions, and `run`, the session wrapper a tick starts, with its
+module's transitions, `run`, the session wrapper a tick starts, with its
 session end, the pause files it reads and extends, and the review budget
-record - with the bash noun's stdout, exit codes and `orch:` messages, in a
-plain and an autopilot (ORCH_AUTOPILOT=1) session. A verb whose body is not
-yet here is refused (not_ported).
+record, and `tick` as far as its sync detection - the pause checks, the
+label check, the claims read and stale cleanup, the done read, the merged-PR
+close through the pr module in-process and the hourly housekeeping - with
+the bash noun's stdout, exit codes and `orch:` messages, in a plain and an
+autopilot (ORCH_AUTOPILOT=1) session.
 
 Beside the noun, the concept every Python noun reads: whether this is an
 autopilot session, the plan's `## Autopilot` block, as handoff_report checks
@@ -35,7 +37,7 @@ import shutil
 import signal
 import subprocess
 import time
-from typing import Callable, Dict, List, Mapping, NoReturn, Optional, Tuple
+from typing import Callable, Dict, List, Mapping, Optional, Tuple
 
 from orch.agent import autopilot_setting_check, default_plugin_root
 from orch.common import (ORCH_DIR_NAME, die, file_write_atomic, is_positive_int, plain_number,
@@ -339,12 +341,6 @@ def watch_every(args: List[str]) -> int:
     return int(every)
 
 
-def not_ported(op: str) -> NoReturn:
-    """The refusal of a verb whose body is not yet converted: the noun is
-    not routed through orch.sh until every verb is."""
-    die("autopilot %s is not converted to Python yet" % op)
-
-
 def dispatch(ap: Autopilot, op: str, args: List[str]) -> int:
     """Runs the verb <op> on <args>, its exit code; refuses an unknown op
     and arguments the verb does not take, as bash's cmd_autopilot does."""
@@ -358,10 +354,7 @@ def dispatch(ap: Autopilot, op: str, args: List[str]) -> int:
         return candidates_verb(ap, *candidates_args(args))
     else:
         die("unknown autopilot op: %s (want %s)" % (op or "<none>", OPS))
-    verb = VERBS.get(op)
-    if verb is None:
-        not_ported(op)
-    return verb(ap, *args)
+    return VERBS[op](ap, *args)
 
 
 def candidates_args(args: List[str]) -> Tuple[str, int, List[int]]:
@@ -994,6 +987,342 @@ def pause_extend(path: str, epoch: int, log: str, what: str = "") -> None:
         log_append(log, message + "\n")
 
 
+# --- tick -----------------------------------------------------------------------
+
+
+def pause_until(ap: Autopilot, main: str, kind: str = "") -> bool:
+    """bash autopilot_pause_until: whether a limit pauses pickup under the
+    main checkout <main> - the usage limit, with <kind> "github" the GitHub
+    API rate limit, or with a pool (core or graphql) its early GitHub pause.
+    While it holds, one line names its reset: the GitHub pauses on stderr,
+    which the watcher keeps so its log says why it is idle, the usage limit
+    on stdout. A passed pause's file is removed (pause_held)."""
+    if kind == "github":
+        path, what = github_pause_file(main), "GitHub API rate limit: the tick does nothing until"
+    elif kind:
+        path = github_early_file(main, kind)
+        what = "GitHub %s pool is below the github-reserve: no issue is picked up until" % kind
+    else:
+        path, what = usage_pause_file(main), "usage limit: no issue is picked up until"
+    shown = pause_held(path, ap.clock(), bool(kind))
+    if shown is None:
+        return False
+    if kind:
+        warn("%s %s" % (what, shown))
+    else:
+        stdout_write("%s %s\n" % (what, shown))
+    return True
+
+
+def github_early_file(main: str, pool: str) -> str:
+    """The early GitHub pause's file for <pool> (core or graphql) under
+    <main>: pickup paused, before any limit is hit, while the pool is below
+    the github-reserve (#2577)."""
+    return "%s/github-early-%s" % (autopilot_dir(main), pool)
+
+
+def github_early(ap: Autopilot, gh, main: str, reserve: int) -> None:
+    """The early GitHub pause, bash autopilot_github_early: reads the pools
+    and, for each with less than <reserve> (the github-reserve setting)
+    percent of its limit left, records its reset, capped at an hour from
+    now, in the pool's early file under <main> (kept if later). A reserve of
+    0 reads nothing; a failed or empty read pauses nothing."""
+    if reserve <= 0:
+        return
+    pools = pools_read(gh)
+    if pools is None:
+        return
+    now = ap.clock()
+    for line in pools.split("\n"):
+        fields = line.split(None, 3)
+        if len(fields) != 4 or fields[0] not in ("core", "graphql") \
+                or not all(plain_number(field) for field in fields[1:]):
+            continue
+        remaining, limit, reset = (int(field) for field in fields[1:])
+        if limit <= 0 or remaining * 100 >= reserve * limit or reset <= now:
+            continue
+        if not pause_put(github_early_file(main, fields[0]), github_reset_cap(reset, now)):
+            warn("could not write the early GitHub pause under " + main)
+
+
+def labels_ensure(gh) -> None:
+    """The labels a tick ensures exist with their colour and description,
+    bash autopilot_labels_ensure: reads the repo's labels once and upserts
+    only the standing labels missing or drifted in colour or description -
+    names and colours compared case-insensitively, descriptions exactly -
+    so with nothing drifted it writes nothing. A failed read or upsert dies,
+    stopping the tick."""
+    from orch.gh import GhFailed, gh_reason
+    from orch.standing import label_entries
+
+    try:
+        have = gh.labels_detail(1000)
+    except GhFailed as failed:
+        die("could not read the repo's labels: %s - the tick stops" % gh_reason(failed.stderr))
+    seen = {(name.lower(), colour.lower(), description) for name, colour, description in have}
+    for name, colour, description in label_entries():
+        if (name.lower(), colour.lower(), description) in seen:
+            continue
+        try:
+            gh.label_upsert(name, colour, description)
+        except GhFailed as failed:
+            die("could not upsert the label %s: %s - the tick stops"
+                % (name, gh_reason(failed.stderr)))
+
+
+def stop_contained(ap: Autopilot, issue: str, tail: str, kind: str, phase: str,
+                   detail: str) -> bool:
+    """The tick's one way to run a stop, bash autopilot_stop_contained: a
+    single standing_stop attempt, a death inside it ending the stop and not
+    the tick (the next tick is the retry). The stop's own failure line
+    reaches stderr; when it fails, warns "could not stop issue #<issue> -
+    its claim stays held; <tail>" and is False."""
+    from orch.common import subshell
+    from orch.standing import Chain, standing_stop
+
+    chain = Chain(ap.gh_of(), issue)
+    if subshell(lambda: standing_stop(chain, kind, phase, detail)) == 0:
+        return True
+    warn("could not stop issue #%s - its claim stays held; %s" % (issue, tail))
+    return False
+
+
+def backstop_line(log: str) -> str:
+    """The last line of the session log <log> a wrapper's stop chain wrote
+    when it gave up; "" when it holds none or cannot be read."""
+    text = read_raw(log) or ""
+    lines = [line for line in text.split("\n") if line.startswith(AUTOPILOT_BACKSTOP_PREFIX)]
+    return lines[-1] if lines else ""
+
+
+def cleanup_stale(ap: Autopilot, main: str, claims) -> int:
+    """Stale claims released, bash autopilot_cleanup_stale: every claim of
+    <claims> - the tick's one read - held by this host whose process is
+    gone (liveness's to name) is a failure stop, quoting its session log's
+    backstop line when it has one, and both of the issue's records go with
+    the claim. A stop that cannot land is contained: the claim and the
+    records stay held for a later tick, and a GitHub pause holding after it
+    ends the cleanup early. Other hosts' claims are never touched. The
+    number of claims it released."""
+    from orch import liveness
+    from orch.gh import claim_ref
+    from orch.standing import host_id
+
+    me = host_id(ap.env)
+    released = 0
+    for claim in claims:
+        if claim.host != me:
+            continue
+        alive, gone_pid = liveness.issue_alive(main, claim.issue, ap.env)
+        if alive:
+            continue
+        unknown = " - no exit code is known"
+        detail = ("the session's process (pid %s) is gone and the claim was never released%s"
+                  % (gone_pid or "unknown", unknown))
+        log = liveness.latest_log(main, claim.issue, claim.phase)
+        backstop = backstop_line(log) if log else ""
+        if backstop:
+            detail = '%s - the session log says: "%s"' % (
+                detail[:-len(unknown)], backstop[len("autopilot run: "):])
+        detail += "; log: " + log if log else "; no session log"
+        tail = ("the next tick tries again; if the issue is gone for good, delete the claim ref"
+                " by hand: git push origin :" + claim_ref(int(claim.issue)))
+        if stop_contained(ap, claim.issue, tail, "failure", claim.phase, detail):
+            liveness.issue_forget(main, claim.issue)
+            released += 1
+        elif github_paused(ap):
+            break
+    return released
+
+
+def done_read(gh) -> List[List[str]]:
+    """The tick's one read of the open orch:done issues, bash
+    autopilot_done_read: the done table from the listed rows, with no
+    per-issue read - `[<issue>, <running>, <sync>, <human>]` for each issue
+    whose row reads OPEN and still at orch:done, each flag "0" or "1". A
+    failed listing warns once and gives none; it does not stop the tick."""
+    from orch.gh import GhFailed, gh_reason
+    from orch.standing import phase_label, standing_of
+
+    label = phase_label("done")
+    try:
+        rows = gh.issues_labelled_rows(label)
+    except GhFailed as failed:
+        warn("could not list the issues labelled %s: %s - no merged-PR close or sync detection"
+             " this tick" % (label, gh_reason(failed.stderr)))
+        return []
+    table = []
+    for row in rows:
+        standing = standing_of(row.state, row.labels)
+        if standing.state != "OPEN" or not standing.is_done():
+            continue
+        table.append([str(row.number)] + [
+            "1" if flag else "0" for flag in (standing.running, standing.sync, standing.human)])
+    return table
+
+
+def close_missed(ap: Autopilot, gh, table: List[List[str]]) -> List[List[str]]:
+    """The merged-PR backstop (#2478), run every tick whatever the
+    auto-sync setting, from the done <table>: pr's close_missed_rows called
+    in-process, not at all for an empty table. The table less every issue
+    it closed. A failed close keeps just that issue, and a failed read - or
+    a death in the close - the whole table, after its warning: the tick
+    never stops on it."""
+    from orch.common import subshell
+    from orch.pr import close_missed_rows
+
+    kept = [table]
+    if table:
+        def close() -> None:
+            kept[0] = close_missed_rows(table, gh=gh, git=ap.git, env=ap.env, now=ap.clock)
+        subshell(close)
+    return kept[0]
+
+
+def sync_detect(gh, table: List[List[str]]) -> None:
+    """The sync request auto-detection, bash autopilot_sync_detect, from the
+    done <table> (it reads no issue itself). When the table is not empty,
+    reads the repo's open PRs once, fork PRs dropped, then files a sync
+    request on every issue in it carrying none of orch:sync, needs-human and
+    orch:running whose one open same-repository PR (head branch
+    `orch/<issue>-`) is CONFLICTING. An issue with no such PR is skipped
+    silently, one with several warned about; a failed read or write warns
+    and skips that issue only."""
+    from orch.branch import branch_name_flow
+    from orch.gh import GhFailed, Unparsed, gh_reason
+    from orch.pr import pr_lines_by_prefix
+    from orch.standing import STANDING_SYNC_LABEL, standing_sync_request
+    from orch.trust import trust_filter_prs
+
+    if not table:
+        return
+    prs: List[str] = []
+    reason = ""
+    try:
+        raw = gh.prs_open_mergeability()
+    except GhFailed as failed:
+        reason = gh_reason(failed.stderr)
+    else:
+        try:
+            prs = trust_filter_prs("the open PRs", raw)
+        except Unparsed:
+            reason = "the open PRs could not be read: a malformed line"
+    for issue, running, sync, human in table:
+        if (running, sync, human) != ("0", "0", "0"):
+            continue
+        if reason:
+            warn("could not read the PR of issue #%s: %s - sync detection skips it"
+                 % (issue, reason))
+            continue
+        prefix = branch_name_flow(issue, "")
+        lines = pr_lines_by_prefix(prs, prefix)
+        if not lines:
+            continue
+        if len(lines) > 1:
+            warn("issue #%s has %d open PRs from a branch starting %s - sync detection skips it"
+                 % (issue, len(lines), prefix))
+            continue
+        if (lines[0].split("\t") + ["", ""])[2] != "CONFLICTING":
+            continue
+        failed_why = standing_sync_request(gh, issue)
+        if failed_why:
+            warn("could not add %s to issue #%s: %s - sync detection skips it"
+                 % (STANDING_SYNC_LABEL, issue, failed_why))
+
+
+# How long a housekeeping run holds: the next runs once the stamp is older.
+HOUSEKEEPING_EVERY = 3600
+
+
+def housekeeping(ap: Autopilot, main: str) -> None:
+    """The tick's hourly housekeeping, bash autopilot_housekeeping. The
+    housekeeping stamp (<autopilot dir>/housekeeping, the epoch of the last
+    run) gates it: a missing stamp, one that does not parse as an epoch,
+    one dated in the future and one more than an hour old each run it. The
+    stamp is written first; when it cannot be, the step warns and is
+    skipped. The session logs are pruned, a failure warned and never
+    failing the step; then the finished sweep /orchestrator:finish runs, its
+    report on stderr, a failed sweep warned and never failing the step."""
+    import contextlib
+    import sys
+
+    from orch import liveness
+    from orch.common import subshell
+    from orch.side_checkout import side_checkout_prune
+
+    stamp = autopilot_dir(main) + "/housekeeping"
+    now = int(ap.clock())
+    text = read_text(stamp) or ""
+    if is_positive_int(text) and int(text) <= now and now - int(text) <= HOUSEKEEPING_EVERY:
+        return
+    try:
+        os.makedirs(os.path.dirname(stamp), exist_ok=True)
+        with open(stamp, "w") as f:
+            f.write("%d\n" % now)
+    except OSError:
+        warn("could not write the housekeeping stamp %s: housekeeping is skipped" % stamp)
+        return
+    liveness.logs_prune(main, ap.clock())
+    with contextlib.redirect_stdout(sys.stderr):
+        swept = subshell(lambda: side_checkout_prune([], ap.gh_of(), ap.git, ap.env, ap.root,
+                                                     clock=ap.clock))
+    if swept != 0:
+        warn("the finished sweep failed - carrying on")
+
+
+def tick_verb(ap: Autopilot) -> int:
+    """`autopilot tick`: one pass of the watcher, bash autopilot_tick, after
+    the gate, ORCH_AUTOPILOT_TICK=1 set for all it starts, run from the main
+    checkout. In order: the GitHub limit pause check (while it holds the
+    tick ends there, making no GitHub call, not even closing merged PRs),
+    the early-pause quota read, the labels, the one read of the claims on
+    origin and the stale claims released from it, one read of the done
+    issues, the merged-PR close (which needs no session, so the usage and
+    early pauses never hold it), the three limit-pause checks (usage, core,
+    graphql), the hourly housekeeping, and sync detection when auto-sync is
+    true, from the done table less the issues the close closed. The tick
+    ends after stale cleanup and after housekeeping that leave a GitHub
+    pause holding."""
+    from orch.checkout import main_checkout_or_die
+    from orch.standing import claims_read_or_die
+
+    gate(ap)
+    # Exported, as bash's, to every child; the gh adapter's limit handling
+    # reads it to record a GitHub limit the tick meets.
+    ap.env["ORCH_AUTOPILOT_TICK"] = "1"  # type: ignore[index]
+    # Read first, as bash reads them: a bad value dies before any GitHub
+    # call.
+    ap.setting("cap")
+    auto_sync, _ = ap.setting("auto-sync")
+    main = main_checkout_or_die(ap.git)
+    try:
+        os.chdir(main)
+    except OSError:
+        die("could not enter the main checkout " + main)
+    if pause_until(ap, main, "github"):
+        return 0
+    reserve = int(ap.setting("github-reserve")[0])
+    gh = ap.gh_of()
+    github_early(ap, gh, main, reserve)
+    labels_ensure(gh)
+    claims = claims_read_or_die(gh)
+    cleanup_stale(ap, main, claims)
+    if pause_until(ap, main, "github"):
+        return 0
+    table = close_missed(ap, gh, done_read(gh))
+    if pause_until(ap, main):
+        return 0
+    # A reserve of 0 turns the early pause off, a recorded one included.
+    if reserve > 0 and (pause_until(ap, main, "core") or pause_until(ap, main, "graphql")):
+        return 0
+    housekeeping(ap, main)
+    if pause_until(ap, main, "github"):
+        return 0
+    if auto_sync == "true":
+        sync_detect(gh, table)
+    return 0
+
+
 # --- run ------------------------------------------------------------------------
 
 # The tools a headless phase session gets: those the plugin's skills and
@@ -1360,8 +1689,8 @@ def run_session(ap: Autopilot, main: str, side: str, issue: str, recorded: str,
     return session_end(ap, main, issue, phase, log, rc, mine)
 
 
-# The verbs taking a fixed number of arguments that are converted, each
-# called with the run and its arguments.
+# The verbs taking a fixed number of arguments, each called with the run and
+# its arguments.
 VERBS: Mapping[str, Callable[..., int]] = {
     "settings": settings_verb,
     "show": show_verb,
@@ -1380,6 +1709,7 @@ VERBS: Mapping[str, Callable[..., int]] = {
     "answer": answer_verb,
     "reenter": reenter_verb,
     "run": run_verb,
+    "tick": tick_verb,
 }
 
 
