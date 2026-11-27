@@ -169,12 +169,9 @@ def cli_answer(capsys, argv):
                          ids=["env", "flow", "unknown-flag", "extra-argument"])
 def test_health_answers_every_argument_as_doctor_does(capsys, seed, tmp_path, monkeypatch, argv):
     healthy(seed)
-    repo = tmp_path / "repo"
-    git_repo(repo, ORIGIN)
-    hold_flow(repo, slug="x", phase="spec", issue=1)
-    monkeypatch.chdir(str(repo))
-    for name, value in (("ORCH_GH_FAKE_STORE", seed.store), ("HOME", str(tmp_path / HOME)),
-                        ("ORCH_RUNNING_BASH", RUNNING_BASH)):
+    flow(tmp_path, issue=1)
+    monkeypatch.setattr(doctor, "Git", lambda: checkout_git(tmp_path))
+    for name, value in doctor_env(tmp_path, ORCH_GH_FAKE_STORE=str(seed.store)).items():
         monkeypatch.setenv(name, value)
 
     doctor_said = cli_answer(capsys, ["doctor", *argv])

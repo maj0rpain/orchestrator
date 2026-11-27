@@ -97,10 +97,6 @@ def _not_finished(reason: str) -> Verdict:
     return Verdict(NOT_FINISHED, reason)
 
 
-def _unread(reason: str) -> Verdict:
-    return Verdict(UNREAD, reason)
-
-
 def finished_flow(gh, state_file: str, default: Callable[[], str]
                   ) -> Tuple[Verdict, str, List[str]]:
     """Whether the flow at <state_file> is finished - bash finished_flow: at
@@ -111,7 +107,7 @@ def finished_flow(gh, state_file: str, default: Callable[[], str]
     against."""
     state = flow_state_get_many(state_file, ("phase", "slug", "branch", "pr", "base"))
     if state is None:
-        return _unread("could not read " + state_file), "", []
+        return Verdict(UNREAD, "could not read " + state_file), "", []
     branch, pr = state["branch"], state["pr"]
     if state["phase"] != "done":
         reason = "flow %s is at %s, not done" % (state["slug"], state["phase"])
@@ -127,7 +123,7 @@ def finished_flow(gh, state_file: str, default: Callable[[], str]
             return _not_finished("PR #%s is %s" % (pr, state_word(pr_state))), branch, []
         head, _, merged_base = gh.pr_refs(recorded_pr(pr))
     except GhFailed as failed:
-        return _unread("could not read GitHub: " + gh_reason(failed.stderr)), branch, []
+        return Verdict(UNREAD, "could not read GitHub: " + gh_reason(failed.stderr)), branch, []
     if merged_base != base:
         return _not_finished("PR #%s merged into %s, not %s" % (pr, merged_base, base)), branch, []
     return Verdict(FINISHED, ""), branch, ["%s\t%s" % (pr, head)]
@@ -143,7 +139,7 @@ def tip_covered(git, branch: str, prs: List[str]) -> Verdict:
     that is present."""
     tip = git.resolve_commit("refs/heads/" + branch)
     if tip is None:
-        return _unread("could not read the tip of " + branch)
+        return Verdict(UNREAD, "could not read the tip of " + branch)
     first = missing = None
     for line in prs:
         n, _, head = line.partition("\t")
@@ -159,7 +155,8 @@ def tip_covered(git, branch: str, prs: List[str]) -> Verdict:
         if covered:
             return Verdict(FINISHED, "")
         if covered is None:
-            return _unread("could not compare %s with PR #%s's head %s" % (branch, n, head[:7]))
+            return Verdict(UNREAD, "could not compare %s with PR #%s's head %s"
+                           % (branch, n, head[:7]))
     if missing is not None:
         return _not_finished("%s: PR #%s's head %s is not in this repo - fetch it to let the sweep"
                              " judge" % (branch, missing[0], missing[1][:7]))
@@ -180,7 +177,7 @@ def side_checkout_finished(gh, git, path: str, default: Callable[[], str]) -> Ve
     be read."""
     status, why = tree_status(git, path)
     if status is None:
-        return _unread(why)
+        return Verdict(UNREAD, why)
     if status:
         return _not_finished("uncommitted changes or untracked files")
     if checkout_has_flow(path):
@@ -193,11 +190,12 @@ def side_checkout_finished(gh, git, path: str, default: Callable[[], str]) -> Ve
     try:
         raw = gh.prs_merged(branch, base)
     except GhFailed as failed:
-        return _unread("could not read GitHub: " + gh_reason(failed.stderr))
+        return Verdict(UNREAD, "could not read GitHub: " + gh_reason(failed.stderr))
     try:
         prs = trust_filter_prs(branch, raw)
     except Unparsed:
-        return _unread("could not read GitHub: the merged PRs from %s into %s" % (branch, base))
+        return Verdict(UNREAD, "could not read GitHub: the merged PRs from %s into %s"
+                       % (branch, base))
     if not prs:
         return _not_finished("no merged PR from %s into %s" % (branch, base))
     return tip_covered(git, branch, prs)

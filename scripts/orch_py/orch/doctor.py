@@ -80,8 +80,8 @@ UNREACHABLE_WORDS = ("dial tcp", "lookup ", "connection refused", "network is un
 RUNNING_BASH = "ORCH_RUNNING_BASH"
 BASH_VERSION_PROBE = 'printf "%s\\n" "${BASH_VERSION%%(*}"'
 PACKAGE_REMEDY = "brew install %s    # or your platform's package manager"
-# The plugin root doctor reports from, two directories above this package, as
-# orch.sh's ORCH_PLUGIN names it: the path the package was loaded by, not
+# The plugin root doctor reports from, three directories above this package,
+# as orch.sh's ORCH_PLUGIN names it: the path the package was loaded by, not
 # resolved through a link.
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__)))))
@@ -356,30 +356,28 @@ def entries_at(registry: Sequence[Entry], phase: str) -> List[Entry]:
 # --- tools ----------------------------------------------------------------------
 
 
-def check_git(d: Doctor) -> None:
-    if d.installed("git"):
-        d.ok("git present")
+def tool_check(d: Doctor, tool: str, missing: str) -> None:
+    """The check of one required tool: the ok line "<tool> present" when
+    <tool> is on PATH, else the FAIL line <missing> and the package remedy."""
+    if d.installed(tool):
+        d.ok("%s present" % tool)
         return
-    d.fail("git not found.")
-    d.remedy(PACKAGE_REMEDY % "git")
+    d.fail(missing)
+    d.remedy(PACKAGE_REMEDY % tool)
+
+
+def check_git(d: Doctor) -> None:
+    tool_check(d, "git", "git not found.")
 
 
 def check_gh(d: Doctor) -> None:
-    if d.installed("gh"):
-        d.ok("gh present")
-        return
-    d.fail("gh not found - the spec phase publishes the issue and the PR through it.")
-    d.remedy(PACKAGE_REMEDY % "gh")
+    tool_check(d, "gh", "gh not found - the spec phase publishes the issue and the PR through it.")
 
 
 def check_jq(d: Doctor) -> None:
     """The flow state the bash nouns read and write needs jq, which makes
     "jq is missing" the one message that has to survive without it."""
-    if d.jq:
-        d.ok("jq present")
-        return
-    d.fail("jq not found - orch.sh reads and writes state.json with it.")
-    d.remedy(PACKAGE_REMEDY % "jq")
+    tool_check(d, "jq", "jq not found - orch.sh reads and writes state.json with it.")
 
 
 def check_python3(d: Doctor) -> None:
@@ -506,11 +504,6 @@ HOST_REMEDY = "export ORCHESTRATOR_HOST=claude    # or junie, antigravity"
 CAPABILITY_HEADER = re.compile(r"\| *Capability *\|")
 
 
-def _cell(text: str) -> str:
-    """A table cell less the spaces padding it, as the bash read trims it."""
-    return text.strip(" ")
-
-
 def host_marked(plugin: str, host: str, mark: str) -> List[str]:
     """The capabilities whose cell in <host>'s column of the plugin's
     capabilities reference carries **<mark>** (Fallback or Unverified), read
@@ -525,12 +518,12 @@ def host_marked(plugin: str, host: str, mark: str) -> List[str]:
         fields = line.split("|")
         if CAPABILITY_HEADER.match(line):
             for i in range(1, len(fields) - 1):
-                if _cell(fields[i]) == host:
+                if fields[i].strip(" ") == host:
                     column = i
             continue
         if column and line.startswith("|") and column < len(fields) \
                 and "**%s**" % mark in fields[column]:
-            marked.append(_cell(fields[1]))
+            marked.append(fields[1].strip(" "))
     return marked
 
 

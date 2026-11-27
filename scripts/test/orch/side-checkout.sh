@@ -1518,8 +1518,8 @@ restore_suite_env
 # --- side checkout marker issue: reading without re-classifying (#3073) -------
 # side_checkout_marker_issue_into reads the issue a marker records for a path
 # the caller holds as a side checkout, starting nothing; the loops over the walk
-# (side_checkout_for_issue, side-checkout list, doctor) cost no more per side
-# checkout than their own content needs.
+# (side_checkout_for_issue, side-checkout list) cost no more per side checkout
+# than their own content needs.
 echo
 echo "side_checkout_marker_issue_into"
 healthy_repo
