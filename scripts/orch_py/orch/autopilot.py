@@ -6,12 +6,13 @@ error dies through orch.common.die. It dispatches every verb, refusing an
 unknown op and each verb's arguments with bash's messages, and runs those
 converted so far - `settings`, `show`, `active`, `rounds`, `budget`, `start`,
 `candidates`, `watch`, the question, reply and re-entry verbs `questions`,
-`reply`, `resume`, `ask`, `answer` and `reenter`, over the Standing module's
-transitions, and `run`, the session wrapper a tick starts, with its session
-end, the pause files it reads and extends, and the review budget record -
-with the bash noun's stdout, exit codes and `orch:` messages, in a plain and
-an autopilot (ORCH_AUTOPILOT=1) session. A verb whose body is not yet here is
-refused (not_ported).
+`reply`, `resume`, `ask`, `answer` and `reenter`, and the Sync request verbs
+`sync`, `sync-finish`, `sync-dropped` and `sync-fail`, over the Standing
+module's transitions, and `run`, the session wrapper a tick starts, with its
+session end, the pause files it reads and extends, and the review budget
+record - with the bash noun's stdout, exit codes and `orch:` messages, in a
+plain and an autopilot (ORCH_AUTOPILOT=1) session. A verb whose body is not
+yet here is refused (not_ported).
 
 Beside the noun, the concept every Python noun reads: whether this is an
 autopilot session, the plan's `## Autopilot` block, as handoff_report checks
@@ -685,6 +686,76 @@ def reply_verb(ap: Autopilot, issue: str, path: str) -> int:
     return 0
 
 
+def sync_verb(ap: Autopilot, issue: str) -> int:
+    """`autopilot sync <issue>`: a Sync request filed on an open orch:done
+    issue, through the Standing sync request transition - refused, with an
+    `orch: ` message, for an issue that is closed, not at orch:done or
+    already carrying orch:sync. It reads the issue's labels alone: no side
+    checkout, as bash's autopilot_sync reads none."""
+    from orch.gh import gh_die
+    from orch.standing import (STANDING_SYNC_LABEL, phase_label, standing_read,
+                               standing_sync_request)
+
+    if not is_positive_int(issue):
+        die("not an issue number: " + issue)
+    gh = ap.gh_of()
+    standing, reason = standing_read(gh, int(issue))
+    if standing is None:
+        gh_die("read issue #" + issue, reason)
+    if standing.state != "OPEN":
+        die("issue #%s is closed" % issue)
+    if not standing.is_done():
+        die("issue #%s is not at %s - a sync request needs a done flow"
+            % (issue, phase_label("done")))
+    if standing.sync:
+        die("issue #%s already carries %s" % (issue, STANDING_SYNC_LABEL))
+    reason = standing_sync_request(gh, issue)
+    if reason:
+        gh_die("add %s to issue #%s" % (STANDING_SYNC_LABEL, issue), reason)
+    return 0
+
+
+# The three ends of a sync session, each a Standing transition the orch-sync
+# skill's autopilot branch calls, on the issue flow state records.
+
+
+def sync_finish_verb(ap: Autopilot) -> int:
+    """`autopilot sync-finish`: orch:sync removed, the claim released."""
+    from orch.standing import Chain, standing_sync_finish
+
+    standing_sync_finish(Chain(ap.gh_of(), flow_issue(ap)))
+    return 0
+
+
+def sync_dropped_verb(ap: Autopilot, path: str) -> int:
+    """`autopilot sync-dropped <file>`: the dropped-intent stop, <file>
+    listing the intents the resolver dropped. The auto-sync setting picks
+    the comment's what-happens-next wording; the merge is pushed, so a bad
+    value never kills the stop: its refusal is the warning, and the stop
+    takes false."""
+    from orch.standing import Chain, standing_sync_dropped
+
+    text = file_text("dropped-intents", path)
+    issue = flow_issue(ap)
+    try:
+        auto_sync = ap.setting("auto-sync")[0] == "true"
+    except SystemExit:
+        auto_sync = False
+    standing_sync_dropped(Chain(ap.gh_of(), issue), text, auto_sync)
+    return 0
+
+
+def sync_fail_verb(ap: Autopilot, reason: str) -> int:
+    """`autopilot sync-fail <reason>`: the failure stop of the sync,
+    orch:sync kept."""
+    from orch.standing import STANDING_SYNC_PHASE, Chain, standing_stop
+
+    if not reason:
+        die("a sync failure needs a reason")
+    standing_stop(Chain(ap.gh_of(), flow_issue(ap)), "failure", STANDING_SYNC_PHASE, reason)
+    return 0
+
+
 def questions_verb(ap: Autopilot) -> int:
     """`autopilot questions`: one tab-separated line per open needs-human
     issue carrying a phase label other than orch:done, or sitting at
@@ -1301,6 +1372,10 @@ VERBS: Mapping[str, Callable[..., int]] = {
     "questions": questions_verb,
     "reply": reply_verb,
     "resume": resume_verb,
+    "sync": sync_verb,
+    "sync-finish": sync_finish_verb,
+    "sync-dropped": sync_dropped_verb,
+    "sync-fail": sync_fail_verb,
     "ask": ask_verb,
     "answer": answer_verb,
     "reenter": reenter_verb,
