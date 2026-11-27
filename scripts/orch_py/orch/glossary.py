@@ -192,12 +192,20 @@ def _entries_or_die(path: str) -> List[Entry]:
     return entries
 
 
+def terms(glossary: str) -> List[str]:
+    """The terms `orch.sh glossary terms` prints for the glossary file at
+    <glossary>, in order: none where there is no such file; dies, exit 2,
+    with NO_ENTRIES where it gives no entries. Doctor's glossary check calls
+    it in-process."""
+    if not os.path.isfile(glossary):
+        return []
+    return [entry.term for entry in _entries_or_die(glossary)]
+
+
 def _terms(args: List[str], glossary: str) -> int:
     if args:
         die("usage: orch.sh glossary terms", 2)
-    if not os.path.isfile(glossary):
-        return 0
-    stdout_write("".join(entry.term + "\n" for entry in _entries_or_die(glossary)))
+    stdout_write("".join(term + "\n" for term in terms(glossary)))
     return 0
 
 

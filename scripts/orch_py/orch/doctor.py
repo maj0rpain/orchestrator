@@ -25,17 +25,23 @@ returns the exit code, and a usage error dies through orch.common.die, exit
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
 from typing import Callable, List, Mapping, NamedTuple, Optional, Union
 
-from orch.base import default_branch_local
-from orch.common import die, stdout_write
-from orch.gh import GhFailed, adapter_of, gh_reason
+from orch import glossary
+from orch.base import base_setting, default_branch_local
+from orch.common import (EXCLUDED_DIRS, capture, die, err_line, exclude_missing, fenced,
+                         file_lines, list_join, stdout_write, trim)
+from orch.gh import GhFailed, adapter_of, gh_reason, label_listed
 from orch.git import Git
+from orch.host import host_detect
 from orch.repo import REPO_CAUSE, REPO_MISSING, RepoPin, owner_name
+from orch.review import standards_resolve_source
 from orch.root import checkout_root
+from orch.triage_labels import LABELS_DOC, expected_labels
 
 USAGE = "usage: orch.sh doctor [--env|--flow]"
 SCOPES = {"": "both", "--env": "env", "--flow": "flow"}
@@ -53,20 +59,29 @@ UNREACHABLE_WORDS = ("dial tcp", "lookup ", "connection refused", "network is un
 RUNNING_BASH = "ORCH_RUNNING_BASH"
 BASH_VERSION_PROBE = 'printf "%s\\n" "${BASH_VERSION%%(*}"'
 PACKAGE_REMEDY = "brew install %s    # or your platform's package manager"
+# The plugin root doctor reports from, two directories above this package, as
+# orch.sh's ORCH_PLUGIN names it: the path the package was loaded by, not
+# resolved through a link.
+PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__)))))
+SETUP_REMEDY = "see docs/repo-setup.md under the plugin root"
 
 
 class Doctor:
     """One run's reporter, its counters, and the probe's answers. <env> is
     the environment the tools are looked for on (its PATH); <git> the
     checkout at <root>; <pin> the repo pin; <gh_of> the gh adapter, made at
-    first use."""
+    first use; <plugin> the plugin root the run reports from."""
 
     def __init__(self, env: Mapping[str, str], git, root: str, pin: RepoPin,
-                 gh_of: Callable[[], object]) -> None:
+                 gh_of: Callable[[], object], plugin: str = PLUGIN_ROOT) -> None:
         self.env = env
         self.git = git
         self.root = root
         self.pin = pin
+        self.plugin = plugin
+        # The host check_host detected; "" for none, or one it does not know.
+        self.host = ""
         self._gh_of = gh_of
         self._gh_adapter = None
         self.oks = self.warns = self.fails = self.groups = 0
@@ -370,12 +385,509 @@ def check_default_branch(d: Doctor) -> None:
     d.remedy("git remote set-head origin --auto")
 
 
+# --- plugin environment ---------------------------------------------------------
+
+HOST_REF = "docs/host-capabilities.md"
+# Each host's column header in the capabilities reference.
+HOST_NAMES = {"claude": "Claude Code", "junie": "Junie CLI", "antigravity": "Antigravity CLI"}
+HOST_REMEDY = "export ORCHESTRATOR_HOST=claude    # or junie, antigravity"
+CAPABILITY_HEADER = re.compile(r"\| *Capability *\|")
+
+
+def _cell(text: str) -> str:
+    """A table cell less the spaces padding it, as the bash read trims it."""
+    return text.strip(" ")
+
+
+def host_marked(plugin: str, host: str, mark: str) -> List[str]:
+    """The capabilities whose cell in <host>'s column of the plugin's
+    capabilities reference carries **<mark>** (Fallback or Unverified), read
+    from the reference itself rather than restated here, so doctor and the
+    table can never disagree; none without the reference."""
+    path = os.path.join(plugin, HOST_REF)
+    if not os.path.isfile(path):
+        return []
+    marked = []
+    column = 0
+    for line in file_lines(path):
+        fields = line.split("|")
+        if CAPABILITY_HEADER.match(line):
+            for i in range(1, len(fields) - 1):
+                if _cell(fields[i]) == host:
+                    column = i
+            continue
+        if column and line.startswith("|") and column < len(fields) \
+                and "**%s**" % mark in fields[column]:
+            marked.append(_cell(fields[1]))
+    return marked
+
+
+def check_host(d: Doctor) -> None:
+    """Reduced enforcement has to be visible: which host doctor believes it
+    runs under, and what that host cannot do, in the reference's words. Not
+    a failure: the flow runs on every host, with the documented fallbacks.
+    An unverified cell is reported apart, so doctor never states it as a
+    gap."""
+    detected = host_detect(d.env)
+    if not detected:
+        d.warn("host not detected - which capabilities are missing is unknown.")
+        d.remedy(HOST_REMEDY)
+        return
+    name = HOST_NAMES.get(detected)
+    if name is None:
+        d.warn("ORCHESTRATOR_HOST=%s names no supported host." % detected)
+        d.remedy(HOST_REMEDY)
+        return
+    d.host = detected
+    lacks = host_marked(d.plugin, name, "Fallback")
+    unverified = host_marked(d.plugin, name, "Unverified")
+    if not lacks + unverified:
+        d.ok("host: " + name)
+        return
+    detail = []
+    if lacks:
+        detail.append("lacks: " + list_join(lacks))
+    if unverified:
+        detail.append("unverified: " + list_join(unverified))
+    d.warn("host: %s %s - fallbacks in %s" % (name, "; ".join(detail), HOST_REF))
+
+
+# What an unset CLAUDE_PLUGIN_ROOT means on each host: no remedy on any,
+# because nothing is broken - every skill falls back to the orch.sh two
+# directories above its own.
+PLUGIN_ROOT_UNSET = {
+    "junie": "CLAUDE_PLUGIN_ROOT unset - Junie expands it only in hooks; skills use the"
+             " relative path.",
+    "antigravity": "CLAUDE_PLUGIN_ROOT unset - Antigravity sets PLUGIN_ROOT only in hooks;"
+                   " skills use the relative path.",
+    "": "CLAUDE_PLUGIN_ROOT unset - only Claude Code sets it; skills use the relative path.",
+}
+
+
+def check_plugin_root(d: Doctor) -> None:
+    """Only Claude Code sets CLAUDE_PLUGIN_ROOT, so whether its absence means
+    anything depends on the host check, which runs first."""
+    if d.env.get("CLAUDE_PLUGIN_ROOT", ""):
+        d.ok("CLAUDE_PLUGIN_ROOT set")
+    elif d.host == "claude":
+        d.warn("CLAUDE_PLUGIN_ROOT is not set under Claude Code - orch.sh was run by hand, not"
+               " through a plugin command.")
+    else:
+        d.ok(PLUGIN_ROOT_UNSET.get(d.host, PLUGIN_ROOT_UNSET[""]))
+
+
+# The user-level skill stores scanned whatever the host: the one the skills
+# CLI installs into, Claude Code's own, and Antigravity CLI's own. Junie's own
+# store is not yet verified, so it is not scanned.
+SKILL_STORES = (".agents/skills", ".claude/skills", ".gemini/config/skills")
+
+
+def tilde(path: str, home: str) -> str:
+    """<path> with a leading <home> written as ~."""
+    return "~" + path[len(home):] if home and path.startswith(home) else path
+
+
+def skills_only_copies(store: str, seen: List[str]) -> List[str]:
+    """The orch-* skill folders in <store> with no orch.sh two directories
+    above them - `..` after a linked folder resolving beside the real one -
+    in name order, each real folder named once across the stores <seen>
+    holds."""
+    try:
+        names = sorted(os.listdir(store))
+    except OSError:
+        return []
+    found = []
+    for name in names:
+        folder = os.path.join(store, name)
+        if not name.startswith("orch-") or not os.path.isdir(folder):
+            continue
+        if not os.path.isfile(os.path.join(folder, "SKILL.md")):
+            continue
+        if os.path.isfile(os.path.join(folder, "..", "..", "scripts", "orch.sh")):
+            continue
+        # The skills CLI links ~/.claude/skills/<skill> into ~/.agents/skills,
+        # so one copy can be reached from both stores: report it once.
+        real = os.path.realpath(folder)
+        if real in seen:
+            continue
+        seen.append(real)
+        found.append(name)
+    return found
+
+
+def check_orch_sh(d: Doctor) -> None:
+    """A skills-only install copies the skills without scripts/, so the
+    orch.sh every skill resolves two directories above it is not there.
+    Doctor runs from an orch.sh, so it can only see such a copy in a
+    user-level skill store beside the full install: a warn per store, not a
+    FAIL, since which host picks up the copy is not something doctor can
+    see."""
+    home = d.env.get("HOME", "")
+    seen: List[str] = []
+    found = False
+    for store in SKILL_STORES:
+        path = home + "/" + store
+        names = skills_only_copies(path, seen)
+        if not names:
+            continue
+        d.warn("orch.sh missing beside the orchestrator skills in %s: %s - a skills-only install."
+               % (tilde(path, home), list_join(names)))
+        found = True
+    if not found:
+        d.ok("orch.sh: %s/scripts/orch.sh" % tilde(d.plugin, home))
+        return
+    d.remedy(*ORCH_INSTALLS.get(d.host, ORCH_INSTALLS[""]))
+
+
+# The install remedy of a skills-only copy, naming only the detected host's
+# install method - every method with no host detected.
+_CLAUDE_INSTALL = ("Claude Code: /plugin marketplace add maj0rpain/orchestrator",
+                   "             /plugin install orchestrator@orchestrator")
+_JUNIE_INSTALL = ("Junie:       install maj0rpain/orchestrator as a Junie extension"
+                  " (unverified)",)
+_AGY_INSTALL = ("Antigravity: agy plugin install <path-to-orchestrator-clone>",)
+_AFTER_INSTALL = ("then remove the skills-only copy named above.",)
+ORCH_INSTALLS = {
+    "claude": _CLAUDE_INSTALL + _AFTER_INSTALL,
+    "junie": _JUNIE_INSTALL + _AFTER_INSTALL,
+    "antigravity": _AGY_INSTALL + _AFTER_INSTALL,
+    "": _CLAUDE_INSTALL + _JUNIE_INSTALL + _AGY_INSTALL + _AFTER_INSTALL,
+}
+
+
+# --- repo config ----------------------------------------------------------------
+
+
+def check_labels_doc(d: Doctor) -> None:
+    """Absent is fine: the canonical names apply. Present but unreadable is a
+    FAIL, because a doc that exists was meant to say something."""
+    if not os.path.isfile(os.path.join(d.root, LABELS_DOC)):
+        d.ok("no %s - the canonical triage label names apply" % LABELS_DOC)
+        return
+    n = len(expected_labels(d.root))
+    if n:
+        d.ok("%d triage labels documented in %s" % (n, LABELS_DOC))
+        return
+    d.fail("%s lists no triage labels - the spec phase labels its issue from it." % LABELS_DOC)
+    d.remedy("fix %s's table, or delete it to use the canonical names" % LABELS_DOC)
+
+
+# The most labels the labels-exist check asks gh to list.
+LABEL_LIMIT = 1000
+
+
+def check_labels_exist(d: Doctor) -> None:
+    """The spec phase applies a label at `gh issue create`, so a label the
+    repo does not have kills the phase after the whole exchange has been
+    spent. A label is matched in any casing, as GitHub attaches one."""
+    if not d.gh_gate():
+        return
+    want = expected_labels(d.root)
+    # Nothing to compare against, and check_labels_doc has said so: one
+    # problem earns one FAIL, never a second derived from the first.
+    if not want:
+        return
+    try:
+        have = d.gh.labels(LABEL_LIMIT)
+    except GhFailed as failed:
+        # GitHub answered the auth probe and then would not answer this: an
+        # absent answer rather than a "no".
+        d.warn("the repo's labels could not be listed: " + gh_reason(failed.stderr))
+        return
+    missing = [label for label in want if not label_listed(have, label)]
+    if not missing:
+        d.ok("every triage label exists on the repo")
+        return
+    # Found every one is definitive whatever the page held, so the cut-off
+    # caveat only ever qualifies a negative.
+    if len(have) >= LABEL_LIMIT:
+        d.warn("the repo has more than %d labels - cannot confirm: %s"
+               % (LABEL_LIMIT, list_join(missing)))
+        return
+    d.fail("triage labels missing from the repo: " + list_join(missing))
+    # Quoted, because a label that needs quoting is exactly the one pasted
+    # wrong.
+    d.remedy(*('gh label create "%s"' % label for label in missing))
+
+
+STANDARDS_CRAWL_TAIL = (" - or delete the paragraph to have the reviewers crawl the standards"
+                        " documents")
+
+
+def check_standards_declaration(d: Doctor) -> None:
+    """The Standards resolution both reviewers' prompts are built from, read
+    in-process from the review module and reported - never parsed a second
+    time: `declared <file>` or `crawled`, then the list. A declaration it
+    rejects is a FAIL carrying the resolution's own message, its remedy
+    naming the entry it stopped at."""
+    lines: List[str] = []
+    _, err, code = capture(lambda: standards_resolve_source(d.root, lines.append))
+    first, listed = (lines[0], lines[1:]) if lines else ("", [])
+    declared = first[len("declared "):] if first.startswith("declared ") else ""
+    if code:
+        d.fail(err_line(err))
+        if not declared:
+            return
+        if listed:
+            d.remedy("change the entry `%s` in the Standards: paragraph of %s to a repo-relative"
+                     " path of a file in the repo, with at most one #Heading that matches once"
+                     % (listed[-1], declared) + STANDARDS_CRAWL_TAIL, SETUP_REMEDY)
+        else:
+            d.remedy("list backticked repo-relative paths in the Standards: paragraph of %s"
+                     % declared + STANDARDS_CRAWL_TAIL, SETUP_REMEDY)
+        return
+    if declared:
+        d.ok("Standards declared in %s: %s" % (declared, list_join(listed)))
+    elif listed:
+        d.ok("no Standards: declaration - the list is crawled: " + list_join(listed))
+    else:
+        d.ok("no Standards: declaration and nothing to crawl - the reviewers apply the smell"
+             " baseline alone")
+
+
+def check_glossary(d: Doctor) -> None:
+    """The root GLOSSARY.md, read in-process through the glossary module's
+    own parse: absent is ok; one that parses is ok with its entry count; one
+    that gives no entries is a FAIL carrying the message `orch.sh glossary
+    terms` dies with. No heuristic for a near miss."""
+    path = os.path.join(d.root, "GLOSSARY.md")
+    if not os.path.isfile(path):
+        d.ok("no GLOSSARY.md - no glossary is read, so the Consistency lens reads none and the"
+             " reviewers' glossary parse check does not run")
+        return
+    terms, err, code = capture(lambda: glossary.terms(path))
+    if not code:
+        d.ok("%d glossary entries read from GLOSSARY.md" % len(terms))
+        return
+    d.fail(err_line(err))
+    d.remedy('write each entry as a **Term**: line, e.g. "**Doctor**: the diagnostic command."'
+             ' (optionally after a "- " bullet)', SETUP_REMEDY)
+
+
+def check_adr_dir(d: Doctor) -> None:
+    """Absent is fine: no ADRs are read. A docs/adr that exists and is no
+    directory is a FAIL, since the skills and the spec review's lenses read
+    it as one. The count is the Markdown files directly in it."""
+    adr = os.path.join(d.root, "docs", "adr")
+    if not os.path.lexists(adr):
+        d.ok("no docs/adr - no ADRs are read")
+        return
+    if not os.path.isdir(adr):
+        d.fail("docs/adr exists and is no directory - the skills and the spec review read ADRs"
+               " from it.")
+        d.remedy("remove docs/adr and create it as a directory of Markdown files, or delete it"
+                 " to have no ADRs read", SETUP_REMEDY)
+        return
+    n = sum(1 for name in os.listdir(adr) if name.endswith(".md") and not name.startswith(".")
+            and os.path.isfile(os.path.join(adr, name)))
+    d.ok("docs/adr holds %d ADRs" % n)
+
+
+def check_sub_issues(d: Doctor) -> None:
+    """Sub-issues have no setting of their own, so the endpoint is asked
+    against an issue that exists. A warn, never a FAIL: the real gate is
+    breakdown publish's sub-issue listing read (ticket_link), and a probe
+    that fails outright is neither answer, saying so in gh's first line."""
+    if not d.gh_gate():
+        return
+    try:
+        supported = d.gh.sub_issues_supported()
+    except GhFailed as failed:
+        d.warn("sub-issues support could not be probed: " + gh_reason(failed.stderr))
+        return
+    if supported is None:
+        d.warn("sub-issues support could not be probed - the repo has no issue to test it"
+               " against.")
+    elif supported:
+        d.ok("sub-issues supported")
+    else:
+        d.warn("sub-issues do not appear to be supported on this GitHub instance - breakdown"
+               " publish will fail at its sub-issue listing read (ticket_link) at spec time.")
+
+
+def check_git_exclude(d: Doctor) -> None:
+    """A warn, not a FAIL: init writes these lines, so a missing one only
+    bites someone who arrived mid-flow. One warning for every missing line,
+    and a remedy appending only those - its leading echo ending an
+    unterminated last line, so it never glues onto the user's pattern."""
+    missing = exclude_missing(EXCLUDED_DIRS, d.git)
+    if not missing:
+        d.ok(list_join(EXCLUDED_DIRS) + " git-excluded")
+        return
+    d.warn(list_join(missing) + " not git-excluded - flow state and planning drafts would show as"
+           " untracked.")
+    d.remedy("{ echo; printf '%%s\\n' %s; }>>\"$(git rev-parse --git-common-dir)/info/exclude\""
+             % "".join("'%s' " % line for line in missing))
+
+
+def check_base_branch(d: Doctor) -> None:
+    """The base branch every new flow forks from and targets. A setting whose
+    branch has gone from origin would send the next fork at nothing, so it
+    FAILs; origin unreachable only means it could not be checked. The
+    default reuses the branch GitHub answered in the probe, else the local
+    fallback, with no second ask."""
+    branch = base_setting(d.git)
+    if not branch:
+        d.ok("base branch: %s (default)" % (d.repo_branch or default_branch_local(d.git).name))
+        return
+    on_origin = d.git.origin_has_branch(branch)
+    if on_origin:
+        d.ok("base branch: %s (set)" % branch)
+    elif on_origin is False:
+        d.fail("base branch %s is set but no longer exists on origin - new flows would fork from"
+               " nothing." % branch)
+        d.remedy("orch.sh base clear", "orch.sh base set <branch>")
+    else:
+        d.warn("base branch %s (set) could not be verified - origin is not reachable." % branch)
+
+
+# The verification labels, in the order doctor reports them, and the files
+# they are read from, in the order the agents read them (ADR-0058).
+VERIFICATION_LABELS = ("Ticket verification", "Full verification", "Branch verification")
+VERIFICATION_FILES = ("CLAUDE.md", "AGENTS.md", "CONTRIBUTING.md")
+# The words bash itself answers, a builtin or a keyword, which count as found
+# though no file is: bash 5's `compgen -b` and `compgen -k`.
+BASH_WORDS = frozenset("""
+. : [ alias bg bind break builtin caller cd command compgen complete compopt continue declare
+dirs disown echo enable eval exec exit export false fc fg getopts hash help history jobs kill
+let local logout mapfile popd printf pushd pwd read readarray readonly return set shift shopt
+source suspend test times trap true type typeset ulimit umask unalias unset wait
+if then else elif fi case esac for select while until do done in function time { } ! [[ ]]
+coproc
+""".split())
+ASSIGNMENT_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+# bash's default IFS, which splits a command into its words.
+IFS_WORDS = re.compile(r"[ \t\n]+")
+
+
+class VerificationLine(NamedTuple):
+    label: str
+    file: str
+    command: str
+
+
+def verification_lines(root: str) -> List[VerificationLine]:
+    """Every verification line of the repo's instructions at <root>: a line
+    outside a fenced code block opening with a label and its colon, its
+    command trimmed, "" for a label with no command. Doctor never judges
+    whether a command runs, only that each label is named once, with one."""
+    found = []
+    for name in VERIFICATION_FILES:
+        path = os.path.join(root, name)
+        if not os.path.isfile(path):
+            continue
+        lines = file_lines(path)
+        for line, state in zip(lines, fenced(lines)):
+            if state:
+                continue
+            label = next((label for label in VERIFICATION_LABELS
+                          if line.startswith(label + ":")), None)
+            if label is not None:
+                found.append(VerificationLine(label, name, trim(line[len(label) + 1:])))
+    return found
+
+
+def verification_report(d: Doctor, label: str, lines: List[VerificationLine]) -> None:
+    """One label's report, by the first rule that holds: a line with no
+    command is a FAIL and the label's only line; two different commands
+    warn; else the label is found. A found label's report, and a twice-named
+    one's, ends on the installed check of its first command."""
+    setup = os.path.join(d.plugin, "docs", "repo-setup.md")
+    named = [line for line in lines if line.label == label]
+    bare = next((line.file for line in named if not line.command), None)
+    if bare is not None:
+        d.fail("%s has a '%s:' line with no command." % (bare, label))
+        d.remedy("write the command after '%s:' in %s, or remove the line - see %s"
+                 % (label, bare, setup))
+        return
+    if not named:
+        verification_missing(d, label, setup)
+        return
+    first = named[0]
+    other = next((line for line in named if line.command != first.command), None)
+    if other is not None:
+        d.warn("%s is named twice with different commands: '%s' in %s and '%s' in %s - the"
+               " first, '%s', is the one used." % (label, first.command, first.file,
+                                                   other.command, other.file, first.command))
+        d.remedy("remove the line '%s: %s' from %s, or make it match - see %s"
+                 % (label, other.command, other.file, setup))
+    else:
+        d.ok("%s: %s (%s)" % (label, first.command, first.file))
+    verification_installed_check(d, first)
+
+
+def verification_missing(d: Doctor, label: str, setup: str) -> None:
+    """A label no file names: Full warns with its remedy; Ticket and Branch
+    are ok, naming what runs instead."""
+    if label == "Full verification":
+        d.warn("no 'Full verification:' line in CLAUDE.md, AGENTS.md or CONTRIBUTING.md - the"
+               " agents' fallback is not defined by the code.")
+        d.remedy("add the line 'Full verification: <command>' to CLAUDE.md - see " + setup)
+    elif label == "Branch verification":
+        d.ok("no 'Branch verification:' line - the combined-branch check runs the full"
+             " verification")
+    else:
+        d.ok("no 'Ticket verification:' line - tickets run the full verification (ADR-0058)")
+
+
+def verification_word(command: str) -> str:
+    """The first command word of a verification line's command, the
+    backticks around it and any leading VAR=value words dropped; "" where
+    none is left."""
+    rest = trim(command)
+    rest = rest[1:] if rest.startswith("`") else rest
+    rest = rest[:-1] if rest.endswith("`") else rest
+    for word in IFS_WORDS.split(rest):
+        if not word:
+            continue
+        name, equals, _ = word.partition("=")
+        if equals and ASSIGNMENT_NAME.fullmatch(name):
+            continue
+        return word
+    return ""
+
+
+def verification_found(d: Doctor, word: str) -> bool:
+    """Whether a command word is found: an executable file for a path,
+    relative to the repo root; else a bash builtin or keyword, or a file on
+    PATH. A function orch.sh defines never counts."""
+    if "/" in word:
+        path = word if word.startswith("/") else os.path.join(d.root, word)
+        return os.path.isfile(path) and os.access(path, os.X_OK)
+    return word in BASH_WORDS or d.installed(word)
+
+
+def verification_installed_check(d: Doctor, line: VerificationLine) -> None:
+    """The installed check of a label's chosen command: found is ok; not
+    found a warn with no remedy, since no one command installs an arbitrary
+    tool. A command that leaves no word says nothing."""
+    word = verification_word(line.command)
+    if not word:
+        return
+    if verification_found(d, word):
+        d.ok("%s command: %s" % (line.label, word))
+    else:
+        d.warn("%s command %s (from %s) is not installed." % (line.label, word, line.file))
+
+
+def check_verification_lines(d: Doctor) -> None:
+    lines = verification_lines(d.root)
+    for label in VERIFICATION_LABELS:
+        verification_report(d, label, lines)
+
+
 # The env checks, in report order.
 ENV_CHECKS: List[Entry] = [
     Head("tools"),
     *checks(check_git, check_gh, check_jq, check_python3, check_bash),
     Head("auth & remotes"),
     *checks(check_origin, check_gh_auth, check_gh_repo, check_default_branch),
+    Head("plugin environment"),
+    *checks(check_host, check_plugin_root, check_orch_sh),
+    Head("repo config"),
+    *checks(check_labels_doc, check_labels_exist, check_standards_declaration, check_glossary,
+            check_adr_dir, check_sub_issues, check_git_exclude, check_base_branch,
+            check_verification_lines),
 ]
 
 
@@ -385,10 +897,11 @@ def run(
     git=None,
     env: Optional[Mapping[str, str]] = None,
     pin: Optional[RepoPin] = None,
+    plugin: str = PLUGIN_ROOT,
 ) -> int:
-    """`orch.sh doctor [--env|--flow]`: the real adapters and the process's
-    environment unless a test hands in others. Outside a checkout it dies
-    first, as orch.sh does."""
+    """`orch.sh doctor [--env|--flow]`: the real adapters, the process's
+    environment and this package's plugin root unless a test hands in
+    others. Outside a checkout it dies first, as orch.sh does."""
     env = os.environ if env is None else env
     git = Git() if git is None else git
     root = checkout_root(git, env)
@@ -399,7 +912,7 @@ def run(
     if scope is None:
         die("unknown doctor flag: %s (want --env or --flow)" % flag)
     pin = RepoPin(env, git) if pin is None else pin
-    d = Doctor(env, git, root, pin, adapter_of(gh, env, pin))
+    d = Doctor(env, git, root, pin, adapter_of(gh, env, pin), plugin)
     d.probe(scope)
     if scope != "flow":
         d.run(ENV_CHECKS)
