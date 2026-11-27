@@ -5,7 +5,7 @@ same-named tag (#2337) and a ticket branch with no upstream (#1152). The
 cases of the bash ticket-worktree sections: `add`, `list` and `remove` with
 every usage line and the unknown-op refusal, each worktree state
 ticket_facts reads, the back-out after a failed add, the teardown's refusals
-and its two failure results, and the worktrees_left bridge doctor calls."""
+and its two failure results."""
 from __future__ import annotations
 
 import os
@@ -169,7 +169,7 @@ def test_add_from_a_linked_worktree_lands_under_its_own_top_level(ticket_repo, c
     assert capsys.readouterr().out == "2 %s\n" % wt_path(ticket_repo, 2)
 
 
-# --- ticket-worktree list, the dispatch and the worktrees_left bridge -------------------
+# --- ticket-worktree list and the dispatch -------------------------------------------
 
 
 def test_list_prints_each_ticket_worktree_under_this_checkout(ticket_repo, capsys):
@@ -206,30 +206,15 @@ def test_an_unknown_op_is_refused_naming_the_ops_there_are(ticket_repo, capsys, 
         1, "", "orch: unknown ticket-worktree op: %s (want add|list|remove)\n" % shown)
 
 
-def bridge(*args):
-    """`orch_python_call ticket-worktree worktrees_left <args>` as
-    orch.__main__ hands it to call_func: its exit code."""
-    from orch import cli
-
-    return cli.call_func(["ticket-worktree", "worktrees_left", *args])
-
-
-def test_worktrees_left_prints_what_list_prints_for_the_same_checkout(ticket_repo, capsys):
+def test_list_prints_in_git_s_worktree_list_order(ticket_repo, capsys):
     added(ticket_repo, capsys, 7)
     added(ticket_repo, capsys, 12)
-    want = listed(capsys)
 
-    assert bridge() == 0
+    assert orch_tw("list") == 0
 
-    assert capsys.readouterr() == (want, "")
-    # In git's worktree list order, which sorts t12 before t7.
-    assert want == "12 %s\n7 %s\n" % (wt_path(ticket_repo, 12), wt_path(ticket_repo, 7))
-
-
-@pytest.mark.parametrize("args", [("7",), ("",), ("a", "b")])
-def test_worktrees_left_dies_on_any_argument_with_its_usage(ticket_repo, capsys, args):
-    assert died_of(capsys, lambda: bridge(*args)) == (
-        1, "", "orch: usage: orch_python_call ticket-worktree worktrees_left\n")
+    # git sorts t12 before t7.
+    assert capsys.readouterr() == (
+        "12 %s\n7 %s\n" % (wt_path(ticket_repo, 12), wt_path(ticket_repo, 7)), "")
 
 
 # --- ticket_facts, the one read of a ticket's facts -----------------------------------

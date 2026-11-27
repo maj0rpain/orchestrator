@@ -102,7 +102,6 @@
 24	13	checkout busy, redo-retired branch (#1981)	0608e4d5c7b58927eb7859c5d847edb713e43621
 6	7	comments module	ab28cc40a5a06628f8ab117b0dd520e62c879e85
 8	10	common.sh is the bottom layer	04f7eed4e1b745bc381196f09f7ddd3c7337cc02
-0	1	orch_dirs_unexcluded	12a7c2c452ab0556c398c46950d20b677e85748f
 5	5	exclude_line	b6acb7e0c1f3b1c7398f701f5050c66553304c1a
 1	2	list_has	35674c3c656a92f5c2ba4ebfddb52cf6602b0640
 0	1	list_join	2cdab9701b23386ed65209c4834779316c9e7994
@@ -118,14 +117,14 @@
 2	2	gh_reason and capture_err (#846)	945f77cb2a6453cdc91c5642f7d92d731d01112c
 1	2	label_listed	a4944cc37004a436b3273b1e242a8617a5e2cc1c
 18	19	gh failure verb and readers (#1022)	8ec16b064e87fc5ede895234c3fba4f8ca36407b
-16	21	gh fake (#280)	43843b915447eacd6e395a09d0569125908daa5b
-103	115	gh adapter contract (#280)	2142bf57c6e6a5d9026edc411f9c13ee2aaf3cc1
+16	21	gh fake (#280)	1f7b93e397b250df775827f45c3208f47238fcf5
+90	100	gh adapter contract (#280)	ed062c73b599385021c2f84b8d60f9ba55159f13
 16	18	claim adapter operations (#1454)	faa35fc415d08eda21b71812e5e6e5c46b39b2d4
 3	4	label casing (#1943)	41702561181f22517cb801c3da597ce5b3409ff3
 48	42	gh rate limits (#2577)	5ec09fb0232ccd3ffa97e89312a5ebd0daf1aaba
 14	15	gh rate limits: the GitHub pause and the hit file (#2577)	b4b9c15807b83d1efd54e8267a594d247da1655d
 2	3	handoff path	2aec06581ef698bd961901b99224c4b7ee69dc74
-13	15	phase table	e7aacb8aba1bf72a2dc5a248aae69803d10d6f2b
+13	15	phase table	05ceea8cdb61f4be69870bd08950e2933558a8e3
 13	15	handoff validate	d36d41c045268f11e539fa332f84cf637bfce231
 7	8	handoff section	5a7e0e0ebceb8f0d856cfd20700a8b033b8d545a
 5	6	spec handoff	8fc1e72b8b9b0a32370a2ebd84ed3683f38300b1
@@ -159,7 +158,7 @@
 10	12	side checkout marker issue: reading without re-classifying (#3073)	f9e586a847d91c113eda75d3bb4008b06cb893fa
 4	5	archive reads the flow's slug once	479dab274c7a796a4fb5c4095d6dc3bbf52b3586
 10	11	side-checkout: the default branch is asked for only when needed	3fc687b966c5b562d19f6fbe0cc519d02c25f747
-30	26	Standing module	7360efe83df71e2983783f4ce7fefa500261a7d4
+20	21	Standing module	b9b154534211e48a0c5a7a19899358f257498c4e
 101	76	Standing transitions	f91fc6159d2633a39ed09251f4e53d4df65eb404
 2	3	standing_ask reads the issue in one jq	323242a91458cfdc0852ce80bf275f3a21daf5f0
 14	15	state	0c580f49e511758e838f9ddd6af8e775b042e6be

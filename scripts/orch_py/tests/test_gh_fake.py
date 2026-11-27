@@ -378,13 +378,12 @@ def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
     assert gh.repo_default_branch("acme/widgets") == "trunk"
 
 
-def test_the_local_default_the_python_seeder_stores_reads_the_same_in_both_fakes(store):
+def test_the_local_default_the_python_seeder_stores_reads_back(store):
     seed = FakeStore(str(store))
     assert fake(store).repo_local_default() == ""
     seed.local_default("upstream/widgets")
 
     assert fake(store).repo_local_default() == "upstream/widgets"
-    assert bash(store, "adapter_repo_local_default") == "upstream/widgets\n"
 
 
 def test_noauth_fails_the_auth_status_with_gh_s_login_report_and_the_rest_as_unauthorised(
@@ -399,16 +398,15 @@ def test_noauth_fails_the_auth_status_with_gh_s_login_report_and_the_rest_as_una
         gh.issue_body(5)
 
     assert (status.value.stderr, body.value.stderr) == (
-        bash(store, "adapter_auth_status github.com 2>&1 || :"),
+        "You are not logged into any GitHub hosts. To log in, run: gh auth login\n",
         bash(store, "adapter_issue_body 5 2>&1 || :"))
 
 
-def test_the_label_names_the_python_seeder_stores_list_the_same_in_both_fakes(store):
+def test_the_label_names_the_python_seeder_stores_list_back_up_to_the_limit(store):
     assert fake(store).labels(1000) == []
     FakeStore(str(store)).label_names("needs triage", "Ready-For-Agent", "wontfix")
 
     assert fake(store).labels(2) == ["needs triage", "Ready-For-Agent"]
-    assert bash(store, "adapter_labels 2") == "needs triage\nReady-For-Agent\n"
 
 
 def test_label_names_the_bash_seeder_stores_list_the_same(store):
@@ -422,21 +420,18 @@ def test_label_names_the_bash_seeder_stores_list_the_same(store):
     ("fake_issue 1 open", True),
     ("fake_issue 1 open; : >\"$ORCH_GH_FAKE_STORE/no_sub_issues\"", False),
 ])
-def test_sub_issue_support_answers_as_the_bash_fake_does(store, seeding, answer):
+def test_sub_issue_support_answers_from_a_bash_seeded_store(store, seeding, answer):
     bash(store, seeding)
 
     assert fake(store).sub_issues_supported() is answer
-    assert bash(store, "adapter_sub_issues_supported") == {
-        None: "", True: "yes\n", False: "no\n"}[answer]
 
 
-def test_the_python_seeder_s_unsupported_sub_issues_read_the_same_in_both_fakes(store):
+def test_the_python_seeder_s_unsupported_sub_issues_read_back(store):
     seed = FakeStore(str(store))
     seed.issue(1, "open")
     seed.no_sub_issues()
 
     assert fake(store).sub_issues_supported() is False
-    assert bash(store, "adapter_sub_issues_supported") == "no\n"
 
 
 @pytest.mark.parametrize("operation, call", [

@@ -21,14 +21,10 @@ rate limits it meets go through the gh adapter's Limits, handed the open
 wait, or told the call never waits. ci_probe, one look over one scope, is
 what doctor's CI check reads.
 
-Doctor's three review checks each read their answer from one bridge here,
-through orch_python_call: doctor_terminal, the terminal-state check's
-classification; doctor_ci, the CI check's ci_probe over the required checks;
-and doctor_standards, the Standards declaration check's resolution, exiting
-3 on a rejected declaration. Each prints data, and doctor.sh prints its own
-lines from it. Python doctor (orch/doctor.py) calls the data under them in
-process: review_terminal_report, doctor_terminal's lines as a list, and
-ci_probe.
+Doctor's three review checks (orch/doctor.py) read their answers here in
+process: review_terminal_report, the terminal-state check's classification as
+a list of lines; ci_probe, the CI check's verdict over the required checks;
+and standards_resolve_source, the Standards declaration check's resolution.
 
 run(argv) takes the arguments after `review`, as orch.sh would hand them on,
 and returns the exit code; every error dies through orch.common.die, with
@@ -593,8 +589,8 @@ DEFAULT_BUDGET = "5"
 
 def review_budget_fallback(raw: str) -> str:
     """The budget read from state, <raw>, or DEFAULT_BUDGET where it is
-    empty or not a plain number - as bash's review_budget_fallback and
-    doctor's d_budget_fallback were, both bash copies gone."""
+    empty or not a plain number - as bash's review_budget_fallback was, the
+    bash copy gone. Doctor's budget check reads it too."""
     return raw if plain_number(raw) else DEFAULT_BUDGET
 
 
@@ -777,62 +773,6 @@ def review_terminal_report(root: str, i: str, budget: str) -> List[str]:
     if lines[0] == "malformed":
         lines.append(review_terminal_record(root, i, state))
     return lines
-
-
-# --- doctor's bridges ----------------------------------------------------------
-# One orch_python_call each, from doctor.sh's review-phase terminal-state and CI
-# checks and its env scope's Standards declaration check: each prints the data
-# the check reads, and doctor prints its own lines from it.
-
-def doctor_terminal(args: List[str], git=None, env: Optional[Mapping[str, str]] = None) -> None:
-    """Bridge for doctor's terminal-state check: `doctor_terminal
-    <iteration> <budget>`, the two values doctor already read. Prints
-    review_terminal_state's lines - the classification word, then its detail
-    - and, for malformed, the path of the record the remedy names, last;
-    exit 0 whatever the classification. Flow state is read once, and only
-    when the flat record is gone, for the retired record of a half-finished
-    redo. The real git adapter and the process's environment unless a test
-    hands in others."""
-    if len(args) != 2:
-        die("usage: orch_python_call review doctor_terminal <iteration> <budget>")
-    git = Git() if git is None else git
-    lines_print(review_terminal_report(checkout_root(git, os.environ if env is None else env),
-                                       *args))
-
-
-def doctor_ci(args: List[str], gh=None, git=None, env: Optional[Mapping[str, str]] = None) -> None:
-    """Bridge for doctor's CI check: `doctor_ci <pr>`. Prints ci_probe's
-    verdict and detail lines over the PR's required checks. The real
-    adapters and the process's environment unless a test hands in others."""
-    if len(args) != 1:
-        die("usage: orch_python_call review doctor_ci <pr>")
-    env = os.environ if env is None else env
-    git = Git() if git is None else git
-    lines_print(ci_probe(adapter_of(gh, env, pin=RepoPin(env, git))(), args[0], "required"))
-
-
-# The exit doctor_standards ends with on a rejected declaration, apart from
-# every other failure of the call.
-STANDARDS_REJECTED = 3
-
-
-def doctor_standards(args: List[str], git=None,
-                     env: Optional[Mapping[str, str]] = None) -> int:
-    """Bridge for doctor's Standards declaration check: `doctor_standards`.
-    Prints standards_resolve_source's lines - `declared <file>` or `crawled`,
-    then the list - and exits 0. A declaration the resolution rejects leaves
-    the declaring file and the entries up to the rejected one on stdout, its
-    message on stderr, and exits STANDARDS_REJECTED. The real git adapter
-    and the process's environment unless a test hands in others."""
-    if args:
-        die("usage: orch_python_call review doctor_standards")
-    git = Git() if git is None else git
-    root = checkout_root(git, os.environ if env is None else env)
-    try:
-        standards_resolve_source(root, lambda line: stdout_write(line + "\n"))
-    except SystemExit:
-        return STANDARDS_REJECTED
-    return 0
 
 
 def _ci(args: List[str], root: str, git, env: Mapping[str, str], clock,

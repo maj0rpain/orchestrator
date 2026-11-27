@@ -271,13 +271,6 @@ git_push_reason() {
   done <<<"$1"
   printf -v "$2" '%s' "${_gpr_bangs:-${_gpr_fatal:-${_gpr_first:-git gave no reason}}}"
 }
-# The argument with leading and trailing whitespace removed, as trim_split
-# writes it.
-trim() {
-  local _trim_s
-  trim_split "$1" _trim_s
-  printf '%s' "$_trim_s"
-}
 
 # The splitters below cut a string up by parameter expansion, so a hot path
 # spawns no awk, sed, cut or tail to do it. Each assigns to caller-named
@@ -462,7 +455,7 @@ exclude_line() {
 # exclude_missing <lines>: prints, one per line, each of the newline-separated
 # <lines> the clone's shared info/exclude lacks - every one when the file is
 # missing. The one place the membership test is written: exclude_line appends
-# exactly this, and orch_dirs_unexcluded prints it.
+# exactly this.
 exclude_missing() {
   local ex l
   ex="$(git rev-parse --git-common-dir)/info/exclude"
@@ -472,10 +465,6 @@ exclude_missing() {
   done <<<"$1"
 }
 
-# Prints, one per line, each EXCLUDED_DIRS entry the clone's shared
-# info/exclude lacks - every entry when the file is missing, as doctor's
-# exclude check (orch/doctor.py) reports it.
-orch_dirs_unexcluded() { exclude_missing "$(printf '%s\n' "${EXCLUDED_DIRS[@]}")"; }
 # Prints, one per line, every path with tracked modifications or untracked
 # files in this working tree that falls outside the planning allowlist. -z
 # keeps unusual file names intact; a rename or copy carries its source path as

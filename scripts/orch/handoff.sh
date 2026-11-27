@@ -32,8 +32,8 @@ phase_list() {
 }
 
 # The flow's phases, space-separated in flow order: read inside functions only
-# (the state writer, doctor's state-phase check). Set when this module is
-# sourced, from the phase table above.
+# (the state writer, autopilot's and standing's phase walks). Set when this
+# module is sourced, from the phase table above.
 PHASES="$(phase_list)"
 # shellcheck disable=SC2034 # read by other modules, each calling orch_load handoff first
 readonly PHASES
@@ -73,17 +73,6 @@ handoffs_due() {
       return 0
     fi
   done
-}
-
-# phases_from <phase>: <phase> and every phase after it, one per line, in
-# table order. Nothing, and non-zero, for a phase the table does not hold.
-phases_from() {
-  local phase found=0
-  for phase in $(phase_list); do
-    [ "$phase" != "$1" ] || found=1
-    if [ "$found" = 1 ]; then printf '%s\n' "$phase"; fi
-  done
-  [ "$found" = 1 ]
 }
 
 # Every review loop, however many the flow has run, reads the implement
@@ -143,10 +132,9 @@ section_count() {
 }
 
 # The bash statement of what a valid handoff is: one line per required
-# section, each `ok <heading>` or `FAIL <problem>`. doctor's flow-state check
-# reads the same answer rather than writing a second one that can drift from it.
-# The Python package's copy, handoff_report in scripts/orch_py/orch/handoff.py,
-# which phase advance runs, is pinned to this one by the golden handoffs of
+# section, each `ok <heading>` or `FAIL <problem>`. The Python package's copy,
+# handoff_report in scripts/orch_py/orch/handoff.py, which phase advance and
+# doctor's flow-state check run, is pinned to this one by the golden handoffs of
 # scripts/orch_py/tests/handoff_report/, run through both.
 # <name> is the handoff file name the sections are looked up by, the file's own
 # basename unless given: an autopilot scratch file is not named as its handoff.
@@ -262,8 +250,8 @@ handoff_comment_post_url() {
 
 # The Handoff store: where a flow's handoffs live, behind one interface with a
 # file adapter (interactive: files in the handoff directory) and a comment
-# adapter (autopilot: marked comments on the issue). Operations: path,
-# fetch_due and fetched; the retire a redo makes is the Python redo noun's
+# adapter (autopilot: marked comments on the issue). Its one operation here is
+# path; the retire a redo makes is the Python redo noun's
 # (scripts/orch_py/orch/handoff.py's handoff_retire). handoff_store is the one
 # place that chooses the adapter, per call, so a test toggling ORCH_AUTOPILOT
 # between commands keeps working.
@@ -293,40 +281,6 @@ handoff_comment_status() {
   esac
 }
 
-# handoff_file_doctor_missing <file>: prints doctor's finding for a missing
-# handoff.
-handoff_file_doctor_missing() {
-  printf 'handoff %s is missing - the phase that writes it has already run.\n' "$1"
-}
-
-# handoff_comment_doctor_missing <file>: prints doctor's finding for a missing
-# handoff comment on the recorded issue.
-handoff_comment_doctor_missing() {
-  printf 'handoff %s comment is missing on issue #%s - the phase that writes it has already run.\n' \
-    "${1%.md}" "$(state_get issue)"
-}
-
-# handoff_doctor_missing <file>: the store's doctor finding, the adapter's.
-handoff_doctor_missing() { "handoff_$(handoff_store)_doctor_missing" "$@"; }
-
-# handoff_file_ready: doctor's readiness check; files need nothing, so it
-# passes.
-handoff_file_ready() { return 0; }
-
-# handoff_comment_ready: doctor's readiness check for reading the comments.
-# Status 0: ready. 1: not ready, the finding printed. 2: ready if gh is, which
-# is for the caller to gate.
-handoff_comment_ready() {
-  if [ -z "$(state_get issue)" ]; then
-    printf 'autopilot session, but no issue is recorded - the handoff comments cannot be read.\n'
-    return 1
-  fi
-  return 2
-}
-
-# handoff_ready: the store's readiness check, the adapter's.
-handoff_ready() { "handoff_$(handoff_store)_ready" "$@"; }
-
 # handoff_comment_write <name> <file>: writes the body of the newest comment
 # tagged for <name> in the last timeline read, marker stripped, to <file>. No gh
 # call. Returns 1, <file> untouched, when there is none or the newest is
@@ -347,17 +301,6 @@ handoff_comment_fetch() {
   handoff_comment_write "$2" "$3"
 }
 
-# handoff_fetched <file>: the lookup that does not fetch. Prints the readable
-# path of the handoff <file> as of the last handoff_fetch_due and, by status,
-# whether it is there; it never dies on a missing one.
-handoff_fetched() { "handoff_$(handoff_store)_fetched" "$@"; }
-
-# handoff_fetch_due <phase>: fetches every handoff due at <phase> where the
-# adapter keeps them elsewhere than the handoff directory, reading the issue's
-# comments once. Never dies: 1 when they cannot be read, 2 when a copy cannot
-# be written (its line on stderr).
-handoff_fetch_due() { "handoff_$(handoff_store)_fetch_due" "$@"; }
-
 # handoff_path <phase> <file>: what `handoff path` prints for <file>, the
 # handoff <phase> writes.
 handoff_path() { "handoff_$(handoff_store)_path" "$@"; }
@@ -370,11 +313,6 @@ handoff_file_locate() {
   [ -f "$HANDOFF_DIR/$1" ]
 }
 
-handoff_file_fetched() { handoff_file_locate "$@"; }
-
-# The files are already in the handoff directory: nothing to fetch.
-handoff_file_fetch_due() { return 0; }
-
 # handoff_file_path <phase> <file>: prints the write target; non-zero when the
 # handoff is missing.
 handoff_file_path() {
@@ -384,7 +322,7 @@ handoff_file_path() {
 # Comment adapter.
 
 # handoff_comment_fetched <file>: prints the scratch path; non-zero when the
-# last handoff_fetch_due left no copy.
+# last handoff_comment_fetch_due left no copy.
 handoff_comment_fetched() {
   printf '%s/%s\n' "$HANDOFF_SCRATCH_DIR" "$1"
   [ -f "$HANDOFF_SCRATCH_DIR/$1" ]

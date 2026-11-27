@@ -109,19 +109,6 @@ out="$(sourced_orch handoffs_due bogus)"; st=$?
 assert_eq "handoffs_due prints nothing for a phase outside the table" "$out" ""
 assert_status "and succeeds" "$st" 0
 
-for pair in "spec|$(writeln spec implement review "done")" \
-            "implement|$(writeln implement review "done")" \
-            "review|$(writeln review "done")" \
-            "done|done"; do
-  p="${pair%%|*}"
-  out="$(sourced_orch phases_from "$p")"; st=$?
-  assert_eq "phases_from $p prints $p and every later phase" "$out" "${pair#*|}"
-  assert_status "phases_from $p succeeds" "$st" 0
-done
-out="$(sourced_orch phases_from bogus)"; st=$?
-assert_eq "phases_from prints nothing for a phase outside the table" "$out" ""
-assert_ne "and fails" "$st" 0
-
 for cell in "handoff|spec|01-plan.md" "handoff|implement|02-spec.md" \
             "handoff|review|03-implement.md" \
             "writer|spec|plan" "writer|implement|spec" "writer|review|implement" \

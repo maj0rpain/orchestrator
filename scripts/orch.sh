@@ -74,9 +74,9 @@ readonly ORCH_SOURCE ORCH_SCRIPTS ORCH_PLUGIN
 source "$ORCH_SCRIPTS/flow-state.sh"
 readonly ORCH_DIR_NAME
 # The directories the plugin writes to and keeps out of git status: its flow
-# state, and .scratch/, where planning drafts land. The one bash list both
-# exclude_orch_dirs and orch_dirs_unexcluded read; orch.common's EXCLUDED_DIRS
-# is its Python copy, which doctor's exclude check reads.
+# state, and .scratch/, where planning drafts land. The one bash list, which
+# exclude_orch_dirs reads; orch.common's EXCLUDED_DIRS is its Python copy,
+# which doctor's exclude check reads.
 readonly EXCLUDED_DIRS=("$ORCH_DIR_NAME/" ".scratch/")
 # The most issues or PRs one list call asks gh for, where gh needs a bare
 # --limit. Three kinds of listing pass it. The search-backed issue listings run

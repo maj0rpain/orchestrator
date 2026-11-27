@@ -290,7 +290,7 @@ gh_or_die() {
 # through one. History: begun with labels (#91), issues (#92); all since #280.
 #
 # The operations, in the order they are defined below:
-# - label: adapter_label_upsert, adapter_labels, adapter_labels_detail
+# - label: adapter_label_upsert, adapter_labels_detail
 # - rate limit: adapter_rate_limit
 # - issue: adapter_issue_body, adapter_issue_comments,
 #   adapter_issue_state_labels, adapter_issue_title_labels,
@@ -312,9 +312,8 @@ gh_or_die() {
 # - sub-issue and dependency: adapter_sub_issues, adapter_sub_issue_link,
 #   adapter_sub_issue_unlink, adapter_issue_parent, adapter_blockers,
 #   adapter_issue_open_blockers, adapter_blockers_states,
-#   adapter_blocker_add, adapter_blocker_remove, adapter_sub_issues_supported
-# - repo: adapter_repo_default_branch, adapter_repo_local_default,
-#   adapter_auth_status <host>
+#   adapter_blocker_add, adapter_blocker_remove
+# - repo: adapter_repo_default_branch
 #
 # ORCH_GH_ADAPTER is an opt-in test knob in the same spirit as review ci's
 # ORCH_CI_* ones, but read differently: not a value substituted at load time,
@@ -375,12 +374,6 @@ url_number() {
 # updates the one that exists, to that colour and description. Prints nothing.
 adapter_label_upsert() {
   gh label create "$1" --force --color "$2" --description "$3" >/dev/null
-}
-
-# adapter_labels <limit>: the names of the repo's labels, at most <limit> of
-# them, one per line. Nothing at all for a repo with none.
-adapter_labels() {
-  gh label list --limit "$1" --json name --jq '.[].name'
 }
 
 # adapter_labels_detail <limit>: the repo's labels, at most <limit> of them, one
@@ -1061,25 +1054,6 @@ adapter_blocker_remove() {
   gh api --method DELETE "repos/{owner}/{repo}/issues/$1/dependencies/blocked_by/$id" >/dev/null
 }
 
-# adapter_sub_issues_supported: whether this GitHub answers the sub-issues
-# endpoint, asked of the repo's most recent issue: "yes" where it answers,
-# "no" only where the endpoint answers HTTP 404, nothing at all where the repo
-# has no issue to ask it of. Every other failure - of the issue listing, or of
-# the endpoint with any other status (401, 403, 410, 5xx) or no connection -
-# fails it, passing gh's stderr through.
-adapter_sub_issues_supported() {
-  local n err rc=0
-  n="$(gh issue list --state all --limit 1 --json number --jq '.[0].number // empty')" || return
-  [ -n "$n" ] || return 0
-  err="$(gh api "repos/{owner}/{repo}/issues/$n/sub_issues" 2>&1 >/dev/null)" || rc=$?
-  if [ "$rc" -eq 0 ]; then printf 'yes\n'; return 0; fi
-  case "$err" in
-    *"HTTP 404"*) printf 'no\n'; return 0 ;;
-  esac
-  [ -z "$err" ] || printf '%s\n' "$err" >&2
-  return "$rc"
-}
-
 # --- repo operations ---
 
 # adapter_repo_default_branch <repo>: the default branch of the repo, named
@@ -1088,23 +1062,6 @@ adapter_sub_issues_supported() {
 # default repo. The answer is gh's stdout as is: a caller validates it.
 adapter_repo_default_branch() {
   gh repo view "$1" --json defaultBranchRef --jq .defaultBranchRef.name
-}
-
-# adapter_repo_local_default: gh's own default repo for this checkout, as the
-# bare OWNER/REPO gh prints even for one off github.com, read from local git
-# config, so no network is needed. Nothing at all where none is set: gh says so
-# on stderr, exiting 0.
-adapter_repo_local_default() {
-  gh repo set-default --view
-}
-
-# adapter_auth_status <host>: succeeds where gh's active account on the host
-# is authenticated, printing gh's own report; fails where it is not, or cannot
-# tell, with gh's report passed through - its text is the only signal telling
-# "not authenticated" from "could not connect". Both flags are needed: gh
-# checks every account on every host otherwise, and one stale account fails it.
-adapter_auth_status() {
-  gh auth status --active --hostname "$1"
 }
 
 # --- claim operations (#1454) ---

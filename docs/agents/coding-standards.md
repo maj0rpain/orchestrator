@@ -48,7 +48,7 @@ could mean.
 
 A variable - a function's local or a test section's top-level one - never takes
 the name of a function defined at file level - for example `note`, `die`,
-`now`, `trim` or tally's `bad`. The shadowing reads as a call where there is
+`now`, `warn` or tally's `bad`. The shadowing reads as a call where there is
 none.
 
 ## 4. One meaning per variable

@@ -8,7 +8,7 @@
 # shell, with nothing to arrange beforehand. A reader that runs inside a $(...)
 # subshell memoises only for that subshell, which never hands its variables
 # back. default_branch_seed is the memo's one writer; default_branch_local is
-# the memo-free local fallback doctor calls.
+# the memo-free local fallback under it.
 # Its tests: scripts/test/orch/base.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -17,7 +17,8 @@
 # remotes/origin/<b>; valid branch names only), else the literal guess main.
 # Returns 0 when origin/HEAD named the branch, 1 when it fell back to main.
 # Never asks GitHub and sets no memo variable: the one home of the local
-# fallback rule, used by default_branch_seed and by doctor.
+# fallback rule, used by default_branch_seed. Its Python copy is
+# orch.base's default_branch_local, which doctor reads.
 default_branch_local() {
   local head_ref b
   head_ref="$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null)" || head_ref=""
@@ -107,7 +108,7 @@ base_branch_into() {
 
 # Whether origin has branch $1: 0 yes, 2 origin answered and it does not,
 # anything else origin could not be asked. ls-remote's own exit codes carry
-# exactly that split, which is the one doctor's severity rule turns on.
+# exactly that split.
 origin_has_branch() {
   local st=0
   git ls-remote --quiet --exit-code origin "refs/heads/$1" >/dev/null 2>&1 || st=$?

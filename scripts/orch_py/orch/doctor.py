@@ -1,5 +1,5 @@
 """orch.sh's doctor noun (ADR-0067), and its alias health: diagnostics for
-the orchestrator plugin, reported as the bash doctor module reported them.
+the orchestrator plugin, reported as they were before the noun was converted.
 Scopes are named for the content they
 cover, never for the caller that asks - `--env` and `--flow` - so a check's
 home does not move when a caller changes. The flow scope is the flow state

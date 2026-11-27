@@ -25,7 +25,7 @@ require_issue, the entry read of the flow's issue a command that needs one
 makes; then what the base reads as when a flow never recorded it,
 flow_base_fallback_into, whose bash copy stays for the bash nouns that read
 it. The review budget's fallback is the review noun's (orch.review), its bash
-copy gone with the bash doctor module, its last bash reader.
+copy gone with its last bash reader.
 """
 from __future__ import annotations
 

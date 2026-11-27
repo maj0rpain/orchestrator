@@ -974,24 +974,3 @@ def settings_report(
             _check_sync_drift(cache, root, plugin_root, host_name, records)
     return records
 
-
-def check_settings(
-    args: Optional[List[str]] = None,
-    git=None,
-    env: Optional[Mapping[str, str]] = None,
-    plugin_root: Optional[str] = None,
-) -> int:
-    """Bridge for doctor.sh's check_agent_settings: settings_report's
-    records, emitted NUL-delimited as `<kind>\\t<message>\\0`."""
-    if args:
-        die("usage: orch_python_call agent check_settings")
-    env = os.environ if env is None else env
-    git = Git() if git is None else git
-    records = settings_report(git, checkout_root(git, env), env, plugin_root)
-    # Some message text is copied verbatim from Junie's log; a NUL in it would
-    # split a record, so every NUL is dropped - no reported line holds one.
-    stdout_write("".join(
-        "%s\t%s\0" % (kind.replace("\0", ""), message.replace("\0", ""))
-        for kind, message in records
-    ))
-    return 0

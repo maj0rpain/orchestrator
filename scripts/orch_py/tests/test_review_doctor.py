@@ -1,17 +1,16 @@
-"""Doctor's three review bridges, each called as orch_python_call calls it -
-through orch.cli's call_func, in a real repository under tmp_path, the gh
-fake on its store - and checked by exactly the data doctor reads: the
-terminal-state bridge's classification word, its detail and, for malformed,
-the record path; the CI bridge's ci_probe verdict and detail lines; and the
-Standards bridge's resolution, its rejected declaration's partial output and
-its death with exit 3."""
+"""The three review reads doctor's review checks take in process, each called
+directly in a real repository under tmp_path, the gh fake on its store, and
+checked by exactly the data doctor reads: review_terminal_report's
+classification word, its detail and, for malformed, the record path;
+ci_probe's verdict and detail lines over the required checks; and
+standards_resolve_source's lines, with a rejected declaration's partial
+output and its death."""
 from __future__ import annotations
 
 import pytest
 
-from conftest import git_repo, hold_flow, record, write
-from orch import cli
-from orch.review import MALFORMED_SHAPE
+from conftest import fake, git_repo, hold_flow, record, write
+from orch.review import MALFORMED_SHAPE, ci_probe, review_terminal_report, standards_resolve_source
 
 INDENT = "      "
 
@@ -27,89 +26,69 @@ def checkout(tmp_path, monkeypatch):
     return root
 
 
-def bridge(capsys, func, *args):
-    """`orch_python_call --as doctor review <func> <args>`, as orch.__main__
-    hands it to call_func: (exit code, stdout, stderr), a death's
-    included."""
-    try:
-        code = cli.call_func(["review", func, *args])
-    except SystemExit as died:
-        code = died.code
-    out, err = capsys.readouterr()
-    return code, out, err
+# --- the terminal-state read ---------------------------------------------------
 
 
-# --- the terminal-state bridge ------------------------------------------------
+def terminal(root, i, budget):
+    """review_terminal_report's lines, each ended by a newline."""
+    return "".join(line + "\n" for line in review_terminal_report(str(root), i, budget))
 
 
-def terminal(capsys, i, budget):
-    return bridge(capsys, "doctor_terminal", i, budget)
+def test_terminal_state_is_none_for_a_loop_not_started(checkout):
+    assert terminal(checkout, "0", "5") == "none\n"
 
 
-def test_terminal_bridge_prints_none_for_a_loop_not_started(checkout, capsys):
-    assert terminal(capsys, "0", "5") == (0, "none\n", "")
+def test_terminal_state_is_pending_short_of_the_budget(checkout):
+    assert terminal(checkout, "2", "5") == "pending\n"
 
 
-def test_terminal_bridge_prints_pending_short_of_the_budget(checkout, capsys):
-    assert terminal(capsys, "2", "5") == (0, "pending\n", "")
+def test_terminal_state_is_interrupted_at_the_budget(checkout):
+    assert terminal(checkout, "5", "5") == "interrupted\n"
 
 
-def test_terminal_bridge_prints_interrupted_at_the_budget(checkout, capsys):
-    assert terminal(capsys, "5", "5") == (0, "interrupted\n", "")
-
-
-def test_terminal_bridge_prints_ready(checkout, capsys):
+def test_terminal_state_is_ready(checkout):
     record(checkout, 5, "## Terminal state", "ready")
-    assert terminal(capsys, "5", "5") == (0, "ready\n", "")
+    assert terminal(checkout, "5", "5") == "ready\n"
 
 
-def test_terminal_bridge_prints_stop_with_its_reason_lines(checkout, capsys):
+def test_terminal_state_is_stop_with_its_reason_lines(checkout):
     record(checkout, 2, "## Terminal state", "stop", "CI failed twice.")
-    assert terminal(capsys, "2", "5") == (0, "stop\nCI failed twice.\n", "")
+    assert terminal(checkout, "2", "5") == "stop\nCI failed twice.\n"
 
 
-def test_terminal_bridge_prints_malformed_its_shape_then_the_record_path(checkout, capsys):
+def test_terminal_state_is_malformed_its_shape_then_the_record_path(checkout):
     path = record(checkout, 5, "## Terminal state", "**stop**")
-    assert terminal(capsys, "5", "5") == (0, "malformed\n%s\n%s\n" % (MALFORMED_SHAPE, path), "")
+    assert terminal(checkout, "5", "5") == "malformed\n%s\n%s\n" % (MALFORMED_SHAPE, path)
 
 
-def test_terminal_bridge_prints_unreadable_with_the_directory_it_could_not_make(checkout,
-                                                                               capsys):
+def test_terminal_state_is_unreadable_with_the_directory_it_could_not_make(checkout):
     (checkout / ".orchestrator").mkdir()
     (checkout / ".orchestrator" / "review").write_text("")
-    code, out, err = terminal(capsys, "5", "5")
-    assert (code, out.rstrip("\n"), err) == (
-        0, "unreadable\ncannot create the review directory %s/.orchestrator/review" % checkout, "")
+    assert terminal(checkout, "5", "5").rstrip("\n") == (
+        "unreadable\ncannot create the review directory %s/.orchestrator/review" % checkout)
 
 
-def test_terminal_bridge_mid_redo_names_the_retired_malformed_record(checkout, capsys):
+def test_terminal_state_mid_redo_names_the_retired_malformed_record(checkout):
     hold_flow(checkout, slug="t", phase="review", issue=21, branch="orch/21-t-redo-1",
               redo_count=1)
     path = record(checkout, 5, "## Terminal state", "stopped here", under="pre-redo-1")
-    assert terminal(capsys, "5", "5") == (0, "malformed\n%s\n%s\n" % (MALFORMED_SHAPE, path), "")
+    assert terminal(checkout, "5", "5") == "malformed\n%s\n%s\n" % (MALFORMED_SHAPE, path)
 
 
-def test_terminal_bridge_mid_redo_reads_the_retired_stop(checkout, capsys):
+def test_terminal_state_mid_redo_reads_the_retired_stop(checkout):
     hold_flow(checkout, slug="t", phase="review", issue=21, branch="orch/21-t-redo-1",
               redo_count=1)
     record(checkout, 5, "## Terminal state", "stop - base sync failed.", under="pre-redo-1")
-    assert terminal(capsys, "5", "5") == (0, "stop\nbase sync failed.\n", "")
+    assert terminal(checkout, "5", "5") == "stop\nbase sync failed.\n"
 
 
-@pytest.mark.parametrize("args", [(), ("5",), ("5", "5", "5")], ids=["none", "one", "three"])
-def test_terminal_bridge_dies_with_its_usage_on_wrong_arguments(checkout, capsys, args):
-    assert bridge(capsys, "doctor_terminal", *args) == (
-        1, "", "orch: usage: orch_python_call review doctor_terminal <iteration> <budget>\n")
+# --- the CI read ---------------------------------------------------------------
 
 
-# --- the CI bridge ------------------------------------------------------------
-
-
-@pytest.fixture
-def github(checkout, seed, monkeypatch):
-    """The gh fake on <seed>'s store, serving the checkout's process."""
-    monkeypatch.setenv("ORCH_GH_FAKE_STORE", seed.store)
-    return seed
+def ci(seed, pr):
+    """ci_probe's lines over PR <pr>'s required checks, each ended by a
+    newline."""
+    return "".join(line + "\n" for line in ci_probe(fake(seed), pr, "required"))
 
 
 @pytest.mark.parametrize("answer, printed", [
@@ -119,69 +98,64 @@ def github(checkout, seed, monkeypatch):
     ("failing", "failing\n%sbuild\n" % INDENT),
     ("boom", "unreachable\n%sdial tcp: lookup api.github.com: no such host\n" % INDENT),
 ])
-def test_ci_bridge_prints_the_verdict_and_detail_of_the_required_checks(github, capsys, answer,
-                                                                          printed):
-    github.checks(40, "required", answer)
-    assert bridge(capsys, "doctor_ci", "40") == (0, printed, "")
+def test_ci_probe_gives_the_verdict_and_detail_of_the_required_checks(seed, answer, printed):
+    seed.checks(40, "required", answer)
+    assert ci(seed, 40) == printed
 
 
-def test_ci_bridge_reads_the_required_scope_alone(github, capsys):
-    github.checks(40, "all", "failing")
-    assert bridge(capsys, "doctor_ci", "40") == (0, "none\n", "")
+def test_ci_probe_reads_the_required_scope_alone(seed):
+    seed.checks(40, "all", "failing")
+    assert ci(seed, 40) == "none\n"
 
 
-def test_ci_bridge_carries_a_failed_reads_first_line(github, capsys):
-    github.fail("adapter_pr_checks", "HTTP 502: Bad Gateway\nsecond line")
-    assert bridge(capsys, "doctor_ci", "40") == (0, "unreachable\n%sHTTP 502: Bad Gateway\n"
-                                                 % INDENT, "")
+def test_ci_probe_carries_a_failed_reads_first_line(seed):
+    seed.fail("adapter_pr_checks", "HTTP 502: Bad Gateway\nsecond line")
+    assert ci(seed, 40) == "unreachable\n%sHTTP 502: Bad Gateway\n" % INDENT
 
 
-@pytest.mark.parametrize("args", [(), ("40", "41")], ids=["none", "two"])
-def test_ci_bridge_dies_with_its_usage_on_wrong_arguments(github, capsys, args):
-    assert bridge(capsys, "doctor_ci", *args) == (
-        1, "", "orch: usage: orch_python_call review doctor_ci <pr>\n")
+# --- the Standards resolution --------------------------------------------------
 
 
-# --- the Standards bridge -----------------------------------------------------
+def standards(root, capsys):
+    """(exit code, stdout, stderr) of standards_resolve_source printing each
+    line it emits: 0 when it returns, a death's code otherwise."""
+    try:
+        standards_resolve_source(str(root), print)
+    except SystemExit as died:
+        out, err = capsys.readouterr()
+        return died.code, out, err
+    out, err = capsys.readouterr()
+    return 0, out, err
 
 
-def standards(capsys):
-    return bridge(capsys, "doctor_standards")
+def test_standards_resolution_prints_crawled_alone_with_nothing_to_crawl(checkout, capsys):
+    assert standards(checkout, capsys) == (0, "crawled\n", "")
 
 
-def test_standards_bridge_prints_crawled_alone_with_nothing_to_crawl(checkout, capsys):
-    assert standards(capsys) == (0, "crawled\n", "")
-
-
-def test_standards_bridge_prints_crawled_and_the_list(checkout, capsys):
+def test_standards_resolution_prints_crawled_and_the_list(checkout, capsys):
     write(checkout, "docs/rules.md", "rules")
     write(checkout, "CLAUDE.md", "See `docs/rules.md`.")
-    assert standards(capsys) == (0, "crawled\nCLAUDE.md\ndocs/rules.md\n", "")
+    assert standards(checkout, capsys) == (0, "crawled\nCLAUDE.md\ndocs/rules.md\n", "")
 
 
-def test_standards_bridge_prints_the_declaring_file_and_its_entries(checkout, capsys):
+def test_standards_resolution_prints_the_declaring_file_and_its_entries(checkout, capsys):
     write(checkout, "docs/rules.md", "rules")
     write(checkout, "docs/more.md", "more")
     write(checkout, "CLAUDE.md", "Standards: `docs/rules.md`, `docs/more.md`")
-    assert standards(capsys) == (0, "declared CLAUDE.md\ndocs/rules.md\ndocs/more.md\n", "")
+    assert standards(checkout, capsys) == (0, "declared CLAUDE.md\ndocs/rules.md\ndocs/more.md\n", "")
 
 
-def test_standards_bridge_on_a_rejected_entry_prints_up_to_it_and_exits_3(checkout, capsys):
+def test_standards_resolution_on_a_rejected_entry_prints_up_to_it_and_dies(checkout, capsys):
     write(checkout, "docs/rules.md", "rules")
     write(checkout, "CLAUDE.md", "Standards: `docs/rules.md`, `docs/missing.md`, `docs/rules.md`")
-    assert standards(capsys) == (
-        3, "declared CLAUDE.md\ndocs/rules.md\ndocs/missing.md\n",
+    assert standards(checkout, capsys) == (
+        1, "declared CLAUDE.md\ndocs/rules.md\ndocs/missing.md\n",
         "orch: Standards entry `docs/missing.md` names a missing file\n")
 
 
-def test_standards_bridge_on_a_declaration_with_no_entries_prints_its_file_and_exits_3(
+def test_standards_resolution_on_a_declaration_with_no_entries_prints_its_file_and_dies(
         checkout, capsys):
     write(checkout, "CLAUDE.md", "Standards: none here")
-    assert standards(capsys) == (
-        3, "declared CLAUDE.md\n",
+    assert standards(checkout, capsys) == (
+        1, "declared CLAUDE.md\n",
         "orch: CLAUDE.md declares Standards: with no entries (want backticked paths)\n")
-
-
-def test_standards_bridge_dies_with_its_usage_on_any_argument(checkout, capsys):
-    assert bridge(capsys, "doctor_standards", "x") == (
-        1, "", "orch: usage: orch_python_call review doctor_standards\n")

@@ -1114,8 +1114,7 @@ class FakeStore:
         _write(_store_path(self.store, "default_branch"), answer)
 
     def local_default(self, name: str) -> None:
-        """gh's own local default repo for the checkout, OWNER/REPO, as the
-        bash suite's fake_local_default seeds it."""
+        """gh's own local default repo for the checkout, OWNER/REPO."""
         _write(_store_path(self.store, "local_default"), name + "\n")
 
     def label_names(self, *names: str) -> None:

@@ -134,8 +134,9 @@
 #   quota             the rate_limit read's answer, one
 #                     "<pool><TAB><remaining><TAB><limit><TAB><reset>" line
 #                     per pool; absent, full pools
-#   noauth            present, gh is not authenticated: the auth status fails
-#                     saying so, every other operation as unauthorised
+#   noauth            present, gh is not authenticated: every operation fails
+#                     as unauthorised (the Python fake's auth status read
+#                     fails saying so)
 
 fake_store() {
   printf '%s\n' "${ORCH_GH_FAKE_STORE:?the gh fake has no store - call fake_github}"
@@ -274,11 +275,7 @@ fake_failing_raw() {
     return 0
   fi
   if [ -f "$s/noauth" ]; then
-    if [ "$1" = adapter_auth_status ]; then
-      echo "You are not logged into any GitHub hosts. To log in, run: gh auth login" >&2
-    else
-      echo "HTTP 401: Bad credentials (https://api.github.com/graphql)" >&2
-    fi
+    echo "HTTP 401: Bad credentials (https://api.github.com/graphql)" >&2
     return 0
   fi
   f="$s/fail/$1"
@@ -346,17 +343,6 @@ fake_label_put() {
 adapter_label_upsert() {
   ! fake_failing adapter_label_upsert || return 1
   fake_label_put "$1" "$2" "$3"
-}
-
-# adapter_labels <limit>: the stored label names, the first <limit> of them.
-# The cut reads every name: head would exit at <limit> and SIGPIPE cut under
-# pipefail (#1019).
-adapter_labels() {
-  local f
-  ! fake_failing adapter_labels || return 1
-  f="$(fake_store)/labels"
-  [ -f "$f" ] || return 0
-  cut -f1 "$f" | awk -v n="$1" 'NR<=n'
 }
 
 # adapter_labels_detail <limit>: the stored labels as name, colour and
@@ -1240,14 +1226,6 @@ adapter_blocker_remove() {
   fake_lines_drop "$(fake_store)/blocked_by/$1" "$2"
 }
 
-# adapter_sub_issues_supported: nothing where the store holds no issue; no
-# where no_sub_issues is present; yes otherwise.
-adapter_sub_issues_supported() {
-  ! fake_failing adapter_sub_issues_supported || return 1
-  [ -n "$(ls "$(fake_store)/issues" 2>/dev/null)" ] || return 0
-  if [ -f "$(fake_store)/no_sub_issues" ]; then echo no; else echo yes; fi
-}
-
 # --- repo operations, on the store --------------------------------------------
 
 # adapter_repo_default_branch <repo>: the stored default_branch answer, as is.
@@ -1260,20 +1238,6 @@ adapter_repo_default_branch() {
   [ ! -f "$f" ] || cat "$f"
   ! fake_failing adapter_repo_default_branch || return 1
   [ -f "$f" ] || { printf "GraphQL: Could not resolve to a Repository with the name '%s'. (repository)\n" "$1" >&2; return 1; }
-}
-
-# adapter_repo_local_default: the stored local_default; nothing where none
-# is set.
-adapter_repo_local_default() {
-  ! fake_failing adapter_repo_local_default || return 1
-  cat "$(fake_store)/local_default" 2>/dev/null || true
-}
-
-# adapter_auth_status: gh's report of a login - failing, as every operation
-# does, under offline or noauth.
-adapter_auth_status() {
-  ! fake_failing adapter_auth_status || return 1
-  echo "Logged in to github.com account fake-gh"
 }
 
 # adapter_claim_create <issue> <phase> <pid> <host>: the claim stored as one

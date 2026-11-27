@@ -238,7 +238,10 @@ def call_func(argv: List[str]) -> int:
     `--as <command>` already taken off by orch.__main__: runs the named
     function of a converted noun's module with `<arg>...`, returning its exit
     code (0 when it returns None). The noun is a converted one. Refuses an
-    unknown noun or a missing or private function."""
+    unknown noun or a missing or private function. Its callers are the bash
+    nouns left (autopilot and side-checkout, each naming itself by `--as`);
+    doctor, a converted noun, reads every answer in process and calls
+    none."""
     if len(argv) < 2:
         die("usage: orch_python_call [--as <command>] <noun> <func> [<arg>...]")
     noun, name, args = argv[0], argv[1], argv[2:]

@@ -1267,12 +1267,12 @@ def test_orch_python_call_runs_without_exec_and_returns_exit_code(tmp_path, repo
 def test_orch_python_call_drops_empty_sys_path_entry_so_cwd_modules_cannot_shadow(
         tmp_path, repo, module):
     (repo / module).write_text("import sys\nsys.stderr.write('shadowed\\n')\nsys.exit(7)\n")
-    script = 'source "$1"\norch_python_call agent check_settings\n'
+    git_config(tmp_path, repo, "orchestrator.route", "quick")
+    script = 'source "$1"\norch_python_call route run show\n'
 
     out, err, code = source_orch_sh(tmp_path, repo, script, unset=GLOBAL_CONFIG)
 
-    assert (err, code) == ("", 0)
-    assert out.startswith("ok\tagent implementer: model inherit (inherit), effort inherit (inherit)\0")
+    assert (out, err, code) == ("quick\n", "", 0)
 
 
 @pytest.mark.parametrize("given", [None, "", "/the/caller/s/path"],
@@ -1289,17 +1289,17 @@ def test_orch_python_call_restores_callers_pythonpath_for_subprocesses(tmp_path,
         'exec "%s" "$@"\n' % (log, real_git)
     )
     shim.chmod(0o755)
+    git_config(tmp_path, repo, "orchestrator.route", "quick")
     script = (
         'source "$1"\n'
-        'PATH="%s:$PATH" orch_python_call agent check_settings\n' % shim_dir
+        'PATH="%s:$PATH" orch_python_call route run show\n' % shim_dir
     )
     knobs = {} if given is None else {"PYTHONPATH": given}
     unset = GLOBAL_CONFIG + (("PYTHONPATH",) if given is None else ())
 
     out, err, code = source_orch_sh(tmp_path, repo, script, knobs=knobs, unset=unset)
 
-    assert (err, code) == ("", 0)
-    assert out.startswith("ok\tagent implementer: model inherit (inherit), effort inherit (inherit)\0")
+    assert (out, err, code) == ("quick\n", "", 0)
     seen = log.read_text().splitlines()
     assert seen and all(line == ("unset" if given is None else given) for line in seen)
 
