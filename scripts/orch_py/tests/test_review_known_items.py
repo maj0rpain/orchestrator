@@ -11,11 +11,8 @@ import os
 
 import pytest
 
-from conftest import AUTOPILOT, CLAUDE, GH_502, answered, hold_flow, orch_review, record, write
-
-
-def lines(*text):
-    return "".join(line + "\n" for line in text)
+from conftest import (AUTOPILOT, CLAUDE, GH_502, answered, hold_flow, lines, orch_review, record,
+                      write)
 
 
 PLAN = lines("## Decisions", "Placeholder.", "", "## Rejected alternatives", "",

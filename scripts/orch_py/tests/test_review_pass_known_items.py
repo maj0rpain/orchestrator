@@ -10,16 +10,11 @@ import pytest
 
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY, RepoPin
-from conftest import GH_502, GITHUB_ORIGIN, UnparsedPrComments, orch_review_pass
+from conftest import GH_502, GITHUB_ORIGIN, UnparsedPrComments, lines, orch_review_pass
 
 BRANCH = "quick/21-foo"
 USAGE = "usage: orch.sh review-pass known-items <issue> <path> [--deviations <file>]"
 RULING = "Spec ruling:"
-
-
-def lines(*items):
-    """The items as a file's lines, each newline-terminated."""
-    return "".join(item + "\n" for item in items)
 
 
 @pytest.fixture

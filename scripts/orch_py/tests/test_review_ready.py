@@ -14,15 +14,11 @@ import os
 import pytest
 
 from conftest import (AUTOPILOT, CLAUDE, GITHUB_ORIGIN, SESSIONS, answered, archive_main,
-                      hold_flow, labels_of, mark_side, orch_review, run_git, side_checkout,
+                      hold_flow, is_draft, labels_of, mark_side, orch_review, run_git, side_checkout,
                       snapshot, state_json, worktree_add)
 from orch.git import Git
 
 HINT = " - the flow stays in review"
-
-
-def is_draft(seed, n):
-    return os.path.isfile(os.path.join(seed.store, "prs", str(n), "draft"))
 
 
 def phase_of(root):

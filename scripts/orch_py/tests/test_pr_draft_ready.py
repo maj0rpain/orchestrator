@@ -5,15 +5,13 @@ store - as the bash pr draft and pr ready answered. pr ready's CI gate is
 orch/review.py's ci_ready_gate."""
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from orch.flow_state import STATE_UNREADABLE_MSG
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY
-from conftest import (GH_502, GITHUB_ORIGIN, SESSIONS, hold_flow, orch_pr, read, snapshot,
-                      state_json)
+from conftest import (GH_502, GITHUB_ORIGIN, SESSIONS, hold_flow, is_draft, orch_pr, read,
+                      snapshot, state_json)
 
 BRANCH = "quick/12-foo"
 # Both verbs, each case of their shared front run through each; every one of
@@ -44,10 +42,6 @@ def mine(seed):
         seed.pr_draft(n)
     seed.pr(57, "open", BRANCH, "main")
     return 57
-
-
-def is_draft(seed, n):
-    return os.path.isfile(os.path.join(seed.store, "prs", str(n), "draft"))
 
 
 def starting(seed, verb, n):

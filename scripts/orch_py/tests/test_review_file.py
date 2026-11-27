@@ -12,8 +12,8 @@ import tempfile
 
 import pytest
 
-from conftest import (AUTOPILOT, CLAUDE, GH_502, SESSIONS, hold_flow, labels_doc, orch_review,
-                      read, snapshot, write_labels_doc)
+from conftest import (AUTOPILOT, CLAUDE, GH_502, SESSIONS, hold_flow, labels_doc, lines,
+                      orch_review, read, snapshot, write_labels_doc)
 
 PR_URL = "https://ghe.example.com/x/y/pull/7"
 USAGE = ("orch: usage: orch.sh review file <major|nit> <title> --axis <spec|standards>"
@@ -69,10 +69,6 @@ def repo_labels(store):
 
 def issue_labels(store, n):
     return sorted((read(store, "issues", n, "labels") or "").splitlines())
-
-
-def lines(*text):
-    return "".join(line + "\n" for line in text)
 
 
 # --- filing -------------------------------------------------------------------

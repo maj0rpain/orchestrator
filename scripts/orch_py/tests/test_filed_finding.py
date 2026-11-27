@@ -8,15 +8,11 @@ import pytest
 
 from orch import filed_finding
 from orch.filed_finding import FindingBody, finding_body_parse
-from conftest import fake
+from conftest import fake, lines
 
 SHA = "0123456789abcdef0123456789abcdef01234567"
 URL = "https://github.com/acme/widgets/pull/42"
 EMPTY = FindingBody("", "", "", "", "", "", "", "", "", "")
-
-
-def lines(*text):
-    return "\n".join(text) + "\n"
 
 
 # A filed finding's body as review file renders it.

@@ -143,22 +143,27 @@ def flow_state(root, phase, issue, branch=None):
     return hold_flow(root, slug="x", phase=phase, issue=issue, branch=branch)
 
 
-def write(root, relative, *lines, raw=None):
-    """<lines>, each ending in a newline - or <raw> as it is - written to
+def lines(*texts):
+    """<texts> as a file's lines, each ending in a newline."""
+    return "".join(text + "\n" for text in texts)
+
+
+def write(root, relative, *texts, raw=None):
+    """<texts>, each ending in a newline - or <raw> as it is - written to
     <root>/<relative>, a Path's, its directories made: its path."""
     path = root / relative
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("".join(line + "\n" for line in lines) if raw is None else raw)
+    path.write_text(lines(*texts) if raw is None else raw)
     return path
 
 
-def record(root, i, *lines, raw=None, under="", report=""):
-    """Iteration <i>'s review record in <root>, holding <lines> or <raw> as
+def record(root, i, *texts, raw=None, under="", report=""):
+    """Iteration <i>'s review record in <root>, holding <texts> or <raw> as
     write takes them, in the review directory or its <under> folder - or,
     with <report>, its iteration-NN-<report>.md reviewer's report: its
     path."""
     name = "iteration-%02d%s.md" % (i, "-" + report if report else "")
-    return write(root, Path(".orchestrator", "review", under, name), *lines, raw=raw)
+    return write(root, Path(".orchestrator", "review", under, name), *texts, raw=raw)
 
 
 def write_labels_doc(root, text):
@@ -588,6 +593,11 @@ def orch_pr(seed, git, *argv, env=None, gh=None):
         return pr.run(list(argv), gh=gh, git=git, env=env)
     except SystemExit as died:
         return died.code
+
+
+def is_draft(seed, n):
+    """Whether PR #<n> in <seed>'s store is a draft."""
+    return os.path.isfile(os.path.join(seed.store, "prs", str(n), "draft"))
 
 
 def prs_of(store):
