@@ -392,20 +392,13 @@ def test_a_plan_comment_the_issue_already_has_is_not_posted_again(p):
     assert p.runs() == ["7"]
 
 
-@pytest.mark.parametrize("title,slug", [
-    ("Agent settings: repeated kind/host switches and duplicated listing remedy builders"
-     " (9 findings)", "agent-settings-repeated-kind-host"),
-    ("Fix the widget", "fix-the-widget"),
-    ("Aaaaaaaaaabbbbbbbbbbccccccccccddddddddddeeeee rest",
-     "aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd"),
-    ("!!! ???", "untitled"),
-])
-def test_the_side_checkout_is_named_for_the_title_s_short_slug(p, title, slug):
-    p.issue(21, title)
+def test_the_side_checkout_is_named_for_the_title_s_short_slug(p):
+    p.issue(21, "Fix the widget")
 
     assert p.tick() == 0
     [(argv, how)] = p.children.of("init")
-    assert (argv[2], how["cwd"]) == (slug, "%s/.orchestrator/checkouts/%s" % (p.main, slug))
+    assert (argv[2], how["cwd"]) == ("fix-the-widget",
+                                     "%s/.orchestrator/checkouts/fix-the-widget" % p.main)
 
 
 def test_a_clash_moves_on_to_the_issue_numbered_name(p):

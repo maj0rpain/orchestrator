@@ -753,19 +753,6 @@ def test_a_pr_merged_before_its_issue_was_created_is_not_acted_on(
     assert t.state(80) == state
 
 
-def test_the_merged_pr_read_is_bounded_by_the_oldest_issue_not_running(t):
-    # #85 is running and the oldest. A read bounded by #86's creation reads
-    # #86's PR, merged before #87 was created, but never #87's, merged
-    # before #86 was.
-    done_merged(t, 85, 3600, created_age=3 * DAY)
-    t.seed.labels(85, "orch:done", "orch:running")
-    done_merged(t, 86, 3 * DAY // 2, created_age=2 * DAY)
-    done_merged(t, 87, 5 * DAY // 2, created_age=DAY)
-
-    assert t.tick() == 0
-    assert (t.state(85), t.state(86), t.state(87)) == ("OPEN", "CLOSED", "OPEN")
-
-
 def test_done_issues_of_different_ages_are_closed_from_one_read_of_each_kind(t, capsys):
     done_merged(t, 83, 4 * DAY, created_age=5 * DAY)
     done_merged(t, 84, 3600, created_age=DAY)

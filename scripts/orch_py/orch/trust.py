@@ -1,6 +1,7 @@
-"""The Trust module (scripts/orch/trust.sh), kept to what the issue and
-review-pass nouns use: the Trusted comment filter, the fork-PR filter and the
-attended reads' trusted-issue warning.
+"""The Trust module (scripts/orch/trust.sh), kept to what the issue,
+review-pass and autopilot nouns use: the Trusted comment filter, the fork-PR
+filter, the attended reads' trusted-issue warning, and the issue check and
+writer text autopilot's pickup trust step and candidates verdict read.
 
 A trusted comment is one whose authorAssociation is OWNER, MEMBER or
 COLLABORATOR (ADR-0057); every other comment is dropped, once per read, before

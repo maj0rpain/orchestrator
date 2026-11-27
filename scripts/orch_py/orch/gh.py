@@ -9,9 +9,10 @@ parse as the operation's JSON raises Unparsed. A caller dies through gh_or_die
 or gh_die, or reacts another way through gh_reason. The CI-evidence reads take
 gh api's whole answer, as gh.sh's ci_api_read did while the bash review noun
 stood, and read it here the way its jq expression did, so an error body GitHub
-answers with is read too. The claim list and the claim delete are the
-two operations the real adapter makes through git rather than gh, as bash's
-adapter_claim_list and adapter_claim_delete are: a claim is a ref on origin.
+answers with is read too. The claim list, the claim create and the claim
+delete are the three operations the real adapter makes through git rather
+than gh, as bash's adapter_claim_list, adapter_claim_create and
+adapter_claim_delete are: a claim is a ref on origin.
 
 The real adapter, Gh, reproduces gh.sh's guard: every call is pinned to the
 repo (orch.repo), dying with the remedy when none resolves, and a failed call

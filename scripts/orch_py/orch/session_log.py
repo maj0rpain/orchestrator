@@ -12,7 +12,7 @@ import re
 import time
 from typing import Any, List, NamedTuple, Optional
 
-from orch.common import read_raw
+from orch.common import lines_of, read_raw
 
 # The text of Claude Code's usage-limit message, with its reset time when it
 # gives one: an epoch after `|`, or a `resets <time>`. Matched within one line,
@@ -163,10 +163,7 @@ def session_log_read(path: str, now: float) -> SessionLog:
         return NOT_LIMITED
     last_rate_limit, last_result = None, None
     plain: List[str] = []
-    lines = text.split("\n")
-    if lines and lines[-1] == "":
-        lines.pop()
-    for line in lines:
+    for line in lines_of(text):
         try:
             event = json.loads(line)
         except ValueError:

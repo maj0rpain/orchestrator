@@ -3,7 +3,8 @@ bash autopilot noun: where an autopilot flow's issue stands. It owns the label
 set (the phase labels, orch:running, needs-human, orch:limited and orch:sync)
 and the label entries a tick ensures, the phase-label helpers, the label
 verdict against a recorded phase and the phase-redo rule (REDO_PAIRS), the
-host id, the read of an issue's Standing (standing_read) with the sync-request
+host id, the read of an issue's Standing (standing_read, and
+standing_read_or_die, the read that dies on failure) with the sync-request
 and Pickup reads on it, the claims on origin (claims_read, one read;
 standing_claim, the create), and every write to an issue's Standing - each a
 transition: begin, sync request, resume, start, ask, reenter, stop, sync
@@ -215,12 +216,19 @@ def standing_read(gh, issue) -> Tuple[Optional[Standing], str]:
     return standing_of(state, labels), ""
 
 
-def standing_human_guard(gh, issue: str) -> Standing:
-    """Issue #<issue>'s Standing, read once; dies unless it is open and
-    carries needs-human - bash standing_human_guard."""
+def standing_read_or_die(gh, issue: str) -> Standing:
+    """standing_read of issue #<issue>, dying "gh could not read issue
+    #<issue>: <reason>" where the read fails."""
     standing, reason = standing_read(gh, int(issue))
     if standing is None:
         gh_die("read issue #" + issue, reason)
+    return standing
+
+
+def standing_human_guard(gh, issue: str) -> Standing:
+    """Issue #<issue>'s Standing, read once; dies unless it is open and
+    carries needs-human - bash standing_human_guard."""
+    standing = standing_read_or_die(gh, issue)
     if standing.state != "OPEN":
         die("issue #%s is closed" % issue)
     if not standing.human:
@@ -651,9 +659,7 @@ def standing_start(gh, issue: str, plan_file: str, ready: str, state_file: str,
         die("issue must be a plain issue number, got: " + issue)
     if not os.path.isfile(plan_file):
         die("plan file not found: " + plan_file)
-    standing, reason = standing_read(gh, int(issue))
-    if standing is None:
-        gh_die("read issue #" + issue, reason)
+    standing = standing_read_or_die(gh, issue)
     if not label_listed(standing.labels, ready):
         die("issue #%s does not carry the '%s' label - an autopilot flow starts from a ready"
             " issue" % (issue, ready))

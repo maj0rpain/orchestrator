@@ -51,8 +51,9 @@ from typing import Callable, Dict, List, Mapping, Optional, Tuple
 
 from orch.agent import autopilot_setting_check, default_plugin_root
 from orch.common import (ORCH_DIR_NAME, UTC_STAMP_FORMAT, capture, die, exit_status,
-                         file_write_atomic, is_positive_int, plain_number, read_raw, read_text,
-                         rm_f, stderr_write, stdout_write, subshell, temp_text_file, trim, warn)
+                         file_write_atomic, is_positive_int, lines_of, plain_number, read_raw,
+                         read_text, rm_f, stderr_write, stdout_write, subshell, temp_text_file,
+                         trim, warn)
 from orch.git import Git
 from orch.host import host_detect, plugin_cmd
 from orch.repo import REPO_REMEDY, RepoPin, owner_name
@@ -652,15 +653,13 @@ def sync_verb(ap: Autopilot, issue: str) -> int:
     already carrying orch:sync. It reads the issue's labels alone: no side
     checkout, as bash's autopilot_sync reads none."""
     from orch.gh import gh_die
-    from orch.standing import (STANDING_SYNC_LABEL, phase_label, standing_read,
+    from orch.standing import (STANDING_SYNC_LABEL, phase_label, standing_read_or_die,
                                standing_sync_request)
 
     if not is_positive_int(issue):
         die("not an issue number: " + issue)
     gh = ap.gh_of()
-    standing, reason = standing_read(gh, int(issue))
-    if standing is None:
-        gh_die("read issue #" + issue, reason)
+    standing = standing_read_or_die(gh, issue)
     if standing.state != "OPEN":
         die("issue #%s is closed" % issue)
     if not standing.is_done():
@@ -1634,9 +1633,7 @@ def pickup_reason(err: str) -> str:
     kept whole, else its last non-empty line, else "the step gave no
     reason". Every other line goes on to stderr - bash
     autopilot_pickup_reason."""
-    lines = err.split("\n")
-    if lines and lines[-1] == "":
-        lines.pop()
+    lines = lines_of(err)
     picks = [i for i, line in enumerate(lines) if line.startswith("orch: ")] or [
         i for i, line in enumerate(lines) if line]
     if not picks:
