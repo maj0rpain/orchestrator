@@ -1,5 +1,7 @@
 """The Liveness module, a concept module with no noun, as far as a converted
-noun needs it: whether the process behind a record is still running.
+noun needs it: whether the process behind a record is still running, and
+whether the process behind an issue's claim is - by its run record under the
+main checkout's autopilot directory, else its tick record.
 
 It owns the record format, `<pid> <start-time>`, which the bash side's
 liveness.sh writes and reads too, and the start-time reader: field 22 of
@@ -12,9 +14,10 @@ from __future__ import annotations
 
 import os
 import subprocess
-from typing import Mapping, Optional
+from typing import Mapping, Optional, Tuple
 
-from orch.common import plain_number, read_text
+from orch.autopilot import autopilot_dir
+from orch.common import plain_number, read_raw, read_text
 
 
 def proc_start(pid: int, env: Mapping[str, str]) -> Optional[str]:
@@ -64,3 +67,29 @@ def record_alive(record: str, env: Mapping[str, str]) -> bool:
     if pid is None or len(words) != 2:
         return False
     return proc_start(pid, env) == words[1]
+
+
+def run_dir(main: str) -> str:
+    """The directory of the issues' run and tick records under the main
+    checkout <main> - bash liveness_subdir run."""
+    return autopilot_dir(main) + "/run"
+
+
+def issue_record(main: str, issue: str) -> str:
+    """Issue <issue>'s record text - its run record's when there is one,
+    else its tick record's, else "" - bash liveness_issue_record; "" too for
+    a record that cannot be read."""
+    for kind in ("pid", "tick"):
+        path = "%s/%s.%s" % (run_dir(main), issue, kind)
+        if os.path.isfile(path):
+            return read_raw(path) or ""
+    return ""
+
+
+def issue_alive(main: str, issue: str, env: Mapping[str, str]) -> Tuple[bool, str]:
+    """Whether the process behind issue <issue>'s claim is alive, by its
+    record under the main checkout <main> (issue_record); with neither
+    record, gone - bash liveness_issue_alive. With it, the pid the record
+    names, its first word, "" where there is no record."""
+    record = issue_record(main, issue)
+    return record_alive(record, env), record.split(" ", 1)[0].rstrip("\n")

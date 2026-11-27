@@ -9,6 +9,7 @@ import os
 import platform
 import re
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ import pytest
 from conftest import (GH_502, died_of, exclude_orchestrator, git_repo, hold_flow, record,
                       run_git)
 from orch import cli, doctor
+from orch.autopilot import epoch_iso
 from orch.gh_fake import FakeGh
 from orch.git import FakeGit, Worktree
 from orch.repo import REPO_CAUSE, REPO_MISSING, RepoPin
@@ -1070,7 +1072,7 @@ def test_a_set_base_branch_is_checked_on_origin(capsys, seed, tmp_path, on_origi
 
 def verification(capsys, seed, tmp_path, files, *tools):
     """The verification lines' report, every line from the Ticket
-    verification's to the end of the repo config group, with <files> written
+    verification's to the agent settings check's first, with <files> written
     to the checkout and <tools> stubs on PATH beside git, gh and jq."""
     for name, text in files.items():
         write(tmp_path, name, text)
@@ -1078,7 +1080,8 @@ def verification(capsys, seed, tmp_path, files, *tools):
                       env=doctor_env(tmp_path, *(TOOLS + tools)))
     group = repo_config(run).split("\n")
     start = next(i for i, line in enumerate(group) if "Ticket verification" in line)
-    return "\n".join(group[start:])
+    end = next(i for i, line in enumerate(group) if line.startswith("ok    agent "))
+    return "\n".join(group[start:end]) + "\n"
 
 
 def setup_doc(tmp_path):
@@ -2335,3 +2338,645 @@ def test_a_deleted_flow_branch_beside_a_same_named_tag_still_fails(capsys, seed,
     assert ("FAIL  branch orch/11-gone no longer exists - the flow has nothing left to build"
             " on.") in flow_lines(run)
     assert run.code == 1
+
+
+# --- repo config: agent settings --------------------------------------------------
+
+
+def agent_lines(run):
+    """The repo config group's agent settings lines: from its first `agent `
+    line to its end."""
+    lines = repo_config(run).split("\n")[:-1]
+    start = next(i for i, line in enumerate(lines) if line.startswith("ok    agent "))
+    return lines[start:]
+
+
+def test_the_agent_settings_check_lists_each_role_and_fails_a_disallowed_value(
+        capsys, seed, tmp_path, monkeypatch):
+    healthy(seed)
+    git = checkout_git(tmp_path, local_config={"orchestrator.effort.implementer": "high",
+                                               "orchestrator.model.fixer": "gpt"},
+                       global_config={"orchestrator.model.reviewer": "haiku"})
+
+    def refuse(*args, **kwargs):
+        raise NoChildProcess()
+
+    monkeypatch.setattr(subprocess, "Popen", refuse)
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=git)
+
+    lines = agent_lines(run)
+    assert lines[:4] == [
+        "ok    agent implementer: model inherit (inherit), effort high (local)",
+        "ok    agent lens: model inherit (inherit), effort inherit (inherit)",
+        "ok    agent reviewer: model haiku (global), effort inherit (inherit)",
+        "ok    agent fixer: model gpt (local, invalid), effort inherit (inherit)",
+    ]
+    assert ("FAIL  orchestrator.model.fixer is gpt (local) - not an allowed model"
+            " (want sonnet|opus|haiku|fable|inherit)") in lines
+    assert INDENT + "orch.sh agent clear fixer --model" in lines
+    assert "ok    agent junie auditor: model inherit (inherit), effort inherit (inherit)" in lines
+    assert "could not run" not in run.out
+    assert run.code == 1
+
+
+def test_a_model_junie_did_not_recognise_fails_with_its_allowed_names(capsys, seed, tmp_path):
+    healthy(seed)
+    logs = tmp_path / HOME / ".junie" / "logs"
+    logs.mkdir(parents=True)
+    (logs / "log-a.log").write_text(
+        "WARN Unrecognized 'model' value 'bad-model', falling back to default."
+        " Allowed LLM names: gpt-5, claude-opus-5-5\n")
+    git = checkout_git(tmp_path, local_config={"orchestrator.junie.model.fixer": "bad-model"})
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=git)
+
+    lines = agent_lines(run)
+    found = lines.index("FAIL  Junie did not recognise model bad-model, set for fixer (local) - it"
+                        " fell back to the session model")
+    assert lines[found - 1] == "ok    junie session: cannot tell (no Junie session index)"
+    assert lines[found + 1:found + 3] == [
+        INDENT + "Allowed LLM names: gpt-5, claude-opus-5-5",
+        INDENT + "orch.sh agent set fixer --host junie --model <id>",
+    ]
+    assert run.code == 1
+
+
+def test_agent_settings_that_cannot_be_read_are_the_check_s_one_fail(capsys, seed, tmp_path):
+    from orch.common import die
+
+    healthy(seed)
+    git = checkout_git(tmp_path)
+    # Its scoped config read dying, as a git that cannot read its config
+    # file would.
+    git.config_regexp = lambda scope, pattern: die("could not read the %s git config" % scope)
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=git)
+
+    assert repo_config(run).endswith("FAIL  could not read the local git config\n")
+    assert run.code == 1
+
+
+# --- repo config: finished side checkouts ---------------------------------------
+
+
+def linked_worktree(tmp_path, path, marker=None):
+    """A linked worktree of the clone at <path>, a Path: its git pointer
+    naming a git folder under tmp_path/git-dir/worktrees that holds a HEAD
+    and, where <marker> is given, the side-checkout ownership marker holding
+    it, its name the path's below tmp_path. Its path, as a str."""
+    gitdir = tmp_path / "git-dir" / "worktrees" / "-".join(path.relative_to(tmp_path).parts)
+    gitdir.mkdir(parents=True)
+    (gitdir / "HEAD").write_text("ref: refs/heads/x\n")
+    if marker is not None:
+        (gitdir / "orchestrator-side-checkout").write_text(marker)
+    path.mkdir(parents=True)
+    (path / ".git").write_text("gitdir: %s\n" % gitdir)
+    return str(path)
+
+
+class SideCheckouts:
+    """The checkout at tmp_path and its side checkouts, each added by add:
+    a FakeGit listing them all, every tree clean, and each branch's tip a
+    commit of its own."""
+
+    def __init__(self, tmp_path, **kwargs):
+        self.tmp_path = tmp_path
+        self.git = checkout_git(tmp_path, **kwargs)
+        self.worktrees = [Worktree(str(tmp_path), "main")]
+        self.git.seed("worktree_list", answer=self.worktrees)
+
+    def add(self, name, branch, tip=None, marker="7\n"):
+        """Side checkout <name> on <branch>, its tip <tip> (a SHA made from
+        the name when None): its path."""
+        path = linked_worktree(self.tmp_path, self.tmp_path / ".orchestrator" / "checkouts" / name,
+                               marker)
+        self.worktrees.append(Worktree(path, branch))
+        self.git.seed("status_at", path, answer="")
+        self.git.seed("branch_at", path, answer=branch)
+        self.tip(branch, tip or sha_of(name))
+        return path
+
+    def tip(self, branch, sha):
+        """<branch>'s tip <sha>, a commit the clone holds."""
+        self.git.seed("resolve_commit", "refs/heads/" + branch, answer=sha)
+        self.git.commits[sha] = {}
+
+    def merged(self, seed, n, branch, head, base="main"):
+        """PR #n merged from <branch> into <base>, its head <head>, a commit
+        the clone holds."""
+        seed.pr(n, "merged", branch, base)
+        seed.pr_head(n, head)
+        self.git.commits[head] = {}
+
+
+def sha_of(name):
+    return (name.encode().hex() * 40)[:40]
+
+
+def finished_lines(run):
+    """The report's lines naming a side checkout, and each one's remedy."""
+    lines = run.out.split("\n")
+    return [line for i, line in enumerate(lines)
+            if line.startswith(("warn  side checkout ", "FAIL  could not read the checkouts"))
+            or (line.startswith(INDENT + "orch.sh side-checkout remove")
+                and lines[i - 1].startswith("warn  side checkout "))]
+
+
+def finished_warn(tmp_path, name):
+    return ["warn  side checkout %s is finished - its PR is merged, and it is still standing at"
+            " %s/.orchestrator/checkouts/%s." % (name, tmp_path, name),
+            INDENT + "orch.sh side-checkout remove " + name]
+
+
+def test_finished_side_checkouts_warn_with_their_remove_command_and_others_say_nothing(
+        capsys, seed, tmp_path):
+    healthy(seed)
+    sides = SideCheckouts(tmp_path)
+    sides.add("dfin", "quick/20-dfin")
+    sides.merged(seed, 60, "quick/20-dfin", sha_of("dfin"))
+    sides.add("dopen", "quick/21-dopen")
+    seed.pr(61, "open", "quick/21-dopen", "main")
+    dflow = sides.add("dflow", "orch/dflow-flow")
+    hold_flow(Path(dflow), slug="dflow-flow", phase="done", branch="orch/dflow-flow", pr="62")
+    sides.merged(seed, 62, "orch/dflow-flow", sha_of("dflow"))
+    sides.add("dun", "quick/22-dun", tip=sha_of("dun-follow-up"))
+    sides.merged(seed, 63, "quick/22-dun", sha_of("dun"))
+    sides.git.seed("ancestry", sha_of("dun-follow-up"), sha_of("dun"), answer=False)
+    dnd = sides.add("dnd", "orch/dnd-flow")
+    hold_flow(Path(dnd), slug="dnd-flow", phase="implement", branch="orch/dnd-flow", pr="64")
+    sides.merged(seed, 64, "orch/dnd-flow", sha_of("dnd"))
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git)
+
+    assert finished_lines(run) == finished_warn(tmp_path, "dfin") + finished_warn(tmp_path, "dflow")
+    assert run.code == 0
+
+
+def test_a_tip_an_ancestor_of_a_merged_head_is_finished_and_one_never_pushed_is_not(
+        capsys, seed, tmp_path):
+    healthy(seed)
+    sides = SideCheckouts(tmp_path)
+    sides.add("behind", "quick/30-behind")
+    sides.merged(seed, 70, "quick/30-behind", sha_of("behind-head"))
+    sides.git.seed("ancestry", sha_of("behind"), sha_of("behind-head"), answer=True)
+    sides.add("unfetched", "quick/31-unfetched")
+    seed.pr(71, "merged", "quick/31-unfetched", "main")
+    seed.pr_head(71, sha_of("not-here"))
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git)
+
+    assert finished_lines(run) == finished_warn(tmp_path, "behind")
+
+
+def test_a_dirty_tree_is_not_finished_and_one_git_cannot_read_is_warned_unchecked(
+        capsys, seed, tmp_path):
+    from orch.git import GitFailure
+
+    healthy(seed)
+    sides = SideCheckouts(tmp_path)
+    dirty = sides.add("dirty", "quick/40-dirty")
+    sides.merged(seed, 80, "quick/40-dirty", sha_of("dirty"))
+    sides.git.seed("status_at", dirty, answer="?? new.txt\n")
+    broken = sides.add("broken", "quick/41-broken")
+    sides.git.seed("status_at", broken, answer=GitFailure(128, "fatal: index file corrupt\nmore"))
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git)
+
+    assert finished_lines(run) == [
+        "warn  side checkout broken could not be checked: git status failed - cannot check the"
+        " working tree: fatal: index file corrupt"]
+    assert run.code == 0
+
+
+def test_a_side_checkout_github_cannot_answer_for_is_warned_unchecked(capsys, seed, tmp_path):
+    healthy(seed)
+    sides = SideCheckouts(tmp_path)
+    sides.add("quick", "quick/50-quick")
+    flowing = sides.add("flowing", "orch/51-flowing")
+    hold_flow(Path(flowing), slug="flowing", phase="done", branch="orch/51-flowing", pr="90")
+    seed.fail("adapter_prs_merged", GH_502)
+    seed.fail("adapter_pr_state_draft", GH_502)
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git)
+
+    assert finished_lines(run) == [
+        "warn  side checkout quick could not be checked: could not read GitHub: HTTP 502: Bad"
+        " Gateway",
+        "warn  side checkout flowing could not be checked: could not read GitHub: HTTP 502: Bad"
+        " Gateway"]
+    assert run.code == 0
+
+
+def test_a_flow_with_no_recorded_base_is_held_to_the_default_branch(capsys, seed, tmp_path):
+    healthy(seed)
+    sides = SideCheckouts(tmp_path)
+    into_main = sides.add("into-main", "orch/60-main")
+    hold_flow(Path(into_main), slug="m", phase="done", branch="orch/60-main", pr="91")
+    sides.merged(seed, 91, "orch/60-main", sha_of("into-main"))
+    elsewhere = sides.add("elsewhere", "orch/61-uat")
+    hold_flow(Path(elsewhere), slug="u", phase="done", branch="orch/61-uat", pr="92")
+    sides.merged(seed, 92, "orch/61-uat", sha_of("elsewhere"), base="uat")
+    recorded = sides.add("recorded", "orch/62-uat")
+    hold_flow(Path(recorded), slug="r", phase="done", branch="orch/62-uat", pr="93", base="uat")
+    sides.merged(seed, 93, "orch/62-uat", sha_of("recorded"), base="uat")
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git)
+
+    assert finished_lines(run) == (finished_warn(tmp_path, "into-main")
+                                   + finished_warn(tmp_path, "recorded"))
+
+
+def test_a_fork_pr_from_the_branch_never_finishes_a_side_checkout(capsys, seed, tmp_path):
+    healthy(seed)
+    sides = SideCheckouts(tmp_path)
+    sides.add("forked", "quick/70-forked")
+    sides.merged(seed, 95, "quick/70-forked", sha_of("forked"))
+    seed.pr_cross(95)
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git,
+                      err="orch: ignored 1 PR(s) from forks for quick/70-forked\n")
+
+    assert finished_lines(run) == []
+
+
+def test_checkouts_that_cannot_be_listed_fail_the_finished_check(capsys, seed, tmp_path):
+    healthy(seed)
+    git = checkout_git(tmp_path)
+    git.seed("worktree_list", answer=None)
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=git)
+
+    assert finished_lines(run) == [
+        "FAIL  could not read the checkouts - git worktree list failed, so no side checkout could"
+        " be checked."]
+    assert run.code == 1
+
+
+def skipped_github(run):
+    found = re.search(r"^warn  (\d+) GitHub checks? skipped", run.out, re.M)
+    return int(found.group(1)) if found else 0
+
+
+def test_offline_a_side_checkout_is_one_more_skipped_github_check(capsys, seed, tmp_path):
+    healthy(seed)
+    seed.offline()
+    without = skipped_github(orch_doctor(capsys, seed, tmp_path, "--env"))
+    sides = SideCheckouts(tmp_path)
+    sides.add("dfin", "quick/20-dfin")
+    sides.merged(seed, 60, "quick/20-dfin", sha_of("dfin"))
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git)
+
+    assert finished_lines(run) == []
+    assert skipped_github(run) == without + 1
+    assert run.code == 0
+
+
+@pytest.mark.parametrize("prepare", [healthy,
+                                     lambda seed: (healthy(seed),
+                                                   seed.fail("adapter_repo_default_branch"))])
+def test_with_side_checkouts_doctor_s_only_default_branch_read_is_its_probe_s(
+        capsys, seed, tmp_path, prepare):
+    prepare(seed)
+    sides = SideCheckouts(tmp_path)
+    for name, n in (("one", 60), ("two", 61)):
+        dflow = sides.add(name, "orch/%s" % name)
+        hold_flow(Path(dflow), slug=name, phase="done", branch="orch/" + name, pr=str(n))
+        sides.merged(seed, n, "orch/" + name, sha_of(name))
+    sides.add("quick", "quick/62-quick")
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git, gh_class=GhReads)
+
+    assert run.gh.asked.count("repo_default_branch") == 1
+    assert finished_lines(run)[:2] == finished_warn(tmp_path, "one")
+
+
+# --- repo config: autopilot claims ------------------------------------------------
+
+ME = "this-host"
+
+
+def claims_git(tmp_path):
+    """checkout_git's checkout, the main checkout git names."""
+    git = checkout_git(tmp_path)
+    git.seed("main_checkout", answer=str(tmp_path))
+    return git
+
+
+def run_record(tmp_path, issue, text, kind="pid"):
+    """Issue <issue>'s run (or tick) record under the main checkout at
+    tmp_path, holding <text>."""
+    run_dir = tmp_path / ".orchestrator" / "autopilot" / "run"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / ("%s.%s" % (issue, kind))).write_text(text)
+
+
+def claim_lines(run):
+    """The report's claim lines, each with its remedy."""
+    lines = run.out.split("\n")
+    return [line for i, line in enumerate(lines)
+            if re.match(r"warn  issue #\d+ (is|has been) claimed", line)
+            or (line.startswith(INDENT) and re.match(r"warn  issue #\d+ (is|has been) claimed",
+                                                     lines[i - 1]))]
+
+
+def claims_doctor(capsys, seed, tmp_path, git=None, **extra):
+    return orch_doctor(capsys, seed, tmp_path, "--env",
+                       git=claims_git(tmp_path) if git is None else git,
+                       env=doctor_env(tmp_path, ORCH_HOST_ID=ME, **extra))
+
+
+def test_old_claims_of_other_hosts_and_dead_claims_of_this_one_warn_with_their_remedies(
+        capsys, seed, tmp_path):
+    healthy(seed)
+    seed.claim(7, host="otherhost", pid=5, started="2020-01-01T00:00:00Z")
+    seed.claim(8, host="otherhost", pid=5, started=epoch_iso(int(time.time())))
+    seed.claim(9, host=ME, pid=5, started="2020-01-01T00:00:00Z")
+    seed.claim(10, host=ME, pid=5, started="2020-01-01T00:00:00Z", phase="review")
+    run_record(tmp_path, 10, "999999999 gone\n")
+    seed.claim(11, host=ME, pid=5, started="2020-01-01T00:00:00Z")
+    run_record(tmp_path, 11, "999999998 gone\n", kind="tick")
+    seed.claim(12, host="thirdhost", pid=6, started="2020-01-01T00:00:00Z")
+
+    run = claims_doctor(capsys, seed, tmp_path)
+
+    assert claim_lines(run) == [
+        "warn  issue #7 has been claimed by otherhost (pid 5, phase spec) since"
+        " 2020-01-01T00:00:00Z - more than a day.",
+        INDENT + "if that session is gone, run orch.sh autopilot tick on otherhost",
+        "warn  issue #9 is claimed by this host (phase spec), but its process is gone (no"
+        " record).",
+        INDENT + "orch.sh autopilot tick",
+        "warn  issue #10 is claimed by this host (phase review), but its process is gone (pid"
+        " 999999999).",
+        INDENT + "orch.sh autopilot tick",
+        "warn  issue #11 is claimed by this host (phase spec), but its process is gone (pid"
+        " 999999998).",
+        INDENT + "orch.sh autopilot tick",
+        "warn  issue #12 has been claimed by thirdhost (pid 6, phase spec) since"
+        " 2020-01-01T00:00:00Z - more than a day.",
+        INDENT + "if that session is gone, run orch.sh autopilot tick on thirdhost",
+    ]
+    assert "refs/orch/claims" not in run.out
+    assert run.code == 0
+
+
+def test_a_claim_whose_process_runs_adds_no_warning(capsys, seed, tmp_path):
+    from orch.liveness import record_of
+
+    healthy(seed)
+    seed.claim(9, host=ME, pid=os.getpid())
+    run_record(tmp_path, 9, record_of(os.getpid(), {}))
+
+    assert claim_lines(claims_doctor(capsys, seed, tmp_path)) == []
+
+
+def test_with_the_main_checkout_unreadable_only_other_hosts_claims_are_named(
+        capsys, seed, tmp_path):
+    healthy(seed)
+    seed.claim(9, host=ME)
+    seed.claim(7, host="otherhost", pid=5, started="2020-01-01T00:00:00Z")
+
+    run = claims_doctor(capsys, seed, tmp_path, git=checkout_git(tmp_path))
+
+    assert [line for line in claim_lines(run) if not line.startswith(INDENT)] == [
+        "warn  issue #7 has been claimed by otherhost (pid 5, phase spec) since"
+        " 2020-01-01T00:00:00Z - more than a day."]
+
+
+def test_without_orch_host_id_this_host_is_its_hostname(capsys, seed, tmp_path):
+    import socket
+
+    healthy(seed)
+    seed.claim(9)
+    seed.claim(6, host=ME, started="2020-01-01T00:00:00Z")
+    env = doctor_env(tmp_path)
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=claims_git(tmp_path), env=env)
+
+    assert socket.gethostname() != ME
+    assert [line for line in claim_lines(run) if not line.startswith(INDENT)] == [
+        "warn  issue #6 has been claimed by %s (pid 1, phase spec) since 2020-01-01T00:00:00Z -"
+        " more than a day." % ME,
+        "warn  issue #9 is claimed by this host (phase spec), but its process is gone (no"
+        " record)."]
+
+
+def test_claims_origin_cannot_list_are_not_reported(capsys, seed, tmp_path):
+    healthy(seed)
+    seed.claim(7, host="otherhost", started="2020-01-01T00:00:00Z")
+    seed.fail("adapter_claim_list", "HTTP 502 claims")
+
+    run = claims_doctor(capsys, seed, tmp_path)
+
+    assert claim_lines(run) == []
+    assert "could not run" not in run.out
+    assert run.code == 0
+
+
+# --- repo config: autopilot side-checkout flows -----------------------------------
+
+
+def side_flow(tmp_path, sides, name="7-side-flow", issue="7", phase="spec", state=None):
+    """A side checkout <name> whose marker records <issue>, holding a flow
+    at <phase> (<state> written as its state file instead, when given): its
+    path."""
+    path = sides.add(name, "orch/" + name, marker=issue + "\n")
+    if state is None:
+        hold_flow(Path(path), slug=name, phase=phase, issue=int(issue) if issue else None)
+    else:
+        write_state(Path(path), state)
+    return path
+
+
+def side_label_lines(run):
+    """The report's side-checkout phase label lines, each with its
+    remedy."""
+    lines = run.out.split("\n")
+    said = re.compile(r"(ok    phase label of #|warn  issue #\d+ is labelled .* its side checkout)")
+    return [line for i, line in enumerate(lines)
+            if said.match(line) or (line.startswith(INDENT) and said.match(lines[i - 1]))]
+
+
+@pytest.mark.parametrize("labels, lines", [
+    (("orch:spec",), ["ok    phase label of #7: orch:spec"]),
+    (("Orch:Spec",), ["ok    phase label of #7: orch:spec"]),
+    (("orch:implement",), [
+        "warn  issue #7 is labelled orch:implement, but its side checkout 7-side-flow last moved"
+        " to phase spec.",
+        INDENT + "relabel the issue orch:spec; the watcher refuses this disagreement"]),
+    (("orch:review", "orch:spec"), [
+        "warn  issue #7 is labelled orch:spec orch:review, but its side checkout 7-side-flow last"
+        " moved to phase spec.",
+        INDENT + "relabel the issue orch:spec; the watcher refuses this disagreement"]),
+])
+def test_a_side_checkout_flow_s_phase_label_is_held_to_its_recorded_phase(
+        capsys, seed, tmp_path, labels, lines):
+    healthy(seed)
+    seed.issue(7, "open", "ready-for-agent", *labels)
+    sides = SideCheckouts(tmp_path)
+    side_flow(tmp_path, sides)
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git, env=flow_env(tmp_path))
+
+    assert side_label_lines(run) == lines
+    assert repo_config(run).endswith("\n".join(lines) + "\n")
+
+
+def test_a_side_flow_labelled_one_step_back_gets_the_redo_the_watcher_will_run(
+        capsys, seed, tmp_path):
+    healthy(seed)
+    seed.issue(7, "open", "orch:spec")
+    sides = SideCheckouts(tmp_path)
+    side_flow(tmp_path, sides, phase="implement")
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git, env=flow_env(tmp_path))
+
+    assert side_label_lines(run) == [
+        "warn  issue #7 is labelled orch:spec, but its side checkout 7-side-flow last moved to"
+        " phase implement.",
+        INDENT + "the watcher will run /orchestrator:redo spec"]
+
+
+def test_side_flows_that_cannot_be_judged_are_passed_over_silently(capsys, seed, tmp_path):
+    healthy(seed)
+    seed.issue(7, "open", "orch:implement")
+    sides = SideCheckouts(tmp_path)
+    side_flow(tmp_path, sides, name="truncated", state='{"phase": "spec", "issue"')
+    side_flow(tmp_path, sides, name="unmarked", issue="")
+    side_flow(tmp_path, sides, name="unread", issue="8")
+    seed.fail("adapter_issue_state_labels", GH_502)
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git, env=flow_env(tmp_path))
+
+    assert side_label_lines(run) == []
+    assert "parse error" not in run.out
+    assert "could not run" not in run.out
+
+
+def test_doctor_in_a_side_checkout_leaves_its_own_flow_to_the_flow_checks(
+        capsys, seed, tmp_path):
+    healthy(seed)
+    seed.issue(7, "open", "orch:implement")
+    sides = SideCheckouts(tmp_path)
+    path = side_flow(tmp_path, sides)
+    sides.git.root = path
+
+    run = orch_doctor(capsys, seed, Path(path), "--env", git=sides.git,
+                      env=flow_env(tmp_path))
+
+    assert side_label_lines(run) == []
+
+
+def test_offline_side_flows_are_one_more_skipped_github_check(capsys, seed, tmp_path):
+    healthy(seed)
+    seed.offline()
+    sides = SideCheckouts(tmp_path)
+    without = skipped_github(orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git))
+    side_flow(tmp_path, sides)
+    side_flow(tmp_path, sides, name="8-other", issue="8")
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git)
+
+    # One for the finished check, one for the two side flows.
+    assert skipped_github(run) == without + 2
+    assert side_label_lines(run) == []
+
+
+# --- git calls per worktree -------------------------------------------------------
+
+
+class CountingGit:
+    """<git>, a FakeGit, counting every method call made on it."""
+
+    def __init__(self, git):
+        self._git = git
+        self.calls = 0
+
+    def __getattr__(self, name):
+        attr = getattr(self._git, name)
+        if not callable(attr):
+            return attr
+
+        def counted(*args, **kwargs):
+            self.calls += 1
+            return attr(*args, **kwargs)
+
+        return counted
+
+
+def plain_worktree_calls(capsys, seed, tmp_path, n):
+    """The FakeGit calls doctor --env makes in a clone with <n> plain
+    worktrees beside its checkout, their git pointers under tmp_path."""
+    git = checkout_git(tmp_path)
+    worktrees = [Worktree(str(tmp_path), "main")]
+    for i in range(n):
+        path = linked_worktree(tmp_path, tmp_path / "plain" / str(n) / ("w%d" % i))
+        worktrees.append(Worktree(path, "pw-%d-%d" % (n, i)))
+    git.seed("worktree_list", answer=worktrees)
+    counting = CountingGit(git)
+    orch_doctor(capsys, seed, tmp_path, "--env", git=counting)
+    return counting.calls
+
+
+def test_five_plain_worktrees_cost_doctor_as_many_git_calls_as_two(capsys, seed, tmp_path):
+    healthy(seed)
+
+    two = plain_worktree_calls(capsys, seed, tmp_path, 2)
+    five = plain_worktree_calls(capsys, seed, tmp_path, 5)
+
+    assert five == two
+
+
+# --- the whole report -------------------------------------------------------------
+
+
+def headers(run):
+    """The report's group headers, in order: its first line and each line
+    after a blank one, the tally's line left out."""
+    lines = run.out.rstrip("\n").split("\n")
+    return [lines[0]] + [lines[i + 1] for i, line in enumerate(lines[:-2]) if not line]
+
+
+def test_bare_doctor_prints_every_group_and_the_repo_config_tail_in_today_s_order(
+        capsys, seed, tmp_path):
+    healthy(seed)
+    seed.offline()
+    sides = SideCheckouts(tmp_path)
+    sides.git.seed("main_checkout", answer=str(tmp_path))
+    side_flow(tmp_path, sides)
+    seed.claim(9, host="otherhost", pid=5, started="2020-01-01T00:00:00Z")
+    flow(tmp_path)
+
+    run = orch_doctor(capsys, seed, tmp_path, git=sides.git, env=flow_env(tmp_path))
+
+    assert headers(run) == ["tools", "auth & remotes", "plugin environment", "repo config",
+                            "flow state", "skipped"]
+    assert re.fullmatch(r"\d+ ok, \d+ warn, \d+ FAIL", run.last())
+
+
+def test_the_repo_config_group_ends_on_agents_side_checkouts_claims_and_side_flows(
+        capsys, seed, tmp_path):
+    healthy(seed)
+    seed.issue(7, "open", "orch:implement")
+    sides = SideCheckouts(tmp_path)
+    sides.git.seed("main_checkout", answer=str(tmp_path))
+    side_flow(tmp_path, sides)
+    sides.add("dfin", "quick/20-dfin")
+    sides.merged(seed, 60, "quick/20-dfin", sha_of("dfin"))
+    seed.claim(9, host="otherhost", pid=5, started="2020-01-01T00:00:00Z")
+
+    run = orch_doctor(capsys, seed, tmp_path, git=sides.git, env=flow_env(tmp_path))
+
+    tail = repo_config(run).split("\n")[-8:-1]
+    assert tail == [
+        "ok    agent junie auditor: model inherit (inherit), effort inherit (inherit)",
+        *finished_warn(tmp_path, "dfin"),
+        "warn  issue #9 has been claimed by otherhost (pid 5, phase spec) since"
+        " 2020-01-01T00:00:00Z - more than a day.",
+        INDENT + "if that session is gone, run orch.sh autopilot tick on otherhost",
+        "warn  issue #7 is labelled orch:implement, but its side checkout 7-side-flow last moved"
+        " to phase spec.",
+        INDENT + "relabel the issue orch:spec; the watcher refuses this disagreement",
+    ]

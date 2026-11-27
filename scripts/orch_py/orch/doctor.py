@@ -32,12 +32,13 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from typing import Callable, Dict, List, Mapping, NamedTuple, Optional, Sequence, TypeVar, Union
 
-from orch import glossary
-from orch.autopilot import autopilot_active
+from orch import agent, glossary
+from orch.autopilot import autopilot_active, iso_epoch
 from orch.base import base_setting, default_branch_local
-from orch.checkout import ticket_worktrees_under
+from orch.checkout import checkouts, ticket_worktrees_under
 from orch.common import (EXCLUDED_DIRS, ORCH_DIR_NAME, capture, die, err_line, exclude_missing,
                          fenced, file_lines, int_as_test_reads, list_join, stdout_write, trim)
 from orch.flow_state import (flow_state_file, flow_state_get_many, recorded_pr,
@@ -48,12 +49,16 @@ from orch.handoff import (NOT_READY, PHASES, READY_IF_GH, handoff_doctor_missing
                           handoff_fetch_due, handoff_fetched, handoff_ready, handoff_report,
                           handoff_scratch_dir, handoffs_due, phases_from)
 from orch.host import flow_cmd, host_detect
+from orch.liveness import issue_alive
 from orch.planning_allowlist import dirty_outside_allowlist
 from orch.repo import REPO_CAUSE, REPO_MISSING, RepoPin, owner_name
 from orch.review import (ci_probe, review_budget_fallback, review_terminal_report,
                          standards_resolve_source)
 from orch.root import checkout_root
-from orch.standing import label_verdict, live_phase, phase_label, redo_phase
+from orch.side_checkout import (FINISHED, UNREAD, side_checkout_finished,
+                                side_checkout_marker_issue)
+from orch.standing import (claims_read, host_id, label_verdict, live_phase, phase_label,
+                           redo_phase, standing_read)
 from orch.triage_labels import LABELS_DOC, expected_labels
 
 T = TypeVar("T")
@@ -837,6 +842,13 @@ def check_git_exclude(d: Doctor) -> None:
              % "".join("'%s' " % line for line in missing))
 
 
+def default_known(d: Doctor) -> str:
+    """The default branch as doctor already holds it, bash's seeded memo:
+    GitHub's answer from the probe, else the local fallback - never a
+    GitHub read of its own."""
+    return d.repo_branch or default_branch_local(d.git).name
+
+
 def check_base_branch(d: Doctor) -> None:
     """The base branch every new flow forks from and targets. A setting whose
     branch has gone from origin would send the next fork at nothing, so it
@@ -845,7 +857,7 @@ def check_base_branch(d: Doctor) -> None:
     fallback, with no second ask."""
     branch = base_setting(d.git)
     if not branch:
-        d.ok("base branch: %s (default)" % (d.repo_branch or default_branch_local(d.git).name))
+        d.ok("base branch: %s (default)" % default_known(d))
         return
     on_origin = d.git.origin_has_branch(branch)
     if on_origin:
@@ -993,6 +1005,108 @@ def check_verification_lines(d: Doctor) -> None:
         verification_report(d, label, lines)
 
 
+# How each kind of the agent module's settings records reports.
+AGENT_REPORTERS = {"ok": Doctor.ok, "warn": Doctor.warn, "fail": Doctor.fail,
+                   "remedy": Doctor.remedy}
+
+
+def check_agent_settings(d: Doctor) -> None:
+    """Claude Code's and Junie's agent settings, the Junie session and the
+    models Junie did not recognise, and the copies' sync drift, single-
+    sourced in the agent module and read from it in-process: each record
+    reported as its kind. A read that dies is this check's one FAIL."""
+    records = d.answer_or_fail(lambda: agent.settings_report(d.git, d.root, d.env, d.plugin))
+    for kind, message in records or ():
+        AGENT_REPORTERS[kind](d, message)
+
+
+def check_side_checkouts_finished(d: Doctor) -> None:
+    """A finished side checkout left standing is a leftover the sweep has
+    not run on: a warn on each, with the command that removes it, and
+    nothing for one still in use. The finished test is the sweep's own,
+    side_checkout_finished. With no side checkout there is nothing to ask
+    GitHub, so the gate - and a skip with GitHub unreachable - only counts
+    once one exists. The test's default branch is the probe's answer:
+    doctor asks GitHub for it only in its probe."""
+    found = checkouts(d.git)
+    if found is None:
+        d.fail("could not read the checkouts - git worktree list failed, so no side checkout"
+               " could be checked.")
+        return
+    sides = [checkout.path for checkout in found if checkout.kind == "side"]
+    if not sides or not d.gh_gate():
+        return
+    for path in sides:
+        name = os.path.basename(path)
+        verdict = side_checkout_finished(d.gh, d.git, path, lambda: default_known(d))
+        if verdict.code == FINISHED:
+            d.warn("side checkout %s is finished - its PR is merged, and it is still standing at"
+                   " %s." % (name, path))
+            d.remedy("orch.sh side-checkout remove " + name)
+        elif verdict.code == UNREAD:
+            d.warn("side checkout %s could not be checked: %s" % (name, verdict.reason))
+
+
+# How long another host's claim is held before doctor names it.
+CLAIM_DAY = 86400
+
+
+def check_autopilot_claims(d: Doctor) -> None:
+    """Claims: this host's whose process is gone (asked of the Liveness
+    module), and other hosts' held for more than a day (the watcher never
+    touches those). Silent where origin cannot be read, and for this host's
+    claims where the main checkout cannot be resolved."""
+    claims, _ = claims_read(d.gh)
+    if claims is None:
+        return
+    now, me, main = int(time.time()), host_id(d.env), d.git.main_checkout()
+    for claim in claims:
+        if claim.host == me:
+            if main is None:
+                continue
+            alive, pid = issue_alive(main, claim.issue, d.env)
+            if alive:
+                continue
+            d.warn("issue #%s is claimed by this host (phase %s), but its process is gone (%s)."
+                   % (claim.issue, claim.phase, "pid " + pid if pid else "no record"))
+            d.remedy("orch.sh autopilot tick")
+            continue
+        started = iso_epoch(claim.started)
+        if started is None or not now - started > CLAIM_DAY:
+            continue
+        d.warn("issue #%s has been claimed by %s (pid %s, phase %s) since %s - more than a day."
+               % (claim.issue, claim.host, claim.pid, claim.phase, claim.started))
+        d.remedy("if that session is gone, run orch.sh autopilot tick on " + claim.host)
+
+
+def check_autopilot_side_flows(d: Doctor) -> None:
+    """check_flow_autopilot_label's check for each autopilot flow living in
+    a side checkout other than this one: the watcher makes those, so a plain
+    doctor in the main checkout is where a label that disagrees with a side
+    checkout's recorded phase is seen. One whose marker records no issue,
+    with no flow, or whose state file will not parse is passed over, and so
+    is one whose issue cannot be read."""
+    found = checkouts(d.git)
+    here = os.path.realpath(d.root)
+    for checkout in found or ():
+        if checkout.kind != "side" or checkout.path == here:
+            continue
+        issue = side_checkout_marker_issue(d.git, checkout.path)
+        if issue is None:
+            continue
+        state = flow_state_get_many(flow_state_file(checkout.path), ("phase",))
+        if state is None:
+            continue
+        if not d.gh_gate():
+            return
+        standing, _ = standing_read(d.gh, int(issue))
+        if standing is None:
+            continue
+        phase_label_verdict(d, issue, state["phase"], standing.labels,
+                            "its side checkout " + os.path.basename(checkout.path),
+                            "phase label of #" + issue)
+
+
 # The flow checks' group header.
 FLOW_HEAD = "flow state"
 
@@ -1007,7 +1121,8 @@ ENV_CHECKS: List[Entry] = [
     Head("repo config"),
     *checks(check_labels_doc, check_labels_exist, check_standards_declaration, check_glossary,
             check_adr_dir, check_sub_issues, check_git_exclude, check_base_branch,
-            check_verification_lines),
+            check_verification_lines, check_agent_settings, check_side_checkouts_finished,
+            check_autopilot_claims, check_autopilot_side_flows),
 ]
 
 

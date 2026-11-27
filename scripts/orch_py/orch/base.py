@@ -13,7 +13,7 @@ gh call - falls through to the next (#465).
 """
 from __future__ import annotations
 
-from typing import NamedTuple, Optional
+from typing import Callable, NamedTuple, Optional
 
 from orch.gh import GhFailed
 
@@ -84,7 +84,14 @@ def base_branch_into(gh, git, pin) -> str:
 def recorded_base_into(gh, git, pin, branch: str) -> str:
     """The base branch <branch> belongs to: the one recorded for it, else
     the base branch in effect now (base_branch_into). Never fails."""
+    return recorded_base_of(git, branch, lambda: default_branch(gh, git, pin).name)
+
+
+def recorded_base_of(git, branch: str, default: Callable[[], str]) -> str:
+    """recorded_base_into's rule, the default branch the name <default>
+    answers - for a caller that already holds it, as bash's seeded
+    default-branch memo is, so the rule asks GitHub nothing of its own."""
     recorded = branch_base_get(git, branch)
     if recorded is not None:
         return recorded
-    return base_branch_into(gh, git, pin)
+    return base_setting(git) or default()
