@@ -18,10 +18,10 @@ The merged-PR backstop (#2477, #2478) lives here alone: PR_CLOSE_GRACE,
 pr_close_missed, the merged-closing read and the newest-merge pick, behind
 two entries: close_missed_rows, which autopilot's tick calls in process at
 most once a tick, never once per issue, and close_missed_finish, which
-side-checkout's sweep calls once per finished checkout, each call carrying
-that checkout's one issue - the bash sweep through its bridge,
-orch/side_checkout.py's in-process. Each ends whatever its reads and closes
-did, after their warnings; only the bridge's usage error dies.
+orch/side_checkout.py's sweep calls in process once per finished checkout,
+each call carrying that checkout's one issue. Each ends whatever its reads
+and closes did, after their warnings; only close_missed_finish's usage error
+dies.
 
 Bash cached the default branch for its process, so pr open's base fallback
 and its issue-line check - and pr publish's recorded base and its check, and
@@ -295,7 +295,7 @@ def close_missed_rows(rows: List[List[str]], gh=None, git=None,
     return kept
 
 
-FINISH_USAGE = "usage: orch_python_call pr close_missed_finish <issue> <pr> <branch>"
+FINISH_USAGE = "usage: close_missed_finish <issue> <pr> <branch>"
 
 
 def close_missed_finish(
@@ -305,15 +305,14 @@ def close_missed_finish(
     env: Optional[Mapping[str, str]] = None,
     now: Callable[[], float] = time.time,
 ) -> None:
-    """Bridge for side-checkout's sweep - and called in-process by
-    side_checkout.py's - once per finished checkout whose issue is open:
-    `close_missed_finish <issue> <pr> <branch>`, <pr> the
-    flow's recorded PR or empty. The merged-PR backstop (#2477): reads the
+    """Called in-process by side_checkout.py's sweep once per finished
+    checkout whose issue is open: `close_missed_finish <issue> <pr>
+    <branch>`, <pr> the flow's recorded PR or empty. The merged-PR backstop (#2477): reads the
     PRs merged into the default branch since <issue> was created and closes
     <issue> through the newest merge among them that is PR <pr>, or, with
     no <pr>, that is from <branch>. A merge inside the grace period gets a
     warning, since no later sweep will see it. A failed read or close warns
-    and never fails the bridge. The real adapters, the process's
+    and never fails the sweep. The real adapters, the process's
     environment and clock unless a test hands in others."""
     if len(args) != 3 or not plain_number(args[0]) or not (args[1] == "" or plain_number(args[1])):
         die(FINISH_USAGE)

@@ -1,8 +1,7 @@
 """The merged-PR backstop (#2477, #2478) of the pr noun: the newest-merge
 pick (#3074) and pr_close_missed's four statuses, then its two callers -
-close_missed_rows, which autopilot's tick calls in process, and the
-close_missed_finish bridge side-checkout's sweep calls, as orch_python_call
-hands it its arguments - on the gh fake's store, the cases of the bash
+close_missed_rows, which autopilot's tick calls in process, and
+close_missed_finish, which side-checkout's sweep calls in process - on the gh fake's store, the cases of the bash
 `pr: PR-line pick and newest merge` section among them."""
 from __future__ import annotations
 
@@ -272,15 +271,15 @@ def test_a_failed_close_keeps_its_issue_while_the_others_close(github, capsys):
     assert [state_of(github, n) for n in (50, 51, 52)] == ["CLOSED\n", "OPEN\n", "CLOSED\n"]
 
 
-# --- the close_missed_finish bridge (#2477) -------------------------------------------
+# --- close_missed_finish (#2477) ------------------------------------------------------
 
-FINISH_USAGE = "orch: usage: orch_python_call pr close_missed_finish <issue> <pr> <branch>\n"
+FINISH_USAGE = "orch: usage: close_missed_finish <issue> <pr> <branch>\n"
 GRACE_WARNING = ("orch: issue #%d is still open: PR #%d merged less than 5 minutes ago - GitHub"
                  " may yet close it, and no later sweep will check\n")
 
 
 def finish(seed, *args, gh=None):
-    """close_missed_finish <args> as orch_python_call hands them on, against
+    """close_missed_finish <args> as side-checkout's sweep hands them on, against
     <gh> (the gh fake on <seed>'s store when None), at NOW: its exit
     code."""
     result = pr.close_missed_finish(list(args), gh=fake(seed) if gh is None else gh,
@@ -359,5 +358,5 @@ def test_a_failed_read_warns_closes_nothing_and_exits_0(github, capsys, failing,
 @pytest.mark.parametrize("args", [(), ("612", ""), ("612", "", "quick/612-a", "x"),
                                   ("x", "", "quick/612-a"), ("612", "7x", "orch/612-a")],
                          ids=["none", "two", "four", "issue", "pr"])
-def test_the_finish_bridge_dies_with_its_usage_line_on_bad_arguments(github, capsys, args):
+def test_close_missed_finish_dies_with_its_usage_line_on_bad_arguments(github, capsys, args):
     assert died_of(capsys, lambda: finish(github, *args)) == (1, "", FINISH_USAGE)

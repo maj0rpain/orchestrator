@@ -4,16 +4,15 @@ once its interpreter check has passed.
 main(argv) takes `<noun> <verb> ...` as orch.sh hands them on. A noun not in
 NOUNS dies as orch.sh dies on an unknown command; `-h` and `--help`, help's
 option spellings, run help, and `health` runs doctor, through ALIASES rather
-than NOUNS, since call_func finds a noun's module by its name.
+than NOUNS.
 
 main ends a run of a noun in SIGPIPE_NOUNS (an alias by the noun it runs)
 whose stdout pipe is closed before it is all written as SIGPIPE ended bash's
-printf and cat: silently, with no Python traceback or flush warning. Every other noun, and every call_func
-bridge, ends such a run as it did before those nouns were converted.
+printf and cat: silently, with no Python traceback or flush warning. Every other
+noun ends such a run as it did before those nouns were converted.
 """
 from __future__ import annotations
 
-import importlib
 import os
 import signal
 import sys
@@ -254,26 +253,3 @@ def main(argv: List[str]) -> int:
         return _sigpipe_as_bash(run, argv[1:])
     return run(argv[1:])
 
-
-def call_func(argv: List[str]) -> int:
-    """`orch_python_call [--as <command>] <noun> <func> [<arg>...]`, its
-    `--as <command>` already taken off by orch.__main__: runs the named
-    function of a converted noun's module with `<arg>...`, returning its exit
-    code (0 when it returns None). The noun is a converted one. Refuses an
-    unknown noun or a missing or private function. Its one caller was the
-    bash side-checkout noun, naming itself by `--as`, now converted: no
-    caller is left, and every converted noun calls every answer in
-    process."""
-    if len(argv) < 2:
-        die("usage: orch_python_call [--as <command>] <noun> <func> [<arg>...]")
-    noun, name, args = argv[0], argv[1], argv[2:]
-    if noun not in NOUNS:
-        die("unknown command: %s (run 'orch.sh help')" % noun)
-    if not name or name.startswith("_"):
-        die("unknown %s function: %s" % (noun, name or "<none>"))
-    mod = importlib.import_module("orch." + noun.replace("-", "_"))
-    fn = getattr(mod, name, None)
-    if not callable(fn):
-        die("unknown %s function: %s" % (noun, name))
-    result = fn(args)
-    return 0 if result is None else result

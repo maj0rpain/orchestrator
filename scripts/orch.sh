@@ -160,13 +160,13 @@ fi
 # never disagree about them.
 source "$ORCH_SCRIPTS/planning-allowlist.sh"
 
-# The -c bootstrap shared by orch_python and orch_python_call: drops the empty
-# entry -c puts first on sys.path (the caller's directory) before importing
-# anything, puts the package directory, argv[1], first in its place, and runs
-# the orch package's __main__ through runpy so require_python stays the single
-# Python 3.9+ version gate. The directory goes on sys.path, never PYTHONPATH,
-# which splits a plugin path holding a colon and would hand the directory on
-# to every command the noun starts; the caller's PYTHONPATH is left as given.
+# orch_python's -c bootstrap: drops the empty entry -c puts first on sys.path
+# (the caller's directory) before importing anything, puts the package
+# directory, argv[1], first in its place, and runs the orch package's __main__
+# through runpy so require_python stays the single Python 3.9+ version gate.
+# The directory goes on sys.path, never PYTHONPATH, which splits a plugin path
+# holding a colon and would hand the directory on to every command the noun
+# starts; the caller's PYTHONPATH is left as given.
 readonly ORCH_PYTHON_BOOTSTRAP='
 import sys
 if sys.path and sys.path[0] == "":
@@ -201,25 +201,6 @@ orch_python_require() {
 orch_python() {
   orch_python_require "${1:-}" || exit 1
   exec python3 -c "$ORCH_PYTHON_BOOTSTRAP" "$ORCH_PLUGIN/scripts/orch_py" "$@"
-}
-
-# orch_python_call [--as <command>] <noun> <func> [<arg>...]: runs a named
-# function of a converted noun in a child Python process, routed through
-# orch.__main__ so bash callers receive stdout, stderr and the exit code. A
-# python3 missing or older than 3.9 is refused naming `orch.sh <command>`, the
-# command the user ran (default <noun>), on both sides of the bridge, with
-# orch_python_require's remedy for that command.
-orch_python_call() {
-  local usage="usage: orch_python_call [--as <command>] <noun> <func> [<arg>...]"
-  local as="${1:-}"
-  if [ "${1:-}" = --as ]; then
-    as="${2:-}"
-    if [ $# -lt 4 ] || [ -z "$as" ]; then warn "$usage"; return 1; fi
-    shift 2
-  fi
-  [ $# -ge 2 ] || { warn "$usage"; return 1; }
-  orch_python_require "$as" || return 1
-  python3 -c "$ORCH_PYTHON_BOOTSTRAP" "$ORCH_PLUGIN/scripts/orch_py" --call --as "$as" "$@"
 }
 
 main() {

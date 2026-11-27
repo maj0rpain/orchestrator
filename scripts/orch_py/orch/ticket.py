@@ -12,7 +12,7 @@ advance makes before it leaves implement, require_no_open_tickets, which
 the pr noun's `pr open` and `pr publish` call too. orch.sh runs the noun as
 a converted noun, and the bash ticket module is gone: each helper keeps the
 name it had there, with its messages and its order of steps, and no bash
-code calls into it but through an orch_python_call bridge.
+code calls into it.
 
 run(argv) takes the arguments after `ticket`, as orch.sh hands them on, and
 returns the exit code; every error dies through orch.common.die. Its verbs

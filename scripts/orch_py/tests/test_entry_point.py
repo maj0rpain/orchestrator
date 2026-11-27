@@ -12,7 +12,7 @@ import pytest
 
 from conftest import (CLAUDE, PACKAGE_BOOTSTRAP, TICKET_PARENT, added, comments_of, committed,
                       died_of, fake, git_repo, hold_flow, run_git, wt_path)
-from orch import ticket
+from orch import cli, ticket
 from orch.common import exclude_orch_dirs
 from orch.gh_fake import FakeStore
 from orch.git import Git
@@ -29,6 +29,17 @@ def test_a_python_below_3_9_dies_before_doing_anything(monkeypatch, capsys):
         "orch: orch.sh issue needs python3 3.9 or newer (found 3.8.10)"
         " - run orch.sh doctor\n",
     )
+
+
+@pytest.mark.parametrize("noun", sorted(set(cli.NOUNS) | {"health"}))
+def test_a_python_below_3_9_is_refused_naming_every_converted_noun(monkeypatch, capsys, noun):
+    monkeypatch.setattr(sys, "version_info", (3, 8, 10, "final", 0))
+    remedy = ("install it: brew install python3, or your platform's package manager"
+              if noun in ("doctor", "health") else "run orch.sh doctor")
+
+    assert died_of(capsys, lambda: main([noun])) == (
+        1, "", "orch: orch.sh %s needs python3 3.9 or newer (found 3.8.10) - %s\n"
+        % (noun, remedy))
 
 
 def test_python_3_9_passes_the_check(monkeypatch, capsys):
@@ -280,15 +291,13 @@ def test_the_autopilot_noun_is_converted(capsys):
         "orch: usage: orch.sh autopilot run <issue>\n"
 
 
-@pytest.mark.parametrize("call", [["route", "show"], ["--call", "route", "run", "show"]],
-                         ids=["noun", "call-mode"])
-def test_a_noun_converted_earlier_keeps_its_flush_failure_on_a_closed_pipe(tmp_path, call):
-    """A noun converted before init, slug, status, archive and help, and an
-    orch_python_call bridge, end a closed stdout pipe as they always did:
-    Python's failed flush at exit, status 120, never SIGPIPE."""
+def test_a_noun_converted_earlier_keeps_its_flush_failure_on_a_closed_pipe(tmp_path):
+    """A noun converted before init, slug, status, archive and help ends a
+    closed stdout pipe as it always did: Python's failed flush at exit,
+    status 120, never SIGPIPE."""
     git_repo(tmp_path)
 
-    run = into_a_closed_pipe(tmp_path, *call)
+    run = into_a_closed_pipe(tmp_path, "route", "show")
 
     assert (run.returncode, "BrokenPipeError" in run.stderr) == (120, True)
 
@@ -307,75 +316,3 @@ def test_the_spec_review_noun_is_routed_to_its_module(capsys):
     assert died_of(capsys, lambda: main(["spec-review", "wipe"])) == (
         1, "", "orch: unknown spec-review op: wipe (want begin|check|apply|wait|prompt)\n")
 
-
-def test_call_mode_below_python_3_9_dies_naming_the_noun(monkeypatch, capsys):
-    monkeypatch.setattr(sys, "version_info", (3, 8, 10, "final", 0))
-
-    assert died_of(capsys, lambda: main(["--call", "agent", "name_shapes"])) == (
-        1, "",
-        "orch: orch.sh agent needs python3 3.9 or newer (found 3.8.10)"
-        " - run orch.sh doctor\n",
-    )
-
-
-def test_call_mode_below_python_3_9_dies_naming_the_command_given_by_as(monkeypatch, capsys):
-    monkeypatch.setattr(sys, "version_info", (3, 8, 10, "final", 0))
-
-    assert died_of(capsys, lambda: main(
-        ["--call", "--as", "side-checkout", "pr", "close_missed_finish"])) == (
-        1, "",
-        "orch: orch.sh side-checkout needs python3 3.9 or newer (found 3.8.10)"
-        " - run orch.sh doctor\n",
-    )
-
-
-def test_call_mode_with_as_dispatches_the_noun_after_it(capsys):
-    assert died_of(capsys, lambda: main(
-        ["--call", "--as", "side-checkout", "issue", "run", "labels"])) == (
-        1, "", "orch: usage: orch.sh issue labels <n>...\n")
-
-
-def test_call_mode_dispatches_a_named_function_on_a_converted_noun(capsys):
-    assert died_of(capsys, lambda: main(["--call", "issue", "run", "labels"])) == (
-        1, "", "orch: usage: orch.sh issue labels <n>...\n")
-    assert died_of(capsys, lambda: main(["--call", "spec-review", "run", "wipe"])) == (
-        1, "", "orch: unknown spec-review op: wipe (want begin|check|apply|wait|prompt)\n")
-
-
-def test_call_mode_refuses_missing_args_unknown_noun_and_unknown_or_private_function(capsys):
-    usage = "orch: usage: orch_python_call [--as <command>] <noun> <func> [<arg>...]\n"
-    assert died_of(capsys, lambda: main(["--call"])) == (1, "", usage)
-    assert died_of(capsys, lambda: main(["--call", "route"])) == (1, "", usage)
-    assert died_of(capsys, lambda: main(["--call", "--as"])) == (1, "", usage)
-    assert died_of(capsys, lambda: main(["--call", "--as", "side-checkout", "route"])) == (
-        1, "", usage)
-    assert died_of(capsys, lambda: main(["--call", "no-such-noun", "run"])) == (
-        1, "", "orch: unknown command: no-such-noun (run 'orch.sh help')\n")
-    assert died_of(capsys, lambda: main(["--call", "route", "no_such_fn"])) == (
-        1, "", "orch: unknown route function: no_such_fn\n")
-    assert died_of(capsys, lambda: main(["--call", "route", "_private"])) == (
-        1, "", "orch: unknown route function: _private\n")
-
-
-@pytest.mark.parametrize("noun, func", [
-    ("review", "doctor_terminal"),
-    ("review", "doctor_ci"),
-    ("review", "doctor_standards"),
-    ("agent", "check_settings"),
-    ("ticket-worktree", "worktrees_left"),
-])
-def test_call_mode_refuses_the_former_doctor_bridges(capsys, noun, func):
-    # Doctor reads these answers in process now, so no bridge stays callable.
-    assert died_of(capsys, lambda: main(["--call", "--as", "doctor", noun, func])) == (
-        1, "", "orch: unknown %s function: %s\n" % (noun, func))
-
-
-@pytest.mark.parametrize("noun, func", [
-    ("agent", "validate_autopilot"),
-    ("pr", "close_missed_tick"),
-])
-def test_call_mode_refuses_the_former_autopilot_bridges(capsys, noun, func):
-    # Autopilot checks its settings and closes merged PRs in process now, so
-    # neither bridge stays callable.
-    assert died_of(capsys, lambda: main(["--call", noun, func])) == (
-        1, "", "orch: unknown %s function: %s\n" % (noun, func))
