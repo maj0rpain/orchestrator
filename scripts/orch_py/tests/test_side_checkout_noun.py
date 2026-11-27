@@ -7,16 +7,13 @@ prune through run are test_side_checkout_add_prune.py's."""
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 import pytest
 
 from conftest import (ARCHIVE_STAMP, archive_clock, archive_main, archived, done_flow, has_branch,
-                      hold_flow, run_git, side_checkout, worktree_add)
+                      hold_flow, mark_side, run_git, side_checkout, worktree_add)
 from orch import side_checkout as module
 from orch.git import FakeGit, Git
-
-MARKER = "orchestrator-side-checkout"
 
 
 @pytest.fixture
@@ -38,15 +35,6 @@ def orch(capsys, monkeypatch, cwd, *argv, git=None):
     return code, out, err
 
 
-def marked(path, content):
-    """Writes <content> as the ownership marker of the worktree at <path>;
-    its path."""
-    gitdir = run_git(path, "rev-parse", "--absolute-git-dir")
-    marker = Path(gitdir) / MARKER
-    marker.write_bytes(content.encode())
-    return marker
-
-
 def listed_order(main):
     """The worktree paths git lists, in its order."""
     return [line[len("worktree "):] for line in
@@ -61,13 +49,13 @@ def test_list_prints_each_side_checkout_in_git_s_order_with_what_it_holds(
         capsys, monkeypatch, main, tmp_path):
     alpha = side_checkout(main, "alpha")
     beta = side_checkout(main, "beta")
-    marked(beta, "12\n")
+    mark_side(beta, "12\n")
     gamma = side_checkout(main, "gamma")
     hold_flow(gamma, slug="gamma-flow", phase="spec", issue=7)
     hand = worktree_add(main, tmp_path.resolve() / "hand", "-b", "hand")
     hold_flow(hand, slug="hand-flow", phase="spec")
     ticket = worktree_add(main, main / ".orchestrator" / "worktrees" / "t4", "-b", "main--t4")
-    marked(ticket, "4\n")
+    mark_side(ticket, "4\n")
     rows = {str(alpha): "alpha %s branch alpha\n" % alpha,
             str(beta): "beta %s branch beta quick #12\n" % beta,
             str(gamma): "gamma %s flow gamma-flow spec #7\n" % gamma}
@@ -78,7 +66,7 @@ def test_list_prints_each_side_checkout_in_git_s_order_with_what_it_holds(
 
 def test_list_from_a_side_checkout_prints_the_same(capsys, monkeypatch, main):
     alpha = side_checkout(main, "alpha")
-    marked(alpha, "5\n")
+    mark_side(alpha, "5\n")
 
     assert orch(capsys, monkeypatch, alpha, "list") == (
         0, "alpha %s branch alpha quick #5\n" % alpha, "")
@@ -88,7 +76,7 @@ def test_list_from_a_side_checkout_prints_the_same(capsys, monkeypatch, main):
                          ids=["empty", "not-plain", "multi-line", "nul"])
 def test_list_appends_no_issue_for_a_marker_recording_none(capsys, monkeypatch, main, content):
     alpha = side_checkout(main, "alpha")
-    marked(alpha, content)
+    mark_side(alpha, content)
 
     assert orch(capsys, monkeypatch, main, "list") == (0, "alpha %s branch alpha\n" % alpha, "")
 
@@ -119,14 +107,14 @@ def test_list_dies_when_the_checkouts_cannot_be_read(capsys, monkeypatch, main):
 def test_issue_prints_the_issue_the_side_checkout_s_marker_records(
         capsys, monkeypatch, main, content, printed):
     alpha = side_checkout(main, "alpha")
-    marked(alpha, content)
+    mark_side(alpha, content)
 
     assert orch(capsys, monkeypatch, alpha, "issue") == (0, printed, "")
 
 
 def test_issue_from_a_folder_inside_the_side_checkout_prints_it_too(capsys, monkeypatch, main):
     alpha = side_checkout(main, "alpha")
-    marked(alpha, "123\n")
+    mark_side(alpha, "123\n")
     (alpha / "sub").mkdir()
 
     assert orch(capsys, monkeypatch, alpha / "sub", "issue") == (0, "123\n", "")
@@ -137,7 +125,7 @@ def test_issue_from_a_folder_inside_the_side_checkout_prints_it_too(capsys, monk
 def test_issue_exits_1_printing_nothing_for_a_marker_recording_no_plain_number(
         capsys, monkeypatch, main, content):
     alpha = side_checkout(main, "alpha")
-    marked(alpha, content)
+    mark_side(alpha, content)
 
     assert orch(capsys, monkeypatch, alpha, "issue") == (1, "", "")
 
@@ -145,20 +133,20 @@ def test_issue_exits_1_printing_nothing_for_a_marker_recording_no_plain_number(
 def test_issue_exits_1_printing_nothing_in_a_worktree_with_no_marker(
         capsys, monkeypatch, main, tmp_path):
     alpha = side_checkout(main, "alpha")
-    os.remove(run_git(alpha, "rev-parse", "--absolute-git-dir") + "/" + MARKER)
+    mark_side(alpha).unlink()
 
     assert orch(capsys, monkeypatch, alpha, "issue") == (1, "", "")
 
 
 def test_issue_exits_1_printing_nothing_in_the_main_checkout(capsys, monkeypatch, main):
-    (main / ".git" / MARKER).write_text("123\n")
+    mark_side(main, "123\n")
 
     assert orch(capsys, monkeypatch, main, "issue") == (1, "", "")
 
 
 def test_issue_exits_1_in_a_ticket_worktree_carrying_a_copied_marker(capsys, monkeypatch, main):
     ticket = worktree_add(main, main / ".orchestrator" / "worktrees" / "t41", "-b", "main--t41")
-    marked(ticket, "123\n")
+    mark_side(ticket, "123\n")
 
     assert orch(capsys, monkeypatch, ticket, "issue") == (1, "", "")
 
@@ -167,7 +155,7 @@ def test_issue_exits_1_in_a_ticket_worktree_carrying_a_copied_marker(capsys, mon
 def test_issue_refuses_any_argument_with_exit_2_before_judging_the_checkout(
         capsys, monkeypatch, main, where):
     alpha = side_checkout(main, "alpha")
-    marked(alpha, "123\n")
+    mark_side(alpha, "123\n")
 
     assert orch(capsys, monkeypatch, alpha if where == "side" else main, "issue", "extra") == (
         2, "", "orch: usage: orch.sh side-checkout issue\n")
