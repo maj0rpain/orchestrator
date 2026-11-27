@@ -9,9 +9,9 @@ parse as the operation's JSON raises Unparsed. A caller dies through gh_or_die
 or gh_die, or reacts another way through gh_reason. The CI-evidence reads take
 gh api's whole answer, as gh.sh's ci_api_read did while the bash review noun
 stood, and read it here the way its jq expression did, so an error body GitHub
-answers with is read too. The claim delete is the
-one operation the real adapter makes through git rather than gh, as bash's
-adapter_claim_delete is: the claim is a ref on origin.
+answers with is read too. The claim list and the claim delete are the
+two operations the real adapter makes through git rather than gh, as bash's
+adapter_claim_list and adapter_claim_delete are: a claim is a ref on origin.
 
 The real adapter, Gh, reproduces gh.sh's guard: every call is pinned to the
 repo (orch.repo), dying with the remedy when none resolves, and a failed call
@@ -116,6 +116,18 @@ PR_COMMITS_CHECKED_QUERY = (
 # GitHub holds no base ref - then each commit's SHA and its "yes" or "no",
 # oldest first, as text: a caller judges an answer that is neither.
 CommitsChecked = Tuple[str, List[Tuple[str, str]]]
+
+
+class ClaimRow(NamedTuple):
+    """One claim on origin, as its claim commit's message records it: the
+    issue it claims, and the host, pid, phase and start time - each "" where
+    the message holds no such line."""
+
+    issue: str
+    host: str
+    pid: str
+    phase: str
+    started: str
 
 
 class Check(NamedTuple):
@@ -644,6 +656,24 @@ class Limits:
 
 # --- claims -------------------------------------------------------------------
 
+# Where the claims live on origin, and the refspec a claim list fetches them by.
+CLAIMS_PREFIX = "refs/orch/claims/"
+CLAIMS_REFSPEC = "+refs/orch/claims/*:refs/orch/claims/*"
+# The fields a claim commit's message records, one `<field>: <value>` line each.
+CLAIM_FIELDS = ("host", "pid", "phase", "started")
+
+
+def claim_row(ref: str, message: str) -> ClaimRow:
+    """The claim the ref <ref>'s commit <message> records, as bash
+    adapter_claim_list reads it: the issue from the ref's last part, each
+    field the first `<field>: ` line after the subject."""
+    body = "\n" + message
+    values = []
+    for field in CLAIM_FIELDS:
+        found = re.search("\n%s: ([^\n]*)" % field, body)
+        values.append(found.group(1) if found else "")
+    return ClaimRow(ref.rsplit("/", 1)[-1], *values)
+
 
 def claim_ref(n: int) -> str:
     """The ref on origin that holds the claim on issue #n - bash
@@ -900,6 +930,22 @@ class Gh:
         self._gh(["issue", "reopen", str(n)])
 
     # --- claim operations ---
+
+    def claim_list(self) -> List[ClaimRow]:
+        """The claims on origin, by issue number - bash adapter_claim_list,
+        through the repo pin's git adapter, no gh call: refs/orch/claims/*
+        fetched first, pruning the local copies of claims since freed, then
+        each claim commit's message read. Raises GhFailed with git's reason
+        where origin cannot be read, and with none where the refs cannot be
+        listed."""
+        git = self.repo_pin.git
+        reason = git.fetch_prune("origin", CLAIMS_REFSPEC)
+        if reason is not None:
+            raise GhFailed(reason if reason.endswith("\n") else reason + "\n")
+        refs = git.refs_contents(CLAIMS_PREFIX)
+        if refs is None:
+            raise GhFailed("")
+        return [claim_row(ref, message) for ref, message in refs]
 
     def claim_delete(self, n: int) -> None:
         """Frees the claim on #n - bash adapter_claim_delete: pushes the

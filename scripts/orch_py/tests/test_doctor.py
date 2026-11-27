@@ -13,11 +13,13 @@ from pathlib import Path
 
 import pytest
 
-from conftest import GH_502, died_of
+from conftest import (GH_502, died_of, exclude_orchestrator, git_repo, hold_flow, record,
+                      run_git)
 from orch import cli, doctor
 from orch.gh_fake import FakeGh
-from orch.git import FakeGit
+from orch.git import FakeGit, Worktree
 from orch.repo import REPO_CAUSE, REPO_MISSING, RepoPin
+from orch.review import MALFORMED_SHAPE
 from orch.triage_labels import TRIAGE_ROLES
 
 ORIGIN = "https://github.com/acme/widgets.git"
@@ -50,7 +52,8 @@ def checkout_git(tmp_path, origin=ORIGIN, origin_head=None, exclude=EXCLUDED, **
     """A FakeGit checkout at tmp_path, <origin> its origin remote (none when
     None) and origin/HEAD naming <origin_head>; main, develop and trunk are
     branch names. Its common directory is tmp_path/git-dir, its info/exclude
-    holding <exclude> (none when None); <kwargs> go to FakeGit."""
+    holding <exclude> (none when None); <kwargs> go to FakeGit. Its working
+    tree is clean, and it is the clone's one worktree."""
     git = FakeGit(remotes={} if origin is None else {"origin": origin}, toplevel=str(tmp_path),
                   **kwargs)
     for name in ("main", "develop", "trunk"):
@@ -61,6 +64,8 @@ def checkout_git(tmp_path, origin=ORIGIN, origin_head=None, exclude=EXCLUDED, **
     if exclude is not None:
         (common / "info" / "exclude").write_text(exclude)
     git.seed("git_common_dir", answer=str(common))
+    git.seed("dirty_paths", answer=[])
+    git.seed("worktree_list", answer=[Worktree(str(tmp_path), "main")])
     return git
 
 
@@ -107,11 +112,12 @@ class Run:
 
 
 def orch_doctor(capsys, seed, tmp_path, *argv, git=None, env=None, gh_class=FakeGh,
-                ssh_lookup=no_ssh_lookup, plugin=None):
+                ssh_lookup=no_ssh_lookup, plugin=None, err=""):
     """`orch.sh doctor <argv>` in-process in the checkout <git> (checkout_git's
     when None), under <env> (doctor_env's when None), the gh fake of
     <gh_class> on <seed>'s store pinned to the checkout's repo, run from the
-    plugin root <plugin> (tmp_path/PLUGIN when None)."""
+    plugin root <plugin> (tmp_path/PLUGIN when None), printing <err> on
+    stderr."""
     git = checkout_git(tmp_path) if git is None else git
     env = doctor_env(tmp_path) if env is None else env
     if plugin is None:
@@ -120,8 +126,8 @@ def orch_doctor(capsys, seed, tmp_path, *argv, git=None, env=None, gh_class=Fake
     pin = RepoPin(env, git, ssh_lookup=ssh_lookup)
     gh = gh_class(seed.store, env, pin=pin, sleep=lambda _: None)
     code = doctor.run(list(argv), gh=gh, git=git, env=env, pin=pin, plugin=plugin)
-    out, err = capsys.readouterr()
-    assert err == ""
+    out, printed = capsys.readouterr()
+    assert printed == err
     return Run(code, out, gh)
 
 
@@ -157,9 +163,11 @@ def test_doctor_and_doctor_env_run_the_environment_groups(capsys, seed, tmp_path
 
 
 def test_doctor_flow_runs_no_environment_group(capsys, seed, tmp_path):
+    flow(tmp_path)
+
     run = orch_doctor(capsys, seed, tmp_path, "--flow")
 
-    assert "tools\n" not in run.out
+    assert run.out.startswith("flow state\n")
     assert run.code == 0
 
 
@@ -1264,3 +1272,1066 @@ def test_the_tally_counts_each_severity_and_only_a_fail_fails_doctor(
 
     assert run.out.endswith("\n\n" + tally(run) + "\n")
     assert run.code == code
+
+
+# --- flow state -----------------------------------------------------------------
+
+CLAUDE_ABORT = "/orchestrator:abort"
+
+
+def test_bare_doctor_with_no_flow_states_there_is_none(capsys, seed, tmp_path):
+    healthy(seed)
+
+    run = orch_doctor(capsys, seed, tmp_path)
+
+    assert run.group("flow state") == "flow state\nok    no active flow\n"
+    assert run.code == 0
+
+
+def test_doctor_flow_with_no_flow_refuses_to_answer(capsys, seed, tmp_path):
+    env = {"PATH": stub_path(tmp_path, *TOOLS), "ORCHESTRATOR_HOST": "claude"}
+
+    assert died_of(capsys, lambda: doctor.run(["--flow"], gh=FakeGh(seed.store, env),
+                                              git=checkout_git(tmp_path), env=env)) == (
+        1, "", "orch: no active flow (.orchestrator/state.json not found)."
+               " Run /orchestrator:start first.\n")
+
+
+def flow_env(tmp_path, *tools, **extra):
+    """doctor_env's environment on Claude Code, <extra> added."""
+    return doctor_env(tmp_path, *tools, **dict({"ORCHESTRATOR_HOST": "claude"}, **extra))
+
+
+# Each handoff's required sections, as a complete one holds them.
+HANDOFF_SECTIONS = {
+    "01-plan.md": ("Decisions", "Rejected alternatives", "Constraints", "Open assumptions"),
+    "02-spec.md": ("Spec issue",),
+    "03-implement.md": ("PR", "Spec issue", "Base SHA", "Deviations", "Verification"),
+}
+# The handoffs a flow at each phase has written.
+HANDOFFS_AT = {
+    "spec": ("01-plan.md",),
+    "implement": ("01-plan.md", "02-spec.md"),
+    "review": ("01-plan.md", "02-spec.md", "03-implement.md"),
+    "done": ("01-plan.md", "02-spec.md", "03-implement.md"),
+}
+
+
+def complete_handoff(path, name):
+    """A complete <name> handoff at <path>, a Path, every section filled."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join("## %s\n\nfilled\n\n" % heading for heading in HANDOFF_SECTIONS[name]))
+
+
+def flow(tmp_path, phase="spec", handoffs=None, **state):
+    """A flow at <phase> in the checkout at tmp_path, <state> its other keys,
+    with every handoff due at <phase> complete (<handoffs> instead, when
+    given)."""
+    hold_flow(tmp_path, **dict({"slug": "x", "phase": phase}, **state))
+    for name in HANDOFFS_AT.get(phase, ()) if handoffs is None else handoffs:
+        complete_handoff(tmp_path / ".orchestrator" / "handoff" / name, name)
+
+
+def flow_doctor(capsys, seed, tmp_path, *argv, git=None, env=None, gh_class=FakeGh, err=""):
+    """`orch.sh doctor --flow` (or <argv>) on Claude Code: orch_doctor's
+    run."""
+    return orch_doctor(capsys, seed, tmp_path, *(argv or ("--flow",)), git=git,
+                       env=flow_env(tmp_path) if env is None else env, gh_class=gh_class,
+                       err=err)
+
+
+def flow_lines(run):
+    """The flow state group's lines but its header."""
+    return run.group("flow state").split("\n")[1:-1]
+
+
+def test_a_fresh_flow_at_spec_is_healthy(capsys, seed, tmp_path):
+    flow(tmp_path)
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert flow_lines(run) == [
+        "ok    phase: spec",
+        "ok    issue: not recorded yet",
+        "ok    branch: not created yet",
+        "ok    PR: not opened yet",
+        "ok    handoff 01-plan.md complete",
+    ]
+    assert run.code == 0
+
+
+def test_a_flow_with_no_pr_asks_github_nothing(capsys, seed, tmp_path):
+    flow(tmp_path)
+    seed.offline()
+
+    run = flow_doctor(capsys, seed, tmp_path, gh_class=GhReads)
+
+    assert "skipped" not in run.out
+    assert run.gh.asked == []
+
+
+@pytest.mark.parametrize("argv", [[], ["--flow"]])
+@pytest.mark.parametrize("raw", ["{not json", "[1]", '{"phase": "spec", "issue": 7'])
+def test_a_state_file_that_is_no_json_object_is_one_fail_with_the_abort_remedy(
+        capsys, seed, tmp_path, argv, raw):
+    healthy(seed)
+    (tmp_path / ".orchestrator").mkdir()
+    (tmp_path / ".orchestrator" / "state.json").write_text(raw)
+
+    run = (flow_doctor(capsys, seed, tmp_path, *argv) if argv
+           else orch_doctor(capsys, seed, tmp_path, env=flow_env(tmp_path)))
+
+    assert run.group("flow state") == "\n".join([
+        "flow state",
+        "FAIL  .orchestrator/state.json is not exactly one JSON object.",
+        INDENT + CLAUDE_ABORT,
+    ]) + "\n"
+    assert run.code == 1
+
+
+def test_without_jq_bare_doctor_counts_every_flow_check_skipped(capsys, seed, tmp_path):
+    healthy(seed)
+    flow(tmp_path)
+
+    run = orch_doctor(capsys, seed, tmp_path, env=flow_env(tmp_path, "git", "gh"))
+
+    assert run.group("flow state") == "flow state\n"
+    assert "warn  11 flow checks skipped: jq is not installed\n" in run.group("skipped")
+    assert run.code == 1
+
+
+def test_without_jq_doctor_flow_fails_on_its_jq_check(capsys, seed, tmp_path):
+    flow(tmp_path)
+
+    run = flow_doctor(capsys, seed, tmp_path, env=flow_env(tmp_path, "git", "gh"))
+
+    assert run.group("flow state") == "\n".join([
+        "flow state",
+        "FAIL  jq not found - orch.sh reads and writes state.json with it.",
+        INDENT + "brew install jq    # or your platform's package manager",
+    ]) + "\n"
+    assert "skipped" not in run.out
+    assert run.code == 1
+
+
+@pytest.mark.parametrize("phase", ["nonsense", "spec implement", ""])
+def test_an_unknown_phase_fails_naming_it_and_the_table_s_phases(capsys, seed, tmp_path, phase):
+    flow(tmp_path, phase=phase)
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert flow_lines(run)[:2] == [
+        "FAIL  unknown phase: %s (want one of: spec implement review done)" % phase,
+        INDENT + CLAUDE_ABORT,
+    ]
+    assert run.code == 1
+
+
+def test_a_recorded_branch_that_is_gone_fails_with_the_abort_remedy(capsys, seed, tmp_path):
+    flow(tmp_path, branch="orch/9-gone")
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert ("FAIL  branch orch/9-gone no longer exists - the flow has nothing left to build on.\n"
+            + INDENT + CLAUDE_ABORT + "\n") in run.out
+    assert run.code == 1
+
+
+def branch_git(tmp_path, branch, upstream=None):
+    """checkout_git's checkout holding <branch>, tracking <upstream>."""
+    git = checkout_git(tmp_path)
+    git.branches[branch] = upstream
+    return git
+
+
+def test_before_implement_the_upstream_is_not_checked(capsys, seed, tmp_path):
+    flow(tmp_path, branch="orch/9-x")
+
+    run = flow_doctor(capsys, seed, tmp_path, git=branch_git(tmp_path, "orch/9-x"))
+
+    assert "ok    branch: orch/9-x\n" in run.out
+    assert "upstream" not in run.out
+    assert run.code == 0
+
+
+@pytest.mark.parametrize("upstream", [None, "refs/remotes/origin/main"])
+def test_from_implement_an_unpushed_branch_warns_with_the_push_remedy(
+        capsys, seed, tmp_path, upstream):
+    flow(tmp_path, phase="implement", branch="orch/9-x")
+
+    run = flow_doctor(capsys, seed, tmp_path, git=branch_git(tmp_path, "orch/9-x", upstream))
+
+    assert ("ok    branch: orch/9-x\n"
+            "warn  branch orch/9-x is not on origin yet.\n"
+            + INDENT + "git push -u origin refs/heads/orch/9-x:refs/heads/orch/9-x\n") in run.out
+    assert run.code == 0
+
+
+def test_a_branch_tracking_its_own_origin_branch_reports_its_upstream(capsys, seed, tmp_path):
+    flow(tmp_path, phase="implement", branch="orch/9-x")
+
+    run = flow_doctor(capsys, seed, tmp_path,
+                      git=branch_git(tmp_path, "orch/9-x", "refs/remotes/origin/orch/9-x"))
+
+    assert "ok    upstream: origin/orch/9-x\n" in run.out
+
+
+@pytest.mark.parametrize("local", [False, True])
+def test_a_done_flow_s_branch_gone_is_the_routine_end_of_a_flow(capsys, seed, tmp_path, local):
+    seed.issue(11, "closed")
+    flow(tmp_path, phase="done", branch="orch/9-merged", issue=11)
+    git = branch_git(tmp_path, "orch/9-merged") if local else checkout_git(tmp_path)
+
+    run = flow_doctor(capsys, seed, tmp_path, git=git)
+
+    assert ("ok    branch: orch/9-merged" + ("" if local else " gone - expected after merge")
+            + "\n") in run.out
+    assert "ok    upstream: none - expected after merge\n" in run.out
+    assert "ok    issue #11 closed\n" in run.out
+    assert run.code == 0
+
+
+def test_outside_done_a_branch_gone_still_fails(capsys, seed, tmp_path):
+    seed.issue(11, "open")
+    flow(tmp_path, phase="review", branch="orch/9-merged", issue=11, iteration=0)
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert "FAIL  branch orch/9-merged no longer exists" in run.out
+
+
+@pytest.mark.parametrize("state, labels, line", [
+    ("open", ("ready-for-agent",), "ok    issue #11 open"),
+    ("open", ("needs-triage",), "ok    issue #11 open"),
+])
+def test_an_open_issue_is_healthy_whatever_its_labels(capsys, seed, tmp_path, state, labels, line):
+    seed.issue(11, state, *labels)
+    flow(tmp_path, issue=11)
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert flow_lines(run)[1] == line
+    assert run.code == 0
+
+
+def test_a_closed_issue_fails_before_done_with_the_reopen_remedy(capsys, seed, tmp_path):
+    seed.issue(11, "closed")
+    flow(tmp_path, issue=11)
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert flow_lines(run)[1:3] == ["FAIL  issue #11 is closed.", INDENT + "gh issue reopen 11"]
+    assert run.code == 1
+
+
+@pytest.mark.parametrize("stderr, reason", [(GH_502, "HTTP 502: Bad Gateway"),
+                                            ("", "gh gave no reason")])
+def test_an_issue_github_will_not_read_fails_with_gh_s_first_line(
+        capsys, seed, tmp_path, stderr, reason):
+    seed.issue(11, "open")
+    seed.fail("adapter_issue_state_labels", stderr)
+    flow(tmp_path, issue=11)
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert flow_lines(run)[1:3] == ["FAIL  issue #11 could not be read from GitHub: " + reason,
+                                    INDENT + "gh issue view 11"]
+    assert run.code == 1
+
+
+@pytest.mark.parametrize("state, lines, code", [
+    ("open", ["ok    PR #7 open"], 0),
+    ("merged", ["ok    PR #7 merged"], 0),
+    ("closed", ["FAIL  PR #7 is closed.", INDENT + "gh pr reopen 7"], 1),
+])
+def test_the_pr_check_reads_the_recorded_pr_s_state(capsys, seed, tmp_path, state, lines, code):
+    seed.pr(7, state, "orch/9-x", "main")
+    flow(tmp_path, pr=7)
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert flow_lines(run)[3:3 + len(lines)] == lines
+    assert run.code == code
+
+
+@pytest.mark.parametrize("stderr, reason", [(GH_502, "HTTP 502: Bad Gateway"),
+                                            ("", "gh gave no reason")])
+def test_a_pr_github_will_not_read_fails_with_gh_s_first_line(
+        capsys, seed, tmp_path, stderr, reason):
+    seed.pr(7, "open", "orch/9-x", "main")
+    seed.fail("adapter_pr_state_draft", stderr)
+    flow(tmp_path, pr=7)
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert flow_lines(run)[3:5] == ["FAIL  PR #7 could not be read from GitHub: " + reason,
+                                    INDENT + "gh pr view 7"]
+    assert run.code == 1
+
+
+def test_offline_the_flow_s_github_checks_are_skipped_never_failed(capsys, seed, tmp_path):
+    seed.issue(11, "open")
+    seed.pr(7, "open", "orch/9-x", "main")
+    seed.offline()
+    flow(tmp_path, issue=11, pr=7)
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert run.group("skipped") == (
+        "skipped\nwarn  3 GitHub checks skipped: GitHub is not reachable\n")
+    assert run.code == 0
+
+
+# --- the review group -------------------------------------------------------------
+
+NEXT = "/orchestrator:next"
+REDO_REFUSES = "redo refuses until it reaches a terminal state."
+
+
+def test_outside_review_nothing_is_said_of_a_review_loop(capsys, seed, tmp_path):
+    flow(tmp_path, phase="implement", iteration=2, budget=5)
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert "review loop" not in run.out
+    assert run.code == 0
+
+
+@pytest.mark.parametrize("iteration, records, lines, code", [
+    (0, {}, ["ok    review loop: not started yet",
+             "ok    review loop iteration (0) within budget (5)"], 0),
+    (2, {}, ["warn  review loop hasn't reached its budget yet (iteration 2 of budget 5) - %s will"
+             " resume it; %s" % (NEXT, REDO_REFUSES),
+             "ok    review loop iteration (2) within budget (5)"], 0),
+    (2, {2: ("## Terminal state", "stop - base sync failed.")},
+     ["ok    review loop at a terminal state: stop (base sync failed.)",
+      "ok    review loop iteration (2) within budget (5)"], 0),
+    (5, {}, ["warn  review loop's last iteration (5 of budget 5) has no recorded terminal state -"
+             " the session looks interrupted, not stopped. %s will resume it; %s"
+             % (NEXT, REDO_REFUSES),
+             "ok    review loop iteration (5) within budget (5)"], 0),
+    (5, {5: ("## Terminal state", "ready")},
+     ["ok    review loop at a terminal state: ready",
+      "ok    review loop iteration (5) within budget (5)"], 0),
+    (5, {5: ("## Terminal state", "stop", "CI failed twice.")},
+     ["ok    review loop at a terminal state: stop (CI failed twice.)",
+      "ok    review loop iteration (5) within budget (5)"], 0),
+    (6, {}, ["warn  review loop's last iteration (6 of budget 5) has no recorded terminal state -"
+             " the session looks interrupted, not stopped. %s will resume it; %s"
+             % (NEXT, REDO_REFUSES),
+             "FAIL  review loop iteration (6) is past its budget (5) - the loop's stop"
+             " enforcement did not hold."], 1),
+])
+def test_the_review_loop_s_terminal_state_and_budget_at_review(
+        capsys, seed, tmp_path, iteration, records, lines, code):
+    flow(tmp_path, phase="review", iteration=iteration, budget=5)
+    for i, texts in records.items():
+        record(tmp_path, i, *texts)
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert [line for line in flow_lines(run) if "review loop" in line] == lines
+    assert run.code == code
+
+
+def test_a_loop_past_its_budget_gets_the_abort_remedy(capsys, seed, tmp_path):
+    flow(tmp_path, phase="review", iteration=6, budget=5)
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert ("is past its budget (5) - the loop's stop enforcement did not hold.\n"
+            + INDENT + CLAUDE_ABORT + "\n") in run.out
+
+
+@pytest.mark.parametrize("budget", ["", "abc", None])
+def test_an_empty_or_uncountable_budget_reads_as_the_default_of_five(
+        capsys, seed, tmp_path, budget):
+    flow(tmp_path, phase="review", iteration=2, budget=budget)
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert "(iteration 2 of budget 5)" in run.out
+    assert "ok    review loop iteration (2) within budget (5)\n" in run.out
+
+
+def test_a_malformed_record_fails_naming_its_shape_and_the_record_to_rewrite(
+        capsys, seed, tmp_path):
+    flow(tmp_path, phase="review", iteration=5, budget=5)
+    path = record(tmp_path, 5, "## Terminal state", "**stop**", "CI failed twice.")
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert ("FAIL  review loop's last iteration (5) has a malformed terminal state - %s\n"
+            "%srewrite the first line of %s in the expected shape above\n"
+            % (MALFORMED_SHAPE, INDENT, path)) in run.out
+    assert run.code == 1
+
+
+@pytest.mark.parametrize("texts, said", [
+    (("stop - base sync failed.",),
+     "ok    review loop at a terminal state: stop (base sync failed.)"),
+    (("stopped here",), INDENT + "rewrite the first line of {path} in the expected shape above"),
+])
+def test_mid_redo_the_retired_record_is_read_and_named(capsys, seed, tmp_path, texts, said):
+    seed.issue(21, "open")
+    flow(tmp_path, phase="review", iteration=5, budget=5, issue=21, slug="t",
+         branch="orch/21-t-redo-1", redo_count=1)
+    path = record(tmp_path, 5, "## Terminal state", *texts, under="pre-redo-1")
+
+    run = flow_doctor(capsys, seed, tmp_path, git=branch_git(tmp_path, "orch/21-t-redo-1"))
+
+    assert said.format(path=path) + "\n" in run.out
+    assert "looks interrupted" not in run.out
+
+
+def test_report_files_change_nothing_said_of_the_loop(capsys, seed, tmp_path):
+    flow(tmp_path, phase="review", iteration=5, budget=5)
+    record(tmp_path, 5, "## Terminal state", "stop", "CI failed twice.")
+    record(tmp_path, 5, "## Terminal state", "ready", report="standards")
+    record(tmp_path, 5, "## Terminal state", "ready", report="spec")
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert "ok    review loop at a terminal state: stop (CI failed twice.)\n" in run.out
+
+
+def test_a_review_directory_that_cannot_be_made_is_the_terminal_check_s_one_fail(
+        capsys, seed, tmp_path):
+    flow(tmp_path, phase="review", iteration=5, budget=5)
+    (tmp_path / ".orchestrator" / "review").write_text("")
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert [line for line in flow_lines(run) if line.startswith("FAIL")] == [
+        "FAIL  review loop's terminal state cannot be read: cannot create the review directory"
+        " %s/.orchestrator/review" % tmp_path]
+    assert "could not run" not in run.out
+    assert run.code == 1
+
+
+def ci_flow(seed, tmp_path, answer=None, phase="review", draft=True, state="open"):
+    """A review flow with PR #40 recorded, open and a draft by default, its
+    required checks answering <answer>."""
+    seed.pr(40, state, "orch/9-x", "main")
+    if draft:
+        seed.pr_draft(40)
+    if answer is not None:
+        seed.checks(40, "required", answer)
+    flow(tmp_path, phase=phase, iteration=0, budget=5, pr=40, branch="orch/9-x")
+
+
+def ci_doctor(capsys, seed, tmp_path, **kwargs):
+    return flow_doctor(capsys, seed, tmp_path,
+                       git=branch_git(tmp_path, "orch/9-x", "refs/remotes/origin/orch/9-x"),
+                       **kwargs)
+
+
+@pytest.mark.parametrize("answer, lines, code", [
+    ("green", ["ok    CI: required checks green"], 0),
+    ("none", ["ok    CI: no required checks reported"], 0),
+    ("pending", ["ok    CI: required checks still pending"], 0),
+    ("failing", ["FAIL  CI: required check(s) failing on PR #40.", INDENT + "gh pr checks 40",
+                 INDENT + "build"], 1),
+    ("boom", ["warn  CI: could not be read from GitHub for PR #40: dial tcp: lookup"
+              " api.github.com: no such host"], 0),
+])
+def test_the_ci_check_reports_the_required_checks_verdict(
+        capsys, seed, tmp_path, answer, lines, code):
+    ci_flow(seed, tmp_path, answer)
+
+    run = ci_doctor(capsys, seed, tmp_path)
+
+    found = flow_lines(run)
+    start = next(i for i, line in enumerate(found) if "CI: " in line)
+    assert found[start:start + len(lines)] == lines
+    assert run.code == code
+
+
+@pytest.mark.parametrize("stderr, reason", [(GH_502, "HTTP 502: Bad Gateway"),
+                                            ("", "gh gave no reason")])
+def test_a_failed_checks_read_warns_with_gh_s_first_line_once(
+        capsys, seed, tmp_path, stderr, reason):
+    ci_flow(seed, tmp_path, "green")
+    seed.fail("adapter_pr_checks", stderr)
+
+    run = ci_doctor(capsys, seed, tmp_path)
+
+    assert "warn  CI: could not be read from GitHub for PR #40: %s\n" % reason in run.out
+    assert run.out.count(reason) == 1
+    assert run.code == 0
+
+
+@pytest.mark.parametrize("phase, draft, state, line, code", [
+    ("review", True, "open", "ok    PR #40 draft state matches phase (review)", 0),
+    ("review", False, "open", "FAIL  PR #40 was marked ready on GitHub but the flow phase is still"
+                              " review - state.json fell out of sync.", 1),
+    ("done", False, "open", "ok    PR #40 draft state matches phase (done)", 0),
+    ("done", True, "open", "FAIL  PR #40 is still a draft but the flow phase is done - review"
+                           " ready did not take.", 1),
+])
+def test_the_draft_check_holds_the_pr_s_draft_flag_to_the_phase(
+        capsys, seed, tmp_path, phase, draft, state, line, code):
+    ci_flow(seed, tmp_path, "green", phase=phase, draft=draft, state=state)
+
+    run = ci_doctor(capsys, seed, tmp_path)
+
+    assert line + "\n" in run.out
+    assert run.code == code
+
+
+@pytest.mark.parametrize("phase, finding, remedy", [
+    ("review", "was marked ready on GitHub", "gh pr view 40"),
+    ("done", "is still a draft", "orch.sh pr ready    # on orch/9-x"),
+])
+def test_each_draft_mismatch_has_its_remedy(capsys, seed, tmp_path, phase, finding, remedy):
+    ci_flow(seed, tmp_path, "green", phase=phase, draft=phase == "done")
+
+    found = flow_lines(ci_doctor(capsys, seed, tmp_path))
+
+    assert finding in found[found.index(INDENT + remedy) - 1]
+
+
+def test_a_merged_pr_s_draft_flag_is_not_checked(capsys, seed, tmp_path):
+    ci_flow(seed, tmp_path, phase="done", state="merged")
+
+    run = ci_doctor(capsys, seed, tmp_path)
+
+    assert "draft" not in run.out
+    assert run.code == 0
+
+
+@pytest.mark.parametrize("stderr, reason", [(GH_502, "HTTP 502: Bad Gateway"),
+                                            ("", "gh gave no reason")])
+def test_an_unreadable_draft_state_warns_and_the_pr_check_fails(
+        capsys, seed, tmp_path, stderr, reason):
+    ci_flow(seed, tmp_path, "green")
+    seed.fail("adapter_pr_state_draft", stderr)
+
+    run = ci_doctor(capsys, seed, tmp_path)
+
+    assert "FAIL  PR #40 could not be read from GitHub: %s\n" % reason in run.out
+    assert "warn  PR #40 draft state could not be read from GitHub: %s\n" % reason in run.out
+
+
+def phase_reports(capsys, seed, tmp_path, phase):
+    """The checks a doctor --flow run at <phase> reported, among the
+    phase-listed ones and check_flow_pr, each one set up to have something
+    to say."""
+    ci_flow(seed, tmp_path, "green", phase=phase)
+    out = ci_doctor(capsys, seed, tmp_path).out
+    said = {
+        "upstream": "upstream: " in out,
+        "terminal": "review loop: not started" in out,
+        "budget": "review loop iteration (" in out,
+        "ci": "CI: " in out,
+        "draft": "draft state" in out or "still a draft" in out,
+        "pr": "PR #40 open" in out,
+    }
+    return [name for name, reported in said.items() if reported]
+
+
+@pytest.mark.parametrize("phase, reported", [
+    ("spec", ["pr"]),
+    ("implement", ["upstream", "pr"]),
+    ("review", ["upstream", "terminal", "budget", "ci", "draft", "pr"]),
+    ("done", ["upstream", "draft", "pr"]),
+    ("bogus", ["pr"]),
+])
+def test_each_phase_listed_check_runs_only_in_its_phases(capsys, seed, tmp_path, phase, reported):
+    assert phase_reports(capsys, seed, tmp_path, phase) == reported
+
+
+# --- the autopilot phase label ----------------------------------------------------
+
+
+def label_doctor(capsys, seed, tmp_path, phase, *labels, **extra):
+    """doctor --flow on a flow at <phase> recording issue #7, which carries
+    <labels>, under <extra> added to the environment."""
+    seed.issue(7, "open", "ready-for-agent", *labels)
+    flow(tmp_path, phase=phase, issue=7)
+    return flow_doctor(capsys, seed, tmp_path, env=flow_env(tmp_path, **extra))
+
+
+@pytest.mark.parametrize("phase, labels, lines", [
+    ("spec", ("orch:spec",), ["ok    phase label: orch:spec"]),
+    ("implement", ("Orch:Implement",), ["ok    phase label: orch:implement"]),
+    ("spec", ("orch:implement",), [
+        "warn  issue #7 is labelled orch:implement, but this checkout last moved to phase spec.",
+        INDENT + "relabel the issue orch:spec; the watcher refuses this disagreement"]),
+    ("spec", ("orch:review", "orch:spec"), [
+        "warn  issue #7 is labelled orch:spec orch:review, but this checkout last moved to phase"
+        " spec.",
+        INDENT + "relabel the issue orch:spec; the watcher refuses this disagreement"]),
+    ("implement", ("orch:spec",), [
+        "warn  issue #7 is labelled orch:spec, but this checkout last moved to phase implement.",
+        INDENT + "the watcher will run /orchestrator:redo spec"]),
+    ("review", ("orch:implement",), [
+        "warn  issue #7 is labelled orch:implement, but this checkout last moved to phase review.",
+        INDENT + "the watcher will run /orchestrator:redo review"]),
+])
+def test_the_phase_label_is_held_to_the_recorded_phase(capsys, seed, tmp_path, phase, labels,
+                                                       lines):
+    run = label_doctor(capsys, seed, tmp_path, phase, *labels)
+
+    found = flow_lines(run)
+    assert found[-len(lines):] == lines
+
+
+def test_an_interactive_flow_s_missing_phase_label_is_not_mentioned(capsys, seed, tmp_path):
+    run = label_doctor(capsys, seed, tmp_path, "spec")
+
+    assert "phase label" not in run.out
+    assert run.code == 0
+
+
+def test_a_failed_label_read_is_the_issue_check_s_to_report(capsys, seed, tmp_path):
+    seed.fail("adapter_issue_state_labels", GH_502)
+
+    run = label_doctor(capsys, seed, tmp_path, "spec", "orch:implement")
+
+    assert "phase label" not in run.out
+    assert "is labelled" not in run.out
+    assert run.out.count("HTTP 502") == 1
+
+
+def test_an_autopilot_session_refuses_an_issue_with_no_phase_label(capsys, seed, tmp_path):
+    run = label_doctor(capsys, seed, tmp_path, "spec", ORCH_AUTOPILOT="1")
+
+    assert flow_lines(run)[-2:] == [
+        "FAIL  issue #7 carries no phase label - an autopilot session needs the flow's phase"
+        " recorded on its issue.",
+        INDENT + "gh issue edit 7 --add-label orch:spec"]
+    assert run.code == 1
+
+
+def test_an_autopilot_session_refuses_a_flow_with_no_issue(capsys, seed, tmp_path):
+    flow(tmp_path)
+
+    run = flow_doctor(capsys, seed, tmp_path, env=flow_env(tmp_path, ORCH_AUTOPILOT="1"))
+
+    assert flow_lines(run)[-2:] == [
+        "FAIL  autopilot session, but no issue is recorded - the flow's phase has no label to"
+        " live on.",
+        INDENT + CLAUDE_ABORT]
+    assert run.code == 1
+
+
+# --- the handoffs -----------------------------------------------------------------
+
+REDO = "/orchestrator:redo"
+
+
+def test_a_missing_handoff_fails_with_the_redo_remedy(capsys, seed, tmp_path):
+    flow(tmp_path, phase="implement", handoffs=["02-spec.md"])
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert flow_lines(run)[-3:] == [
+        "FAIL  handoff 01-plan.md is missing - the phase that writes it has already run.",
+        INDENT + REDO,
+        "ok    handoff 02-spec.md complete"]
+    assert run.code == 1
+
+
+def test_a_handoff_with_an_empty_section_fails_naming_it(capsys, seed, tmp_path):
+    flow(tmp_path, phase="implement", handoffs=["01-plan.md"])
+    (tmp_path / ".orchestrator" / "handoff" / "02-spec.md").write_text("## Spec issue\n\n")
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert flow_lines(run)[-2:] == ["FAIL  handoff 02-spec.md: empty section: ## Spec issue",
+                                    INDENT + REDO]
+    assert run.code == 1
+
+
+def test_markers_and_older_flows_leftovers_are_no_handoffs(capsys, seed, tmp_path):
+    flow(tmp_path, phase="review", iteration=0, loop=2)
+    healthy_out = flow_doctor(capsys, seed, tmp_path).out
+    handoffs = tmp_path / ".orchestrator" / "handoff"
+    (handoffs / "spec-paused").write_text("7\n")
+    (handoffs / "spec-round").write_text("7 1 2\n")
+    (tmp_path / ".orchestrator" / "review" / "loop-01").mkdir(parents=True)
+    (tmp_path / ".orchestrator" / "review" / "loop-01" / "iteration-01.md").write_text("")
+
+    run = flow_doctor(capsys, seed, tmp_path)
+
+    assert run.out == healthy_out
+    assert "04-review.md" not in run.out and "loop" not in run.out.replace("review loop", "")
+    assert run.code == 0
+
+
+PLAN_AUTOPILOT = "## Autopilot\n\nRounds: 2\nBudget: 3\n"
+
+
+def handoff_comment(seed, stem, body, created="2026-01-01T00:00:00Z"):
+    """Issue #7's <stem> handoff comment holding <body>."""
+    seed.comment(7, "someone", created, "<!-- orch:handoff %s -->\n%s" % (stem, body))
+
+
+def complete_text(name):
+    return "".join("## %s\n\nfilled\n\n" % heading for heading in HANDOFF_SECTIONS[name])
+
+
+def autopilot_flow(seed, tmp_path, posted=("01-plan", "02-spec")):
+    """An autopilot flow at implement on issue #7, labelled orch:implement,
+    its <posted> handoff comments complete."""
+    seed.issue(7, "open", "orch:implement")
+    for stem in posted:
+        handoff_comment(seed, stem, complete_text(stem + ".md")
+                        + (PLAN_AUTOPILOT if stem == "01-plan" else ""))
+    flow(tmp_path, phase="implement", issue=7, handoffs=())
+
+
+def autopilot_doctor(capsys, seed, tmp_path, gh_class=FakeGh, err=""):
+    return flow_doctor(capsys, seed, tmp_path, env=flow_env(tmp_path, ORCH_AUTOPILOT="1"),
+                       gh_class=gh_class, err=err)
+
+
+def handoff_lines(run):
+    return [line for line in flow_lines(run) if "handoff" in line]
+
+
+def test_an_autopilot_flow_s_handoffs_are_its_posted_comments(capsys, seed, tmp_path):
+    autopilot_flow(seed, tmp_path)
+
+    run = autopilot_doctor(capsys, seed, tmp_path)
+
+    assert handoff_lines(run) == ["ok    handoff 01-plan.md complete",
+                                  "ok    handoff 02-spec.md complete"]
+    assert run.code == 0
+
+
+def test_a_handoff_comment_missing_fails_naming_the_issue(capsys, seed, tmp_path):
+    autopilot_flow(seed, tmp_path, posted=("02-spec",))
+
+    run = autopilot_doctor(capsys, seed, tmp_path)
+
+    assert flow_lines(run)[-4:-1] == [
+        "FAIL  handoff 01-plan comment is missing on issue #7 - the phase that writes it has"
+        " already run.",
+        INDENT + REDO,
+        "ok    handoff 02-spec.md complete"]
+    assert run.code == 1
+
+
+def test_an_incomplete_newest_handoff_comment_is_flagged(capsys, seed, tmp_path):
+    autopilot_flow(seed, tmp_path)
+    handoff_comment(seed, "02-spec", "## Decisions\n", created="2030-01-01T00:00:00Z")
+
+    run = autopilot_doctor(capsys, seed, tmp_path)
+
+    assert "FAIL  handoff 02-spec.md: missing section: ## Spec issue\n" in run.out
+
+
+def test_an_autopilot_flow_with_no_issue_cannot_read_its_handoff_comments(
+        capsys, seed, tmp_path):
+    flow(tmp_path, phase="implement", handoffs=())
+
+    run = autopilot_doctor(capsys, seed, tmp_path)
+
+    assert ("FAIL  autopilot session, but no issue is recorded - the handoff comments cannot be"
+            " read.\n" + INDENT + CLAUDE_ABORT + "\n") in run.out
+    assert "is missing" not in run.out
+    assert run.code == 1
+
+
+@pytest.mark.parametrize("prepare, reason", [
+    (lambda seed: seed.fail("adapter_issue_comments", "HTTP 502 comments"), "HTTP 502 comments"),
+    (lambda seed: seed.lag("adapter_issue_comments", 1, "not json"),
+     "gh's output is not a comment list"),
+])
+def test_handoff_comments_that_cannot_be_read_are_one_fail_with_no_remedy(
+        capsys, seed, tmp_path, prepare, reason):
+    autopilot_flow(seed, tmp_path)
+    autopilot_doctor(capsys, seed, tmp_path)
+    prepare(seed)
+
+    run = autopilot_doctor(capsys, seed, tmp_path)
+
+    assert handoff_lines(run) == ["FAIL  could not read issue #7's handoff comments: " + reason]
+    assert REDO not in run.out
+    assert run.code == 1
+
+
+def test_handoff_comment_copies_that_cannot_be_written_are_one_fail(capsys, seed, tmp_path):
+    autopilot_flow(seed, tmp_path)
+    scratch = tmp_path / ".orchestrator" / "scratch"
+    scratch.mkdir(parents=True)
+    scratch.chmod(0o555)
+    try:
+        # Each copy's own line on stderr, as handoff_comment_write prints it.
+        run = autopilot_doctor(capsys, seed, tmp_path, err="".join(
+            "orch: could not write %s/%s\n" % (scratch, name) for name in HANDOFFS_AT["implement"]))
+    finally:
+        scratch.chmod(0o755)
+
+    assert handoff_lines(run) == [
+        "FAIL  could not write the copies of issue #7's handoff comments to %s" % scratch]
+    assert run.code == 1
+
+
+def test_two_due_handoff_comments_cost_one_comment_read(capsys, seed, tmp_path):
+    autopilot_flow(seed, tmp_path)
+
+    autopilot_doctor(capsys, seed, tmp_path)
+
+    assert (tmp_path / "store" / "comment_reads").read_text() == "x\n"
+
+
+def test_offline_the_handoff_comments_are_skipped_never_failed(capsys, seed, tmp_path):
+    autopilot_flow(seed, tmp_path)
+    seed.offline()
+
+    run = autopilot_doctor(capsys, seed, tmp_path)
+
+    assert handoff_lines(run) == []
+    assert run.group("skipped") == (
+        "skipped\nwarn  3 GitHub checks skipped: GitHub is not reachable\n")
+    assert run.code == 0
+
+
+# --- the working tree and ticket worktrees ----------------------------------------
+
+
+def dirty_git(tmp_path, answer):
+    """checkout_git's checkout, git status answering <answer>: the dirty
+    paths, or git's error line."""
+    git = checkout_git(tmp_path)
+    git.seed("dirty_paths", answer=answer)
+    return git
+
+
+def test_changes_outside_the_planning_allowlist_fail_naming_each_path(capsys, seed, tmp_path):
+    flow(tmp_path)
+
+    run = flow_doctor(capsys, seed, tmp_path, git=dirty_git(
+        tmp_path, ["lib/left-behind.sh", "docs/agents/notes.md", "stray.txt"]))
+
+    assert flow_lines(run)[-2:] == [
+        "FAIL  the working tree has changes outside the planning allowlist:"
+        " lib/left-behind.sh, stray.txt",
+        INDENT + "git status"]
+    assert run.code == 1
+
+
+def test_changes_inside_the_planning_allowlist_are_not_reported(capsys, seed, tmp_path):
+    flow(tmp_path)
+
+    run = flow_doctor(capsys, seed, tmp_path,
+                      git=dirty_git(tmp_path, ["docs/agents/notes.md", ".scratch/plan.md"]))
+
+    assert "planning allowlist" not in run.out
+    assert run.code == 0
+
+
+def test_a_git_status_that_cannot_run_is_a_fail_and_the_report_goes_on(capsys, seed, tmp_path):
+    flow(tmp_path)
+
+    run = flow_doctor(capsys, seed, tmp_path,
+                      git=dirty_git(tmp_path, "fatal: index file smaller than expected"))
+
+    assert flow_lines(run)[0] == "ok    phase: spec"
+    assert flow_lines(run)[-1] == ("FAIL  git status failed - cannot check the working tree:"
+                                   " fatal: index file smaller than expected")
+    assert run.last() == "5 ok, 0 warn, 1 FAIL"
+
+
+def worktrees_git(tmp_path, *others):
+    """checkout_git's checkout, ticket worktree 12 under it and each of
+    <others>' paths another worktree of the clone."""
+    git = checkout_git(tmp_path)
+    git.seed("worktree_list", answer=[
+        Worktree(str(tmp_path), "main"),
+        Worktree(str(tmp_path / ".orchestrator" / "worktrees" / "t12"), "main--t12"),
+    ] + [Worktree(path, None) for path in others])
+    return git
+
+
+LEFTOVER = ["FAIL  ticket worktree {root}/.orchestrator/worktrees/t12 is left over - a ticket run"
+            " did not finish.", INDENT + "orch.sh ticket-worktree remove 12"]
+
+
+def leftover(tmp_path):
+    return [line.format(root=tmp_path) for line in LEFTOVER]
+
+
+@pytest.mark.parametrize("argv", [[], ["--flow"]])
+def test_a_leftover_ticket_worktree_of_this_checkout_alone_fails(capsys, seed, tmp_path, argv):
+    healthy(seed)
+    flow(tmp_path)
+    git = worktrees_git(tmp_path, "/elsewhere/.orchestrator/worktrees/t13")
+
+    run = orch_doctor(capsys, seed, tmp_path, *argv, git=git, env=flow_env(tmp_path))
+
+    assert flow_lines(run)[-2:] == leftover(tmp_path)
+    assert "t13" not in run.out
+    assert run.code == 1
+
+
+@pytest.mark.parametrize("argv, prepare, tools", [
+    ([], lambda tmp_path: None, TOOLS),
+    ([], lambda tmp_path: write_state(tmp_path, "{not json"), TOOLS),
+    (["--flow"], lambda tmp_path: write_state(tmp_path, "{not json"), TOOLS),
+    ([], flow, ("git", "gh")),
+    (["--flow"], flow, ("git", "gh")),
+])
+def test_the_ticket_worktree_check_runs_whatever_the_flow_s_state(
+        capsys, seed, tmp_path, argv, prepare, tools):
+    healthy(seed)
+    prepare(tmp_path)
+
+    run = orch_doctor(capsys, seed, tmp_path, *argv, git=worktrees_git(tmp_path),
+                      env=flow_env(tmp_path, *tools))
+
+    assert flow_lines(run)[-2:] == leftover(tmp_path)
+    assert run.code == 1
+
+
+def write_state(tmp_path, raw):
+    (tmp_path / ".orchestrator").mkdir(exist_ok=True)
+    (tmp_path / ".orchestrator" / "state.json").write_text(raw)
+
+
+def test_with_no_ticket_worktree_nothing_is_said_of_them(capsys, seed, tmp_path):
+    flow(tmp_path)
+
+    assert "ticket worktree" not in flow_doctor(capsys, seed, tmp_path).out
+
+
+def test_a_worktree_listing_that_cannot_be_read_is_the_check_s_one_fail(capsys, seed, tmp_path):
+    flow(tmp_path)
+    git = checkout_git(tmp_path)
+    git.seed("worktree_list", answer=None)
+
+    run = flow_doctor(capsys, seed, tmp_path, git=git)
+
+    assert [line for line in run.out.split("\n") if line.startswith("FAIL")] == [
+        "FAIL  could not read the checkouts - git worktree list failed"]
+    assert "could not run" not in run.out
+    assert run.last() == "5 ok, 0 warn, 1 FAIL"
+    assert run.code == 1
+
+
+# --- a failed read in a former bridge target, and one read per answer ---------------
+
+
+class ChecksDie(FakeGh):
+    """The gh fake, its checks read dying as the real adapter's guard does
+    with no repo to pin the call to."""
+
+    def pr_checks(self, n, scope):
+        from orch.common import die
+        die("no repo to pin the checks read to")
+
+
+def test_a_ci_read_that_dies_is_the_ci_check_s_one_fail(capsys, seed, tmp_path):
+    ci_flow(seed, tmp_path)
+
+    run = ci_doctor(capsys, seed, tmp_path, gh_class=ChecksDie)
+
+    assert [line for line in flow_lines(run) if "CI" in line or "checks" in line] == [
+        "FAIL  no repo to pin the checks read to"]
+    assert "could not run" not in run.out
+    assert run.code == 1
+
+
+class FlowReads(FakeGh):
+    """The gh fake, counting its flow issue and flow PR reads in reads."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.reads = {"issue": 0, "pr": 0}
+
+    def issue_state_labels(self, n):
+        self.reads["issue"] += 1
+        return super().issue_state_labels(n)
+
+    def pr_state_draft(self, n):
+        self.reads["pr"] += 1
+        return super().pr_state_draft(n)
+
+
+def reads_flow(seed, tmp_path, phase="review", issue_state="open", pr_state="open",
+               labels=("orch:review",), **state):
+    seed.issue(7, issue_state, "ready-for-agent", *labels)
+    seed.pr(40, pr_state, "orch/9-x", "main")
+    seed.pr_draft(40)
+    seed.checks(40, "required", "green")
+    flow(tmp_path, **dict({"phase": phase, "issue": 7, "pr": 40, "branch": "orch/9-x",
+                           "iteration": 0}, **state))
+
+
+def reads_doctor(capsys, seed, tmp_path, **extra):
+    return ci_doctor(capsys, seed, tmp_path, gh_class=FlowReads,
+                     env=flow_env(tmp_path, **extra))
+
+
+@pytest.mark.parametrize("phase, issue_state, pr_state, labels", [
+    ("review", "open", "open", ("orch:review",)),
+    ("implement", "open", "open", ("orch:implement",)),
+    ("done", "closed", "merged", ("orch:done",)),
+])
+def test_the_flow_issue_and_pr_are_each_read_once_per_run(
+        capsys, seed, tmp_path, phase, issue_state, pr_state, labels):
+    reads_flow(seed, tmp_path, phase, issue_state, pr_state, labels)
+
+    run = reads_doctor(capsys, seed, tmp_path)
+
+    assert run.gh.reads == {"issue": 1, "pr": 1}
+    assert "phase label: orch:%s\n" % phase in run.out
+
+
+def test_an_autopilot_flow_with_no_phase_label_reads_its_issue_once(capsys, seed, tmp_path):
+    reads_flow(seed, tmp_path, labels=())
+
+    run = reads_doctor(capsys, seed, tmp_path, ORCH_AUTOPILOT="1")
+
+    assert "FAIL  issue #7 carries no phase label" in run.out
+    assert run.gh.reads["issue"] == 1
+
+
+@pytest.mark.parametrize("operation, read", [("adapter_issue_state_labels", "issue"),
+                                             ("adapter_pr_state_draft", "pr")])
+def test_a_failing_read_is_reached_once(capsys, seed, tmp_path, operation, read):
+    reads_flow(seed, tmp_path)
+    seed.fail(operation, GH_502)
+
+    run = reads_doctor(capsys, seed, tmp_path)
+
+    assert run.gh.reads[read] == 1
+    assert "could not be read from GitHub: HTTP 502: Bad Gateway" in run.out
+
+
+def test_offline_neither_the_issue_nor_the_pr_is_read(capsys, seed, tmp_path):
+    reads_flow(seed, tmp_path)
+    seed.offline()
+
+    run = reads_doctor(capsys, seed, tmp_path)
+
+    assert run.gh.reads == {"issue": 0, "pr": 0}
+    assert run.out.count("skipped:") == 1
+
+
+@pytest.mark.parametrize("unset, reads", [("pr", {"issue": 1, "pr": 0}),
+                                          ("issue", {"issue": 0, "pr": 1})])
+def test_what_is_not_recorded_is_not_read(capsys, seed, tmp_path, unset, reads):
+    reads_flow(seed, tmp_path, **{unset: None})
+
+    assert reads_doctor(capsys, seed, tmp_path).gh.reads == reads
+
+
+def test_a_deleted_flow_branch_beside_a_same_named_tag_still_fails(capsys, seed, tmp_path):
+    root = tmp_path.resolve() / "repo"
+    root.mkdir()
+    git = git_repo(root, origin=ORIGIN)
+    exclude_orchestrator(root)
+    run_git(root, "commit", "-q", "--allow-empty", "-m", "first")
+    run_git(root, "tag", "orch/11-gone")
+    seed.issue(11, "open")
+    flow(root, phase="implement", issue=11, branch="orch/11-gone")
+
+    run = orch_doctor(capsys, seed, root, "--flow", git=git, env=flow_env(tmp_path))
+
+    assert ("FAIL  branch orch/11-gone no longer exists - the flow has nothing left to build"
+            " on.") in flow_lines(run)
+    assert run.code == 1

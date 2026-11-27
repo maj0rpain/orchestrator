@@ -108,6 +108,8 @@ COULD_NOT: Dict[str, Any] = {
     "git_common_dir": None,
     "current_branch": None,
     "push": "git gave no reason",
+    "fetch_prune": "git gave no reason",
+    "refs_contents": None,
     "origin_has_branch": None,
     "push_set_upstream": "git gave no reason",
     "remote_delete": "git gave no reason",
@@ -584,6 +586,30 @@ class Git:
         landed, else the reason its stderr gives (git_push_reason)."""
         return self._push([remote, refspec])
 
+    # The claim list's operations, run where the adapter runs, as bash's
+    # adapter_claim_list runs its git.
+
+    def fetch_prune(self, remote: str, refspec: str) -> Optional[str]:
+        """`git fetch --quiet --prune <remote> <refspec>`: None when it
+        fetched, else its stderr, or "git gave no reason" for none."""
+        run = self._run(["fetch", "--quiet", "--prune", remote, refspec])
+        if run.returncode == 0:
+            return None
+        return run.stderr.decode("utf-8", "surrogateescape") or COULD_NOT["fetch_prune"]
+
+    def refs_contents(self, prefix: str) -> Optional[List[Tuple[str, str]]]:
+        """Every ref under <prefix>, in version (numeric) order, with the
+        message of the commit it names - one for-each-ref; None when it
+        fails."""
+        run = self._run(["for-each-ref", "--sort=version:refname",
+                         "--format=%(refname)%00%(contents)%00", prefix])
+        if run.returncode != 0:
+            return None
+        fields = run.stdout.decode("utf-8", "surrogateescape").split("\0")
+        # Each ref's record is `<ref>\0<message>\0\n`: the newline opens the
+        # next ref's field.
+        return [(fields[k].lstrip("\n"), fields[k + 1]) for k in range(0, len(fields) - 1, 2)]
+
     # Branch retire's operations (orch.branch), run where the adapter runs, as
     # bash's `branch retire` runs its git.
 
@@ -995,6 +1021,12 @@ class FakeGit:
 
     def push(self, remote: str, refspec: str) -> Optional[str]:
         return self._answer("push", remote, refspec)
+
+    def fetch_prune(self, remote: str, refspec: str) -> Optional[str]:
+        return self._answer("fetch_prune", remote, refspec)
+
+    def refs_contents(self, prefix: str) -> Optional[List[Tuple[str, str]]]:
+        return self._answer("refs_contents", prefix)
 
     def branch_exists(self, name: str) -> bool:
         return name in self.branches

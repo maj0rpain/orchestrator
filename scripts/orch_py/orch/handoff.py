@@ -25,7 +25,11 @@ one it is part of the body.
 The phase table is the one Python copy of the bash side's (PHASE_TABLE),
 which Python does not read, pinned to it by tests/test_handoff.py's drift
 test; PHASES is its first column, and phase_writer and
-phase_next read it as bash's phase_cell writer did and its phase_next did. `handoff
+phase_next read it as bash's phase_cell writer did and its phase_next did,
+phases_from as bash's phases_from does. Python doctor's handoff check reads
+through each adapter what bash's does: handoff_ready, handoff_fetch_due,
+handoff_fetched and handoff_doctor_missing, each with its file and comment
+form, as bash's of the same name. `handoff
 path` resolves through the Handoff store's adapter handoff_store chooses per
 call: the file adapter, the handoff directory's files, and in an autopilot
 session the comment adapter, marked comments on the recorded issue, read
@@ -136,6 +140,14 @@ def handoffs_due(phase: str) -> List[str]:
         if row_phase == phase:
             return due
     return []
+
+
+def phases_from(phase: str) -> Optional[List[str]]:
+    """<phase> and every phase after it, in table order, as bash's
+    phases_from; None for a phase the table does not hold."""
+    if phase not in PHASES:
+        return None
+    return list(PHASES[PHASES.index(phase):])
 
 
 def handoffs_written_from(phase: str) -> List[str]:
@@ -254,6 +266,56 @@ def handoff_store(env: Mapping[str, str]) -> str:
     """The adapter this session's handoffs live in: `comment` in an
     autopilot session and `file` otherwise."""
     return "comment" if autopilot_active(env) else "file"
+
+
+# handoff_ready's three answers: ready; not ready, its finding given; ready if
+# gh is, which is for the caller to gate.
+READY, NOT_READY, READY_IF_GH = 0, 1, 2
+
+
+def handoff_ready(env: Mapping[str, str], issue: str) -> Tuple[int, str]:
+    """Doctor's readiness check, the adapter's: (READY, "") for the file
+    adapter, which needs nothing; the comment adapter, for the flow's
+    recorded <issue>, is (NOT_READY, its finding) with none recorded, else
+    (READY_IF_GH, "")."""
+    if handoff_store(env) == "file":
+        return READY, ""
+    if not issue:
+        return NOT_READY, ("autopilot session, but no issue is recorded - the handoff comments"
+                           " cannot be read.")
+    return READY_IF_GH, ""
+
+
+def handoff_fetch_due(gh_of, env: Mapping[str, str], root: str, phase: str,
+                      issue: str) -> Tuple[int, str]:
+    """Fetches every handoff due at <phase> where the adapter keeps them
+    elsewhere than the handoff directory of the checkout at <root>: the file
+    adapter has nothing to fetch, (0, ""); the comment adapter reads the
+    recorded <issue>'s comments once, through the gh adapter <gh_of> makes,
+    as handoff_comment_fetch_due answers. Never dies."""
+    if handoff_store(env) == "file":
+        return 0, ""
+    return handoff_comment_fetch_due(gh_of(), issue, phase, handoff_scratch_dir(root))
+
+
+def handoff_doctor_missing(env: Mapping[str, str], name: str, issue: str) -> str:
+    """Doctor's finding for the handoff file <name> missing, the adapter's:
+    the file adapter names the file; the comment adapter names its comment
+    missing on issue #<issue>, the flow's recorded issue."""
+    if handoff_store(env) == "file":
+        return "handoff %s is missing - the phase that writes it has already run." % name
+    return ("handoff %s comment is missing on issue #%s - the phase that writes it has already"
+            " run." % (_stem(name), issue))
+
+
+def handoff_fetched(env: Mapping[str, str], root: str, name: str) -> Tuple[str, bool]:
+    """The lookup that does not fetch: the readable path of the handoff file
+    <name> in the checkout at <root> as of the last handoff_fetch_due, and
+    whether it is there - the handoff directory's file for the file adapter,
+    the scratch copy for the comment adapter. It never dies."""
+    directory = handoff_dir(root) if handoff_store(env) == "file" else handoff_scratch_dir(root)
+    path = "%s/%s" % (directory, name)
+    return path, os.path.isfile(path)
 
 
 def handoff_comment_write(entries: List[Entry], name: str, path: str) -> int:

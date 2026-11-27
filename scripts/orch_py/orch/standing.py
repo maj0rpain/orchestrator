@@ -1,5 +1,9 @@
 """The Standing module (scripts/orch/standing.sh), kept to what the Python
-nouns use: the Phase label test, the claim release a spec review round's
+nouns use: the Phase label test, and what Python doctor reads an autopilot
+flow's issue with - the phase labels' text, the live phase, the label
+verdict against a recorded phase and the phase-redo rule (REDO_PAIRS), the
+read of an issue's Standing (standing_read), the host id and the claims
+read (claims_read) - each as bash's of the same name; the claim release a spec review round's
 pause makes in an autopilot flow, and a finished phase's close under its
 claim (standing_finish, with its label move, standing_move_label), which the
 phase noun's finish runs for phase advance and for review ready.
@@ -24,16 +28,23 @@ writes.
 """
 from __future__ import annotations
 
+import socket
 import time
-from typing import Callable, List, NoReturn, Sequence
+from typing import Callable, List, Mapping, NamedTuple, NoReturn, Optional, Sequence, Tuple
 
 from orch.common import die
 from orch.flow_state import phase_write_try
-from orch.gh import GhFailed, gh_reason, label_listed
+from orch.gh import ClaimRow, GhFailed, gh_reason, label_listed
 from orch.handoff import PHASES
 
 # The label an autopilot flow's issue carries while a session holds its claim.
 STANDING_RUNNING_LABEL = "orch:running"
+# The labels of an issue waiting on the human, of a session stopped on a
+# limit, and of a sync request - not a phase label: an issue carrying it
+# keeps orch:done.
+STANDING_HUMAN_LABEL = "needs-human"
+STANDING_LIMITED_LABEL = "orch:limited"
+STANDING_SYNC_LABEL = "orch:sync"
 
 
 def phase_label(phase: str) -> str:
@@ -43,6 +54,102 @@ def phase_label(phase: str) -> str:
 def phase_labels_in(labels: Sequence[str]) -> List[str]:
     """The phases, in table order, whose labels are among <labels>."""
     return [p for p in PHASES if label_listed(labels, phase_label(p))]
+
+
+def phase_labels_text(labels: Sequence[str]) -> str:
+    """The phase labels among <labels>, each spelled `orch:<phase>`, joined
+    by single spaces in table order; "" when there are none - bash
+    standing_phase_labels_text."""
+    return " ".join(phase_label(p) for p in phase_labels_in(labels))
+
+
+def live_phase(labels: Sequence[str]) -> str:
+    """The first phase other than done whose label is among <labels>, in
+    table order; "" when there is none - bash standing_live_phase."""
+    return next((p for p in phase_labels_in(labels) if p != "done"), "")
+
+
+def label_verdict(labels: Sequence[str], phase: str) -> Tuple[str, str]:
+    """Whether the phase labels among <labels> agree with the recorded
+    <phase> - bash standing_label_verdict: ("none", "") with no phase label;
+    ("agrees", <text>) when the one carried is <phase>'s; else ("disagrees",
+    <text>), <text> the phase labels' phase_labels_text."""
+    text = phase_labels_text(labels)
+    if not text:
+        return "none", ""
+    return ("agrees" if text == phase_label(phase) else "disagrees"), text
+
+
+# The one source of the phase-redo rule: (labelled, recorded, redo) rows, the
+# redo being the `orch.sh redo` argument for a flow labelled <labelled> whose
+# checkout last moved to <recorded> - bash STANDING_REDO_PAIRS.
+REDO_PAIRS = (("implement", "review", "review"), ("spec", "implement", "spec"))
+
+
+def redo_phase(labelled: str, recorded: str) -> Optional[str]:
+    """The phase-redo rule, bash standing_redo_phase: the `orch.sh redo`
+    argument that steps a flow labelled <labelled> back to that phase from
+    the <recorded> phase its checkout last moved to; None for any other
+    pair, which is no redo."""
+    return next((redo for pair_labelled, pair_recorded, redo in REDO_PAIRS
+                 if (pair_labelled, pair_recorded) == (labelled, recorded)), None)
+
+
+def host_id(env: Mapping[str, str]) -> str:
+    """The identity a claim records as its host - bash standing_host_id:
+    ORCH_HOST_ID when set and non-empty (the container entrypoint sets it,
+    kept in the repo volume across recreates), else the hostname."""
+    return env.get("ORCH_HOST_ID", "") or socket.gethostname()
+
+
+class Standing(NamedTuple):
+    """The label half of an issue's Standing, as bash standing_set fills
+    it: its state (OPEN or CLOSED), every label, the live phase
+    (live_phase), the text of every phase label (phase_labels_text), and
+    whether it carries orch:running, needs-human, orch:limited and
+    orch:sync."""
+
+    state: str
+    labels: List[str]
+    phase: str
+    phase_labels: str
+    running: bool
+    human: bool
+    limited: bool
+    sync: bool
+
+
+def standing_of(state: str, labels: Sequence[str]) -> Standing:
+    """The label half of Standing from a <state> and <labels>, with no
+    GitHub call - bash standing_set."""
+    return Standing(state, list(labels), live_phase(labels), phase_labels_text(labels),
+                    label_listed(labels, STANDING_RUNNING_LABEL),
+                    label_listed(labels, STANDING_HUMAN_LABEL),
+                    label_listed(labels, STANDING_LIMITED_LABEL),
+                    label_listed(labels, STANDING_SYNC_LABEL))
+
+
+def standing_read(gh, issue) -> Tuple[Optional[Standing], str]:
+    """Issue <issue>'s state and labels, read once through the gh adapter
+    <gh>, as its Standing and "" - bash standing_read; (None, gh's reason)
+    where the read fails, printing nothing, for a caller that words its own
+    death."""
+    try:
+        state, labels = gh.issue_state_labels(issue)
+    except GhFailed as failed:
+        return None, gh_reason(failed.stderr)
+    return standing_of(state, labels), ""
+
+
+def claims_read(gh) -> Tuple[Optional[List[ClaimRow]], str]:
+    """The claims on origin, read once through the gh adapter <gh>, by
+    issue number, and "" - bash standing_claims_read; (None, the reason)
+    where origin cannot be read, saying nothing, for a caller that words
+    its own death or stays silent, as bash's --quiet read does."""
+    try:
+        return gh.claim_list(), ""
+    except GhFailed as failed:
+        return None, gh_reason(failed.stderr)
 
 
 def standing_landed_die(clause: str, landed: Sequence[str]) -> NoReturn:

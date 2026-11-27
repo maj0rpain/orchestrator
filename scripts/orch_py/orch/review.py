@@ -26,7 +26,9 @@ through orch_python_call: doctor_terminal, the terminal-state check's
 classification; doctor_ci, the CI check's ci_probe over the required checks;
 and doctor_standards, the Standards declaration check's resolution, exiting
 3 on a rejected declaration. Each prints data, and doctor.sh prints its own
-lines from it.
+lines from it. Python doctor (orch/doctor.py) calls the data under them in
+process: review_terminal_report, doctor_terminal's lines as a list, and
+ci_probe.
 
 run(argv) takes the arguments after `review`, as orch.sh would hand them on,
 and returns the exit code; every error dies through orch.common.die, with
@@ -761,6 +763,23 @@ def _retire(args: List[str], root: str, git, env: Mapping[str, str], clock,
     stdout_write(review_retire(root, args[0]) + "\n")
 
 
+def review_terminal_report(root: str, i: str, budget: str) -> List[str]:
+    """What doctor's terminal-state check reads for the checkout at <root>,
+    handed the iteration <i> and budget <budget> it already read:
+    review_terminal_state's lines - the classification word, then its detail
+    - and, for malformed, the path of the record the remedy names, last,
+    whatever the classification. Flow state is read once, and only when the
+    flat record is gone, for the retired record of a half-finished redo."""
+    state = None
+    if review_flat_record_gone(root, i):
+        # A failed read counts as no redo in progress, and is not made again.
+        state = flow_state_get_many(flow_state_file(root), FALLBACK_KEYS) or {}
+    lines, _ = review_terminal_state(root, i, budget, state)
+    if lines[0] == "malformed":
+        lines.append(review_terminal_record(root, i, state))
+    return lines
+
+
 # --- doctor's bridges ----------------------------------------------------------
 # One orch_python_call each, from doctor.sh's review-phase terminal-state and CI
 # checks and its env scope's Standards declaration check: each prints the data
@@ -778,16 +797,8 @@ def doctor_terminal(args: List[str], git=None, env: Optional[Mapping[str, str]] 
     if len(args) != 2:
         die("usage: orch_python_call review doctor_terminal <iteration> <budget>")
     git = Git() if git is None else git
-    root = checkout_root(git, os.environ if env is None else env)
-    i, budget = args
-    state = None
-    if review_flat_record_gone(root, i):
-        # A failed read counts as no redo in progress, and is not made again.
-        state = flow_state_get_many(flow_state_file(root), FALLBACK_KEYS) or {}
-    lines, _ = review_terminal_state(root, i, budget, state)
-    if lines[0] == "malformed":
-        lines.append(review_terminal_record(root, i, state))
-    lines_print(lines)
+    lines_print(review_terminal_report(checkout_root(git, os.environ if env is None else env),
+                                       *args))
 
 
 def doctor_ci(args: List[str], gh=None, git=None, env: Optional[Mapping[str, str]] = None) -> None:

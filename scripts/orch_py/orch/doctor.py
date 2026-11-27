@@ -2,7 +2,10 @@
 `python3 -m orch doctor` alone: diagnostics for the orchestrator plugin, as
 the bash doctor module reports them. Scopes are named for the content they
 cover, never for the caller that asks - `--env` and `--flow` - so a check's
-home does not move when a caller changes.
+home does not move when a caller changes. The flow scope is the flow state
+group, each check in the phases it runs in (a registry entry's phase list),
+then the working-tree check against the planning allowlist and the
+ticket-worktrees check, which runs on every path, a flow or none.
 
 Every check reports through the Doctor's reporter - ok, warn, fail, remedy,
 under a group header - and the exit code comes from the FAIL count alone.
@@ -29,19 +32,31 @@ import re
 import shutil
 import subprocess
 import sys
-from typing import Callable, List, Mapping, NamedTuple, Optional, Union
+from typing import Callable, Dict, List, Mapping, NamedTuple, Optional, Sequence, TypeVar, Union
 
 from orch import glossary
+from orch.autopilot import autopilot_active
 from orch.base import base_setting, default_branch_local
-from orch.common import (EXCLUDED_DIRS, capture, die, err_line, exclude_missing, fenced,
-                         file_lines, list_join, stdout_write, trim)
+from orch.checkout import ticket_worktrees_under
+from orch.common import (EXCLUDED_DIRS, ORCH_DIR_NAME, capture, die, err_line, exclude_missing,
+                         fenced, file_lines, int_as_test_reads, list_join, stdout_write, trim)
+from orch.flow_state import (flow_state_file, flow_state_get_many, recorded_pr,
+                             require_state_exists)
 from orch.gh import GhFailed, adapter_of, gh_reason, label_listed
 from orch.git import Git
-from orch.host import host_detect
+from orch.handoff import (NOT_READY, PHASES, READY_IF_GH, handoff_doctor_missing,
+                          handoff_fetch_due, handoff_fetched, handoff_ready, handoff_report,
+                          handoff_scratch_dir, handoffs_due, phases_from)
+from orch.host import flow_cmd, host_detect
+from orch.planning_allowlist import dirty_outside_allowlist
 from orch.repo import REPO_CAUSE, REPO_MISSING, RepoPin, owner_name
-from orch.review import standards_resolve_source
+from orch.review import (ci_probe, review_budget_fallback, review_terminal_report,
+                         standards_resolve_source)
 from orch.root import checkout_root
+from orch.standing import label_verdict, live_phase, phase_label, redo_phase
 from orch.triage_labels import LABELS_DOC, expected_labels
+
+T = TypeVar("T")
 
 USAGE = "usage: orch.sh doctor [--env|--flow]"
 SCOPES = {"": "both", "--env": "env", "--flow": "flow"}
@@ -96,6 +111,11 @@ class Doctor:
         # The default branch as GitHub reports it, when a valid branch name.
         self.repo_branch = ""
         self.jq = self.installed("jq")
+        # The flow's values (FLOW_KEYS, the budget after its fallback) from
+        # the one state read, when state.json is exactly one JSON object.
+        self.flow: Optional[Dict[str, str]] = None
+        self._issue: Optional[IssueRead] = None
+        self._pr: Optional[PrRead] = None
 
     # --- the reporter ---
 
@@ -140,7 +160,7 @@ class Doctor:
         self.skip_line(self.gh_skipped, "GitHub", self.gh_answer)
         self.skip_line(self.jq_skipped, "flow", "jq is not installed")
 
-    def run(self, registry: List["Entry"]) -> None:
+    def run(self, registry: Sequence["Entry"]) -> None:
         """Runs each entry of <registry> in order: a header opens its group,
         and a check that raises is reported as one that could not run."""
         for entry in registry:
@@ -198,10 +218,57 @@ class Doctor:
             self.gh_skipped += 1
         return open_
 
+    def answer_or_fail(self, call: Callable[[], T]) -> Optional[T]:
+        """The answer of <call>, a read in the module of the concept it
+        serves; where it dies, or raises the GhFailed it reports a failed
+        read with, the check's one FAIL carrying the failure's message, and
+        None - never the aborted-check warn, so the exit stays a FAIL's."""
+        try:
+            answer, err, code = capture(call)
+        except GhFailed as failed:
+            self.fail(gh_reason(failed.stderr))
+            return None
+        if code:
+            self.fail(err_line(err))
+            return None
+        return answer
+
+    # --- the flow memos ---
+
+    def issue_read(self) -> "IssueRead":
+        """The flow issue's state and labels, read from GitHub at most once
+        per run: every check that needs either takes that one answer. Call
+        only after gh_gate has opened. The recorded number goes to gh as
+        recorded_pr hands a recorded PR on: a plain number as an int."""
+        if self._issue is None:
+            try:
+                state, labels = self.gh.issue_state_labels(recorded_pr(self.flow["issue"]))
+                self._issue = IssueRead(True, state, labels, "")
+            except GhFailed as failed:
+                self._issue = IssueRead(False, "", [], failed.stderr)
+        return self._issue
+
+    def pr_read(self) -> "PrRead":
+        """The flow PR's state and draft flag, read once, as issue_read."""
+        if self._pr is None:
+            try:
+                state, draft = self.gh.pr_state_draft(recorded_pr(self.flow["pr"]))
+                self._pr = PrRead(True, state, draft, "")
+            except GhFailed as failed:
+                self._pr = PrRead(False, "", False, failed.stderr)
+        return self._pr
+
     def probe(self, scope: str) -> None:
-        """The answers the env checks share, read once. The flow scope
-        reaches gh through gh_gate instead, which probes on first use, so a
-        run that needs no GitHub answer costs no round trip."""
+        """The answers the checks share, read once. A state file holding
+        anything but exactly one JSON object leaves self.flow None, which
+        settles every flow check at once; the same one read takes the values
+        the flow checks use. The flow scope reaches gh through gh_gate,
+        which probes on first use, so a run that needs no GitHub answer
+        costs no round trip."""
+        if scope != "env" and self.jq:
+            self.flow = flow_state_get_many(flow_state_file(self.root), FLOW_KEYS)
+            if self.flow is not None:
+                self.flow["budget"] = review_budget_fallback(self.flow["budget"])
         if scope == "flow":
             return
         self.probe_gh()
@@ -219,6 +286,30 @@ class Doctor:
             self.repo_branch = view
 
 
+# The state keys the flow checks read, in the probe's one read.
+FLOW_KEYS = ("phase", "issue", "branch", "pr", "iteration", "budget")
+
+
+class IssueRead(NamedTuple):
+    """The flow-issue memo: whether the read answered, the state and labels
+    it gave, and gh's stderr where it did not."""
+
+    read: bool
+    state: str
+    labels: List[str]
+    err: str
+
+
+class PrRead(NamedTuple):
+    """The flow-PR memo: whether the read answered, the state (empty where
+    it did not) and draft flag it gave, and gh's stderr where it did not."""
+
+    read: bool
+    state: str
+    draft: bool
+    err: str
+
+
 class Head(NamedTuple):
     """A registry's group header."""
 
@@ -226,11 +317,14 @@ class Head(NamedTuple):
 
 
 class Check(NamedTuple):
-    """A registry's check: its name, the bash check's function name, and the
-    check, run on the Doctor."""
+    """A registry's check: its name, the bash check's function name, the
+    check, run on the Doctor, and the phases it runs in - "" for every
+    phase, else a comma-separated list whose `<phase>+` element stands for
+    <phase> and every phase after it in the phase table."""
 
     name: str
     check: Callable[[Doctor], None]
+    phases: str = ""
 
 
 Entry = Union[Head, Check]
@@ -239,6 +333,29 @@ Entry = Union[Head, Check]
 def checks(*functions: Callable[[Doctor], None]) -> List[Check]:
     """A registry's checks, each named by its function."""
     return [Check(function.__name__, function) for function in functions]
+
+
+def phase_list(entry: Check) -> List[str]:
+    """<entry>'s phases, each `<phase>+` element expanded to the phases it
+    stands for. Every element is checked against the phase table, so a typo
+    never quietly disables a check: one naming a phase the table does not
+    hold dies naming its entry."""
+    phases: List[str] = []
+    for element in entry.phases.split(","):
+        named = element[:-1] if element.endswith("+") else element
+        following = phases_from(named)
+        if following is None:
+            die("%s:%s: no such phase in the phase table: %s" % (entry.name, entry.phases, named))
+        phases += following if element.endswith("+") else [named]
+    return phases
+
+
+def entries_at(registry: Sequence[Entry], phase: str) -> List[Entry]:
+    """The entries of <registry> that apply at <phase>: a header or a check
+    with no phase list always, a listed check only when its list names
+    <phase>."""
+    return [entry for entry in registry
+            if isinstance(entry, Head) or not entry.phases or phase in phase_list(entry)]
 
 
 # --- tools ----------------------------------------------------------------------
@@ -876,6 +993,9 @@ def check_verification_lines(d: Doctor) -> None:
         verification_report(d, label, lines)
 
 
+# The flow checks' group header.
+FLOW_HEAD = "flow state"
+
 # The env checks, in report order.
 ENV_CHECKS: List[Entry] = [
     Head("tools"),
@@ -889,6 +1009,395 @@ ENV_CHECKS: List[Entry] = [
             check_adr_dir, check_sub_issues, check_git_exclude, check_base_branch,
             check_verification_lines),
 ]
+
+
+# --- flow state -----------------------------------------------------------------
+# The checks below read the values the probe read from state.json in one read
+# (Doctor.flow), never state.json itself, so a missing jq and a file that will
+# not parse each settle all of them at once, in flow_scope, before any runs:
+# reaching a check at all is the proof that its preconditions held.
+
+
+def check_state_phase(d: Doctor) -> None:
+    phase = d.flow["phase"]
+    if phase in PHASES:
+        d.ok("phase: " + phase)
+        return
+    d.fail("unknown phase: %s (want one of: %s)" % (phase, " ".join(PHASES)))
+    d.remedy(flow_cmd(d.env, "abort"))
+
+
+def check_flow_issue(d: Doctor) -> None:
+    """Unconditional on how the issue arrived - adopted at init or published
+    by the spec phase. The ready-for-agent label is deliberately not
+    re-checked: it is a one-time gate at adoption (docs/adr/0005). Read
+    through the shared flow-issue memo, which knows OPEN and CLOSED only."""
+    issue = d.flow["issue"]
+    if not issue:
+        d.ok("issue: not recorded yet")
+        return
+    if not d.gh_gate():
+        return
+    read = d.issue_read()
+    if read.state == "OPEN":
+        d.ok("issue #%s open" % issue)
+    elif read.state == "CLOSED":
+        # pr open always writes `Closes #<issue>`, so a done flow's issue
+        # being closed is the expected result of merging.
+        if d.flow["phase"] == "done":
+            d.ok("issue #%s closed" % issue)
+        else:
+            d.fail("issue #%s is closed." % issue)
+            d.remedy("gh issue reopen " + issue)
+    else:
+        d.fail("issue #%s could not be read from GitHub: %s" % (issue, gh_reason(read.err)))
+        d.remedy("gh issue view " + issue)
+
+
+def check_flow_branch(d: Doctor) -> None:
+    """A local branch alone, never a tag of the same name."""
+    branch = d.flow["branch"]
+    if not branch:
+        d.ok("branch: not created yet")
+        return
+    if d.git.branch_exists(branch):
+        d.ok("branch: " + branch)
+        return
+    # A done flow stays put until the next init archives it (ADR-0009), and
+    # its branch deleted after the merge is the routine end of a flow.
+    if d.flow["phase"] == "done":
+        d.ok("branch: %s gone - expected after merge" % branch)
+        return
+    d.fail("branch %s no longer exists - the flow has nothing left to build on." % branch)
+    d.remedy(flow_cmd(d.env, "abort"))
+
+
+def check_flow_upstream(d: Doctor) -> None:
+    """Only from the phase that pushes onwards: before implement, not having
+    pushed is correct. origin/<branch> specifically, not just any upstream:
+    a branch may still track its base until its first push (#1152)."""
+    branch = d.flow["branch"]
+    if not branch:
+        return
+    upstream = d.git.branch_upstream(branch) or ""
+    if upstream == "refs/remotes/origin/" + branch:
+        d.ok("upstream: " + upstream[len("refs/remotes/"):])
+        return
+    # After the merge the remote branch is routinely deleted; a push remedy
+    # here would recreate a branch somebody removed on purpose.
+    if d.flow["phase"] == "done":
+        d.ok("upstream: none - expected after merge")
+        return
+    d.warn("branch %s is not on origin yet." % branch)
+    d.remedy("git push -u origin refs/heads/%s:refs/heads/%s" % (branch, branch))
+
+
+def check_flow_pr(d: Doctor) -> None:
+    pr = d.flow["pr"]
+    if not pr:
+        d.ok("PR: not opened yet")
+        return
+    if not d.gh_gate():
+        return
+    read = d.pr_read()
+    if read.state == "OPEN":
+        d.ok("PR #%s open" % pr)
+    elif read.state == "MERGED":
+        d.ok("PR #%s merged" % pr)
+    elif read.state == "CLOSED":
+        d.fail("PR #%s is closed." % pr)
+        d.remedy("gh pr reopen " + pr)
+    else:
+        d.fail("PR #%s could not be read from GitHub: %s" % (pr, gh_reason(read.err)))
+        d.remedy("gh pr view " + pr)
+
+
+def check_flow_review_terminal(d: Doctor) -> None:
+    """The proactive surface for the classification `redo review` refuses
+    on: a human sees "this loop looks interrupted" before wondering why redo
+    won't run. The classification is the review module's, handed the
+    iteration and budget the probe read: the word, its detail and, for
+    malformed, the record path last."""
+    i, budget = d.flow["iteration"], d.flow["budget"]
+    lines = d.answer_or_fail(lambda: review_terminal_report(d.root, i, budget))
+    if lines is None:
+        return
+    # As bash's $(...) read the bridge's lines: trailing newlines dropped.
+    word, _, detail = "\n".join(lines).rstrip("\n").partition("\n")
+    if word == "none":
+        d.ok("review loop: not started yet")
+    elif word == "ready":
+        d.ok("review loop at a terminal state: ready")
+    elif word == "stop":
+        d.ok("review loop at a terminal state: stop (%s)" % detail.split("\n", 1)[0])
+    # Both warn rather than FAIL: /orchestrator:next resumes either one. A
+    # loop short of its budget is proceeding normally, where one whose last
+    # iteration recorded nothing looks like its session simply died.
+    elif word == "pending":
+        d.warn("review loop hasn't reached its budget yet (iteration %s of budget %s) - %s will"
+               " resume it; redo refuses until it reaches a terminal state."
+               % (i, budget, flow_cmd(d.env, "next")))
+    elif word == "interrupted":
+        d.warn("review loop's last iteration (%s of budget %s) has no recorded terminal state -"
+               " the session looks interrupted, not stopped. %s will resume it; redo refuses"
+               " until it reaches a terminal state." % (i, budget, flow_cmd(d.env, "next")))
+    # A FAIL, not a warn: the record is there but unreadable, and
+    # /orchestrator:next will not rewrite it - only a human editing it will.
+    elif word == "malformed":
+        shape, _, record = detail.partition("\n")
+        d.fail("review loop's last iteration (%s) has a malformed terminal state - %s"
+               % (i, shape))
+        d.remedy("rewrite the first line of %s in the expected shape above"
+                 % record.split("\n", 1)[0])
+    elif word == "unreadable":
+        d.fail("review loop's terminal state cannot be read: " + detail)
+
+
+def check_flow_review_budget(d: Doctor) -> None:
+    """`review begin` dies rather than start an iteration past budget, so an
+    iteration count past it is state.json in a shape nothing produced on a
+    healthy run. An iteration test cannot count reads as within budget."""
+    i, budget = d.flow["iteration"], d.flow["budget"]
+    n = int_as_test_reads(i)
+    if n is not None and n > int(budget):
+        d.fail("review loop iteration (%s) is past its budget (%s) - the loop's stop"
+               " enforcement did not hold." % (i, budget))
+        d.remedy(flow_cmd(d.env, "abort"))
+        return
+    d.ok("review loop iteration (%s) within budget (%s)" % (i, budget))
+
+
+def check_flow_review_ci(d: Doctor) -> None:
+    """The loop requires CI green before it marks the PR ready, so the
+    review module's ci_probe over the required checks is the loop's read of
+    exactly this, asked once: a snapshot, never the live loop's grace."""
+    pr = d.flow["pr"]
+    if not pr or not d.gh_gate():
+        return
+    lines = d.answer_or_fail(lambda: ci_probe(d.gh, recorded_pr(pr), "required"))
+    if lines is None:
+        return
+    verdict, detail = lines[0], "\n".join(lines[1:])
+    if verdict == "green":
+        d.ok("CI: required checks green")
+    elif verdict == "none":
+        d.ok("CI: no required checks reported")
+    elif verdict == "pending":
+        d.ok("CI: required checks still pending")
+    elif verdict == "failing":
+        d.fail("CI: required check(s) failing on PR #%s." % pr)
+        d.remedy("gh pr checks " + pr)
+    else:
+        # ci_probe's only other word - a failing round trip, not fixable
+        # from here, so no remedy; gh's reason rides in the warn.
+        d.warn("CI: could not be read from GitHub for PR #%s: %s" % (pr, trim(detail)))
+        return
+    if detail:
+        d.line(detail)
+
+
+def check_flow_review_draft(d: Doctor) -> None:
+    """`review ready` marks the PR ready and records phase: done as one
+    operation, so isDraft and phase disagreeing on an open PR is evidence
+    that operation only half landed."""
+    pr = d.flow["pr"]
+    if not pr or not d.gh_gate():
+        return
+    read = d.pr_read()
+    if not read.state:
+        d.warn("PR #%s draft state could not be read from GitHub: %s" % (pr, gh_reason(read.err)))
+        return
+    # A merged or closed PR cannot go back to draft.
+    if read.state != "OPEN":
+        return
+    phase = d.flow["phase"]
+    if phase == "done" and read.draft:
+        d.fail("PR #%s is still a draft but the flow phase is done - review ready did not take."
+               % pr)
+        d.remedy("orch.sh pr ready    # on " + d.flow["branch"])
+    elif phase == "review" and not read.draft:
+        d.fail("PR #%s was marked ready on GitHub but the flow phase is still review -"
+               " state.json fell out of sync." % pr)
+        d.remedy("gh pr view " + pr)
+    else:
+        d.ok("PR #%s draft state matches phase (%s)" % (pr, phase))
+
+
+def check_flow_handoffs(d: Doctor) -> None:
+    """Pure reuse: what makes a handoff valid lives in handoff_report, and
+    which are due is the phase table's handoffs_due - phase names what runs
+    next, so every earlier phase has already written one."""
+    phase, issue = d.flow["phase"], d.flow["issue"]
+    # A phase the table does not hold is due nothing, so the check skips it.
+    due = handoffs_due(phase)
+    if due:
+        ready, finding = handoff_ready(d.env, issue)
+        if ready == NOT_READY:
+            d.fail(finding)
+            d.remedy(flow_cmd(d.env, "abort"))
+            return
+        if ready == READY_IF_GH and not d.gh_gate():
+            return
+        fetched, reason = handoff_fetch_due(lambda: d.gh, d.env, d.root, phase, issue)
+        if fetched == 2:
+            d.fail("could not write the copies of issue #%s's handoff comments to %s"
+                   % (issue, handoff_scratch_dir(d.root)))
+            return
+        if fetched:
+            d.fail("could not read issue #%s's handoff comments: %s"
+                   % (issue, reason or "gh's output is not a comment list"))
+            return
+    state_file = flow_state_file(d.root)
+    for name in due:
+        path, present = handoff_fetched(d.env, d.root, name)
+        if not present:
+            d.fail(handoff_doctor_missing(d.env, name, issue))
+            d.remedy(flow_cmd(d.env, "redo"))
+            continue
+        lines, _ = handoff_report(path, state_file, d.env, name)
+        problems = [line for line in lines if not line.startswith("ok ")]
+        if not problems:
+            d.ok("handoff %s complete" % name)
+            continue
+        for line in problems:
+            d.fail("handoff %s: %s" % (name, line[len("FAIL "):] if line.startswith("FAIL ")
+                                       else line))
+        d.remedy(flow_cmd(d.env, "redo"))
+
+
+def phase_label_verdict(d: Doctor, issue: str, phase: str, labels: Sequence[str], source: str,
+                        ok_lead: str) -> bool:
+    """The ok or warn line, and the warn's remedy, for issue #<issue>'s
+    phase labels among <labels> against the phase <source> (where it was
+    recorded, e.g. "this checkout") last moved to; <ok_lead> opens the ok
+    line. False, printing nothing, when the issue carries no phase
+    label."""
+    verdict, text = label_verdict(labels, phase)
+    if verdict == "none":
+        return False
+    if verdict == "agrees":
+        d.ok("%s: %s" % (ok_lead, text))
+        return True
+    d.warn("issue #%s is labelled %s, but %s last moved to phase %s."
+           % (issue, text, source, phase))
+    redo = redo_phase(live_phase(labels), phase)
+    if redo is not None:
+        d.remedy("the watcher will run %s %s" % (flow_cmd(d.env, "redo"), redo))
+    else:
+        d.remedy("relabel the issue %s; the watcher refuses this disagreement" % phase_label(phase))
+    return True
+
+
+def check_flow_autopilot_label(d: Doctor) -> None:
+    """An autopilot flow's phase is its issue's phase label (ADR-0052);
+    state.json records the phase this checkout last moved to, and a label
+    that disagrees is flagged. An interactive flow carries no phase label
+    and is left alone - except under ORCH_AUTOPILOT=1, where a flow with
+    none is refused. The labels come from the shared flow-issue memo; a
+    failed read is the issue check's to report."""
+    issue, phase = d.flow["issue"], d.flow["phase"]
+    if not issue:
+        if autopilot_active(d.env):
+            d.fail("autopilot session, but no issue is recorded - the flow's phase has no label"
+                   " to live on.")
+            d.remedy(flow_cmd(d.env, "abort"))
+        return
+    if not d.gh_gate():
+        return
+    read = d.issue_read()
+    if not read.read:
+        return
+    if phase_label_verdict(d, issue, phase, read.labels, "this checkout", "phase label"):
+        return
+    if autopilot_active(d.env):
+        d.fail("issue #%s carries no phase label - an autopilot session needs the flow's phase"
+               " recorded on its issue." % issue)
+        d.remedy("gh issue edit %s --add-label %s" % (issue, phase_label(phase)))
+
+
+def check_flow_worktree_clean(d: Doctor) -> None:
+    """Every phase commits and pushes its own work before it ends, so a
+    change outside the planning allowlist at a phase boundary is a bug in
+    the phase that left it - caught here, at the top of /orchestrator:next.
+    Silent on a clean tree; a git status that cannot run is this check's
+    FAIL, never the end of the report."""
+    dirty = d.answer_or_fail(lambda: dirty_outside_allowlist(d.git))
+    if not dirty:
+        return
+    d.fail("the working tree has changes outside the planning allowlist: " + list_join(dirty))
+    d.remedy("git status")
+
+
+def check_ticket_worktrees_left(d: Doctor) -> None:
+    """A ticket worktree under this checkout is a run's leftover once its
+    phase is not running (ADR-0036): the next implement phase or quick
+    implementation stops on it, and archive refuses to move it. Silent when
+    there is none - ticket-worktree list's own scope, so another checkout's
+    in-flight tickets never fail this one. A listing that cannot be read is
+    never read as none: it is this check's one FAIL."""
+    left = d.answer_or_fail(lambda: ticket_worktrees_under(d.git, d.root))
+    for n, path in left or ():
+        d.fail("ticket worktree %s is left over - a ticket run did not finish." % path)
+        d.remedy("orch.sh ticket-worktree remove " + n)
+
+
+# The flow checks, in report order, each with the phases it runs in.
+FLOW_CHECKS: List[Entry] = [
+    Head(FLOW_HEAD),
+    *checks(check_state_phase, check_flow_issue, check_flow_branch),
+    Check("check_flow_upstream", check_flow_upstream, "implement+"),
+    *checks(check_flow_pr),
+    Check("check_flow_review_terminal", check_flow_review_terminal, "review"),
+    Check("check_flow_review_budget", check_flow_review_budget, "review"),
+    Check("check_flow_review_ci", check_flow_review_ci, "review"),
+    Check("check_flow_review_draft", check_flow_review_draft, "review+"),
+    *checks(check_flow_handoffs, check_flow_autopilot_label),
+]
+
+
+def flow_scope(d: Doctor, scope: str) -> None:
+    """The flow scope, after the env scope where both run. --flow asks about
+    a flow specifically, so having none is a failure there; bare doctor did
+    not ask, so it states the absence and carries on: an empty answer must
+    never be mistaken for a healthy one."""
+    state_file = flow_state_file(d.root)
+    if scope == "flow":
+        require_state_exists(state_file, d.env)
+    if not os.path.isfile(state_file):
+        d.head(FLOW_HEAD)
+        d.ok("no active flow")
+    elif scope == "flow" and not d.jq:
+        # --flow never runs the tools group, so nothing else here would
+        # report the jq every flow check needs: skipping them all and still
+        # exiting 0 is the one answer a diagnostic must never give -
+        # /orchestrator:next gates on exactly that exit code.
+        d.run([Head(FLOW_HEAD), *checks(check_jq)])
+    else:
+        run_flow(d)
+    # On every path here - no flow, a broken state file, no jq - because it
+    # reads git alone (#673): a quick implementation has no flow, and its
+    # leftover is reported here or nowhere.
+    d.run(checks(check_ticket_worktrees_left))
+
+
+def run_flow(d: Doctor) -> None:
+    """The flow checks that apply at the flow's phase, once jq and the state
+    file both held; else, under the flow header, the skip of every flow
+    check or the state file's one FAIL."""
+    if d.jq and d.flow is not None:
+        d.run(entries_at(FLOW_CHECKS, d.flow["phase"]))
+        # Outside the registry: it reads git alone and prints nothing when
+        # clean, so a flow with a clean tree reports exactly what it did.
+        d.run(checks(check_flow_worktree_clean))
+        return
+    d.head(FLOW_HEAD)
+    if not d.jq:
+        d.jq_skipped += sum(1 for entry in FLOW_CHECKS if isinstance(entry, Check))
+        return
+    # One problem earns one FAIL: every check reads this file, so there is
+    # nothing left to say about it and nothing that could be said honestly.
+    d.fail("%s/state.json is not exactly one JSON object." % ORCH_DIR_NAME)
+    d.remedy(flow_cmd(d.env, "abort"))
 
 
 def run(
@@ -916,6 +1425,8 @@ def run(
     d.probe(scope)
     if scope != "flow":
         d.run(ENV_CHECKS)
+    if scope != "env":
+        flow_scope(d, scope)
     d.skip_report()
     d.line("")
     d.line("%d ok, %d warn, %d FAIL" % (d.oks, d.warns, d.fails))

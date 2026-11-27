@@ -1,9 +1,9 @@
 """Contract tests of the real gh adapter (ADR-0033): each gh operation run
 against a fixture gh on PATH that answers by exact argv, proving the argv it
 hands gh, how it reads the answer, the repo pin and its remedy, the rate-limit
-handling and the `gh could not <action>` death. The claim delete, the one
-git-backed operation, runs instead against a real bare origin under
-tmp_path."""
+handling and the `gh could not <action>` death. The claim list and the claim
+delete, the two git-backed operations, run instead against a real bare origin
+under tmp_path."""
 from __future__ import annotations
 
 import json
@@ -11,8 +11,8 @@ import shutil
 
 import pytest
 
-from orch.gh import (Check, Gh, GhFailed, IssueRow, LabelledBody, SubIssue, Unparsed, gh_die,
-                     gh_or_die)
+from orch.gh import (Check, ClaimRow, Gh, GhFailed, IssueRow, LabelledBody, SubIssue, Unparsed,
+                     gh_die, gh_or_die)
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY, RepoPin
 
@@ -1456,3 +1456,64 @@ def test_any_other_push_failure_fails_the_delete_with_git_s_reason(claimed):
         gh.claim_delete(5)
 
     assert failed.value.stderr == "fatal: '%s' does not appear to be a git repository\n" % origin
+
+
+# --- the claim list -------------------------------------------------------------
+
+
+def claim_pushed(root, n, host, pid, phase, started):
+    """A claim on issue #<n> pushed to origin from the clone at <root>, its
+    commit message as adapter_claim_create writes it."""
+    run_git(root, "commit", "-q", "--allow-empty", "-m", "orch claim %d" % n, "-m",
+            "host: %s\npid: %s\nphase: %s\nstarted: %s" % (host, pid, phase, started))
+    run_git(root, "push", "-q", "origin", "HEAD:refs/orch/claims/%d" % n)
+
+
+@pytest.fixture
+def claims(tmp_path):
+    """A clone of a bare origin under tmp_path, origin holding claims on
+    #12, #5 and #9, made in that order: (origin's path, the clone's path,
+    the real adapter on the clone)."""
+    origin, root = tmp_path / "origin.git", tmp_path / "clone"
+    git = origin_clone(origin, root)
+    claim_pushed(root, 12, "thirdhost", 7, "review", "2020-01-01T00:00:00Z")
+    claim_pushed(root, 5, "otherhost", 5, "spec", "2021-01-01T00:00:00Z")
+    claim_pushed(root, 9, "myhost", 1, "implement", "2022-01-01T00:00:00Z")
+    return origin, root, Gh(RepoPin({}, git), {})
+
+
+def test_the_claim_list_reads_each_claim_s_message_in_issue_order(claims):
+    _, _, gh = claims
+
+    assert gh.claim_list() == [
+        ClaimRow("5", "otherhost", "5", "spec", "2021-01-01T00:00:00Z"),
+        ClaimRow("9", "myhost", "1", "implement", "2022-01-01T00:00:00Z"),
+        ClaimRow("12", "thirdhost", "7", "review", "2020-01-01T00:00:00Z"),
+    ]
+
+
+def test_the_claim_list_prunes_a_claim_freed_since_the_last_fetch(claims):
+    origin, root, gh = claims
+    gh.claim_list()
+    run_git(origin, "update-ref", "-d", "refs/orch/claims/9")
+
+    assert [row.issue for row in gh.claim_list()] == ["5", "12"]
+
+
+def test_a_claim_message_missing_a_field_reads_it_as_empty(claims):
+    _, root, gh = claims
+    run_git(root, "commit", "-q", "--allow-empty", "-m", "orch claim 3", "-m", "host: lone")
+    run_git(root, "push", "-q", "origin", "HEAD:refs/orch/claims/3")
+
+    assert gh.claim_list()[0] == ClaimRow("3", "lone", "", "", "")
+
+
+def test_a_claim_list_origin_cannot_answer_fails_with_git_s_reason(claims):
+    origin, _, gh = claims
+    shutil.rmtree(str(origin))
+
+    with pytest.raises(GhFailed) as failed:
+        gh.claim_list()
+
+    assert failed.value.stderr.startswith(
+        "fatal: '%s' does not appear to be a git repository\n" % origin)
