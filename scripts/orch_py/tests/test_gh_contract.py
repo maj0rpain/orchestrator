@@ -324,6 +324,34 @@ def test_a_labelled_rows_listing_that_does_not_parse_fails(fixture_gh):
     assert failed.value.stderr == "gh answered a listing that does not parse"
 
 
+def any_labelled_rows_argv(*labels, limit="1000"):
+    return ["issue", "list", "--state", "open",
+            "--search", "label:%s sort:created-asc" % ",".join('"%s"' % l for l in labels),
+            "--limit", limit, "--json", "number,state,labels", "--jq", OPEN_ROWS_JQ]
+
+
+def test_issues_any_labelled_rows_lists_the_issues_carrying_any_label_named(fixture_gh, capsys):
+    fixture_gh.reply(any_labelled_rows_argv("orch:spec", "orch:sync"),
+                     "7\nOPEN\n1\norch:spec\n9\nOPEN\n2\norch:done\norch:sync\n")
+
+    assert real_gh(fixture_gh).issues_any_labelled_rows("orch:spec", "orch:sync") == [
+        StateRow(7, "OPEN", ["orch:spec"]), StateRow(9, "OPEN", ["orch:done", "orch:sync"])]
+    assert capsys.readouterr().err == ""
+
+
+def test_an_any_labelled_listing_at_the_issue_list_limit_warns_naming_its_labels_by_or(
+        fixture_gh, capsys):
+    fixture_gh.reply(any_labelled_rows_argv("orch:spec", "orch:sync", limit="2"),
+                     "1\nOPEN\n0\n2\nOPEN\n0\n")
+
+    assert len(real_gh(fixture_gh, ORCH_ISSUE_LIST_LIMIT="2").issues_any_labelled_rows(
+        "orch:spec", "orch:sync")) == 2
+    assert capsys.readouterr().err == (
+        "orch: the open issues labelled orch:spec or orch:sync reached the issue-list limit of 2"
+        " - the newest past it are missing from this list\n"
+    )
+
+
 def state_argv(number):
     return ["issue", "view", str(number), "--json", "state,url",
             "--jq", 'if (.url | test("/pull/")) then "PULL" else .state end']

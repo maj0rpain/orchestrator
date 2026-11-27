@@ -363,6 +363,25 @@ def handoff_comment_fetch_due(gh, issue: str, phase: str, scratch: str) -> Tuple
     return status, ""
 
 
+def handoff_comment_post(gh, issue: str, name: str, path: str) -> bool:
+    """Posts the handoff file at <path>, already validated, silently as a
+    new comment on issue #<issue> under <name>'s marker, as bash's
+    handoff_comment_post does - the newest tagged comment is the handoff,
+    so a post never edits an earlier one. False, after `orch: gh could not
+    post the <name> handoff on issue #<issue>: <reason>` on stderr, when the
+    post fails. The temp body is removed on every path."""
+    unmade = "could not create a temp file for the handoff comment"
+    with temp_text_file(marked_comment_write("handoff", name) + (read_raw(path) or ""),
+                        unmade, unmade) as body:
+        try:
+            gh.issue_comment(int(issue), body)
+        except GhFailed as failed:
+            warn("gh could not post the %s handoff on issue #%s: %s"
+                 % (name, issue, gh_reason(failed.stderr)))
+            return False
+    return True
+
+
 def handoff_comment_post_url(gh, issue: str, name: str, path: str) -> Optional[str]:
     """Posts the handoff file at <path>, already validated, as a new comment
     on issue #<issue> under <name>'s marker, as bash's

@@ -452,6 +452,7 @@ def test_the_python_seeder_s_unsupported_sub_issues_read_back(store):
     ("adapter_blocker_remove", lambda gh: gh.blocker_remove(5, 7)),
     ("adapter_claim_delete", lambda gh: gh.claim_delete(5)),
     ("adapter_issues_labelled_rows", lambda gh: gh.issues_labelled_rows("needs-human")),
+    ("adapter_issues_any_labelled_rows", lambda gh: gh.issues_any_labelled_rows("needs-human")),
     ("adapter_issue_reopen", lambda gh: gh.issue_reopen(5)),
     ("adapter_pr_close", lambda gh: gh.pr_close(6, "Closed.")),
     ("adapter_issue_created_at", lambda gh: gh.issue_created_at(5)),
@@ -1398,6 +1399,24 @@ def test_issues_labelled_rows_lists_the_open_issues_carrying_every_label_as_the_
         StateRow(1, "OPEN", ["Needs-Human"])]
     assert capsys.readouterr().err == (
         "orch: the open issues labelled needs-human reached the issue-list limit of 1"
+        " - the newest past it are missing from this list\n")
+
+
+def test_issues_any_labelled_rows_lists_the_open_issues_carrying_any_label_as_the_bash_fake_does(
+        store, capsys):
+    bash_answer = bash(store, "fake_issue 3 open orch:spec\nfake_issue 1 open Orch:Sync orch:done\n"
+                              "fake_issue 2 closed orch:spec\nfake_issue 4 open bug\n"
+                              # the limits orch.sh's gh module sets
+                              "ISSUE_LIST_LIMIT=1000 ISSUE_SEARCH_CAP=1000\n"
+                              "adapter_issues_any_labelled_rows orch:spec orch:sync\n")
+
+    assert fake(store).issues_any_labelled_rows("orch:spec", "orch:sync") == [
+        StateRow(1, "OPEN", ["Orch:Sync", "orch:done"]), StateRow(3, "OPEN", ["orch:spec"])]
+    assert bash_answer == "1\nOPEN\n2\nOrch:Sync\norch:done\n3\nOPEN\n1\norch:spec\n"
+    assert fake(store, ORCH_ISSUE_LIST_LIMIT="1").issues_any_labelled_rows(
+        "orch:spec", "orch:sync") == [StateRow(1, "OPEN", ["Orch:Sync", "orch:done"])]
+    assert capsys.readouterr().err == (
+        "orch: the open issues labelled orch:spec or orch:sync reached the issue-list limit of 1"
         " - the newest past it are missing from this list\n")
 
 

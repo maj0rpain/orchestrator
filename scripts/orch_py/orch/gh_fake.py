@@ -297,12 +297,12 @@ class FakeGh:
                 numbers.append(int(name))
         return numbers
 
-    def _labelled_open(self, *labels: str) -> List[int]:
-        """The open issues carrying every label, cut at the search limit as a
-        labelled listing is."""
+    def _labelled_open(self, *labels: str, match: Callable[..., bool] = all) -> List[int]:
+        """The open issues carrying every label - with <match> any, any of
+        them - cut at the search limit as a labelled listing is."""
         limit = min(real.issue_list_limit(self.env), real.ISSUE_SEARCH_CAP)
         return [n for n in self._open_numbers()
-                if all(real.label_listed(self._labels(n), label) for label in labels)][:limit]
+                if match(real.label_listed(self._labels(n), label) for label in labels)][:limit]
 
     def _next_number(self, counter_name: str = "next_issue") -> int:
         """The number a new issue takes - or a new PR, under next_pr - the
@@ -412,15 +412,17 @@ class FakeGh:
         real.labelled_limit_warn(self.env, len(rows), label)
         return rows
 
-    def _state_rows(self, operation: str, labels: Sequence[str]) -> List[StateRow]:
+    def _state_rows(self, operation: str, labels: Sequence[str],
+                    match: Callable[..., bool] = all) -> List[StateRow]:
         """The state listing <operation> answers: the open issues carrying
-        every one of <labels>, or its stale answer while it lags."""
+        every one of <labels> - with <match> any, any of them - or its stale
+        answer while it lags."""
         self._failing(operation)
         stale = self._lagging(operation)
         if stale is not None:
             return real.parse_state_rows(stale)
         return [StateRow(n, _first_line(_issue_path(self.store, n, "state")), self._labels(n))
-                for n in self._labelled_open(*labels)]
+                for n in self._labelled_open(*labels, match=match)]
 
     def issues_open_rows(self) -> List[StateRow]:
         rows = self._state_rows("adapter_issues_open_rows", ())
@@ -430,6 +432,11 @@ class FakeGh:
     def issues_labelled_rows(self, *labels: str) -> List[StateRow]:
         rows = self._state_rows("adapter_issues_labelled_rows", labels)
         real.labelled_limit_warn(self.env, len(rows), *labels)
+        return rows
+
+    def issues_any_labelled_rows(self, *labels: str) -> List[StateRow]:
+        rows = self._state_rows("adapter_issues_any_labelled_rows", labels, any)
+        real.any_labelled_limit_warn(self.env, len(rows), *labels)
         return rows
 
     def issues_open_titles(self) -> List[Tuple[int, str]]:

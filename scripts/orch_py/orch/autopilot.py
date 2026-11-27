@@ -10,11 +10,14 @@ converted so far - `settings`, `show`, `active`, `rounds`, `budget`, `start`,
 `sync`, `sync-finish`, `sync-dropped` and `sync-fail`, over the Standing
 module's transitions, `run`, the session wrapper a tick starts, with its
 session end, the pause files it reads and extends, and the review budget
-record, and `tick` as far as its sync detection - the pause checks, the
-label check, the claims read and stale cleanup, the done read, the merged-PR
-close through the pr module in-process and the hourly housekeeping - with
-the bash noun's stdout, exit codes and `orch:` messages, in a plain and an
-autopilot (ORCH_AUTOPILOT=1) session.
+record, and `tick` - the pause checks, the label check, the claims read and
+stale cleanup, the done read, the merged-PR close through the pr module
+in-process, the hourly housekeeping, sync detection, and ranking and Pickup
+within the Cap and the Sync slots, each run started detached as `orch.sh
+autopilot run <issue>` - with the bash noun's stdout, exit codes and `orch:`
+messages, in a plain and an autopilot (ORCH_AUTOPILOT=1) session. The only
+orch.sh children it starts run Python nouns: a tick's init and redo in a
+side checkout, its runs, and a run's `verification stop`.
 
 Beside the noun, the concept every Python noun reads: whether this is an
 autopilot session, the plan's `## Autopilot` block, as handoff_report checks
@@ -1270,6 +1273,288 @@ def housekeeping(ap: Autopilot, main: str) -> None:
         warn("the finished sweep failed - carrying on")
 
 
+# --- pickup ---------------------------------------------------------------------
+
+
+def rank(phase: str) -> int:
+    """The pickup rank of a session's phase word <phase>, lowest first,
+    bash autopilot_rank: a sync request 0, then the phases in reverse order
+    of the phase table (review 1, implement 2, spec 3), the phase furthest
+    along first. done is not picked up and has no rank of its own."""
+    from orch.handoff import PHASES
+    from orch.standing import STANDING_SYNC_PHASE
+
+    if phase == STANDING_SYNC_PHASE:
+        return 0
+    live = [p for p in PHASES if p != "done"]
+    return len(live) - live.index(phase) if phase in live else len(live) + 1
+
+
+def flow_ranked(gh) -> List[Tuple[str, str]]:
+    """The tick's one listing of its flow issues, bash autopilot_flow_ranked:
+    the open issues carrying any live phase label (every phase but done) or
+    orch:sync, listed once, each row's Standing read from the row with no
+    per-issue read, the unpickable dropped and the rest ranked - (issue,
+    session phase word) by rank, then oldest first. Dies when the listing
+    fails."""
+    from orch.gh import GhFailed, any_labels_phrase, gh_reason
+    from orch.handoff import PHASES
+    from orch.standing import STANDING_SYNC_LABEL, phase_label, standing_of
+
+    labels = [phase_label(p) for p in PHASES if p != "done"] + [STANDING_SYNC_LABEL]
+    try:
+        rows = gh.issues_any_labelled_rows(*labels)
+    except GhFailed as failed:
+        die("could not list the issues labelled %s: %s"
+            % (any_labels_phrase(labels), gh_reason(failed.stderr)))
+    ranked = []
+    for row in rows:
+        standing = standing_of(row.state, row.labels)
+        if standing.pickable():
+            phase = standing.session_phase()
+            ranked.append((rank(phase), row.number, phase))
+    return [(str(n), phase) for _, n, phase in sorted(ranked)]
+
+
+class PickupStop(Exception):
+    """A pickup step that failed or refused: the stop's <kind> (refusal or
+    failure) and its text."""
+
+    def __init__(self, kind: str, text: str) -> None:
+        super().__init__(text)
+        self.kind = kind
+        self.text = text
+
+
+def settled(kind: str, detail: str, code: int, err: str) -> None:
+    """The tail of a captured step that exited <code> with the stderr
+    <err>, bash autopilot_pickup_settle: a success passes every stderr line
+    on; a failure raises PickupStop(<kind>, "<detail>: <reason>"), the
+    reason taken by pickup_reason's rule."""
+    if code == 0:
+        stderr_write(err)
+        return
+    raise PickupStop(kind, "%s: %s" % (detail, pickup_reason(err)))
+
+
+def contained(kind: str, detail: str, call: Callable[[], object]) -> object:
+    """Runs the in-process step <call> contained, bash
+    autopilot_pickup_contained: its stdout dropped, its stderr captured, a
+    death in it failing only the step (settled). Its answer."""
+    import contextlib
+    import io
+
+    from orch.common import capture
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        answer, err, code = capture(call)
+    settled(kind, detail, code, err)
+    return answer
+
+
+def orch_in(ap: Autopilot, side: str, kind: str, detail: str, *args: str) -> None:
+    """The step running `orch.sh <args>` as a child in the side checkout
+    <side> under ORCH_AUTOPILOT=1, bash autopilot_orch_in: stdout dropped,
+    stderr captured for the failure's reason (settled)."""
+    import tempfile
+
+    try:
+        err_file = tempfile.TemporaryFile()
+    except OSError:
+        settled(kind, detail, 1, "could not create a temp file for the command's stderr\n")
+        return
+    with err_file:
+        code = started(ap, [orch_sh(), *args], cwd=side, env=dict(ap.env, ORCH_AUTOPILOT="1"),
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=err_file)
+        err_file.seek(0)
+        err = err_file.read().decode("utf-8", "surrogateescape")
+    settled(kind, detail, code, err)
+
+
+# The Decisions a hand-labelled issue's minimal plan gives.
+MINIMAL_PLAN_DECISION = ("This issue was adopted to be reviewed as it stands: no spec was"
+                         " written for it.")
+
+
+def minimal_plan(ap: Autopilot) -> str:
+    """The plan a hand-labelled issue gets, bash autopilot_minimal_plan: the
+    repo's Rounds and Budget, a Decision saying the issue is reviewed as it
+    stands, and None elsewhere."""
+    from orch.flow_state import flow_state_file
+    from orch.handoff import handoff_required
+
+    rounds = ap.setting("rounds")[0]
+    budget = ap.setting("budget")[0]
+    text = ""
+    for heading in handoff_required("01-plan.md", flow_state_file(ap.root)):
+        text += "%s\n\n%s\n\n" % (
+            heading, MINIMAL_PLAN_DECISION if heading == "## Decisions" else "None")
+    return text + "## Autopilot\n\nRounds: %s\nBudget: %s\n" % (rounds, budget)
+
+
+def post_minimal_plan(ap: Autopilot, gh, issue: str) -> None:
+    """Posts the minimal plan comment when issue #<issue> has no plan
+    comment, bash autopilot_post_minimal_plan. Dies, the reason on stderr,
+    where the comments cannot be read, the plan does not validate or its
+    post fails."""
+    import contextlib
+    import sys
+
+    from orch.common import temp_text_file
+    from orch.flow_state import flow_state_file
+    from orch.handoff import handoff_check, handoff_comment_post
+    from orch.issue_timeline import timeline_die, timeline_handoff, timeline_read
+
+    entries, reason = timeline_read(gh, issue)
+    if entries is None:
+        timeline_die(issue, reason)
+    if timeline_handoff(entries, "01-plan") is not None:
+        return
+    unmade = "could not create a temp file"
+    with temp_text_file(minimal_plan(ap), unmade, unmade) as path:
+        with contextlib.redirect_stdout(sys.stderr):
+            status = handoff_check(path, flow_state_file(ap.root), ap.env, "", "01-plan.md",
+                                   "autopilot")
+        if status != 0:
+            stderr_write("the minimal plan does not validate\n")
+            raise SystemExit(1)
+        if not handoff_comment_post(gh, issue, "01-plan", path):
+            raise SystemExit(1)
+
+
+def pickup_trust(gh, issue: str) -> None:
+    """Pickup's first step, before any side checkout, init or plan comment,
+    so it runs before every phase: an untrusted issue is a refusal naming
+    the writer and what they last wrote; a failed read is a failure naming
+    the read - it fails closed."""
+    from orch.gh import GhFailed, gh_reason
+    from orch.trust import issue_check, writer_text
+
+    try:
+        untrusted = issue_check(gh, int(issue))
+    except GhFailed as failed:
+        raise PickupStop("failure", "step trust read failed: " + gh_reason(failed.stderr))
+    if untrusted is not None:
+        raise PickupStop("refusal", writer_text("the issue", untrusted) + " - an owner, member"
+                         " or collaborator must edit it before autopilot runs on it")
+
+
+def pickup_side_add(ap: Autopilot, gh, main: str, issue: str) -> str:
+    """The side checkout added for issue #<issue>, which has none: its
+    title read, then side-checkout add under the first free name of its
+    short slug (side_checkout_free_slug), add's report passed on to stderr.
+    Its path."""
+    from orch.gh import GhFailed, gh_reason
+    from orch.side_checkout import side_checkout_add, side_checkout_free_slug
+
+    detail = "step side-checkout add failed"
+    try:
+        title, _ = gh.issue_title_labels(int(issue))
+    except GhFailed as failed:
+        raise PickupStop("failure", "%s: could not read the issue's title: %s"
+                         % (detail, gh_reason(failed.stderr)))
+    slug = side_checkout_free_slug(main, title, issue)
+    return str(contained("failure", detail, lambda: side_checkout_add(
+        [slug, "--issue", issue], gh, ap.git, ap.env, ap.root, clock=ap.clock)))
+
+
+def pickup_steps(ap: Autopilot, gh, main: str, issue: str, phase: str, limited: bool) -> None:
+    """Pickup's steps in order, up to the session's start, bash
+    autopilot_pickup_steps: the trust check, the side checkout - added when
+    the issue has none - init where it holds no flow, the plan comment, the
+    recorded phase, a redo where the label stepped back one phase, then
+    begin. A sync request adds no side checkout, runs no init, posts no plan
+    comment and runs no redo, and wants its side checkout at done. The
+    first step that fails or refuses raises PickupStop."""
+    from orch.checkout import checkout_has_flow
+    from orch.flow_state import flow_state_file, flow_state_get_many
+    from orch.host import plugin_cmd
+    from orch.side_checkout import side_checkout_for_issue
+    from orch.standing import (STANDING_SYNC_PHASE, phase_label, redo_phase, redo_rule,
+                               standing_begin)
+
+    sync = phase == STANDING_SYNC_PHASE
+    pickup_trust(gh, issue)
+    side = side_checkout_for_issue(ap.git, issue)
+    if sync:
+        if side is None:
+            raise PickupStop("refusal", "no side checkout on this host holds issue #%s - run %s"
+                             " where it lives" % (issue, plugin_cmd(ap.env, "sync",
+                                                                     "the orch-sync skill")))
+    else:
+        if side is None:
+            side = pickup_side_add(ap, gh, main, issue)
+        if not checkout_has_flow(side):
+            orch_in(ap, side, "failure", "step init failed",
+                    "init", os.path.basename(side), "--issue", issue)
+        contained("failure", "step minimal plan comment failed",
+                  lambda: post_minimal_plan(ap, gh, issue))
+    values = flow_state_get_many(flow_state_file(side), ["phase"])
+    if values is None:
+        raise PickupStop("failure", "step reading the recorded phase failed: state.json in %s"
+                         " cannot be read - run orch.sh doctor --flow" % side)
+    recorded = values["phase"]
+    if sync:
+        if recorded and recorded != "done":
+            raise PickupStop("refusal", "the issue carries a sync request, but its side checkout"
+                             " records phase %s, not done" % recorded)
+    elif recorded != phase:
+        redo = redo_phase(phase, recorded)
+        if redo is None:
+            raise PickupStop("refusal", "the issue is labelled %s, but its side checkout last"
+                             " moved to phase %s - only %s is a redo"
+                             % (phase_label(phase), recorded, redo_rule()))
+        orch_in(ap, side, "refusal", "redo %s refused" % redo, "redo", redo)
+    reason = standing_begin(gh, issue, limited)
+    if reason:
+        raise PickupStop("failure", reason)
+
+
+def spawn_run(ap: Autopilot, main: str, issue: str) -> None:
+    """Starts `orch.sh autopilot run <issue>` detached from the main
+    checkout <main>, bash autopilot_spawn_run: in a new session, so neither
+    the terminal's hangup nor a Ctrl-C at the watch reaches it, stdin from
+    /dev/null, stdout and stderr dropped. ORCH_AUTOPILOT_FOREGROUND=1, set
+    by tests, starts it the same way and waits for it. A run the starter
+    cannot start is ignored in either mode: the claim is left for a later
+    tick's stale cleanup."""
+    try:
+        child = ap.starter([orch_sh(), "autopilot", "run", issue], cwd=main, env=dict(ap.env),
+                           start_new_session=True, stdin=subprocess.DEVNULL,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        return
+    if ap.env.get("ORCH_AUTOPILOT_FOREGROUND", "") == "1":
+        child.wait()
+
+
+def pickup(ap: Autopilot, gh, main: str, issue: str, phase: str, limited: bool) -> None:
+    """Steps 2 to 5 of a tick for the claimed issue #<issue>, bash
+    autopilot_pickup. A refusal or a failed step ends in one stop and the
+    tick goes on; a stop that cannot land is contained (stop_contained) and
+    the claim stays held for a later tick's stale cleanup. A step that
+    failed on a GitHub API rate limit - a GitHub pause holds once it has
+    failed - only deletes the claim ref (no stop, no label, nothing
+    counted); if that fails the claim stays held for stale cleanup. Past
+    every step, the run starts."""
+    from orch.gh import GhFailed
+
+    try:
+        pickup_steps(ap, gh, main, issue, phase, limited)
+    except PickupStop as stop:
+        if github_paused(ap):
+            try:
+                gh.claim_delete(int(issue))
+            except GhFailed:
+                warn("could not delete the claim ref on issue #%s; it stays held for stale"
+                     " cleanup" % issue)
+            return
+        stop_contained(ap, issue, "%s: %s; a later tick's stale cleanup stops it"
+                       % (stop.kind, stop.text), stop.kind, phase, stop.text)
+        return
+    spawn_run(ap, main, issue)
+
+
 def tick_verb(ap: Autopilot) -> int:
     """`autopilot tick`: one pass of the watcher, bash autopilot_tick, after
     the gate, ORCH_AUTOPILOT_TICK=1 set for all it starts, run from the main
@@ -1279,12 +1564,23 @@ def tick_verb(ap: Autopilot) -> int:
     origin and the stale claims released from it, one read of the done
     issues, the merged-PR close (which needs no session, so the usage and
     early pauses never hold it), the three limit-pause checks (usage, core,
-    graphql), the hourly housekeeping, and sync detection when auto-sync is
-    true, from the done table less the issues the close closed. The tick
-    ends after stale cleanup and after housekeeping that leave a GitHub
-    pause holding."""
+    graphql), the hourly housekeeping, sync detection when auto-sync is
+    true, from the done table less the issues the close closed, then
+    Pickup. One listing of the flow issues ranks them (flow_ranked); a
+    phase is claimed while the claim count - the claims read less those
+    cleanup released - is below the cap, a sync request while it is below
+    the cap plus the sync slots (half the cap, rounded down), and the first
+    phase issue the cap leaves no room for ends the loop. Each ranked issue
+    the cap leaves room for is read once, directly, just before its claim:
+    one no longer pickable, or at another phase than its row, is skipped
+    silently, and the pickup acts on that read's limited flag. A failed
+    read, or a claim create that fails for a reason other than a lost race,
+    stops the tick, naming it. The tick ends after stale cleanup, after
+    housekeeping and after any pickup that leave a GitHub pause holding."""
+    from orch import liveness
     from orch.checkout import main_checkout_or_die
-    from orch.standing import claims_read_or_die
+    from orch.standing import (STANDING_SYNC_PHASE, claims_read_or_die, standing_claim,
+                               standing_read)
 
     gate(ap)
     # Exported, as bash's, to every child; the gh adapter's limit handling
@@ -1292,7 +1588,7 @@ def tick_verb(ap: Autopilot) -> int:
     ap.env["ORCH_AUTOPILOT_TICK"] = "1"  # type: ignore[index]
     # Read first, as bash reads them: a bad value dies before any GitHub
     # call.
-    ap.setting("cap")
+    cap = int(ap.setting("cap")[0])
     auto_sync, _ = ap.setting("auto-sync")
     main = main_checkout_or_die(ap.git)
     try:
@@ -1306,7 +1602,8 @@ def tick_verb(ap: Autopilot) -> int:
     github_early(ap, gh, main, reserve)
     labels_ensure(gh)
     claims = claims_read_or_die(gh)
-    cleanup_stale(ap, main, claims)
+    # The claim count is the read's claims less those cleanup released.
+    count = len(claims) - cleanup_stale(ap, main, claims)
     if pause_until(ap, main, "github"):
         return 0
     table = close_missed(ap, gh, done_read(gh))
@@ -1320,6 +1617,32 @@ def tick_verb(ap: Autopilot) -> int:
         return 0
     if auto_sync == "true":
         sync_detect(gh, table)
+    slots = cap // 2
+    pid = os.getpid()
+    for issue, phase in flow_ranked(gh):
+        sync = phase == STANDING_SYNC_PHASE
+        if count >= (cap + slots if sync else cap):
+            if sync:
+                continue
+            break
+        # The listing may be served late: the issue itself is read, once,
+        # before the claim. One no longer pickable, or at another phase, is
+        # skipped.
+        standing, reason = standing_read(gh, int(issue))
+        if standing is None:
+            die("could not read issue #%s: %s" % (issue, reason))
+        if not standing.pickable() or standing.session_phase() != phase:
+            continue
+        code, reason = standing_claim(gh, issue, phase, pid, ap.env, ap.clock)
+        if code == 2:
+            continue
+        if code:
+            die("could not claim issue #%s: %s - the tick stops" % (issue, reason))
+        liveness.tick_begin(main, issue, pid, ap.env)
+        count += 1
+        pickup(ap, gh, main, issue, phase, standing.limited)
+        if pause_until(ap, main, "github"):
+            return 0
     return 0
 
 

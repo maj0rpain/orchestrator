@@ -296,6 +296,18 @@ def labelled_limit_warn(env: Mapping[str, str], count: int, *labels: str) -> Non
     issue_list_limit_warn(env, count, "the open issues labelled " + " and ".join(labels))
 
 
+def any_labels_phrase(labels: Sequence[str]) -> str:
+    """The labels named, joined by " or ", for a message about a listing
+    of the open issues carrying any of them - bash issues_any_labels_phrase."""
+    return " or ".join(labels)
+
+
+def any_labelled_limit_warn(env: Mapping[str, str], count: int, *labels: str) -> None:
+    """issue_list_limit_warn for a listing of the open issues carrying any
+    of <labels>, joined by " or "."""
+    issue_list_limit_warn(env, count, "the open issues labelled " + any_labels_phrase(labels))
+
+
 def _captured_lines(text: str) -> List[str]:
     """The lines of an answer read as the bash readers capture it: every
     trailing newline dropped first."""
@@ -907,6 +919,20 @@ class Gh:
         bash adapter_issues_labelled_rows."""
         rows = self._state_rows(labels)
         labelled_limit_warn(self.env, len(rows), *labels)
+        return rows
+
+    def issues_any_labelled_rows(self, *labels: str) -> List[StateRow]:
+        """The open issues carrying any of the labels named, as
+        issues_open_rows lists them, one cut across all, warning, naming the
+        labels joined by "or", when the cut is reached - bash
+        adapter_issues_any_labelled_rows."""
+        rows = parse_state_rows(self._gh(
+            ["issue", "list", "--state", "open", "--search",
+             "label:%s sort:created-asc" % ",".join('"%s"' % label for label in labels),
+             "--limit", str(issue_list_limit(self.env)), "--json", "number,state,labels",
+             "--jq", ".[] | .number, .state, (.labels | length), (.labels[].name)"]
+        ))
+        any_labelled_limit_warn(self.env, len(rows), *labels)
         return rows
 
     def issues_open_titles(self) -> List[Tuple[int, str]]:

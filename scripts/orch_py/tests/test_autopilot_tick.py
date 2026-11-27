@@ -1,4 +1,5 @@
-"""`orch.sh autopilot tick`, its first half - the GitHub limit pause check,
+"""`orch.sh autopilot tick`, its first half (its second half, ranking and
+Pickup, is test_autopilot_pickup.py's) - the GitHub limit pause check,
 the early-pause quota read, the label check, the one read of the claims and
 the stale claims released from it, the one read of the done issues, the
 merged-PR close, the usage and early pauses, the hourly housekeeping and
@@ -14,17 +15,18 @@ pause, contained stops, one read of the claims, the early GitHub pause,
 housekeeping's log prune and its sweep."""
 from __future__ import annotations
 
+import json
 import os
 import time
 from pathlib import Path
 
 import pytest
 
-from conftest import comments_of, labels_of, read
+from conftest import comments_of, hold_flow, labels_of, read
 from orch import autopilot
 from orch.gh_fake import FakeGh
 from orch.repo import RepoPin
-from orch.standing import label_entries
+from orch.standing import REDO_PAIRS, label_entries
 from test_side_checkout_add_prune import Clone
 
 NOW = 1780315200
@@ -64,11 +66,76 @@ class CountingGh(FakeGh):
         return super().issues_labelled_rows(*labels)
 
 
+class Child:
+    """A child the fake starter ran to its end: wait() gives its exit, and
+    whether it was waited for is kept."""
+
+    def __init__(self, code):
+        self.code = code
+        self.waited = False
+
+    def wait(self):
+        self.waited = True
+        return self.code
+
+
+# The flow phase `orch.sh redo <phase>` steps a flow back to, for each redo
+# the phase-redo rule names.
+REDO_TO = {redo: labelled for labelled, _, redo in REDO_PAIRS}
+
+
+class Children:
+    """The fake process starter of the tick's children, each kept in
+    <calls> as (argv, how it was started) and each the orch.sh beside the
+    package's plugin root: `init <slug> --issue <n>` holds a spec-phase flow
+    of that issue in its side checkout, `redo <phase>` steps its flow back
+    (REDO_TO), and `autopilot run <issue>` does nothing. A noun in <notes>
+    writes that to its stderr and succeeds; one in <fails> writes its stderr
+    there and exits 1 instead; one in <unstartable> cannot be started at
+    all."""
+
+    def __init__(self):
+        self.calls = []
+        self.started = []
+        self.notes = {}
+        self.fails = {}
+        self.unstartable = set()
+
+    def __call__(self, argv, **how):
+        self.calls.append((list(argv), how))
+        noun = argv[1]
+        if noun in self.unstartable:
+            raise FileNotFoundError(2, "No such file or directory", argv[0])
+        child = Child(0)
+        self.started.append(child)
+        if noun in self.fails:
+            how["stderr"].write(self.fails[noun].encode())
+            child.code = 1
+            return child
+        if noun in self.notes:
+            how["stderr"].write(self.notes[noun].encode())
+        if noun == "init":
+            hold_flow(Path(how["cwd"]), slug=argv[2], issue=int(argv[4]), phase="spec")
+        elif noun == "redo":
+            state = json.loads((Path(how["cwd"]) / ".orchestrator" / "state.json").read_text())
+            hold_flow(Path(how["cwd"]), **dict(state, phase=REDO_TO[argv[2]]))
+        return child
+
+    def of(self, noun):
+        """The argv and how of each start of <noun>, in order."""
+        return [(argv, how) for argv, how in self.calls if argv[1] == noun]
+
+    def runs(self):
+        """The issues an `autopilot run` was started for, in order."""
+        return [argv[3] for argv, _ in self.of("autopilot")]
+
+
 class Ticker:
     """The main checkout at tmp_path with no side checkout, GitHub's
     default branch main, the permission mode acceptEdits, claude on PATH,
-    a fake /proc holding this process, and the housekeeping stamp fresh,
-    so housekeeping runs only where a case removes it."""
+    a fake /proc holding this process, the housekeeping stamp fresh, so
+    housekeeping runs only where a case removes it, and the fake starter of
+    its children."""
 
     def __init__(self, tmp_path, seed):
         self.clone = Clone(tmp_path, seed, local_config={
@@ -89,6 +156,7 @@ class Ticker:
                     "ORCH_HOST_ID": "this-host"}
         self.clock = lambda: NOW
         self.gh = None
+        self.children = Children()
         self.stamp(NOW)
 
     def set(self, name, value):
@@ -138,7 +206,7 @@ class Ticker:
                              sleep=lambda _: None, now=self.clock)
         try:
             return autopilot.run(["tick", *argv], gh=self.gh, git=self.git, env=self.env,
-                                 clock=self.clock)
+                                 clock=self.clock, starter=self.children)
         except SystemExit as died:
             return died.code
 
@@ -630,7 +698,9 @@ def test_a_failed_close_keeps_its_issue_for_sync_detection_and_a_closed_one_leav
 
     assert t.tick() == 0
     assert (t.state(62), t.labels(62)) == ("CLOSED", ["orch:done"])
-    assert (t.state(63), t.labels(63)) == ("OPEN", ["orch:done", "orch:sync"])
+    # The sync request it got is picked up the same tick and refused: no
+    # side checkout holds the issue.
+    assert (t.state(63), t.labels(63)) == ("OPEN", ["needs-human", "orch:done", "orch:sync"])
 
 
 class DyingMergedRead(CountingGh):
@@ -650,7 +720,7 @@ def test_a_death_in_the_close_keeps_the_whole_table_and_the_tick_goes_on(t, caps
     assert t.tick(gh_class=DyingMergedRead) == 0
     assert "orch: gh: command not found\n" in capsys.readouterr().err
     assert t.state(64) == "OPEN"
-    assert t.labels(64) == ["orch:done", "orch:sync"]
+    assert t.labels(64) == ["needs-human", "orch:done", "orch:sync"]
 
 
 def test_a_usage_limit_pause_stops_sync_detection_never_the_close(t, capsys):
@@ -770,10 +840,13 @@ def test_a_conflicting_open_pr_of_a_done_issue_gets_a_sync_request_and_nothing_e
     t.seed.pr_cross(139)
 
     assert t.tick() == 0
+    # Each sync request - the one filed and the one already there - is
+    # picked up the same tick and refused, as no side checkout holds it.
     assert [t.labels(n) for n in range(30, 40)] == [
-        ["orch:done", "orch:sync"], ["orch:done"], ["orch:done"], ["orch:done"], ["orch:done"],
-        ["orch:done", "orch:sync"], ["needs-human", "orch:done"], ["orch:done", "orch:running"],
-        ["orch:done"], ["orch:done"]]
+        ["needs-human", "orch:done", "orch:sync"], ["orch:done"], ["orch:done"], ["orch:done"],
+        ["orch:done"], ["needs-human", "orch:done", "orch:sync"], ["needs-human", "orch:done"],
+        ["orch:done", "orch:running"], ["orch:done"], ["orch:done"]]
+    assert t.children.runs() == []
     err = capsys.readouterr().err
     assert "orch: ignored 1 PR(s) from forks for the open PRs\n" in err
     assert "issue #38" not in err
@@ -967,7 +1040,7 @@ def test_a_sweep_that_cannot_read_github_removes_nothing_warns_and_the_tick_goes
     assert err.count("orch: the finished sweep failed - carrying on\n") == 1
     assert "quick/9-hs-done" in t.git.branches
     assert t.text("housekeeping") == "%d\n" % NOW
-    assert t.labels(30) == ["orch:done", "orch:sync"]
+    assert t.labels(30) == ["needs-human", "orch:done", "orch:sync"]
 
 
 def test_a_sweep_that_meets_a_github_limit_writes_the_pause_and_ends_the_tick(t, capsys):
