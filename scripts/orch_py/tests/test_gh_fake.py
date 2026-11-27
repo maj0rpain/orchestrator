@@ -337,6 +337,28 @@ def test_label_create_adds_a_missing_label_and_fails_on_one_in_any_casing(store)
     )
 
 
+def test_label_upsert_rewrites_a_label_in_its_casing_and_adds_a_missing_one_as_bash_does(store):
+    bash(store, "fake_label Bug d73a4a 'Something is wrong'; fake_label nit c5def5 'Small'")
+    gh = fake(store)
+
+    gh.label_upsert("BUG", "ffffff", "Rewritten")
+    gh.label_upsert("review:major", "d93f0b", "Review finding filed at major severity")
+
+    assert (store / "labels").read_text() == (
+        "nit\tc5def5\tSmall\n"
+        "Bug\tffffff\tRewritten\n"
+        "review:major\td93f0b\tReview finding filed at major severity\n"
+    )
+
+
+def test_a_label_upsert_seeded_to_fail_writes_nothing(store, seed):
+    seed.fail("adapter_label_upsert", "HTTP 502: Bad Gateway\n")
+
+    with pytest.raises(GhFailed):
+        fake(store).label_upsert("review:nit", "c5def5", "x")
+    assert not (store / "labels").exists()
+
+
 def test_repo_default_branch_is_the_stored_answer_and_fails_with_none(store):
     gh = fake(store)
     with pytest.raises(GhFailed) as failed:

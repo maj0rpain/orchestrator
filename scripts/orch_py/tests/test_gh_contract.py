@@ -587,6 +587,27 @@ def test_label_create_of_a_label_that_exists_fails_with_gh_s_stderr(fixture_gh):
     assert failed.value.stderr == exists
 
 
+LABEL_UPSERT = ["label", "create", "review:major", "--force", "--color", "d93f0b",
+                "--description", "Review finding filed at major severity"]
+
+
+def test_label_upsert_creates_or_rewrites_the_label_with_force(fixture_gh):
+    fixture_gh.reply(LABEL_UPSERT, "updated\n")
+
+    assert real_gh(fixture_gh).label_upsert(
+        "review:major", "d93f0b", "Review finding filed at major severity") is None
+    assert fixture_gh.argvs() == [LABEL_UPSERT]
+
+
+def test_a_failed_label_upsert_passes_gh_s_stderr_through(fixture_gh):
+    fixture_gh.reply(LABEL_UPSERT, stderr="HTTP 502: Bad Gateway\n", exit=1)
+
+    with pytest.raises(GhFailed) as failed:
+        real_gh(fixture_gh).label_upsert(
+            "review:major", "d93f0b", "Review finding filed at major severity")
+    assert failed.value.stderr == "HTTP 502: Bad Gateway\n"
+
+
 # --- repo operations ---------------------------------------------------------
 
 

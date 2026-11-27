@@ -504,6 +504,17 @@ class FakeGh:
             )
         _write(labels, "%s\t%s\t%s\n" % (name, colour, description), "ab")
 
+    def label_upsert(self, name: str, colour: str, description: str) -> None:
+        """The label, created or rewritten, in the store: named as the
+        store holds it in any casing, moved to the end, as the bash fake's
+        fake_label_put does."""
+        self._failing("adapter_label_upsert")
+        labels = _store_path(self.store, "labels")
+        name = self._label_canon(name)
+        kept = "".join(line + "\n" for line in file_lines(labels)
+                       if line.split("\t", 1)[0] != name)
+        _write(labels, "%s%s\t%s\t%s\n" % (kept, name, colour, description))
+
     # --- repo operations ---
 
     def repo_default_branch(self, repo: str) -> str:

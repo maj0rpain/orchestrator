@@ -1144,6 +1144,12 @@ class Gh:
         where it has one, leaving it as it is."""
         self._gh(["label", "create", name, "--color", colour, "--description", description])
 
+    def label_upsert(self, name: str, colour: str, description: str) -> None:
+        """Creates the label, or rewrites the one that exists, to that colour
+        and description."""
+        self._gh(["label", "create", name, "--force", "--color", colour,
+                  "--description", description])
+
     # --- repo operations ---
 
     def repo_default_branch(self, repo: str) -> str:
