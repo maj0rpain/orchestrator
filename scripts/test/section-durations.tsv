@@ -1,6 +1,6 @@
 2	3	isolation	515032bd4fc32da75de21c0eedd643e862a3d360
 19	15	isolation under a git hook (#1905)	35f86424bbb12bbb8e632b51969bdbc47308e9ff
-21	25	the section filter (ORCH_TEST_ONLY, #612)	17f4afaa0df8df9b8526254d7d829716dab56fb8
+21	26	the section filter (ORCH_TEST_ONLY, #612)	36d9c986790bf3f47e1c7834d5eb6a17adb6c226
 12	14	quiet mode (ORCH_TEST_QUIET, #614)	4100c3c77ce578a6223b24e690ef49d34d92d318
 247	81	the parallel runner (ORCH_TEST_JOBS, #780)	d46e7b212b2beaff6d351ecaad880cd5326273ae
 21	35	the parallel runner's start order (#2857)	24f3031be75cb1a6895308aee7cf9da472bfbc5d
@@ -155,7 +155,7 @@
 10	12	side-checkout prune: fork PRs are not proof (#1979)	7dd8d3fb3cdec8619f1297cefaf131f9989968d2
 131	137	side-checkout prune: the merged-PR close backstop (#2477)	0134953c0f9c6a3ae8c1d53a9c532ea7551b6fa3
 3	4	side_checkout_marker reads the worktree's git pointer	d31a2b3b83c72522f87238dc1d45e73b7a4b6cb5
-10	11	side checkout marker issue: reading without re-classifying (#3073)	b5fd286a38e9d5388c597ba3ef86a348d030189d
+7	8	side checkout marker issue: reading without re-classifying (#3073)	8b19c794ef4be0750983ee35fe8f0b9f5a94e529
 4	5	archive reads the flow's slug once	479dab274c7a796a4fb5c4095d6dc3bbf52b3586
 10	11	side-checkout: the default branch is asked for only when needed	3fc687b966c5b562d19f6fbe0cc519d02c25f747
 20	21	Standing module	b9b154534211e48a0c5a7a19899358f257498c4e

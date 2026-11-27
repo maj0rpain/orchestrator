@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from conftest import (GH_502, died_of, exclude_orchestrator, git_repo, hold_flow, record,
-                      run_git)
+from conftest import (GH_502, died_of, exclude_orchestrator, git_repo, hold_flow, labels_doc,
+                      record, run_git, write, write_labels_doc)
 from orch import cli, doctor
 from orch.autopilot import epoch_iso
 from orch.gh_fake import FakeGh
@@ -33,6 +33,8 @@ TOOLS = ("git", "gh", "jq")
 HOME = "home"
 PLUGIN = "home/plugin"
 EXCLUDED = ".orchestrator/\n.scratch/\n"
+# A checkout's state file, below its root.
+STATE_JSON = ".orchestrator/state.json"
 
 
 def stub_path(tmp_path, *names, bash_prints=None):
@@ -478,8 +480,9 @@ def test_a_default_branch_github_did_not_name_warns_with_the_local_fallback(
 
 
 class GhReads(FakeGh):
-    """The gh fake, keeping each GitHub read doctor makes, in order, in
-    asked."""
+    """The gh fake, keeping the name of each GitHub read doctor makes, in
+    order, in asked: the probe's, the labels and sub-issues reads, and the
+    issue and PR reads."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -500,6 +503,14 @@ class GhReads(FakeGh):
     def sub_issues_supported(self):
         self.asked.append("sub_issues_supported")
         return super().sub_issues_supported()
+
+    def issue_state_labels(self, n):
+        self.asked.append("issue_state_labels")
+        return super().issue_state_labels(n)
+
+    def pr_state_draft(self, n):
+        self.asked.append("pr_state_draft")
+        return super().pr_state_draft(n)
 
 
 @pytest.mark.parametrize("prepare", [healthy, lambda seed: seed.default_branch("\n"),
@@ -709,20 +720,21 @@ def test_a_skill_linked_from_a_full_checkout_is_no_skills_only_copy(capsys, seed
     assert ORCH_SH_OK + "\n" in run.out
 
 
+@pytest.mark.parametrize("home", ["", None])
+def test_with_home_empty_or_unset_the_plugin_root_is_written_after_a_tilde(
+        capsys, seed, tmp_path, home):
+    env = doctor_env(tmp_path)
+    if home is None:
+        del env["HOME"]
+    else:
+        env["HOME"] = home
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", env=env)
+
+    assert "ok    orch.sh: ~%s/%s/scripts/orch.sh\n" % (tmp_path, PLUGIN) in run.out
+
+
 # --- repo config: triage labels -------------------------------------------------
-
-LABELS_DOC = "docs/agents/triage-labels.md"
-
-
-def labels_doc(tmp_path, *rows):
-    """The checkout's triage-labels doc: a role table of <rows>, each a
-    (role, label) pair."""
-    doc = tmp_path / LABELS_DOC
-    doc.parent.mkdir(parents=True, exist_ok=True)
-    doc.write_text("\n".join(["# Triage Labels", "", "| Role | Label | Meaning |",
-                              "| --- | --- | --- |"]
-                             + ["| `%s` | `%s` | m |" % row for row in rows]) + "\n")
-
 
 def repo_config(run):
     return run.group("repo config")
@@ -744,8 +756,9 @@ def test_a_documented_label_missing_from_the_repo_fails_with_its_create_command(
         capsys, seed, tmp_path):
     healthy(seed)
     seed.label_names("needs-triage")
-    labels_doc(tmp_path, ("needs-triage", "needs-triage"), ("needs-info", "needs info"),
-               ("ready-for-agent", "agent go"))
+    write_labels_doc(tmp_path, labels_doc(("needs-triage", "needs-triage"),
+                                          ("needs-info", "needs info"),
+                                          ("ready-for-agent", "agent go")))
 
     run = orch_doctor(capsys, seed, tmp_path)
 
@@ -774,7 +787,8 @@ def test_with_no_labels_doc_the_canonical_names_are_checked(capsys, seed, tmp_pa
 def test_a_triage_label_the_repo_holds_in_another_casing_exists(capsys, seed, tmp_path):
     healthy(seed)
     seed.label_names("Needs-Triage", "READY-for-agent")
-    labels_doc(tmp_path, ("needs-triage", "needs-triage"), ("ready-for-agent", "ready-for-agent"))
+    write_labels_doc(tmp_path, labels_doc(("needs-triage", "needs-triage"),
+                                          ("ready-for-agent", "ready-for-agent")))
 
     run = orch_doctor(capsys, seed, tmp_path)
 
@@ -785,9 +799,7 @@ def test_a_triage_label_the_repo_holds_in_another_casing_exists(capsys, seed, tm
 def test_a_labels_doc_that_lists_no_labels_fails_once_and_asks_github_nothing(
         capsys, seed, tmp_path):
     healthy(seed)
-    doc = tmp_path / LABELS_DOC
-    doc.parent.mkdir(parents=True)
-    doc.write_text("# Triage Labels\n\nThis repo does not use a table.\n")
+    write_labels_doc(tmp_path, "# Triage Labels\n\nThis repo does not use a table.\n")
 
     run = orch_doctor(capsys, seed, tmp_path, gh_class=GhReads)
 
@@ -842,12 +854,6 @@ def test_a_label_listing_github_will_not_answer_warns_with_gh_s_reason(
 SETUP_REMEDY = INDENT + "see docs/repo-setup.md under the plugin root"
 
 
-def write(tmp_path, name, text):
-    path = tmp_path / name
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text)
-
-
 def line_of(run, prefix):
     """The report's line opening with <prefix>, and the remedy lines under
     it."""
@@ -871,7 +877,7 @@ def line_of(run, prefix):
 def test_the_standards_check_names_the_declaration_or_the_crawl(
         capsys, seed, tmp_path, files, line):
     for name, text in files.items():
-        write(tmp_path, name, text)
+        write(tmp_path, name, raw=text)
 
     run = orch_doctor(capsys, seed, tmp_path, "--env")
 
@@ -896,7 +902,7 @@ def test_the_standards_check_names_the_declaration_or_the_crawl(
 def test_a_rejected_standards_declaration_fails_with_the_resolution_s_own_message(
         capsys, seed, tmp_path, declaration, lines):
     healthy(seed)
-    write(tmp_path, "CLAUDE.md", declaration)
+    write(tmp_path, "CLAUDE.md", raw=declaration)
 
     run = orch_doctor(capsys, seed, tmp_path, "--env")
 
@@ -923,7 +929,7 @@ def test_the_glossary_check_counts_the_entries_or_fails_with_the_parse_error(
         capsys, seed, tmp_path, glossary, lines):
     healthy(seed)
     if glossary is not None:
-        write(tmp_path, "GLOSSARY.md", glossary)
+        write(tmp_path, "GLOSSARY.md", raw=glossary)
 
     run = orch_doctor(capsys, seed, tmp_path, "--env")
 
@@ -937,9 +943,9 @@ class NoChildProcess(Exception):
 
 def test_the_standards_and_glossary_checks_start_no_child_process(
         capsys, seed, tmp_path, monkeypatch):
-    write(tmp_path, "docs/rules.md", "rules\n")
-    write(tmp_path, "CLAUDE.md", "Standards: `docs/rules.md`\n")
-    write(tmp_path, "GLOSSARY.md", "**Alpha**: one.\n")
+    write(tmp_path, "docs/rules.md", raw="rules\n")
+    write(tmp_path, "CLAUDE.md", raw="Standards: `docs/rules.md`\n")
+    write(tmp_path, "GLOSSARY.md", raw="**Alpha**: one.\n")
 
     def refuse(*args, **kwargs):
         raise NoChildProcess()
@@ -960,7 +966,7 @@ ADR_REMEDY = (INDENT + "remove docs/adr and create it as a directory of Markdown
 def test_the_adr_check_counts_the_markdown_files_directly_in_docs_adr(capsys, seed, tmp_path):
     absent = orch_doctor(capsys, seed, tmp_path, "--env")
     for name in ("0001-a.md", "0002-b.md", "nested/0003.md", "notes.txt", ".hidden.md"):
-        write(tmp_path, "docs/adr/" + name, "x\n")
+        write(tmp_path, "docs/adr/" + name, raw="x\n")
 
     run = orch_doctor(capsys, seed, tmp_path, "--env")
 
@@ -1046,7 +1052,7 @@ def test_the_git_exclude_check_names_only_the_missing_lines(
 
 def test_running_the_git_exclude_remedy_clears_the_warning(capsys, seed, tmp_path):
     repo = tmp_path / "clone"
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    git_repo(repo)
     exclude = repo / ".git" / "info" / "exclude"
     exclude.write_text("secrets.env")
     git = checkout_git(tmp_path)
@@ -1101,7 +1107,7 @@ def verification(capsys, seed, tmp_path, files, *tools):
     verification's to the agent settings check's first, with <files> written
     to the checkout and <tools> stubs on PATH beside git, gh and jq."""
     for name, text in files.items():
-        write(tmp_path, name, text)
+        write(tmp_path, name, raw=text)
     run = orch_doctor(capsys, seed, tmp_path, "--env",
                       env=doctor_env(tmp_path, *(TOOLS + tools)))
     group = repo_config(run).split("\n")
@@ -1224,9 +1230,9 @@ def test_verification_lines_in_a_fenced_block_or_not_opening_a_line_are_not_read
 ])
 def test_the_first_command_word_of_a_verification_line_is_looked_up(
         capsys, seed, tmp_path, command, line):
-    write(tmp_path, "scripts/vc-run.sh", "#!/bin/sh\nexit 0\n")
+    write(tmp_path, "scripts/vc-run.sh", raw="#!/bin/sh\nexit 0\n")
     (tmp_path / "scripts" / "vc-run.sh").chmod(0o755)
-    write(tmp_path, "scripts/vc-plain.sh", "#!/bin/sh\nexit 0\n")
+    write(tmp_path, "scripts/vc-plain.sh", raw="#!/bin/sh\nexit 0\n")
 
     report = verification(capsys, seed, tmp_path,
                           {"CLAUDE.md": "Ticket verification: %s\n" % command}, "vctool")
@@ -1404,8 +1410,7 @@ def test_a_flow_with_no_pr_asks_github_nothing(capsys, seed, tmp_path):
 def test_a_state_file_that_is_no_json_object_is_one_fail_with_the_abort_remedy(
         capsys, seed, tmp_path, argv, raw):
     healthy(seed)
-    (tmp_path / ".orchestrator").mkdir()
-    (tmp_path / ".orchestrator" / "state.json").write_text(raw)
+    write(tmp_path, STATE_JSON, raw=raw)
 
     run = (flow_doctor(capsys, seed, tmp_path, *argv) if argv
            else orch_doctor(capsys, seed, tmp_path, env=flow_env(tmp_path)))
@@ -2249,8 +2254,8 @@ def test_a_leftover_ticket_worktree_of_this_checkout_alone_fails(capsys, seed, t
 
 @pytest.mark.parametrize("argv, prepare, tools", [
     ([], lambda tmp_path: None, TOOLS),
-    ([], lambda tmp_path: write_state(tmp_path, "{not json"), TOOLS),
-    (["--flow"], lambda tmp_path: write_state(tmp_path, "{not json"), TOOLS),
+    ([], lambda tmp_path: write(tmp_path, STATE_JSON, raw="{not json"), TOOLS),
+    (["--flow"], lambda tmp_path: write(tmp_path, STATE_JSON, raw="{not json"), TOOLS),
     ([], flow, ("git", "gh")),
     (["--flow"], flow, ("git", "gh")),
 ])
@@ -2264,11 +2269,6 @@ def test_the_ticket_worktree_check_runs_whatever_the_flow_s_state(
 
     assert flow_lines(run)[-2:] == leftover(tmp_path)
     assert run.code == 1
-
-
-def write_state(tmp_path, raw):
-    (tmp_path / ".orchestrator").mkdir(exist_ok=True)
-    (tmp_path / ".orchestrator" / "state.json").write_text(raw)
 
 
 def test_with_no_ticket_worktree_nothing_is_said_of_them(capsys, seed, tmp_path):
@@ -2314,20 +2314,10 @@ def test_a_ci_read_that_dies_is_the_ci_check_s_one_fail(capsys, seed, tmp_path):
     assert run.code == 1
 
 
-class FlowReads(FakeGh):
-    """The gh fake, counting its flow issue and flow PR reads in reads."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.reads = {"issue": 0, "pr": 0}
-
-    def issue_state_labels(self, n):
-        self.reads["issue"] += 1
-        return super().issue_state_labels(n)
-
-    def pr_state_draft(self, n):
-        self.reads["pr"] += 1
-        return super().pr_state_draft(n)
+def flow_reads(run):
+    """How many times the run read the flow issue and the flow PR."""
+    return {"issue": run.gh.asked.count("issue_state_labels"),
+            "pr": run.gh.asked.count("pr_state_draft")}
 
 
 def reads_flow(seed, tmp_path, phase="review", issue_state="open", pr_state="open",
@@ -2341,7 +2331,7 @@ def reads_flow(seed, tmp_path, phase="review", issue_state="open", pr_state="ope
 
 
 def reads_doctor(capsys, seed, tmp_path, **extra):
-    return ci_doctor(capsys, seed, tmp_path, gh_class=FlowReads,
+    return ci_doctor(capsys, seed, tmp_path, gh_class=GhReads,
                      env=flow_env(tmp_path, **extra))
 
 
@@ -2356,7 +2346,7 @@ def test_the_flow_issue_and_pr_are_each_read_once_per_run(
 
     run = reads_doctor(capsys, seed, tmp_path)
 
-    assert run.gh.reads == {"issue": 1, "pr": 1}
+    assert flow_reads(run) == {"issue": 1, "pr": 1}
     assert "phase label: orch:%s\n" % phase in run.out
 
 
@@ -2366,7 +2356,7 @@ def test_an_autopilot_flow_with_no_phase_label_reads_its_issue_once(capsys, seed
     run = reads_doctor(capsys, seed, tmp_path, ORCH_AUTOPILOT="1")
 
     assert "FAIL  issue #7 carries no phase label" in run.out
-    assert run.gh.reads["issue"] == 1
+    assert run.gh.asked.count("issue_state_labels") == 1
 
 
 @pytest.mark.parametrize("operation, read", [("adapter_issue_state_labels", "issue"),
@@ -2377,7 +2367,7 @@ def test_a_failing_read_is_reached_once(capsys, seed, tmp_path, operation, read)
 
     run = reads_doctor(capsys, seed, tmp_path)
 
-    assert run.gh.reads[read] == 1
+    assert flow_reads(run)[read] == 1
     assert "could not be read from GitHub: HTTP 502: Bad Gateway" in run.out
 
 
@@ -2387,7 +2377,7 @@ def test_offline_neither_the_issue_nor_the_pr_is_read(capsys, seed, tmp_path):
 
     run = reads_doctor(capsys, seed, tmp_path)
 
-    assert run.gh.reads == {"issue": 0, "pr": 0}
+    assert flow_reads(run) == {"issue": 0, "pr": 0}
     assert run.out.count("skipped:") == 1
 
 
@@ -2396,7 +2386,7 @@ def test_offline_neither_the_issue_nor_the_pr_is_read(capsys, seed, tmp_path):
 def test_what_is_not_recorded_is_not_read(capsys, seed, tmp_path, unset, reads):
     reads_flow(seed, tmp_path, **{unset: None})
 
-    assert reads_doctor(capsys, seed, tmp_path).gh.reads == reads
+    assert flow_reads(reads_doctor(capsys, seed, tmp_path)) == reads
 
 
 def test_a_deleted_flow_branch_beside_a_same_named_tag_still_fails(capsys, seed, tmp_path):
@@ -2689,6 +2679,24 @@ def test_checkouts_that_cannot_be_listed_fail_the_finished_check(capsys, seed, t
     assert run.code == 1
 
 
+def test_without_jq_a_side_checkout_holding_a_flow_could_not_be_checked(
+        capsys, seed, tmp_path):
+    healthy(seed)
+    sides = SideCheckouts(tmp_path)
+    dflow = sides.add("dflow", "orch/dflow-flow")
+    hold_flow(Path(dflow), slug="dflow-flow", phase="done", branch="orch/dflow-flow", pr="62")
+    sides.merged(seed, 62, "orch/dflow-flow", sha_of("dflow"))
+    sides.add("dfin", "quick/20-dfin")
+    sides.merged(seed, 60, "quick/20-dfin", sha_of("dfin"))
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git,
+                      env=doctor_env(tmp_path, "git", "gh"))
+
+    assert finished_lines(run) == [
+        "warn  side checkout dflow could not be checked: could not read"
+        " %s/.orchestrator/state.json" % dflow] + finished_warn(tmp_path, "dfin")
+
+
 def skipped_github(run):
     found = re.search(r"^warn  (\d+) GitHub checks? skipped", run.out, re.M)
     return int(found.group(1)) if found else 0
@@ -2864,7 +2872,7 @@ def side_flow(tmp_path, sides, name="7-side-flow", issue="7", phase="spec", stat
     if state is None:
         hold_flow(Path(path), slug=name, phase=phase, issue=int(issue) if issue else None)
     else:
-        write_state(Path(path), state)
+        write(Path(path), STATE_JSON, raw=state)
     return path
 
 
@@ -2923,14 +2931,31 @@ def test_side_flows_that_cannot_be_judged_are_passed_over_silently(capsys, seed,
     sides = SideCheckouts(tmp_path)
     side_flow(tmp_path, sides, name="truncated", state='{"phase": "spec", "issue"')
     side_flow(tmp_path, sides, name="unmarked", issue="")
+    misread = sides.add("misread", "orch/misread", marker="7x\n")
+    hold_flow(Path(misread), slug="misread", phase="spec", issue=7)
+    # Issue #8 is one GitHub does not hold, so its read fails.
     side_flow(tmp_path, sides, name="unread", issue="8")
-    seed.fail("adapter_issue_state_labels", GH_502)
 
     run = orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git, env=flow_env(tmp_path))
 
     assert side_label_lines(run) == []
+    assert "unmarked" not in run.out
+    assert "misread" not in run.out
     assert "parse error" not in run.out
     assert "could not run" not in run.out
+
+
+def test_without_jq_side_flows_are_passed_over_unread(capsys, seed, tmp_path):
+    healthy(seed)
+    seed.issue(7, "open", "orch:implement")
+    sides = SideCheckouts(tmp_path)
+    side_flow(tmp_path, sides)
+
+    run = orch_doctor(capsys, seed, tmp_path, "--env", git=sides.git,
+                      env=flow_env(tmp_path, "git", "gh"), gh_class=GhReads)
+
+    assert side_label_lines(run) == []
+    assert "issue_state_labels" not in run.gh.asked
 
 
 def test_doctor_in_a_side_checkout_leaves_its_own_flow_to_the_flow_checks(

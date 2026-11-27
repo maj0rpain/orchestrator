@@ -46,9 +46,10 @@ from orch.flow_state import (flow_state_file, flow_state_get_many, recorded_pr,
                              require_state_exists)
 from orch.gh import GhFailed, adapter_of, gh_reason, label_listed
 from orch.git import Git
-from orch.handoff import (NOT_READY, PHASES, READY_IF_GH, handoff_doctor_missing,
-                          handoff_fetch_due, handoff_fetched, handoff_ready, handoff_report,
-                          handoff_scratch_dir, handoffs_due, phases_from)
+from orch.handoff import (COMMENTS_UNREAD, COPY_UNWRITTEN, NOT_READY, PHASES, READY_IF_GH,
+                          handoff_doctor_missing, handoff_fetch_due, handoff_fetched,
+                          handoff_ready, handoff_report, handoff_scratch_dir, handoffs_due,
+                          phases_from)
 from orch.host import flow_cmd, host_detect
 from orch.liveness import issue_alive
 from orch.planning_allowlist import dirty_outside_allowlist
@@ -179,6 +180,12 @@ class Doctor:
                 self.warn("%s could not run." % entry.name)
 
     # --- the probe ---
+
+    def side_state(self, state_file: str, keys: Sequence[str]) -> Optional[Dict[str, str]]:
+        """A side checkout's state values, read as bash's side-checkout
+        checks read them, through jq: with jq missing, none, as for a file
+        that will not parse."""
+        return flow_state_get_many(state_file, keys) if self.jq else None
 
     def installed(self, command: str) -> bool:
         """Whether <command> is an executable on the PATH doctor runs
@@ -330,7 +337,7 @@ def checks(*functions: Callable[[Doctor], None], phases: str = "") -> List[Check
     return [Check(function.__name__, function, phases) for function in functions]
 
 
-def phase_list(entry: Check) -> List[str]:
+def entry_phases(entry: Check) -> List[str]:
     """<entry>'s phases, each `<phase>+` element expanded to the phases it
     stands for. Every element is checked against the phase table, so a typo
     never quietly disables a check: one naming a phase the table does not
@@ -350,7 +357,7 @@ def entries_at(registry: Sequence[Entry], phase: str) -> List[Entry]:
     with no phase list always, a listed check only when its list names
     <phase>."""
     return [entry for entry in registry
-            if isinstance(entry, Head) or not entry.phases or phase in phase_list(entry)]
+            if isinstance(entry, Head) or not entry.phases or phase in entry_phases(entry)]
 
 
 # --- tools ----------------------------------------------------------------------
@@ -588,8 +595,10 @@ SKILL_STORES = (".agents/skills", ".claude/skills", ".gemini/config/skills")
 
 
 def tilde(path: str, home: str) -> str:
-    """<path> with a leading <home> written as ~."""
-    return "~" + path[len(home):] if home and path.startswith(home) else path
+    """<path> with a leading <home> written as ~, as bash's
+    ${path/#$HOME/\\~} writes it: an empty <home> leads every path, so the ~
+    goes in front of the whole of it."""
+    return "~" + path[len(home):] if path.startswith(home) else path
 
 
 def skills_only_copies(store: str, seen: List[str]) -> List[str]:
@@ -1021,7 +1030,8 @@ def check_side_checkouts_finished(d: Doctor) -> None:
         return
     for path in sides:
         name = os.path.basename(path)
-        verdict = side_checkout_finished(d.gh, d.git, path, lambda: default_known(d))
+        verdict = side_checkout_finished(d.gh, d.git, path, lambda: default_known(d),
+                                         d.side_state)
         if verdict.code == FINISHED:
             d.warn("side checkout %s is finished - its PR is merged, and it is still standing at"
                    " %s." % (name, path))
@@ -1067,8 +1077,8 @@ def check_autopilot_side_flows(d: Doctor) -> None:
     a side checkout other than this one: the watcher makes those, so a plain
     doctor in the main checkout is where a label that disagrees with a side
     checkout's recorded phase is seen. One whose marker records no issue,
-    with no flow, or whose state file will not parse is passed over, and so
-    is one whose issue cannot be read."""
+    with no flow, or whose state file will not parse - every one, with jq
+    missing - is passed over, and so is one whose issue cannot be read."""
     found = checkouts(d.git)
     here = os.path.realpath(d.root)
     for checkout in found or ():
@@ -1077,7 +1087,7 @@ def check_autopilot_side_flows(d: Doctor) -> None:
         issue = side_checkout_marker_issue(d.git, checkout.path)
         if issue is None:
             continue
-        state = flow_state_get_many(flow_state_file(checkout.path), ("phase",))
+        state = d.side_state(flow_state_file(checkout.path), ("phase",))
         if state is None:
             continue
         if not d.gh_gate():
@@ -1342,11 +1352,11 @@ def check_flow_handoffs(d: Doctor) -> None:
         if ready == READY_IF_GH and not d.gh_gate():
             return
         fetched, reason = handoff_fetch_due(lambda: d.gh, d.env, d.root, phase, issue)
-        if fetched == 2:
+        if fetched == COPY_UNWRITTEN:
             d.fail("could not write the copies of issue #%s's handoff comments to %s"
                    % (issue, handoff_scratch_dir(d.root)))
             return
-        if fetched:
+        if fetched == COMMENTS_UNREAD:
             d.fail("could not read issue #%s's handoff comments: %s"
                    % (issue, reason or "gh's output is not a comment list"))
             return

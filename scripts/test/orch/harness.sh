@@ -859,7 +859,7 @@ assert_eq "lists a sub-section as a title of its own" \
   "$(count_lines -xF 'branch: unknown op' "$out")" "1"
 assert_eq "lists titles without trailing dashes" "$(count_lines -- '-$' "$out")" "0"
 assert_eq "lists no shared-setup header" \
-  "$(count_lines -E 'doctor harness|fixture gh' "$out")" "0"
+  "$(count_lines -E 'healthy repo|fixture gh' "$out")" "0"
 assert_eq "runs nothing" "$(count_lines 'passed' "$out")" "0"
 
 # --- quiet mode (ORCH_TEST_QUIET, #614) ---------------------------------------

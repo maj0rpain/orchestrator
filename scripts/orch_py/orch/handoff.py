@@ -288,15 +288,21 @@ def handoff_ready(env: Mapping[str, str], issue: str) -> Tuple[int, str]:
     return READY_IF_GH, ""
 
 
+# handoff_comment_fetch_due's three answers, handoff_fetch_due's too: every
+# due copy fetched; the comments unread, gh's reason given; a copy unwritten,
+# its line on stderr.
+FETCHED, COMMENTS_UNREAD, COPY_UNWRITTEN = 0, 1, 2
+
+
 def handoff_fetch_due(gh_of, env: Mapping[str, str], root: str, phase: str,
                       issue: str) -> Tuple[int, str]:
     """Fetches every handoff due at <phase> where the adapter keeps them
     elsewhere than the handoff directory of the checkout at <root>: the file
-    adapter has nothing to fetch, (0, ""); the comment adapter reads the
+    adapter has nothing to fetch, (FETCHED, ""); the comment adapter reads the
     recorded <issue>'s comments once, through the gh adapter <gh_of> makes,
     as handoff_comment_fetch_due answers. Never dies."""
     if handoff_store(env) == "file":
-        return 0, ""
+        return FETCHED, ""
     return handoff_comment_fetch_due(gh_of(), issue, phase, handoff_scratch_dir(root))
 
 
@@ -338,20 +344,21 @@ def handoff_comment_write(entries: List[Entry], name: str, path: str) -> int:
 
 def handoff_comment_fetch_due(gh, issue: str, phase: str, scratch: str) -> Tuple[int, str]:
     """Clears the scratch copy of every handoff due at <phase>, reads
-    <issue>'s comments once and writes each live one to <scratch>: (0, "");
-    (1, gh's reason, "" for an answer that is no comment list) when the
-    comments cannot be read, leaving no copy; (2, "") when a copy cannot be
-    written, its line on stderr, after the others are written."""
+    <issue>'s comments once and writes each live one to <scratch>:
+    (FETCHED, ""); (COMMENTS_UNREAD, gh's reason, "" for an answer that is
+    no comment list) when the comments cannot be read, leaving no copy;
+    (COPY_UNWRITTEN, "") when a copy cannot be written, its line on stderr,
+    after the others are written."""
     due = handoffs_due(phase)
     for handoff in due:
         rm_f("%s/%s" % (scratch, handoff))
     entries, reason = timeline_read(gh, issue)
     if entries is None:
-        return 1, reason
-    status = 0
+        return COMMENTS_UNREAD, reason
+    status = FETCHED
     for handoff in due:
         if handoff_comment_write(entries, _stem(handoff), "%s/%s" % (scratch, handoff)) == 2:
-            status = 2
+            status = COPY_UNWRITTEN
     return status, ""
 
 
@@ -443,7 +450,7 @@ def handoff_path(phase: str, gh, env: Mapping[str, str], root: str) -> Tuple[str
     issue = require_issue(state_file, env)["issue"]
     scratch = handoff_scratch_dir(root)
     status, reason = handoff_comment_fetch_due(gh, issue, phase, scratch)
-    if status == 1:
+    if status == COMMENTS_UNREAD:
         timeline_die(issue, reason)
     path = "%s/%s" % (scratch, handoff)
     _comment_copy_or_die(status, path, issue, _stem(handoff))

@@ -16,7 +16,7 @@ import errno
 import os
 import shutil
 import time
-from typing import Callable, List, NamedTuple, Optional, Tuple
+from typing import Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from orch.checkout import (checkout_gitdir_into, checkout_has_flow, checkout_kind,
                            refuse_ticket_worktrees)
@@ -97,15 +97,20 @@ def _not_finished(reason: str) -> Verdict:
     return Verdict(NOT_FINISHED, reason)
 
 
-def finished_flow(gh, state_file: str, default: Callable[[], str]
+# A state file's reader, flow_state_get_many's shape: the values of the keys
+# asked, or None for a file that cannot be read.
+StateRead = Callable[[str, Sequence[str]], Optional[Dict[str, str]]]
+
+
+def finished_flow(gh, state_file: str, default: Callable[[], str], read_state: StateRead
                   ) -> Tuple[Verdict, str, List[str]]:
     """Whether the flow at <state_file> is finished - bash finished_flow: at
     done, and its recorded PR merged into its own base branch (the default
-    branch <default> names where the flow recorded none), read through the
-    gh adapter <gh>. With the verdict, the flow's branch and the one merged
-    PR line - its number, a tab, its head SHA - the branch tip is judged
-    against."""
-    state = flow_state_get_many(state_file, ("phase", "slug", "branch", "pr", "base"))
+    branch <default> names where the flow recorded none), its state read by
+    <read_state> and GitHub through the gh adapter <gh>. With the verdict,
+    the flow's branch and the one merged PR line - its number, a tab, its
+    head SHA - the branch tip is judged against."""
+    state = read_state(state_file, ("phase", "slug", "branch", "pr", "base"))
     if state is None:
         return Verdict(UNREAD, "could not read " + state_file), "", []
     branch, pr = state["branch"], state["pr"]
@@ -164,7 +169,8 @@ def tip_covered(git, branch: str, prs: List[str]) -> Verdict:
     return _not_finished("%s has commits past PR #%s's merged head %s" % (branch, n, head[:7]))
 
 
-def side_checkout_finished(gh, git, path: str, default: Callable[[], str]) -> Verdict:
+def side_checkout_finished(gh, git, path: str, default: Callable[[], str],
+                           read_state: StateRead) -> Verdict:
     """Whether the side checkout at <path> is finished - bash
     side_checkout_finished, the sweep's own test and the glossary's
     **Finished**: a clean tree, and either a finished flow (finished_flow),
@@ -172,16 +178,16 @@ def side_checkout_finished(gh, git, path: str, default: Callable[[], str]) -> Ve
     branch recorded for it (recorded_base_of, the default branch <default>
     names) - and the branch's tip held by a merged PR (tip_covered), so the
     sweep's branch -D never drops a commit. Read through the gh adapter <gh>
-    and the git adapter <git>. A git status that cannot run is unread, as
-    an unreadable GitHub is, so nothing is removed on a tree that could not
-    be read."""
+    and the git adapter <git>, a flow's state by <read_state>. A git status
+    that cannot run is unread, as an unreadable GitHub is, so nothing is
+    removed on a tree that could not be read."""
     status, why = tree_status(git, path)
     if status is None:
         return Verdict(UNREAD, why)
     if status:
         return _not_finished("uncommitted changes or untracked files")
     if checkout_has_flow(path):
-        verdict, branch, merged = finished_flow(gh, flow_state_file(path), default)
+        verdict, branch, merged = finished_flow(gh, flow_state_file(path), default, read_state)
         return verdict if verdict.code != FINISHED else tip_covered(git, branch, merged)
     branch = checkout_branch(git, path)
     if branch is None:

@@ -355,14 +355,14 @@ class Git:
         return self._line_at_top(["merge-base", one, other])
 
     def is_ancestor(self, commit: str, of: str) -> bool:
-        """Whether <commit> is <of> or one of its ancestors; False too when
-        either names no commit."""
-        return self._run_at_top(["merge-base", "--is-ancestor", commit, of]).returncode == 0
+        """Whether <commit> is <of> or one of its ancestors: ancestry's
+        answer, False too where git cannot judge - either names no
+        commit."""
+        return self.ancestry(commit, of) is True
 
     def ancestry(self, commit: str, of: str) -> Optional[bool]:
-        """Whether <commit> is <of> or one of its ancestors, as is_ancestor
-        answers; None where git cannot judge - either names no commit -
-        never read as a no."""
+        """Whether <commit> is <of> or one of its ancestors; None where git
+        cannot judge - either names no commit - never read as a no."""
         code = self._run_at_top(["merge-base", "--is-ancestor", commit, of]).returncode
         return {0: True, 1: False}.get(code)
 

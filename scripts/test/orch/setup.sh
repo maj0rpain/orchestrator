@@ -510,7 +510,7 @@ layer_upcalls() {
   layer_calls "${defs[@]}" -- "$dir/orch/$file"
 }
 
-# --- doctor harness ---------------------------------------------------------
+# --- the healthy repo and the fresh flow ------------------------------------
 
 # The documented triage-label table, in the shape the setup skill writes it:
 # a header row, a separator row, and backticked labels in the second column.
@@ -540,20 +540,23 @@ seeded_home() {
   return 0
 }
 
-# A repo where every --env check passes, so a test can break exactly one thing
-# and attribute the result to it.
+# healthy_repo: a new_repo set up as the setup skill leaves one - a GitHub
+# origin, a triage-labels doc, a full verification line, the orchestrator's
+# folders git-excluded - with the fixture gh, CLAUDE_PLUGIN_ROOT set and a
+# throwaway HOME, cwd inside it: fresh_flow's repo, and the side-checkout
+# sections' fresh walk.
 healthy_repo() {
   new_repo >/dev/null
   git remote set-url origin https://github.com/acme/widgets.git
   labels_doc docs/agents/triage-labels.md
-  # The verification lines check warns of a repo naming no full verification.
+  # The full verification line a set-up repo names.
   writeln 'Full verification: true test' >CLAUDE.md
   git add CLAUDE.md && git commit -qm 'instructions'
   printf '%s\n' ".orchestrator/" ".scratch/" >>.git/info/exclude
   gh_fixture
   export CLAUDE_PLUGIN_ROOT="$PWD"
-  # A throwaway HOME, so no skill store on the machine running the tests
-  # reaches doctor's checks.
+  # A throwaway HOME, so nothing under the real one - a skill store, a cache -
+  # reaches the commands a section runs.
   seeded_home
 }
 
