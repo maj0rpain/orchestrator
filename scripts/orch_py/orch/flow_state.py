@@ -20,10 +20,11 @@ state.json earns, require_state_exists, the refusal when there is no flow,
 require_state, the refusal of no flow or an unreadable one (its bash copy
 gone with the bash review noun, its one bash caller),
 require_state_readable, the refusal of a state file that exists but cannot
-be read, which handoff validate makes, require_state_read, a command's entry
-read of the keys it needs, require_value, the refusal of a required field
-left empty, and require_issue, the entry read of the flow's issue a command
-that needs one makes; then what the base reads as when a flow never recorded it,
+be read, which handoff validate makes (its bash copy gone with the bash
+handoff noun), require_state_read, a command's entry read of the keys it
+needs, require_value, the refusal of a required field left empty, and
+require_issue, the entry read of the flow's issue a command that needs one
+makes (its bash copy gone with the bash handoff noun); then what the base reads as when a flow never recorded it,
 flow_base_fallback_into, whose bash copy stays for the bash nouns that read
 it. The review budget's fallback is the review noun's (orch.review), its bash
 copy gone with its last bash reader.
