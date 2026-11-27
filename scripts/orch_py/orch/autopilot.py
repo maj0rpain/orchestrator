@@ -5,11 +5,13 @@ bash noun until every verb is here. run(argv) takes the arguments after
 error dies through orch.common.die. It dispatches every verb, refusing an
 unknown op and each verb's arguments with bash's messages, and runs those
 converted so far - `settings`, `show`, `active`, `rounds`, `budget`, `start`,
-`candidates`, `watch`, and the question, reply and re-entry verbs
-`questions`, `reply`, `resume`, `ask`, `answer` and `reenter`, over the
-Standing module's transitions - with the bash noun's stdout, exit codes and
-`orch:` messages, in a plain and an autopilot (ORCH_AUTOPILOT=1) session. A
-verb whose body is not yet here is refused (not_ported).
+`candidates`, `watch`, the question, reply and re-entry verbs `questions`,
+`reply`, `resume`, `ask`, `answer` and `reenter`, over the Standing module's
+transitions, and `run`, the session wrapper a tick starts, with its session
+end, the pause files it reads and extends, and the review budget record -
+with the bash noun's stdout, exit codes and `orch:` messages, in a plain and
+an autopilot (ORCH_AUTOPILOT=1) session. A verb whose body is not yet here is
+refused (not_ported).
 
 Beside the noun, the concept every Python noun reads: whether this is an
 autopilot session, the plan's `## Autopilot` block, as handoff_report checks
@@ -19,9 +21,10 @@ the GitHub limit pause under the main checkout and a session's hit file, in
 the format and at the path autopilot.sh reads them (pinned by
 tests/github_pause/, ADR-0067).
 
-The gh, handoff, flow-state, standing, trust and filed-finding modules the
-verbs call are imported inside them: each imports this module's concept
-part at its own import, so importing them here at the top would be a cycle.
+The gh, handoff, flow-state, standing, trust, filed-finding, liveness and
+side-checkout modules the verbs call are imported inside them: each imports
+this module's concept part at its own import, so importing them here at the
+top would be a cycle; the session-log module is imported with them.
 """
 from __future__ import annotations
 
@@ -35,7 +38,7 @@ from typing import Callable, Dict, List, Mapping, NoReturn, Optional, Tuple
 
 from orch.agent import autopilot_setting_check, default_plugin_root
 from orch.common import (ORCH_DIR_NAME, die, file_write_atomic, is_positive_int, plain_number,
-                         read_raw, read_text, stdout_write, trim, warn)
+                         read_raw, read_text, rm_f, stderr_write, stdout_write, trim, warn)
 from orch.git import Git
 from orch.host import host_detect
 from orch.repo import REPO_REMEDY, RepoPin, owner_name
@@ -410,18 +413,18 @@ def active_verb(ap: Autopilot) -> int:
     return 0 if autopilot_active(ap.env) else 1
 
 
-def plan_value(ap: Autopilot, key: str) -> int:
-    """`autopilot rounds` and `autopilot budget`: the <key> line of the `##
-    Autopilot` block of the flow's issue's newest plan comment, printed as
-    a plain integer, bash autopilot_plan_value. Dies when no issue is
-    recorded, when the comments cannot be read, when the issue has no plan
-    comment, and when its block holds no one valid <key> line."""
+def plan_number(ap: Autopilot, root: str, key: str) -> int:
+    """The <key> line of the `## Autopilot` block of the newest plan comment
+    of the issue the flow in the checkout at <root> records, a plain
+    integer, bash autopilot_plan_value. Dies when no issue is recorded, when
+    the comments cannot be read, when the issue has no plan comment, and when
+    its block holds no one valid <key> line."""
     # Imported here: these modules read this one at their own import.
     from orch.flow_state import flow_state_file, require_issue
     from orch.handoff import handoff_comment_missing
     from orch.issue_timeline import timeline_body, timeline_die, timeline_handoff, timeline_read
 
-    issue = require_issue(flow_state_file(ap.root), ap.env)["issue"]
+    issue = require_issue(flow_state_file(root), ap.env)["issue"]
     entries, reason = timeline_read(ap.gh_of(), issue)
     if entries is None:
         timeline_die(issue, reason)
@@ -431,7 +434,13 @@ def plan_value(ap: Autopilot, key: str) -> int:
     values = autopilot_block_values(timeline_body(entries, index), key)
     if len(values) != 1 or not is_positive_int(values[0]):
         die("issue #%s's plan comment has no valid ## Autopilot %s line" % (issue, key))
-    stdout_write("%d\n" % int(values[0]))
+    return int(values[0])
+
+
+def plan_value(ap: Autopilot, key: str) -> int:
+    """`autopilot rounds` and `autopilot budget`: this checkout's flow's
+    plan_number for <key>, printed."""
+    stdout_write("%d\n" % plan_number(ap, ap.root, key))
     return 0
 
 
@@ -735,16 +744,14 @@ def gate(ap: Autopilot) -> None:
     if (host and host != "claude") or shutil.which("claude", path=ap.env.get("PATH")) is None:
         die("autopilot is Claude Code only (no headless-session fallback on this host;"
             " see docs/host-capabilities.md)")
-    if ap.setting("permission-mode")[1] == "unset":
-        die("%spermission-mode is not set - choose how headless sessions run (git config"
-            " %spermission-mode <%s>)" % (SETTING_PREFIX, SETTING_PREFIX, "|".join(AUTOPILOT_MODES)))
+    mode_require(ap)
     for name in ("model", "effort"):
         ap.setting(name)
 
 
 def orch_sh() -> str:
     """The orch.sh beside the package's plugin root, which the watcher's
-    children run - bash AUTOPILOT_SELF."""
+    and the session wrapper's children run - bash AUTOPILOT_SELF."""
     return os.path.join(default_plugin_root(), "scripts", "orch.sh")
 
 
@@ -832,6 +839,454 @@ def watch_verb(ap: Autopilot, every: int) -> int:
         for signum, handler in handlers.items():
             signal.signal(signum, handler)
         watch_end(pidfile)
+# --- the pause files read and extended --------------------------------------------
+
+
+def usage_pause_file(main: str) -> str:
+    """The usage limit file under <main>: pickup paused until a usage
+    limit's reset."""
+    return autopilot_dir(main) + "/limit"
+
+
+def pause_held(path: str, now: float, capped: bool) -> Optional[str]:
+    """Whether the limit file <path> pauses pickup at <now>, bash
+    autopilot_pause_until's read: while its reset is ahead, the reset as
+    shown (the file's text); once it has passed, the file removed and None.
+    A <capped> file - the GitHub one or an early pool's - more than an hour
+    ahead is first rewritten to an hour on, the cut warned; a failed rewrite
+    still holds until the cut time, and the next read cuts again."""
+    if not os.path.isfile(path):
+        return None
+    epoch = pause_epoch(path)
+    if epoch <= now:
+        rm_f(path)
+        return None
+    shown = read_text(path) or ""
+    if capped:
+        cut = github_reset_cap(epoch, now)
+        if cut != epoch:
+            try:
+                with open(path, "w") as f:
+                    f.write(epoch_iso(cut) + "\n")
+            except OSError:
+                pass
+            shown = epoch_iso(cut)
+            warn("the GitHub pause until %s is more than an hour away, which no GitHub limit"
+                 " names; it is cut to %s" % (epoch_iso(epoch), shown))
+    return shown
+
+
+def github_paused(ap: Autopilot) -> bool:
+    """Whether a GitHub pause holds, saying nothing but the warning of a
+    pause it cut, bash autopilot_github_paused; never, where the main
+    checkout cannot be read."""
+    main = ap.git.main_checkout()
+    return main is not None and pause_held(github_pause_file(main), ap.clock(), True) is not None
+
+
+def github_pause_wait(ap: Autopilot, wait: float = 0) -> None:
+    """Sleeps until a GitHub pause that holds has passed, else <wait>
+    seconds; ORCH_GH_LIMIT_WAIT, the guard's test knob, replaces the wait
+    either way."""
+    from orch.checkout import main_checkout_or_die
+
+    if github_paused(ap):
+        path = github_pause_file(main_checkout_or_die(ap.git))
+        wait = github_reset_cap(pause_epoch(path), ap.clock()) - ap.clock()
+    knob = ap.env.get("ORCH_GH_LIMIT_WAIT", "")
+    try:
+        wait = float(knob) if knob else wait
+    except ValueError:
+        pass
+    ap.sleep(max(0.0, wait))
+
+
+def log_append(log: str, text: str) -> None:
+    """Appends <text> to the session log <log>; a failed write is lost, as
+    bash's `>>` loses it."""
+    try:
+        with open(log, "a") as f:
+            f.write(text)
+    except OSError:
+        pass
+
+
+def pause_extend(path: str, epoch: int, log: str, what: str = "") -> None:
+    """Records <epoch> as the reset of the limit file <path>, by
+    pause_put's rule; <what> ("GitHub") prefixes "limit file" in a
+    failure's note. A failed write is noted in <log> and on stderr, and is
+    no failure of the caller."""
+    if not pause_put(path, epoch):
+        message = "autopilot run: could not write the %slimit file %s" % (
+            what + " " if what else "", path)
+        warn(message)
+        log_append(log, message + "\n")
+
+
+# --- run ------------------------------------------------------------------------
+
+# The tools a headless phase session gets: those the plugin's skills and
+# agents use.
+AUTOPILOT_TOOLS = "Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage"
+# Its system prompt addition: it is told it is headless, as print mode turns
+# AskUserQuestion off and a question asked in chat is never answered.
+AUTOPILOT_SYSTEM_PROMPT = (
+    "You are a headless orchestrator autopilot session: no human reads this conversation, and"
+    " no tool asks one. Never end your turn on a question. Where a skill offers an autopilot"
+    " branch (`orch.sh autopilot active` exits 0, which it does in this session), take that"
+    " branch. Where a decision truly needs the human, post it with `orch.sh autopilot ask"
+    " <phase> <file>` and stop. When an `orch:` message says the GitHub API rate limit was"
+    " reached, end your turn at once: do not retry or wait, the watcher picks the work up after"
+    " the reset.")
+# Its settings: no bundled skills, and no plugin-authoring, a built-in plugin
+# that disableBundledSkills leaves listed.
+AUTOPILOT_SETTINGS = '{"disableBundledSkills":true,"enabledPlugins":{"plugin-authoring@builtin":false}}'
+# How long, in ms, print mode waits for background tasks after a session's
+# last turn: a ticket subagent outlives its 10-minute default, and a finite
+# ceiling (2 hours) still ends a hung session, which then goes through the
+# existing failure handling. Not 0: nothing else limits a session, so a hung
+# subagent would hold its claim forever.
+AUTOPILOT_BG_WAIT_MS = 7200000
+# The prompts of a phase session and of a sync request's session.
+PHASE_PROMPT = ("Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase"
+                " it names, and stop when the phase is finished.")
+SYNC_PROMPT = ("Run the orchestrator:orch-sync skill's autopilot branch in this checkout: sync the"
+               " branch with its base, and stop when the sync is finished.")
+
+AUTOPILOT_STOP_ATTEMPTS = 3
+AUTOPILOT_BACKSTOP_PREFIX = ("autopilot run: the stop chain failed after %d attempts - "
+                             % AUTOPILOT_STOP_ATTEMPTS)
+
+
+def mode_require(ap: Autopilot) -> str:
+    """The permission mode, dying, naming the key and its remedy, when none
+    is set - bash autopilot_mode_require."""
+    mode, source = ap.setting("permission-mode")
+    if source == "unset":
+        die("%spermission-mode is not set - choose how headless sessions run (git config"
+            " %spermission-mode <%s>)" % (SETTING_PREFIX, SETTING_PREFIX, "|".join(AUTOPILOT_MODES)))
+    return mode
+
+
+def recorded_of(side: str, key: str) -> str:
+    """<key>'s value in the flow state of the side checkout <side>; dies
+    when it cannot be read - bash autopilot_read_die."""
+    from orch.flow_state import flow_state_file, flow_state_get_many
+
+    values = flow_state_get_many(flow_state_file(side), [key])
+    if values is None:
+        die("could not read the recorded %s of %s - state.json cannot be read" % (key, side))
+    return values[key]
+
+
+def pickup_reason(err: str) -> str:
+    """A failed step's reason from its stderr <err>: its last `orch: ` line,
+    kept whole, else its last non-empty line, else "the step gave no
+    reason". Every other line goes on to stderr - bash
+    autopilot_pickup_reason."""
+    lines = err.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    picks = [i for i, line in enumerate(lines) if line.startswith("orch: ")] or [
+        i for i, line in enumerate(lines) if line]
+    if not picks:
+        return "the step gave no reason"
+    stderr_write("".join(line + "\n" for i, line in enumerate(lines) if i != picks[-1]))
+    return lines[picks[-1]]
+
+
+def stop_attempts(ap: Autopilot, issue: str, log: str, closing: str,
+                  transition: Callable[..., None]) -> int:
+    """The wrapper's stop chain: <transition>, given the issue's Chain, run
+    up to AUTOPILOT_STOP_ATTEMPTS times, a death ending only the attempt;
+    the claim and the run record are kept throughout. The attempts share one
+    landed record, so each resumes from the first write that did not land.
+    Before the second and third it waits for a GitHub pause when one holds,
+    else 60, then 300 seconds (github_pause_wait). 0 when an attempt landed;
+    when the last fails, 1, one backstop line written to <log> - the stop's
+    kind, its first line and <closing>, the clause that ends it - for stale
+    cleanup to quote."""
+    import tempfile
+
+    from orch.common import subshell
+    from orch.standing import Chain
+
+    try:
+        handle, record = tempfile.mkstemp()
+        os.close(handle)
+    except OSError:
+        die("could not create a temp file for the stop chain's state")
+    try:
+        for attempt in range(1, AUTOPILOT_STOP_ATTEMPTS + 1):
+            if attempt > 1:
+                github_pause_wait(ap, 60 if attempt == 2 else 300)
+            chain = Chain(ap.gh_of(), issue, state_file=record)
+            if subshell(lambda: transition(chain)) == 0:
+                return 0
+        line = Chain(ap.gh_of(), issue, state_file=record).get("stop")
+    finally:
+        rm_f(record)
+    kind, _, first = (line or "stop\tno stop text was built").partition("\t")
+    log_append(log, "%s%s: %s; %s\n" % (AUTOPILOT_BACKSTOP_PREFIX, kind, first, closing))
+    return 1
+
+
+def claim_release_only(ap: Autopilot, main: str, issue: str, fallback: str,
+                       closing: str) -> None:
+    """The claim release after a read that met a GitHub limit, no session
+    having run. The log is named by the claim's own phase, else <fallback>.
+    It waits out the GitHub pause, then releases the claim through
+    stop_attempts with <closing> ending its backstop line; the chain's
+    failure is ignored."""
+    from orch import liveness
+    from orch.standing import claim_of, claims_read, standing_claim_release
+
+    claims, _ = claims_read(ap.gh_of())
+    claim = claim_of(claims or [], issue)
+    phase = claim.phase if claim is not None and claim.phase else fallback
+    log = liveness.log_path(main, issue, phase, ap.clock)
+    github_pause_wait(ap)
+    stop_attempts(ap, issue, log, closing, standing_claim_release)
+
+
+def review_budget_record(ap: Autopilot, side: str) -> None:
+    """Records the plan's Budget as the side checkout <side>'s review
+    budget: the plan read for that checkout's issue, as `autopilot budget`
+    run there reads it, then written with `state set budget`'s refusals.
+    Dies with the step's own reason."""
+    from orch.flow_state import flow_state_file, require_state_exists, state_write_many
+
+    budget = plan_number(ap, side, "Budget")
+    state_file = flow_state_file(side)
+    require_state_exists(state_file, ap.env)
+    state_write_many(state_file, [("budget", str(budget))], ap.clock)
+
+
+def pools_read(gh) -> Optional[str]:
+    """GitHub's core and graphql pools, one per line - the one quiet read,
+    never retried nor handled; None when it fails or is empty."""
+    from orch.gh import GhFailed
+
+    try:
+        pools = gh.limits.pools()
+    except GhFailed:
+        return None
+    return pools or None
+
+
+def github_usage(before: Optional[str], after: Optional[str]) -> Optional[str]:
+    """The change in core and graphql usage from the pools <before> to the
+    pools <after> as one line, "core <n>, graphql <m>"; None when either
+    read failed or names no such pool. A pool that reset meanwhile counts
+    as no usage."""
+    if not before or not after:
+        return None
+
+    def used(pools: str, pool: str) -> Optional[int]:
+        for line in pools.split("\n"):
+            fields = line.split()
+            if len(fields) >= 3 and fields[0] == pool:
+                if not (plain_number(fields[1]) and plain_number(fields[2])):
+                    return None
+                return int(fields[2]) - int(fields[1])
+        return None
+
+    parts = []
+    for pool in ("core", "graphql"):
+        was, now = used(before, pool), used(after, pool)
+        if was is None or now is None:
+            return None
+        parts.append("%s %d" % (pool, max(0, now - was)))
+    return ", ".join(parts)
+
+
+def started(ap: Autopilot, argv: List[str], **how) -> int:
+    """<argv> started through the process starter and waited for: its exit
+    code; 127, or 126, when it cannot be started, as a shell reports a
+    command it could not find or run."""
+    import errno
+
+    try:
+        return ap.starter(argv, **how).wait()
+    except OSError as failed:
+        return 127 if failed.errno == errno.ENOENT else 126
+
+
+def session_end(ap: Autopilot, main: str, issue: str, phase: str, log: str, rc: int,
+                mine) -> int:
+    """What a run does once its session has exited <rc>, bash
+    autopilot_session_end: the claim <mine> held before the session, still
+    held (or, with none before, any claim now), decides a stop; a released
+    one is no stop, only a note. The limit pause is the reset the session
+    named, or one hour on; the early pause is the five-hour window's
+    resetsAt when its utilization is 0.9 or more, whatever the outcome; the
+    usage pause file is extended once, with the later. A hit file naming a
+    reset, with no usage limit, is a GitHub limit stop extending the GitHub
+    pause. Every stop goes through stop_attempts: 1 when the chain gives up,
+    the claim held. Dies, before any write, when the claims cannot be
+    read."""
+    from orch import liveness
+    from orch.session_log import session_log_read
+    from orch.standing import (claim_of, claims_read_or_die, standing_limit_stop,
+                               standing_stop)
+
+    claim = claim_of(claims_read_or_die(ap.gh_of()), issue)
+    held = claim is not None and (mine is None or claim == mine)
+    now = ap.clock()
+    said = session_log_read(log, now)
+    hit_epoch = iso_epoch(liveness.hit_take(main, issue).rstrip("\n")) or 0
+    # A hit file from before the write cap may name a reset past the hour.
+    gh_reset = github_reset_cap(hit_epoch, now) if hit_epoch > 0 else 0
+    outcome, limit = "failure", None
+    if not held:
+        outcome = "released"
+    elif said.limited:
+        outcome, limit = "limited", said.reset if said.reset is not None else int(now) + 3600
+    elif hit_epoch > 0:
+        outcome = "github"
+    # One write: the later of the two pauses.
+    pause = said.early
+    if limit is not None and (pause is None or limit > pause):
+        pause = limit
+    if pause is not None:
+        pause_extend(usage_pause_file(main), pause, log)
+    if outcome == "github":
+        pause_extend(github_pause_file(main), gh_reset, log, "GitHub")
+    closing = "the session exited with code %d" % rc
+    if outcome == "released":
+        note = "autopilot run: issue #%s's session exited %d with its claim released" % (issue, rc)
+        stdout_write(note + "\n")
+        log_append(log, note + "\n")
+        return 0
+    if outcome == "limited":
+        reset = epoch_iso(said.reset) if said.reset is not None else ""
+        return stop_attempts(ap, issue, log, closing, lambda chain: standing_limit_stop(
+            chain, phase, reset, epoch_iso(limit), rc, log))
+    if outcome == "github":
+        return stop_attempts(ap, issue, log, closing, lambda chain: standing_limit_stop(
+            chain, phase, epoch_iso(gh_reset), epoch_iso(gh_reset), rc, log, "github"))
+    detail = closing + "; "
+    if said.reply:
+        detail += "it ended on: *%s*; " % said.reply
+    return stop_attempts(ap, issue, log, closing, lambda chain: standing_stop(
+        chain, "failure", phase, detail + "log: " + log))
+
+
+def run_verb(ap: Autopilot, issue: str) -> int:
+    """`autopilot run <issue>`: the session wrapper a tick starts. Runs the
+    headless session in the issue's side checkout, its output in the session
+    log, under a run record made before the start-up read and removed on
+    exit while it still names this run; then stops the session's
+    verification runs, writes the GitHub usage line and hands over to
+    session_end. A start-up read, or a first-loop review's budget record,
+    that met a GitHub limit only releases the claim."""
+    from orch import liveness
+    from orch.checkout import main_checkout_or_die
+    from orch.side_checkout import side_checkout_for_issue
+
+    if not plain_number(issue):
+        die("issue must be a plain issue number, got: " + issue)
+    mode = mode_require(ap)
+    main = main_checkout_or_die(ap.git)
+    side = side_checkout_for_issue(ap.git, issue)
+    if side is None:
+        die("no side checkout records issue #" + issue)
+    recorded = recorded_of(side, "phase")
+    # Marked before the start-up read: a GitHub limit it meets writes the
+    # pause. Exported, as bash's, to every child.
+    ap.env["ORCH_AUTOPILOT_RUN"] = "1"  # type: ignore[index]
+    pid = os.getpid()
+    # The run record is made once, before the start-up read, so stale
+    # cleanup sees a live session throughout.
+    if not liveness.run_begin(main, issue, pid, ap.env):
+        return 1
+    try:
+        return run_session(ap, main, side, issue, recorded, mode)
+    finally:
+        liveness.run_end(main, issue, pid, ap.env)
+
+
+def run_session(ap: Autopilot, main: str, side: str, issue: str, recorded: str,
+                mode: str) -> int:
+    """run_verb's part under the run record."""
+    from orch import liveness
+    from orch.common import capture
+    from orch.gh import gh_die
+    from orch.standing import claim_of, claims_read_or_die, standing_read, standing_stop
+
+    gh = ap.gh_of()
+    standing, reason = standing_read(gh, int(issue))
+    if standing is None:
+        # A read that met a GitHub limit (a pause holds once it has failed)
+        # runs no session and makes no stop: only the claim is released.
+        if github_paused(ap):
+            claim_release_only(ap, main, issue, recorded,
+                               "no session ran: the start-up read met a GitHub limit")
+            return 0
+        gh_die("read issue #" + issue, reason)
+    prompt, phase = PHASE_PROMPT, recorded
+    # A sync request is told by orch:sync on a done issue; its phase word is
+    # sync.
+    if recorded == "done" and standing.is_sync():
+        prompt, phase = SYNC_PROMPT, standing.session_phase()
+    hit = liveness.hit_path(main, issue)
+    # The claim this run was started for: a session that releases it may
+    # exit after the next phase's claim is made, and that one is not this
+    # run's to fail.
+    mine = claim_of(claims_read_or_die(gh), issue)
+    log = liveness.log_path(main, issue, phase, ap.clock)
+    if phase == "review" and recorded_of(side, "iteration") == "0":
+        # A first-loop review session is not asked its budget: the plan's is
+        # recorded, over any left by a loop before a redo.
+        _, err, code = capture(lambda: review_budget_record(ap, side))
+        if code:
+            if github_paused(ap):
+                claim_release_only(ap, main, issue, phase, "no session ran: the first-loop"
+                                   " review's budget record met a GitHub limit")
+                return 0
+            detail = ("could not record the plan's Budget as the review budget: "
+                      + pickup_reason(err))
+            stop_attempts(ap, issue, log, "no session ran", lambda chain: standing_stop(
+                chain, "failure", "review", detail))
+            return 0
+        stderr_write(err)
+    flags: List[str] = []
+    for name in ("model", "effort"):
+        value, source = ap.setting(name)
+        if source != "unset" and value != "inherit":
+            flags += ["--" + name, value]
+    before = pools_read(gh)
+    launcher = ap.env.get("ORCH_AUTOPILOT_LAUNCHER", "") or "claude"
+    session_env = dict(ap.env, ORCH_AUTOPILOT="1", ORCH_AUTOPILOT_HIT_FILE=hit,
+                       CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS="1",
+                       CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=str(AUTOPILOT_BG_WAIT_MS))
+    argv = [launcher, "-p", prompt, "--permission-mode", mode, *flags,
+            "--tools", AUTOPILOT_TOOLS, "--settings", AUTOPILOT_SETTINGS,
+            "--strict-mcp-config", "--exclude-dynamic-system-prompt-sections",
+            "--append-system-prompt", AUTOPILOT_SYSTEM_PROMPT,
+            "--output-format", "stream-json", "--verbose"]
+    try:
+        with open(log, "wb") as out:
+            rc = started(ap, argv, cwd=side, env=session_env, stdin=subprocess.DEVNULL,
+                         stdout=out, stderr=subprocess.STDOUT)
+    except OSError:
+        rc = 1
+    # The session's verification runs end with it. A child process, so the
+    # stop's one failing exit (a group surviving KILL) never ends this
+    # wrapper; a failed stop is a line in the log and changes nothing else.
+    try:
+        with open(log, "ab") as err_log:
+            stopped = started(ap, [orch_sh(), "verification", "stop", side], cwd=side,
+                              env=dict(ap.env, ORCH_LOAD_TRACE=""), stdin=subprocess.DEVNULL,
+                              stdout=subprocess.DEVNULL, stderr=err_log)
+    except OSError:
+        stopped = 1
+    if stopped != 0:
+        log_append(log, "autopilot run: could not stop every verification run of %s\n" % side)
+    usage = github_usage(before, pools_read(gh) if before else None)
+    if usage is not None:
+        log_append(log, "autopilot run: GitHub API usage this session: %s\n" % usage)
+    return session_end(ap, main, issue, phase, log, rc, mine)
 
 
 # The verbs taking a fixed number of arguments that are converted, each
@@ -849,6 +1304,7 @@ VERBS: Mapping[str, Callable[..., int]] = {
     "ask": ask_verb,
     "answer": answer_verb,
     "reenter": reenter_verb,
+    "run": run_verb,
 }
 
 
