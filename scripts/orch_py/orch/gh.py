@@ -22,7 +22,6 @@ is set, as the bash suite's fake_github sets it, else the real adapter.
 """
 from __future__ import annotations
 
-import datetime
 import json
 import os
 import re
@@ -40,6 +39,7 @@ from typing import (
     TypeVar,
 )
 
+from orch.autopilot import epoch_iso, github_limit_record
 from orch.common import die, lines_of, message_line, plain_number, warn
 from orch.git import Git
 from orch.repo import REPO_REMEDY, RepoPin
@@ -530,12 +530,6 @@ def limit_kind(stderr: str) -> str:
     return ""
 
 
-def epoch_iso(epoch: int) -> str:
-    """Epoch seconds as a UTC timestamp."""
-    moment = datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc)
-    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def number_of(text: str) -> int:
     """<text> as a number, as awk reads one: its leading digits, else 0."""
     match = re.match(r"\s*([0-9]+)", text)
@@ -559,9 +553,19 @@ class Limits:
     line each, raising GhFailed when it cannot: the read is never retried nor
     handled.
 
-    Out of this slice: an autopilot process's record of the reset (the
-    GitHub pause and the hit file), and a re-callable wait's quiet give-up,
-    whose mark no Python process can be handed.
+    A limit given up on is recorded in an autopilot process
+    (orch.autopilot's github_limit_record: the GitHub limit pause under the
+    main checkout <main_checkout> answers, and a session's hit file), each
+    failed write one clause joined onto the limit line after " - ", as
+    gh.sh's gh_limit_handle joins them.
+
+    Two settings serve a re-callable wait, `review ci`'s: <wait>, the open
+    wait (an orch.wait OpenWait), asked whether a first secondary limit's
+    wait fits in what is left of its block - when it does not, the call
+    fails with no message and nothing recorded, the wait's mark left for
+    its checks to end the call as still running; and <no_wait>, set by a
+    call that never waits (`review ci --no-wait`, bash's NO_WAIT_CALL),
+    which gives a first secondary limit up at once.
     """
 
     def __init__(
@@ -570,11 +574,15 @@ class Limits:
         pools: Pools,
         sleep: Callable[[float], None],
         now: Callable[[], float],
+        main_checkout: Callable[[], Optional[str]] = lambda: None,
     ) -> None:
         self.env = env
         self.pools = pools
         self.sleep = sleep
         self.now = now
+        self.main_checkout = main_checkout
+        self.wait = None
+        self.no_wait = False
 
     def run(self, attempt: Callable[[], T], compound: bool = False) -> T:
         retried = False
@@ -585,8 +593,11 @@ class Limits:
                 kind = limit_kind(failed.stderr)
                 if not kind:
                     raise
-                if kind == "secondary" and not retried and not compound:
-                    self.sleep(float(self.env.get("ORCH_GH_LIMIT_WAIT", "") or LIMIT_WAIT_DEFAULT))
+                if kind == "secondary" and not retried and not compound and not self.no_wait:
+                    nap = float(self.env.get("ORCH_GH_LIMIT_WAIT", "") or LIMIT_WAIT_DEFAULT)
+                    if self.wait is not None and not self.wait.limit_fits(nap):
+                        raise GhFailed("") from None
+                    self.sleep(nap)
                     retried = True
                     continue
                 raise GhFailed(message_line(self.message())) from None
@@ -607,11 +618,16 @@ class Limits:
         return latest or int(self.now()) + LIMIT_RESET_FALLBACK
 
     def message(self) -> str:
-        return (
+        """The one limit line, naming the reset, any failed write of the
+        autopilot record joined on after " - "."""
+        reset = self.reset()
+        line = (
             "GitHub API rate limit reached - it resets at %s. An autopilot session"
             " ends its turn now and does not retry; the watcher picks the work up"
-            " after the reset." % epoch_iso(self.reset())
+            " after the reset." % epoch_iso(reset)
         )
+        clauses = github_limit_record(self.env, reset, self.now(), self.main_checkout)
+        return line + " - " + "; ".join(clauses) if clauses else line
 
 
 # --- claims -------------------------------------------------------------------
@@ -651,7 +667,7 @@ class Gh:
     ) -> None:
         self.repo_pin = pin
         self.env = env
-        self.limits = Limits(env, self._rate_limit, sleep, now)
+        self.limits = Limits(env, self._rate_limit, sleep, now, pin.git.main_checkout)
 
     def pin(self) -> bool:
         """Whether a repo resolves to pin gh to, calling no gh - for a command

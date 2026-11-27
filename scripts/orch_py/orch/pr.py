@@ -40,7 +40,6 @@ orch/review.py's ci_ready_gate.
 """
 from __future__ import annotations
 
-import calendar
 import json
 import os
 import re
@@ -50,6 +49,7 @@ from contextlib import contextmanager
 from typing import Callable, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 from orch import comments
+from orch.autopilot import iso_epoch
 from orch.base import base_branch_into, default_branch, recorded_base_into
 from orch.branch import branch_name_flow, branch_pr_set
 from orch.checkout import checkout_branch, current_branch_or_die
@@ -166,16 +166,6 @@ class _Run:
 # issue GitHub left open: GitHub's own close lands within it, so the backstop
 # never races it.
 PR_CLOSE_GRACE = 300
-
-
-def iso_epoch(text: str) -> Optional[int]:
-    """The UTC timestamp <text>, YYYY-MM-DDTHH:MM:SSZ, as epoch seconds, or
-    None for a value that does not read - bash autopilot_iso_epoch, which
-    stays for autopilot's other callers."""
-    try:
-        return calendar.timegm(time.strptime(text, "%Y-%m-%dT%H:%M:%SZ"))
-    except ValueError:
-        return None
 
 
 def pr_close_missed(gh, issue: str, pr: str, merged_at: str, closing: str, default: str,

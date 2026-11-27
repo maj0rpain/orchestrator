@@ -1196,6 +1196,57 @@ def test_a_failure_that_is_no_limit_passes_through_untouched(fixture_gh):
     assert sleeps == []
 
 
+class OpenWait:
+    """A re-callable wait the limit handling asks whether a limit wait fits:
+    it answers <fits> and records each wait asked about."""
+
+    def __init__(self, fits):
+        self.fits = fits
+        self.asked = []
+
+    def limit_fits(self, seconds):
+        self.asked.append(seconds)
+        return self.fits
+
+
+def test_a_limit_wait_the_open_wait_cannot_hold_gives_up_quietly(fixture_gh):
+    fixture_gh.reply(BODY, stderr=SECONDARY + "\n", exit=1)
+    sleeps = []
+    gh = real_gh(fixture_gh, sleeps=sleeps, ORCH_GH_LIMIT_WAIT="30")
+    gh.limits.wait = OpenWait(fits=False)
+
+    assert limit_failure(gh) == ""
+    assert gh.limits.wait.asked == [30.0]
+    assert fixture_gh.argvs() == [BODY]
+    assert sleeps == []
+
+
+def test_a_limit_wait_the_open_wait_holds_is_waited_out_and_retried(fixture_gh):
+    fixture_gh.reply(BODY, stderr=SECONDARY + "\n", exit=1, then=[("Body.\n", "", 0)])
+    sleeps = []
+    gh = real_gh(fixture_gh, sleeps=sleeps)
+    gh.limits.wait = OpenWait(fits=True)
+
+    assert gh.issue_body(5) == "Body."
+    assert gh.limits.wait.asked == [60.0]
+    assert sleeps == [60.0]
+
+
+def test_a_no_wait_call_gives_up_at_once_on_a_first_secondary_limit(fixture_gh):
+    fixture_gh.reply(BODY, stderr=SECONDARY + "\n", exit=1)
+    fixture_gh.reply(RATE_LIMIT, pools(0, 5))
+    sleeps = []
+    gh = real_gh(fixture_gh, sleeps=sleeps)
+    gh.limits.no_wait = True
+
+    stderr = limit_failure(gh)
+
+    assert stderr == ("orch: GitHub API rate limit reached - it resets at 2033-05-18T03:33:20Z"
+                      + LIMIT_TAIL + "\n")
+    assert fixture_gh.argvs() == [BODY, RATE_LIMIT]
+    assert sleeps == []
+
+
 # --- the gh could not death --------------------------------------------------
 
 

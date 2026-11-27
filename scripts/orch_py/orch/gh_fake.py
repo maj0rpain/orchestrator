@@ -156,7 +156,9 @@ def _comment_write(directory: str, author: str, created: str, association: str,
 class FakeGh:
     """The fake operations on the store at <store>. <env> holds the knobs
     the rate-limit handling and the listing read; <pin>, when given, answers
-    pin() as the real adapter's does, else the repo is taken as resolved."""
+    pin() as the real adapter's does and its git adapter the main checkout an
+    autopilot process's limit record is written under, else the repo is
+    taken as resolved and the main checkout as unreadable."""
 
     def __init__(
         self,
@@ -170,7 +172,8 @@ class FakeGh:
         self.env = env
         self.repo_pin = pin
         self.now = now
-        self.limits = Limits(env, self._rate_limit, sleep, now)
+        self.limits = Limits(env, self._rate_limit, sleep, now,
+                             pin.git.main_checkout if pin is not None else lambda: None)
 
     def pin(self) -> bool:
         return self.repo_pin is None or self.repo_pin.resolve() is not None
@@ -1099,6 +1102,16 @@ class FakeStore:
 
     def unfail(self) -> None:
         shutil.rmtree(_store_path(self.store, "fail"), ignore_errors=True)
+
+    def ratelimit(self, stderr: str = "API rate limit exceeded for user ID 1.") -> None:
+        """Every operation but the quota read fails with <stderr>, bash
+        fake_ratelimit."""
+        _write(_store_path(self.store, "ratelimit"), stderr + "\n")
+
+    def quota(self, pool: str, remaining: int, limit: int, reset: int) -> None:
+        """The quota read answers one more pool line, bash fake_quota."""
+        _write(_store_path(self.store, "quota"),
+               "%s\t%d\t%d\t%d\n" % (pool, remaining, limit, reset), "ab")
 
     def offline(self) -> None:
         _write(_store_path(self.store, "offline"), "")
