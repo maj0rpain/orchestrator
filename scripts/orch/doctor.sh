@@ -30,8 +30,8 @@
 # loads through orch_load. The helpers it calls from noun modules
 # (default_branch_local, default_branch_seed, base_setting and
 # origin_has_branch from base.sh,
-# require_state from state.sh) are defined by the time cmd_doctor runs - every
-# check its env check list names is doctor's own:
+# require_state_exists from state.sh) are defined by the time cmd_doctor runs -
+# every check its env check list names is doctor's own:
 # run as a command they are stubs that load their module on first call
 # (loader.sh's orch_stubs). cmd_doctor is then
 # dispatched from main() exactly like any other command.

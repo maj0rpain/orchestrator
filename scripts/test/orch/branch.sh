@@ -66,6 +66,19 @@ origin_branch_state() {
   git -C "$1" rev-parse --quiet --verify "refs/heads/$2" >/dev/null && echo pushed || echo missing
 }
 
+# state_write_fails_after_first_bin: prints a new directory holding a mktemp
+# that lets the first state.json.* temp file through and fails every later
+# one, so a command's first state write lands and the rest fail.
+state_write_fails_after_first_bin() {
+  local dir
+  dir="$(mktemp -d)"
+  writeln '#!/bin/sh' 'case " $* " in' '  *state.json.*)' \
+    "    if [ -e '$dir/seen' ]; then exit 1; fi; : >'$dir/seen' ;;" 'esac' \
+    "exec $(command -v mktemp) \"\$@\"" >"$dir/mktemp"
+  chmod +x "$dir/mktemp"
+  printf '%s\n' "$dir"
+}
+
 # --- branch create -----------------------------------------------------------
 # Unlike branch off's caller-named branch, this one derives its own name from
 # state - slug plus the recorded issue - and records both `branch` and

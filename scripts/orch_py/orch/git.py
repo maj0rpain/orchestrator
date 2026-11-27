@@ -276,7 +276,7 @@ class Git:
         return self._run(["cat-file", "-e", sha + "^{commit}"]).returncode == 0
 
     # review ci's push-time and no-CI-evidence reads, run where the adapter
-    # runs, as bash's review ci runs its git; each a "could not" value on a
+    # runs, as the bash review ci ran its git; each a "could not" value on a
     # git failure.
 
     def ref_exists(self, ref: str) -> bool:

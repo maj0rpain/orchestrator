@@ -752,24 +752,6 @@ fake_take_number() {
   printf '%s\n' "$n"
 }
 
-# adapter_issue_create <title> <body-file> [label...]: a new open issue in the
-# store, numbered as fake_next_issue set (default one past the highest issue
-# or PR number the store holds), its number printed.
-adapter_issue_create() {
-  local title="$1" body="$2" n d l
-  shift 2
-  ! fake_failing adapter_issue_create || return 1
-  n="$(fake_take_number next_issue)" || return 1
-  d="$(fake_issue_dir "$n")"
-  mkdir -p "$d"
-  printf 'OPEN\n' >"$d/state"
-  printf '%s\n' "$title" >"$d/title"
-  cat "$body" >"$d/body"
-  : >"$d/labels"
-  for l in "$@"; do fake_labels_add "$d/labels" "$l"; done
-  printf '%s\n' "$n"
-}
-
 # adapter_issue_body_edit <n> <file>: the file's contents as the stored body.
 adapter_issue_body_edit() {
   ! fake_failing adapter_issue_body_edit || return 1
@@ -956,24 +938,6 @@ adapter_pr_refs() {
   oid="$(fake_pr_head_oid "$d")"
   printf '%s\n' "$oid"
   cat "$d/head" "$d/base"
-}
-
-# adapter_pr_url_head <n>: the stored PR's url (default
-# https://github.com/o/r/pull/<n>), then its head SHA as fake_pr_head_oid reads it.
-adapter_pr_url_head() {
-  local d
-  ! fake_failing adapter_pr_url_head || return 1
-  fake_pr_known "$1" || return 1
-  d="$(fake_pr_dir "$1")"
-  if [ -f "$d/url" ]; then cat "$d/url"; else printf 'https://github.com/o/r/pull/%s\n' "$1"; fi
-  fake_pr_head_oid "$d"
-}
-
-# adapter_pr_ready <n>: the stored PR no longer a draft.
-adapter_pr_ready() {
-  ! fake_failing adapter_pr_ready || return 1
-  fake_pr_known "$1" || return 1
-  rm -f "$(fake_pr_dir "$1")/draft"
 }
 
 # adapter_pr_draft <n>: the stored PR a draft.
@@ -1328,126 +1292,6 @@ adapter_repo_local_default() {
 adapter_auth_status() {
   ! fake_failing adapter_auth_status || return 1
   echo "Logged in to github.com account fake-gh"
-}
-
-# --- ci operations, on the store ----------------------------------------------
-
-# fake_checks_answer <answer>: the checks one scripted answer stands for, in
-# adapter_pr_checks's TSV shape - or, for boom, a connection error.
-fake_checks_answer() {
-  local runs=https://github.com/acme/widgets/actions/runs
-  case "$1" in
-    green)    printf 'pass\tbuild\t%s/1/job/1\n' "$runs" ;;
-    failing)  printf 'fail\tbuild\t%s/4242/job/77\npass\tlint\t%s/1/job/1\n' "$runs" "$runs" ;;
-    cancel)   printf 'cancel\tbuild\t%s/5150/job/9\n' "$runs" ;;
-    # A failing check that is no Actions run - a commit status from an outside
-    # CI - listed first, ahead of a failing Actions run.
-    external) printf 'pass\tlint\t%s/1/job/1\nfail\text-ci\thttps://ci.example.com/build/9\nfail\tbuild\t%s/4242/job/77\n' "$runs" "$runs" ;;
-    # Two failing checks in different Actions runs; in one run; an Actions check
-    # then an outside status.
-    tworuns)  printf 'fail\tbuild\t%s/4242/job/77\nfail\ttest\t%s/4343/job/78\n' "$runs" "$runs" ;;
-    onerun)   printf 'fail\tbuild\t%s/4242/job/77\nfail\ttest\t%s/4242/job/78\n' "$runs" "$runs" ;;
-    mixed)    printf 'fail\tbuild\t%s/4242/job/77\nfail\text-ci\thttps://ci.example.com/build/9\n' "$runs" ;;
-    # A failing check whose Actions link carries no numeric run id.
-    badrunid) printf 'fail\tbuild\t%s/12abc\n' "$runs" ;;
-    # One failing check whose name contains a comma.
-    comma)    printf 'fail\tbuild (linux, x64)\t%s/4242/job/77\n' "$runs" ;;
-    pending)  printf 'pending\tbuild\t\n' ;;
-    # The fake records no head branch, so gh's no-checks line names a fixed one.
-    none)     fake_no_checks ;;
-    # gh's empty list, `[]`: nothing on stdout, nothing on stderr, exit 0.
-    empty)    ;;
-    boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; return 1 ;;
-    # Without this arm a mistyped answer prints nothing and succeeds, which
-    # ci_probe reads as a repo with no checks - a test that passes while
-    # asserting nothing.
-    *)        echo "gh fake: no checks answer named '$1'" >&2; return 99 ;;
-  esac
-}
-
-# fake_no_checks: gh's "no checks" answer - nothing on stdout, its line on
-# stderr, exit 0 - as adapter_pr_checks passes it on.
-fake_no_checks() { echo "no checks reported on the 'topic' branch" >&2; }
-
-# adapter_pr_checks <n> <required|all>: the next answer of the script
-# fake_checks seeded for the PR and scope - one per call, the last repeating
-# once the script runs out. An unseeded scope has no checks.
-adapter_pr_checks() {
-  local d f i answer
-  ! fake_failing adapter_pr_checks || return 1
-  d="$(fake_store)/checks/$1"
-  f="$d/$2"
-  mkdir -p "$d"
-  echo read >>"$d/reads"
-  [ -f "$f" ] || { fake_no_checks; return 0; }
-  i=$(( $(cat "$f.n" 2>/dev/null || echo 0) + 1 ))
-  printf '%s\n' "$i" >"$f.n"
-  answer="$(sed -n "${i}p" "$f")"
-  [ -n "$answer" ] || answer="$(tail -n 1 "$f")"
-  fake_checks_answer "$answer"
-}
-
-# adapter_branch_required_checks <branch>: the stored contexts the branch
-# requires; nothing for an unprotected branch.
-adapter_branch_required_checks() {
-  ! fake_failing adapter_branch_required_checks || return 1
-  cat "$(fake_store)/protection/$1" 2>/dev/null || true
-}
-
-# adapter_branch_rules <branch>: the stored rule types the branch's rulesets
-# apply; nothing for none.
-adapter_branch_rules() {
-  ! fake_failing adapter_branch_rules || return 1
-  cat "$(fake_store)/rules/$1" 2>/dev/null || true
-}
-
-# adapter_pr_commits_checked <n>: the base tip's answer, then a line per commit,
-# as the real operation prints them. A ref has a check run or a status where
-# check_runs or statuses lists it; the base tip is the PR's stored base branch
-# name. Each read is recorded in the PR's evidence_reads. The PR's whole answer
-# stored under evidence_raw is printed in place of the one built from the
-# store; no_base_ref makes the base tip's line empty. A commit's default list
-# is the PR's head alone.
-adapter_pr_commits_checked() {
-  local d oid ref s check_runs statuses listed base commits=""
-  ! fake_failing adapter_pr_commits_checked || return 1
-  fake_pr_known "$1" || return 1
-  d="$(fake_pr_dir "$1")"
-  echo read >>"$d/evidence_reads"
-  if [ -f "$d/evidence_raw" ]; then cat "$d/evidence_raw"; return 0; fi
-  s="$(fake_store)"
-  # Both lists are read once; each ref is then tested in bash.
-  fake_slurp "$s/check_runs" || true; check_runs="$fake_slurped"
-  fake_slurp "$s/statuses" || true; statuses="$fake_slurped"
-  listed="$check_runs"$'\n'"$statuses"
-  if [ -f "$d/no_base_ref" ]; then
-    echo
-  else
-    fake_read_state "$d/base" || true; base="$fake_state"
-    if list_has "$listed" "$base"; then echo yes; else echo no; fi
-  fi
-  oid="$(fake_pr_head_oid "$d")"
-  if [ -f "$d/commits" ]; then file_read commits "$d/commits" || commits=""; commits="${commits%$'\n'}"; elif [ -n "$oid" ]; then commits="$oid"; fi
-  [ -n "$commits" ] || return 0
-  while IFS= read -r ref; do
-    if list_has "$listed" "$ref"; then printf '%s\tyes\n' "$ref"; else printf '%s\tno\n' "$ref"; fi
-  done <<<"$commits"
-}
-
-# adapter_run_rerun <run>: the run appended to reruns.
-adapter_run_rerun() {
-  ! fake_failing adapter_run_rerun || return 1
-  printf '%s\n' "$1" >>"$(fake_store)/reruns"
-}
-
-# adapter_job_failed_log <job>: the log stored for the job under job_logs/<job>;
-# a job with none stored fails, as gh does for a log it cannot read.
-adapter_job_failed_log() {
-  ! fake_failing adapter_job_failed_log || return 1
-  local f
-  f="$(fake_store)/job_logs/$1"
-  [ -f "$f" ] || { echo "log not found" >&2; return 1; }
-  cat "$f"
 }
 
 # adapter_claim_create <issue> <phase> <pid> <host>: the claim stored as one

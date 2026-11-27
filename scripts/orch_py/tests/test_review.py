@@ -1,14 +1,14 @@
-"""The review concept module's terminal-state read, pinned to bash's
-review_terminal_state by the golden review records of tests/review_terminal/:
-each case directory holds an `args` file (the iteration and the budget), an
-optional state.json and review/ tree, copied into a checkout's .orchestrator/
-before the read, and an `expected` file - the classification's lines, then
-`status <n>`, `<root>` standing for the checkout's root. Both the bash
-review_terminal_state, sourced in a bash child process, and the Python one
-must print exactly that (ADR-0067's golden files both languages are tested
-against). Beside it, the pieces the read is built from: the record path, the
-record's terminal section, the flat-record-gone check, and the redo predicate
-and flow-branch names the fallback compares against."""
+"""The review concept module's terminal-state read, pinned by the golden
+review records of tests/review_terminal/: each case directory holds an `args`
+file (the iteration and the budget), an optional state.json and review/ tree,
+copied into a checkout's .orchestrator/ before the read, and an `expected` file
+- the classification's lines, then `status <n>`, `<root>` standing for the
+checkout's root. The Python read must print exactly that (ADR-0067's golden
+files); they were bash review_terminal_state's answers while the bash review
+noun stood, and stay the pin now it is gone. Beside it, the pieces the read is
+built from: the record path, the record's terminal section, the
+flat-record-gone check, and the redo predicate and flow-branch names the
+fallback compares against."""
 from __future__ import annotations
 
 import shutil
@@ -16,38 +16,19 @@ from pathlib import Path
 
 import pytest
 
-from conftest import bash_sourced, died_of, orch_files
+from conftest import died_of, orch_files
 from orch.branch import branch_name_flow, branch_name_redo
 from orch.redo import redo_midway
 from orch.review import (review_flat_record_gone, review_record_path, review_record_terminal,
                          review_retire, review_terminal_record, review_terminal_state)
 
 GOLDEN = Path(__file__).resolve().parent / "review_terminal"
-SCRIPTS = Path(__file__).resolve().parents[2]
 CASES = sorted(path.name for path in GOLDEN.iterdir() if path.is_dir())
-
-# Each case run through the bash review_terminal_state, the modules loaded as
-# orch.sh loads them, ROOT, STATE and REVIEW_DIR the checkout's: its lines,
-# `status <n>`, then a `--` line and review_flat_record_gone's status.
-# redo_midway is review.sh's, beside the read it serves.
-BASH_RUN = r'''
-set -uo pipefail
-source "$1"
-source "$2"
-ROOT="$3"
-STATE="$ROOT/.orchestrator/state.json"
-REVIEW_DIR="$ROOT/.orchestrator/review"
-orch_load state
-orch_load handoff
-orch_load branch
-orch_load review
-st=0
-review_terminal_state "$4" "$5" || st=$?
-printf 'status %s\n--\n' "$st"
-st=0
-review_flat_record_gone "$4" || st=$?
-printf '%s\n' "$st"
-'''
+# The golden cases whose flat record is gone, as bash review_flat_record_gone
+# answered them while the bash review noun stood.
+FLAT_GONE = frozenset({
+    "fallback-state-unread", "missing-at-budget", "missing-before-budget", "not-midway",
+    "pre-redo-fallback", "pre-redo-missing"})
 
 
 def case_args(case):
@@ -75,15 +56,6 @@ def expected(case, root):
     return (GOLDEN / case / "expected").read_text(encoding="utf-8").replace("<root>", str(root))
 
 
-def bash_run(case, root):
-    """(the bash classification's text and status line, the bash flat-record-
-    gone status) of <case> in the checkout at <root>."""
-    out = bash_sourced(SCRIPTS / "flow-state.sh", BASH_RUN, SCRIPTS / "orch" / "common.sh",
-                       SCRIPTS / "orch" / "loader.sh", root, *case_args(case))
-    classified, gone = out.split("--\n")
-    return classified, gone
-
-
 def python_text(root, i, budget):
     """The Python classification's lines, then `status <n>`, as text."""
     lines, status = review_terminal_state(str(root), i, budget)
@@ -91,16 +63,17 @@ def python_text(root, i, budget):
 
 
 @pytest.mark.parametrize("case", CASES)
-def test_a_golden_review_record_classifies_and_reads_its_flat_record_alike_in_both_languages(
-        case, tmp_path):
-    bash_root = checkout_of(case, tmp_path / "bash")
-    python_root = checkout_of(case, tmp_path / "python")
-    bash_text, bash_gone = bash_run(case, bash_root)
+def test_a_golden_review_record_classifies_as_its_expected_file_says(case, tmp_path):
+    root = checkout_of(case, tmp_path)
 
-    assert bash_text == expected(case, bash_root)
-    assert python_text(python_root, *case_args(case)) == expected(case, python_root)
-    # The same bash child answers whether the flat record is gone.
-    assert review_flat_record_gone(str(python_root), case_args(case)[0]) == (bash_gone == "0\n")
+    assert python_text(root, *case_args(case)) == expected(case, root)
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_a_golden_review_record_s_flat_record_is_gone_as_bash_answered(case, tmp_path):
+    root = checkout_of(case, tmp_path)
+
+    assert review_flat_record_gone(str(root), case_args(case)[0]) == (case in FLAT_GONE)
 
 
 def test_an_iteration_s_record_path_is_its_zero_padded_file_in_a_made_review_directory(tmp_path):

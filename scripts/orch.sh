@@ -84,7 +84,7 @@ readonly EXCLUDED_DIRS=("$ORCH_DIR_NAME/" ".scratch/")
 # created first, as its search states, and never warns, so a cut there drops the
 # oldest. The other PR listings run newest first, as gh lists them, and never
 # warn, so a cut drops the oldest. Overridable
-# through the environment, like review.sh's ORCH_CI_* knobs, so a test can turn
+# through the environment, like review ci's ORCH_CI_* knobs, so a test can turn
 # it down; a raised override stops counting at ISSUE_SEARCH_CAP for every
 # search-backed listing - the issue listings and the merged-PR backstop's -
 # since the other PR listings run no search. It stays out of the documented
@@ -232,10 +232,11 @@ main() {
   case "$cmd" in
     # The nouns converted to Python, the one place naming them: each runs
     # through orch_python, and has no module of its own here. Among them
-    # init, phase, redo, ticket, ticket-worktree and pr, and the bare global
-    # commands slug, status, archive and help, help with its option spellings,
-    # which the Python entry point runs as help; a bare orch.sh is help too.
-    issue|finding-triage|verification|audit|review-pass|spec-review|spec|breakdown|glossary|parallel|route|agent|slug|status|archive|help|-h|--help|init|phase|redo|ticket|ticket-worktree|pr)
+    # init, phase, redo, ticket, ticket-worktree, pr and review, and the bare
+    # global commands slug, status, archive and help, help with its option
+    # spellings, which the Python entry point runs as help; a bare orch.sh is
+    # help too.
+    issue|finding-triage|verification|audit|review-pass|spec-review|spec|breakdown|glossary|parallel|route|agent|slug|status|archive|help|-h|--help|init|phase|redo|ticket|ticket-worktree|pr|review)
       orch_python "$cmd" "$@" ;;
     doctor|health) cmd_doctor "$@" ;;
     default-branch) cmd_default_branch "$@" ;;
@@ -246,7 +247,6 @@ main() {
     handoff)       cmd_handoff "$@" ;;
     branch)        cmd_branch "$@" ;;
     side-checkout) cmd_side_checkout "$@" ;;
-    review)        cmd_review "$@" ;;
     *) die "unknown command: $cmd (run 'orch.sh help')" ;;
   esac
 }

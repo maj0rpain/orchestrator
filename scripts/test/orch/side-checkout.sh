@@ -30,6 +30,17 @@ sp_branch_off() {
   git -C "$1" commit -q --allow-empty -m "work on $2"
 }
 
+# marked_ticket_worktree <n>: adds ticket worktree t<n> under the current
+# checkout, on a branch, and copies a side-checkout marker recording issue 123
+# into its git folder - a ticket worktree carrying a copied marker (#1110).
+# Prints its path.
+marked_ticket_worktree() {
+  local path
+  path="$("$ORCH" ticket-worktree add "$1")" || return
+  printf '123\n' >"$(git -C "$path" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
+  printf '%s\n' "$path"
+}
+
 # --- side-checkout (#722) -----------------------------------------------------
 # A side checkout: a worktree the plugin makes under the main checkout's
 # .orchestrator/checkouts/<slug>, on no branch at origin/<base>, carrying the

@@ -50,8 +50,7 @@ def redo_midway(issue: str, slug: str, branch: str, redo_count: str) -> Optional
     of <issue> and <slug> (the exact name, so a slug that merely ends that way
     does not match: #2550). The one test the retire plan below and the review
     loop's terminal-state read both make, so they never disagree on whether a
-    redo is resuming; bash review.sh keeps its copy for review terminal and
-    doctor."""
+    redo is resuming."""
     count = int_as_test_reads(redo_count)
     if count is None or count <= 0:
         return None

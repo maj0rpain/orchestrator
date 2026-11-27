@@ -1163,6 +1163,16 @@ def test_pr_dies_pointing_at_doctor_without_python3(tmp_path, repo, seed):
                 " - run orch.sh doctor\n", 1)
 
 
+# --- review ------------------------------------------------------------------
+
+
+def test_review_dies_pointing_at_doctor_without_python3(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "review", "path", "1",
+                   path=path_without(tmp_path, "python3")) \
+        == ("", "orch: orch.sh review needs python3 3.9 or newer (found none)"
+                " - run orch.sh doctor\n", 1)
+
+
 # --- orch_python_call bootstrap ----------------------------------------------
 
 

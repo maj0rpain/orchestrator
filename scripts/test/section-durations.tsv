@@ -1,43 +1,43 @@
-2	3	isolation	29b7016dbadab53b468d1dcfc83ac22ab535f197
-18	14	isolation under a git hook (#1905)	b90fcf0d7dfda188a9cfd57d157ab18984d1639b
-20	23	the section filter (ORCH_TEST_ONLY, #612)	3851f667ed16e09d5119de92cdedef1b6ba49c23
-12	14	quiet mode (ORCH_TEST_QUIET, #614)	79f8f9b9e9e72ee47686ec133f4a4d1a71dfd088
-233	75	the parallel runner (ORCH_TEST_JOBS, #780)	bd40a097b11f428e8d267b855d7e340f5b1a5700
-19	33	the parallel runner's start order (#2857)	bef6e060e317eebdb98a7f70d24bee31d7ac2a87
-129	133	the shard setting (#2859)	9b61393c12b768f06ff1f4732c370e8f6f175635
-19	25	the seeded start (stub cache)	0d530815d70c6b744893975cacc25a2178523b9c
-314	266	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	a5ff91db1f018554567e769a8e8e2610d20c918e
-4	7	assertions in a subshell (#1904)	4c23c7778ef304aaffbe9ad5e976f4f5e1b25c1b
-2	3	the standalone suites' tally (#1904)	071f90ead8fb9aae70066ea3f620aaf8873ccf18
-16	24	the section files (#932)	2d9e278f2589b28849eb9a1fdb3f07060a6cf597
-348	45	the suite's temp root (#807)	5608e64822a59ee09d355d1cebf680720b96307d
-2	3	the real-gh guard (#779)	eef4e07da577eed6d2f183731a455e9db258646e
-56	45	all.sh, the single entry point (#615)	3ccdae8cef30a86e3df57966e6c2bf8cfe109154
-1	2	all.sh's suite list holds every runner (#1941)	0b614e730423ea2600e1351ee9d9563f2cd7489d
-529	180	the job pool (#2022)	f5f374e2ab70647decc2751d97b8a11a79f60bd5
-1	2	the slot fd contract (#2300)	fff6989604fce76eb144b9ab7b1f1ab1462b0acc
-69	30	the test runners' CPU load (#1586)	5d9c2c7724b144836657cbaf8451d9008d25fa04
-2	3	shell code (#1411)	ae6e0689095093c5f3a804a41bcae90adb5617e0
-51	52	test-helper placement (#1006)	2df00220f4c8856f05945086e017614587ad5dd3
-26	27	helper body copies (#3170)	1990b158445b2d920383c9b3bc9bf0cbc615bcac
-39	40	gh op placement (#1037)	0be25f87dfe37eb4b9de4274d529192c3ce8fd8a
-5	6	marked comment prelude placement (#1853)	958f12424dbbe98b33047976cd3fbb66a93bc7fa
-14	14	comment reader placement (#3085)	55bdf83c20e24b208867d0c1ceb38e5bfc2b83ae
-11	12	orch_load before cross-module reads (#2868)	f1b36ea1360b792804dbff4a756179f42c8768a5
-5	6	on-demand sourcing variable (#2820)	efd37f8ffb1575e270768006b89ea640fe9680dc
-2	2	declaration substitutions (#1327)	301758feb2e751e8640406d2433dbd3ad80056a4
-13	20	the helper index (#1144)	bf68bc269c754a2ef1e3f17a108858b076a73bdf
-1	2	stand-in adapter (#2465)	32f153cd42a055ea4f13a30c379b709245e2b5d2
-1	2	git env clear (#1905)	3eb6d6370287e1c0c7cc2422ca3cc709896ffac2
-4	4	runner git isolation (#1905)	ae52c2dfe8e593092e6999bc67f173103d567032
-1	1	the background child start (#3025)	6921c8e92a10e7a0e7ba138039b5f89ee70e9a5e
-2	2	the suite start (#3582)	7062792d92a3fa8e7cb13a3b6c659decba11bcb2
-9	9	the pytest suite (#3912)	e10144970bc8899df7dd1b32b55938620ed22d6e
-2	4	the counting fixture's stdin counter (#3434)	21a707c7252e5d08c3fb69c1f90106d891bc8af3
-93	114	affected.sh, the ticket verification (#2023)	0bdfd60b173fd196626ff1de1748b41dd2381705
-6	7	the row rule (#3549)	3a9e272b0e2b6c484f15940108bdb9b29d4d21e6
-8	11	the shared test support, function by function (#3550)	9f661c6adeddcd7137ddf468b62e5615c3c46f7e
-6	9	the gh fake, operation by operation (#3551)	768bae24ec1dc488ce67466f90bb55eacb5b7fc6
+2	3	isolation	515032bd4fc32da75de21c0eedd643e862a3d360
+19	15	isolation under a git hook (#1905)	35f86424bbb12bbb8e632b51969bdbc47308e9ff
+21	24	the section filter (ORCH_TEST_ONLY, #612)	2a17834c11c820c3decda2011fdfa6b48581ebdd
+12	14	quiet mode (ORCH_TEST_QUIET, #614)	4100c3c77ce578a6223b24e690ef49d34d92d318
+247	81	the parallel runner (ORCH_TEST_JOBS, #780)	d46e7b212b2beaff6d351ecaad880cd5326273ae
+21	35	the parallel runner's start order (#2857)	24f3031be75cb1a6895308aee7cf9da472bfbc5d
+144	143	the shard setting (#2859)	e24f280cb0dcaaa4f453dd8ce7d56585dd487551
+21	26	the seeded start (stub cache)	bf7197e48dad2434e4deee70b1632a9e447c8419
+341	284	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	7c18ca2fba1b8dc7fee520c27490c394b4dffd58
+5	7	assertions in a subshell (#1904)	34c2cd5e5c0cd4ab21489cdf76693ca41135caed
+2	3	the standalone suites' tally (#1904)	920fb1ef303bcfa717825c48d90afa818f4577e9
+21	26	the section files (#932)	f821bae7090a918325b98d2750de4eadd74cf7dc
+365	49	the suite's temp root (#807)	8bdc926450e99b087eb25dea1b355b2382a963af
+2	3	the real-gh guard (#779)	58240508755bf097c180166d526e1dd8df861655
+58	47	all.sh, the single entry point (#615)	25ae006f6076967e59cf78ca1e4b3c712bdd42a5
+1	2	all.sh's suite list holds every runner (#1941)	4ac3ec66ebe302a02caf0627903c67622533dab2
+550	189	the job pool (#2022)	e3f2cf2660017e623116bd714d44002448d4090c
+1	2	the slot fd contract (#2300)	6e5ad96592f5f3bf9119e9019ba96b31965c6262
+73	31	the test runners' CPU load (#1586)	a8f0dd8d22fae397dd593226410a4b3511d5507a
+2	3	shell code (#1411)	d6f0b5684eb985877391eac85d5f85833f476f05
+48	49	test-helper placement (#1006)	9fa9ce9e8bdaa098b1398be4a0f858e689d9435e
+25	26	helper body copies (#3170)	c17691d78de45d05e57e5bb3d0a2706afd3e8783
+35	36	gh op placement (#1037)	ea3237a8c86e6fa269bbbde551a74dcc88adf3a7
+4	5	marked comment prelude placement (#1853)	c82cf7623be19b2a4f0f5ef61192bbda043ed69a
+14	15	comment reader placement (#3085)	096f0e3ca64ee96e61506ef207e1de781487e079
+9	10	orch_load before cross-module reads (#2868)	d335c2b84d813749699f53bf3a211c145840a9ee
+5	6	on-demand sourcing variable (#2820)	ce0c1d9dacf7454faeb8f75d8ecb968d94d39c59
+2	3	declaration substitutions (#1327)	4bc6af8c075fa3e228d591c36e7b5295c2f26169
+12	20	the helper index (#1144)	bb8ef87a7a53d024a8e9ff715cde112a87c59eb5
+1	2	stand-in adapter (#2465)	ce60dec4a1298c84a2ce5ae1ed245aab5549a7c5
+1	2	git env clear (#1905)	2052083fded3c2e6d1aa8fadec0eec89e399e3fd
+4	5	runner git isolation (#1905)	01fbd5362c760f5e032f5718bfce5059936d5050
+1	1	the background child start (#3025)	e76c57b4f833ba908735ba800db723cc5b722d13
+2	2	the suite start (#3582)	8b728fac06f79e5eb1b689336897e6ee0647884a
+9	9	the pytest suite (#3912)	a0897fd9267c334bd1bb5ffa32e987b1ccf1f4ec
+3	4	the counting fixture's stdin counter (#3434)	0d610419ca21e2a6e7c93f257e8571c8565d04f3
+97	118	affected.sh, the ticket verification (#2023)	32ce01a5a0316ce4c2bc46b4aa13d1b6bc9ca324
+6	7	the row rule (#3549)	c89e784b702b9ae0654beebb22547dd9c7ee68fd
+9	11	the shared test support, function by function (#3550)	e009c6a49b809e560893b50abf39c3b0c6ca4abe
+6	9	the gh fake, operation by operation (#3551)	908597903fef76669a0b925147633b574a128918
 92	94	autopilot	646765a3ac0b2dbb30b56aae8d131b311088b8de
 18	21	autopilot rounds, budget and start	4bf188e50b694a0173cd96cfac049088185707a5
 24	27	autopilot ask and answer	87016fa65f52cd0d02cff1705e656ffc138978ba
@@ -81,22 +81,22 @@
 14	15	base	07ff5508f721d1922536c4537214f701c52d53dd
 38	31	a flow's base branch	dc1b95f862cec0114a7a0b7a3212313d50975422
 3	4	base set on a truncated state.json (#1929)	de4767097a86d163c76e27f57e97f2f368040804
-15	11	branch create	b7221d66f04927e991b13b130cd1c81993375451
-15	11	branch off	b1f54dad6aa911a1959b09c1b11ab0dda7467623
-8	9	a quick implementation's base branch	071c11e9c1b0b7aa128f85f544348e5d412f09ed
-6	7	a quick implementation's base SHA (#243)	359bf44d38cc6e4c99d92dd7d8a55d2d1563ea83
-12	8	plugin-made branches have no upstream (#1152)	39dc7d399c2b04130bc132b9316d76bc8c3a3aa6
-11	12	branch retire	af60b35c67e6303919fb354a9c7d74369b536835
-2	2	branch_records_base (#1713)	c09c10645d92e2b14d600b7d317df74a9f46e8ab
-34	36	branch sync (#792)	ca51760297b001871483b0ac989250af914485a5
-17	15	branch busy (#1201)	e67c95910e4be6d84770d9bbb6e591a0d5e5f759
-20	11	branch off and branch create refuse a busy checkout (#1202)	f3fe34fb5d29ee9c90c2a053381aca0dda78fd7d
-21	19	branch create on a restart (ADR-0054)	0a52779bad77123597b85aa85a918b91caf0eaa0
-43	27	branch create off the flow's branch (#1911)	19767585136b3fe0f9be2410a5523d2ec87a66cd
-11	11	the fork start point is decided where origin is asked (#1930)	70dd514017b5080654504f79f9824d4d7fa7ecf3
-1	1	branch: unknown op	5d401f7811640cc890f262296a8249ead5f5aadc
-3	4	branch retire beside a same-named tag (#2337)	cd9f5a31a32394329c96cd0210dfbf06ce2adc7e
-10	7	branch create and branch off beside a same-named tag (#2337)	5d2e10dafd695db147cc55e68378f5f8ea7ab583
+17	12	branch create	3b232476eb90f5bb6dea81ee318a669e3c8d0824
+17	12	branch off	c0d85f0ee6d15abb769f461af78850a8567793c7
+8	9	a quick implementation's base branch	72cd3c4294e0f50c40c8514eb5b489c936d5a82c
+6	7	a quick implementation's base SHA (#243)	1b44b1830c22d83a34179c5fb2f11f1b6f3aa3e4
+13	8	plugin-made branches have no upstream (#1152)	18b4e5b4861dedfa171a37a2c7d42495ecaac57d
+11	13	branch retire	6e0ef38b0cf48a6cc666d81f317f5aa85247482b
+2	2	branch_records_base (#1713)	ed4dc760c86cd4c995a29e78d9d4ed872e6a95c3
+34	37	branch sync (#792)	d467f34f8556796d7fef47466040a0deb1c97d41
+17	16	branch busy (#1201)	0c7b4220cc2dff1b7797634fa5e01dff178bea8f
+21	11	branch off and branch create refuse a busy checkout (#1202)	3d82b6f5f630347d65a0e535a4e9236d6d19a9ec
+21	20	branch create on a restart (ADR-0054)	0502ccc6f06adb7790af1e0dedc61c05d112f318
+43	27	branch create off the flow's branch (#1911)	4b2734aed8e4c43aa0c08fe7ffe08cec57f1781d
+12	12	the fork start point is decided where origin is asked (#1930)	336eb38234f0caf884f611d25ac35370884d060d
+1	2	branch: unknown op	b1229665941ea3f9f33a2166c5fbf7ffe117f0bb
+3	4	branch retire beside a same-named tag (#2337)	bee77fb4fde9e8669e8930548ab1263c3ae0304f
+11	6	branch create and branch off beside a same-named tag (#2337)	b9d8506a0e6e551181f369b4f52eb5ffc23f10aa
 14	15	checkout (#1078)	fcf77c433fd8f107550a2cadbac96af60bcf2952
 3	4	checkout current branch (#1079)	d402f627ba50a3c716ac0ac24115f71bb152fd28
 24	13	checkout busy, redo-retired branch (#1981)	0608e4d5c7b58927eb7859c5d847edb713e43621
@@ -113,41 +113,41 @@
 1	2	capture_err and capture without a temp file (#1780)	fc19f584557286e04c9abe1748bf4408b90215bf
 7	9	capture, capture_err and file_read	15f31dc392fbcce33a8210b2b13e103e6a539901
 0	1	die_hinted and die_opt_check	a31d5ea9ef99f315cf022f51ad5894482feffb9e
-2	3	host detection (host.sh, #281)	a9cfcd11f81e5e9a41c296ad7d50186312744c8c
-8	9	doctor.sh is a one-way dependency (#281)	f58369151c5455f43fe24c1c8448c3a3b07c3b9d
-185	196	doctor	a320eb67a08a1df9a55c3396d49495e43b3af635
-7	8	doctor: python3 check (#3912)	4ddad4977c95823d86cb44fe43ac5b3342e2b792
-56	61	doctor: host (#128)	978721e4fb1dd1e01c15c20e997aaa02755fc8df
-114	128	doctor --flow	f097bec748999080d6e58cb1367bec7d83fef5b5
-52	58	doctor --env: finished side checkouts (#727)	6c5fffe7d725910de46bf5e712c18cc5800073b6
-13	16	doctor at the review phase	3510b3a381c81866698adf3212d7c6f98ee07a04
-8	9	doctor: upstream beside an ambiguous origin/<branch> (#1331)	b3dc4364f1c0cff88a7920ccac55184fd86bab8e
-52	60	doctor: review terminal check	d8c2ba30483cff780da730f8f12a6144d2862f49
-12	14	doctor: review budget check	6c9474b53b64b286d26c1634b4114e508e0d52ba
-27	32	doctor: review ci check	7961e080062a591804d0685fed4615ef159173d1
-106	113	doctor: review checks bridged to Python	8a12b55b426337fe95978c0a203f9081de9769f8
-26	31	doctor: review draft check	be90a88f29d7c5361fd9c3017505e6bb361b65c8
-21	24	doctor: phase-listed flow checks	4591ec1c5aeefa7f99c9e6cd525179a50341c58e
-16	18	doctor: base branch check	3ae622c4d1660952229a78f8006859988f469330
-2	32	doctor: agent settings check (#1358)	ca9bf3758b36e9dbe770f8d0f2db797ce978b8be
-55	46	doctor: Junie session and log (#1449)	8eeae467d102184560c2700a04b073ef79cd26fd
-25	27	doctor: Junie agent settings check (#1448)	80f3e548acbebc9e69c558300e33505c15da8fb3
-30	33	doctor: autopilot phase label and claims (#1457)	29e0ceaeea2f72133dc0a9a8d72d215082bf1105
-14	15	doctor: autopilot side-checkout flows	70774bcff127d83b28113b99eb16a9bf6f84bc27
-2	31	doctor --flow: autopilot handoff comments (#1457)	ef9e3a39700d435374b58022a8527ac9eeb5bfbe
-5	6	doctor: phase label in the repo's casing (#1943)	439d8300e44cf6f57bfd5819f438efc1316b9677
-6	7	doctor --flow: a deleted flow branch beside a same-named tag (#2337)	386178ed2be19d9f8c1319452be67961840082f8
-5	6	doctor --flow: a side checkout with a truncated state.json	26cc4dd0fcf25711a732dd2224f5ea3e9768f108
-23	25	doctor --env: ssh alias hint beside the gh auth check (#2585)	83148bc27e097c0a3ff9b5816270cd56defe8fa3
-43	49	doctor: one issue read and one PR read per run (#2554)	6404461c4732a0edfc319f0615f334ea8649fed0
-2	3	triage_label_into: parse once, later lookups start no command	fff1e7d366f30e7ec55e7105ab1b6fe2b53e152e
-11	9	doctor --env: git processes per worktree	9ecba8fdb057ab847f76e8faaaf52cf9588882f1
-12	13	doctor --env: Standards declaration check (#3358)	2c10a9f6b1a3fcaa8ce6d4ec0d7a1170ce002a9e
-11	13	doctor --env: glossary check (#3358)	199e2e69a5f2563301770df70cd879c66331db85
-5	6	doctor --env: glossary check without python3	4094529f9dc5deed0029e710eca2b83e78f5d316
-0	10	doctor --env: ADR directory check (#3358)	90f2e5fe47ee6a4fb9618720cc454391fa820037
-30	33	doctor --env: verification lines	4cb3cfb283efe42c5d0b75d14c23095db419ea48
-52	58	doctor --env: verification commands (#3346)	cf7c5eb67bf98108a3aa7ac69496c9a7486d783e
+2	3	host detection (host.sh, #281)	613677e6fc29561fb10f872b400259b3c89eeb7b
+7	8	doctor.sh is a one-way dependency (#281)	42da19b14ccd5bb084fcd8281cfb5f4bebe322ed
+216	228	doctor	bef2566bedd52402bad78e86b8e939030e631474
+7	8	doctor: python3 check (#3912)	987aae398592d452b3375a1624de5ab4cc0f03dc
+60	66	doctor: host (#128)	da414abe5b8318a4720ac9868911c439ba7f3583
+126	140	doctor --flow	d9bf0337a6e5f8859c0d5072f2735cd8d133cd24
+54	58	doctor --env: finished side checkouts (#727)	b4d4ff980d407a146915899e9a0b4c0d0d91a459
+15	18	doctor at the review phase	27ee05d9c7c73637c7e8b6c94521b748955b122a
+9	10	doctor: upstream beside an ambiguous origin/<branch> (#1331)	9989b3c62b57be4a8b1d8029ac5f3b2af379ba82
+54	63	doctor: review terminal check	8994a7f1e5739066610e2cd485646424717c6cf4
+12	14	doctor: review budget check	a157062f9eaf729bfc983ab3c8f3348c24fc3801
+34	39	doctor: review ci check	43c5652c599238e87a9666a4d2379d098e1194ee
+120	128	doctor: review checks bridged to Python	66bf651fa5c400fc5a6e6201c91b7ddaf2c006d1
+32	36	doctor: review draft check	57b68490c8b3c26cfca11491e7e8ef1933cc99c5
+22	25	doctor: phase-listed flow checks	6cf428636abf22e2597c30d5f37e2c4ec770b5e9
+17	19	doctor: base branch check	8d52b746a952f55e1b193648f92adb88be8171f5
+27	30	doctor: agent settings check (#1358)	88aed556a2d3d5d95baeccb544beb8378dbaddf0
+3	43	doctor: Junie session and log (#1449)	a108d377645a9067c79a406df4f016fa401e54ca
+26	28	doctor: Junie agent settings check (#1448)	1b7989b3818bea16c4beca825fac780cd8458147
+35	38	doctor: autopilot phase label and claims (#1457)	8a6bfdff881f61673c301354effac8937d690cd0
+14	16	doctor: autopilot side-checkout flows	2305da5e3a5cc0b0f78d17f046bccf4368df3fdc
+28	31	doctor --flow: autopilot handoff comments (#1457)	0b4a28f28a7d0b0923ed68d7f4aa440b36087249
+5	6	doctor: phase label in the repo's casing (#1943)	720ab1b784e23e25b0bc5ddd428244cb1f71a280
+5	6	doctor --flow: a deleted flow branch beside a same-named tag (#2337)	4f329099295cae9e43df817ad50faafd7d61ec04
+5	5	doctor --flow: a side checkout with a truncated state.json	1a7a157f8c9acfeaeb323103be89e329f1dbaa30
+25	27	doctor --env: ssh alias hint beside the gh auth check (#2585)	633e0e8e47a97335cb0679cb640af1880115bef5
+50	56	doctor: one issue read and one PR read per run (#2554)	bdb51be531c1b6ff1b5f5ae732421a7b01bc2df7
+2	3	triage_label_into: parse once, later lookups start no command	3f860b8fd30918d7a29e05b92481c50ff8ccec10
+12	10	doctor --env: git processes per worktree	47b1af3680cb73326c566e8b9892cf93edec9a3c
+13	15	doctor --env: Standards declaration check (#3358)	610d1ac41455a131e12f409ea45c1f693d6eaad6
+13	14	doctor --env: glossary check (#3358)	b695e04afa9ccaa59d7f2a15533d5d92ff0147b8
+4	5	doctor --env: glossary check without python3	393fc94a3f088abc522d1c8e48346e18fddb6dfd
+0	11	doctor --env: ADR directory check (#3358)	576d070a87bcc329aa68995e430eddfb87bb9fec
+33	35	doctor --env: verification lines	6801d00cfda73740f42f41ccc6243f1ed39c9ed4
+58	61	doctor --env: verification commands (#3346)	0b18d04c3d4cd9f1bff184fb42a129a0f9b46a17
 0	1	is_filed_severity	41fb54217cc90b7a75a37b3ee336945167710410
 1	2	severity table	cbcec87893fb4d691f66b67cb960e1bc2f27d3d3
 3	3	category table	4ddf897afb91fdb5736b0ac6486b6b06637af785
@@ -157,10 +157,10 @@
 2	2	gh_reason and capture_err (#846)	0d96f6f7bde2b654bb58a1c98b53fdeb12283ad9
 1	2	label_listed	a4944cc37004a436b3273b1e242a8617a5e2cc1c
 18	19	gh failure verb and readers (#1022)	8ec16b064e87fc5ede895234c3fba4f8ca36407b
-16	20	gh fake (#280)	99998e2be14ba3761b93117737ac1a5afba0d7b5
-150	165	gh adapter contract (#280)	182f216bbdae9256f73b183fde310fdcd9d93a4c
+15	19	gh fake (#280)	777285f292b1718357220e4585676cdbb76e7b8c
+114	127	gh adapter contract (#280)	dcb8418d86a66644b0aa8fcf3a0de1aadc584f50
 16	18	claim adapter operations (#1454)	faa35fc415d08eda21b71812e5e6e5c46b39b2d4
-4	5	label casing (#1943)	77c8ad3cb673e3990c493ea2d27e62d875a97b65
+3	4	label casing (#1943)	56ac6b95b254e0b384f3125adbf598f09b0586e9
 59	44	gh rate limits (#2577)	6b3262dea293ac5a7afef69cac530ad4d3f2c2f7
 14	15	gh rate limits: the GitHub pause and the hit file (#2577)	b4b9c15807b83d1efd54e8267a594d247da1655d
 2	4	handoff path	f53a3d84f5d17aa6675f4f58c4cf7689b1d9a208
@@ -185,57 +185,33 @@
 29	25	marked-comment module	f6f5c1a7f89a0d4a6d8a53403309d4f68d4fe0c2
 9	10	repo show	03b579d082d6e4e5353a860b91cb90f1006013d0
 8	9	default-branch	2ab1b9bd03b98654ef71dcf00efa0fd1f0f07c16
-10	11	review ready's pointer to /orchestrator:finish (#727)	115340a40e381431178120078b97a3ad283e620b
-7	8	review begin	6af350a92795d9993701a07a4c2dc7d28b4cca64
-3	4	review path	7aedaa864235d8230d7a0ed8d2ca405445035a6c
-4	5	the multi-loop machinery is gone	2abdf290a612c2206253179c9445eeef4a0856dc
-50	58	review file	899dcfe07a3efa0ee24a4f109ab6a317aa8cd33a
-11	12	review ready	de3fef2429139f3fd058556a972ce00247c0ff58
-148	93	review ci	c743ea7679c2d035b24cda7dfbf289dd93ea2ef4
-17	16	the grace counts from the push (issue #475)	5392664110acf7349bbbb41221acb92927c14596
-17	19	review ci --no-wait	419b66e50cc5f9942bf3fcdd79b1be44a65d8b3a
-6	58	the grace is skipped on no evidence of CI (issue #476)	09967d800b56e1188df2ae8d61d28f607d7a1ad7
-15	16	review rerun	50c7b9f5d2355d5daa3b098ec61d42aeb477cd52
-8	9	review ci-log	b5ed5f55bd744265c82a1669a78542cb90e7d829
-1	20	review terminal	56a013e8e9eff3f66ccdbd5c99a8a0e877b3d8a6
-22	23	review resume	4a965ee6cc16e49060669e3dd1d0ce298d33d023
-4	5	review retire	5fcd3acf2bb05c3cfbe7edb119d82c1fb5da9d5f
-10	12	review known-items	07cb4ca427633fe6cb5b00772ebd2e61c08f8c26
-7	8	review ready in an autopilot flow (#1457)	477cd12dd2192294615884b374b91ea61211927e
-7	8	review known-items in an autopilot flow (#1457)	c801b0daa3d8e2789edd6e88ee6b1387479333c3
-20	24	review standards (#1532)	1723efbdc7e11664f29783c6319556feca737ccf
-74	77	review ready with a failed phase write (#1931)	b1f5212516369d62226ca7bda628fa68d248c86d
-7	8	review reads its Flow state once	2a34f39ab7250bb5fda94d709e828e0392758e7f
-4	5	review_terminal_record fallback reads once	3fd265f265845eb0c02bdc4660c63f2e9ef0be2d
-7	7	review terminal mid-redo (#2569)	fb2d7c04533ca2a7a4f24b62a8b1f860a6d97890
-14	11	review ci <pr>	9f2ac1ea5d25271ae033e287a23d02c99fd9cfff
 7	8	Session log module	ac33d04d5c7aa3128ec5db232b1d4a7de9ecacef
-65	50	side-checkout (#722)	3ed9cd6604e4ae1b8e5f4287b54c5144ee8ebea3
-73	62	side-checkout archive and remove (#724)	da15c6a82f6693c86359f8b5334b077f90dcc2ae
-61	64	side-checkout prune (#726)	2bda70fa48dd4b380007de96e4897b5b0aea9095
-86	64	side-checkout prune: edge cases (#726)	277ca22be1d9ae955700564c30434d572674a41e
-18	19	archive keeps flow-less directories (#1247)	1cf41fafd151a6478b41bf1fd7aff5efd9847669
-30	34	side-checkout prune: a covered branch tip (#1906)	8ebe0cf87526357849fc8acf8dadda9117ca2fcc
-5	7	side-checkout prune: fork PRs are not proof (#1979)	004dd30e3e0deb54b95c8c79110e26cd2ffc4014
-10	112	side-checkout prune: the merged-PR close backstop (#2477)	3b431472c7770655d7db67d311496872803eb87c
-2	3	side_checkout_marker reads the worktree's git pointer	7605e77ff7fdca5853e0a9cc368065fe764cb65e
-10	12	side checkout marker issue: reading without re-classifying (#3073)	4d201251bfb73c22114fdcdc86ae808fb3930ed5
-5	6	archive reads the flow's slug once	d1e47a75531129e6123579f59802dd69c84d1d76
-6	7	side-checkout: the default branch is asked for only when needed	5f8f132611fabd4e0dede5d1e6b3db76ceff3111
+40	44	side-checkout (#722)	b91f88c9c0a097a1493d23434220efcae4c616dd
+61	66	side-checkout archive and remove (#724)	05602a2a988b5e813a82f015c269684227c9a9d5
+54	58	side-checkout prune (#726)	de331054c2592b398596a4da04d6cc2ca38a1286
+73	78	side-checkout prune: edge cases (#726)	9dc7ac3dd7886524d17a7833bd2cabb851d19668
+11	12	archive keeps flow-less directories (#1247)	b5a2a1d4acf6b0db8e2f8786b6f2a051e6b17a33
+2	33	side-checkout prune: a covered branch tip (#1906)	76355df4a335bed0986fdc8f619c49c5e9f21497
+9	11	side-checkout prune: fork PRs are not proof (#1979)	45894c90a22ea27a18265594df3f7faa9fd2234d
+111	117	side-checkout prune: the merged-PR close backstop (#2477)	a4d1af9ecde7b49ab1efec47087c28af99d86d0f
+3	4	side_checkout_marker reads the worktree's git pointer	d42c9eb47ccab8ef6eef81ae78ac61466360c652
+11	13	side checkout marker issue: reading without re-classifying (#3073)	3418e88650a411c5faa51f626ad727f1b6e1d642
+5	5	archive reads the flow's slug once	94f13f7560edcc82735aaaf192ec53e024522744
+9	10	side-checkout: the default branch is asked for only when needed	6ea97ffd2d139cf260ecc85533473cce052c65c2
 30	26	Standing module	7360efe83df71e2983783f4ce7fefa500261a7d4
 101	76	Standing transitions	f91fc6159d2633a39ed09251f4e53d4df65eb404
 2	3	standing_ask reads the issue in one jq	323242a91458cfdc0852ce80bf275f3a21daf5f0
-17	15	state	fa462da9238eabb9c0f0f6ac45666e5679118e51
-20	15	a flow from before the budget shipped	cc2ff1d9c66526ce208a626b438813f3a5f40235
-9	8	state get reads every key with its default	cfb71961bbe67a8757339ab99dc00651478e38f9
-9	8	the state writer accepts exactly the table's phases	100d27fcb26efab387e765b12b1244e594e6e93f
-6	6	state.json schema	2c207fb6be571fbcf26e72bafb89f04196c0854c
-4	4	state set on a corrupt state.json	9a4b99f6a3c2c6a9792a1d53c6728bc2b764464f
-15	13	the Flow state module, sourced alone	552577db3d171425f676e2d8af1d68c0fe9e5ffe
-4	4	commands on a truncated state.json (#1929)	d432015660f7951036578b4d1b574a2557e0aa8b
-6	5	the shared and own-checkout readers on a truncated state.json	846c5bc308df9afc9b7fcaa99252bc3119fe0f58
-6	5	state set with a failed write (#1931)	f303871559a3140030c8709a2c17427c0ceb1d8d
-11	13	the entry read and the required-field helpers	e74a48bce1228a68d88a641a9a8382349f20577c
+14	15	state	bb63ea2e6798f59464c49aed488aa7e2facfea34
+16	15	a flow from before the budget shipped	a3f691e467a159fcb39fa48944e069cc255613f7
+8	9	state get reads every key with its default	b5f343d052ca2b51cda708beac891d167f27b989
+7	8	the state writer accepts exactly the table's phases	ac28efa7ed42b667f4959d06a9f96db5762477fe
+5	6	state.json schema	6661a11bb75a2ff78a0d1f76aa74f6dbdbd26e5f
+3	4	state set on a corrupt state.json	3cd67fa9586f89fdf2c745657ab7d2db67658bdc
+13	14	the Flow state module, sourced alone	d32e874c456f891b4684463e4349638f2bb20a62
+3	4	commands on a truncated state.json (#1929)	23b30b950306b3f50653bc6c2840b172fbfa4bdb
+4	5	the shared and own-checkout readers on a truncated state.json	f78f676f78e4986a0086789c23c984857437fd5a
+5	5	state set with a failed write (#1931)	6af0dc7948f3cd9f13b141b5b7376303f6f73bd8
+11	13	the entry read and the required-field helpers	a0fc92334a7c5cd8adf4329ad8143f2b4eb469a3
 19	21	trust module	fa9ddfe15cdbea37ab5523493c97f1e967397961
 89	19	wait: a call's block is wall time	90d20fdb4b55a5964e512640526d36f24c6b6f96
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594

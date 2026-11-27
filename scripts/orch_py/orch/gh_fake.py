@@ -44,10 +44,10 @@ EPOCH = "1970-01-01T00:00:00Z"
 NO_HEAD_OID = "0" * 40
 _RUNS = "https://github.com/acme/widgets/actions/runs"
 _EXT_CI = "https://ci.example.com/build/9"
-# gh's line where a PR has no checks, as bash fake_no_checks prints it.
+# gh's line where a PR has no checks.
 NO_CHECKS = "no checks reported on the 'topic' branch\n"
-# The checks each scripted answer stands for, as fake_checks_answer prints
-# them; boom is a connection error, and none and empty no checks at all -
+# The checks each scripted answer stands for (checks/<n>/<scope> in the store
+# layout); boom is a connection error, and none and empty no checks at all -
 # none with gh's NO_CHECKS line, empty with no word from gh.
 CHECKS_ANSWERS = {
     "green": [Check("pass", "build", _RUNS + "/1/job/1")],
@@ -821,8 +821,8 @@ class FakeGh:
     # --- CI-evidence operations ---
 
     def _stored_lines(self, *parts: object) -> List[str]:
-        """The lines of the store file at <parts>, as the bash fake's `cat`
-        prints them and a capture reads them; none where it is absent."""
+        """The lines of the store file at <parts>, as `cat` prints them and a
+        capture reads them; none where it is absent."""
         return real.lines_of((read_raw(_store_path(self.store, *parts)) or "").rstrip("\n"))
 
     def branch_required_checks(self, branch: str) -> List[str]:

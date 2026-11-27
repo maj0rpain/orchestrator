@@ -240,6 +240,18 @@ def test_pr_comment_writing_into_a_closed_pipe_dies_of_sigpipe_silently(
     assert comments_of(seed.store, 57, "prs") == ["A note.\n"]
 
 
+def test_review_path_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_path):
+    """review path prints the record's path, as bash's printf did, so a closed
+    stdout pipe ends it silently - once the review directory is made."""
+    git_repo(tmp_path)
+    hold_flow(tmp_path, slug="x", phase="review", issue=7, iteration=1)
+
+    run = into_a_closed_pipe(tmp_path, "review", "path", "1")
+
+    assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
+    assert (tmp_path / ".orchestrator" / "review").is_dir()
+
+
 @pytest.mark.parametrize("call", [["route", "show"], ["--call", "route", "run", "show"]],
                          ids=["noun", "call-mode"])
 def test_a_noun_converted_earlier_keeps_its_flush_failure_on_a_closed_pipe(tmp_path, call):

@@ -87,6 +87,17 @@ EOF
 nojq_path=""
 on_windows_bash || nojq_path="$(gh_fixture && path_without_jq)"
 
+# review_flow <slug>: fresh_flow, then on to the review phase - leaves a flow
+# named <slug> at the review phase with the plan, spec and implement handoffs
+# complete, cwd inside it, and whatever healthy_repo exports.
+review_flow() {
+  fresh_flow "$1"
+  complete_handoff "$("$ORCH" handoff path spec)"
+  complete_handoff "$("$ORCH" handoff path implement)"
+  complete_handoff "$("$ORCH" handoff path review)"
+  state_fixture phase review
+}
+
 # --- host detection (host.sh, #281) -------------------------------------------
 echo
 echo "host detection (host.sh, #281)"

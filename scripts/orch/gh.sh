@@ -311,12 +311,11 @@ gh_or_die() {
 #   adapter_issue_created_at, adapter_issues_labelled_rows,
 #   adapter_issues_any_labelled_rows,
 #   adapter_issues_open_rows, adapter_issues_titled_rows,
-#   adapter_issue_create, adapter_issue_body_edit, adapter_issue_comment,
+#   adapter_issue_body_edit, adapter_issue_comment,
 #   adapter_issue_comment_url,
 #   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
 # - pr: adapter_pr_create, adapter_pr_labels, adapter_pr_body,
-#   adapter_pr_comments, adapter_pr_refs, adapter_pr_url_head,
-#   adapter_pr_ready, adapter_pr_draft,
+#   adapter_pr_comments, adapter_pr_refs, adapter_pr_draft,
 #   adapter_pr_state_draft, adapter_prs_open, adapter_prs_open_bodies,
 #   adapter_prs_open_mergeability,
 #   adapter_pr_diff, adapter_prs_merged,
@@ -329,11 +328,8 @@ gh_or_die() {
 #   adapter_blocker_add, adapter_blocker_remove, adapter_sub_issues_supported
 # - repo: adapter_repo_default_branch, adapter_repo_local_default,
 #   adapter_auth_status <host>
-# - ci: adapter_pr_checks, adapter_branch_required_checks,
-#   adapter_branch_rules, adapter_pr_commits_checked,
-#   adapter_run_rerun, adapter_job_failed_log
 #
-# ORCH_GH_ADAPTER is an opt-in test knob in the same spirit as review.sh's
+# ORCH_GH_ADAPTER is an opt-in test knob in the same spirit as review ci's
 # ORCH_CI_* ones, but read differently: not a value substituted at load time,
 # but a file sourced immediately after the real adapter functions are defined:
 # anything it redefines overrides the corresponding real function for the
@@ -342,7 +338,7 @@ gh_or_die() {
 # is identical to before the seam existed.
 #
 # Operations under the #280 contract - the label, issue, PR, sub-issue and
-# dependency, repo, and CI ones - are named for what their callers need and own
+# dependency, and repo ones - are named for what their callers need and own
 # gh's flags, --jq and GitHub's database ids: each prints plain text in the
 # shape documented on it, and on a gh failure returns non-zero with gh's stderr
 # passed through.
@@ -739,21 +735,6 @@ adapter_issues_open_titles() {
     --jq '.[] | select(has("pull_request") | not) | "\(.number)\t\(.title)"'
 }
 
-# adapter_issue_create <title> <body-file> [label...]: files the issue under
-# every label named and prints its number alone. Fails, printing nothing, where
-# gh succeeded but printed no issue URL.
-adapter_issue_create() {
-  local title="$1" body="$2" args=() l out n
-  shift 2
-  for l in "$@"; do args+=(--label "$l"); done
-  out="$(gh issue create --title "$title" --body-file "$body" ${args[@]+"${args[@]}"})" || return
-  if ! n="$(url_number issues "$out")"; then
-    printf 'gh issue create printed no issue URL: %s\n' "$out" >&2
-    return 1
-  fi
-  printf '%s\n' "$n"
-}
-
 # adapter_issue_body_edit <n> <file>: replaces the issue's body with the
 # file's contents. Prints nothing.
 adapter_issue_body_edit() {
@@ -865,9 +846,8 @@ adapter_pr_comments() {
   gh pr view "$1" --json comments
 }
 
-# adapter_pr_refs <n>: review ci's read of the PR's own head and base (issues
-# #475, #476) - the SHA and branch its grace is anchored to come from the PR,
-# not from local HEAD, which can be anywhere by the time the loop ends. Prints
+# adapter_pr_refs <n>: the read of the PR's own head and base, from the PR, not
+# from local HEAD, which can be anywhere by the time a caller reads it. Prints
 # the head SHA, the head branch and the base branch, an empty line for one
 # GitHub leaves unset.
 adapter_pr_refs() {
@@ -881,27 +861,6 @@ adapter_pr_refs() {
 # caller-named variables, on gh_lines_read's contract.
 pr_refs_read() {
   gh_lines_read adapter_pr_refs "$1" "$5" "$2" "$3" "$4"
-}
-
-# adapter_pr_url_head <n>: review file's read of the PR's canonical URL and
-# remote head commit (issue #1936). Prints the URL on the first line and the
-# head SHA on the second, an empty line for one GitHub leaves unset.
-adapter_pr_url_head() {
-  gh pr view "$1" --json url,headRefOid --jq '(.url // ""), (.headRefOid // "")'
-}
-
-# pr_url_head_read <n> <url_var> <sha_var> <err_var>: reads PR <n> once through
-# adapter_pr_url_head and writes its URL and head SHA (each empty where GitHub
-# leaves it unset) into the first two caller-named variables, on
-# gh_lines_read's contract.
-pr_url_head_read() {
-  local __puhr_rest
-  gh_lines_read adapter_pr_url_head "$1" "$4" "$2" "$3" __puhr_rest
-}
-
-# adapter_pr_ready <n>: marks the draft PR ready for review. Prints nothing.
-adapter_pr_ready() {
-  gh pr ready "$1" >/dev/null
 }
 
 # adapter_pr_draft <n>: turns the ready PR back into a draft (issue #967).
@@ -1167,111 +1126,6 @@ adapter_repo_local_default() {
 # checks every account on every host otherwise, and one stale account fails it.
 adapter_auth_status() {
   gh auth status --active --hostname "$1"
-}
-
-# --- ci operations ---
-
-# adapter_pr_checks <n> <required|all>: the PR's checks - the ones branch
-# protection requires, or every check on its head - one per line as TSV,
-# "<bucket><TAB><name><TAB><link>", in gh's order; an empty link for a check
-# that has none. Nothing at all on stdout where gh reports no checks, or no
-# required ones, with gh's line passed through on stderr. gh documents exit
-# 8 for pending checks, still answering the JSON: that is read like an exit
-# 0, and where it leaves nothing readable, a single pending check with no
-# name or link is printed. Fails where gh answered with something jq cannot
-# read.
-adapter_pr_checks() {
-  local args=("$1") err out tsv st=0
-  [ "$2" != required ] || args+=(--required)
-  gh_capture out err gh pr checks "${args[@]}" --json bucket,name,link || st=$?
-  case "$st" in
-    0|8) ;;
-    *)
-      ! grep -q 'no checks reported\|no required checks' <<<"$err" || st=0
-      printf '%s' "$err" >&2
-      return "$st" ;;
-  esac
-  if ! tsv="$(printf '%s' "$out" | jq -r '.[] | "\(.bucket)\t\(.name)\t\(.link // "")"' 2>/dev/null)"; then
-    if [ "$st" = 8 ]; then printf 'pending\t\t\n'; return 0; fi
-    printf 'gh pr checks answered with something jq could not read\n' >&2
-    return 1
-  fi
-  if [ -z "$tsv" ]; then
-    [ "$st" != 8 ] || printf 'pending\t\t\n'
-    return 0
-  fi
-  printf '%s\n' "$tsv"
-}
-
-# ci_api_read <what> <path> <jq> [gh api args...]: one gh api read (the args,
-# a GraphQL query's fields, follow the path), its JSON answer run through
-# the jq expression. On a gh failure, gh's stderr passes through - except
-# where <what> is given and gh's answer names it: GitHub's message for an
-# absence it reports as an error, which succeeds printing nothing. Shared by the
-# CI-evidence operations below; not called from anywhere else.
-ci_api_read() {
-  local err out res st=0
-  gh_capture out err gh api "$2" "${@:4}" || st=$?
-  if [ "$st" != 0 ]; then
-    if [ -n "$1" ] && grep -qF -- "$1" <<<"$out"$'\n'"$err"; then
-      return 0
-    fi
-    printf '%s' "$err" >&2
-    return "$st"
-  fi
-  if ! res="$(printf '%s' "$out" | jq -r "$3" 2>/dev/null)"; then
-    printf 'gh api answered with something jq could not read\n' >&2
-    return 1
-  fi
-  [ -z "$res" ] || printf '%s\n' "$res"
-}
-
-# review ci's CI-evidence reads (issue #476). None of them decides anything:
-# no_ci_evidence judges what they print.
-#
-# adapter_branch_required_checks <branch>: the check contexts classic branch
-# protection requires on the branch, one per line, each once. Nothing at all
-# for an unprotected branch - GitHub's 404 `Branch not protected`. Any other
-# failure, a bare 404 `Not Found` from lacking access included, fails it.
-adapter_branch_required_checks() {
-  ci_api_read 'Branch not protected' \
-    "repos/{owner}/{repo}/branches/$1/protection/required_status_checks" \
-    '[(.contexts // [])[], ((.checks // [])[] | .context)] | unique | .[]'
-}
-
-# adapter_branch_rules <branch>: the type of every rule the repo's rulesets
-# apply to the branch, one per line; nothing at all for none.
-adapter_branch_rules() {
-  ci_api_read '' "repos/{owner}/{repo}/rules/branches/$1" '.[].type'
-}
-
-# The GraphQL query and jq behind adapter_pr_commits_checked. One line, so a
-# logged argv (the gh fixture's) stays one line. A rollup's contexts are the
-# commit's check runs and commit statuses together; null where it has none.
-PR_COMMITS_CHECKED_QUERY='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { baseRef { target { ... on Commit { statusCheckRollup { contexts { totalCount } } } } } commits(first: 100) { nodes { commit { oid statusCheckRollup { contexts { totalCount } } } } } } } }'
-PR_COMMITS_CHECKED_JQ='def checked: if (.statusCheckRollup.contexts.totalCount // 0) > 0 then "yes" else "no" end; .data.repository.pullRequest | (if .baseRef == null then "" else .baseRef.target | checked end), (.commits.nodes[] | "\(.commit.oid)\t\(.commit | checked)")'
-
-# adapter_pr_commits_checked <n>: whether the base branch tip, then each of PR
-# #n's first 100 commits, has any check run or commit status. The first line is
-# the base tip's "yes" or "no" - empty where GitHub holds no base ref - then one
-# "<sha><TAB>yes|no" line per commit, oldest first. One GraphQL read; it decides
-# nothing, no_ci_evidence judges what it prints.
-adapter_pr_commits_checked() {
-  ci_api_read '' graphql "$PR_COMMITS_CHECKED_JQ" \
-    -F owner='{owner}' -F name='{repo}' -F number="$1" -f query="$PR_COMMITS_CHECKED_QUERY"
-}
-
-# adapter_run_rerun <run>: reruns the failed jobs of GitHub Actions run <run>
-# (issue #525). Prints nothing.
-adapter_run_rerun() {
-  gh run rerun "$1" --failed >/dev/null
-}
-
-# adapter_job_failed_log <job>: the failed steps' log of GitHub Actions job
-# <job>, as gh prints it. Fails, with gh's stderr passed through, where gh
-# could not read the log.
-adapter_job_failed_log() {
-  gh run view --job "$1" --log-failed
 }
 
 # --- claim operations (#1454) ---

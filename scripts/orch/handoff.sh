@@ -262,7 +262,7 @@ handoff_comment_post_url() {
 
 # The Handoff store: where a flow's handoffs live, behind one interface with a
 # file adapter (interactive: files in the handoff directory) and a comment
-# adapter (autopilot: marked comments on the issue). Operations: path, read,
+# adapter (autopilot: marked comments on the issue). Operations: path,
 # fetch_due and fetched; the retire a redo makes is the Python redo noun's
 # (scripts/orch_py/orch/handoff.py's handoff_retire). handoff_store is the one
 # place that chooses the adapter, per call, so a test toggling ORCH_AUTOPILOT
@@ -272,13 +272,6 @@ handoff_comment_post_url() {
 # in an autopilot session and `file` otherwise.
 handoff_store() {
   if autopilot_active; then printf 'comment\n'; else printf 'file\n'; fi
-}
-
-# handoff_file_missing <name> [<hint>]: dies, naming the handoff <name> (its
-# file name without the `.md`) missing: `handoff not found: <path>`. A <hint>
-# is the part naming the caller's own situation; it follows ` - write it `.
-handoff_file_missing() {
-  die "handoff not found: $HANDOFF_DIR/$1.md${2:+ - write it $2}"
 }
 
 # handoff_comment_missing <issue> <name> [<hint>]: dies, naming the handoff
@@ -359,11 +352,6 @@ handoff_comment_fetch() {
 # whether it is there; it never dies on a missing one.
 handoff_fetched() { "handoff_$(handoff_store)_fetched" "$@"; }
 
-# handoff_read <file> [<hint>]: the dying read. Prints the readable path of the
-# handoff <file>, as the adapter's lookup does, then dies with the adapter's
-# missing message, <hint> naming the caller's situation, when there is none.
-handoff_read() { "handoff_$(handoff_store)_read" "$@"; }
-
 # handoff_fetch_due <phase>: fetches every handoff due at <phase> where the
 # adapter keeps them elsewhere than the handoff directory, reading the issue's
 # comments once. Never dies: 1 when they cannot be read, 2 when a copy cannot
@@ -382,10 +370,6 @@ handoff_file_locate() {
   [ -f "$HANDOFF_DIR/$1" ]
 }
 
-handoff_file_read() {
-  handoff_file_locate "$1" || handoff_file_missing "${1%.md}" "${2:-}"
-}
-
 handoff_file_fetched() { handoff_file_locate "$@"; }
 
 # The files are already in the handoff directory: nothing to fetch.
@@ -398,28 +382,6 @@ handoff_file_path() {
 }
 
 # Comment adapter.
-
-# handoff_comment_locate <file>: prints the scratch path the comment is
-# fetched to; non-zero when no issue is recorded or there is no live comment
-# (status 1); 2 when the copy cannot be written. A failed comments read dies
-# with gh's reason (or the parse-failure wording), never returning a status.
-handoff_comment_locate() {
-  local file="$1" issue dir="$HANDOFF_SCRATCH_DIR"
-  printf '%s/%s\n' "$dir" "$file"
-  issue="$(state_get issue 2>/dev/null)" || issue=""
-  [ -n "$issue" ] || return 1
-  rm -f "$dir/$file"
-  handoff_comment_fetch "$issue" "${file%.md}" "$dir/$file" || return $?
-  [ -f "$dir/$file" ]
-}
-
-# handoff_comment_read <file> [<hint>]: requires the recorded issue first.
-handoff_comment_read() {
-  local file="$1" issue="" st=0
-  require_issue issue
-  handoff_comment_locate "$file" || st=$?
-  handoff_comment_status "$st" "$issue" "${file%.md}" "${2:-}"
-}
 
 # handoff_comment_fetched <file>: prints the scratch path; non-zero when the
 # last handoff_fetch_due left no copy.

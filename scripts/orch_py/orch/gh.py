@@ -7,8 +7,9 @@ Each owns gh's flags and --jq expressions and answers in Python values; a gh
 failure raises GhFailed carrying gh's stderr, and an answer that does not
 parse as the operation's JSON raises Unparsed. A caller dies through gh_or_die
 or gh_die, or reacts another way through gh_reason. The CI-evidence reads take
-gh api's whole answer, as gh.sh's ci_api_read does, and read it here the way
-its jq expression does, so an error body GitHub answers with is read too. The claim delete is the
+gh api's whole answer, as gh.sh's ci_api_read did while the bash review noun
+stood, and read it here the way its jq expression did, so an error body GitHub
+answers with is read too. The claim delete is the
 one operation the real adapter makes through git rather than gh, as bash's
 adapter_claim_delete is: the claim is a ref on origin.
 
@@ -101,7 +102,7 @@ class SubIssue(NamedTuple):
     open_blockers: Optional[int]
 
 
-# The GraphQL query behind pr_commits_checked, gh.sh's own: one line, so a
+# The GraphQL query behind pr_commits_checked, as gh.sh had it: one line, so a
 # logged argv stays one line. A rollup's contexts are the commit's check runs
 # and commit statuses together; null where it has none.
 PR_COMMITS_CHECKED_QUERY = (
@@ -476,7 +477,7 @@ def _jq_raw_lines(values: Sequence[object]) -> List[str]:
 
 
 def _jq_checked(commit) -> str:
-    """gh.sh's jq `checked`: "yes" where the commit's rollup counts any
+    """The jq `checked` gh.sh ran: "yes" where the commit's rollup counts any
     check run or status, else "no" - compared as jq compares, so only a
     count above zero, a string, an array or an object is above 0."""
     count = _jq_or(_jq_field(_jq_field(_jq_field(commit, "statusCheckRollup"), "contexts"),
@@ -499,7 +500,7 @@ def parse_commits_checked(text: str) -> CommitsChecked:
 
 
 def _commits_checked_lines(answer) -> List[str]:
-    """The lines gh.sh's jq prints for the GraphQL answer: the base tip's,
+    """The lines gh.sh's jq printed for the GraphQL answer: the base tip's,
     then one per commit."""
     pr = _jq_field(_jq_field(_jq_field(answer, "data"), "repository"), "pullRequest")
     base = _jq_field(pr, "baseRef")

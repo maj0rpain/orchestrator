@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # state.sh - orch.sh's state command (state get and state set), with the state
-# helpers every module calls (state_get, state_write, require_state,
+# helpers every module calls (state_get, state_write, require_state_exists,
 # require_state_read, require_value, require_field, require_issue).
 # Two readers, each with a many-key form: state_get and
 # state_get_many, the unguarded own-checkout readers, and state_get_in and
@@ -157,19 +157,12 @@ state_write_many() {
   die "could not record the state write in $STATE - the flow is unchanged"
 }
 
-# require_state: dies unless an active flow's state file exists and parses
-# (require_state_exists, then require_state_readable).
-require_state() {
-  require_state_exists
-  require_state_readable
-}
-
 # The one spelling of the refusal an unparseable state.json earns.
 STATE_UNREADABLE_MSG="state.json cannot be read - run orch.sh doctor --flow"
 
-# require_state_exists [die2]: require_state's existence check alone, for
-# doctor --flow and abort, which must still run on a state.json that does not
-# parse.
+# require_state_exists [die2]: dies unless an active flow's state file exists,
+# for doctor --flow and abort, which must still run on a state.json that does
+# not parse.
 require_state_exists() {
   [ -f "$STATE" ] || "${1:-die}" "no active flow ($ORCH_DIR_NAME/state.json not found). Run $(flow_cmd start) first."
 }

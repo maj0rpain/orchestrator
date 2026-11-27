@@ -107,14 +107,12 @@ branch_is_retired() { [ "$(git config --get "$(branch_retired_key "$1")" 2>/dev/
 # non-zero when none is recorded.
 forked_from_branch() { git config --get "$(forked_from_key "$1")" 2>/dev/null; }
 
-# Name builders. A flow's branch from its issue and slug, its redo form from
-# that and a redo count, and a quick implementation's branch from issue and
-# slug.
+# Name builders. A flow's branch from its issue and slug, and a quick
+# implementation's branch from issue and slug.
 
 # branch_name_flow_into <var> <issue> <slug>: the flow's branch name, set into
 # the caller-named <var> with no subshell. The one place the format lives.
 branch_name_flow_into() { printf -v "$1" 'orch/%s-%s' "$2" "$3"; }
-branch_name_redo() { local _bnr; branch_name_flow_into _bnr "$1" "$2"; printf '%s-redo-%s\n' "$_bnr" "$3"; }
 branch_name_quick() { printf 'quick/%s-%s\n' "$1" "$2"; }
 
 # branch_issue_of <name>: prints the issue number of a flow or quick branch
@@ -159,26 +157,6 @@ branch_kind() {
 # branch kinds.
 branch_records_base() {
   case "$(branch_kind "$1")" in flow|quick) return 0 ;; *) return 1 ;; esac
-}
-
-# discard_own_branch_work <who> <branch> <recorded> <active>: the Discard
-# rule's prelude and the discard in one: proves <branch> is the caller's own,
-# then runs discard_flow_branch_work. <recorded> is the flow's recorded branch
-# and <active> is non-empty when a flow is active; both come from the caller's
-# one read of flow state, and this reads none. Own is the branch the flow
-# holds, in any phase; else, with an active flow, the flow-branch proof dies on
-# it; with none, a `quick` branch. Called as a bare statement, so a die stops
-# the caller.
-discard_own_branch_work() {
-  local who="$1" b="$2" recorded="$3" active="$4"
-  if [ "$recorded" != "$b" ]; then
-    if [ -n "$active" ]; then
-      require_flow_branch "$who" "$b" "$recorded"
-    elif [ "$(branch_kind "$b")" != quick ]; then
-      die "$who: no active flow, and $b is not a quick implementation's branch - nothing was discarded"
-    fi
-  fi
-  discard_flow_branch_work
 }
 
 # discard_create_work <name>: the Discard rule's decision for both `branch

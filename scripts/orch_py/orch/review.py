@@ -1,5 +1,5 @@
-"""The review noun (scripts/orch/review.sh), all twelve verbs: the verb
-dispatch, with its unknown-op refusal and every usage line bash has;
+"""orch.sh's review noun (ADR-0067), all twelve verbs: the verb dispatch,
+with its unknown-op refusal and every usage line the bash noun had;
 `review begin`, `path`, `terminal`, `resume` and `retire`, with the budget
 fallback and its default of 5 (review_budget_fallback); `review file`, built
 on orch/filed_finding.py; `review known-items`, built on
@@ -31,9 +31,9 @@ lines from it.
 run(argv) takes the arguments after `review`, as orch.sh would hand them on,
 and returns the exit code; every error dies through orch.common.die, with
 bash's messages and in bash's order of guards and side effects, in a plain
-and an autopilot session. Each verb reads its flow state once. The bash noun
-still serves the CLI: the package CLI registers the noun, but orch.sh hands
-no verb here yet.
+and an autopilot session. Each verb reads its flow state once. orch.sh hands
+every `review` verb here; the bash noun is gone, and nothing here calls back
+into bash.
 
 Under the verbs sits the review loop's terminal-state read: an iteration's
 record path (review_record_path), the record's Terminal state section
@@ -43,17 +43,16 @@ pre-redo-<n>/ (review_terminal_record), whether the flat record is gone
 (review_flat_record_gone), and the classification itself
 (review_terminal_state), each as bash's, messages included; and `review
 retire <n>`'s move of the iteration records aside into pre-redo-<n>/
-(review_retire), which a redo review makes. The bash copies stay for the
-bash noun until the cutover; tests/test_review.py pins this classification to
-bash's by the golden review records of tests/review_terminal/, run through
-both, and tests/test_review_noun.py reads them through `review terminal`.
+(review_retire), which a redo review makes. tests/test_review.py pins this
+classification by the golden review records of tests/review_terminal/, bash's
+answers while the bash noun stood, and tests/test_review_noun.py reads them
+through `review terminal`.
 
 It also holds the CI gate `pr ready` and `review ready` run before they
 mark a PR ready (ci_ready_gate), with the helpers under it - which checks count
 (ci_counted), one look at them (ci_counted_probe), its classification
-(ci_classify) and the unreachable verdict (ci_unreachable) - each a copy of
-bash's, messages included. The bash versions stay in review.sh for `review
-ci` and the loop until the review noun converts (ADR-0067).
+(ci_classify) and the unreachable verdict (ci_unreachable) - each as the
+bash noun's were, messages included.
 """
 from __future__ import annotations
 

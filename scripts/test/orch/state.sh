@@ -10,6 +10,9 @@
 # chmod a-w, it also fails as root.
 state_write_fails_bin() { fails_bin mktemp '*state.json.*'; }
 
+# fake_pr_draft_of <n>: whether the store's PR #n is a draft, yes or no.
+fake_pr_draft_of() { [ -f "$ORCH_GH_FAKE_STORE/prs/$1/draft" ] && echo yes || echo no; }
+
 # --- state ------------------------------------------------------------------
 echo
 echo "state"
