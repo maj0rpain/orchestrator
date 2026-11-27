@@ -97,6 +97,24 @@ restore_index() {
   mv "$idx.bak" "$idx"
 }
 
+# discards_in <dir> <slug> <issue> <what>: in a subshell inside the linked
+# worktree <dir>, starts a flow <slug> on <issue>, makes its branch, dirties the
+# tree and runs branch create again without autopilot, asserting it exits 0 and
+# leaves the tree clean; <what> names the worktree in the assertions.
+discards_in() {
+  (
+    cd "$1" || { bad "cd into the $4" "cannot cd into $1"; exit 1; }
+    orch_gh_failing init "$2" >/dev/null
+    orch_gh_failing state set issue "$3"
+    orch_gh_failing branch create >/dev/null
+    echo hand >>README.md
+    local out st
+    out="$(orch_gh_failing branch create 2>&1)"; st=$?
+    assert_status "a dirty tree in a $4 is discarded" "$st" 0
+    assert_eq "leaving it clean" "$(git status --porcelain)" ""
+  )
+}
+
 # --- branch create -----------------------------------------------------------
 # Unlike branch off's caller-named branch, this one derives its own name from
 # state - slug plus the recorded issue - and records both `branch` and
@@ -1306,29 +1324,11 @@ git checkout -q -- README.md
 # a side checkout discards without autopilot
 sc_clone
 side="$(sc_add sidebr)"
-(
-  cd "$side" || { bad "cd into the side checkout" "cannot cd into $side"; exit 1; }
-  orch_gh_failing init sidebr >/dev/null
-  orch_gh_failing state set issue 16
-  orch_gh_failing branch create >/dev/null
-  echo hand >>README.md
-  out="$(orch_gh_failing branch create 2>&1)"; st=$?
-  assert_status "a dirty tree in a side checkout is discarded" "$st" 0
-  assert_eq "leaving it clean" "$(git status --porcelain)" ""
-)
+discards_in "$side" sidebr 16 "side checkout"
 # a linked worktree that is no side checkout discards without autopilot too
 hand="$(mktemp -d)/hand"
 git worktree add -q --detach "$hand"
-(
-  cd "$hand" || { bad "cd into the hand-made worktree" "cannot cd into $hand"; exit 1; }
-  orch_gh_failing init handbr >/dev/null
-  orch_gh_failing state set issue 18
-  orch_gh_failing branch create >/dev/null
-  echo hand >>README.md
-  out="$(orch_gh_failing branch create 2>&1)"; st=$?
-  assert_status "a dirty tree in a hand-made worktree is discarded" "$st" 0
-  assert_eq "leaving it clean" "$(git status --porcelain)" ""
-)
+discards_in "$hand" handbr 18 "hand-made worktree"
 
 # --- branch create off the flow's branch (#1911) ------------------------------
 # The discard rule runs only on the flow's own branch or a detached HEAD. On any

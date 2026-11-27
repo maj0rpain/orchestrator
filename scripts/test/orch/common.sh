@@ -42,9 +42,11 @@ assert_eq "common.sh calls no function a noun module defines" \
   "$(common_upcalls "$(dirname "$ORCH")" | tr '\n' ' ')" ""
 
 # --- exclude_line -------------------------------------------------------------
-# exclude_orch_dirs is called bare under set -e, as orch/common.py's copy is by
-# init, side-checkout add and the ticket worktree, so a failed write (#1548)
-# pins its message; the appends keep an unterminated last line whole (#1912).
+# exclude_orch_dirs has no bash caller left - the converted nouns write the
+# exclude file through orch/common.py's copy - and is kept because the spec's
+# Stays list keeps it. These cases still pin its failed-write message, naming
+# the missing lines and the file (#1548), and that exclude_line's appends keep
+# an unterminated last line whole (#1912).
 echo
 echo "exclude_line"
 new_repo >/dev/null

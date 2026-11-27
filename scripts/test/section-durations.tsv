@@ -39,27 +39,27 @@
 18	19	base	3dfb2ca9c0260cc996972c7beeb6f4d59ac11b43
 30	33	a flow's base branch	a38a88e4fd87d244f389a36c20379a4ae9f40714
 4	4	base set on a truncated state.json (#1929)	1120aedf3fa2ad596a3f884d5b8f1bcf2db9c172
-20	14	branch create	40ba9151b88e2ed4468547c13dc394f894a252c8
-21	15	branch off	771a7dc5b09012b8e145a428a9e51c0ea16fcc1b
-10	11	a quick implementation's base branch	492b76b548a093e5a50fb8d96c790c6a343861ed
-8	9	a quick implementation's base SHA (#243)	7633b1fa577b99769a98981bf555093dc18c95c8
-16	10	plugin-made branches have no upstream (#1152)	9b7c6ef0e54f5f85ecb9e8b1f2b340215ecc345f
-14	15	branch retire	71387049f8d7a36e2dbbab912bc59841a2f2282f
-1	3	branch_records_base (#1713)	f8e678e5068bae9336e07f93e9bb878618ae2b2b
-40	44	branch sync (#792)	4f02b2096ebd7cc5bcc2e3413da5e0fd5ffeeb62
-21	19	branch busy (#1201)	ba168d1817c7a61145576f98080c68672b35044c
-1	14	branch off and branch create refuse a busy checkout (#1202)	6e14776ef4cd0b9a1cec1f5dbe6159726c9aaf09
-29	28	branch create on a restart (ADR-0054)	977b1a42ac39080fd6fe56a9a86a31f0ad0cab84
-51	31	branch create off the flow's branch (#1911)	cd5d8444537a72e25190281dcff25ecf94f4e37d
-15	15	the fork start point is decided where origin is asked (#1930)	11c17c41c85dd6c2fc881ecab2db6f4ca5718901
-1	1	branch: unknown op	0840ecfae7bdbddf00782fbec306ffe5eeced6a5
-4	5	branch retire beside a same-named tag (#2337)	97490123085e8a157bc8271d21161157ed671fb2
-15	8	branch create and branch off beside a same-named tag (#2337)	e533ecf335e116180560d5e73afbe02b58cd36ce
+20	14	branch create	5d8167839f24e044c13dccee6c4562995b67ab10
+21	15	branch off	0b9304c85a90994439711940a247bc4caf99f123
+10	11	a quick implementation's base branch	5467e023b827dab0ff921ccbc9ee00b8a246936b
+8	9	a quick implementation's base SHA (#243)	dab9988fb3721ed7b0c073637cf69e5df0889130
+16	10	plugin-made branches have no upstream (#1152)	5e3ab578c3be992fe72d62d61e6096cf4d913232
+14	15	branch retire	9f1ecb3621c6816114687e17ca26b9a4d9b32e92
+1	3	branch_records_base (#1713)	b91ffb6fd73b152ff84fa269bd2f3b934d292ffd
+40	43	branch sync (#792)	212f31c0bb8f2d74ea3f710bb17935ccda94e3ea
+21	19	branch busy (#1201)	1e18819dd77c9c6ac6b136e866a90fa9bdf207dc
+24	13	branch off and branch create refuse a busy checkout (#1202)	7b739e6f9577a76927380ea504b7292e80418964
+29	28	branch create on a restart (ADR-0054)	2d81f09d2338acb4c46248299141576d72441dd8
+52	30	branch create off the flow's branch (#1911)	ecd7708e33e01172935974fd24b882cf767ca699
+15	15	the fork start point is decided where origin is asked (#1930)	3e3ff5fe676de88b73b9e0cb290673e8a7f56d51
+1	1	branch: unknown op	505113d205b8fc3671292f52453d113b46a0042b
+4	5	branch retire beside a same-named tag (#2337)	6e872c74e3e31a9f1a6228bae5ad9e20c6c7585d
+14	8	branch create and branch off beside a same-named tag (#2337)	0adc1df249672e06eca91c89592cc93b4b09917d
 5	6	checkout (#1078)	143bb1ec7694cd5d2f8e11b179258e46734a9646
 4	4	checkout current branch (#1079)	d402f627ba50a3c716ac0ac24115f71bb152fd28
 20	14	checkout busy, redo-retired branch (#1981)	0608e4d5c7b58927eb7859c5d847edb713e43621
 8	10	common.sh is the bottom layer	04f7eed4e1b745bc381196f09f7ddd3c7337cc02
-4	5	exclude_line	f1ee77cf01b06a3b7a0380b8640286180e7982a8
+4	5	exclude_line	2f2b70803ce6bfb6d93731b1baeb524c703eac62
 1	1	list_has	5d665bbaedef272afcd04ace046930cc9c533f4c
 0	1	list_join	2cdab9701b23386ed65209c4834779316c9e7994
 1	2	word_listed	57898b88e72e83296291ec2606d7f5d85024c603
