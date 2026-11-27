@@ -423,15 +423,17 @@ cmd_side_checkout_remove() {
 # a checkout the sweep judged finished, run before it is archived or removed.
 # A flow's issue and PR are the ones its state records; a flow-less checkout's
 # PR is the newest merged from <branch> and its issue the one a `quick/<issue>-`
-# branch names - any other branch is skipped. Closes the issue, when open,
+# branch names - any other branch is skipped. Reads the issue's state through
+# gh's state-and-labels read, and closes the issue, when open,
 # through pr.py's close_missed_finish bridge, one Python process a checkout
 # closed, which warns when the PR merged inside the grace period, since no
 # later sweep will see it. A failed read or close, or a bridge that cannot run
 # (python3 missing included), warns and never fails the sweep: always returns
 # 0.
 side_checkout_close_missed() {
-  orch_load standing
-  local path="$1" br="$2" state issue pr=""
+  # labels is issue_state_labels_read's out-param, filled and never read here
+  # shellcheck disable=SC2034
+  local path="$1" br="$2" state issue pr="" issue_state labels gh_err
   if checkout_has_flow "$path"; then
     state="$(flow_state_file "$path")"
     state_get_many_in "$state" issue=issue pr=pr 2>/dev/null || return 0
@@ -440,8 +442,9 @@ side_checkout_close_missed() {
     case "$br" in quick/*) ;; *) return 0 ;; esac
     issue="$(branch_issue_of "$br")" || return 0
   fi
-  standing_read "$issue" || { warn "could not read issue #$issue: $STANDING_REASON - the merged-PR close skips it"; return 0; }
-  [ "$STANDING_STATE" = OPEN ] || return 0
+  issue_state_labels_read "$issue" issue_state labels gh_err ||
+    { warn "could not read issue #$issue: $(gh_reason "$gh_err") - the merged-PR close skips it"; return 0; }
+  [ "$issue_state" = OPEN ] || return 0
   orch_python_call --as side-checkout pr close_missed_finish "$issue" "$pr" "$br" </dev/null || :
   return 0
 }

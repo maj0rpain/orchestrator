@@ -255,5 +255,5 @@ main() {
 }
 
 # Run as a command, not when sourced: a test sources this file to reach a
-# helper such as has_review_label directly.
+# helper such as is_branch_name directly.
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then main "$@"; fi

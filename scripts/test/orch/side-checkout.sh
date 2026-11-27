@@ -1447,6 +1447,37 @@ assert_status "the close backstop on a truncated state.json returns 0" "$st" 0
 assert_eq "it prints nothing" "$out" ""
 assert_eq "it reads no issue from GitHub, so the open issue is left alone" "$(fake_state_of 610)" "OPEN"
 
+# The issue's state is read through gh's own state-and-labels read, loading no
+# Standing module: a failed read warns with gh's reason and skips the close.
+fake_offline
+bf_quick ir 614 714; fake_pr_merged 714 3600 614
+fake_online
+ir="$(git worktree list --porcelain | sed -n "s/^worktree //p" | grep "/ir\$")"
+ir_trace="$(mktemp)"
+fake_fail adapter_issue_state_labels "HTTP 502"
+out="$(ORCH_LOAD_TRACE="$ir_trace" sourced_orch side_checkout_close_missed "$ir" quick/614-ir 2>&1)"; st=$?
+assert_status "a failed issue read leaves the close backstop returning 0" "$st" 0
+assert_eq "it warns with gh's reason" "$out" \
+  "orch: could not read issue #614: HTTP 502 - the merged-PR close skips it"
+assert_trace_names_no "the close backstop's issue read" "$ir_trace" standing
+assert_eq "and the issue stays open" "$(fake_state_of 614)" "OPEN"
+fake_unfail
+rm -f "$ir_trace"
+
+# A closed issue is skipped: no close process is started for it.
+fake_offline
+bf_quick cs 615 715; fake_pr_merged 715 3600 615
+fake_issue 615 closed
+fake_online
+cs="$(git worktree list --porcelain | sed -n "s/^worktree //p" | grep "/cs\$")"
+cs_py="$(counting_bin python3)"
+out="$(PATH="$cs_py:$PATH" sourced_orch side_checkout_close_missed "$cs" quick/615-cs 2>&1)"; st=$?
+assert_status "the close backstop over a closed issue returns 0" "$st" 0
+assert_eq "it prints nothing" "$out" ""
+assert_eq "and starts no close process" "$(counting_starts "$cs_py" python3)" "0"
+assert_eq "and posts no close comment" "$(fake_comments_of 615)" ""
+rm -rf "$cs_py"
+
 # --- side_checkout_marker reads the worktree's git pointer --------------------
 # The marker lookup reads <path>/.git instead of starting git: a main
 # worktree's git folder, or the folder a linked worktree's pointer names,

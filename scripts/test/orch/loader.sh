@@ -19,23 +19,6 @@ orch_modules_list() {
 # a running bash of <version>.
 guard_line_for() { echo "orch: bash $1 is too old - orch.sh needs bash 4.2 or newer: brew install bash"; }
 
-# assert_trace_names_no <label> <trace file> <module>...: asserts a load trace,
-# written by a run that had ORCH_LOAD_TRACE=<file> on, names none of the given
-# modules - a module the run must not load at all.
-assert_trace_names_no() {
-  local label="$1" trace="$2" mod line n
-  shift 2
-  local -a lines=()
-  mapfile -t lines <"$trace"
-  for mod in "$@"; do
-    n=0
-    for line in "${lines[@]}"; do
-      [ "${line%%[[:space:]]*}" = "$mod" ] && n=$((n + 1))
-    done
-    assert_eq "$label: the load trace names no $mod" "$n" "0"
-  done
-}
-
 # --- orch_load ----------------------------------------------------------------
 echo
 echo "orch_load"
@@ -93,13 +76,13 @@ assert_status "and its exit status" "$status2" "$status"
 src_run() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash -c "$1" _ "$ORCH" 2>&1; }
 lazy_pre='ORCH_SOURCE_LAZY=1; source "$1"; shift; '
 
-src_run "$lazy_pre"'(has_review_label review:major); true'
-assert_eq "a stub called in a subshell loads its module there only" "$(cat "$trace")" "filed-finding 1"
+src_run "$lazy_pre"'(is_branch_name main); true'
+assert_eq "a stub called in a subshell loads its module there only" "$(cat "$trace")" "base 1"
 
 # A stub passes its arguments and returns the real function's status.
-out="$(src_run "$lazy_pre"'st=0; has_review_label review:major || st=$?; echo "st=$st"')"
-assert_eq "a stub passes its arguments and returns the real function's status for a review label" "$out" "st=0"
-out="$(src_run "$lazy_pre"'st=0; has_review_label nonesuch || st=$?; echo "st=$st"')"
+out="$(src_run "$lazy_pre"'st=0; is_branch_name main || st=$?; echo "st=$st"')"
+assert_eq "a stub passes its arguments and returns the real function's status for a valid branch name" "$out" "st=0"
+out="$(src_run "$lazy_pre"'st=0; is_branch_name "a..b" || st=$?; echo "st=$st"')"
 assert_contains "and returns a failing status" "$out" "st=1"
 
 # A stub whose module no longer defines the function: one the function moved
