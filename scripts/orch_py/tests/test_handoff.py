@@ -1,24 +1,9 @@
-"""The handoff module's phase table against the bash phase table it copies,
-the handoffs a phase has due and those a step back makes stale, and the
+"""The handoffs a phase has due and those a step back makes stale, and the
 retire a redo sets the stale ones aside with, in each Handoff store."""
 from __future__ import annotations
 
-import re
-from pathlib import Path
-
 from conftest import GH_502, comments_of, died_of, fake, flow_state, orch_files, read
-from orch.handoff import PHASE_TABLE, handoff_retire, handoffs_due, handoffs_written_from
-
-HANDOFF_SH = Path(__file__).resolve().parents[2] / "orch" / "handoff.sh"
-
-
-def test_the_phase_table_is_the_bash_phase_table_row_for_row():
-    table = re.search(r"^readonly PHASE_TABLE='(.*?)'$", HANDOFF_SH.read_text(), re.M | re.S)
-
-    assert table is not None
-    rows = [row.split("|") for row in table.group(1).split("\n")]
-    assert [(phase, handoff, writer, tuple(sections.split(";")) if sections else ())
-            for phase, handoff, writer, sections in rows] == list(PHASE_TABLE)
+from orch.handoff import handoff_retire, handoffs_due, handoffs_written_from
 
 
 def test_the_handoffs_due_at_a_phase_are_those_of_every_row_up_to_it():

@@ -17,10 +17,9 @@ standing_move_label had no bash copy left before standing.sh went.
 
 A phase label, `orch:<phase>`, records an autopilot flow's phase on its
 issue. PHASES is the flow's phases in order, read from the handoff module
-(orch/handoff.py's PHASES, its phase table's first column), the one Python
-copy of the bash side's. Labels are matched as GitHub matches them, in any
-casing (label_listed), so a label the repo holds in its own casing is
-found and removed.
+(orch/handoff.py's PHASES, its phase table's first column). Labels are
+matched as GitHub matches them, in any casing (label_listed), so a label
+the repo holds in its own casing is found and removed.
 
 Begin, sync request and resume are single writes; every other transition
 is a chain (Chain): its writes run in order, and one that fails dies naming

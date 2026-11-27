@@ -59,9 +59,9 @@
 #                                     and whose merged-PR close is a bridge
 #                                     (the pytest suite runs on every call);
 #                                     not every section that reaches the
-#                                     package - fake_flow's init and the
+#                                     package - a flow's init and the
 #                                     status and help calls reach it from
-#                                     most - which CI's whole run covers
+#                                     many - which CI's whole run covers
 #   the pytest suite's wrapper (scripts/test/orch_py_test.sh)
 #                                     the harness section file's sections
 #   hook-edit-width.sh, width.sh, shell_code.awk
@@ -122,11 +122,9 @@
 #
 # Always run: the pytest suite (orch_py_test.sh, test_tree.sh's PYTEST_SUITE,
 # which takes its own job-pool slots), docs_lint.sh, orch_test.sh's placement
-# sections (test-helper
-# placement, gh op placement, marked comment prelude placement, comment
-# reader placement, helper body copies), and the shellcheck run, at warning
-# severity, on the changed scripts/**/*.sh files that still exist. Sections are
-# chosen through orch_test.sh's ORCH_TEST_ONLY.
+# sections (test-helper placement, gh op placement, helper body copies), and
+# the shellcheck run, at warning severity, on the changed scripts/**/*.sh files
+# that still exist. Sections are chosen through orch_test.sh's ORCH_TEST_ONLY.
 #
 # Each suite other than orch_test.sh holds a slot of the job pool while it runs
 # (test_jobs.sh's suite start, as all.sh's suites do), waiting for one when none
@@ -541,7 +539,7 @@ harness="scripts/test/orch/harness.sh"
 if [ -f "$harness" ]; then
   while IFS= read -r t; do
     case "$t" in
-      "test-helper placement ("* | "gh op placement ("* | "marked comment prelude placement ("* | "comment reader placement ("* | "helper body copies ("*)
+      "test-helper placement ("* | "gh op placement ("* | "helper body copies ("*)
         add_title "$t" ;;
     esac
   done < <(titles_of "$harness")

@@ -5,6 +5,28 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# dir_snapshot <dir>: every file under <dir>, by its path from <dir>, with its
+# checksum, in a fixed order - for a byte-identical comparison with another
+# snapshot of the same directory.
+dir_snapshot() { (cd "$1" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r cksum); }
+
+# fake_snapshot: a digest of the whole store, so a test asserts a read-only
+# command left it as it was. The read-side files are reads, never writes, so
+# they are left out: comment_reads, each PR's evidence_reads, each PR's
+# checks/<n>/reads and each checks/<n>/<scope>.n cursor. The fail/ and lag/
+# countdowns stay in: a test seeds them, and any operation consumes them.
+fake_snapshot() { dir_snapshot "$ORCH_GH_FAKE_STORE" | sed -E '/ \.\/(comment_reads|prs\/[^\/]+\/evidence_reads|checks\/[^\/]+\/(reads|[^\/]+\.n))$/d'; }
+
+# fake_lag <operation> <n> [stale]: the next n calls of the named operation
+# answer stale, as GitHub does for a moment after a write; the call after them
+# is current again. An operation that reads answers the stale text given, in
+# its own documented shape - or, given none, an empty one.
+fake_lag() {
+  mkdir -p "$ORCH_GH_FAKE_STORE/lag"
+  printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/lag/$1"
+  if [ $# -ge 3 ]; then printf '%s\n' "$3" >"$ORCH_GH_FAKE_STORE/lag/$1.stale"; fi
+}
+
 # gh_reply <exit> <stdout> <stderr> <argv...>: the canned reply the fixture gh
 # answers to exactly that argv, replacing any earlier reply for it.
 gh_reply() {
@@ -773,10 +795,9 @@ err="$(ORCH_GH_FAKE_STORE="" "$FB" -c 'source "$1"; fake_open_issues' _ "$GH_ADA
 assert_status "an operation with no store fails" "$st" 1
 assert_contains "saying to call fake_github" "$err" "the gh fake has no store - call fake_github"
 # The second group answers from the store in bash too (#2862): each bare PATH
-# holds only what the function may keep - nothing for a plain read, jq for the
-# comments' JSON, cat and date for the quota.
-mkdir "$bare_dir/jq" "$bare_dir/catdate"
-ln -s "$(command -v jq)" "$bare_dir/jq/jq"
+# holds only what the function may keep - nothing for a plain read, cat and
+# date for the quota.
+mkdir "$bare_dir/catdate"
 for c in cat date; do ln -s "$(command -v $c)" "$bare_dir/catdate/$c"; done
 fake_issue 40 open Lbl
 assert_eq "adapter_issue_state_labels gives the state then the labels on an empty PATH" \
@@ -798,15 +819,6 @@ assert_eq "adapter_claim_list gives the claims by issue number, numerically, on 
   "$(barely empty adapter_claim_list | cut -f1 | tr '\n' ' ')" "9 12 "
 rm -rf "$S/claims"
 assert_eq "and none with no claims directory" "$(barely empty adapter_claim_list)" ""
-jc="$bare_dir/jc"; mkdir -p "$jc"
-for k in 1 2 10; do
-  mkdir "$jc/$k"; printf 'au%s\n' "$k" >"$jc/$k/author"; printf 'c%s\n' "$k" >"$jc/$k/created"; printf 'b%s' "$k" >"$jc/$k/body"
-done
-printf 'MEMBER\n' >"$jc/2/association"
-assert_eq "fake_comments_json lists the comments in numeric order with jq alone on the PATH" \
-  "$(barely jq fake_comments_json "$jc" 7 | jq -r '[.[] | "\(.author)/\(.authorAssociation)/\(.createdAt)/\(.body)"] | join(" ")')" \
-  "au1/OWNER/c1/b1 au2/MEMBER/c2/b2 au10/OWNER/c10/b10"
-assert_eq "and [] for a missing directory" "$(barely jq fake_comments_json "$bare_dir/none" 7)" "[]"
 assert_eq "adapter_rate_limit gives a stored quota with cat on the PATH" \
   "$(printf 'core\t1\t2\t3\n' >"$S/quota"; barely catdate adapter_rate_limit)" "$(printf 'core\t1\t2\t3')"
 rm -f "$S/quota"
@@ -873,13 +885,6 @@ out="$(contract adapter_issue_body 404 2>&1)"; st=$?
 assert_status "issue body: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" \
   "GraphQL: Could not resolve to an issue or pull request with the number of 404."
-
-gh_reply 0 $'{"comments":[{"author":{"login":"pat"},"authorAssociation":"OWNER","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z"}]}\n' '' \
-  issue view 23 --json comments
-out="$(contract adapter_issue_comments 23 2>&1)"; st=$?
-assert_status "issue comments: reads the comments as gh's raw JSON" "$st" 0
-assert_eq "printing what gh answered, unrendered" "$out" \
-  '{"comments":[{"author":{"login":"pat"},"authorAssociation":"OWNER","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z"}]}'
 
 issue_json_jq="$(sourced_orch_script 'printf "%s" "$ISSUE_JSON_JQ"')"
 : >"$GH_FIXTURE/env.log"
@@ -1020,27 +1025,6 @@ gh_reply 0 'https://github.com/acme/widgets/issues/23' '' issue edit 23 --body-f
 out="$(contract adapter_issue_body_edit 23 "$ibody" 2>&1)"; st=$?
 assert_status "issue body edit: replaces the body from the file" "$st" 0
 assert_eq "printing nothing" "$out" ""
-
-gh_reply 0 'https://github.com/acme/widgets/issues/23#issuecomment-1' '' issue comment 23 --body-file "$ibody"
-out="$(contract adapter_issue_comment 23 "$ibody" 2>&1)"; st=$?
-assert_status "issue comment: posts the file as a comment" "$st" 0
-assert_eq "printing nothing" "$out" ""
-gh_reply 1 '' 'HTTP 403: Resource not accessible by integration' issue comment 24 --body-file "$ibody"
-out="$(contract adapter_issue_comment 24 "$ibody" 2>&1)"; st=$?
-assert_status "issue comment: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
-gh_reply 0 'https://github.com/acme/widgets/issues/23#issuecomment-1' '' issue comment 23 --body-file "$ibody"
-out="$(contract adapter_issue_comment_url 23 "$ibody" 2>&1)"; st=$?
-assert_status "issue comment url: posts the file as a comment" "$st" 0
-assert_eq "printing the URL gh printed" "$out" "https://github.com/acme/widgets/issues/23#issuecomment-1"
-gh_reply 0 '' '' issue comment 23 --body-file "$ibody"
-out="$(contract adapter_issue_comment_url 23 "$ibody" 2>&1)"; st=$?
-assert_status "issue comment url: a reply with no URL succeeds" "$st" 0
-assert_eq "printing nothing" "$out" ""
-gh_reply 1 '' 'HTTP 403: Resource not accessible by integration' issue comment 24 --body-file "$ibody"
-out="$(contract adapter_issue_comment_url 24 "$ibody" 2>&1)"; st=$?
-assert_status "issue comment url: a gh failure fails it" "$st" 1
-assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
 
 gh_reply 0 'https://github.com/acme/widgets/issues/23' '' \
   issue edit 23 --remove-label "triage me" --remove-label bug --add-label afk --add-label enhancement
@@ -1209,13 +1193,6 @@ gh_reply 1 '' 'no pull requests found for 404' pr view 404 --json body --jq .bod
 out="$(contract adapter_pr_body 404 2>&1)"; st=$?
 assert_status "pr body: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "no pull requests found for 404"
-
-gh_reply 0 $'{"comments":[{"author":{"login":"pat"},"authorAssociation":"OWNER","body":"LGTM","createdAt":"2026-10-01T09:00:00Z"}]}\n' '' \
-  pr view 57 --json comments
-out="$(contract adapter_pr_comments 57 2>&1)"; st=$?
-assert_status "pr comments: reads the comments as gh's raw JSON" "$st" 0
-assert_eq "printing what gh answered, unrendered" "$out" \
-  '{"comments":[{"author":{"login":"pat"},"authorAssociation":"OWNER","body":"LGTM","createdAt":"2026-10-01T09:00:00Z"}]}'
 
 refs_jq='(.headRefOid // ""), (.headRefName // ""), (.baseRefName // "")'
 gh_reply 0 $'bbbb\ntopic\nmain\n' '' \

@@ -76,8 +76,8 @@ def autopilot_active(env: Mapping[str, str]) -> bool:
 
 def autopilot_block_values(text: str, key: str) -> List[str]:
     """The value of each `<key>: <value>` line in <text>'s `## Autopilot`
-    section, trimmed, in order, as bash autopilot_block_values: a line whose
-    value is blank holds none."""
+    section, trimmed, in order, as bash's autopilot_block_values read it: a
+    line whose value is blank holds none."""
     # Imported here: the handoff module reads this one at its own import.
     from orch.handoff import section_body
 
@@ -91,10 +91,10 @@ def autopilot_block_values(text: str, key: str) -> List[str]:
 
 
 def autopilot_block_report(text: str) -> Tuple[List[str], int]:
-    """The plan <text>'s `## Autopilot` block in handoff_report's lines, bash
-    autopilot_block_report: `ok ## Autopilot`, or one FAIL line per problem
-    with status 1. The block is `Rounds` and `Budget`, each one line holding
-    a whole number of 1 or more."""
+    """The plan <text>'s `## Autopilot` block in handoff_report's lines, as
+    bash's autopilot_block_report gave it: `ok ## Autopilot`, or one FAIL line
+    per problem with status 1. The block is `Rounds` and `Budget`, each one
+    line holding a whole number of 1 or more."""
     from orch.handoff import section_count
 
     if section_count(text, "## Autopilot") == 0:

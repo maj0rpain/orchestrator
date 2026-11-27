@@ -23,8 +23,6 @@
 # new noun is Python (ADR-0067), as is a noun converted to it: it has no module
 # here, and main's one case naming the converted nouns hands it to the orch
 # package in scripts/orch_py/, through orch_python.
-# PHASES, the flow phase list, is the Handoff module's: read it after orch_load
-# handoff.
 #
 # Usage: orch.sh <command> [args]   (run `orch.sh help` for the list)
 
@@ -136,10 +134,7 @@ readonly ROOT
 readonly ORCH="$ROOT/$ORCH_DIR_NAME"
 STATE="$(flow_state_file "$ROOT")"
 readonly STATE
-readonly HANDOFF_DIR="$ORCH/handoff"
 readonly REVIEW_DIR="$ORCH/review"
-# Where an autopilot flow fetches a handoff comment to read it as a file.
-readonly HANDOFF_SCRATCH_DIR="$ORCH/scratch"
 
 # The modules, after the ROOT block, whose constants they read: every file
 # beside common.sh but common.sh and loader.sh - the noun modules and the
@@ -233,23 +228,22 @@ main() {
   case "$cmd" in
     # The nouns converted to Python, the one place naming them: each runs
     # through orch_python, and has no module of its own here. Among them
-    # init, phase, redo, ticket, ticket-worktree, pr, review, autopilot and
-    # doctor with its alias health, and the bare global commands slug, status,
-    # archive and help, help with its option spellings, which the Python entry
-    # point runs as help; a bare orch.sh is help too. orch_python execs
-    # python3, so the process `orch.sh autopilot watch` or `orch.sh autopilot
-    # run` starts keeps its pid, which the watch pidfile and the run records
-    # name. Doctor's bash check reports the bash
-    # running this script, which Python cannot see: it is handed on as
-    # ORCH_RUNNING_BASH, trimmed of its "(1)-release" tail.
-    issue|finding-triage|verification|audit|review-pass|spec-review|spec|breakdown|glossary|parallel|route|agent|slug|status|archive|help|-h|--help|init|phase|redo|ticket|ticket-worktree|pr|review|autopilot|doctor|health)
+    # init, phase, handoff, redo, ticket, ticket-worktree, pr, review,
+    # autopilot and doctor with its alias health, and the bare global commands
+    # slug, status, archive and help, help with its option spellings, which the
+    # Python entry point runs as help; a bare orch.sh is help too. orch_python
+    # execs python3, so the process `orch.sh autopilot watch` or `orch.sh
+    # autopilot run` starts keeps its pid, which the watch pidfile and the run
+    # records name. Doctor's bash check reports the bash running this script,
+    # which Python cannot see: it is handed on as ORCH_RUNNING_BASH, trimmed of
+    # its "(1)-release" tail.
+    issue|finding-triage|verification|audit|review-pass|spec-review|spec|breakdown|glossary|parallel|route|agent|slug|status|archive|help|-h|--help|init|phase|handoff|redo|ticket|ticket-worktree|pr|review|autopilot|doctor|health)
       case "$cmd" in doctor|health) export ORCH_RUNNING_BASH="${BASH_VERSION%%(*}" ;; esac
       orch_python "$cmd" "$@" ;;
     default-branch) cmd_default_branch "$@" ;;
     base)          cmd_base "$@" ;;
     repo)          cmd_repo "$@" ;;
     state)         cmd_state "$@" ;;
-    handoff)       cmd_handoff "$@" ;;
     branch)        cmd_branch "$@" ;;
     side-checkout) cmd_side_checkout "$@" ;;
     *) die "unknown command: $cmd (run 'orch.sh help')" ;;

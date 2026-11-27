@@ -18,48 +18,19 @@ fake_issue_authorship() {
 }
 
 # --- trust module -----------------------------------------------------------
-# The Trust module's own rules: which associations its comment filter keeps,
-# the issue check by the author's association, and the attended reads'
-# warning. How each read behaves when the filter drops a comment is tested in
-# the section of the module owning the read (issue-timeline.sh, ...). The
-# comment filter is read directly, through the Comments module's read of a
-# PR's comments (comments_trusted_read pr), and the issue check and its
-# warning through `init --issue`.
+# The Trust module's own rules: the issue check by the author's association
+# and the attended reads' warning, both through `init --issue`, and the PR
+# filter. The comment filter is orch/trust.py's filter_comments, tested in
+# pytest.
 echo
 echo "trust module"
-tick_fixture
+sc_clone
+fake_github
 fake_issue 7 open ready-for-agent orch:spec
-# tr_comments_read: PR #9's comments as the comment filter keeps them, the
-# array comments_trusted_read pr assigns, on stdout; the filter's stderr line
-# left as it is.
-tr_comments_read() {
-  # shellcheck disable=SC2016
-  sourced_orch eval 'comments_trusted_read pr 9 tr_kept tr_why; printf "%s" "$tr_kept"'
-}
 
 tr_assocs_trusted="OWNER MEMBER COLLABORATOR"
 tr_assocs_untrusted="CONTRIBUTOR FIRST_TIME_CONTRIBUTOR FIRST_TIMER MANNEQUIN NONE"
-
-# The comment filter's associations: one comment per association on PR #9,
-# read once; a kept one is in the array the read assigns. The Issue timeline's
-# section covers how timeline_read uses the filter.
-fake_pr 9 open topic main
-tr_i=0
-for assoc in $tr_assocs_trusted $tr_assocs_untrusted; do
-  tr_i=$((tr_i + 1))
-  fake_pr_comment 9 "user$tr_i" "2026-09-0${tr_i}T10:00:00Z" "written by $assoc" "$assoc"
-done
 tr_file="$(mktemp)"
-tr_text="$(tr_comments_read 2>"$tr_file")"
-tr_err="$(cat "$tr_file")"
-for assoc in $tr_assocs_trusted; do
-  assert_contains "a $assoc comment is kept" "$tr_text" "written by $assoc"
-done
-for assoc in $tr_assocs_untrusted; do
-  assert_not_contains "a $assoc comment is dropped" "$tr_text" "written by $assoc"
-done
-assert_eq "and the dropped ones are reported once, naming the PR" "$tr_err" \
-  'orch: ignored 5 comment(s) from untrusted authors on #9'
 
 # The issue check, by the author's association, through `init --issue`, which
 # warns of an untrusted writer.
@@ -79,24 +50,11 @@ for assoc in $tr_assocs_untrusted; do
     "$(tr_fetch stranger "$assoc")" "was last written by stranger"
 done
 
-# The JSON array the filter hands jq is built as the module loads, on an empty
-# PATH, so it starts no process.
-tr_json="$(PATH='' "$BASH" -c 'source "$1/scripts/orch/trust.sh"; printf "%s" "$TRUST_ASSOCIATIONS_JSON"' _ "$PLUGIN_ROOT")"
-assert_eq "the array is built at load, with no process on PATH" "$tr_json" '["OWNER", "MEMBER", "COLLABORATOR"]'
-
-# The comment filter and the issue check agree on a lower-case association and
-# an empty one (the trusted ones and NONE are asserted above).
-fake_pr 9 open topic main
-fake_pr_comment 9 someone "2026-09-01T10:00:00Z" "said by owner" owner
-fake_pr_comment 9 someone "2026-09-02T10:00:00Z" "said by empty" ""
-printf '\n' >"$ORCH_GH_FAKE_STORE/prs/9/comments/2/association"
-tr_case_text="$(tr_comments_read 2>/dev/null)"
+# A lower-case association and an empty one are not trusted (the trusted ones
+# and NONE are asserted above).
 for tr_a in owner ""; do
-  tr_label="${tr_a:-empty}"
-  tr_kept=no; [[ "$tr_case_text" != *"said by $tr_label"* ]] || tr_kept=yes
-  tr_checked=no; [ -n "$(tr_fetch stranger "$tr_a")" ] || tr_checked=yes
-  assert_eq "association '$tr_label': the filter and the issue check agree" "$tr_kept" "$tr_checked"
-  assert_eq "association '$tr_label' is not trusted" "$tr_kept" no
+  assert_contains "association '${tr_a:-empty}' is not trusted" \
+    "$(tr_fetch stranger "$tr_a")" "was last written by stranger"
 done
 
 # The editor and renamer rules, with the author a stranger.

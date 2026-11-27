@@ -1,15 +1,13 @@
-"""The Issue timeline module (scripts/orch/issue-timeline.sh): one read of
-an issue's trusted comments, each with its marked_comment_info, and the
-queries answered from it with no gh call - the live handoff and the body a
-comment holds, which the handoff module's comment adapter reads, and the
-question, reply, stop, limit-stop and re-entry queries the Standing module
-and the autopilot noun read.
+"""The Issue timeline module: one read of an issue's trusted comments, each
+with its marked_comment_info, and the queries answered from it with no gh
+call - the live handoff and the body a comment holds, which the handoff
+module's comment adapter reads, and the question, reply, stop, limit-stop and
+re-entry queries the Standing module and the autopilot noun read.
 
 A reply is any comment after the newest question comment but a re-entry
 comment; a stop is a refusal or a failure comment, never a limit stop. Only
 the read can fail: timeline_read hands the failure back, timeline_die is
-the one dying helper, and timeline_read_or_die the read that dies on failure,
-as in bash.
+the one dying helper, and timeline_read_or_die the read that dies on failure.
 """
 from __future__ import annotations
 
@@ -53,7 +51,7 @@ def timeline_die(issue: str, reason: str, code: int = 1) -> None:
 
 def timeline_read_or_die(gh, issue: str, code: int = 1) -> List[Entry]:
     """timeline_read's entries for issue <issue>, else timeline_die with
-    exit <code>, bash timeline_read_or_die."""
+    exit <code>."""
     entries, reason = timeline_read(gh, issue)
     if entries is None:
         timeline_die(issue, reason, code)

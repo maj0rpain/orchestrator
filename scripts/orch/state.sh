@@ -1,13 +1,13 @@
 # shellcheck shell=bash
 # state.sh - orch.sh's state command (state get and state set), with the state
 # helpers every module calls (state_get, state_write, require_state_exists,
-# require_state_read, require_value, require_field, require_issue).
+# require_state_read, require_value).
 # Two readers, each with a many-key form: state_get and
 # state_get_many, the unguarded own-checkout readers, and state_get_in and
 # state_get_many_in, the guarded shared ones; the guarded one-key reader costs
 # one jq. A command's entry read is require_state_read: the two refusals and
 # every key it needs in one jq. require_value checks a required field on a
-# value the caller already holds; require_field reads one key and checks it.
+# value the caller already holds.
 # Its tests: scripts/test/orch/state.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -36,8 +36,7 @@ state_key_field() {
 # misspelt read would otherwise look exactly like an unset one. It calls the
 # Flow state module's reader directly and does not check the file parses, so
 # on an unreadable state.json jq's own parse error and status come through;
-# commands that must refuse such a file do it first, with
-# require_state_readable.
+# commands that must refuse such a file read through require_state_read.
 state_get() {
   state_read "$STATE" "$1"
 }
@@ -141,8 +140,7 @@ state_write_string() {
 # malformed pair list dies "malformed state write: <args>". A failed write
 # dies naming each key given once, in order (never a --string marker), as
 # state_write's does, or naming no key when a value will not convert or the
-# object's keys cannot be read. phase_write reports through it, so a failed
-# phase_write dies the same way; both no-key failure paths share the one
+# object's keys cannot be read. Both no-key failure paths share the one
 # fall-through die.
 state_write_many() {
   local obj keys
@@ -165,14 +163,6 @@ STATE_UNREADABLE_MSG="state.json cannot be read - run orch.sh doctor --flow"
 # and for require_state_read, which checks parsing after it.
 require_state_exists() {
   [ -f "$STATE" ] || "${1:-die}" "no active flow ($ORCH_DIR_NAME/state.json not found). Run $(flow_cmd start) first."
-}
-
-# require_state_readable [die2]: dies, through the dier given, when the state
-# file exists but is not exactly one JSON object. A missing file passes: the
-# caller settles whether a flow must exist.
-# shellcheck disable=SC2120 # no caller passes a dier any more; die2 stays for one that needs it
-require_state_readable() {
-  [ ! -f "$STATE" ] || flow_state_readable "$STATE" || "${1:-die}" "$STATE_UNREADABLE_MSG"
 }
 
 # require_state_read [die|die2] <var>=<key>...: a command's entry read. Dies
@@ -213,47 +203,6 @@ require_value() {
   local __rv_msg
   state_required_msg "$1" || die2 "no required-field message for state key: $1"
   [ -n "$2" ] || "${3:-die}" "$__rv_msg"
-}
-
-# require_field <var> <key> [die2]: one guarded one-key read into the caller's
-# <var>, then require_value: one jq and no subshell, refusing in order with no
-# state file, an unreadable one, and an empty value. Call it as a bare
-# statement on its own line - `local pr; require_field pr pr` - never folded
-# into `$(...)`: the out-param is assigned in the caller's own shell, and `die`
-# runs there too, so `set -e` stops it instead of the caller carrying on with an
-# empty value. A caller-named out-param is a `printf -v`, not a nameref, which
-# needs bash 4.3. The third argument, die2, dies through die2, for a command
-# that reserves exit 1 for a meaningful "no".
-require_field() {
-  require_state_read "${3:-die}" "$1=$2"
-  require_value "$2" "${!1}" "${3:-die}"
-}
-
-# The spec issue number, for the handoff ops that need it before touching
-# GitHub. A second argument, die2, is passed on to
-# require_field.
-require_issue() { require_field "$1" issue "${2:-die}"; }
-
-# The bash writer of state.phase: phase_write, which dies on a failed write.
-# Every bash write of state.phase goes through it; phase advance, review
-# ready's finish, the redos' closing write and Python init record the phase
-# through the Python copies, phase_write and
-# phase_write_try in orch_py/orch/flow_state.py, which check it against
-# handoff.py's copy of the phase table (ADR-0067). It knows only which phases
-# exist: every caller keeps its own guard on which transition it may make, so
-# a step back needs no handoff check here. Optional trailing <key> <value>
-# pairs are written with the phase in one write, after require_flow_phase: the
-# phase and the keys are recorded together or not at all. It dies as
-# state_write_many does (a malformed pair list "malformed state write:
-# <args>", a failed write naming phase and each key once).
-phase_write() {
-  require_flow_phase "$1"
-  state_write_many phase "$@"
-}
-# phase_write's PHASES guard: dies unless <phase> is a flow phase.
-require_flow_phase() {
-  orch_load handoff
-  word_listed "$PHASES" "$1" || die "not a flow phase: $1 (want one of: $PHASES)"
 }
 
 # flow_base_fallback_into <var> <raw>: sets <var> to the base read from state,

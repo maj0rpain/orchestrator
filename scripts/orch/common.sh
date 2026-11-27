@@ -116,10 +116,6 @@ float_add() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f\n", a + b }'; }
 # ORCH_AUTOPILOT, so no skill reads the variable itself.
 autopilot_active() { [ "${ORCH_AUTOPILOT:-}" = 1 ]; }
 
-# is_positive_int <v>: whether <v> is a whole number of 1 or more, leading
-# zeros allowed ("08" is 8). Each caller keeps its own reaction to a no.
-is_positive_int() { [[ "$1" =~ ^[0-9]+$ ]] && [ "$((10#$1))" -gt 0 ]; }
-
 # is_number <v>: whether <v> is a non-negative decimal number: digits with at
 # most one point, and at least one character. Each caller keeps its reaction.
 is_number() {
@@ -342,19 +338,6 @@ file_read() {
   return 1
 }
 
-# file_write_atomic <file> <text>: <text> written to <file>, exactly, through a
-# temp file beside it moved into place on success - so a failed write leaves an
-# existing <file> untouched and never a partly written one. Creates <file>'s
-# directory. Fails, saying nothing, when it cannot write.
-file_write_atomic() {
-  local _fwa_tmp
-  mkdir -p "$(dirname "$1")" || return 1
-  _fwa_tmp="$(mktemp "$1.XXXXXX")" || return 1
-  if printf '%s' "$2" >"$_fwa_tmp" && mv "$_fwa_tmp" "$1"; then return 0; fi
-  rm -f "$_fwa_tmp"
-  return 1
-}
-
 # state_word <var> <state>: GitHub's uppercase issue or PR <state> into <var>
 # as the lowercase word a message prints. Any other value is passed through
 # unchanged.
@@ -516,31 +499,3 @@ require_clean_tree() {
   status="$(tree_status "$1")" || die "$status"
   [ -z "$status" ] || die "$2"
 }
-
-# FENCE_AWK: the one markdown code-fence rule, an awk function fragment each
-# scanner prepends to its own program. A fence opens on a line whose first
-# non-space character, after at most three spaces of indent, starts a run of
-# at least three backticks or tildes; it closes only on a line that, with the
-# same indent allowance, is a bare run of the same character at least as long.
-# fenced(line) is called once per input line, in order, and strips the line's
-# CR and trailing whitespace from its own copy; it returns 2 for a fence
-# delimiter line (opening or closing), 1 for a line inside a fence and 0
-# otherwise. A caller uses the result to gate its own tests - headings,
-# sections, paragraph breaks - and decides itself what to do with a fence's
-# lines, delimiters included. State is fence_-prefixed.
-# shellcheck disable=SC2034 # used by the handoff module
-FENCE_AWK='
-  function fence_run(s, c,   n) { n = 0; while (substr(s, n + 1, 1) == c) n++; return n }
-  function fenced(line,   s, c, n) {
-    s = line; sub(/[ \t\r]+$/, "", s)
-    n = fence_run(s, " "); if (n <= 3) s = substr(s, n + 1)
-    c = substr(s, 1, 1)
-    if (fence_char != "") {
-      if (c == fence_char && fence_run(s, c) >= fence_len && fence_run(s, c) == length(s)) { fence_char = ""; return 2 }
-      return 1
-    }
-    if ((c == "`" || c == "~") && fence_run(s, c) >= 3) { fence_char = c; fence_len = fence_run(s, c); return 2 }
-    return 0
-  }
-'
-

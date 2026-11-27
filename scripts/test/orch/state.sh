@@ -5,6 +5,12 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# fake_flow <slug>: a section's starting point on the store-backed GitHub fake
+# - a bare new_repo, fake_github, and a flow named <slug> just started in it,
+# cwd inside it. Unlike fresh_flow it brings no healthy_repo environment; the
+# section still ends with its own restore_suite_env.
+fake_flow() { new_repo >/dev/null; fake_github; "$ORCH" init "$1" >/dev/null; }
+
 # state_write_fails_bin: a fails_bin for mktemp that fails a state.json.*
 # template - the temp file every state write makes - and nothing else. Unlike
 # chmod a-w, it also fails as root.
@@ -155,57 +161,6 @@ for key in slug phase issue base branch pr base_sha created updated; do
   assert_status "an absent $key still reads" "$st" 0
   assert_eq "an absent $key reads as empty" "$out" ""
 done
-restore_suite_env
-
-# --- the state writer accepts exactly the table's phases --------------------
-# phase_write, the bash writer of state.phase, accepts the phase table's phases
-# and refuses any other, leaving the recorded phase as it was.
-# Optional trailing key/value pairs are written with the phase, or not at all.
-echo
-echo "state phase writer"
-fake_flow phase-writer
-for p in implement review "done" spec; do
-  out="$(sourced_orch phase_write "$p" 2>&1)"; st=$?
-  assert_status "the state writer accepts $p" "$st" 0
-  assert_eq "and writes it" "$("$ORCH" state get phase)" "$p"
-done
-out="$(sourced_orch phase_write plan 2>&1)"; st=$?
-assert_status "the state writer refuses a phase outside the table" "$st" 1
-assert_eq "with today's message" "$out" \
-  "orch: not a flow phase: plan (want one of: spec implement review done)"
-assert_eq "leaving the recorded phase unchanged" "$("$ORCH" state get phase)" "spec"
-out="$(sourced_orch phase_write "spec implement" 2>&1)"; st=$?
-assert_status "the state writer refuses two adjacent phases" "$st" 1
-assert_eq "with today's message for them too" "$out" \
-  "orch: not a flow phase: spec implement (want one of: spec implement review done)"
-assert_eq "leaving the recorded phase unchanged after them" "$("$ORCH" state get phase)" "spec"
-out="$(sourced_orch phase_write review budget 9 --string base_sha 77 2>&1)"; st=$?
-assert_status "phase_write with pairs succeeds" "$st" 0
-assert_eq "writing the phase and the keys" "$(jq -c '[.phase, .budget, .base_sha]' .orchestrator/state.json)" '["review",9,"77"]'
-before="$(cat .orchestrator/state.json)"
-out="$(sourced_orch phase_write plan budget 1 2>&1)"; st=$?
-assert_status "phase_write refuses a phase outside the table, with pairs" "$st" 1
-assert_eq "writing neither phase nor keys" "$(cat .orchestrator/state.json)" "$before"
-phase_write_fails_bin="$(state_write_fails_bin)"
-out="$(PATH="$phase_write_fails_bin:$PATH" sourced_orch phase_write 'done' budget 1 2>&1)"; st=$?
-assert_status "phase_write with pairs dies on a failed write" "$st" 1
-assert_contains "with its wording" "$out" "orch: could not record phase, budget in $PWD/.orchestrator/state.json - the flow is unchanged"
-assert_eq "writing neither phase nor keys on it" "$(cat .orchestrator/state.json)" "$before"
-out="$(PATH="$phase_write_fails_bin:$PATH" sourced_orch phase_write 'done' budget 1 --string branch b budget 2 2>&1)"; st=$?
-assert_status "phase_write with several pairs exits 1 on a failed write" "$st" 1
-assert_contains "phase_write names each key once, in order, never --string" "$out" "orch: could not record phase, budget, branch in $PWD/.orchestrator/state.json - the flow is unchanged"
-assert_eq "a failed several-pairs write leaves state.json unchanged" "$(cat .orchestrator/state.json)" "$before"
-out="$(PATH="$phase_write_fails_bin:$PATH" sourced_orch phase_write 'done' 2>&1)"; st=$?
-assert_contains "phase_write with no pairs names phase alone" "$out" "orch: could not record phase in $PWD/.orchestrator/state.json - the flow is unchanged"
-assert_status "phase_write with no pairs exits 1 on a failed write" "$st" 1
-assert_eq "a failed no-pairs write leaves state.json unchanged" "$(cat .orchestrator/state.json)" "$before"
-out="$(sourced_orch phase_write 'done' budget 2>&1)"; st=$?
-assert_status "phase_write with a key and no value exits 1" "$st" 1
-assert_eq "naming the malformed write" "$out" "orch: malformed state write: phase done budget"
-out="$(sourced_orch phase_write 'done' --string 2>&1)"; st=$?
-assert_status "phase_write with a dangling --string exits 1" "$st" 1
-assert_eq "phase_write with a dangling --string is malformed" "$out" "orch: malformed state write: phase done --string"
-assert_eq "a malformed write leaves state.json unchanged" "$(cat .orchestrator/state.json)" "$before"
 restore_suite_env
 
 # --- state.json schema ------------------------------------------------------
@@ -588,9 +543,9 @@ assert_eq "leaving state.json byte for byte for it too" "$(cat .orchestrator/sta
 restore_suite_env
 
 # --- the entry read and the required-field helpers ---------------------------
-# require_state_read, require_value, require_field and the one-jq readers.
+# require_state_read, require_value and the one-jq readers.
 echo
-echo "require_state_read, require_value and require_field"
+echo "require_state_read and require_value"
 fresh_flow entry
 rs_file="$PWD/.orchestrator/state.json"
 rs_jq="$(counting_bin jq)"
@@ -621,17 +576,7 @@ out="$(sourced_orch require_value nonsense "" 2>&1)"; st=$?
 assert_status "require_value on a key with no message exits 2" "$st" 2
 out="$(sourced_orch require_value nonsense 7 2>&1)"; st=$?
 assert_status "require_value on a key with no message exits 2 with a value too" "$st" 2
-: >"$rs_jq/jq.log"
-out="$(PATH="$rs_jq:$PATH" sourced_orch_script 'require_issue v; echo "[$v]"' 2>&1)"; st=$?
-assert_status "require_issue on a null issue dies" "$st" 1
-assert_eq "with its own message" "$out" "orch: no issue recorded in state - the spec phase must publish one first"
-assert_eq "after one jq" "$(counting_starts "$rs_jq" jq)" "1"
-out="$(sourced_orch_script 'require_issue v die2' 2>&1)"; st=$?
-assert_status "require_issue through die2 exits 2" "$st" 2
-assert_eq "with its own message through die2" "$out" "orch: no issue recorded in state - the spec phase must publish one first"
 "$ORCH" state set issue 7 >/dev/null
-out="$(sourced_orch_script 'require_issue v; echo "$v"' 2>&1)"
-assert_eq "require_issue assigns the issue" "$out" "7"
 : >"$rs_jq/jq.log"
 rs_mktempbin="$(counting_bin mktemp)"
 rs_rmbin="$(counting_bin rm)"
@@ -666,22 +611,12 @@ assert_status "require_state_read with no state file dies" "$st" 1
 assert_contains "saying there is no active flow" "$out" "orch: no active flow"
 out="$(sourced_orch require_state_read die2 a=phase 2>&1)"; st=$?
 assert_status "and exits 2 through die2" "$st" 2
-out="$(sourced_orch_script 'require_issue v' 2>&1)"; st=$?
-assert_status "require_issue with no state file dies" "$st" 1
-assert_contains "saying there is no active flow" "$out" "orch: no active flow"
-out="$(sourced_orch_script 'require_issue v die2' 2>&1)"; st=$?
-assert_status "require_issue with no state file exits 2 through die2" "$st" 2
-assert_contains "saying there is no active flow" "$out" "orch: no active flow"
 fresh_flow entry2
 state_truncate
 out="$(sourced_orch require_state_read a=phase 2>&1)"; st=$?
 assert_state_unreadable "require_state_read" 1 "$out" "$st"
 out="$(sourced_orch require_state_read die2 a=phase 2>&1)"; st=$?
 assert_state_unreadable "require_state_read through die2" 2 "$out" "$st"
-out="$(sourced_orch_script 'require_issue v' 2>&1)"; st=$?
-assert_state_unreadable "require_issue" 1 "$out" "$st"
-out="$(sourced_orch_script 'require_issue v die2' 2>&1)"; st=$?
-assert_state_unreadable "require_issue through die2" 2 "$out" "$st"
 out="$(sourced_orch state_get_in "$PWD/.orchestrator/state.json" nonsense 2>&1)"; st=$?
 assert_status "state_get_in of a key outside the table on a truncated file returns 2" "$st" 2
 assert_eq "printing nothing" "$out" ""

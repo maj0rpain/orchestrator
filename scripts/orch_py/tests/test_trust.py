@@ -1,7 +1,7 @@
-"""The Trust module's comment filter, by the comment's author association:
-the cases the bash trust section asserts through `pr comments`, pinned on
-the Python filter itself - which associations it keeps, which it drops, a
-lower-case and an empty association among them, and its one message."""
+"""The Trust module's comment filter, by the comment's author association,
+pinned on orch/trust.py's filter_comments - which associations it keeps,
+which it drops, a lower-case and an empty association among them, and its
+one message."""
 from __future__ import annotations
 
 import pytest

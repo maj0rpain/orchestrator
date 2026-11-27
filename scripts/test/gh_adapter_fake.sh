@@ -84,7 +84,7 @@
 #                     counts it down
 #   lag/<operation>.stale
 #                     the stale answer, where the operation takes one
-#   comment_reads     one line per adapter_issue_comments call made
+#   comment_reads     one line per issue-comments read the Python fake made
 #   default_branch    the answer to the repo's default branch, byte for byte;
 #                     absent, gh cannot answer for the repo
 #   checks/<n>/<scope>
@@ -96,7 +96,7 @@
 #                     how many calls the script has answered
 #                     (this cursor, comment_reads, prs/<n>/evidence_reads and
 #                     checks/<n>/reads are read-side bookkeeping:
-#                     fake_snapshot in the shared test setup leaves them out)
+#                     fake_snapshot in gh.sh's test preamble leaves them out)
 #   checks/<n>/reads  one line per read of PR #n's checks, scripted scope or
 #                     not; rescripting a scope never resets it
 #   job_logs/<job>    the failed-step log of Actions job <job>; absent, the
@@ -126,7 +126,8 @@
 #                     GitHub leaves off: adapter_issue_open_blockers answers
 #                     nothing for them
 #   no_sub_issues     present, the sub-issues endpoint refuses every issue
-#   no_comment_url    present, adapter_issue_comment_url prints no URL
+#   no_comment_url    present, the Python fake's issue comment URL post
+#                     answers no URL
 #   offline           present, every operation fails with a connection error
 #   ratelimit         present, every operation but the rate_limit read fails
 #                     as a GitHub API rate limit, with the file's contents as
@@ -400,13 +401,11 @@ fake_issue_labels_counted() {
 
 # fake_comment_append <dir> <author> <created-at> <body-file> [<assoc>]:
 # one comment appended to an issue's or PR's comments directory, numbered in
-# order, its authorAssociation OWNER unless given, its number left in
-# fake_comment_number. The existing comments are counted with a glob, and the
-# comment's directory made in one mkdir.
+# order, its authorAssociation OWNER unless given. The existing comments are
+# counted with a glob, and the comment's directory made in one mkdir.
 fake_comment_append() {
   local d="$1" k=1 e
   for e in "$d"/*; do [ -e "$e" ] && k=$((k + 1)); done
-  fake_comment_number="$k"
   mkdir -p "$d/$k"
   printf '%s\n' "$2" >"$d/$k/author"
   printf '%s\n' "$3" >"$d/$k/created"
@@ -432,41 +431,6 @@ fake_close_comment() {
   rm -f "$c"
 }
 
-# fake_comment_url <n> <k>: the URL of the k-th comment on issue <n>.
-fake_comment_url() { printf 'https://github.com/o/r/issues/%s#issuecomment-%s\n' "$1" "$2"; }
-
-# fake_comments_json <comments-dir> <n>: the directory's comments, numerically
-# ordered, as one compact JSON array of author, authorAssociation (OWNER for a
-# comment stored without one), createdAt, body and url, the url
-# being https://github.com/o/r/issues/<n>#issuecomment-<k> for the k-th
-# comment; [] for a missing or empty directory. The entries are listed and the
-# fields read in bash; only jq runs, once per comment.
-fake_comments_json() {
-  local d="$1" k comments="[]" au as cr
-  if [ -d "$d" ]; then
-    fake_entries_sorted "$d"
-    for k in ${fake_entries[@]+"${fake_entries[@]}"}; do
-      fake_slurp "$d/$k/author" || true; au="$fake_slurped"
-      fake_slurp "$d/$k/association" || fake_slurped=OWNER; as="$fake_slurped"
-      fake_slurp "$d/$k/created" || true; cr="$fake_slurped"
-      comments="$(jq -c --arg a "$au" \
-        --arg s "$as" \
-        --arg c "$cr" --rawfile b "$d/$k/body" \
-        --arg u "$(fake_comment_url "$2" "$k")" \
-        '. + [{author: $a, authorAssociation: $s, createdAt: $c, body: $b, url: $u}]' <<<"$comments")"
-    done
-  fi
-  printf '%s\n' "$comments"
-}
-
-# fake_comments_raw <comments-dir> <n>: the stored comments as gh's raw JSON -
-# an object whose comments array holds each comment's author login object,
-# authorAssociation, createdAt, body and url.
-fake_comments_raw() {
-  fake_comments_json "$1" "$2" \
-    | jq -c '{comments: map({author: {login: .author}, authorAssociation, createdAt, body, url})}'
-}
-
 # adapter_issue_body <n>: the stored body, then a newline, as gh's --jq .body
 # prints it.
 adapter_issue_body() {
@@ -474,20 +438,6 @@ adapter_issue_body() {
   fake_issue_known "$1" || return 1
   cat "$(fake_issue_dir "$1")/body" 2>/dev/null
   printf '\n'
-}
-
-# adapter_issue_comments <n>: the stored comments as gh's raw JSON - an object
-# whose comments array holds each comment's author login object,
-# authorAssociation, createdAt, body and url.
-adapter_issue_comments() {
-  echo x >>"$(fake_store)/comment_reads"
-  ! fake_failing adapter_issue_comments || return 1
-  if fake_lagging adapter_issue_comments; then
-    fake_stale adapter_issue_comments
-    return 0
-  fi
-  fake_issue_known "$1" || return 1
-  fake_comments_raw "$(fake_issue_dir "$1")/comments" "$1"
 }
 
 # adapter_issue_json <n>: the stored issue as ISSUE_JSON_JQ's trimmed object -
@@ -727,27 +677,6 @@ adapter_issue_body_edit() {
   cat "$2" >"$(fake_issue_dir "$1")/body"
 }
 
-# adapter_issue_comment <n> <file>: the file's contents appended as a comment,
-# by fake-gh.
-adapter_issue_comment() {
-  ! fake_failing adapter_issue_comment || return 1
-  fake_issue_known "$1" || return 1
-  fake_comment_write "$(fake_issue_dir "$1")/comments" "$2"
-}
-
-# adapter_issue_comment_url <n> <file>: adapter_issue_comment, then the posted
-# comment's URL, as fake_comments_json stores it; nothing where no_comment_url
-# is present.
-adapter_issue_comment_url() {
-  local d
-  ! fake_failing adapter_issue_comment_url || return 1
-  fake_issue_known "$1" || return 1
-  d="$(fake_issue_dir "$1")/comments"
-  fake_comment_write "$d" "$2"
-  [ ! -f "$(fake_store)/no_comment_url" ] || return 0
-  fake_comment_url "$1" "$fake_comment_number"
-}
-
 # fake_option_value <operation> <option-names> <option> [value...]: true where
 # <option> is followed by a value that is neither empty nor one of
 # <option-names>, a space-separated list each compared whole; otherwise says so
@@ -886,14 +815,6 @@ adapter_pr_body() {
   fake_pr_known "$1" || return 1
   cat "$(fake_pr_dir "$1")/body" 2>/dev/null
   printf '\n'
-}
-
-# adapter_pr_comments <n>: the stored comments as gh's raw JSON, as
-# adapter_issue_comments prints an issue's.
-adapter_pr_comments() {
-  ! fake_failing adapter_pr_comments || return 1
-  fake_pr_known "$1" || return 1
-  fake_comments_raw "$(fake_pr_dir "$1")/comments" "$1"
 }
 
 # adapter_pr_refs <n>: the stored head SHA (default forty zeros, a SHA no

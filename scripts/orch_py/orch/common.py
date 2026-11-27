@@ -136,7 +136,7 @@ def plain_positive_number(text: str) -> bool:
 
 def is_positive_int(text: str) -> bool:
     """Whether <text> is a plain number (plain_number) above zero, leading
-    zeros allowed - bash's is_positive_int."""
+    zeros allowed, as bash's is_positive_int was."""
     return plain_number(text) and int(text) > 0
 
 
@@ -247,13 +247,13 @@ def _run_of(text: str, char: str) -> int:
 
 
 def fenced(lines: Iterable[str]) -> List[int]:
-    """The one markdown code-fence rule, common.sh's FENCE_AWK, over <lines>
-    in order: for each, 2 for a fence delimiter line (opening or closing), 1
-    for a line inside a fence and 0 otherwise. A fence opens on a line whose
-    first non-space character, after at most three spaces of indent, starts a
-    run of at least three backticks or tildes; it closes only on a line that,
-    with the same indent allowance, is a bare run of the same character at
-    least as long. Each line's CR and trailing blanks are ignored."""
+    """The one markdown code-fence rule, as common.sh's FENCE_AWK was, over
+    <lines> in order: for each, 2 for a fence delimiter line (opening or
+    closing), 1 for a line inside a fence and 0 otherwise. A fence opens on a
+    line whose first non-space character, after at most three spaces of
+    indent, starts a run of at least three backticks or tildes; it closes
+    only on a line that, with the same indent allowance, is a bare run of the
+    same character at least as long. Each line's CR and trailing blanks are ignored."""
     states = []
     fence_char = ""
     fence_len = 0

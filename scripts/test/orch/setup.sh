@@ -334,9 +334,6 @@ sourced_orch_script() { local s="$1"; shift; bash -c 'source "$1"; shift; '"$s" 
 # temp_file_make fail on its PK_NTH-th call, counted in the file PK_COUNT, and
 # work otherwise.
 NTH_MAKE_FAKE='real_make=$(declare -f temp_file_make); temp_file_make() { local n=0; [ ! -e "$PK_COUNT" ] || n=$(<"$PK_COUNT"); n=$((n+1)); echo "$n" >"$PK_COUNT"; [ "$n" -ne "$PK_NTH" ] || return 1; eval "${real_make/temp_file_make/real_temp_file_make}"; real_temp_file_make "$@"; }; '
-# marker_of <kind> [<arg>] [retired]: the marked-comment module's first line for
-# the kind, so a seeded comment is written as the module writes it.
-marker_of() { sourced_orch marked_comment_write "$@"; }
 
 # The Flow state module, sourced so state_fixture writes through orch.sh's own
 # writer: a fixture can then never store a value orch.sh would not write.
@@ -389,14 +386,21 @@ state_fixture_drop() {
 }
 
 # complete_handoff <file>: a complete handoff at <file>, holding every section
-# the Handoff module's phase table requires for its name - read through
-# handoff_required in a shell that sourced orch.sh, so the fixture cannot drift
-# from the validator - each with a placeholder body, plus Host fallbacks
-# whatever the state says. When handoff_required fails, on a name the table
-# does not hold, it fails and writes no file.
+# the phase table requires for its name - read from the missing sections
+# `orch.sh handoff validate` reports for an empty file of that name, outside
+# autopilot, so the fixture cannot drift from the validator - each with a
+# placeholder body, plus Host fallbacks whatever the state says. On a name the
+# table does not hold, validate reports no section, and it fails and writes no
+# file.
 complete_handoff() {
-  local headings heading
-  headings="$(sourced_orch handoff_required "$(basename "$1")")" || return 1
+  local dir empty headings heading
+  dir="$(mktemp -d)" || return 1
+  empty="$dir/${1##*/}"
+  : >"$empty"
+  headings="$(env -u ORCH_AUTOPILOT "$ORCH" handoff validate "$empty" 2>/dev/null \
+    | sed -n 's/^FAIL  missing section: //p')"
+  rm -rf "$dir"
+  [ -n "$headings" ] || return 1
   grep -qxF '## Host fallbacks' <<<"$headings" || headings="$headings"$'\n''## Host fallbacks'
   while IFS= read -r heading; do
     writeln "$heading" "Placeholder for ${heading#\#\# }." ''
@@ -506,12 +510,6 @@ healthy_repo() {
 # section that needs a later phase arranges it with state_fixture.
 fresh_flow() { healthy_repo; "$ORCH" init "$1" >/dev/null; }
 
-# fake_flow <slug>: a section's starting point on the store-backed GitHub fake
-# - a bare new_repo, fake_github, and a flow named <slug> just started in it,
-# cwd inside it. Unlike fresh_flow it brings no healthy_repo environment; the
-# section still ends with its own restore_suite_env.
-fake_flow() { new_repo >/dev/null; fake_github; "$ORCH" init "$1" >/dev/null; }
-
 # --- the store-backed gh fake (#280) ------------------------------------------
 #
 # fake_github: a behaviour test's GitHub. It creates a fresh, empty store and
@@ -538,16 +536,6 @@ fake_pr_head() {
 
 # iso_of <epoch>: epoch seconds as a UTC timestamp, GNU or BSD date.
 iso_of() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; }
-
-# fake_comment_seed <comments-dir> <author> <created-at> <body> [<association>]:
-# the body, byte
-# for byte, appended as a comment by the fake's own fake_comment_append, so the
-# store's comment layout has one writer.
-fake_comment_seed() {
-  printf '%s' "$4" |
-    bash -c 'source "$1"; fake_comment_append "$2" "$3" "$4" /dev/stdin "$5"' \
-      _ "$GH_ADAPTER_FAKE" "$1" "$2" "$3" "${5-}"
-}
 
 # fake_comment_bodies <comments-dir>: the bodies of the directory's comments,
 # in order, one blank line between; nothing for none.
@@ -581,59 +569,9 @@ fake_issue_relabel() {
   [ $# -eq 0 ] || printf '%s\n' "$@" >"$ORCH_GH_FAKE_STORE/issues/$n/labels"
 }
 
-# fake_comment <n> <author> <created-at> <body> [<association>]: seeds a comment
-# on issue #n, after any it has; its association is OWNER unless given.
-fake_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/$1/comments" "$2" "$3" "$4" "${5-}"; }
-
 # fake_comments_of <n>: the bodies of issue #n's comments read back from the
 # store, in order, one blank line between.
 fake_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
-
-# tick_fixture: a clone of a bare origin, the gh fake, the permission mode set,
-# claude on PATH and the fake session launcher in place. The launcher records
-# argv, ORCH_AUTOPILOT, its directory and every issue's labels, then writes the
-# output and exits as seeded: $launcher_dir/out and /exit, and, in /release, the
-# issues whose claims it releases before exiting.
-tick_fixture() {
-  sc_clone
-  fake_github
-  git config orchestrator.autopilot.permission-mode acceptEdits
-  launcher_dir="$(mktemp -d)"
-  cat >"$launcher_dir/launcher" <<LAUNCHER
-#!/bin/sh
-{
-  printf 'argv:%s\n' "\$*"
-  for a in "\$@"; do printf 'arg:%s\n' "\$a"; done
-  printf 'autopilot:%s\n' "\${ORCH_AUTOPILOT:-}"
-  printf 'explore-plan:%s\n' "\${CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS:-}"
-  printf 'bg-wait:%s\n' "\${CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS:-}"
-  printf 'dir:%s\n' "\$(pwd -P)"
-  for d in "$ORCH_GH_FAKE_STORE"/issues/*/; do
-    printf 'labels:%s:%s\n' "\$(basename "\$d")" "\$(LC_ALL=C sort "\$d/labels" | tr '\n' ' ')"
-  done
-} >>"$launcher_dir/calls"
-[ -f "$launcher_dir/out" ] && cat "$launcher_dir/out"
-for n in \$(cat "$launcher_dir/release" 2>/dev/null); do rm -f "$ORCH_GH_FAKE_STORE/claims/\$n"; done
-exit "\$(cat "$launcher_dir/exit" 2>/dev/null || echo 0)"
-LAUNCHER
-  chmod +x "$launcher_dir/launcher"
-  export ORCH_AUTOPILOT_LAUNCHER="$launcher_dir/launcher" ORCH_AUTOPILOT_FOREGROUND=1
-  tickbin="$(mktemp -d)"
-  printf '#!/bin/sh\nexit 0\n' >"$tickbin/claude"; chmod +x "$tickbin/claude"
-  PATH="$tickbin:$PATH"
-}
-
-# dir_snapshot <dir>: every file under <dir>, by its path from <dir>, with its
-# checksum, in a fixed order - for a byte-identical comparison with another
-# snapshot of the same directory.
-dir_snapshot() { (cd "$1" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r cksum); }
-
-# fake_snapshot: a digest of the whole store, so a test asserts a read-only
-# command left it as it was. The read-side files are reads, never writes, so
-# they are left out: comment_reads, each PR's evidence_reads, each PR's
-# checks/<n>/reads and each checks/<n>/<scope>.n cursor. The fail/ and lag/
-# countdowns stay in: a test seeds them, and any operation consumes them.
-fake_snapshot() { dir_snapshot "$ORCH_GH_FAKE_STORE" | sed -E '/ \.\/(comment_reads|prs\/[^\/]+\/evidence_reads|checks\/[^\/]+\/(reads|[^\/]+\.n))$/d'; }
 
 # fake_pr <n> <state> <head> <base>: seeds PR #n afresh, open, closed or
 # merged, from the head branch into the base - no body, comments or commits,
@@ -646,10 +584,6 @@ fake_pr() {
   printf '%s\n' "$3" >"$d/head"
   printf '%s\n' "$4" >"$d/base"
 }
-
-# fake_pr_comment <n> <author> <created-at> <body> [association]: seeds a
-# comment on PR #n, after any it has; the association defaults to OWNER.
-fake_pr_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/prs/$1/comments" "$2" "$3" "$4" "${5-}"; }
 
 # fake_pr_draft <n>: seeds PR #n as a draft.
 fake_pr_draft() { : >"$ORCH_GH_FAKE_STORE/prs/$1/draft"; }
@@ -679,16 +613,6 @@ GH_502=$'HTTP 502: Bad Gateway\nsecond line'
 
 # fake_unfail: every operation fake_fail named succeeds again.
 fake_unfail() { rm -rf "$ORCH_GH_FAKE_STORE/fail"; }
-
-# fake_lag <operation> <n> [stale]: the next n calls of the named operation
-# answer stale, as GitHub does for a moment after a write; the call after them
-# is current again. An operation that reads answers the stale text given, in
-# its own documented shape - or, given none, an empty one.
-fake_lag() {
-  mkdir -p "$ORCH_GH_FAKE_STORE/lag"
-  printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/lag/$1"
-  if [ $# -ge 3 ]; then printf '%s\n' "$3" >"$ORCH_GH_FAKE_STORE/lag/$1.stale"; fi
-}
 
 # fake_default_branch <answer>: seeds gh's answer to the repo's default branch,
 # byte for byte, so a test can seed a polluted or empty one.

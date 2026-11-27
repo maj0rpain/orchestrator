@@ -165,19 +165,6 @@ assert_eq "word_listed answers with an empty PATH" \
     PATH=
     word_listed "a b c" b && printf y; word_listed "a b c" "a b" || printf n')" "yn"
 
-# --- is_positive_int ----------------------------------------------------------
-# The one whole-number-of-1-or-more test.
-echo
-echo "is_positive_int"
-new_repo >/dev/null
-pi_verdicts=""
-for pi_item in 1 08 42 0 00 -1 1.5 '' abc ' 3'; do
-  if sourced_orch is_positive_int "$pi_item"; then pi_verdicts="$pi_verdicts y"
-  else pi_verdicts="$pi_verdicts n"; fi
-done
-assert_eq "is_positive_int accepts whole numbers of 1 or more, leading zeros included, and nothing else" \
-  "$pi_verdicts" " y y y n n n n n n n"
-
 # --- err_line (#1718) ---------------------------------------------------------
 # A captured error's first line, everything through its first `orch: ` dropped.
 echo
