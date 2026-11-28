@@ -34,12 +34,12 @@
 1	1	list_has	1b77da0f0baf0e9659a1986eafd8934fb41d25ae
 1	1	list_join	4292808f3baa0e4ec59d9d9efc00d1bc66916e45
 1	1	word_listed	7b04df9704648c2a1974b0634cc1240b58a7d4db
-1	2	git_push (#1300)	db8a1bf02c6724a2beb43c62efb67c36f1b73bbf
+2	2	git_push (#1300)	8d1f9e47f37be5028b822043a6221919a082998c
 1	1	capture_err and capture without a temp file (#1780)	4c43cfabfef1346a8bb6fa28d80ca9ebe2b5b34a
 4	5	capture, capture_err and file_read	5ec13636e30e940e59b787ed65d72f5f2227ea40
 1	1	die_hinted and die_opt_check	77b3d461e3e7fd34dd30fa05a6add7f30ba9b875
 7	8	the Flow state module, sourced alone	b36078b4d6a93aabebb74975a54f213323651e1d
-1	2	host detection (host.sh, #281)	810863fbb3e926aaff3a2d2d00c5e6caa68f55d7
+0	2	host detection (host.sh, #281)	0eb656a59df724be17fd299d5199fc0198026796
 1	1	triage_label_into: parse once, later lookups start no command	e6cea4b87c87e036e84f91d0ae69695a8fdd295c
 311	377	hooks_test.sh	a9b96b44977968d5a4038202ec1db0a55e007846
 301	375	docs_lint.sh	ba1a55210fcb7887fda29382e5de7097b7125050

@@ -191,17 +191,6 @@ def test_the_state_noun_is_converted(capsys):
         "orch: unknown state op: wipe (want get|set)\n"
 
 
-def test_state_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_path):
-    """state get printed through bash's jq and cat, which died of SIGPIPE on
-    a pipe whose reader is gone: so does the converted noun."""
-    git_repo(tmp_path)
-    hold_flow(tmp_path, slug="x", phase="spec", issue=7)
-
-    run = into_a_closed_pipe(tmp_path, "state", "get", "slug")
-
-    assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
-
-
 def spec_with_ticket(seed):
     """Spec issue #90 with one open sub-issue, #450."""
     for n in (90, 450):

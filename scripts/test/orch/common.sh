@@ -157,10 +157,9 @@ assert_eq "word_listed answers with an empty PATH" \
     word_listed "a b c" b && printf y; word_listed "a b c" "a b" || printf n')" "yn"
 
 # --- git_push (#1300) ---------------------------------------------------------
-# Every push orch.sh makes runs through git_push, which returns the push's
-# status and cuts git's reason out of its stderr. pr open, pr publish and
-# branch's sections pin each site; this pins the join of several ` ! ` lines,
-# which no command's single-ref push can reach.
+# git_push, the bash copy of orch.git's push, returns the push's status and
+# cuts git's reason out of its stderr. This pins the join of several ` ! `
+# lines, which no command's single-ref push can reach.
 echo
 echo "git_push"
 new_repo >/dev/null

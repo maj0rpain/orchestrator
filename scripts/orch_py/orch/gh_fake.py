@@ -136,7 +136,8 @@ def _numbered(directory: str) -> List[str]:
 
 
 def _store_path(store: str, *parts: object) -> str:
-    """The path of <parts> under the store at <store>, in the fake_* layout."""
+    """The path of <parts> under the store at <store>, in the layout
+    scripts/test/gh_adapter_fake.sh documents."""
     return os.path.join(store, *(str(part) for part in parts))
 
 
@@ -1160,8 +1161,7 @@ class FakeStore:
 
     def pr_merged(self, n: int, merged_at: str, *closing: int) -> None:
         """PR #n merged at the UTC timestamp <merged_at>, its
-        closingIssuesReferences the issues given, as fake_pr_merged seeds
-        them."""
+        closingIssuesReferences the issues given."""
         _write(_pr_path(self.store, n, "merged_at"), merged_at + "\n")
         _write(_pr_path(self.store, n, "closing"), "".join("%d\n" % i for i in closing))
 
@@ -1227,13 +1227,12 @@ class FakeStore:
               started: str = "2026-01-01T00:00:00Z", phase: str = "spec") -> None:
         """A claim on issue #n, held by <host> (this host when None) with
         <pid>, from <started> at <phase> - by default pid 1, a start long
-        past and the spec phase, as fake_claim_seed seeds it."""
+        past and the spec phase."""
         _write(_store_path(self.store, "claims", n), "%d\t%s\t%d\t%s\t%s\n" % (
             n, socket.gethostname() if host is None else host, pid, phase, started))
 
     def claim_held(self, n: int) -> bool:
-        """Whether the store holds a claim on issue #n, as fake_claim_held
-        reads it."""
+        """Whether the store holds a claim on issue #n."""
         return os.path.isfile(_store_path(self.store, "claims", n))
 
     def fail(self, operation: str, stderr: Optional[str] = None) -> None:

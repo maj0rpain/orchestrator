@@ -152,8 +152,8 @@ git_config_unset() {
 }
 # git_push <reason-var> <git push args...>: runs git push with the arguments,
 # sets <reason-var> to git's reason through git_push_reason, and returns the
-# push's status (#1300). Every push orch.sh makes runs through it, so none
-# drops the reason or leaves the status unchecked; each site keeps its own die.
+# push's status (#1300). The bash copy of orch.git's push, which every push
+# orch.sh makes runs through; kept for the common section's tests (#4304).
 # Same rules as capture_err: current shell only, _git_push_-prefixed locals.
 git_push() {
   local _git_push_err _git_push_st=0
@@ -231,9 +231,10 @@ file_read_text() {
 # exclude_line <lines>: makes sure each of the newline-separated <lines> is a
 # line of the clone's shared info/exclude, adding it once and never again: it
 # appends the lines exclude_missing finds absent, creating the file's directory
-# first, and does nothing at all when none is missing. The one place that file
-# is appended to; it dies naming the missing lines and the file on a failed
-# write.
+# first, and does nothing at all when none is missing. It dies naming the
+# missing lines and the file on a failed write. The bash copy of
+# orch/common.py's exclude_line, which makes every append orch.sh makes to that
+# file; kept for the common section's tests (#4304).
 exclude_line() {
   local missing ex
   missing="$(exclude_missing "$1")"
@@ -249,8 +250,8 @@ exclude_line() {
 
 # exclude_missing <lines>: prints, one per line, each of the newline-separated
 # <lines> the clone's shared info/exclude lacks - every one when the file is
-# missing. The one place the membership test is written: exclude_line appends
-# exactly this.
+# missing. exclude_line appends exactly this. The bash copy of orch/common.py's
+# exclude_missing; kept for the common section's tests (#4304).
 exclude_missing() {
   local ex l
   ex="$(git rev-parse --git-common-dir)/info/exclude"
