@@ -58,27 +58,25 @@
 54	46	gh rate limits (#2577)	a847a9097deefbfd5fd0a57bc5302683b2d04955
 19	20	gh rate limits: the GitHub pause and the hit file (#2577)	ff4daa3a441a027c6acc89c1dacfba5024650de1
 1	2	host detection (host.sh, #281)	810863fbb3e926aaff3a2d2d00c5e6caa68f55d7
-6	7	orch_load	b7690e1c2206cbbb9683deef992bff879a329c86
-12	13	on-demand loading	47c18484156704d549b2a54e2a2e381705db8623
-16	19	stub table cache	f08da23fcef1d9cfbb031ed5cab21326cda0ee8c
+4	5	orch_load	7e122b1c86b2ee83ea6602bd74685318321f6be6
+10	12	on-demand loading	e34e8de9711be82ff036132dbcc45fe06675f16d
+16	17	stub table cache	8cbe21443c3dedd753f3b5ce28f791847bc9374b
 1	2	mp-skill	e60393c4f6e6f95d5fba4df7ab64704fd650e873
 4	5	bash version guard	b9c291545a1708ed286831ce6e7ed83b277ce540
 1	2	outside a checkout (#931)	0ae7f89078991baf6f44277fef5b969e1b217f1f
 1	2	no repo to resolve	a065f98f63163074971027d035f7768f585494d7
 2	4	a tool manager's banner (#465)	a7250a9efb433b42b995ef234d550de3652aacc7
-17	18	state	0a78c0fc4998dc1ebefe5eaa05c9e16ac1103d94
-25	22	a flow from before the budget shipped	dce89e0725529fdfc383f5b4d006c1c4656aa88c
-10	12	state get reads every key with its default	9bace913efe640b0abe2299c86617c6ad5782ae3
-6	8	state.json schema	9d005186194c8c44afe7cb242b7c1052cb5ccdb3
-4	5	state set on a corrupt state.json	a442a58339d922d056dea08d79a4cafe91d7e509
-18	19	the Flow state module, sourced alone	5f8c08f95189b41f9c207bd0a2299e5bcdd49180
-4	5	the shared and own-checkout readers on a truncated state.json	516b1d6488896072a5b13a28a5dafa3aab202c12
-3	4	state set with a failed write (#1931)	b17f57a191770a48384bd28866df6d6549584bfc
-6	8	the entry read	57b4bd20cd7175625e7a3d553c455201cb7712d5
+24	21	a flow from before the budget shipped	1f83920339afa1baeb232f03a2026b94b89b890c
+5	7	doctor --flow on a state.json lacking keys	57efef21cc0fba265c95ffe62c35ab05d7dd915b
+3	4	state.json schema	ce7a776ac1843d913eef22a465de348a036d3d54
+3	4	state_fixture on a corrupt state.json	c1abea4c0b501302c488ef0329bf4af81fc27a59
+17	17	the Flow state module, sourced alone	27dd8f1952ca3503f2924e04529ca4032ebcea3e
+5	5	the shared and own-checkout readers on a truncated state.json	88c14f1137e120b89cc972493eb3681339fdff0c
+7	8	the entry read	42c947f319e1785364a0eccde914f04821dc01bb
 1	2	triage_label_into: parse once, later lookups start no command	ba2dc83098993a7a23392d37d31c6a721b76254e
 22	23	trust module	91012f70e1eddf53cf027a6b8d2c410d1d35bc38
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594
-282	351	docs_lint.sh	e8b693f22f892277a74097701800a6363335a190
+287	358	docs_lint.sh	2a647dd4b0dc5ea8cfe32f0d504fd5f34bd3752a
 40	30	version_bump_test.sh	13c6acda626586d9df9be1d51a465dd889fdc723
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 39	41	autopilot_up_test.sh	68a84aa80b2feb5cc7dddc8103eb23c82b0c5155
