@@ -111,21 +111,6 @@ assert_first_line() {
   assert_eq "$1" "$(printf '%s\n' "$2" | sed -n 1p)" "$3"
 }
 
-# adapter_stood_in <definitions> <cmd>...: runs <cmd> with ORCH_GH_ADAPTER at a
-# stand-in adapter, a temp file that sources the gh adapter fake and then holds
-# <definitions> (bash text) verbatim. The file is removed whatever <cmd>'s
-# status, and that status is returned. When the mktemp or the write fails,
-# nothing runs, any file made is removed, and it returns non-zero.
-adapter_stood_in() {
-  local defs="$1" adapter st
-  shift
-  adapter="$(mktemp)" || return 1
-  printf 'source %q\n%s\n' "$GH_ADAPTER_FAKE" "$defs" >"$adapter" || { rm -f "$adapter"; return 1; }
-  ORCH_GH_ADAPTER="$adapter" "$@"; st=$?
-  rm -f "$adapter"
-  return "$st"
-}
-
 # log_count <log> [<tag>]: the lines in <log>, only those starting with "<tag> "
 # when a tag is given; 0 for a <log> that is absent, in both forms.
 log_count() {
@@ -361,10 +346,6 @@ GH_502=$'HTTP 502: Bad Gateway\nsecond line'
 
 # fake_unfail: every operation fake_fail named succeeds again.
 fake_unfail() { rm -rf "$ORCH_GH_FAKE_STORE/fail"; }
-
-# fake_default_branch <answer>: seeds gh's answer to the repo's default branch,
-# byte for byte, so a test can seed a polluted or empty one.
-fake_default_branch() { printf '%s' "$1" >"$ORCH_GH_FAKE_STORE/default_branch"; }
 
 # --- the fixture gh (adapter contract tests, #280) ----------------------------
 #

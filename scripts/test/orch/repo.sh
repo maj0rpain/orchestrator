@@ -5,6 +5,10 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# fake_default_branch <answer>: seeds gh's answer to the repo's default branch,
+# byte for byte, so a test can seed a polluted or empty one.
+fake_default_branch() { printf '%s' "$1" >"$ORCH_GH_FAKE_STORE/default_branch"; }
+
 # new_repo_with_origin [branch]: new_repo, plus tracking refs for its origin:
 # origin/<branch> (default: the checked-out branch) set to HEAD, and
 # origin/HEAD pointing at it. Call it in the current shell, never inside $(...):

@@ -5,6 +5,21 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# adapter_stood_in <definitions> <cmd>...: runs <cmd> with ORCH_GH_ADAPTER at a
+# stand-in adapter, a temp file that sources the gh adapter fake and then holds
+# <definitions> (bash text) verbatim. The file is removed whatever <cmd>'s
+# status, and that status is returned. When the mktemp or the write fails,
+# nothing runs, any file made is removed, and it returns non-zero.
+adapter_stood_in() {
+  local definitions="$1" stand_in st
+  shift
+  stand_in="$(mktemp)" || return 1
+  printf 'source %q\n%s\n' "$GH_ADAPTER_FAKE" "$definitions" >"$stand_in" || { rm -f "$stand_in"; return 1; }
+  ORCH_GH_ADAPTER="$stand_in" "$@"; st=$?
+  rm -f "$stand_in"
+  return "$st"
+}
+
 # ALL_RUNNER_FILES: the files, by name in scripts/test/, that make up all.sh's
 # runnable copy. Every fixture that copies all.sh derives its copy, its written
 # list and its shellcheck counts from it.
@@ -4155,7 +4170,7 @@ assert_eq "under their headers" "$(printf '%s\n' "$out" | grep '^# ')" \
 
 undescribed=""
 for name in default_branch_into is_branch_name float_add \
-  require_state_exists fake_default_branch sourced_orch; do
+  require_state_exists fake_unfail sourced_orch; do
   grep -qE "^$name"$'\t''[^-]' <<<"$index_default"$'\n'"$out" \
     || undescribed+=" $name"
 done

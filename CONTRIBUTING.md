@@ -47,36 +47,37 @@ it falls back to the full suite.
 far are `issue`, `finding-triage`, `verification`, `audit`, `review-pass`,
 `spec-review`, `spec`, `breakdown`, `glossary`, `parallel`, `route`, `agent`,
 `phase`, `handoff`, `redo`, `ticket`, `ticket-worktree`, `pr`, `review`,
-`autopilot`, `side-checkout`, `branch`, `repo`, `base`, `doctor` with its
-alias `health`, and the bare global commands `init`, `slug`, `status`,
-`archive`, `default-branch` and `help`; a helper a converted noun needs is copied into the package module of
-the concept it serves, under its bash name, and its bash copy stays while a
-bash caller remains. `orch.sh` stays the one entry point: main's one case
-naming the converted nouns calls `orch_python`, which runs the package as
-`python3 -m orch <noun> <arg>...` would, in place of orch.sh, so stdin, stdout,
-stderr and the exit code are the noun's own. It runs it through a `-c` bootstrap
-rather than `-m`: `-m` puts the caller's directory ahead of `PYTHONPATH` and the
-standard library, so a `json.py` or `orch.py` there would shadow the package or
-its imports, and Python 3.9 has no `-P`. The bootstrap drops that directory from
-`sys.path` before importing anything, puts the package directory first on
-`sys.path` in its place, then runs `orch/__main__.py` through `runpy`. The
-package directory never goes on `PYTHONPATH`, which would split a plugin path
-holding a colon and hand the directory on to every command the noun starts; the
-caller's own `PYTHONPATH` is left as given. `help`'s option spellings, `-h` and
-`--help`, and a bare `orch.sh` reach the same case and run `help`. The entry
-point, `orch/__main__.py`, is in syntax every python3 compiles (no annotations,
-f-strings or `from __future__` imports) and imports the rest of the package only
-after its version check. With no `python3` on `PATH`, `orch_python` dies before
-doing anything, exit 1, naming `orch.sh doctor`; the package's entry point dies
-the same way below Python 3.9. `doctor` and `health` themselves, which cannot
-point at doctor, name the install instead, on both sides. orch.sh's ROOT block
-still runs first, and the package's own (`orch/root.py`) gives the same death
-outside a checkout when it is run directly. A converted noun keeps the bash
-noun's arguments, stdout, exit codes and `orch:` messages, and its bash module
-and section file are deleted with it. The package uses only the standard
-library; the dev dependencies (pytest, pytest-xdist, pytest-timeout) are pinned
-in `scripts/orch_py/requirements-dev.txt`, which the autopilot image installs
-into a venv at `/opt/orch-dev`. Locally: `python3 -m venv .venv && .venv/bin/pip
+`autopilot`, `side-checkout`, `branch`, `repo`, `base`, `doctor` with its alias
+`health`, and the bare global commands `init`, `slug`, `status`, `archive`,
+`default-branch` and `help`; a helper a converted noun needs is copied into the
+package module of the concept it serves, under its bash name, and its bash copy
+stays while a bash caller remains. `orch.sh` stays the one entry point: main's
+one case naming the converted nouns calls `orch_python`, which runs the package
+as `python3 -m orch <noun> <arg>...` would, in place of orch.sh, so stdin,
+stdout, stderr and the exit code are the noun's own. It runs it through a `-c`
+bootstrap rather than `-m`: `-m` puts the caller's directory ahead of
+`PYTHONPATH` and the standard library, so a `json.py` or `orch.py` there would
+shadow the package or its imports, and Python 3.9 has no `-P`. The bootstrap
+drops that directory from `sys.path` before importing anything, puts the package
+directory first on `sys.path` in its place, then runs `orch/__main__.py` through
+`runpy`. The package directory never goes on `PYTHONPATH`, which would split a
+plugin path holding a colon and hand the directory on to every command the noun
+starts; the caller's own `PYTHONPATH` is left as given. `help`'s option
+spellings, `-h` and `--help`, and a bare `orch.sh` reach the same case and run
+`help`. The entry point, `orch/__main__.py`, is in syntax every python3 compiles
+(no annotations, f-strings or `from __future__` imports) and imports the rest of
+the package only after its version check. With no `python3` on `PATH`,
+`orch_python` dies before doing anything, exit 1, naming `orch.sh doctor`; the
+package's entry point dies the same way below Python 3.9. `doctor` and `health`
+themselves, which cannot point at doctor, name the install instead, on both
+sides. orch.sh's ROOT block still runs first, and the package's own
+(`orch/root.py`) gives the same death outside a checkout when it is run
+directly. A converted noun keeps the bash noun's arguments, stdout, exit codes
+and `orch:` messages, and its bash module and section file are deleted with it.
+The package uses only the standard library; the dev dependencies (pytest,
+pytest-xdist, pytest-timeout) are pinned in
+`scripts/orch_py/requirements-dev.txt`, which the autopilot image installs into
+a venv at `/opt/orch-dev`. Locally: `python3 -m venv .venv && .venv/bin/pip
 install -r scripts/orch_py/requirements-dev.txt`. From `scripts/orch_py/`,
 `python3 -m pytest` runs the whole suite, `-k <name>` the tests whose names
 match, `-n <workers>` (or `-n auto`) spreads them over xdist workers.

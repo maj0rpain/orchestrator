@@ -6,8 +6,9 @@
 # that shell, with nothing to arrange beforehand. A reader that runs inside a
 # $(...) subshell memoises only for that subshell, which never hands its
 # variables back. default_branch_seed is the memo's one writer;
-# default_branch_local is the memo-free local fallback under it. The base and default-branch nouns are Python (ADR-0067), in
-# orch/base.py beside the Python copies of these readers.
+# default_branch_local is the memo-free local fallback under it. The base and
+# default-branch nouns are Python (ADR-0067), in orch/base.py beside the Python
+# copies of these readers.
 # Its tests: scripts/test/orch/base.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 

@@ -25,8 +25,8 @@ BASH_HELPERS = {
     SCRIPTS / "test" / "orch" / "setup.sh": [
         "fake_issue", "fake_issue_relabel",
         "fake_fail", "fake_unfail", "fake_pr",
-        "fake_default_branch",
     ],
+    SCRIPTS / "test" / "orch" / "repo.sh": ["fake_default_branch"],
     SCRIPTS / "test" / "orch" / "base.sh": ["fake_next_pr", "fake_pr_base_of", "fake_pr_body_of"],
     SCRIPTS / "test" / "orch" / "gh.sh": ["fake_lag", "fake_ratelimit", "fake_duplicate_of",
                                           "fake_issue_body", "fake_pr_comments_of",
