@@ -11,10 +11,11 @@ branch name gives, the discard rule's own-branch proof and discard (as
 bash's discard_own_branch_work was, its bash copy gone), branch_retire,
 every arm of bash `branch retire <old> <new>`, the start-point decision and
 the fork branch off and branch create share (bash new_branch_start and
-fork_new_branch), and the branch noun's run (ADR-0067): its dispatch over
-the six verbs and its off, busy, base-sha, sync and retire verbs, each with
-the bash noun's usage line, output, exit codes and `orch: ` messages. create
-is still run in bash, and orch.sh routes branch there until it is converted.
+fork_new_branch), branch create's own discard-rule decision (bash
+discard_create_work), and the branch noun's run (ADR-0067): its dispatch
+over the six verbs and its create, off, busy, base-sha, sync and retire
+verbs, each with the bash noun's usage line, output, exit codes and `orch: `
+messages. orch.sh still routes branch to bash until the noun is switched.
 """
 from __future__ import annotations
 
@@ -26,7 +27,7 @@ from orch.base import (base_branch_into, branch_base_get, branch_base_sha_get,
                        branch_base_sha_set, record_branch_base, recorded_base_into)
 from orch.common import die, plain_number, require_clean_tree, stderr_write, stdout_write, warn
 from orch.flow_state import (flow_base_fallback_into, flow_state_file, require_state_read,
-                             state_write_many)
+                             require_value, state_write_many)
 from orch.gh import adapter_of
 from orch.git import Git, GitFailure, git_failed
 from orch.repo import RepoPin
@@ -313,10 +314,82 @@ def run(argv: List[str], gh=None, git=None, env: Optional[Mapping[str, str]] = N
         pin = RepoPin(env, git) if pin is None else pin
         return sync_verb(rest, adapter_of(gh, env, pin), git, pin, root, env)
     if op == "create":
-        # Still bash's verbs: orch.sh routes branch to bash until all six run
-        # here, so only a direct call reaches this.
-        die("branch %s is not converted to Python yet - run orch.sh branch %s" % (op, op))
+        pin = RepoPin(env, git) if pin is None else pin
+        return create_verb(rest, adapter_of(gh, env, pin), git, root, env, pin)
     die("unknown branch op: %s (want %s)" % (op or "<none>", OPS))
+
+
+# The remedy a flow's create names for a base origin says is gone: a flow
+# can correct the base it records.
+FLOW_GONE_BASE_REMEDY = "point this flow at another base: orch.sh base set <branch> --flow"
+
+
+def discard_create_work(git, root: str, env: Mapping[str, str], name: str) -> None:
+    """The discard rule's decision for both branch create paths (bash
+    discard_create_work), <name> being the flow's branch, in the checkout at
+    <root>: on the flow's own branch, or a detached HEAD with no rebase in
+    progress, it applies discard_flow_branch_work. On any other branch -
+    foreign, or plugin-made but not the flow's, a rebase in progress naming
+    the branch it rebases - it discards nothing: with no work to discard it
+    returns, so the caller goes on, and with any it dies, exit 1, naming that
+    branch."""
+    # Imported here: the checkout module reads this one at its own import.
+    from orch.checkout import (checkout_branch_or_rebasing, discard_flow_branch_work,
+                               work_to_discard)
+
+    branch = checkout_branch_or_rebasing(git, root)
+    if branch is None or branch == name:
+        discard_flow_branch_work(git, root, env)
+        return
+    merging, rebasing, dirty = work_to_discard(git, root)
+    if merging or rebasing or dirty:
+        die("branch create: the current branch %s is not the flow's branch %s - nothing was"
+            " discarded" % (branch, name))
+
+
+def create_verb(argv: List[str], gh_of, git, root: str, env: Mapping[str, str], pin) -> int:
+    """`branch create`: the flow's branch orch/<issue>-<slug>, named from
+    the flow state of the checkout at <root>. A restarted implement phase
+    finds it already made - state.branch records it and it exists locally -
+    and it is checked out if not current and printed, after the discard
+    rule's decision, with no busy refusal and no write: base_sha and the
+    branch's recorded base stay as they are (ADR-0054). Otherwise, in this
+    order: the busy refusal, exit 3, on the branch signal only - the flow
+    mid-pipeline is its own; the start point off the flow's base (through
+    the flow base fallback, the gh adapter gh_of() makes and the repo pin
+    <pin>); the discard rule's decision; the fork; state's branch and
+    base_sha in one write; the base and base SHA in the branch's git config,
+    where branch sync and branch base-sha find them once the flow is gone;
+    the name printed. A refusal before the fork writes and discards nothing.
+    The state refusals come before the usage check, as bash's did."""
+    # Imported here: the checkout module reads this one at its own import.
+    from orch.checkout import checkout_branch, refuse_busy_checkout
+
+    state_file = flow_state_file(root)
+    state = require_state_read(state_file, env, ("slug", "issue", "branch", "base"), 1)
+    if argv:
+        die("usage: orch.sh branch create")
+    require_value("issue", state["issue"])
+    name = branch_name_flow(state["issue"], state["slug"])
+    if state["branch"] == name and git.branch_exists(name):
+        discard_create_work(git, root, env, name)
+        if checkout_branch(git) != name:
+            failed = git.checkout_existing_branch(name)
+            if failed is not None:
+                stderr_write(failed.stderr)
+                die("could not check out %s" % name)
+        stdout_write(name + "\n")
+        return 0
+    refuse_busy_checkout(git, root, env, "branch")
+    base = flow_base_fallback_into(state["base"], gh_of, git, pin)
+    start = new_branch_start(git, name, base, FLOW_GONE_BASE_REMEDY)
+    discard_create_work(git, root, env, name)
+    fork_new_branch(git, name, start)
+    sha = git.resolve_commit("HEAD") or ""
+    state_write_many(state_file, [("branch", name, True), ("base_sha", sha, True)])
+    _exit_on(record_branch_base(git, name, base, sha))
+    stdout_write(name + "\n")
+    return 0
 
 
 def off_verb(argv: List[str], gh_of, git, root: str, env: Mapping[str, str], pin) -> int:

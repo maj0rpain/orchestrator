@@ -1,19 +1,21 @@
-"""`orch.sh branch off|busy|base-sha|retire` and the noun's dispatch, called
-in-process through the branch module's run: off, busy and retire against
-FakeGit and the gh fake, base-sha against real repositories with a real
-origin under tmp_path, since its fallback is git's merge-base, which a fake
-would only restate - as are off's full-ref naming beside same-named tags and
-git's own refusal of a clashing checkout. Each message, exit code and order of checks is the bash noun's,
-verbatim."""
+"""`orch.sh branch create|off|busy|base-sha|retire` and the noun's dispatch,
+called in-process through the branch module's run: create, off, busy and
+retire against FakeGit and the gh fake, base-sha against real repositories
+with a real origin under tmp_path, since its fallback is git's merge-base,
+which a fake would only restate - as are create's and off's full-ref naming
+beside same-named tags and git's own refusal of a clashing checkout. Each
+message, exit code and order of checks is the bash noun's, verbatim."""
 from __future__ import annotations
 
+import json
 import subprocess
 
 import pytest
 
-from conftest import committed, fake, hold_flow, origin_clone, outcome, run_git
+from conftest import (GITHUB_ORIGIN, committed, exclude_orchestrator, fake, hold_flow,
+                      origin_clone, outcome, run_git, state_json)
 from orch import branch as module
-from orch.git import FakeGit, Git
+from orch.git import FakeGit, Git, Worktree
 
 ROOT = "/nonexistent/checkout"
 
@@ -36,14 +38,6 @@ def test_an_unknown_or_missing_op_is_refused_naming_the_six(capsys, argv, named)
         "orch: unknown branch op: %s (want create|off|busy|base-sha|sync|retire)\n" % named))
 
 
-@pytest.mark.parametrize("op", ["create"])
-def test_a_verb_still_run_in_bash_is_known_never_an_unknown_op(capsys, op):
-    # orch.sh routes branch to bash until the switch ticket, so run reaches
-    # these only when called directly: a refusal naming the verb, exit 1.
-    assert orch(capsys, op) == (1, "", (
-        "orch: branch %s is not converted to Python yet - run orch.sh branch %s\n" % (op, op)))
-
-
 # --- off -------------------------------------------------------------------------------
 
 NAME = "quick/9-widgets"
@@ -53,13 +47,13 @@ ABORT = "/orchestrator:abort (or orch-flow's Abort section)"
 
 
 def forking(tmp_path, base="main", on="main", dirty=(), fetched=True, branches=(), **config):
-    """A FakeGit at tmp_path on <on>, <dirty> changed (a str for a status
+    """A FakeGit at tmp_path on <on> (None for a detached HEAD), <dirty> changed (a str for a status
     that cannot run), its local config holding <config> (each key's - spelled
     _ and . spelled __), local branch <base> at LOCAL_TIP beside <branches>,
     origin's <base> at ORIGIN_TIP, its fetch working when <fetched>."""
     local = {key.replace("__", ".").replace("_", "-"): value for key, value in config.items()}
     git = FakeGit(toplevel=str(tmp_path), local_config=local,
-                  branches=dict.fromkeys((base, on) + tuple(branches)))
+                  branches=dict.fromkeys(b for b in (base, on) + tuple(branches) if b))
     git.seed("current_branch", answer=on)
     git.seed("dirty_paths", answer=dirty if isinstance(dirty, str) else list(dirty))
     git.seed("fetch_default_branch", base, answer=fetched)
@@ -330,6 +324,442 @@ def test_off_whose_checkout_clashes_with_an_edit_dies_with_git_s_message_writing
     assert "would be overwritten" in err and "docs/agents/notes.md" in err
     assert repo_facts(root, "quick/7-x") == ("none", "<unset>", "main")
     assert (root / "docs" / "agents" / "notes.md").read_text() == "one\nmine\n"
+
+
+# --- create ----------------------------------------------------------------------------
+
+FLOW = "orch/11-feat"
+CREATE_USAGE = "orch: usage: orch.sh branch create\n"
+GONE_REMEDY = "point this flow at another base: orch.sh base set <branch> --flow"
+NO_FLOW = ("orch: no active flow (.orchestrator/state.json not found). Run /orchestrator:start"
+           " (or orch-flow's Starting a flow section) first.\n")
+UNREADABLE = "orch: state.json cannot be read - run orch.sh doctor --flow\n"
+NO_ISSUE = "orch: no issue recorded in state - the spec phase must publish one first\n"
+AUTOPILOT = {"ORCH_AUTOPILOT": "1"}
+
+
+def flowing(tmp_path, on="main", recorded=None, base="main", issue=11, phase="implement",
+            main=True, **forked):
+    """Flow feat on <issue> in the checkout at tmp_path, at <phase>, its
+    state.json recording branch <recorded> and base <base> (None for no base
+    key), and a FakeGit there as forking makes it on <on> (None for a
+    detached HEAD), with <forked> handed on: the worktree list naming
+    tmp_path the main checkout when <main>, else a hand-made worktree, and
+    every step of the discard sequence working."""
+    state = {"slug": "feat", "phase": phase, "issue": issue, "branch": recorded}
+    if base is not None:
+        state["base"] = base
+    hold_flow(tmp_path, **state)
+    git = forking(tmp_path, base=base or "main", on=on, **forked)
+    root = str(tmp_path)
+    git.checkouts[root] = root
+    git.seed("branch_at", root, answer=on)
+    git.seed("worktree_list", answer=[Worktree(root, on)] if main else [
+        Worktree("/elsewhere/main", "main"), Worktree(root, on)])
+    for step in ("merge_abort_at", "reset_hard_at", "clean_at"):
+        git.seed(step, root, answer=True)
+    git.seed("rebase_abort_at", root, answer=None)
+    return git
+
+
+def rebasing_onto(tmp_path, branch):
+    """Leaves git's record of a rebase of <branch> in progress in the
+    checkout at tmp_path, as a stopped rebase leaves it: HEAD detached."""
+    record = tmp_path / ".git" / "rebase-merge"
+    record.mkdir(parents=True)
+    (tmp_path / ".git" / "HEAD").write_text(ORIGIN_TIP + "\n")
+    (record / "head-name").write_text("refs/heads/%s\n" % branch)
+
+
+def create(capsys, seed, git, *argv, env=None):
+    return orch(capsys, "create", *argv, git=git, gh=fake(seed), env=env)
+
+
+def made(tmp_path, git, name=FLOW):
+    """The branch and base SHA the flow's state records, then what recorded
+    says of <name>."""
+    state = json.loads(state_json(tmp_path).read_text())
+    return (state.get("branch"), state.get("base_sha")) + recorded(git, name)
+
+
+def untouched(tmp_path, git):
+    """What a create that writes nothing must leave as it was: the
+    state.json's text and what facts reads."""
+    return (state_json(tmp_path).read_text(),) + facts(git)
+
+
+def interactive_refusal(tmp_path, dirty, merging=""):
+    """The flow-branch discard's refusal in an interactive main checkout at
+    tmp_path, naming <dirty> and the abort command <merging> names."""
+    return ("orch: uncommitted or in-progress work on the flow's branch in the main checkout -"
+            " discard it yourself (%s): %sgit -C \"%s\" reset --hard && git -C \"%s\" clean -fd\n"
+            % (dirty, merging, tmp_path, tmp_path))
+
+
+def foreign_refusal(branch):
+    return ("orch: branch create: the current branch %s is not the flow's branch %s - nothing"
+            " was discarded\n" % (branch, FLOW))
+
+
+def test_create_forks_the_flow_s_branch_records_it_in_state_and_git_config_and_prints_it(
+        tmp_path, seed, capsys):
+    git = flowing(tmp_path)
+
+    assert create(capsys, seed, git) == (0, FLOW + "\n", "")
+    assert made(tmp_path, git) == (FLOW, ORIGIN_TIP, "main", ORIGIN_TIP, FLOW, None)
+
+
+def test_create_forks_from_the_base_the_flow_records_over_the_base_setting(
+        tmp_path, seed, capsys):
+    git = flowing(tmp_path, base="uat", orchestrator__base="main")
+
+    assert create(capsys, seed, git) == (0, FLOW + "\n", "")
+    assert made(tmp_path, git) == (FLOW, ORIGIN_TIP, "uat", ORIGIN_TIP, FLOW, None)
+
+
+def test_a_state_json_recording_no_base_forks_from_the_flow_base_fallback_s_base(
+        tmp_path, seed, capsys):
+    # GitHub's default branch, never the base setting or origin/HEAD's branch.
+    seed.default_branch("trunk")
+    git = flowing(tmp_path, base=None, orchestrator__base="uat")
+    git.remotes = dict(GITHUB_ORIGIN)
+    for name in ("trunk", "main", "uat"):
+        git.seed("is_branch_name", name, answer=True)
+    git.seed("origin_head_branch", answer="main")
+    git.seed("fetch_default_branch", "trunk", answer=True)
+    git.seed("resolve_commit", "refs/remotes/origin/trunk", answer=LOCAL_TIP)
+
+    assert create(capsys, seed, git) == (0, FLOW + "\n", "")
+    assert made(tmp_path, git) == (FLOW, LOCAL_TIP, "trunk", LOCAL_TIP, FLOW, None)
+
+
+def test_create_on_a_plugin_made_branch_with_no_pr_exits_3_discarding_and_writing_nothing(
+        tmp_path, seed, capsys):
+    # The tree is dirty too: the busy refusal comes before the discard.
+    git = flowing(tmp_path, on="quick/6-earlier", dirty=["README.md"],
+                  **{"branch__quick/6-earlier__orchestrator_base": "main"})
+    before = untouched(tmp_path, git)
+
+    assert create(capsys, seed, git) == (3, "", (
+        "orch: busy: branch quick/6-earlier has no PR yet\n"
+        "     Open its PR, or switch off it.\n"))
+    assert untouched(tmp_path, git) == before
+
+
+def test_create_checks_the_branch_signal_only_never_its_own_flow_or_the_tree(
+        tmp_path, seed, capsys):
+    # Its own flow mid-pipeline, and a tree dirty outside the allowlist on a
+    # detached HEAD, which an autopilot flow discards.
+    git = flowing(tmp_path, on=None, dirty=["README.md"])
+
+    assert create(capsys, seed, git, env=AUTOPILOT) == (0, FLOW + "\n", "")
+    assert made(tmp_path, git) == (FLOW, ORIGIN_TIP, "main", ORIGIN_TIP, FLOW, None)
+
+
+@pytest.mark.parametrize("env", [{}, AUTOPILOT], ids=["interactive", "autopilot"])
+def test_create_refuses_a_name_already_taken_discarding_and_writing_nothing(
+        tmp_path, seed, capsys, env):
+    # A branch the flow never recorded; the dirty detached HEAD shows the
+    # discard never ran: in the interactive main checkout it would refuse.
+    git = flowing(tmp_path, on=None, dirty=["README.md"], branches=(FLOW,))
+    git.seed("reset_hard_at", str(tmp_path), answer=False)
+    before = untouched(tmp_path, git)
+
+    assert create(capsys, seed, git, env=env) == (
+        1, "", "orch: branch %s already exists\n" % FLOW)
+    assert untouched(tmp_path, git) == before
+
+
+@pytest.mark.parametrize("has, message", [
+    (False, "base branch main does not exist on origin - push it, or %s" % GONE_REMEDY),
+    (True, "could not fetch main from origin"),
+], ids=["gone", "fetch-failed"])
+def test_create_refuses_a_base_origin_lacks_or_failed_to_fetch_discarding_and_writing_nothing(
+        tmp_path, seed, capsys, has, message):
+    git = flowing(tmp_path, on=None, dirty=["README.md"], fetched=False)
+    git.seed("origin_has_branch", "main", answer=has)
+    git.seed("ref_exists", "refs/remotes/origin/main", answer=True)
+    before = untouched(tmp_path, git)
+
+    assert create(capsys, seed, git) == (1, "", "orch: %s\n" % message)
+    assert untouched(tmp_path, git) == before
+
+
+@pytest.mark.parametrize("tracked, tip", [(True, ORIGIN_TIP), (False, LOCAL_TIP)],
+                         ids=["origin-s-local-ref", "local-base"])
+def test_with_origin_unreachable_create_forks_from_origin_s_local_ref_else_the_local_base(
+        tmp_path, seed, capsys, tracked, tip):
+    git = flowing(tmp_path, fetched=False)
+    git.seed("ref_exists", "refs/remotes/origin/main", answer=tracked)
+
+    assert create(capsys, seed, git) == (0, FLOW + "\n", "")
+    assert made(tmp_path, git) == (FLOW, tip, "main", tip, FLOW, None)
+
+
+def test_the_fresh_path_on_a_detached_head_in_an_interactive_main_checkout_is_refused(
+        tmp_path, seed, capsys):
+    git = flowing(tmp_path, on=None, dirty=["README.md", "stray.txt"])
+    before = untouched(tmp_path, git)
+
+    assert create(capsys, seed, git) == (
+        1, "", interactive_refusal(tmp_path, "README.md, stray.txt"))
+    assert untouched(tmp_path, git) == before
+
+
+def test_the_fresh_path_on_a_detached_head_in_a_hand_made_worktree_discards_and_forks(
+        tmp_path, seed, capsys):
+    git = flowing(tmp_path, on=None, dirty=["README.md"], main=False)
+
+    assert create(capsys, seed, git) == (0, FLOW + "\n", "")
+    assert made(tmp_path, git) == (FLOW, ORIGIN_TIP, "main", ORIGIN_TIP, FLOW, None)
+
+
+@pytest.mark.parametrize("env", [{}, AUTOPILOT], ids=["interactive", "autopilot"])
+@pytest.mark.parametrize("on, recorded_branch, config", [
+    ("human-scratch", None, {}),
+    ("orch/11-feat-redo-1", "orch/11-feat-redo-1", {
+        "branch__orch/11-feat-redo-1__orchestrator_base": "main",
+        "branch__orch/11-feat-redo-1__orchestrator_retired": "true"}),
+], ids=["foreign", "retired-redo-branch-state-still-records"])
+def test_the_fresh_path_on_a_dirty_branch_not_the_flow_s_dies_discarding_and_writing_nothing(
+        tmp_path, seed, capsys, env, on, recorded_branch, config):
+    git = flowing(tmp_path, on=on, recorded=recorded_branch, dirty=["README.md"], **config)
+    before = untouched(tmp_path, git)
+
+    assert create(capsys, seed, git, env=env) == (1, "", foreign_refusal(on))
+    assert untouched(tmp_path, git) == before
+
+
+def test_the_fresh_path_on_a_branch_not_the_flow_s_with_a_merge_in_progress_dies(
+        tmp_path, seed, capsys):
+    git = flowing(tmp_path, on="scratch-m")
+    git.seed("merge_in_progress_at", str(tmp_path), answer=True)
+    before = untouched(tmp_path, git)
+
+    assert create(capsys, seed, git, env=AUTOPILOT) == (1, "", foreign_refusal("scratch-m"))
+    assert untouched(tmp_path, git) == before
+
+
+def test_the_fresh_path_on_a_foreign_branch_s_rebase_in_progress_dies_naming_it(
+        tmp_path, seed, capsys):
+    # The rebase detaches HEAD; the branch it rebases is the current one.
+    git = flowing(tmp_path, on=None, branches=("scratch-r",))
+    rebasing_onto(tmp_path, "scratch-r")
+    before = untouched(tmp_path, git)
+
+    assert create(capsys, seed, git, env=AUTOPILOT) == (1, "", foreign_refusal("scratch-r"))
+    assert untouched(tmp_path, git) == before
+
+
+def test_a_record_git_refuses_ends_create_with_git_s_status_and_stderr(tmp_path, seed, capsys):
+    # As bash's set -e did, the state already written.
+    git = flowing(tmp_path)
+    git.config_write_fails.add(("local", "branch.%s.orchestrator-base" % FLOW))
+
+    assert create(capsys, seed, git) == (
+        255, "", "error: could not lock config file .git/config: File exists\n")
+    assert made(tmp_path, git) == (FLOW, ORIGIN_TIP, None, None, FLOW, None)
+
+
+def test_a_failed_state_write_records_neither_key_nor_the_git_config(tmp_path, seed, capsys):
+    git = flowing(tmp_path)
+    folder = state_json(tmp_path).parent
+    folder.chmod(0o555)
+    try:
+        result = create(capsys, seed, git)
+    finally:
+        folder.chmod(0o755)
+
+    assert result == (1, "", (
+        "orch: could not record branch, base_sha in %s - the flow is unchanged\n"
+        % state_json(tmp_path)))
+    assert made(tmp_path, git) == (None, None, None, None, FLOW, None)
+
+
+# The restart: the flow's own branch, recorded and made.
+
+
+def restarting(tmp_path, on="main", **forked):
+    """flowing's flow with FLOW made and recorded, its git config holding a
+    base and a base SHA unlike any create would write."""
+    forked.setdefault("branches", (FLOW,))
+    return flowing(tmp_path, on=on, recorded=FLOW, **{
+        "branch__%s__orchestrator_base" % FLOW: "main",
+        "branch__%s__orchestrator_base_sha" % FLOW: "moved-marker"}, **forked)
+
+
+@pytest.mark.parametrize("on", ["main", FLOW], ids=["elsewhere", "on-it"])
+@pytest.mark.parametrize("phase", ["implement", "done"])
+def test_a_restart_checks_the_flow_s_branch_out_and_prints_it_writing_nothing(
+        tmp_path, seed, capsys, on, phase):
+    git = restarting(tmp_path, on=on, phase=phase)
+    state = state_json(tmp_path).read_text()
+
+    assert create(capsys, seed, git) == (0, FLOW + "\n", "")
+    assert (state_json(tmp_path).read_text(), recorded(git, FLOW)) == (
+        state, ("main", "moved-marker", FLOW, None))
+
+
+def test_a_restart_is_never_refused_as_busy(tmp_path, seed, capsys):
+    git = restarting(tmp_path, on="quick/6-earlier",
+                     **{"branch__quick/6-earlier__orchestrator_base": "main"})
+
+    assert create(capsys, seed, git) == (0, FLOW + "\n", "")
+    assert git.current_branch() == FLOW
+
+
+@pytest.mark.parametrize("on", [FLOW, None], ids=["own-branch", "detached-head"])
+def test_a_restart_s_dirty_tree_in_an_interactive_main_checkout_is_refused(
+        tmp_path, seed, capsys, on):
+    git = restarting(tmp_path, on=on, dirty=["README.md", "stray.txt"])
+    before = untouched(tmp_path, git)
+
+    assert create(capsys, seed, git) == (
+        1, "", interactive_refusal(tmp_path, "README.md, stray.txt"))
+    assert untouched(tmp_path, git) == before
+
+
+def test_a_restart_s_merge_in_progress_in_an_interactive_main_checkout_names_merge_abort(
+        tmp_path, seed, capsys):
+    git = restarting(tmp_path, on=FLOW)
+    git.seed("merge_in_progress_at", str(tmp_path), answer=True)
+
+    assert create(capsys, seed, git) == (1, "", interactive_refusal(
+        tmp_path, " merge in progress", 'git -C "%s" merge --abort; ' % tmp_path))
+
+
+def test_a_restart_s_own_rebase_in_progress_in_an_interactive_main_checkout_names_it(
+        tmp_path, seed, capsys):
+    git = restarting(tmp_path, on=None)
+    rebasing_onto(tmp_path, FLOW)
+
+    assert create(capsys, seed, git) == (1, "", interactive_refusal(
+        tmp_path, "", 'git -C "%s" rebase --abort; ' % tmp_path))
+
+
+@pytest.mark.parametrize("env, main", [(AUTOPILOT, True), ({}, False)],
+                         ids=["autopilot", "hand-made-worktree"])
+@pytest.mark.parametrize("on", [FLOW, None], ids=["own-branch", "detached-head"])
+def test_a_restart_s_dirty_tree_is_discarded_where_the_discard_rule_allows(
+        tmp_path, seed, capsys, env, main, on):
+    git = restarting(tmp_path, on=on, dirty=["README.md"], main=main)
+
+    assert create(capsys, seed, git, env=env) == (0, FLOW + "\n", "")
+    assert git.current_branch() == FLOW
+
+
+def test_a_restart_s_failed_discard_step_dies_naming_it(tmp_path, seed, capsys):
+    git = restarting(tmp_path, on=FLOW, dirty=["README.md"])
+    git.seed("reset_hard_at", str(tmp_path), answer=False)
+
+    assert create(capsys, seed, git, env=AUTOPILOT) == (1, "", (
+        "orch: could not discard: git reset --hard failed in %s\n" % tmp_path))
+
+
+def test_a_restart_where_the_main_checkout_cannot_be_told_discards_nothing(
+        tmp_path, seed, capsys):
+    git = restarting(tmp_path, on=FLOW, dirty=["README.md"])
+    git.seed("worktree_list", answer=None)
+
+    assert create(capsys, seed, git) == (1, "", (
+        "orch: could not tell whether %s is the main checkout - nothing was discarded\n"
+        % tmp_path))
+
+
+@pytest.mark.parametrize("env", [{}, AUTOPILOT], ids=["interactive", "autopilot"])
+def test_a_restart_on_a_dirty_branch_not_the_flow_s_dies_discarding_nothing(
+        tmp_path, seed, capsys, env):
+    git = restarting(tmp_path, on="human-scratch", dirty=["README.md", "untracked.txt"])
+    before = untouched(tmp_path, git)
+
+    assert create(capsys, seed, git, env=env) == (1, "", foreign_refusal("human-scratch"))
+    assert untouched(tmp_path, git) == before
+
+
+def test_a_restart_on_a_foreign_branch_s_rebase_in_progress_dies_naming_it(
+        tmp_path, seed, capsys):
+    git = restarting(tmp_path, on=None, branches=(FLOW, "scratch-r"))
+    rebasing_onto(tmp_path, "scratch-r")
+
+    assert create(capsys, seed, git, env=AUTOPILOT) == (1, "", foreign_refusal("scratch-r"))
+    assert git.current_branch() is None
+
+
+# The refusals before either path.
+
+
+def test_create_with_no_flow_is_refused(tmp_path, seed, capsys):
+    assert create(capsys, seed, forking(tmp_path)) == (1, "", NO_FLOW)
+
+
+def test_create_beside_an_unreadable_state_json_is_refused(tmp_path, seed, capsys):
+    hold_flow(tmp_path).write_text("{\"slug\": \"feat\", \"pha")
+
+    assert create(capsys, seed, forking(tmp_path)) == (1, "", UNREADABLE)
+
+
+def test_create_with_no_issue_recorded_is_refused_writing_nothing(tmp_path, seed, capsys):
+    git = flowing(tmp_path, issue=None)
+    before = untouched(tmp_path, git)
+
+    assert create(capsys, seed, git) == (1, "", NO_ISSUE)
+    assert untouched(tmp_path, git) == before
+
+
+def test_create_with_an_argument_is_a_usage_error(tmp_path, seed, capsys):
+    assert create(capsys, seed, flowing(tmp_path), "extra") == (1, "", CREATE_USAGE)
+
+
+@pytest.mark.parametrize("state, issue, expected", [
+    (None, 11, NO_FLOW),
+    ("{\"slug\": \"feat\", \"pha", 11, UNREADABLE),
+    ("flow", None, CREATE_USAGE),
+], ids=["no-flow", "unreadable", "no-issue"])
+def test_the_state_refusals_come_before_the_usage_and_the_usage_before_the_issue(
+        tmp_path, seed, capsys, state, issue, expected):
+    git = forking(tmp_path) if state is None else flowing(tmp_path, issue=issue)
+    if state not in (None, "flow"):
+        state_json(tmp_path).write_text(state)
+
+    assert create(capsys, seed, git, "extra") == (1, "", expected)
+
+
+# Real repositories: the full-ref naming, and git's refusal of a checkout.
+
+
+def test_create_beside_tags_named_like_the_branch_and_origin_s_base_forks_from_origin_s_tip(
+        off_repo, seed, capsys):
+    root, origin_tip, local_tip = off_repo
+    hold_flow(root, slug="feat", phase="implement", issue=11, branch=None, base="main")
+    for tag in (FLOW, "origin/main"):
+        run_git(root, "tag", tag, local_tip)
+
+    assert orch(capsys, "create", git=Git(cwd=str(root)), gh=fake(seed)) == (0, FLOW + "\n", "")
+    assert (head_of(root, "refs/heads/" + FLOW), repo_facts(root, FLOW),
+            run_git(root, "for-each-ref", "--format=%(upstream)", "refs/heads/" + FLOW),
+            json.loads(state_json(root).read_text())["base_sha"]) == (
+        origin_tip, ("made", origin_tip, FLOW), "", origin_tip)
+
+
+def test_a_restart_whose_checkout_git_refuses_dies_with_git_s_message_after_it(
+        off_repo, seed, capsys):
+    # The flow's branch tracks an allowlisted file main holds untracked: no
+    # work to discard, but a checkout git will not make over it.
+    root, _, _ = off_repo
+    run_git(root, "checkout", "-qb", FLOW)
+    committed(root, {"docs/agents/plan.md": "branch\n"}, "plan")
+    run_git(root, "checkout", "-q", "main")
+    (root / "docs" / "agents" / "plan.md").write_text("mine\n")
+    hold_flow(root, slug="feat", phase="implement", issue=11, branch=FLOW, base="main")
+    exclude_orchestrator(root)
+
+    code, out, err = orch(capsys, "create", git=Git(cwd=str(root)), gh=fake(seed))
+
+    assert (code, out) == (1, "")
+    assert "would be overwritten" in err and "docs/agents/plan.md" in err
+    assert err.endswith("orch: could not check out %s\n" % FLOW)
+    assert (run_git(root, "branch", "--show-current"),
+            (root / "docs" / "agents" / "plan.md").read_text()) == ("main", "mine\n")
 
 
 # --- busy ------------------------------------------------------------------------------
