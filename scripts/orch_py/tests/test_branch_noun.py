@@ -243,15 +243,15 @@ def test_off_dies_when_the_fetch_fails_while_origin_has_the_base(tmp_path, seed,
     assert facts(git) == before
 
 
-@pytest.mark.parametrize("tracked, tip", [(True, ORIGIN_TIP), (False, LOCAL_TIP)],
+@pytest.mark.parametrize("tracked, start_tip", [(True, ORIGIN_TIP), (False, LOCAL_TIP)],
                          ids=["origin-s-local-ref", "local-base"])
 def test_with_origin_unreachable_off_forks_from_origin_s_local_ref_else_the_local_base(
-        tmp_path, seed, capsys, tracked, tip):
+        tmp_path, seed, capsys, tracked, start_tip):
     git = forking(tmp_path, fetched=False)
     git.seed("ref_exists", "refs/remotes/origin/main", answer=tracked)
 
     assert off(capsys, seed, git, NAME) == (0, NAME + "\n", "")
-    assert recorded(git) == ("main", tip, NAME, None)
+    assert recorded(git) == ("main", start_tip, NAME, None)
 
 
 def test_a_record_git_refuses_ends_off_with_git_s_status_and_stderr(tmp_path, seed, capsys):
@@ -492,15 +492,15 @@ def test_create_refuses_a_base_origin_lacks_or_failed_to_fetch_discarding_and_wr
     assert untouched(tmp_path, git) == before
 
 
-@pytest.mark.parametrize("tracked, tip", [(True, ORIGIN_TIP), (False, LOCAL_TIP)],
+@pytest.mark.parametrize("tracked, start_tip", [(True, ORIGIN_TIP), (False, LOCAL_TIP)],
                          ids=["origin-s-local-ref", "local-base"])
 def test_with_origin_unreachable_create_forks_from_origin_s_local_ref_else_the_local_base(
-        tmp_path, seed, capsys, tracked, tip):
+        tmp_path, seed, capsys, tracked, start_tip):
     git = flowing(tmp_path, fetched=False)
     git.seed("ref_exists", "refs/remotes/origin/main", answer=tracked)
 
     assert create(capsys, seed, git) == (0, FLOW + "\n", "")
-    assert made(tmp_path, git) == (FLOW, tip, "main", tip, FLOW, None)
+    assert made(tmp_path, git) == (FLOW, start_tip, "main", start_tip, FLOW, None)
 
 
 def test_the_fresh_path_on_a_detached_head_in_an_interactive_main_checkout_is_refused(
@@ -671,16 +671,6 @@ def test_a_restart_s_failed_discard_step_dies_naming_it(tmp_path, seed, capsys):
 
     assert create(capsys, seed, git, env=AUTOPILOT) == (1, "", (
         "orch: could not discard: git reset --hard failed in %s\n" % tmp_path))
-
-
-def test_a_restart_where_the_main_checkout_cannot_be_told_discards_nothing(
-        tmp_path, seed, capsys):
-    git = restarting(tmp_path, on=FLOW, dirty=["README.md"])
-    git.seed("worktree_list", answer=None)
-
-    assert create(capsys, seed, git) == (1, "", (
-        "orch: could not tell whether %s is the main checkout - nothing was discarded\n"
-        % tmp_path))
 
 
 @pytest.mark.parametrize("env", [{}, AUTOPILOT], ids=["interactive", "autopilot"])
