@@ -1,5 +1,5 @@
 """`orch.sh state get [<key>]` and `orch.sh state set <key> <value>`, the
-state noun, ported from the deleted bash cmd_state: a read of one key of the
+state noun, ported from the deleted bash state noun: a read of one key of the
 flow's state.json, or the whole file as it stands, and a write of one key
 skill prose sets. A module of its own rather than a part of orch.flow_state,
 which the other nouns import for its readers and writers: this one is only

@@ -11,8 +11,8 @@ ticket-worktree <verb>`, `orch.sh pr <verb>`, `orch.sh autopilot <verb>`,
 `orch.sh side-checkout <verb>`, `orch.sh branch <verb>`, `orch.sh repo show`,
 `orch.sh default-branch`, `orch.sh base <verb>` or `orch.sh help` (and its
 spellings) as a command, in a checkout under tmp_path, against a fake store
-seeded in the layout the bash suite's fake_* helpers write, with
-ORCH_GH_FAKE_STORE set as fake_github sets it."""
+seeded in the layout scripts/test/gh_adapter_fake.sh documents, with
+ORCH_GH_FAKE_STORE set."""
 from __future__ import annotations
 
 import json

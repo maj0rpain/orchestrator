@@ -10,8 +10,8 @@ branch_retire, every arm of `branch retire <old> <new>`, the start-point
 decision and the fork branch off and branch create share, branch create's
 own discard-rule decision, and the noun's run: its dispatch over the six
 verbs and its create, off, busy, base-sha, sync and retire verbs, each with
-the bash noun's usage line, output, exit codes and `orch: ` messages, which
-orch.sh's converted-noun case runs.
+the bash noun's usage line, output, exit codes and `orch: ` messages, its
+bash body gone.
 """
 from __future__ import annotations
 

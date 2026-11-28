@@ -349,7 +349,7 @@ TICKET7 = TICKET_PARENT + "--t7"
 
 @pytest.fixture
 def ticket_repo(tmp_path, monkeypatch):
-    """bash's tw_repo: a clone of a bare origin with one commit on its
+    """A clone of a bare origin with one commit on its
     default branch pushed, then TICKET_PARENT checked out with a feature.txt
     commit of its own, git's identity set; the process's working directory:
     its root, resolved."""

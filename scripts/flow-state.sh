@@ -2,7 +2,7 @@
 # flow-state.sh - the Flow state module: the one owner of the state format of
 # a checkout's flow, .orchestrator/state.json - its keys, their defaults,
 # reading (one key per jq, or several in one) and the active-flow check -
-# sourced by orch.sh and by hook-common.sh. It writes nothing: the Python
+# sourced by hook-common.sh, for the hooks. It writes nothing: the Python
 # package's Flow state module, scripts/orch_py/orch/flow_state.py, makes every
 # write of the file, copies flow_state_get_many's rules and the key table's
 # key, default and seed columns, and writes a new flow's seed for Python init,
@@ -12,7 +12,7 @@
 # too, and those under seed/, which only pytest reads, the seed to the bytes
 # bash init wrote.
 #
-# It needs nothing from orch.sh, so the hooks can source it alone, as they do
+# It needs no other file, so the hooks can source it alone, as they do
 # host.sh: every function takes the state file's path as an argument, none
 # reads $ROOT or $STATE, none calls die, and none prints a diagnostic of its
 # own - only a reader's value and flow_state_file's path reach stdout. Every
@@ -39,26 +39,26 @@
 # section of scripts/test/orch/flow-state.sh.
 
 # The directory under a checkout's root holding its flow state. It lives here
-# because where the state file sits is the one fact orch.sh and the hooks
-# share: the hooks reach it only through flow_state_file, and orch.sh builds
-# its other .orchestrator/ paths on it - so it changes only when the state file
-# moves, never for a reason outside the state format. It is assigned plainly,
-# since the hooks and the tests source this file.
+# because where the state file sits is part of the state format: the hooks
+# reach it only through flow_state_file, and the Python package's ORCH_DIR_NAME
+# (orch/common.py) names the same directory - so it changes only when the state
+# file moves, never for a reason outside the state format. It is assigned
+# plainly, since the hooks and the tests source this file.
 ORCH_DIR_NAME=".orchestrator"
 
 # Every flow state key, one row each, in the order init seeds them into
-# state.json: key|default|seed. state_get reads it, so adding a key is one row
-# here and one in the Python Flow state module's STATE_KEYS, which Python init
-# seeds from and whose owner column state set reads; an arg row also needs its
-# value in that module's _SEED_ARGS, and without it init dies "could not build
-# the state seed". The seed column is the shared format's bash record, which
+# state.json: key|default|seed. Adding a key is one row here and one in the
+# Python Flow state module's STATE_KEYS, which Python init seeds from and whose
+# owner column state set reads; an arg row also needs its value in that
+# module's _SEED_ARGS, and without it init dies "could not build the state
+# seed". The seed column is the shared format's bash record, which
 # pytest's parity test pins Python's to. state_rows is its one reader: lines
 # starting with # are comments, and blank lines are skipped.
 #
-# default: what state_get returns for a null or missing value. A flow started
-#   by an older release lacks keys a fresh one seeds; each reads back as its
-#   default. The default applies only to a null or missing value, never to a
-#   stored false (jq's `//` would treat false like null).
+# default: what flow_state_get returns for a null or missing value. A flow
+#   started by an older release lacks keys a fresh one seeds; each reads back
+#   as its default. The default applies only to a null or missing value,
+#   never to a stored false (jq's `//` would treat false like null).
 # seed: the JSON literal init writes, or arg where init supplies the value at
 #   run time; Python init writes it (orch/flow_state.py's _SEED_ARGS).
 STATE_KEYS='slug||arg

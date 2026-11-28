@@ -1,6 +1,7 @@
-"""orch.sh's ROOT block, for a converted noun: every command runs inside a
-checkout. Outside one it dies before doing anything, exit 1, with the message
-orch.sh gives there: the working directory, and a remedy naming the checkout
+"""The checkout root every noun needs: every command runs inside a checkout,
+and cli.main resolves the root before it dispatches any noun. Outside one it
+dies before doing anything, exit 1, with the message orch.sh's bash ROOT block
+gave there: the working directory, and a remedy naming the checkout
 OLDPWD is in when it is in one - an agent whose working directory drifted
 into a mktemp directory still has OLDPWD (#1523).
 """

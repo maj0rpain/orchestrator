@@ -4,11 +4,11 @@
 #
 # This file is the suite's runner and its one entry point; it holds no test.
 # The tests live under scripts/test/orch/: every `# ---` section in the file
-# for the orch.sh noun it tests, scripts/test/orch/<noun>.sh (the harness's own
-# sections in harness.sh), and the shared setup and the summary in setup.sh.
-# A ticket's tests go in the file for the noun it touches; a new noun is
-# Python, its tests pytest in scripts/orch_py/tests/, and a new section file
-# is picked up by the runner with no edit here. A noun file holds
+# named for the bash file it tests (common.sh, flow-state.sh, host.sh,
+# triage-labels.sh), the harness's own sections in harness.sh, and the shared
+# setup and the summary in setup.sh. Every orch.sh noun is Python, its tests
+# pytest in scripts/orch_py/tests/, and a new section file is picked up by the
+# runner with no edit here. A section file holds
 # only `# ---` sections, optionally preceded by its preamble: the text before
 # its first `# ---` line, eval'd before that file's sections whenever one of
 # them runs. Every preamble opens with the same shellcheck lines - the shell

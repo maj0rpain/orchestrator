@@ -25,57 +25,51 @@ While iterating, run only the section you are working on, in quiet mode:
 `ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`, where
 `<section>` is an extended regex matched, ignoring case, against the `# ---`
 section titles (every top-level branch of an alternation must match a section),
-e.g. `ORCH_TEST_ONLY='^base$'` or
-`ORCH_TEST_ONLY='^state '`. Run `scripts/test/affected.sh` before each
-commit. CI runs the whole suite on every
-PR through all.sh, which starts its other suites one by one, each waiting for
-a pool slot when none is free, then orch_test.sh, then the pytest suite
-(orch_py_test.sh), then shellcheck over every shell file, so they overlap,
-carries on past a failing one, and once all have finished prints each suite's
-FAIL lines and a summary line, the pytest suite's first, then the others' in
-the order of all.sh's `suites` list, then shellcheck's findings and a
-`shellcheck: N findings` summary line, or `shellcheck: not installed -
-skipped`, which fails the run only in CI. It ends on one verdict line, `all.sh:
-PASS (<n> parts)` or `all.sh: FAIL (<part>, <part>, ...)`, naming each failed
-part by its summary line's prefix (leftover temp files as `temp files`);
-affected.sh ends the same way on `affected.sh: ...`, or on all.sh's verdict when
-it falls back to the full suite.
+e.g. `ORCH_TEST_ONLY='^list_has$'` or
+`ORCH_TEST_ONLY='^the Flow state module'`. Run `scripts/test/affected.sh`
+before each commit. CI runs the whole suite on every PR through all.sh, which
+starts its other suites one by one, each waiting for a pool slot when none is
+free, then orch_test.sh, then the pytest suite (orch_py_test.sh), then
+shellcheck over every shell file, so they overlap, carries on past a failing
+one, and once all have finished prints each suite's FAIL lines and a summary
+line, the pytest suite's first, then the others' in the order of all.sh's
+`suites` list, then shellcheck's findings and a `shellcheck: N findings` summary
+line, or `shellcheck: not installed - skipped`, which fails the run only in CI.
+It ends on one verdict line, `all.sh: PASS (<n> parts)` or `all.sh: FAIL
+(<part>, <part>, ...)`, naming each failed part by its summary line's prefix
+(leftover temp files as `temp files`); affected.sh ends the same way on
+`affected.sh: ...`, or on all.sh's verdict when it falls back to the full suite.
 
-**The Python package.** A noun converted to Python (ADR-0067) lives in the
+**The Python package.** Every noun is Python (ADR-0067): it lives in the
 `orch` package, `scripts/orch_py/orch/`, and its tests are pytest, in
-`scripts/orch_py/tests/` (still no top-level `tests/`). The converted nouns so
-far are `issue`, `finding-triage`, `verification`, `audit`, `review-pass`,
-`spec-review`, `spec`, `breakdown`, `glossary`, `parallel`, `route`, `agent`,
-`phase`, `handoff`, `redo`, `ticket`, `ticket-worktree`, `pr`, `review`,
-`autopilot`, `side-checkout`, `branch`, `repo`, `base`, `doctor` with its alias
-`health`, and the bare global commands `init`, `slug`, `status`, `archive`,
-`default-branch` and `help`; a helper a converted noun needs is copied into the
-package module of the concept it serves, under its bash name, and its bash copy
-stays while a bash caller remains. `orch.sh` stays the one entry point: main's
-one case naming the converted nouns calls `orch_python`, which runs the package
-as `python3 -m orch <noun> <arg>...` would, in place of orch.sh, so stdin,
-stdout, stderr and the exit code are the noun's own. It runs it through a `-c`
-bootstrap rather than `-m`: `-m` puts the caller's directory ahead of
-`PYTHONPATH` and the standard library, so a `json.py` or `orch.py` there would
-shadow the package or its imports, and Python 3.9 has no `-P`. The bootstrap
-drops that directory from `sys.path` before importing anything, puts the package
-directory first on `sys.path` in its place, then runs `orch/__main__.py` through
-`runpy`. The package directory never goes on `PYTHONPATH`, which would split a
-plugin path holding a colon and hand the directory on to every command the noun
-starts; the caller's own `PYTHONPATH` is left as given. `help`'s option
-spellings, `-h` and `--help`, and a bare `orch.sh` reach the same case and run
-`help`. The entry point, `orch/__main__.py`, is in syntax every python3 compiles
-(no annotations, f-strings or `from __future__` imports) and imports the rest of
-the package only after its version check. With no `python3` on `PATH`,
-`orch_python` dies before doing anything, exit 1, naming `orch.sh doctor`; the
+`scripts/orch_py/tests/` (still no top-level `tests/`). Each noun's code sits in
+the package module of the concept it serves, and the package owns the noun list
+(`cli.NOUNS`). `orch.sh` stays the one entry point: after its bash version guard
+and its `python3` check it hands every argument to the package with one `exec`,
+which runs it as `python3 -m orch <noun> <arg>...` would, in place of orch.sh,
+so stdin, stdout, stderr and the exit code are the noun's own. It runs it
+through a `-c` bootstrap rather than `-m`: `-m` puts the caller's directory
+ahead of `PYTHONPATH` and the standard library, so a `json.py` or `orch.py`
+there would shadow the package or its imports, and Python 3.9 has no `-P`. The
+bootstrap drops that directory from `sys.path` before importing anything, puts
+the package directory first on `sys.path` in its place, then runs
+`orch/__main__.py` through `runpy`. The package directory never goes on
+`PYTHONPATH`, which would split a plugin path holding a colon and hand the
+directory on to every command the noun starts; the caller's own `PYTHONPATH` is
+left as given. `help`'s option spellings, `-h` and `--help`, and a bare
+`orch.sh` run `help`. The entry point, `orch/__main__.py`, is in syntax every
+python3 compiles (no annotations, f-strings or `from __future__` imports) and
+imports the rest of the package only after its version check. With no `python3`
+on `PATH`, orch.sh's `orch_python_require` dies before doing anything, exit 1,
+naming `orch.sh doctor`, whatever the noun, an unknown one included; the
 package's entry point dies the same way below Python 3.9. `doctor` and `health`
 themselves, which cannot point at doctor, name the install instead, on both
-sides. orch.sh's ROOT block still runs first, and the package's own
-(`orch/root.py`) gives the same death outside a checkout when it is run
-directly. A converted noun keeps the bash noun's arguments, stdout, exit codes
-and `orch:` messages, and its bash module and section file are deleted with it.
-The package uses only the standard library; the dev dependencies (pytest,
-pytest-xdist, pytest-timeout) are pinned in
+sides. The package resolves the checkout root (`orch/root.py`) before it
+dispatches any noun, so every noun, `help` and an unknown one included, dies
+outside a checkout. A converted noun kept the bash noun's arguments, stdout,
+exit codes and `orch:` messages, and its bash module and section file were
+deleted with it. The package uses only the standard library; the dev
+dependencies (pytest, pytest-xdist, pytest-timeout) are pinned in
 `scripts/orch_py/requirements-dev.txt`, which the autopilot image installs into
 a venv at `/opt/orch-dev`. Locally: `python3 -m venv .venv && .venv/bin/pip
 install -r scripts/orch_py/requirements-dev.txt`. From `scripts/orch_py/`,
@@ -86,30 +80,22 @@ all.sh on every call but a shard group other than the first: it reports pytest's
 result as a suite's FAIL lines and summary, and prints `not installed - skipped`
 without pytest, which fails only under CI. The pytest suite is in neither
 all.sh's suites list nor the durations file, and has no durations file of its
-own. In affected.sh a change under `scripts/orch_py/` selects the base sections,
-which call converted nouns' own verbs through CLI dispatch (their `pr open` and
-`branch create` fixtures), hooks_test.sh, whose paste guard rows run
-`spec-review check` through it; the `.orchestrator` entry classification is a
-pytest case, in `test_flow_less_entries.py`, so it runs on every call. That is
-not every section that reaches the package: a section that starts a flow runs
-`init` through the dispatch, and some run `status` or `help`; CI's whole run
-covers those.
+own. In affected.sh a change under `scripts/orch_py/` selects hooks_test.sh,
+whose paste guard rows run `spec-review check` through it; the `.orchestrator`
+entry classification is a pytest case, in `test_flow_less_entries.py`, so it
+runs on every call.
 
 orch_test.sh is the suite's runner and holds no test. Its `# ---` sections live
-under `scripts/test/orch/`: `<noun>.sh` holds the sections for one orch.sh noun
-(`state.sh`, `base.sh`, ...), `harness.sh` the harness's
-own (the section filter, quiet mode, all.sh), `common.sh` the bottom-layer
-check on `scripts/orch/common.sh`, `loader.sh` the loader's sections and
-those about `orch.sh` itself (its bash version guard, its death outside a
-checkout and its removed nouns), and `setup.sh` the shared setup and the
-summary. A concept module with no noun gets
-a section file named as the module is, beside the per-noun files: `checkout.sh`
-for `scripts/orch/checkout.sh`, `trust.sh` for `scripts/orch/trust.sh`, and,
-for the two bash sources outside `scripts/orch/`, `host.sh` for
-`scripts/host.sh` and `triage-labels.sh` for `scripts/triage-labels.sh`. A
-ticket's tests go in the file for the noun it touches; a new
-noun is Python, its tests pytest in `scripts/orch_py/tests/`, and a new section
-file is picked up by the runner with no edit. A noun file holds
+under `scripts/test/orch/`, one file per bash file they test, named as it is:
+`common.sh` the bottom-layer check on `scripts/orch/common.sh`, `flow-state.sh`
+the Flow state module's readers in `scripts/flow-state.sh`, `host.sh` for
+`scripts/host.sh` and `triage-labels.sh` for `scripts/triage-labels.sh`; beside
+them `harness.sh` holds the harness's own (the section filter, quiet mode,
+all.sh), and `setup.sh` the shared setup and the summary. `orch.sh` itself (its
+bash version guard, its `python3` check and its handoff to the package) is
+tested by pytest, in `test_entry_point.py` and `test_dispatch.py`. Every noun is
+Python, its tests pytest in `scripts/orch_py/tests/`, and a new section file is
+picked up by the runner with no edit. A section file holds
 only `# ---` sections, optionally preceded by a preamble: the text before its
 first `# ---` line, run before that file's sections whenever one of them runs.
 
@@ -270,73 +256,22 @@ Test-helper placement is checked by `scripts/test/orch/harness.sh`'s
 test-helper placement section; its failure message states the rule. Copying a
 helper's whole body is checked too: see Test helpers below.
 
-orch.sh's own code is laid out the same way: `scripts/orch/<noun>.sh` holds one
-bash noun's code, named as that noun's test file is, and a helper lives in the
-module of the concept it serves, whichever modules call it. A converted noun
-has no bash module: its code is in the Python package (see The Python package
-in Layout).
-`scripts/orch/common.sh` holds only the primitives no concept owns (die, warn,
-note, capture and the like) and calls nothing a noun module defines; its test
-section checks this. For bash callers the gh adapter layer stays whole in
-`gh.sh`, whichever bash module calls it; a converted noun reaches GitHub
-through the Python gh adapter, `scripts/orch_py/orch/gh.py`, instead. A bash
-command that reaches GitHub - a GitHub operation, or a function or
-whole command that makes one - is captured through the gh module's pair
-`gh_capture` and `gh_capture_err`, never through bare `capture` or
-`capture_err`: the pair resolves the Repo in the caller's shell first, so that
-shell resolves it once (a subshell that resolves first does so for itself and
-cannot hand the memo back). The concept modules with no noun, `checkout.sh`
-(the Checkout module: only the main checkout's read, which the gh adapter's
-GitHub limit record calls; everything else about checkouts is its Python
-copy's, `orch/checkout.py`) and `trust.sh` (the
-Trust module: its fork-PR filter and issue trust check are kept with no bash
-caller; which PRs and comments orch.sh reads and which issues autopilot runs on
-are decided by its Python copy, `orch/trust.py`),
-live among the modules too. The
-Filed finding, Liveness, Session log and Standing modules went with the bash
-autopilot noun, and the Comments, Issue timeline and Marked comment modules
-with the bash handoff noun: each is a Python module only
+orch.sh's own code is all Python: every noun's code is in the Python package
+(see The Python package above), each helper in the package module of the
+concept it serves, whichever modules call it, and a noun reaches GitHub through
+the Python gh adapter, `scripts/orch_py/orch/gh.py`. The bash module directory,
+`scripts/orch/`, holds only `common.sh`: the bash primitives no concept owns
+(die, warn, capture and the like), sourced by the autopilot scripts and the
+bash test sections; orch.sh sources nothing, and there is no module loader. The
+concept modules with no noun - the Checkout module (`orch/checkout.py`), the
+Trust module (`orch/trust.py`), and the Filed finding, Liveness, Session log,
+Standing, Comments, Issue timeline and Marked comment modules
 (`orch/filed_finding.py`, `orch/liveness.py`, `orch/session_log.py`,
 `orch/standing.py`, `orch/comments.py`, `orch/issue_timeline.py`,
-`orch/marked_comment.py`).
-`scripts/orch/loader.sh` (beside `common.sh`, always loaded) holds the loader:
-the stub table, its per-copy cache under `~/.cache/orchestrator/`, the stub
-dispatch (`orch_stubs`, `orch_stub`), `orch_load`, which sources a module once
-per shell, and the load trace (`ORCH_LOAD_TRACE=<file>` appends `<module>
-<depth>` per load). orch.sh names no module: it loads each through
-`orch_load`, so a bash noun's module needs only a case in `main`; a new noun
-is Python (ADR-0067), in the `orch` package, as **The Python package** above
-says.
-Run as a command, `orch.sh` loads a module only when one of its functions is
-first called: at start the loader defines a stub for each function a module
-defines at column 0, and the first call loads that module. Sourced, it loads
-every module at once, in C-locale name order, so a function replaced after the
-`source` line stays replaced; only a plain, unexported `ORCH_SOURCE_LAZY=1` set
-before the `source` line loads on demand, and a sourced start always unsets it.
-Reading another module's top-level variable: a top-level variable is one a
-module assigns outside any function, plainly or through `readonly`,
-`declare`, `export` or `typeset`. A function, or a module's own top-level
-code, that reads another module's top-level variable names
-`orch_load <that module>` earlier in its own
-text than the first such read, so on-demand loading never reads an unset
-variable. The variables of the always-loaded files (`orch.sh`, `common.sh`,
-`loader.sh` and the files `orch.sh` sources from `scripts/` itself) are exempt.
-harness.sh's `orch_load before cross-module reads` section enforces it
-over the real tree; its failure names the file, the function or `top level`,
-and the variable.
-When a command's load trace shows a module more than once, it was loaded in
-subshells (a command substitution, a pipeline): load it with `orch_load` in
-the main shell before the first subshell that needs it. The load sits at the
-command's entry for a module every run reaches, or before the shared loop;
-inside the one op, branch or function
-that has the need, so a run that never reaches it loads nothing more; and,
-where that branch itself runs inside a
-subshell, in the main shell behind a guard that tests the same condition, such
-as `if autopilot_active; then orch_load <module>; fi` for a load only an
-autopilot session needs.
-The assertion over a load trace belongs to the loader's section file, in its
-preamble: `assert_trace_names_no <label> <trace> <module>...`, in `loader.sh`,
-asserts a trace names none of the given modules.
+`orch/marked_comment.py`) - are Python modules only. The bash sources outside
+`scripts/orch/` that the hooks read - the Flow state module
+(`scripts/flow-state.sh`), `host.sh`, `triage-labels.sh` and the hook helpers -
+each stand alone, sourced by the file that needs them.
 
 shellcheck is needed for `all.sh`'s lint step. `.shellcheckrc` holds its source
 settings; severity is a command-line option only, so a manual run needs
@@ -418,48 +353,24 @@ and ships no version bump; the other rules still hold.
 
 `scripts/dev/helpers.sh` is the helper index, read from the code so it cannot
 drift: run it rather than grepping for a helper. Bare, it lists every function
-of orch.sh's modules (`scripts/orch/*.sh`) under a `# <path>` header per
-module, each with the first line of the comment above it - its second line
-where the first holds only the `<name> <args>:` signature - or `-` where there
-is none; `cmd_*` entry points are left out. `--tests` lists the shared test
-setup (`scripts/test/orch/setup.sh`), the gh adapter fake
-(`scripts/test/gh_adapter_fake.sh`) and the assertion tally
-(`scripts/test/tally.sh`: `ok`, `bad`, `skip`, which count even inside a
-`( ... )` subshell, and `tally_summary`, the ending each standalone suite
-calls) and the bounded FIFO wait (`scripts/test/fifo.sh`: `fifo_bounded`,
+of the bash module directory (`scripts/orch/*.sh`, `common.sh` alone) under a
+`# <path>` header per file, each with the first line of the comment above it -
+its second line where the first holds only the `<name> <args>:` signature -
+or `-` where there is none; `cmd_*` entry points are left out. `--tests` lists
+the shared test setup (`scripts/test/orch/setup.sh`), the gh fake's store layout
+(`scripts/test/gh_adapter_fake.sh`, which holds no function) and the assertion
+tally (`scripts/test/tally.sh`: `ok`, `bad`, `skip`, which count even inside a
+`( ... )` subshell, and `tally_summary`, the ending each standalone suite calls)
+and the bounded FIFO wait (`scripts/test/fifo.sh`: `fifo_bounded`,
 `fifo_read_line` for a read) and the counting fixture
 (`scripts/test/counting.sh`: `counting_bin`, `counting_starts`,
-`counting_argv_bin`, which logs only the starts whose arguments match,
-`counting_glob_bin`, which logs only those whose arguments match a glob,
 `counting_stdin_bin`, which records the bytes offered on stdin, and
 `counting_bytes`, their sum) and the failing-command fixture
 (`scripts/test/fails.sh`: `fails_bin`, a stub that fails the calls whose
 arguments match a glob, with any status, and runs the real command otherwise)
-instead - their fixtures, fakes and assertions. A
-`<file>` argument lists that one bash file alone, e.g.
-`scripts/dev/helpers.sh scripts/orch/base.sh`. harness.sh's helper index
-section checks it against what bash itself defines.
-
-A section's `HOME` starts with the stub cache of the tree under test: the runner
-builds it once per run, the seed, and `setup.sh` copies it into each fresh
-`HOME` (mode 600, a file of its own). The cache tests and any test that runs
-`orch.sh` from a copied or planted tree still rebuild, as the file is named from
-its tree. A seed that cannot be built or copied leaves the run unseeded,
-silently.
-
-A test that needs a `HOME` of its own calls `seeded_home`, which exports a
-throwaway `HOME` that starts with its own copy of the same seed, so isolating a
-test costs no rebuild; the state section file's `healthy_repo` uses it. It
-prints nothing and succeeds, and in an unseeded run the `HOME` holds no cache
-file.
-
-`sourced_orch` sets `ORCH_SOURCE_LAZY=1`, so it loads orch.sh's modules on
-demand, as the command does and so a test's shell starts cheaply, except in its
-`eval` form (`sourced_orch eval <code>`); `sourced_orch_script` loads every
-module, as the code it runs may replace or name any function. Only
-`sourced_orch` sets the variable outside the loader's own section file: the
-harness section on the on-demand sourcing variable (#2820) fails on any other
-test file naming it.
+instead - their fixtures, fakes and assertions. A `<file>` argument lists that
+one bash file alone, e.g. `scripts/dev/helpers.sh scripts/flow-state.sh`.
+harness.sh's helper index section checks it against what bash itself defines.
 
 A test file may not write out a helper's whole body either: harness.sh's helper
 body copies section runs `helper_copies` over the orch suite's section files,
@@ -477,12 +388,12 @@ exempt a deliberate repeat with a comment on the line just before it,
 
 The fixtures to reach for first:
 
-- `fake_github`: a fresh, empty store-backed GitHub fake that every orch.sh
-  the test runs talks to in place of gh.
-- `fake_issue <n> <state> [labels...]`: seeds issue #n in that fake, open or
-  closed, with its labels.
-- `state_fixture <key> <value>`: arranges state.json directly, for the keys
-  `state set` refuses (phase, branch, pr, iteration, ...).
+- `new_repo`: a fresh repo with one commit and an origin resolving to the repo
+  `o/r`, the cwd inside it.
+- `counting_bin <cmd>`: a stub that counts its starts, for a test that pins
+  how many times a command ran.
+- `fails_bin`: a stub that fails the calls whose arguments match a glob and
+  runs the real command otherwise.
 
 The pytest suite has fakes of its own, never the bash harness's fixtures:
 each test uses `tmp_path` and `monkeypatch`, and an in-process test hands a
@@ -511,15 +422,11 @@ tags and branches named like their refs, and the checkouts of `create` and
 
 - `orch.gh_fake.FakeGh`, the gh adapter's fake, and `FakeStore`, which seeds
   and reads the shared fake store: the file store
-  `scripts/test/gh_adapter_fake.sh` documents, in the layout the bash
-  `fake_*` helpers write. `orch.gh.adapter` picks the fake whenever
-  `ORCH_GH_FAKE_STORE` is set, as `fake_github` sets it, and the fake honours
-  the store's failure files (`fail/<operation>` with `.after` and `.times`,
-  `offline`, `ratelimit`) under `adapter_<method name>`, the bash adapter's
-  name for an operation both keep, so a bash section's `fake_fail` reaches a
-  converted noun it runs through orch.sh. A bash stand-in
-  (`adapter_stood_in`) cannot reach Python: a case that needs one for a
-  converted verb is a pytest test.
+  `scripts/test/gh_adapter_fake.sh` documents. `orch.gh.adapter` picks the
+  fake whenever `ORCH_GH_FAKE_STORE` is set, so a test that runs orch.sh as a
+  process reaches it too, and the fake honours the store's failure files
+  (`fail/<operation>` with `.after` and `.times`, `offline`, `ratelimit`) under
+  `adapter_<method name>`.
 - `orch.git.FakeGit`, the git adapter's in-memory fake. Each git operation is
   tested against a real repository in `tmp_path` and against the fake,
   asserting the same answers. The operations `orch.git.COULD_NOT` names answer
@@ -539,7 +446,7 @@ child bash that does not inherit `-x`, so run it sequentially:
 `ORCH_TEST_ONLY='^<section>$' ORCH_TEST_JOBS=1 bash -x
 scripts/test/orch_test.sh`.
 
-`orch.sh`, its modules and the test suite target bash 4.2+: `mapfile`, `declare
+`orch.sh`, `common.sh` and the test suite target bash 4.2+: `mapfile`, `declare
 -A` and `printf -v` are fine. `orch.sh` refuses to start below 4.2: its version
 guard, the first lines after the shell options, prints one line and exits,
 and those lines stay bash 3.2-compatible, beside the hook scripts.
@@ -614,20 +521,15 @@ skills/orch-questions/        gathers the pending autopilot questions, a fresh s
 skills/orch-audit-tests/     audits a repo's test suite for cost-cutting refactors read-only: scope, measure sequentially, partition into areas, hunt in read-only orch-test-auditor subagents, rank by cost saved, HTML report, hand off to orch-interview and `orch.sh audit file`
 skills/orch-audit-docs/      audits a repo's documentation against its code read-only: scope, partition into areas, hunt in read-only orch-doc-auditor subagents, rank, HTML report, hand off to orch-interview and `orch.sh audit file`
 skills/orch-audit-code/      audits a repo's source code for latent bugs, inefficiencies and architecture deepenings read-only: scope, partition into areas, hunt in read-only orch-code-auditor subagents, rank, HTML report, hand off to orch-interview and `orch.sh audit file`
-scripts/orch.sh               the entry point for every deterministic operation (mechanism): path resolution, shared constants, the module list, main, whose one case naming the converted nouns hands each to the orch package through orch_python
-scripts/orch/<noun>.sh        one module per orch.sh noun still in bash (state.sh, base.sh, ...), sourced by orch.sh, named as its test file
-scripts/orch_py/orch/         the orch Python package (ADR-0067), one module per converted noun (issue.py, finding_triage.py, verification.py, audit.py, review_pass.py, spec_review.py, spec.py, breakdown.py, glossary.py, parallel.py, route.py, agent.py, slug.py, status.py, init.py, archive.py, help.py, phase.py, handoff.py, redo.py, ticket.py, ticket_worktree.py, pr.py, review.py, doctor.py, autopilot.py, side_checkout.py, branch.py, repo.py, base.py, each named as its noun with each - as _) beside the helpers it rebuilt, among them filed_finding.py (the Filed finding module's categories, labels and body parse, the filing checks audit file and review file make: the flag parse, the input and location checks, the needs-triage label and the body temp file, and what review file alone needs: each severity's label and its upsert, the category a review axis starts in, and the body render, and the untriaged-finding check issue triage and autopilot's candidates verdict make; its one copy, the bash filed-finding.sh gone with the bash autopilot noun), common.py (the primitives no concept owns, among them normalize_slug, dir_stamp, the code-fence rule, the git exclude writer audit begin and review-pass begin use, and move_files_aside), lines_fate.py (the Lines fate module, a concept module with no noun: what became of a range of a file's lines at a ref since a commit filed them, read by finding triage's scan), planning_allowlist.py (the Python copy of scripts/planning-allowlist.sh's lists, texts and matcher, pinned to it by a parity test, and the dirty-path scan the flow-start check refuses with), flow_state.py (the Flow state reader and seed writer: state.json read by the bash Flow state module's multi-key rules, pinned to it by golden files, the seed init writes and creates (flow_state_seed, flow_state_create), pinned to bash init's bytes by the seed/ golden files, the multi-key writer (state_write_many, several keys in one write), the phase writers (phase_write, and phase_write_try, which returns failure for a caller that words its own, each taking further keys to write with the phase), the flow-holding guard, require_state_exists, the no-flow refusal archive makes, require_state_read, a command's entry read of the keys it needs, with its no-flow and unreadable refusals, require_state, the refusal of no flow or an unreadable one, require_state_readable, the refusal of a state file that exists but cannot be read, which handoff validate makes, require_value, a required field's refusal, require_issue, the recorded issue's read with its exit code, which the autopilot verbs read, and the flow base fallback status reads (flow_base_fallback_into)), known_items.py (the Known items module, its one copy: a record's entries, tagged bullets and the known-items file), handoff.py (the handoff noun - path, post, fetch, validate and section - with its usage lines, name check and unknown-op refusal; a heading's lines and its count outside code fences, `handoff path` through the file adapter and, under autopilot, the comment adapter, handoff validation - the required sections, `handoff_report` and `handoff_check` - pinned by the golden handoffs of tests/handoff_report/, and the retire a redo sets stale handoffs aside with, handoffs_written_from and handoff_retire, with its file and comment adapters, and the checks doctor makes of the handoffs due: the phase list from a phase (phases_from) and handoff_ready, handoff_doctor_missing, handoff_fetched and handoff_fetch_due, and the comment posts autopilot's minimal plan and `autopilot start` make, handoff_comment_post and handoff_comment_post_url), issue_timeline.py (an issue's trusted comments read once, and its live handoffs, for the comment adapter, and the question, reply, answers, stop, limit-stop count, re-entry count and re-entered queries, and the body look a resumed stop makes, which standing.py and autopilot.py read), marked_comment.py (the first line of every kind of marked comment - the spec review changelog's opening, the retired handoff marker the comment retire posts - and recognising the marked comments the issue, review-pass and spec-review nouns read), ticket.py (the ticket noun - publish, next, list, close, report save and show, parent, merge and reclaim, beside exists, block, unblock, retire and reset - and the ticket concept the other nouns reach: a breakdown's sub-issue listing, the `## Blocked by` and `## Ticket` reads and rewrites, `ticket exists`, `ticket block`, `ticket unblock` and `ticket retire`, as spec-review apply runs them, and `ticket_create`, `ticket_link`, `ticket_links_verified` and `blockers_set`, as breakdown publish runs them, `require_no_open_tickets`, phase advance's open-tickets refusal, which `pr open` and `pr publish` call too, and `ticket reset` and `ticket retire`, as redo runs them), ticket_worktree.py (the ticket-worktree noun - add, list and remove - and the Ticket worktree concept the ticket noun's close, merge and reclaim reach: a ticket number's check and its worktree's path, ticket_facts, one read returning a TicketFacts record with its worktree states, and the requirements on it, the merged check of a ticket branch, and ticket_worktree_teardown, with its two failure results), autopilot.py (the autopilot noun, all twenty verbs: the verb dispatch with its unknown-op refusal and every usage line; settings and show, with the settings' lookup and validation, the model and effort checked by agent.py's autopilot_setting_check in process; active, rounds and budget; start, through standing.py's standing_start; candidates; the question, reply and re-entry verbs questions, reply, resume, ask, answer and reenter, and the Sync request verbs sync, sync-finish, sync-dropped and sync-fail, over standing.py's transitions; watch, each tick a fresh `orch.sh autopilot tick` process; tick, with the pause files, the claims and done reads, stale cleanup, the merged-PR close through pr.py's close_missed_rows in process, the hourly housekeeping, sync detection, ranking and Pickup, each run started detached as `orch.sh autopilot run <issue>`; and run, the session wrapper, with its session end and the review budget record through flow_state.py's writer - and the concept every Python noun reads: whether this is an autopilot session, the plan's `## Autopilot` block report, the pause files' UTC timestamps, and the GitHub limit record gh.py's limit handling makes in an autopilot process, the GitHub limit pause and a session's hit file, pinned to the bash gh adapter's pause put by tests/github_pause/), session_log.py (the Session log module, its one copy: what a phase session's log says about usage limits, read in one pass - its limit stop, reset, early pause and final reply - which autopilot run's session end reads), standing.py (the Standing module whole, its one copy since the bash standing.sh went with the bash autopilot noun: the label set and the label entries a tick ensures, the phase label test, the standing read with the Pickup rule and the sync-request reads on it, the phase-redo rule, the host id, the claims read once on origin and the claim create, the single writes - begin, sync request and resume - and the chain transitions, each a Chain whose failure dies naming the writes that landed, the claim held: ask, reenter, stop, sync finish, sync dropped, limit stop, claim release, the pause spec pause --round makes in an autopilot flow, and the finished phase's close, standing_finish, the phase label moved by standing_move_label, then the phase recorded, then the claim released; and the resumable chain's landed record a session wrapper hands a chain; doctor reads the standing and claims reads, the host id, the live phase and redo phase reads and the label verdict), pr.py (the pr noun - open, publish, release, comment, comments, fetch, read, update, draft and ready - with the PR-writing standard's body check and the push-then-issue-line step open and publish share; the merged-PR close, close_missed_rows, which autopilot's tick calls in process once a tick, and close_missed_finish, which side_checkout.py's sweep calls in process; and the current branch's open PR, which review-pass reads too), branch.py (the branch noun - create, off, busy, base-sha, sync and retire - with its unknown-op refusal and every usage line, and the branch concept the other nouns read, its one copy since the bash branch module went: the PR, retired and forked-from keys read off a branch, the PR and forked-from keys written (branch_pr_set, the PR key's writer, which pr open and pr publish call), the branch kinds, whether a branch records a base, the flow's branch name and its redo form, a ticket branch's name, the issue a flow or quick branch name gives, the discard rule's own-branch proof and discard, branch_retire, every arm of `branch retire`, which redo calls in process, the start-point decision and the fork create and off share (new_branch_start, fork_new_branch), and create's own discard-rule decision (discard_create_work)), review.py (the review noun, all twelve verbs: the verb dispatch with its unknown-op refusal and every usage line; begin, path, terminal, resume and retire, with the budget fallback and its default of 5 (review_budget_fallback) that status and redo read too; file, built on filed_finding.py; known-items, built on known_items.py; standards with the Standards resolution under it (standards_resolve_source); ci and ci --no-wait, the grace from the push, the no-CI-evidence skip and wait.py's stored total; rerun and ci-log, over the failing counted checks; ready, the CI gate pr ready makes too (ci_ready_gate, with ci_counted, ci_counted_probe, ci_classify and ci_unreachable under it), the PR marked ready, then phase.py's finish called in process; what doctor's three review checks read in process, review_terminal_report, ci_probe and standards_resolve_source; and the review loop's terminal-state read: the record path, the record's terminal section, the flat-record-gone check, the terminal record with its pre-redo-<n>/ fallback, and the classification, pinned by the golden review records of tests/review_terminal/, and review_retire, `review retire`'s move of the records into pre-redo-<n>/), base.py (the base noun - set, its --flow form included, show and clear - with its unknown-op refusal, every usage line, the base note and require_on_origin's checks, beside the base concept's default-branch lookup and the default-branch noun (run_default_branch), the base branch in effect now, as base_branch_into reads it for init, the base a branch belongs to, as recorded_base_into reads it, and the base and base-SHA keys a branch records them under, their one spelling, with their getters, setters and the record of both (record_branch_base)), host.py (the host, the plugin and flow commands a message names for it, and the stop block naming the fresh session's next step that the phase noun's boundary and advance and spec pause print), checkout.py (the Checkout concept as far as a converted noun needs it: the main checkout, the current branch and a checkout's branch, the branch a rebase in progress is rebasing (checkout_branch_or_rebasing, which review resume reads), the checkout a branch is checked out in, the ticket-worktree path, the checkout scan init, status and archive read - every checkout with its kind (checkouts, checkout_classify, checkout_kind), what one holds (checkout_holding) - whether a merge or a rebase is in progress, the ticket-worktree listing and refusal (ticket_worktrees_under, refuse_ticket_worktrees), the busy-checkout refusal on its flow, branch and tree signals (checkout_busy, refuse_busy_checkout), and the discard rule's pieces (ADR-0054): the flow-branch proof, the work to discard, the discard sequence and the flow-branch discard; its one copy but for the main checkout's read the bash Checkout module keeps), side_checkout.py (the side-checkout noun (ADR-0037) - add, list, remove, prune and issue - and the Side checkout concept the other nouns read: the ownership marker, where a flow is archived and the archive itself (archive_root, archive_flow), and the teardown, a side checkout archived into the main checkout's archive then removed, with its or-exit wrapper, which archive reads, and the glossary's **Finished**, side_checkout_finished, which doctor's finished-side-checkouts check reads, and what the autopilot noun reaches: add (side_checkout_add, the short slug and its clash suffixes a picked-up issue's side checkout is named by), the finished sweep (side_checkout_prune, its merged-PR close calling pr.py's close_missed_finish in-process), and the two lookups, side_checkouts_dir and side_checkout_for_issue), repo.py (the repo noun - show, with --name and --host - and the Repo pin and its resolution, the owner/name split and whether the host came from origin's SSH URL), triage_labels.py (the triage labels table and the expected labels doctor checks), and liveness.py (the Liveness module, its one copy since the bash liveness.sh went with the bash autopilot noun: the `<pid> <start-time>` record and issue_alive, whether an issue's claim is alive, the run, tick and hit files with their begin and end, the watch pidfile, and the session log naming and its 14-day prune) and wait.py (the Wait module's one copy: the re-callable block and a re-callable wait's stored total, its format pinned by the golden files of tests/wait/, with the provisional guard, the limited mark and the decision whether a GitHub rate-limit wait fits in the block, which gh.py's limit handling asks); doctor.py the doctor noun and its alias health (the reporter, the env and flow check registries, the GitHub probe each answer is read once by, and doctor's own checks, each a registry entry named for the bash check it replaced); audit.py the audit noun (begin, report, file and file --run, and the drift line of an audit-filed body that the issue noun reads); review_pass.py the review-pass noun (begin and known-items); spec.py the spec noun (fetch, update, comment and comments on the flow's issue through the issue noun in-process, pause and pause --round with their markers, round-dir and round), with the spec concept's round directory: its state files, the saved answer, the hold and the round's local tail, the reset, the carry and the round count's parse, read by the golden round directories and saved-answer lines of tests/spec_round/; glossary.py the glossary noun (terms, show and match: the root GLOSSARY.md's entry grammar as pure functions over text, and show_file, docs_lint's reader of one entry from any file); parallel.py the parallel noun (show: the parallel cap, read through git.py's config_value); route.py the route noun (show: the default route, read the same way); slug.py the slug noun (common.py's normalize_slug, printed); init.py the init noun (the busy and planning-allowlist refusals, the adoption gate, the trust warning, the seed, the archive of a done flow, the folders and git exclude, and the state write); status.py the status noun (the flow lines, the "No active flow" line and the listing of the other checkouts); archive.py the archive noun (the flow archived in place in the main checkout, or from a side checkout into the main checkout's archive and the worktree then removed, through side_checkout.py); help.py the help noun (the command list, moved verbatim from bash cmd_help and pinned byte for byte by tests/help/golden.txt); phase.py the phase noun (advance and boundary, and finish, the phase recorded or, in an autopilot session, the Standing finish, which review ready calls in process); redo.py the redo noun (review and spec, with redo_midway, the half-finished-redo predicate the terminal-state read shares, the retire plan, the attempt retire - the PR closed, then the branch retired through branch.py's branch_retire and recorded in one state write - and the closing write); agent.py the agent noun (set, show, clear, get, sync and roles, the HostSpec table, .junie/agents/ copy-sync, name_shapes, the agent name shapes docs_lint reads, and autopilot_setting_check, the autopilot model and effort check, which the autopilot noun calls in process); breakdown.py the breakdown noun (publish and state: the draft parse in memory, the publishing order, and the save point, which ticket.py's retire removes, in the layout the bash noun wrote); spec_review.py the spec-review noun (begin, check, apply, wait and prompt), with spec_review_batch.py (the batch and lens findings parse and the validation check and apply share), spec_review_tickets.py (the ticket items parse and the offline checks) and spec_review_apply.py (the machinery the apply verb calls: the answer, the edits, the changelog, the saved answer and --resume, and the GitHub writes); verification.py the verification noun (a re-callable command, its runner started through its own copy of the bootstrap, at the module's `__main__` entry point): standard library only, Python 3.9+; __main__.py the entry point (the version check, in syntax every python3 compiles), cli.py the noun table, gh.py and git.py the only places gh and git run (gh.py's operations among them the sub-issue listing, link and unlink, the blocker list, add and remove that the ticket commands call, claim_delete, the claim ref's push to origin, claim_create, the claim commit pushed only where origin holds none, issues_labelled_rows, the questions verb's needs-human listing, issues_any_labelled_rows, the tick's one listing of its flow issues, and what doctor asks: the auth status probe for a host, the repo's label list, gh's local default repo, the sub-issue support probe and the merged-PRs read; git.py's push, with its reason, and the claim create's empty_commit and push_new_ref, and git_failed, which hands a failed run's stderr on as bash let it through), gh_fake.py the gh adapter's fake on the shared fake store, with its claim seeder and reader (claim and claim_held, as fake_claim_seed and fake_claim_held), root.py the ROOT block
+scripts/orch.sh               the entry point for every deterministic operation (mechanism): the bash version guard, the python3 check and one exec handing every argument to the orch package
+scripts/orch_py/orch/         the orch Python package (ADR-0067), one module per converted noun (issue.py, finding_triage.py, verification.py, audit.py, review_pass.py, spec_review.py, spec.py, breakdown.py, glossary.py, parallel.py, route.py, agent.py, slug.py, status.py, init.py, archive.py, help.py, phase.py, handoff.py, redo.py, ticket.py, ticket_worktree.py, pr.py, review.py, doctor.py, autopilot.py, side_checkout.py, branch.py, repo.py, base.py, state.py, each named as its noun with each - as _) beside the helpers it rebuilt, among them filed_finding.py (the Filed finding module's categories, labels and body parse, the filing checks audit file and review file make: the flag parse, the input and location checks, the needs-triage label and the body temp file, and what review file alone needs: each severity's label and its upsert, the category a review axis starts in, and the body render, and the untriaged-finding check issue triage and autopilot's candidates verdict make; its one copy, the bash filed-finding.sh gone with the bash autopilot noun), common.py (the primitives no concept owns, among them normalize_slug, dir_stamp, the code-fence rule, the git exclude writer audit begin and review-pass begin use, and move_files_aside), lines_fate.py (the Lines fate module, a concept module with no noun: what became of a range of a file's lines at a ref since a commit filed them, read by finding triage's scan), planning_allowlist.py (the Python copy of scripts/planning-allowlist.sh's lists, texts and matcher, pinned to it by a parity test, and the dirty-path scan the flow-start check refuses with), flow_state.py (the Flow state reader and seed writer: state.json read by the bash Flow state module's multi-key rules, pinned to it by golden files, the seed init writes and creates (flow_state_seed, flow_state_create), pinned to bash init's bytes by the seed/ golden files, the multi-key writer (state_write_many, several keys in one write), the phase writers (phase_write, and phase_write_try, which returns failure for a caller that words its own, each taking further keys to write with the phase), the flow-holding guard, require_state_exists, the no-flow refusal archive makes, require_state_read, a command's entry read of the keys it needs, with its no-flow and unreadable refusals, require_state, the refusal of no flow or an unreadable one, require_state_readable, the refusal of a state file that exists but cannot be read, which handoff validate makes, require_value, a required field's refusal, require_issue, the recorded issue's read with its exit code, which the autopilot verbs read, and the flow base fallback status reads (flow_base_fallback_into)), known_items.py (the Known items module, its one copy: a record's entries, tagged bullets and the known-items file), handoff.py (the handoff noun - path, post, fetch, validate and section - with its usage lines, name check and unknown-op refusal; a heading's lines and its count outside code fences, `handoff path` through the file adapter and, under autopilot, the comment adapter, handoff validation - the required sections, `handoff_report` and `handoff_check` - pinned by the golden handoffs of tests/handoff_report/, and the retire a redo sets stale handoffs aside with, handoffs_written_from and handoff_retire, with its file and comment adapters, and the checks doctor makes of the handoffs due: the phase list from a phase (phases_from) and handoff_ready, handoff_doctor_missing, handoff_fetched and handoff_fetch_due, and the comment posts autopilot's minimal plan and `autopilot start` make, handoff_comment_post and handoff_comment_post_url), issue_timeline.py (an issue's trusted comments read once, and its live handoffs, for the comment adapter, and the question, reply, answers, stop, limit-stop count, re-entry count and re-entered queries, and the body look a resumed stop makes, which standing.py and autopilot.py read), marked_comment.py (the first line of every kind of marked comment - the spec review changelog's opening, the retired handoff marker the comment retire posts - and recognising the marked comments the issue, review-pass and spec-review nouns read), ticket.py (the ticket noun - publish, next, list, close, report save and show, parent, merge and reclaim, beside exists, block, unblock, retire and reset - and the ticket concept the other nouns reach: a breakdown's sub-issue listing, the `## Blocked by` and `## Ticket` reads and rewrites, `ticket exists`, `ticket block`, `ticket unblock` and `ticket retire`, as spec-review apply runs them, and `ticket_create`, `ticket_link`, `ticket_links_verified` and `blockers_set`, as breakdown publish runs them, `require_no_open_tickets`, phase advance's open-tickets refusal, which `pr open` and `pr publish` call too, and `ticket reset` and `ticket retire`, as redo runs them), ticket_worktree.py (the ticket-worktree noun - add, list and remove - and the Ticket worktree concept the ticket noun's close, merge and reclaim reach: a ticket number's check and its worktree's path, ticket_facts, one read returning a TicketFacts record with its worktree states, and the requirements on it, the merged check of a ticket branch, and ticket_worktree_teardown, with its two failure results), autopilot.py (the autopilot noun, all twenty verbs: the verb dispatch with its unknown-op refusal and every usage line; settings and show, with the settings' lookup and validation, the model and effort checked by agent.py's autopilot_setting_check in process; active, rounds and budget; start, through standing.py's standing_start; candidates; the question, reply and re-entry verbs questions, reply, resume, ask, answer and reenter, and the Sync request verbs sync, sync-finish, sync-dropped and sync-fail, over standing.py's transitions; watch, each tick a fresh `orch.sh autopilot tick` process; tick, with the pause files, the claims and done reads, stale cleanup, the merged-PR close through pr.py's close_missed_rows in process, the hourly housekeeping, sync detection, ranking and Pickup, each run started detached as `orch.sh autopilot run <issue>`; and run, the session wrapper, with its session end and the review budget record through flow_state.py's writer - and the concept every Python noun reads: whether this is an autopilot session, the plan's `## Autopilot` block report, the pause files' UTC timestamps, and the GitHub limit record gh.py's limit handling makes in an autopilot process, the GitHub limit pause and a session's hit file, pinned by the golden pause files of tests/github_pause/), session_log.py (the Session log module, its one copy: what a phase session's log says about usage limits, read in one pass - its limit stop, reset, early pause and final reply - which autopilot run's session end reads), standing.py (the Standing module whole, its one copy since the bash standing.sh went with the bash autopilot noun: the label set and the label entries a tick ensures, the phase label test, the standing read with the Pickup rule and the sync-request reads on it, the phase-redo rule, the host id, the claims read once on origin and the claim create, the single writes - begin, sync request and resume - and the chain transitions, each a Chain whose failure dies naming the writes that landed, the claim held: ask, reenter, stop, sync finish, sync dropped, limit stop, claim release, the pause spec pause --round makes in an autopilot flow, and the finished phase's close, standing_finish, the phase label moved by standing_move_label, then the phase recorded, then the claim released; and the resumable chain's landed record a session wrapper hands a chain; doctor reads the standing and claims reads, the host id, the live phase and redo phase reads and the label verdict), pr.py (the pr noun - open, publish, release, comment, comments, fetch, read, update, draft and ready - with the PR-writing standard's body check and the push-then-issue-line step open and publish share; the merged-PR close, close_missed_rows, which autopilot's tick calls in process once a tick, and close_missed_finish, which side_checkout.py's sweep calls in process; and the current branch's open PR, which review-pass reads too), branch.py (the branch noun - create, off, busy, base-sha, sync and retire - with its unknown-op refusal and every usage line, and the branch concept the other nouns read, its one copy since the bash branch module went: the PR, retired and forked-from keys read off a branch, the PR and forked-from keys written (branch_pr_set, the PR key's writer, which pr open and pr publish call), the branch kinds, whether a branch records a base, the flow's branch name and its redo form, a ticket branch's name, the issue a flow or quick branch name gives, the discard rule's own-branch proof and discard, branch_retire, every arm of `branch retire`, which redo calls in process, the start-point decision and the fork create and off share (new_branch_start, fork_new_branch), and create's own discard-rule decision (discard_create_work)), review.py (the review noun, all twelve verbs: the verb dispatch with its unknown-op refusal and every usage line; begin, path, terminal, resume and retire, with the budget fallback and its default of 5 (review_budget_fallback) that status and redo read too; file, built on filed_finding.py; known-items, built on known_items.py; standards with the Standards resolution under it (standards_resolve_source); ci and ci --no-wait, the grace from the push, the no-CI-evidence skip and wait.py's stored total; rerun and ci-log, over the failing counted checks; ready, the CI gate pr ready makes too (ci_ready_gate, with ci_counted, ci_counted_probe, ci_classify and ci_unreachable under it), the PR marked ready, then phase.py's finish called in process; what doctor's three review checks read in process, review_terminal_report, ci_probe and standards_resolve_source; and the review loop's terminal-state read: the record path, the record's terminal section, the flat-record-gone check, the terminal record with its pre-redo-<n>/ fallback, and the classification, pinned by the golden review records of tests/review_terminal/, and review_retire, `review retire`'s move of the records into pre-redo-<n>/), base.py (the base noun - set, its --flow form included, show and clear - with its unknown-op refusal, every usage line, the base note and require_on_origin's checks, beside the base concept's default-branch lookup and the default-branch noun (run_default_branch), the base branch in effect now, as base_branch_into reads it for init, the base a branch belongs to, as recorded_base_into reads it, and the base and base-SHA keys a branch records them under, their one spelling, with their getters, setters and the record of both (record_branch_base)), host.py (the host, the plugin and flow commands a message names for it, and the stop block naming the fresh session's next step that the phase noun's boundary and advance and spec pause print), checkout.py (the Checkout concept as far as a converted noun needs it: the main checkout, the current branch and a checkout's branch, the branch a rebase in progress is rebasing (checkout_branch_or_rebasing, which review resume reads), the checkout a branch is checked out in, the ticket-worktree path, the checkout scan init, status and archive read - every checkout with its kind (checkouts, checkout_classify, checkout_kind), what one holds (checkout_holding) - whether a merge or a rebase is in progress, the ticket-worktree listing and refusal (ticket_worktrees_under, refuse_ticket_worktrees), the busy-checkout refusal on its flow, branch and tree signals (checkout_busy, refuse_busy_checkout), and the discard rule's pieces (ADR-0054): the flow-branch proof, the work to discard, the discard sequence and the flow-branch discard; its one copy since the bash Checkout module went), side_checkout.py (the side-checkout noun (ADR-0037) - add, list, remove, prune and issue - and the Side checkout concept the other nouns read: the ownership marker, where a flow is archived and the archive itself (archive_root, archive_flow), and the teardown, a side checkout archived into the main checkout's archive then removed, with its or-exit wrapper, which archive reads, and the glossary's **Finished**, side_checkout_finished, which doctor's finished-side-checkouts check reads, and what the autopilot noun reaches: add (side_checkout_add, the short slug and its clash suffixes a picked-up issue's side checkout is named by), the finished sweep (side_checkout_prune, its merged-PR close calling pr.py's close_missed_finish in-process), and the two lookups, side_checkouts_dir and side_checkout_for_issue), repo.py (the repo noun - show, with --name and --host - and the Repo pin and its resolution, the owner/name split and whether the host came from origin's SSH URL), state.py (the state noun - get and set - over flow_state.py's readers, its multi-key writer and the key table's owner column, which says which keys `state set` may write), triage_labels.py (the triage labels table and the expected labels doctor checks), and liveness.py (the Liveness module, its one copy since the bash liveness.sh went with the bash autopilot noun: the `<pid> <start-time>` record and issue_alive, whether an issue's claim is alive, the run, tick and hit files with their begin and end, the watch pidfile, and the session log naming and its 14-day prune) and wait.py (the Wait module's one copy: the re-callable block and a re-callable wait's stored total, its format pinned by the golden files of tests/wait/, with the provisional guard, the limited mark and the decision whether a GitHub rate-limit wait fits in the block, which gh.py's limit handling asks); doctor.py the doctor noun and its alias health (the reporter, the env and flow check registries, the GitHub probe each answer is read once by, and doctor's own checks, each a registry entry named for the bash check it replaced); audit.py the audit noun (begin, report, file and file --run, and the drift line of an audit-filed body that the issue noun reads); review_pass.py the review-pass noun (begin and known-items); spec.py the spec noun (fetch, update, comment and comments on the flow's issue through the issue noun in-process, pause and pause --round with their markers, round-dir and round), with the spec concept's round directory: its state files, the saved answer, the hold and the round's local tail, the reset, the carry and the round count's parse, read by the golden round directories and saved-answer lines of tests/spec_round/; glossary.py the glossary noun (terms, show and match: the root GLOSSARY.md's entry grammar as pure functions over text, and show_file, docs_lint's reader of one entry from any file); parallel.py the parallel noun (show: the parallel cap, read through git.py's config_value); route.py the route noun (show: the default route, read the same way); slug.py the slug noun (common.py's normalize_slug, printed); init.py the init noun (the busy and planning-allowlist refusals, the adoption gate, the trust warning, the seed, the archive of a done flow, the folders and git exclude, and the state write); status.py the status noun (the flow lines, the "No active flow" line and the listing of the other checkouts); archive.py the archive noun (the flow archived in place in the main checkout, or from a side checkout into the main checkout's archive and the worktree then removed, through side_checkout.py); help.py the help noun (the command list, moved verbatim from bash cmd_help and pinned byte for byte by tests/help/golden.txt); phase.py the phase noun (advance and boundary, and finish, the phase recorded or, in an autopilot session, the Standing finish, which review ready calls in process); redo.py the redo noun (review and spec, with redo_midway, the half-finished-redo predicate the terminal-state read shares, the retire plan, the attempt retire - the PR closed, then the branch retired through branch.py's branch_retire and recorded in one state write - and the closing write); agent.py the agent noun (set, show, clear, get, sync and roles, the HostSpec table, .junie/agents/ copy-sync, name_shapes, the agent name shapes docs_lint reads, and autopilot_setting_check, the autopilot model and effort check, which the autopilot noun calls in process); breakdown.py the breakdown noun (publish and state: the draft parse in memory, the publishing order, and the save point, which ticket.py's retire removes, in the layout the bash noun wrote); spec_review.py the spec-review noun (begin, check, apply, wait and prompt), with spec_review_batch.py (the batch and lens findings parse and the validation check and apply share), spec_review_tickets.py (the ticket items parse and the offline checks) and spec_review_apply.py (the machinery the apply verb calls: the answer, the edits, the changelog, the saved answer and --resume, and the GitHub writes); verification.py the verification noun (a re-callable command, its runner started through its own copy of the bootstrap, at the module's `__main__` entry point): standard library only, Python 3.9+; __main__.py the entry point (the version check, in syntax every python3 compiles), cli.py the noun table, gh.py and git.py the only places gh and git run (gh.py's operations among them the sub-issue listing, link and unlink, the blocker list, add and remove that the ticket commands call, claim_delete, the claim ref's push to origin, claim_create, the claim commit pushed only where origin holds none, issues_labelled_rows, the questions verb's needs-human listing, issues_any_labelled_rows, the tick's one listing of its flow issues, and what doctor asks: the auth status probe for a host, the repo's label list, gh's local default repo, the sub-issue support probe and the merged-PRs read; git.py's push, with its reason, and the claim create's empty_commit and push_new_ref, and git_failed, which hands a failed run's stderr on as bash let it through), gh_fake.py the gh adapter's fake on the shared fake store, with its claim seeder and reader (claim and claim_held, as fake_claim_seed and fake_claim_held), root.py the ROOT block
 scripts/orch_py/tests/        the pytest suite: in-process tests of each noun against the fakes (the verification noun's against real repositories and real processes, and the worktree and git-status cases of init, archive and status, and the ticket noun's close, merge and reclaim and the ticket-worktree noun's add, list, remove and teardown, and the review noun's resume discard and ready side-checkout pointer, and the side-checkout noun's list, issue and remove, and the branch noun's sync and base-sha, its create, off and retire beside same-named tags and branches and its create and off over a clashing edit, against real repositories, ADR-0067's exceptions for what a fake would only restate), two of the review reads doctor makes in process (ci_probe and standards_resolve_source) called directly on a plain directory and the gh fake in test_review_doctor.py, review_terminal_report, whose one caller is doctor, tested through doctor, the gh adapter's contract tests against a fixture gh, the git adapter's tests against a real repository and its fake, doctor's report, every group and check through doctor.run, in test_doctor.py, and the end-to-end checks of orch.sh's dispatch (test_dispatch.py), doctor's own python3 refusal and the running bash's version line among them; conftest.py the clean environment and the real-gh guard, and the shared fixtures, among them the real-repository ones the checkout, side-checkout, archive, status, init and ticket tests share (worktree_add, mark_side, hold_flow, done_flow, side_checkout, archive_main, the FakeGit side checkouts doctor and the side-checkout sweep share (linked_worktree, SideCheckouts, sha_of), and the pinned archive_clock with its ARCHIVE_STAMP and archived, the file helpers files_under and orch_files, and the ticket nouns' ticket_repo with its TICKET_PARENT and TICKET7, orch_tw, wt_path, added, git_of, has_branch, lock_ref and rebasing)
 scripts/orch_py/requirements-dev.txt the pinned dev dependencies: pytest, pytest-xdist, pytest-timeout (the package itself needs none)
 scripts/orch_py/pytest.ini    the pytest settings: the tests folder, the package on the module path, the per-test timeout, no cache directory
-scripts/orch/checkout.sh      the Checkout module, a concept module with no noun, holding only the main checkout's read (checkout_parse, main_checkout, main_checkout_or_die, checkouts_unreadable), which the gh adapter's GitHub limit record calls; everything else about checkouts is orch/checkout.py's
-scripts/orch/trust.sh         the Trust module, a concept module with no noun: its fork-PR filter (trust_filter_prs) and issue trust check (trust_issue_check), both kept with no bash caller; which PRs orch.sh reads - the filter dropping a fork PR - is orch/trust.py's, as are the comment filter dropping a comment whose author is not an owner, member or collaborator and the issue trust check deciding which issues autopilot runs on
-scripts/orch/common.sh        the primitives no concept owns (die, capture, ..., and autopilot_active, whether this is an autopilot session, which the gh adapter asks)
-scripts/orch/loader.sh        the module loader, always loaded beside common.sh: the stub table, its per-copy cache under ~/.cache/orchestrator/, the stub dispatch (orch_stubs, orch_stub), orch_load (once per shell) and the ORCH_LOAD_TRACE load trace
-scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), the capture pair gh_capture and gh_capture_err, every adapter_* operation, the GitHub limit record its limit handler makes in an autopilot process (the GitHub limit pause and a session's hit file, with the pause put, the pause-file paths and the reset cap), the ORCH_GH_ADAPTER hook
-scripts/triage-labels.sh      the triage-label parser and LABELS_DOC, sourced by orch.sh and hook-grilling.sh; its sections in scripts/test/orch/triage-labels.sh
-scripts/host.sh               the one host detector: host_detect (environment) and host_from_project_path (hook payload), sourced by orch.sh and hook-common.sh; its sections in scripts/test/orch/host.sh
-scripts/flow-state.sh         the Flow state module: state.json's keys, defaults, reading and writing, sourced by orch.sh and hook-common.sh; the state format's owner and the writer of every change after a flow's seed, with a Python reader and seed writer beside it (scripts/orch_py/orch/flow_state.py), pinned to it by the golden state.json files in scripts/orch_py/tests/flow_state/: the reader by those under read/ and refused/, which the state section reads too, and the seed by those under seed/, which only pytest reads
+scripts/orch/common.sh        the bash primitives no concept owns (die, warn, capture, ...), the one file left in scripts/orch/, sourced by the autopilot scripts and the bash test sections
+scripts/triage-labels.sh      the triage-label parser and LABELS_DOC, sourced by hook-grilling.sh; its sections in scripts/test/orch/triage-labels.sh
+scripts/host.sh               the one host detector: host_detect (environment) and host_from_project_path (hook payload), sourced by hook-common.sh; its sections in scripts/test/orch/host.sh
+scripts/flow-state.sh         the Flow state module: state.json's keys, defaults, reading and the active-flow check, sourced by hook-common.sh; the state format's owner, writing nothing: its Python side (scripts/orch_py/orch/flow_state.py) makes every write of the file, the seed included, pinned to it by the golden state.json files in scripts/orch_py/tests/flow_state/: the reader by those under read/ and refused/, which the flow-state section reads too, and the seed by those under seed/, which only pytest reads
 scripts/hook-*.sh             the seven hooks; hook-bash.sh makes the one decision on plugin subagents' and autopilot Bash calls, in order: deny an unquoted pgrep or pkill word under every mode, else deny a plain stdin read under any mode but bypassPermissions, else rewrite the command to close stdin under bypassPermissions; hook-grilling.sh sends only the session's state and points to orch-interview's Closing section, and also runs on UserPromptSubmit for Junie, hook-paste-guard.sh is Claude Code only, hook-paste-stop-guard.sh its Stop half
 scripts/paste-guard.sh        the transcript scan and paste check the two paste guards share, sourced by hook-paste-guard.sh and hook-paste-stop-guard.sh
 scripts/bash-walk.sh          the command walker the Bash hook sources, sourced by hook-bash.sh
@@ -647,7 +549,7 @@ scripts/test/                 shell tests: the suites in all.sh's `suites` list 
 scripts/test/orch_py_test.sh  the pytest suite's wrapper, run by all.sh and affected.sh outside the durations file: pytest from the /opt/orch-dev venv or python3, its xdist workers drawn from the job pool, its result as a suite's FAIL lines and summary
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
 scripts/test/tally.sh         the assertion tally every suite sources: ok, bad and skip append to a per-run file, so an assertion inside a subshell counts; tally_summary is the ending each standalone suite calls
-scripts/test/counting.sh      the counting fixture the orch.sh suite's runner, hooks_test.sh and docs_lint.sh source: counting_bin makes a directory holding a stub, which its caller puts first on PATH, that logs one line per start and runs the real command, counting_starts reads the count, counting_argv_bin makes the stub log only the starts whose joined arguments equal a given string, counting_glob_bin makes it log only those whose padded arguments match a glob, counting_stdin_bin makes counting_bin's stub also record the bytes offered on its stdin, counting_bytes sums them
+scripts/test/counting.sh      the counting fixture the orch.sh suite's runner, hooks_test.sh and docs_lint.sh source: counting_bin makes a directory holding a stub, which its caller puts first on PATH, that logs one line per start and runs the real command, counting_starts reads the count, counting_stdin_bin makes counting_bin's stub also record the bytes offered on its stdin, counting_bytes sums them
 scripts/test/fails.sh         the failing-command fixture the orch.sh suite's runner and hooks_test.sh source: fails_bin makes a directory holding a stub, which its caller puts first on PATH, that exits with a given status (0 allowed), after an optional stderr line, when its space-padded arguments match a glob, and runs the real command for every other call
 scripts/test/test_jobs.sh     the job-count, job pool and priority helpers orch_test.sh, all.sh, affected.sh and section-durations.sh all source: the default ORCH_TEST_JOBS (ORCH_TEST_POOL_PERCENT) and the renice to 10, and the signal-reachable child start (test_jobs_run_child, with its INT/TERM stop) that section-durations.sh and lens-bench.sh use, and the suite start (test_jobs_suite_start, with its start order test_jobs_start_order and children marker test_jobs_held_marker) all.sh and affected.sh start each suite through, orch_test.sh's parallel section start each section child, and section-durations.sh each suite but orch_test.sh
 scripts/test/report.sh       the report helpers all.sh, affected.sh and section-durations.sh source: a suite's FAIL block and summary line, the shellcheck summary, the temp-files failure record, and the run's verdict line, whose PASS or FAIL comes from the failed parts recorded
@@ -656,13 +558,10 @@ scripts/test/git_env.sh      `test_git_env_clear`, which every suite runner sour
 scripts/test/shell_code.awk    the SHELL_CODE_AWK library, the one rule of what counts as code in a shell file: setup.sh, docs_lint.sh, width.sh and the helper index each load it whole
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary
 scripts/test/orch/harness.sh  the harness's own sections: isolation, the section filter, quiet mode, all.sh
-scripts/test/orch/common.sh   the bottom-layer check on scripts/orch/common.sh
-scripts/test/orch/loader.sh   the loader's sections: orch_load, on-demand loading, the stub table cache, and the entry script's own: the removed mp-skill and suite-cost nouns, the bash version guard, and the death outside a checkout (#931)
-scripts/test/orch/<noun>.sh   one file per orch.sh noun (state.sh, base.sh, ...): its sections, after an optional preamble
-scripts/test/orch/checkout.sh the Checkout module's section, the main checkout's read, named as the module is
+scripts/test/orch/common.sh   the bottom-layer check on scripts/orch/common.sh, sourcing it alone
+scripts/test/orch/flow-state.sh    the Flow state module's sections (scripts/flow-state.sh), sourcing it alone, named as the file is
 scripts/test/orch/host.sh          the host detector's sections (scripts/host.sh), named as the file is
 scripts/test/orch/triage-labels.sh the triage-label parser's sections (scripts/triage-labels.sh), named as the file is
-scripts/test/orch/trust.sh          the Trust module's sections, named as the module is
 docs/how-it-works.md          the phases, every command in full, the base branch, hosts, and activation
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
 docs/driver-loop.md           the driver loop (loop steps a-f, its slots, dispatching a subagent) the implement phase and a quick implementation both run

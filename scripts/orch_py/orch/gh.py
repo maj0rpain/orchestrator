@@ -7,20 +7,19 @@ Each owns gh's flags and --jq expressions and answers in Python values; a gh
 failure raises GhFailed carrying gh's stderr, and an answer that does not
 parse as the operation's JSON raises Unparsed. A caller dies through gh_or_die
 or gh_die, or reacts another way through gh_reason. The CI-evidence reads take
-gh api's whole answer, as gh.sh's ci_api_read did while the bash review noun
-stood, and read it here the way its jq expression did, so an error body GitHub
-answers with is read too. The claim list, the claim create and the claim
-delete are the three operations the real adapter makes through git rather
-than gh, as bash's adapter_claim_list, adapter_claim_create and
-adapter_claim_delete are: a claim is a ref on origin.
+gh api's whole answer, as the bash review noun did while it stood, and read
+it here the way its jq expression did, so an error body GitHub answers with
+is read too. The claim list, the claim create and the claim delete are the
+three operations the real adapter makes through git rather than gh, as the
+bash adapter's were: a claim is a ref on origin.
 
-The real adapter, Gh, reproduces gh.sh's guard: every call is pinned to the
-repo (orch.repo), dying with the remedy when none resolves, and a failed call
-goes through the rate-limit handling, Limits, which the fake's injected
-failures go through too.
+The real adapter, Gh, reproduces the bash gh adapter's guard: every call is
+pinned to the repo (orch.repo), dying with the remedy when none resolves, and
+a failed call goes through the rate-limit handling, Limits, which the fake's
+injected failures go through too.
 
 adapter() is the factory: the fake (orch.gh_fake) whenever ORCH_GH_FAKE_STORE
-is set, as the bash suite's fake_github sets it, else the real adapter.
+is set, else the real adapter.
 """
 from __future__ import annotations
 
@@ -52,14 +51,14 @@ T = TypeVar("T")
 # with is dropped, so the shape does not change with gh's version.
 ISSUE_JSON_JQ = "{number, title, body, labels: [.labels[].name]}"
 
-# A parent's sub-issues as sub_issues reads them, gh.sh's SUB_ISSUES_JQ. GitHub
-# can leave the dependency summary off an issue; its blocker field is then
+# A parent's sub-issues as sub_issues reads them, the bash adapter's jq.
+# GitHub can leave the dependency summary off an issue; its blocker field is then
 # empty rather than a count.
 SUB_ISSUES_JQ = ('.[] | "\\(.number)\\t\\(.state | ascii_upcase)\\t'
                  '\\(.issue_dependencies_summary.blocked_by // "")"')
 
-# The GraphQL query and --jq behind issue_authorship, gh.sh's own: one line,
-# so a logged argv stays one line.
+# The GraphQL query and --jq behind issue_authorship, the bash adapter's: one
+# line, so a logged argv stays one line.
 ISSUE_AUTHORSHIP_QUERY = (
     "query($owner: String!, $name: String!, $number: Int!) { repository(owner:"
     " $owner, name: $name) { issue(number: $number) { author { login }"
@@ -113,8 +112,8 @@ class SubIssue(NamedTuple):
     open_blockers: Optional[int]
 
 
-# The GraphQL query behind pr_commits_checked, as gh.sh had it: one line, so a
-# logged argv stays one line. A rollup's contexts are the commit's check runs
+# The GraphQL query behind pr_commits_checked, as the bash adapter had it: one
+# line, so a logged argv stays one line. A rollup's contexts are the commit's check runs
 # and commit statuses together; null where it has none.
 PR_COMMITS_CHECKED_QUERY = (
     "query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner,"
@@ -299,7 +298,7 @@ def labelled_limit_warn(env: Mapping[str, str], count: int, *labels: str) -> Non
 
 def any_labels_phrase(labels: Sequence[str]) -> str:
     """The labels named, joined by " or ", for a message about a listing
-    of the open issues carrying any of them - bash issues_any_labels_phrase."""
+    of the open issues carrying any of them."""
     return " or ".join(labels)
 
 
@@ -329,8 +328,7 @@ def _field_rows(text: str) -> List[Tuple[int, str, List[str]]]:
     """The count-marked records of a listing whose second line is one field:
     number, that field, label count, then one label per line - each as its
     number, field and labels. Raises GhFailed "gh answered a listing that
-    does not parse" on a record that is not, as bash's issues_rows_read_via
-    does."""
+    does not parse" on a record that is not, as the bash adapter did."""
     lines = _captured_lines(text)
     rows = []
     i = 0
@@ -552,7 +550,7 @@ def _jq_raw_lines(values: Sequence[object]) -> List[str]:
 
 
 def _jq_checked(commit) -> str:
-    """The jq `checked` gh.sh ran: "yes" where the commit's rollup counts any
+    """The jq `checked` the bash adapter ran: "yes" where the commit's rollup counts any
     check run or status, else "no" - compared as jq compares, so only a
     count above zero, a string, an array or an object is above 0."""
     count = _jq_or(_jq_field(_jq_field(_jq_field(commit, "statusCheckRollup"), "contexts"),
@@ -575,7 +573,7 @@ def parse_commits_checked(text: str) -> CommitsChecked:
 
 
 def _commits_checked_lines(answer) -> List[str]:
-    """The lines gh.sh's jq printed for the GraphQL answer: the base tip's,
+    """The lines the bash adapter's jq printed for the GraphQL answer: the base tip's,
     then one per commit."""
     pr = _jq_field(_jq_field(_jq_field(answer, "data"), "repository"), "pullRequest")
     base = _jq_field(pr, "baseRef")
@@ -627,8 +625,8 @@ Pools = Callable[[], str]
 
 
 class Limits:
-    """The one limit handler, gh.sh's gh_limit_retry and gh_limit_handle,
-    for the real adapter's calls and the fake's injected failures alike.
+    """The one limit handler, for the real adapter's calls and the fake's
+    injected failures alike.
 
     run(attempt) makes the attempt; a failure that is a limit is handled: a
     first secondary limit is waited out (ORCH_GH_LIMIT_WAIT seconds, default
@@ -643,8 +641,8 @@ class Limits:
     A limit given up on is recorded in an autopilot process
     (orch.autopilot's github_limit_record: the GitHub limit pause under the
     main checkout <main_checkout> answers, and a session's hit file), each
-    failed write one clause joined onto the limit line after " - ", as
-    gh.sh's gh_limit_handle joins them.
+    failed write one clause joined onto the limit line after " - ", as the
+    bash gh adapter joined them.
 
     Two settings serve a re-callable wait, `review ci`'s: <wait>, the open
     wait (an orch.wait OpenWait), asked whether a first secondary limit's
@@ -803,7 +801,7 @@ class Gh:
         return run.returncode, _text(run.stdout)
 
     def _gh(self, args: Sequence[str], compound: bool = False) -> str:
-        """gh.sh's guard: _run through the rate-limit handling - the stdout of
+        """The guard: _run through the rate-limit handling - the stdout of
         the deciding attempt alone. A <compound> write is never retried."""
         return self.limits.run(lambda: self._run(args), compound)
 

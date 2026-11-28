@@ -1,15 +1,13 @@
 """The base concept's module and the base noun (ADR-0067), holding the
-default-branch lookup, as the bash side's default_branch_resolve and
-default_branch_seed find it, the base branch in effect now, as bash's
-base_branch_into read it, the base a branch belongs to, and the base and
-base-SHA keys a branch records them under, with their getters, their setters
+default-branch lookup, the base branch in effect now, as base_branch_into
+reads it, the base a branch belongs to, and the base and base-SHA keys a branch records them under, with their getters, their setters
 and the record of both together - the one place those keys are spelled, the
 bash copies gone with the bash branch noun - the default-branch noun,
 `orch.sh default-branch [--sha]`, run_default_branch, beside the lookup it
 prints, and the base noun's run: `base set` (its --flow form included),
 `base show` and `base clear`, with the base note, require_on_origin's checks
 and every usage line, unknown-op line and message of the bash noun, its bash
-body gone. orch.sh's converted-noun case runs both nouns. The base noun reads
+body gone. orch.sh hands both nouns to the package. The base noun reads
 the Flow state module, which imports this one for its readers, so its verbs
 import it when they run.
 
@@ -33,8 +31,7 @@ from orch.host import flow_cmd
 from orch.repo import RepoPin
 from orch.root import checkout_root
 
-# The sources the lookup answers from, as bash's DEFAULT_BRANCH_SOURCE names
-# them.
+# The sources the lookup answers from, named as the bash lookup named them.
 GITHUB = "github"
 ORIGIN_HEAD = "origin-head"
 FALLBACK = "fallback"

@@ -519,14 +519,13 @@ class Git:
         return self._line_at_top(["config", "--get", key])
 
     # The checkout scan's operations (orch.checkout), the list, and the main
-    # checkout read from it, run where the adapter runs, as bash's
-    # checkout_parse runs, the others in the checkout they name, as bash's
-    # `git -C <path>`.
+    # checkout read from it, run where the adapter runs, the others in the
+    # checkout they name, as bash's `git -C <path>`.
 
     def worktree_list(self) -> Optional[List[Worktree]]:
         """Every checkout of the clone, the main checkout first, read from
-        `git worktree list --porcelain` - bash checkout_parse, the one place
-        the porcelain is read: a Worktree for each `worktree` line, its branch
+        `git worktree list --porcelain` - the one place the porcelain is
+        read: a Worktree for each `worktree` line, its branch
         the `branch refs/heads/` line after it. A worktree whose directory is
         gone is listed too. None when the list fails."""
         run = self._run(["worktree", "list", "--porcelain"])

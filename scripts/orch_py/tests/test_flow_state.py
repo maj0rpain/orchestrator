@@ -194,7 +194,7 @@ MANY_STATE = '{"phase":"implement","branch":"orch/7-x","pr":12,"redo_count":0,"u
 
 def test_a_multi_key_write_records_every_key_in_one_write(tmp_path):
     """The write, on a state and pairs - a null, an integer, a word, and a
-    number marked a string - leaves the bytes bash flow_state_write_many left
+    number marked a string - leaves the bytes the bash multi-key writer left
     on the same state while it was the writer."""
     python = tmp_path / "python.json"
     python.write_text(MANY_STATE)

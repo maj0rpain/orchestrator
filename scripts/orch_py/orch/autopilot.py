@@ -26,8 +26,8 @@ autopilot session, the plan's `## Autopilot` block, as handoff_report checks
 it for 01-plan.md, the UTC timestamps the pause files hold, and the GitHub
 limit record the gh adapter's limit handling makes in an autopilot process -
 the GitHub limit pause under the main checkout and a session's hit file, in
-the format and at the path the bash gh adapter's limit record writes them
-too (pinned by tests/github_pause/, ADR-0067).
+the format and at the path the bash gh adapter's limit record wrote them
+(pinned by tests/github_pause/, ADR-0067).
 
 The gh, handoff, flow-state, standing, trust, filed-finding, liveness,
 side-checkout, checkout, PR, branch and issue-timeline modules the verbs
@@ -118,13 +118,13 @@ def autopilot_block_report(text: str) -> Tuple[List[str], int]:
 
 
 def epoch_iso(epoch: int) -> str:
-    """Epoch seconds as a UTC timestamp, bash autopilot_epoch_iso."""
+    """Epoch seconds as a UTC timestamp."""
     return time.strftime(UTC_STAMP_FORMAT, time.gmtime(epoch))
 
 
 def iso_epoch(text: str) -> Optional[int]:
     """The UTC timestamp <text>, YYYY-MM-DDTHH:MM:SSZ, as epoch seconds, or
-    None for a value that does not read - bash autopilot_iso_epoch."""
+    None for a value that does not read."""
     try:
         return calendar.timegm(time.strptime(text, UTC_STAMP_FORMAT))
     except ValueError:
@@ -149,7 +149,7 @@ def pause_epoch(path: str) -> int:
 
 
 def pause_put(path: str, epoch: int) -> bool:
-    """bash autopilot_pause_put: records <epoch> in <path> as one UTC
+    """Records <epoch> in <path> as one UTC
     timestamp line, keeping a reset already there that is later and
     replacing one that is earlier or does not read. Whether it held: False
     when the file cannot be written."""
@@ -160,13 +160,13 @@ def pause_put(path: str, epoch: int) -> bool:
 
 def github_reset_cap(epoch: int, now: float) -> int:
     """<epoch>, or <now> plus AUTOPILOT_GITHUB_PAUSE_MAX when <epoch> is
-    further ahead, bash autopilot_github_reset_cap."""
+    further ahead."""
     return min(epoch, int(now) + AUTOPILOT_GITHUB_PAUSE_MAX)
 
 
 def github_limit_record(env: Mapping[str, str], reset: int, now: float,
                         main_checkout: Callable[[], Optional[str]]) -> List[str]:
-    """bash autopilot_github_limit_record <reset>: in an autopilot process -
+    """The GitHub limit record of <reset>: in an autopilot process -
     a tick or the session wrapper, each by a flag of its own, or a session
     (ORCH_AUTOPILOT=1) - the GitHub limit pause under the main checkout
     <main_checkout> answers (None when it cannot be read), its reset capped

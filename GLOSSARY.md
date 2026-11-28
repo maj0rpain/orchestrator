@@ -399,7 +399,9 @@ keeps its arguments, output, exit codes and messages, so no skill, agent or
 hook calling it changes; its bash code and bash tests are gone, and its tests
 are the pytest suite's. It needs `python3` 3.9 or newer, and dies saying so
 without one, pointing at `orch.sh doctor` - or, for doctor itself, naming the
-install. `issue` is the first.
+install. `issue` was the first, and `base`, `state`, `repo` and
+`default-branch`, converted together, the last; every `orch.sh` noun is now
+one.
 _Avoid_: Python noun, ported noun.
 
 ### Quick implementation and blueprint

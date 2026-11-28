@@ -52,11 +52,7 @@
 #                                     rows run spec-review check through it
 #                                     (the pytest suite, the .orchestrator
 #                                     entry classification with it, runs on
-#                                     every call);
-#                                     not every section that reaches the
-#                                     package - a flow's init and the
-#                                     status and help calls reach it from
-#                                     many - which CI's whole run covers
+#                                     every call)
 #   the pytest suite's wrapper (scripts/test/orch_py_test.sh)
 #                                     the harness section file's sections
 #   hook-edit-width.sh, width.sh, shell_code.awk

@@ -1,7 +1,7 @@
 """`orch.sh state get [<key>]` and `orch.sh state set <key> <value>`, called
 in-process through the state module's run in a FakeGit checkout under
 tmp_path with a tmp_path state.json - the cases of the deleted bash state
-sections, each message and exit code as the bash cmd_state had it: get with
+sections, each message and exit code as the bash state noun had it: get with
 and without a key, each key's default, the missing and unreadable state file;
 set on each settable key with its coercion, the refusal of an owned and an
 unknown key, the usage line, a failed write and an unreadable file; the

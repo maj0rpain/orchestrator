@@ -70,11 +70,10 @@ across the board, and issue #60 retired it everywhere else.
 A new noun is Python (ADR-0067): a module of the `orch` package,
 `scripts/orch_py/orch/<noun>.py`, its file name the noun's with each `-` as
 `_` (`finding_triage.py` for `finding-triage`), with its one
-`OPS = "<verb>|..."` line, its entry in `orch/cli.py`'s `NOUNS`, and its name
-in the one case of `orch.sh`'s `main` naming the converted nouns, which hands
-it on through `orch_python`; its tests are pytest, in `scripts/orch_py/tests/`.
-A new verb on an existing noun goes in that noun's module: the Python module
-of a converted noun, else the bash one, `scripts/orch/<noun>.sh`.
+`OPS = "<verb>|..."` line and its entry in `orch/cli.py`'s `NOUNS`; `orch.sh`
+hands every argument to the package, so it needs no edit. Its tests are
+pytest, in `scripts/orch_py/tests/`. A new verb on an existing noun goes in that
+noun's Python module.
 
 A new bare global command is a Python noun module, as `init`, `slug`,
 `status`, `archive` and `help` are, with pytest tests in

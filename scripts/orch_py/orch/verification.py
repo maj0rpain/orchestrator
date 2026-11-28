@@ -28,8 +28,8 @@ The noun's terms:
   is made once: a checkout removed and made again at the same path has none,
   so it is another checkout.
 - The **runner** is a Python process the call starts in a session and process
-  group of its own, through RUNNER_BOOTSTRAP, a copy of orch.sh's
-  orch_python bootstrap that runs this module as __main__ - no noun table,
+  group of its own, through RUNNER_BOOTSTRAP, a copy of orch.sh's -c
+  bootstrap that runs this module as __main__ - no noun table,
   verb or help reaches that entry point. It starts the command in its own
   group, so the record's pid names the group that holds both, then ignores
   TERM, so a TERM to the group stops the command and the runner sees it end.
@@ -151,7 +151,7 @@ STOP_TURN = 0.05
 
 ENDED = "the run ended without a status - run the same command again"
 
-# The runner's start: orch.sh's orch_python bootstrap, running this module as
+# The runner's start: orch.sh's -c bootstrap, running this module as
 # __main__ in place of the package. It drops the empty entry -c puts first on
 # sys.path, so nothing in the runner's directory shadows the package, and puts
 # its first argument, the package directory (package_dir), first in its

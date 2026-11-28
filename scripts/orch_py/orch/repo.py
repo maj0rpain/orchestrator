@@ -1,7 +1,6 @@
-"""The repo pin (#520): the repo every gh call is pinned to, as the bash
-side's repo.sh resolves it, and the repo noun (ADR-0067), `orch.sh repo show
-[--name|--host]`, with the bash noun's usage line, output, exit codes and
-`orch: ` messages, which orch.sh's converted-noun case runs.
+"""The repo pin (#520): the repo every gh call is pinned to, and the repo
+noun (ADR-0067), `orch.sh repo show [--name|--host]`, with the bash noun's
+usage line, output, exit codes and `orch: ` messages, its bash body gone.
 
 GH_REPO when the caller set it, else the [HOST/]OWNER/REPO parsed from the
 checkout's origin remote - never gh's own default repo, which in a fork is the

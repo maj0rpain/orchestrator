@@ -1,5 +1,5 @@
-"""The Trust module (scripts/orch/trust.sh), kept to what the issue,
-review-pass and autopilot nouns use: the Trusted comment filter, the fork-PR
+"""The Trust module, its one copy since the bash one went, kept to what the
+issue, review-pass and autopilot nouns use: the Trusted comment filter, the fork-PR
 filter, the attended reads' trusted-issue warning, and the issue check and
 writer text autopilot's pickup trust step and candidates verdict read.
 

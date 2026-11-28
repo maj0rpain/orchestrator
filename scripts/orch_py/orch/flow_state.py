@@ -1,36 +1,30 @@
 """The Flow state module's Python side: a checkout's flow state,
 .orchestrator/state.json, read by the rules of the bash Flow state module's
 readers (scripts/flow-state.sh's flow_state_get_many, and flow_state_get for
-the one key the state noun reads), which stays the state format's owner.
-Python init writes a new flow's seed - built from the key table's seed
-column, created, and stamped with its spec phase - the multi-key writer
-(state_write_many, and state_write_many_try for a caller that words its own
-failure) sets several keys in one write as bash's state_write_many did (its
-bash copy gone with the bash branch noun), each value coerced as bash's
-flow_state_json coerces it unless its pair is marked a string, the Python
-phase writers (phase_write and phase_write_try) record a phase, with any
-further keys in the same write, and the state noun's `state set`
-(orch.state) writes one settable key: no bash command writes the file.
-The golden state.json files of tests/flow_state/ pin the two sides to each
-other (ADR-0067): those under read/ and refused/ the readers, and those
-under seed/ the seed Python writes to the bytes bash init wrote.
+the one key the state noun reads), which stays the state format's owner and
+writes nothing: every write of the file is made here. Python init writes a
+new flow's seed - built from the key table's seed column, created, and stamped
+with its spec phase - the multi-key writer (state_write_many, and
+state_write_many_try for a caller that words its own failure) sets several
+keys in one write, each value coerced by flow_state_json unless its pair is
+marked a string, the phase writers (phase_write and phase_write_try) record a
+phase, with any further keys in the same write, and the state noun's `state
+set` (orch.state) writes one settable key, the key table's owner column
+saying which. The golden state.json files of tests/flow_state/ pin the two
+sides to each other (ADR-0067): those under read/ and refused/ the readers,
+and those under seed/ the seed Python writes to the bytes bash init wrote.
 
-Beside the reader sit the pieces of bash's state module that only read
-state.json: flow_holding_phase, the guard a branch or issue an active flow
-holds answers to (ADR-0029), STATE_UNREADABLE_MSG, the refusal an unreadable
-state.json earns, require_state_exists, the refusal when there is no flow,
-require_state, the refusal of no flow or an unreadable one (its bash copy
-gone with the bash review noun, its one bash caller),
-require_state_readable, the refusal of a state file that exists but cannot
-be read, which handoff validate makes (its bash copy gone with the bash
-handoff noun), require_state_read, a command's entry read of the keys it
-needs, require_value, the refusal of a required field left empty (its bash
-copy gone with the bash branch noun), and
-require_issue, the entry read of the flow's issue a command that needs one
-makes (its bash copy gone with the bash handoff noun); then what the base reads as when a flow never recorded it,
-flow_base_fallback_into, whose bash copy stays for the bash nouns that read
-it. The review budget's fallback is the review noun's (orch.review), its bash
-copy gone with its last bash reader.
+Beside the reader sit the refusals and guards built on it: flow_holding_phase,
+the guard a branch or issue an active flow holds answers to (ADR-0029),
+STATE_UNREADABLE_MSG, the refusal an unreadable state.json earns,
+require_state_exists, the refusal when there is no flow, require_state, the
+refusal of no flow or an unreadable one, require_state_readable, the refusal
+of a state file that exists but cannot be read, which handoff validate makes,
+require_state_read, a command's entry read of the keys it needs,
+require_value, the refusal of a required field left empty, and require_issue,
+the entry read of the flow's issue a command that needs one makes; then what
+the base reads as when a flow never recorded it, flow_base_fallback_into, its
+one copy. The review budget's fallback is the review noun's (orch.review).
 """
 from __future__ import annotations
 
@@ -130,9 +124,9 @@ def flow_state_create(path: str, state: Mapping[str, Any]) -> bool:
     return file_write_atomic(path, _state_text(state), make_directory=False)
 
 
-# A state write's pairs: each (key, value), value a string coerced as bash's
+# A state write's pairs: each (key, value), value a string coerced as
 # flow_state_json coerces it, or (key, value, True) to store the value as a
-# JSON string, as bash's --string before a pair marks it.
+# JSON string, as bash's --string before a pair marked it.
 Pair = Union[Tuple[str, str], Tuple[str, str, bool]]
 
 # The words flow_state_json stores as JSON literals.
@@ -140,7 +134,7 @@ _JSON_WORDS = {"null": None, "true": True, "false": False}
 
 
 def flow_state_json(value: str) -> Any:
-    """<value> as bash's flow_state_json stores it: null, true and false
+    """<value> as the bash writer stored it: null, true and false
     literally, an all-digit value as a number, anything else as a string."""
     if value in _JSON_WORDS:
         return _JSON_WORDS[value]
@@ -148,9 +142,9 @@ def flow_state_json(value: str) -> Any:
 
 
 def state_pairs_json(pairs: Sequence[Pair]) -> Dict[str, Any]:
-    """<pairs> as one object, bash's flow_state_pairs_json: each value
-    coerced by flow_state_json, or kept a string where its pair is marked;
-    a key given twice keeps its first place and its last value."""
+    """<pairs> as one object, as the bash writer made it: each value coerced
+    by flow_state_json, or kept a string where its pair is marked; a key
+    given twice keeps its first place and its last value."""
     obj: Dict[str, Any] = {}
     for key, value, *string in pairs:
         obj[key] = value if string and string[0] else flow_state_json(value)
@@ -160,10 +154,10 @@ def state_pairs_json(pairs: Sequence[Pair]) -> Dict[str, Any]:
 def state_write_many_try(path: str, pairs: Sequence[Pair],
                          clock: Callable[[], float] = time.time) -> bool:
     """Sets every one of <pairs> (state_pairs_json) in the state file at
-    <path> in one write, bash's flow_state_write_many: updated stamped with
-    the time <clock> reads, then the keys set, each in place in the file's
-    key order and a new one last, the file rewritten as flow_state_create
-    writes it. Whether it succeeded, printing nothing and leaving the file
+    <path> in one write, as the bash multi-key writer made it: updated
+    stamped with the time <clock> reads, then the keys set, each in place in
+    the file's key order and a new one last, the file rewritten as
+    flow_state_create writes it. Whether it succeeded, printing nothing and leaving the file
     untouched when it is absent, is not exactly one JSON object, or cannot
     be written."""
     state = _state_object(path)

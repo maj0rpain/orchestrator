@@ -24,7 +24,7 @@ from orch.git import FakeGit
 ORIGIN = "https://github.com/acme/widgets.git"
 FLOW_BRANCH = "orch/16-propen"
 QUICK_BRANCH = "quick/16-widgets"
-# pr_body_complete's body, as the bash suite writes it.
+# A complete PR body, as the bash suite wrote it.
 COMPLETE_BODY = ("## Summary\n\nImplements the thing.\n\nSome detail.\n\n"
                  "## Evidence\n\nmake test - pass\n\n"
                  "## Merge Danger\n\n**Door:** two-way\n**Blast Radius:** the widget module\n")
