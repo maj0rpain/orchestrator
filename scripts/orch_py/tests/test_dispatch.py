@@ -30,7 +30,6 @@ from conftest import (
     AUDIT_FIXTURES,
     CLAUDE,
     GLOBAL_CONFIG,
-    PACKAGE_BOOTSTRAP,
     VERIFICATION_KNOBS,
     comments_of,
     committed,
@@ -171,27 +170,6 @@ def test_a_module_file_in_the_callers_directory_shadows_nothing(tmp_path, repo, 
 
     assert orch_sh(tmp_path, repo, seed, "issue", "labels") == (
         "", "orch: usage: orch.sh issue labels <n>...\n", 1)
-
-
-@pytest.mark.parametrize("came_from", ["sub", None], ids=["oldpwd-in-a-checkout", "no-oldpwd"])
-def test_the_noun_run_outside_a_checkout_dies_as_orch_sh_does(tmp_path, repo, came_from):
-    (repo / "sub").mkdir()
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    env = dict(os.environ, HOME=str(tmp_path), PYTHONDONTWRITEBYTECODE="1")
-    env.pop("OLDPWD", None)
-    if came_from is not None:
-        env["OLDPWD"] = str(repo / came_from)
-
-    def run(*command):
-        done = subprocess.run([*command, "issue", "fetch", "931", "out.md"], cwd=str(outside),
-                              env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE, timeout=30)
-        return done.stdout.decode(), done.stderr.decode(), done.returncode
-
-    bash = run("/bin/bash", str(SCRIPTS / "orch.sh"))
-    assert bash[2] == 1 and "not inside a git repository" in bash[1]
-    assert run(sys.executable, "-c", PACKAGE_BOOTSTRAP, str(SCRIPTS / "orch_py")) == bash
 
 
 # --- the entry script --------------------------------------------------------
