@@ -1226,11 +1226,6 @@ def test_state_set_then_get_round_trips_through_the_python_noun(tmp_path, repo, 
     assert (tmp_path / "shim.log").read_text() == "ran\n"
 
 
-def test_an_unknown_state_op_is_refused_through_the_python_noun(tmp_path, repo, seed):
-    assert orch_sh(tmp_path, repo, seed, "state", "bogus") == (
-        "", "orch: unknown state op: bogus (want get|set)\n", 1)
-
-
 def test_state_dies_pointing_at_doctor_without_python3(tmp_path, repo, seed):
     assert orch_sh(tmp_path, repo, seed, "state", "get", "phase",
                    path=path_without(tmp_path, "python3")) \

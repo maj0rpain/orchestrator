@@ -623,7 +623,7 @@ class Git:
         return self._push([remote, refspec])
 
     # The claim create's operations, run where the adapter runs, as bash's
-    # adapter_claim_create runs its git.
+    # adapter_claim_create ran its git.
 
     def empty_commit(self, subject: str, body: str) -> Optional[str]:
         """A commit of the empty tree with no parent, its message <subject>
@@ -642,7 +642,7 @@ class Git:
         return self._push(["--force-with-lease=%s:" % ref, remote, "%s:%s" % (commit, ref)])
 
     # The claim list's operations, run where the adapter runs, as bash's
-    # adapter_claim_list runs its git.
+    # adapter_claim_list ran its git.
 
     def fetch_prune(self, remote: str, refspec: str) -> Optional[str]:
         """`git fetch --quiet --prune <remote> <refspec>`: None when it
@@ -693,9 +693,9 @@ class Git:
         return GitFailure(run.returncode, run.stderr.decode("utf-8", "surrogateescape"))
 
     def origin_has_branch(self, name: str) -> Optional[bool]:
-        """Whether origin has branch <name> - bash origin_has_branch, on
-        ls-remote's own exit codes: True yes, False origin answered and it
-        does not, None origin could not be asked."""
+        """Whether origin has branch <name>, on ls-remote's own exit codes:
+        True yes, False origin answered and it does not, None origin could
+        not be asked."""
         code = self._run(
             ["ls-remote", "--quiet", "--exit-code", "origin", "refs/heads/" + name]
         ).returncode

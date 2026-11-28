@@ -15,7 +15,7 @@ import os
 
 import pytest
 
-from conftest import CLAUDE, hold_flow, outcome, state_json
+from conftest import CLAUDE, hold_flow, outcome, state_json, write
 from orch import state
 from orch.git import FakeGit
 
@@ -90,15 +90,13 @@ def test_get_of_a_key_outside_the_table_is_refused_as_an_unknown_state_key(root,
 
 @pytest.mark.parametrize("argv", [("get",), ()], ids=["get", "bare"])
 def test_get_with_no_key_prints_the_whole_file_as_it_stands(root, capsys, argv):
-    state_json(root).parent.mkdir()
-    state_json(root).write_text('{"slug": "s",\n  "phase":"spec"}\n')
+    write(root, ".orchestrator/state.json", raw='{"slug": "s",\n  "phase":"spec"}\n')
 
     assert orch_state(capsys, root, *argv) == (0, '{"slug": "s",\n  "phase":"spec"}\n', "")
 
 
 def test_get_with_no_key_prints_an_unreadable_file_too(root, capsys):
-    state_json(root).parent.mkdir()
-    state_json(root).write_text("not json\n")
+    write(root, ".orchestrator/state.json", raw="not json\n")
 
     assert orch_state(capsys, root, "get") == (0, "not json\n", "")
 
@@ -112,16 +110,14 @@ def test_a_missing_state_file_is_refused_as_no_active_flow(root, capsys, argv):
 def test_get_of_a_key_on_an_unreadable_file_dies_as_unreadable(root, capsys):
     """The departure from parity: bash passed jq's parse error and status
     through."""
-    state_json(root).parent.mkdir()
-    state_json(root).write_text("not json\n")
+    write(root, ".orchestrator/state.json", raw="not json\n")
 
     assert orch_state(capsys, root, "get", "budget") == (1, "", UNREADABLE)
 
 
 def test_get_of_an_unknown_key_on_an_unreadable_file_still_dies_as_an_unknown_state_key(
         root, capsys):
-    state_json(root).parent.mkdir()
-    state_json(root).write_text("not json\n")
+    write(root, ".orchestrator/state.json", raw="not json\n")
 
     assert orch_state(capsys, root, "get", "nonsense") == (
         1, "", "orch: unknown state key: nonsense\n")
@@ -195,8 +191,7 @@ def test_set_on_an_unreadable_file_dies_as_unreadable_leaving_it_as_it_was(root,
     """A write that cannot apply leaves the file byte-identical, with
     nothing new beside it; the message is the departure from parity, where
     bash passed jq's parse error through."""
-    state_json(root).parent.mkdir()
-    state_json(root).write_text("not json\n")
+    write(root, ".orchestrator/state.json", raw="not json\n")
 
     assert orch_state(capsys, root, "set", "budget", "3") == (1, "", UNREADABLE)
     assert state_json(root).read_text() == "not json\n"
@@ -204,8 +199,7 @@ def test_set_on_an_unreadable_file_dies_as_unreadable_leaving_it_as_it_was(root,
 
 
 def test_set_of_an_unknown_key_on_an_unreadable_file_is_still_refused_as_unknown(root, capsys):
-    state_json(root).parent.mkdir()
-    state_json(root).write_text("not json\n")
+    write(root, ".orchestrator/state.json", raw="not json\n")
 
     assert orch_state(capsys, root, "set", "bogus", "1") == (
         1, "", "orch: state set refuses bogus: settable keys are issue, budget,"

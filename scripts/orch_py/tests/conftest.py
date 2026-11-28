@@ -61,7 +61,7 @@ def store(tmp_path):
 
 @pytest.fixture
 def seed(store):
-    """The store's seeder and reader, as the bash suite's fake_* helpers."""
+    """The store's seeder and reader."""
     return FakeStore(str(store))
 
 

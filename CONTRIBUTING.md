@@ -87,11 +87,12 @@ runs on every call.
 
 orch_test.sh is the suite's runner and holds no test. Its `# ---` sections live
 under `scripts/test/orch/`, one file per bash file they test, named as it is:
-`common.sh` the bottom-layer check on `scripts/orch/common.sh`, `flow-state.sh`
-the Flow state module's readers in `scripts/flow-state.sh`, `host.sh` for
-`scripts/host.sh` and `triage-labels.sh` for `scripts/triage-labels.sh`; beside
-them `harness.sh` holds the harness's own (the section filter, quiet mode,
-all.sh), and `setup.sh` the shared setup and the summary. `orch.sh` itself (its
+`common.sh` the sections on `scripts/orch/common.sh`'s own helpers,
+`flow-state.sh` the Flow state module's readers in `scripts/flow-state.sh`,
+`host.sh` for `scripts/host.sh` and `triage-labels.sh` for
+`scripts/triage-labels.sh`; beside them `harness.sh` holds the harness's own
+(the section filter, quiet mode, all.sh), and `setup.sh` the shared setup and
+the summary. `orch.sh` itself (its
 bash version guard, its `python3` check and its handoff to the package) is
 tested by pytest, in `test_entry_point.py` and `test_dispatch.py`. Every noun is
 Python, its tests pytest in `scripts/orch_py/tests/`, and a new section file is
@@ -563,7 +564,7 @@ scripts/test/git_env.sh      `test_git_env_clear`, which every suite runner sour
 scripts/test/shell_code.awk    the SHELL_CODE_AWK library, the one rule of what counts as code in a shell file: setup.sh, docs_lint.sh, width.sh and the helper index each load it whole
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary
 scripts/test/orch/harness.sh  the harness's own sections: isolation, the section filter, quiet mode, all.sh
-scripts/test/orch/common.sh   the bottom-layer check on scripts/orch/common.sh, sourcing it alone
+scripts/test/orch/common.sh   the sections on scripts/orch/common.sh's own helpers, sourcing it alone
 scripts/test/orch/flow-state.sh    the Flow state module's sections (scripts/flow-state.sh), sourcing it alone, named as the file is
 scripts/test/orch/host.sh          the host detector's sections (scripts/host.sh), named as the file is
 scripts/test/orch/triage-labels.sh the triage-label parser's sections (scripts/triage-labels.sh), named as the file is

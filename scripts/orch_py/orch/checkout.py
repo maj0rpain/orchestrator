@@ -7,8 +7,9 @@ the ticket-worktree refusal, the busy-checkout refusal, and the discard
 rule's pieces (ADR-0054): the flow-branch proof, the work to discard, the
 discard sequence in a checkout and the flow-branch discard. All of it is
 this module's alone, the bash copies gone with the bash side-checkout,
-ticket and branch nouns (ADR-0067), but for the main checkout's read, which
-the bash Checkout module keeps for the gh adapter's GitHub limit record.
+ticket and branch nouns (ADR-0067), but for the main checkout's read itself,
+which the git adapter keeps (orch.git's main_checkout), the gh adapter's
+GitHub limit record reading it too.
 """
 from __future__ import annotations
 

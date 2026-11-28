@@ -13,7 +13,7 @@ import pytest
 
 from conftest import (UNATTENDED_TAIL, assert_check_passes as assert_passes,
                       assert_check_refused as assert_refused, nudge, orch_issue,
-                      orch_spec_review, refused_lines as refused, rewrite_lines, state_json)
+                      orch_spec_review, refused_lines as refused, rewrite_lines, write)
 from orch import spec_review
 
 USAGE = "usage: orch.sh spec-review check <dir> [--tickets | --full <n>...]"
@@ -365,9 +365,7 @@ orch sync --hourly
 
 def test_a_malformed_state_json_does_not_matter_and_github_is_never_reached(root, capsys):
     d = round_dir(root)
-    state = state_json(root)
-    state.parent.mkdir()
-    state.write_text("{not json")
+    write(root, ".orchestrator/state.json", raw="{not json")
 
     # No gh adapter is handed in: a gh call would reach the real-gh guard.
     assert check(root, d) == 0

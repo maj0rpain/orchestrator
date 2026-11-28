@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# host.sh - the one host detector, sourced by orch.sh and by hook-common.sh.
+# host.sh - the one bash host detector, sourced by hook-common.sh.
 #
 # Holds only host_detect and host_from_project_path. Needs nothing from
 # orch.sh, so the hooks can source it alone (#281).
@@ -15,7 +15,8 @@ host_from_project_path() {
   if [ -n "${1:-}" ]; then printf 'junie\n'; else printf 'claude\n'; fi
 }
 
-# The environment host detector, as orch.sh calls it. Prints "claude",
+# The environment host detector, as orch.sh called it before orch/host.py
+# took the rule over; only its own test section calls it now. Prints "claude",
 # "junie", "antigravity", or nothing when no signal is present (orch.sh run
 # by hand in a terminal). ORCHESTRATOR_HOST names the host outright, for a
 # shell no signal reaches. Antigravity CLI exports ANTIGRAVITY_AGENT and

@@ -1,25 +1,23 @@
-"""The gh adapter's in-process fake, on the file store the bash fake keeps.
+"""The gh adapter's in-process fake, on the gh fake's file store.
 
 FakeGh offers the real adapter's operations (orch.gh.Gh) on the directory
 ORCH_GH_FAKE_STORE names, in the layout scripts/test/gh_adapter_fake.sh
-documents, so what a bash orch.sh process wrote is there for a Python one and
-the other way round. orch.gh.adapter() picks it whenever ORCH_GH_FAKE_STORE
-is set.
+documents, so what one orch.sh process wrote is there for the next.
+orch.gh.adapter() picks it whenever ORCH_GH_FAKE_STORE is set.
 
-Each operation honours the store's failure files under the bash adapter's
-operation name - adapter_<the method's name>, kept by an operation whose bash
-counterpart is gone, as adapter_issues_labelled_bodies is - read before the
-operation touches the store: fail/<operation>, with its fail/<operation>.after and
-fail/<operation>.times countdowns, offline, ratelimit and noauth. A failure
-goes through the real adapter's rate-limit handling (orch.gh.Limits), the
-rate_limit read answering from the store's quota. The reads the bash fake
-lets lag (lag/<operation>, .after and .stale) lag here too, the stale answer
-read in the shape the real operation reads gh's. A fifo at hold/<operation>
-parks the call as it parks a bash one: the calling process's pid is written
-to `held`, and the call waits until something is written to the fifo.
+Each operation honours the store's failure files under its operation name,
+adapter_<the method's name> - read before the operation touches the store:
+fail/<operation>, with its fail/<operation>.after and fail/<operation>.times
+countdowns, offline, ratelimit and noauth. A failure goes through the real
+adapter's rate-limit handling (orch.gh.Limits), the rate_limit read
+answering from the store's quota. The reads the store lets lag
+(lag/<operation>, .after and .stale) lag, the stale answer read in the shape
+the real operation reads gh's. A fifo at hold/<operation> parks the call:
+the calling process's pid is written to `held`, and the call waits until
+something is written to the fifo.
 
-FakeStore seeds and reads back the store as the bash suite's fake_* helpers
-do, for a test that runs orch.sh on it.
+FakeStore seeds and reads back the store, for a test that runs orch.sh on
+it.
 """
 from __future__ import annotations
 
@@ -1030,8 +1028,8 @@ class FakeGh:
 
 
 class FakeStore:
-    """Seeds the store at <store> and reads it back, as the bash suite's
-    fake_* helpers do, in their layout."""
+    """Seeds the store at <store> and reads it back, in the layout
+    scripts/test/gh_adapter_fake.sh documents."""
 
     def __init__(self, store: str) -> None:
         self.store = store

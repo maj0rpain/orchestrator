@@ -128,9 +128,9 @@ def base_in_effect(git, default: Callable[[], str]) -> str:
 
 
 def base_branch_into(gh, git, pin) -> str:
-    """The base branch in effect now, bash base_branch_into: base_in_effect,
-    the default branch read by default_branch, through the gh adapter <gh>
-    and the repo pin <pin>. Never fails."""
+    """The base branch in effect now: base_in_effect, the default branch
+    read by default_branch, through the gh adapter <gh> and the repo pin
+    <pin>. Never fails."""
     return base_in_effect(git, lambda: default_branch(gh, git, pin).name)
 
 

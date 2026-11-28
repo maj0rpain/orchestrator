@@ -17,7 +17,7 @@ import subprocess
 import pytest
 
 from conftest import (CLAUDE, GH_502, SESSIONS, CountingGh, died_of, fake, hold_flow, lines, prs_of,
-                      read, state_json)
+                      read, state_json, write)
 from orch import pr
 from orch.git import FakeGit
 
@@ -500,8 +500,7 @@ def test_open_with_no_flow_dies_before_its_usage(root, github, capsys):
 
 
 def test_open_with_an_unreadable_state_dies_before_its_usage(root, github, capsys):
-    state_json(root).parent.mkdir()
-    state_json(root).write_text('{"issue": 16')
+    write(root, ".orchestrator/state.json", raw='{"issue": 16')
 
     assert died_of(capsys, lambda: orch_pr(root, github, checkout_git(root, FLOW_BRANCH),
                                            "open")) == (

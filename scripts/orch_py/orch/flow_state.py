@@ -82,7 +82,7 @@ def flow_state_file(root: str) -> str:
 
 def now(clock: Callable[[], float] = time.time) -> str:
     """The time <clock> reads as the created and updated stamp: ISO-8601,
-    UTC, to the second, as bash's now prints it."""
+    UTC, to the second, as bash's now printed it."""
     return time.strftime(UTC_STAMP_FORMAT, time.gmtime(clock()))
 
 
@@ -310,8 +310,8 @@ def flow_holding_phase(state_file: str, branch: str, issue: str) -> Optional[Hol
 
 def require_state_exists(state_file: str, env: Mapping[str, str], code: int = 1) -> None:
     """Dies, exit <code>, when there is no state file at <state_file>,
-    naming the host's start command from <env> - bash require_state_exists,
-    the one spelling of the no-flow refusal."""
+    naming the host's start command from <env>: the one spelling of the
+    no-flow refusal."""
     if not os.path.isfile(state_file):
         die("no active flow (%s/state.json not found). Run %s first."
             % (ORCH_DIR_NAME, flow_cmd(env, "start")), code)
@@ -337,11 +337,11 @@ def require_state_readable(state_file: str) -> None:
 
 def require_state_read(state_file: str, env: Mapping[str, str], keys: Sequence[str],
                        code: int) -> Dict[str, str]:
-    """A command's entry read, bash require_state_read: every one of <keys>
-    in <state_file>, in one read (flow_state_get_many). Dies, exit <code> - 2
-    for a command that reserves exit 1 for a meaningful "no" - when there is
-    no state file (require_state_exists), and with STATE_UNREADABLE_MSG when
-    it cannot be read."""
+    """A command's entry read: every one of <keys> in <state_file>, in one
+    read (flow_state_get_many). Dies, exit <code> - 2 for a command that
+    reserves exit 1 for a meaningful "no" - when there is no state file
+    (require_state_exists), and with STATE_UNREADABLE_MSG when it cannot be
+    read."""
     require_state_exists(state_file, env, code)
     state = flow_state_get_many(state_file, keys)
     if state is None:
@@ -349,8 +349,7 @@ def require_state_read(state_file: str, env: Mapping[str, str], keys: Sequence[s
     return state
 
 
-# The one spelling of each required field's message, by key: bash
-# state_required_msg.
+# The one spelling of each required field's message, by key.
 REQUIRED_MSGS = {
     "issue": NO_ISSUE_MSG,
     "branch": "no branch recorded in state",
@@ -391,10 +390,9 @@ def require_issue(state_file: str, env: Mapping[str, str],
 
 def flow_base_fallback_into(raw: str, gh_of: Callable[[], Any], git, pin) -> str:
     """The base read from state, <raw>, or the default branch where it is
-    empty - a flow started before base was recorded - bash
-    flow_base_fallback_into. The gh adapter is made by <gh_of> only when the
-    default branch is looked up, through the git adapter <git> and the repo
-    pin <pin>. Never fails."""
+    empty - a flow started before base was recorded. The gh adapter is made
+    by <gh_of> only when the default branch is looked up, through the git
+    adapter <git> and the repo pin <pin>. Never fails."""
     if raw:
         return raw
     return default_branch(gh_of(), git, pin).name

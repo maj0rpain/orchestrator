@@ -11,7 +11,7 @@ import os
 import pytest
 
 from conftest import (GH_502, GITHUB_ORIGIN, CountingGh, fake, hold_flow, origin_main_clone,
-                      outcome, run_git, state_json, worktree_add)
+                      outcome, run_git, worktree_add, write)
 
 from orch import base as module
 from orch.git import FakeGit, Git
@@ -250,8 +250,7 @@ def test_set_beside_a_done_flow_gives_no_note(tmp_path, seed, capsys):
 
 def test_set_on_a_truncated_state_json_dies_leaving_orchestrator_base_unchanged(tmp_path, seed,
                                                                                capsys):
-    state_json(tmp_path).parent.mkdir()
-    state_json(tmp_path).write_text('{"slug": "basetrunc", "pha')
+    write(tmp_path, ".orchestrator/state.json", raw='{"slug": "basetrunc", "pha')
     git = on_origin(on_origin_head(checkout(tmp_path, orchestrator__base="keep")), "uat")
 
     assert orch(capsys, seed, git, "set", "uat") == (1, "", UNREADABLE)
@@ -318,9 +317,7 @@ def test_set_flow_refuses_a_done_flow_as_no_active_flow(tmp_path, seed, capsys):
 
 
 def test_set_flow_on_a_truncated_state_json_dies_unreadable(tmp_path, seed, capsys):
-    state = state_json(tmp_path)
-    state.parent.mkdir()
-    state.write_text('{"slug": "basetrunc", "pha')
+    state = write(tmp_path, ".orchestrator/state.json", raw='{"slug": "basetrunc", "pha')
     assert refused(capsys, seed, on_origin(checkout(tmp_path), "uat"), state, "uat", UNREADABLE)
 
 

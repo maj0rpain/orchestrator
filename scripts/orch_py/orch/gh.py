@@ -726,7 +726,7 @@ CLAIM_FIELDS = ("host", "pid", "phase", "started")
 
 def claim_row(ref: str, message: str) -> ClaimRow:
     """The claim the ref <ref>'s commit <message> records, as bash
-    adapter_claim_list reads it: the issue from the ref's last part, each
+    adapter_claim_list read it: the issue from the ref's last part, each
     field the first `<field>: ` line after the subject."""
     body = "\n" + message
     values = []
@@ -737,8 +737,7 @@ def claim_row(ref: str, message: str) -> ClaimRow:
 
 
 def claim_ref(n: int) -> str:
-    """The ref on origin that holds the claim on issue #n - bash
-    adapter_claim_ref."""
+    """The ref on origin that holds the claim on issue #n."""
     return "%s%d" % (CLAIMS_PREFIX, n)
 
 
@@ -928,8 +927,7 @@ class Gh:
 
     def issues_labelled_rows(self, *labels: str) -> List[StateRow]:
         """The open issues carrying every label named, as issues_open_rows
-        lists them, warning, naming the labels, when the cut is reached -
-        bash adapter_issues_labelled_rows."""
+        lists them, warning, naming the labels, when the cut is reached."""
         rows = self._state_rows(labels)
         labelled_limit_warn(self.env, len(rows), *labels)
         return rows
@@ -937,8 +935,7 @@ class Gh:
     def issues_any_labelled_rows(self, *labels: str) -> List[StateRow]:
         """The open issues carrying any of the labels named, as
         issues_open_rows lists them, one cut across all, warning, naming the
-        labels joined by "or", when the cut is reached - bash
-        adapter_issues_any_labelled_rows."""
+        labels joined by "or", when the cut is reached."""
         rows = self._state_rows((), "label:" + ",".join('"%s"' % label for label in labels))
         any_labelled_limit_warn(self.env, len(rows), *labels)
         return rows
@@ -1040,10 +1037,10 @@ class Gh:
     # --- claim operations ---
 
     def claim_list(self) -> List[ClaimRow]:
-        """The claims on origin, by issue number - bash adapter_claim_list,
-        through the repo pin's git adapter, no gh call: refs/orch/claims/*
-        fetched first, pruning the local copies of claims since freed, then
-        each claim commit's message read. Raises GhFailed with git's reason
+        """The claims on origin, by issue number, through the repo pin's git
+        adapter, no gh call: refs/orch/claims/* fetched first, pruning the
+        local copies of claims since freed, then each claim commit's message
+        read. Raises GhFailed with git's reason
         where origin cannot be read, and with none where the refs cannot be
         listed."""
         git = self.repo_pin.git
@@ -1056,10 +1053,10 @@ class Gh:
         return [claim_row(ref, message) for ref, message in refs]
 
     def claim_create(self, n: int, phase: str, pid: int, host: str, started: str) -> bool:
-        """Takes the claim on #n - bash adapter_claim_create, through the
-        repo pin's git adapter, no gh call: a claim commit of the empty tree,
-        its message recording <host>, <pid>, <phase> and <started>, pushed to
-        the claim's ref on origin only where origin holds none. True when it
+        """Takes the claim on #n, through the repo pin's git adapter, no gh
+        call: a claim commit of the empty tree, its message recording <host>,
+        <pid>, <phase> and <started>, pushed to the claim's ref on origin only
+        where origin holds none. True when it
         was taken, False when origin already held one - a lost race; any
         other failure raises GhFailed with git's reason."""
         git = self.repo_pin.git
@@ -1075,9 +1072,8 @@ class Gh:
         raise GhFailed(reason + "\n")
 
     def claim_delete(self, n: int) -> None:
-        """Frees the claim on #n - bash adapter_claim_delete: pushes the
-        delete of its ref to origin through the repo pin's git adapter, no gh
-        call. A claim already gone is freed all the same - a push whose
+        """Frees the claim on #n: pushes the delete of its ref to origin
+        through the repo pin's git adapter, no gh call. A claim already gone is freed all the same - a push whose
         reason says it does not exist; any other failure raises GhFailed with
         git's reason."""
         reason = self.repo_pin.git.push("origin", ":" + claim_ref(n))
