@@ -551,6 +551,16 @@ def test_the_fresh_path_on_a_foreign_branch_s_rebase_in_progress_dies_naming_it(
     assert untouched(tmp_path, git) == before
 
 
+def test_the_fresh_path_on_a_tree_that_cannot_be_read_exits_1_writing_nothing(
+        tmp_path, seed, capsys):
+    git = flowing(tmp_path, dirty="fatal: index file corrupt")
+    before = untouched(tmp_path, git)
+
+    assert create(capsys, seed, git) == (1, "", (
+        "orch: git status failed - cannot check the working tree: fatal: index file corrupt\n"))
+    assert untouched(tmp_path, git) == before
+
+
 def test_a_record_git_refuses_ends_create_with_git_s_status_and_stderr(tmp_path, seed, capsys):
     # As bash's set -e did, the state already written.
     git = flowing(tmp_path)
@@ -676,6 +686,16 @@ def test_a_restart_on_a_dirty_branch_not_the_flow_s_dies_discarding_nothing(
     assert untouched(tmp_path, git) == before
 
 
+def test_a_restart_on_a_branch_not_the_flow_s_with_a_merge_in_progress_dies(
+        tmp_path, seed, capsys):
+    git = restarting(tmp_path, on="scratch-m")
+    git.seed("merge_in_progress_at", str(tmp_path), answer=True)
+    before = untouched(tmp_path, git)
+
+    assert create(capsys, seed, git, env=AUTOPILOT) == (1, "", foreign_refusal("scratch-m"))
+    assert untouched(tmp_path, git) == before
+
+
 def test_a_restart_on_a_foreign_branch_s_rebase_in_progress_dies_naming_it(
         tmp_path, seed, capsys):
     git = restarting(tmp_path, on=None, branches=(FLOW, "scratch-r"))
@@ -727,18 +747,40 @@ def test_the_state_refusals_come_before_the_usage_and_the_usage_before_the_issue
 # Real repositories: the full-ref naming, and git's refusal of a checkout.
 
 
-def test_create_beside_tags_named_like_the_branch_and_origin_s_base_forks_from_origin_s_tip(
-        off_repo, seed, capsys):
+@pytest.mark.parametrize("kind", ["tag", "branch"])
+def test_create_beside_refs_named_like_the_branch_and_origin_s_base_forks_from_origin_s_tip(
+        off_repo, seed, capsys, kind):
+    # Tags named like both, or a stray local branch named origin/main.
     root, origin_tip, local_tip = off_repo
     hold_flow(root, slug="feat", phase="implement", issue=11, branch=None, base="main")
-    for tag in (FLOW, "origin/main"):
-        run_git(root, "tag", tag, local_tip)
+    for name in ((FLOW, "origin/main") if kind == "tag" else ("origin/main",)):
+        run_git(root, kind, name, local_tip)
 
     assert orch(capsys, "create", git=Git(cwd=str(root)), gh=fake(seed)) == (0, FLOW + "\n", "")
     assert (head_of(root, "refs/heads/" + FLOW), repo_facts(root, FLOW),
             run_git(root, "for-each-ref", "--format=%(upstream)", "refs/heads/" + FLOW),
             json.loads(state_json(root).read_text())["base_sha"]) == (
         origin_tip, ("made", origin_tip, FLOW), "", origin_tip)
+
+
+def test_create_whose_fork_clashes_with_an_edit_dies_with_git_s_message_writing_nothing(
+        off_repo, seed, capsys):
+    # The edit is allowlisted, so there is no work to discard on main.
+    root, _, _ = off_repo
+    with open(root / "docs" / "agents" / "notes.md", "a") as notes:
+        notes.write("mine\n")
+    state = hold_flow(root, slug="feat", phase="implement", issue=11, branch=None, base="main")
+    exclude_orchestrator(root)
+    before = state.read_text()
+
+    code, out, err = orch(capsys, "create", git=Git(cwd=str(root)), gh=fake(seed))
+
+    assert (code, out) == (1, "")
+    assert err.startswith("orch: could not create %s from refs/remotes/origin/main: " % FLOW)
+    assert "would be overwritten" in err and "docs/agents/notes.md" in err
+    assert (repo_facts(root, FLOW), state.read_text(),
+            (root / "docs" / "agents" / "notes.md").read_text()) == (
+        ("none", "<unset>", "main"), before, "one\nmine\n")
 
 
 def test_a_restart_whose_checkout_git_refuses_dies_with_git_s_message_after_it(
