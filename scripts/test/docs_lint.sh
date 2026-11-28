@@ -4482,6 +4482,9 @@ printf '%s\n' 'main() {' '  case "$cmd" in' '    base) cmd_base "$@" ;;' '    re
 mkdir -p "$fixture/scripts/orch_py/orch"
 printf '%s\n' '"""A converted noun."""' '# OPS = "commented|out"' 'OPS = "spin|stop"' 'MORE = "x|y"' \
   >"$fixture/scripts/orch_py/orch/gadget_box.py"
+# base: a Python module of readers with no OPS line beside it, so its verbs
+# stay its bash module's.
+printf '%s\n' '"""Base readers."""' 'MORE = "x|y"' >"$fixture/scripts/orch_py/orch/base.py"
 # gizmo: converted, its bash module left holding helpers alone.
 printf '%s\n' '"""A converted noun beside a bash module of helpers."""' 'OPS = "turn"' \
   >"$fixture/scripts/orch_py/orch/gizmo.py"
