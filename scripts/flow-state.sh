@@ -89,7 +89,7 @@ phase||null|use phase advance (review ready and redo also move it)
 # was adopted or published - nothing downstream needs that distinction
 # recorded (ADR-0005).
 issue||arg|-
-# When a flow base may change: see the header of base_set_flow.
+# When a flow base may change: see the docstring of set_flow in orch/base.py.
 base||arg|init seeds it
 branch||null|branch create records it
 pr||null|pr open records it

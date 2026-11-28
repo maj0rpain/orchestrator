@@ -9,9 +9,10 @@ route show`, `orch.sh agent <verb>`, `orch.sh slug <text>`, `orch.sh status`,
 handoff <verb>`, `orch.sh redo <op>`, `orch.sh ticket <verb>`, `orch.sh
 ticket-worktree <verb>`, `orch.sh pr <verb>`, `orch.sh autopilot <verb>`,
 `orch.sh side-checkout <verb>`, `orch.sh branch <verb>`, `orch.sh repo show`,
-`orch.sh default-branch` or `orch.sh help` (and its spellings) as a command, in a checkout under tmp_path, against a fake store seeded in the
-layout the bash suite's fake_* helpers write, with ORCH_GH_FAKE_STORE set as
-fake_github sets it."""
+`orch.sh default-branch`, `orch.sh base <verb>` or `orch.sh help` (and its
+spellings) as a command, in a checkout under tmp_path, against a fake store
+seeded in the layout the bash suite's fake_* helpers write, with
+ORCH_GH_FAKE_STORE set as fake_github sets it."""
 from __future__ import annotations
 
 import json
@@ -1157,6 +1158,24 @@ def test_repo_and_default_branch_refuse_without_python3_pointing_at_doctor(
                    path=path_without(tmp_path, "python3")) == (
         "", "orch: orch.sh %s needs python3 3.9 or newer (found none) - run orch.sh"
             " doctor\n" % noun, 1)
+
+
+# --- base ------------------------------------------------------------------
+
+
+def test_base_show_runs_through_the_python_noun(tmp_path, repo, seed):
+    run_git(repo, "config", "orchestrator.base", "uat")
+
+    assert orch_sh(tmp_path, repo, seed, "base", "show", path=python3_shim(tmp_path)) == (
+        "uat (set)\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_base_refuses_without_python3_pointing_at_doctor(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "base", "show",
+                   path=path_without(tmp_path, "python3")) == (
+        "", "orch: orch.sh base needs python3 3.9 or newer (found none) - run orch.sh"
+            " doctor\n", 1)
 
 
 # --- side-checkout -----------------------------------------------------------

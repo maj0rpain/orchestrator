@@ -4154,7 +4154,7 @@ assert_eq "under their headers" "$(printf '%s\n' "$out" | grep '^# ')" \
   "$(printf '# %s\n' "${index_tests[@]}")"
 
 undescribed=""
-for name in base_branch_into base_source float_add \
+for name in default_branch_into is_branch_name float_add \
   require_state_exists fake_default_branch sourced_orch; do
   grep -qE "^$name"$'\t''[^-]' <<<"$index_default"$'\n'"$out" \
     || undescribed+=" $name"

@@ -325,6 +325,17 @@ def test_repo_and_default_branch_writing_into_a_closed_pipe_die_of_sigpipe_silen
     assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
 
 
+def test_base_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_path):
+    """`orch.sh base show | head` ended silently as bash's printf did: so
+    does the Python base noun."""
+    git_repo(tmp_path)
+    run_git(tmp_path, "config", "orchestrator.base", "uat")
+
+    run = into_a_closed_pipe(tmp_path, "base", "show")
+
+    assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
+
+
 def test_the_repo_noun_is_converted(capsys):
     assert died_of(capsys, lambda: main(["repo", "bogus"])) == (
         1, "", "orch: unknown repo op: bogus (want show)\n")
@@ -333,6 +344,11 @@ def test_the_repo_noun_is_converted(capsys):
 def test_the_default_branch_noun_is_converted(capsys):
     assert died_of(capsys, lambda: main(["default-branch", "extra"])) == (
         1, "", "orch: usage: orch.sh default-branch [--sha]\n")
+
+
+def test_the_base_noun_is_converted(capsys):
+    assert died_of(capsys, lambda: main(["base", "show", "extra"])) == (
+        1, "", "orch: usage: orch.sh base show\n")
 
 
 def test_a_noun_converted_earlier_keeps_its_flush_failure_on_a_closed_pipe(tmp_path):

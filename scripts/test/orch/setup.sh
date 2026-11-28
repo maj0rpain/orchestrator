@@ -217,26 +217,6 @@ state_fixture() {
   flow_state_write "$(flow_state_file "$(git rev-parse --show-toplevel)")" "$1" "$2"
 }
 
-# state_truncate [bytes]: cuts the checkout's state file to its first <bytes>
-# bytes (40 by default), leaving a file that does not parse as JSON. The cut
-# goes through a temp file beside it, moved back over it.
-state_truncate() {
-  local file
-  file="$(flow_state_file "$(git rev-parse --show-toplevel)")"
-  head -c "${1:-40}" "$file" >"$file.cut" && mv "$file.cut" "$file"
-}
-
-# assert_state_unreadable <label> <want-status> <out> <st>: asserts a command
-# run on a truncated state.json (see state_truncate) exited <st> as
-# <want-status>, printed the shared unreadable line in <out>, and leaked no jq
-# parse error. The one place tests spell that line.
-assert_state_unreadable() {
-  assert_status "$1 exits $2" "$4" "$2"
-  assert_contains "$1 prints the unreadable line" "$3" \
-    "orch: state.json cannot be read - run orch.sh doctor --flow"
-  assert_not_contains "$1 leaks no jq text" "$3" "parse error"
-}
-
 # state_fixture_drop <key>...: deletes each named key from the checkout's
 # state file in place, as a flow started by an older release lacks keys a
 # fresh one seeds. Raw jq, not the Flow state module: the module has no delete
@@ -298,18 +278,7 @@ layer_upcalls() {
   layer_calls "${defs[@]}" -- "$dir/orch/$file"
 }
 
-# --- the healthy repo and the fresh flow ------------------------------------
-
-# The documented triage-label table, in the shape the setup skill writes it:
-# a header row, a separator row, and backticked labels in the second column.
-labels_doc() {
-  writeln '# Triage Labels' '' \
-          '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
-          '| -------------------------- | -------------------- | ----------- |' \
-          '| `needs-triage`             | `needs-triage`       | Evaluate it |' \
-          '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |' \
-          '' 'Edit the right-hand column to match whatever vocabulary you use.' >"$1"
-}
+# --- a seeded HOME -----------------------------------------------------------
 
 # seeded_home: gives the calling shell a throwaway HOME (exported) that starts
 # with its own copy of the run's seed, the stub cache of the tree under test, so
@@ -327,31 +296,6 @@ seeded_home() {
   fi
   return 0
 }
-
-# healthy_repo: a new_repo set up as the setup skill leaves one - a GitHub
-# origin, a triage-labels doc, a full verification line, the orchestrator's
-# folders git-excluded - with the fixture gh, CLAUDE_PLUGIN_ROOT set and a
-# throwaway HOME, cwd inside it: fresh_flow's repo.
-healthy_repo() {
-  new_repo >/dev/null
-  git remote set-url origin https://github.com/acme/widgets.git
-  labels_doc docs/agents/triage-labels.md
-  # The full verification line a set-up repo names.
-  writeln 'Full verification: true test' >CLAUDE.md
-  git add CLAUDE.md && git commit -qm 'instructions'
-  printf '%s\n' ".orchestrator/" ".scratch/" >>.git/info/exclude
-  gh_fixture
-  export CLAUDE_PLUGIN_ROOT="$PWD"
-  # A throwaway HOME, so nothing under the real one - a skill store, a cache -
-  # reaches the commands a section runs.
-  seeded_home
-}
-
-
-# fresh_flow <slug>: a section's own starting point - a healthy_repo with a
-# flow named <slug> just started in it, at the spec phase, cwd inside it. A
-# section that needs a later phase arranges it with state_fixture.
-fresh_flow() { healthy_repo; "$ORCH" init "$1" >/dev/null; }
 
 # --- the store-backed gh fake (#280) ------------------------------------------
 #

@@ -1,16 +1,13 @@
 # shellcheck shell=bash
-# base.sh - orch.sh's base command: the checkout's base branch setting and a
-# flow's own base, with default_branch_into, which repo.sh and state.sh call
-# too, and the base command's own origin checks, origin_has_branch and
-# require_on_origin. The two readers, default_branch_into and base_branch_into,
-# set a caller-named variable in the caller's own shell, so the first read
+# base.sh - the default-branch reader the bash nouns left call:
+# default_branch_into, which state.sh's flow-base fallback reads. The reader
+# sets a caller-named variable in the caller's own shell, so the first read
 # memoises the answer (DEFAULT_BRANCH, DEFAULT_BRANCH_SOURCE) for the rest of
 # that shell, with nothing to arrange beforehand. A reader that runs inside a
 # $(...) subshell memoises only for that subshell, which never hands its
 # variables back. default_branch_seed is the memo's one writer;
-# default_branch_local is the memo-free local fallback under it. The base a
-# branch belongs to, which branch base-sha and pr publish read, is
-# orch/base.py's recorded_base_into.
+# default_branch_local is the memo-free local fallback under it. The base and default-branch nouns are Python (ADR-0067), in
+# orch/base.py beside the Python copies of these readers.
 # Its tests: scripts/test/orch/base.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -66,8 +63,9 @@ default_branch_seed() {
 # GitHub is asked only when the repo resolves - adapter_repo_default_branch
 # takes it positionally, since `gh repo view` ignores GH_REPO - and a checkout
 # with none falls through to the local pointer rather than dying: the answer
-# has always been best-effort, and base show asks it - as Python init asks its
-# copy, orch/base.py's default_branch - before anything needs GitHub.
+# has always been best-effort, as it is for its Python copy, orch/base.py's
+# default_branch, which init, base show and default-branch ask before anything
+# needs GitHub.
 default_branch_resolve() {
   local b=""
   [ -z "${DEFAULT_BRANCH_SOURCE:-}" ] || return 0
@@ -91,133 +89,4 @@ default_branch_into() {
 # empty one).
 is_branch_name() {
   git check-ref-format --branch "$1" >/dev/null 2>&1
-}
-
-# The base branch in effect now: the checkout's orchestrator.base setting, else
-# the default branch: the answer the base command and base_note report -
-# default_branch_into keeps meaning GitHub's default branch alone.
-# Local git config rather than state.json or a tracked file: it outlives
-# abort and archiving, every worktree of the clone shares it, and it never
-# travels with a push.
-base_setting() { git config --get orchestrator.base 2>/dev/null || true; }
-# base_branch_into <var>: sets <var> to the base branch - the configured one,
-# else the default branch - in the caller's shell. Never fails.
-base_branch_into() {
-  local _bb_b
-  _bb_b="$(base_setting)"
-  if [ -n "$_bb_b" ]; then printf -v "$1" '%s' "$_bb_b"; else default_branch_into "$1"; fi
-}
-
-# Whether origin has branch $1: 0 yes, 2 origin answered and it does not,
-# anything else origin could not be asked. ls-remote's own exit codes carry
-# exactly that split.
-origin_has_branch() {
-  local st=0
-  git ls-remote --quiet --exit-code origin "refs/heads/$1" >/dev/null 2>&1 || st=$?
-  return "$st"
-}
-
-# Prints the base note, "<base> (<source>)". Sets nothing in the caller's shell.
-base_note() {
-  local base
-  base_branch_into base
-  note "$base ($(base_source))"
-}
-# base_source: prints `set` when a base branch is configured, else `default`.
-base_source() { if [ -n "$(base_setting)" ]; then echo set; else echo default; fi; }
-
-# Dies unless origin answers that it has branch $1 - the one check both
-# `base set` and `base set --flow` make before writing anything.
-require_on_origin() {
-  local st=0
-  origin_has_branch "$1" || st=$?
-  case "$st" in
-    0) ;;
-    2) die "branch $1 does not exist on origin - push it first, or check the name" ;;
-    *) die "could not reach origin to check that branch $1 exists - nothing was set" ;;
-  esac
-}
-
-# A flow's base is fixed when init seeds it: no redo and no change to the
-# checkout setting rewrites it, so its fork point and PR target cannot move
-# under it. base set --flow is the one exception: the explicit correction of
-# the active flow's own base, allowed only while the flow has no branch -
-# before it first branches, or after a redo retires that branch. The
-# checks run in a fixed order and the first that fails is reported; nothing is
-# written unless all pass. The name is stored literally, the default branch's
-# own included: a flow's base is pinned, unlike the checkout setting.
-base_set_flow() {
-  orch_load state
-  local b="$1" branch slug phase
-  [ -f "$STATE" ] || die "no active flow - nothing was set"
-  state_get_many_in "$STATE" branch=branch slug=slug phase=phase || die "$STATE_UNREADABLE_MSG"
-  [ "$phase" != "done" ] || die "no active flow - nothing was set"
-  if [ -n "$branch" ]; then
-    if [ "$phase" = review ]; then
-      die "flow $slug already has branch $branch - its base can change again once $(flow_cmd redo) retires it"
-    fi
-    die "flow $slug already has branch $branch - its base can no longer change; abort to start again on another base"
-  fi
-  is_branch_name "$b" || die "$b is not a valid branch name - nothing was set"
-  require_on_origin "$b"
-  state_write_string base "$b"
-  note "$b (flow)"
-}
-
-cmd_base() {
-  local op="${1:-}" b="" flow=0 a
-  shift || true
-  case "$op" in
-    set)
-      # --flow may come before or after the one branch name; anything else is
-      # a usage error.
-      for a in "$@"; do
-        if [ "$a" = --flow ] && [ "$flow" -eq 0 ]; then flow=1
-        elif [ -z "$b" ] && [ "$a" != --flow ]; then b="$a"
-        else die "usage: orch.sh base set <branch> [--flow]"
-        fi
-      done
-      [ -n "$b" ] || die "usage: orch.sh base set <branch> [--flow]"
-      if [ "$flow" -eq 1 ]; then base_set_flow "$b"; return; fi
-      # One read of the active flow's phase, base and slug, only when a state
-      # file exists, doubles as the readability check.
-      local fphase="done" fbase fslug
-      if [ -f "$STATE" ]; then
-        orch_load state
-        state_get_many_in "$STATE" fphase=phase fbase=base fslug=slug || die "$STATE_UNREADABLE_MSG"
-      fi
-      require_on_origin "$b"
-      # The default branch's own name is no setting at all - storing it would
-      # pin today's default and outlive a rename of it - but only when GitHub
-      # or origin/HEAD named that default. A name matching only the main
-      # fallback is a guess, never the default's name, so it is stored.
-      local dflt dsrc
-      default_branch_into dflt dsrc
-      if [ "$b" = "$dflt" ] && [ "$dsrc" != fallback ]; then
-        git config --unset orchestrator.base 2>/dev/null || true
-      else
-        git config orchestrator.base "$b"
-      fi
-      base_note
-      # The setting only reaches flows started after it; say so rather than
-      # let the active flow's PR surprise anyone by targeting its old base.
-      if [ "$fphase" != "done" ]; then
-        local cur fb
-        base_branch_into cur
-        flow_base_fallback_into fb "$fbase"
-        [ "$fb" = "$cur" ] ||
-          note "note: the active flow $fslug keeps its own base branch: $fb"
-      fi
-      ;;
-    show)
-      [ $# -eq 0 ] || die "usage: orch.sh base show"
-      base_note
-      ;;
-    clear)
-      [ $# -eq 0 ] || die "usage: orch.sh base clear"
-      git config --unset orchestrator.base 2>/dev/null || true
-      base_note
-      ;;
-    *) die "unknown base op: ${op:-<none>} (want set|show|clear)" ;;
-  esac
 }

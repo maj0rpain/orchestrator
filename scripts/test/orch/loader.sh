@@ -81,14 +81,6 @@ assert_eq "no module loads twice at depth 0" \
   "$(awk '$2 == 0 {print $1}' "$trace" | sort | uniq -d)" ""
 run_traced nonesuch-command
 assert_eq "an unknown command loads no module" "$(cat "$trace")" ""
-# base show asks GitHub for the default branch, here the gh fake, from a
-# command substitution, loading the gh module there: new_repo's origin is a
-# GitHub URL, so the repo resolves.
-fake_github
-run_traced base show
-restore_suite_env
-assert_eq "a load from a subshell records a depth above 0" \
-  "$(awk '$2 > 0 {print $1}' "$trace" | sed -n 1p)" "gh"
 out="$(bash "$ORCH" state get phase 2>&1)"; status=$?
 out2="$(ORCH_LOAD_TRACE=/nonexistent/dir/trace bash "$ORCH" state get phase 2>&1)"; status2=$?
 assert_eq "an unwritable ORCH_LOAD_TRACE leaves the command's output as it is" "$out2" "$out"
@@ -97,6 +89,15 @@ assert_status "and its exit status" "$status2" "$status"
 # src_run <script>: <script> run with $1 = orch.sh, the trace emptied first.
 src_run() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash -c "$1" _ "$ORCH" 2>&1; }
 lazy_pre='ORCH_SOURCE_LAZY=1; source "$1"; shift; '
+
+# default_branch_into asks GitHub, here the gh fake, from a command
+# substitution, loading the gh module there: new_repo's origin is a GitHub URL,
+# so the repo resolves. No bash noun left runs it, so it is called sourced.
+fake_github
+src_run "$lazy_pre"'default_branch_into b' >/dev/null
+restore_suite_env
+assert_eq "a load from a subshell records a depth above 0" \
+  "$(awk '$2 > 0 {print $1}' "$trace" | sed -n 1p)" "gh"
 
 src_run "$lazy_pre"'(is_branch_name main); true'
 assert_eq "a stub called in a subshell loads its module there only" "$(cat "$trace")" "base 1"
