@@ -15,7 +15,7 @@ every argument to the standard-library package in `scripts/orch_py/orch/`, as
 package owns the noun list, each noun's code in the module of the concept it
 serves, its pytest tests beside it in `scripts/orch_py/tests/`. The bash module
 directory `scripts/orch/` holds only `common.sh`, the bash primitives no
-concept owns, which the autopilot scripts source; there is no module loader.
+concept owns, which the autopilot scripts source.
 See CONTRIBUTING.md's Layout for the full map.
 There is no top-level `tests/`, and `hooks/` holds only `hooks.json`.
 

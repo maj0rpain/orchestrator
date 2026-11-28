@@ -262,7 +262,7 @@ concept it serves, whichever modules call it, and a noun reaches GitHub through
 the Python gh adapter, `scripts/orch_py/orch/gh.py`. The bash module directory,
 `scripts/orch/`, holds only `common.sh`: the bash primitives no concept owns
 (die, warn, capture and the like), sourced by the autopilot scripts and the
-bash test sections; orch.sh sources nothing, and there is no module loader. The
+bash test sections; orch.sh sources nothing. The
 concept modules with no noun - the Checkout module (`orch/checkout.py`), the
 Trust module (`orch/trust.py`), and the Filed finding, Liveness, Session log,
 Standing, Comments, Issue timeline and Marked comment modules
