@@ -4,7 +4,11 @@ branch in effect now, as its base_branch_into reads it, the base a branch
 belongs to, and the base and base-SHA keys a branch records them under, with
 their getters, their setters and the record of both together - the one
 place those keys are spelled, the bash copies gone with the bash branch noun
-- so far; the later `base` noun grows it rather than moving it.
+- and the default-branch noun (ADR-0067), `orch.sh default-branch [--sha]`,
+run_default_branch, beside the lookup it prints, with the bash noun's usage
+line, output, exit codes and `orch: ` messages, which orch.sh's
+converted-noun case runs; the later `base` noun grows it rather than moving
+it.
 
 GitHub is asked first, and only when the repo pin resolves: origin/HEAD is a
 local pointer frozen at clone time, which in a clone taken while a feature
@@ -15,10 +19,14 @@ gh call - falls through to the next (#465).
 """
 from __future__ import annotations
 
-from typing import Callable, NamedTuple, Optional
+import os
+from typing import Callable, List, Mapping, NamedTuple, Optional
 
-from orch.gh import GhFailed
-from orch.git import GitFailure
+from orch.common import die, stdout_write
+from orch.gh import GhFailed, adapter_of
+from orch.git import Git, GitFailure
+from orch.repo import RepoPin
+from orch.root import checkout_root
 
 # The sources the lookup answers from, as bash's DEFAULT_BRANCH_SOURCE names
 # them.
@@ -141,3 +149,29 @@ def recorded_base_of(git, branch: str, default: Callable[[], str]) -> str:
     if recorded is not None:
         return recorded
     return base_in_effect(git, default)
+
+
+def run_default_branch(argv: List[str], gh=None, git=None,
+                       env: Optional[Mapping[str, str]] = None, pin=None) -> int:
+    """`orch.sh default-branch [--sha]`: the default branch's name, or with
+    --sha the default SHA - the full SHA of refs/remotes/origin/<default> as
+    it stands. --sha never fetches: finding triage reads it right after its
+    scan's fetch set that ref, so it names the remote tip the scan used. The
+    real adapters and the process's environment unless a test hands in
+    others; outside a checkout it dies first, as orch.sh does."""
+    env = os.environ if env is None else env
+    git = Git() if git is None else git
+    checkout_root(git, env)
+    if argv and argv != ["--sha"]:
+        die("usage: orch.sh default-branch [--sha]")
+    pin = RepoPin(env, git) if pin is None else pin
+    default = default_branch(adapter_of(gh, env, pin)(), git, pin).name
+    if not argv:
+        stdout_write(default + "\n")
+        return 0
+    ref = "refs/remotes/origin/" + default
+    sha = git.resolve_commit(ref)
+    if sha is None:
+        die("no %s - fetch the default branch first" % ref)
+    stdout_write(sha + "\n")
+    return 0

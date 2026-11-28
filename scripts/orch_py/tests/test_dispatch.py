@@ -8,9 +8,8 @@ route show`, `orch.sh agent <verb>`, `orch.sh slug <text>`, `orch.sh status`,
 `orch.sh init <slug>`, `orch.sh archive`, `orch.sh phase <verb>`, `orch.sh
 handoff <verb>`, `orch.sh redo <op>`, `orch.sh ticket <verb>`, `orch.sh
 ticket-worktree <verb>`, `orch.sh pr <verb>`, `orch.sh autopilot <verb>`,
-`orch.sh side-checkout <verb>`, `orch.sh branch <verb>` or `orch.sh help` (and
-its spellings)
-as a command, in a checkout under tmp_path, against a fake store seeded in the
+`orch.sh side-checkout <verb>`, `orch.sh branch <verb>`, `orch.sh repo show`,
+`orch.sh default-branch` or `orch.sh help` (and its spellings) as a command, in a checkout under tmp_path, against a fake store seeded in the
 layout the bash suite's fake_* helpers write, with ORCH_GH_FAKE_STORE set as
 fake_github sets it."""
 from __future__ import annotations
@@ -1131,6 +1130,33 @@ def test_branch_refuses_without_a_usable_python3_pointing_at_doctor(
     assert orch_sh(tmp_path, repo, seed, "branch", "busy", path=path_of(tmp_path)) == (
         "", "orch: orch.sh branch needs python3 3.9 or newer (found %s) - run orch.sh"
             " doctor\n" % found, 1)
+
+
+# --- repo and default-branch ------------------------------------------------
+
+
+def test_repo_show_prints_the_origin_s_repo_through_the_python_noun(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "repo", "show", path=python3_shim(tmp_path),
+                   unset=("GH_REPO",)) == ("acme/widgets (origin)\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_default_branch_prints_github_s_answer_through_the_python_noun(tmp_path, repo, seed):
+    seed.default_branch("trunk\n")
+
+    assert orch_sh(tmp_path, repo, seed, "default-branch", path=python3_shim(tmp_path),
+                   unset=("GH_REPO",)) == ("trunk\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+@pytest.mark.parametrize("noun, argv", [("repo", ("show",)), ("default-branch", ())],
+                         ids=["repo", "default-branch"])
+def test_repo_and_default_branch_refuse_without_python3_pointing_at_doctor(
+        tmp_path, repo, seed, noun, argv):
+    assert orch_sh(tmp_path, repo, seed, noun, *argv,
+                   path=path_without(tmp_path, "python3")) == (
+        "", "orch: orch.sh %s needs python3 3.9 or newer (found none) - run orch.sh"
+            " doctor\n" % noun, 1)
 
 
 # --- side-checkout -----------------------------------------------------------

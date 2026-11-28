@@ -78,13 +78,6 @@ base_setting() { git config --get orchestrator.base || echo "<unset>"; }
 out="$(orch_gh_failing base show)"; st=$?
 assert_status "show succeeds with nothing set" "$st" 0
 assert_eq "show names the default branch as the source when nothing is set" "$out" "main (default)"
-# #1111: a local branch named origin/main makes git's short name for
-# origin/HEAD ambiguous (remotes/origin/main); the fallback still settles on
-# main.
-git branch origin/main
-assert_eq "default-branch beside a local origin/main branch still names main" \
-  "$(orch_gh_failing default-branch 2>/dev/null)" "main"
-git branch -D -q origin/main
 
 out="$(orch_gh_failing base set nosuch 2>&1)"; st=$?
 assert_status "set refuses a branch missing from origin" "$st" 1
@@ -95,7 +88,6 @@ out="$(orch_gh_failing base set uat 2>&1)"; st=$?
 assert_status "set accepts a branch origin has" "$st" 0
 assert_eq "set writes orchestrator.base" "$(base_setting)" "uat"
 assert_eq "show names the setting as the source" "$(orch_gh_failing base show)" "uat (set)"
-assert_eq "default-branch still names the default branch" "$(orch_gh_failing default-branch)" "main"
 
 wt="$(mktemp -d)/wt"
 git worktree add -q "$wt" -b base-wt
@@ -181,14 +173,6 @@ done
 fake_unfail
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
 rm -rf .orchestrator
-
-# The memo never outlives one process: a rename between two runs is seen.
-assert_eq "default-branch names the default branch" \
-  "$(fake_default_branch main; counted_orch default-branch)" "main"
-assert_eq "its run reached the read" "$(read_count)" "1"
-assert_eq "the next run, after a rename, names the new default" \
-  "$(fake_default_branch trunk; counted_orch default-branch)" "trunk"
-assert_eq "and reached the read again" "$(read_count)" "1"
 unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 rm -rf "$(dirname "$bare")"
 

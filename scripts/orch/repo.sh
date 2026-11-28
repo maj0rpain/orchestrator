@@ -1,34 +1,31 @@
 # shellcheck shell=bash
-# repo.sh - orch.sh's repo and default-branch commands.
+# repo.sh - the repo pin's bash copy, which base.sh and gh.sh still call; the
+# repo and default-branch nouns are Python (orch/repo.py, orch/base.py).
 # Its tests: scripts/test/orch/repo.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 # repo_resolve: resolves the Repo once per shell and memoises the whole answer
 # in plain (never exported) shell variables, repo_resolve their one writer:
-# REPO_NAME and REPO_SOURCE (GH_REPO or origin; read by repo show),
-# REPO_MEMO_STATUS (the outcome, 0 or 1, a failed resolution too; empty until
-# the first resolve) and REPO_MEMO_HOST (the host the repo pins). The memo
-# lives in the shell that resolves: a later resolve there, or in a subshell
-# forked from it afterwards, returns the same answer and status without
-# starting a process. A subshell's own resolve dies with it and never reaches
-# its parent.
+# REPO_NAME, REPO_MEMO_STATUS (the outcome, 0 or 1, a failed resolution too;
+# empty until the first resolve) and REPO_MEMO_HOST (the host the repo pins).
+# The memo lives in the shell that resolves: a later resolve there, or in a
+# subshell forked from it afterwards, returns the same answer and status
+# without starting a process. A subshell's own resolve dies with it and never
+# reaches its parent.
 # shellcheck disable=SC2034
 repo_resolve() {
   local url
   if [ -n "${REPO_MEMO_STATUS:-}" ]; then return "$REPO_MEMO_STATUS"; fi
   REPO_NAME=""
-  REPO_SOURCE=""
   REPO_MEMO_HOST=""
   if [ -n "${GH_REPO:-}" ]; then
     REPO_NAME="$GH_REPO"
-    REPO_SOURCE=GH_REPO
     REPO_MEMO_HOST="$(repo_host "$REPO_NAME")"
     REPO_MEMO_STATUS=0
     return 0
   fi
   if url="$(git remote get-url origin 2>/dev/null)" \
     && REPO_NAME="$(repo_from_url "$url")"; then
-    REPO_SOURCE=origin
     REPO_MEMO_HOST="$(repo_host "$REPO_NAME")"
     REPO_MEMO_HOST="${REPO_MEMO_HOST:-github.com}"
     REPO_MEMO_STATUS=0
@@ -146,27 +143,6 @@ repo_from_url() {
   fi
 }
 
-# repo_gh_host: the GitHub host gh targets for the resolved repo (not the
-# glossary's Host, the agent CLI), read from the memo
-# repo_resolve memoises. The one rule, followed by the gh guard's pin, doctor's
-# GitHub probe (orch/doctor.py, through orch.repo) and repo show --host: the
-# repo's pinned host (repo_pinned_host); else (a user-set OWNER/REPO GH_REPO)
-# the user's GH_HOST, or github.com when unset, as gh does.
-repo_gh_host() {
-  local host
-  host="$(repo_pinned_host)"
-  printf '%s\n' "${host:-${GH_HOST:-github.com}}"
-}
-
-# repo_pinned_host: the host the repo itself decides, which the gh guard pins -
-# the repo name's explicit host; else github.com for a repo resolved from
-# origin; else nothing, for a user-set OWNER/REPO GH_REPO, whose host is the
-# user's own GH_HOST.
-repo_pinned_host() {
-  repo_resolve || return 0
-  if [ -n "$REPO_MEMO_HOST" ]; then printf '%s\n' "$REPO_MEMO_HOST"; fi
-}
-
 # gh api fills {owner}/{repo} from GH_REPO but takes its host only from
 # GH_HOST, never from GH_REPO's host part (gh 2.102.0). So the pin exports the
 # repo's pinned host as GH_HOST; for a user-set OWNER/REPO GH_REPO it leaves the
@@ -178,38 +154,3 @@ repo_pin_host() {
 }
 # The USR1 trap that dies with REPO_REMEDY is set by orch.sh itself, so a module
 # loaded on demand is not what a signalled main shell waits on.
-
-# default-branch [--sha]: the default branch's name, or with --sha the default
-# SHA - the full SHA of refs/remotes/origin/<default> as it stands. --sha never
-# fetches: finding triage reads it right after its scan's fetch set that ref,
-# so it names the remote tip the scan used.
-cmd_default_branch() {
-  local usage="usage: orch.sh default-branch [--sha]" default ref sha
-  if [ $# -eq 0 ]; then default_branch_into default; printf '%s\n' "$default"; return; fi
-  [ $# -eq 1 ] && [ "$1" = --sha ] || die "$usage"
-  default_branch_into default
-  ref="refs/remotes/origin/$default"
-  sha="$(git rev-parse --verify -q "$ref^{commit}")" \
-    || die "no $ref - fetch the default branch first"
-  printf '%s\n' "$sha"
-}
-
-cmd_repo() {
-  local op="${1:-}"
-  shift || true
-  case "$op" in
-    show)
-      case "$*" in
-        ""|--name|--host) ;;
-        *) die "usage: orch.sh repo show [--name|--host]" ;;
-      esac
-      repo_resolve || die "$REPO_REMEDY"
-      case "${1:-}" in
-        --name) note "$REPO_NAME" ;;
-        --host) note "$(repo_gh_host)" ;;
-        *) note "$REPO_NAME ($REPO_SOURCE)" ;;
-      esac
-      ;;
-    *) die "unknown repo op: ${op:-<none>} (want show)" ;;
-  esac
-}

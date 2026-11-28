@@ -5,6 +5,30 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# write_ssh_stub <command run for github-work> <exit status>: an ssh at
+# "$ssh_stub_dir", for a PATH ahead of the suite-wide identity one, that runs
+# <command> when its last argument is github-work, then exits with <exit status>
+# on every call unless <command> exits first, and records every call in
+# "$ssh_calls". The dir is made once per shell. In a parallel run each section,
+# a process of its own, gets its own dir. In a serial run (ORCH_TEST_JOBS=1)
+# every section runs in one shell and they share it, which is safe because each
+# write_ssh_stub call overwrites the stub and a section that counts calls
+# clears the calls file first.
+write_ssh_stub() {
+  if [ -z "${ssh_stub_dir:-}" ]; then
+    ssh_stub_dir="$(mktemp -d)"
+    ssh_calls="$ssh_stub_dir/calls"; : >"$ssh_calls"
+  fi
+  cat >"$ssh_stub_dir/ssh" <<SSH
+#!/usr/bin/env bash
+echo "\$*" >>"$ssh_calls"
+for h in "\$@"; do :; done
+if [ "\$h" = github-work ]; then $1; fi
+exit $2
+SSH
+  chmod +x "$ssh_stub_dir/ssh"
+}
+
 # dir_snapshot <dir>: every file under <dir>, by its path from <dir>, with its
 # checksum, in a fixed order - for a byte-identical comparison with another
 # snapshot of the same directory.

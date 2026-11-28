@@ -1,5 +1,7 @@
 """The repo pin (#520): the repo every gh call is pinned to, as the bash
-side's repo.sh resolves it.
+side's repo.sh resolves it, and the repo noun (ADR-0067), `orch.sh repo show
+[--name|--host]`, with the bash noun's usage line, output, exit codes and
+`orch: ` messages, which orch.sh's converted-noun case runs.
 
 GH_REPO when the caller set it, else the [HOST/]OWNER/REPO parsed from the
 checkout's origin remote - never gh's own default repo, which in a fork is the
@@ -10,8 +12,13 @@ user-set OWNER/REPO GH_REPO keeps the user's own GH_HOST, set or unset.
 """
 from __future__ import annotations
 
+import os
 import subprocess
-from typing import Callable, Dict, Mapping, NamedTuple, Optional
+from typing import Callable, Dict, List, Mapping, NamedTuple, Optional
+
+from orch.common import die, stdout_write
+from orch.git import Git
+from orch.root import checkout_root
 
 REPO_MISSING = "no GitHub repo to work on"
 REPO_CAUSE = REPO_MISSING + ": origin is missing or not a GitHub owner/name"
@@ -167,3 +174,37 @@ class RepoPin:
         if repo.host:
             env["GH_HOST"] = repo.host
         return env
+
+
+OPS = "show"
+
+# The flags repo show takes, read as bash read them: its arguments joined by
+# one space, so one empty argument is no flag at all.
+SHOW_FLAGS = ("", "--name", "--host")
+
+
+def run(argv: List[str], git=None, env: Optional[Mapping[str, str]] = None,
+        pin: Optional[RepoPin] = None) -> int:
+    """`orch.sh repo <op>`: the real git adapter, the process's environment
+    and a pin on them unless a test hands in others. Outside a checkout it
+    dies first, as orch.sh does, whatever the op."""
+    env = os.environ if env is None else env
+    git = Git() if git is None else git
+    checkout_root(git, env)
+    op, rest = (argv[0], argv[1:]) if argv else ("", [])
+    if op != "show":
+        die("unknown repo op: %s (want %s)" % (op or "<none>", OPS))
+    flag = " ".join(rest)
+    if flag not in SHOW_FLAGS:
+        die("usage: orch.sh repo show [--name|--host]")
+    pin = RepoPin(env, git) if pin is None else pin
+    repo = pin.resolve()
+    if repo is None:
+        die(REPO_REMEDY)
+    if flag == "--name":
+        stdout_write(repo.name + "\n")
+    elif flag == "--host":
+        stdout_write(pin.gh_host() + "\n")
+    else:
+        stdout_write("%s (%s)\n" % (repo.name, repo.source))
+    return 0

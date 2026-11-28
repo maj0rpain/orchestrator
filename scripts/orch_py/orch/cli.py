@@ -190,6 +190,18 @@ def _branch(argv: List[str]) -> int:
     return run(argv)
 
 
+def _repo(argv: List[str]) -> int:
+    from orch.repo import run
+
+    return run(argv)
+
+
+def _default_branch(argv: List[str]) -> int:
+    from orch.base import run_default_branch
+
+    return run_default_branch(argv)
+
+
 # The converted nouns: each takes the arguments after the noun and returns its
 # exit code.
 NOUNS: Dict[str, Callable[[List[str]], int]] = {
@@ -221,6 +233,8 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "autopilot": _autopilot,
     "side-checkout": _side_checkout,
     "branch": _branch,
+    "repo": _repo,
+    "default-branch": _default_branch,
 }
 
 # The other spellings main runs as a noun - help's option spellings and
@@ -232,7 +246,8 @@ ALIASES: Dict[str, str] = {"-h": "help", "--help": "help", "health": "doctor"}
 # keeps its flush failure there, as it always ended.
 SIGPIPE_NOUNS = frozenset({"init", "slug", "status", "archive", "help", "phase", "handoff",
                            "redo", "ticket", "ticket-worktree", "pr", "review", "doctor",
-                           "autopilot", "side-checkout", "branch"})
+                           "autopilot", "side-checkout", "branch", "repo",
+                           "default-branch"})
 
 
 def _sigpipe_as_bash(run: Callable[[List[str]], int], argv: List[str]) -> int:

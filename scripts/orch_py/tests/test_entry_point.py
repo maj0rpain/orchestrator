@@ -309,6 +309,32 @@ def test_the_branch_noun_is_converted(capsys):
         1, "", "orch: usage: orch.sh branch base-sha\n")
 
 
+@pytest.mark.parametrize("call, origin", [
+    (("repo", "show"), "https://github.com/acme/widgets.git"),
+    (("default-branch",), None),
+], ids=["repo", "default-branch"])
+def test_repo_and_default_branch_writing_into_a_closed_pipe_die_of_sigpipe_silently(
+        tmp_path, call, origin):
+    """`orch.sh repo show | head` and `orch.sh default-branch | head` ended
+    silently as bash's printf did: so do the Python nouns. default-branch
+    runs with no origin, so it asks GitHub nothing."""
+    git_repo(tmp_path, origin)
+
+    run = into_a_closed_pipe(tmp_path, *call)
+
+    assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
+
+
+def test_the_repo_noun_is_converted(capsys):
+    assert died_of(capsys, lambda: main(["repo", "bogus"])) == (
+        1, "", "orch: unknown repo op: bogus (want show)\n")
+
+
+def test_the_default_branch_noun_is_converted(capsys):
+    assert died_of(capsys, lambda: main(["default-branch", "extra"])) == (
+        1, "", "orch: usage: orch.sh default-branch [--sha]\n")
+
+
 def test_a_noun_converted_earlier_keeps_its_flush_failure_on_a_closed_pipe(tmp_path):
     """A noun converted before init, slug, status, archive and help ends a
     closed stdout pipe as it always did: Python's failed flush at exit,

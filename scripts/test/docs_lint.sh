@@ -4346,13 +4346,20 @@ routed_nouns() {
     }' "$1"
 }
 # noun_module <root> <noun> <var>: sets <var> to the root-relative path of the
-# noun's module: scripts/orch/<noun>.sh, or, when the root holds no such file,
-# the Python module of a noun converted to Python (ADR-0067),
-# scripts/orch_py/orch/<noun>.py with each - as _. Starts no process.
+# noun's module: the Python module of a noun converted to Python (ADR-0067),
+# scripts/orch_py/orch/<noun>.py with each - as _, when it holds an `OPS = `
+# line - a bash module of helpers its conversion left beside it is not the
+# noun's; else scripts/orch/<noun>.sh, when the root holds it; else the Python
+# path. Starts no process.
 noun_module() {
-  local __nm_path="scripts/orch/$2.sh"
-  [ -f "$1/$__nm_path" ] || __nm_path="scripts/orch_py/orch/${2//-/_}.py"
-  printf -v "$3" '%s' "$__nm_path"
+  local __nm_py="scripts/orch_py/orch/${2//-/_}.py" __nm_line
+  if [ -f "$1/$__nm_py" ]; then
+    while IFS= read -r __nm_line; do
+      if [[ $__nm_line == 'OPS = "'* ]]; then printf -v "$3" '%s' "$__nm_py"; return 0; fi
+    done <"$1/$__nm_py"
+  fi
+  if [ -f "$1/scripts/orch/$2.sh" ]; then __nm_py="scripts/orch/$2.sh"; fi
+  printf -v "$3" '%s' "$__nm_py"
 }
 # noun_verbs <root> <noun>...: one "<noun><TAB><verb>" line per verb each named
 # noun dispatches - each name on a top-level arm of the first case in cmd_<noun>
@@ -4470,11 +4477,15 @@ fixture="$(new_fixture)"
 mkdir -p "$fixture/scripts/orch" "$fixture/docs/agents"
 printf '%s\n' 'main() {' '  case "$cmd" in' '    base) cmd_base "$@" ;;' '    redo) cmd_redo "$@" ;;' \
   '    doctor) cmd_doctor "$@" ;;' '    widget-thing) cmd_widget_thing "$@" ;;' \
-  '    gadget-box) orch_python "$cmd" "$@" ;;' '    *) die nope ;;' '  esac' '}' \
-  >"$fixture/scripts/orch.sh"
+  '    gadget-box) orch_python "$cmd" "$@" ;;' '    gizmo) orch_python "$cmd" "$@" ;;' '    *) die nope ;;' \
+  '  esac' '}' >"$fixture/scripts/orch.sh"
 mkdir -p "$fixture/scripts/orch_py/orch"
 printf '%s\n' '"""A converted noun."""' '# OPS = "commented|out"' 'OPS = "spin|stop"' 'MORE = "x|y"' \
   >"$fixture/scripts/orch_py/orch/gadget_box.py"
+# gizmo: converted, its bash module left holding helpers alone.
+printf '%s\n' '"""A converted noun beside a bash module of helpers."""' 'OPS = "turn"' \
+  >"$fixture/scripts/orch_py/orch/gizmo.py"
+printf '%s\n' 'gizmo_helper() {' '  case "$1" in' '    left) echo ;;' '  esac' '}' >"$fixture/scripts/orch/gizmo.sh"
 printf '%s\n' 'cmd_base() {' '  case "$1" in' '    set)' '      case "$2" in' '        major)' '          x=1 ;;' \
   '        green)' '          x=2 ;;' '      esac' '      ;;' '    show|-x|--long) echo ;;' '    extra) echo ;;' \
   '    *) die "unknown base op" ;;' '  esac' '  case "$1" in' '    later) echo ;;' '  esac' '}' >"$fixture/scripts/orch/base.sh"
@@ -4486,7 +4497,7 @@ printf '%s\n' 'cmd_widget_thing() {' '  case "$1" in' '    go|stop) echo ;;' '  
   >"$fixture/scripts/orch/widget-thing.sh"
 printf '%s\n' '# CLI' '' '## Current nouns' '' '| Noun | Verbs |' '| --- | --- |' \
   '| `base` | `set`, `show`, `clear` |' '| `widget-thing` | `go`, `stop` |' '| `gadget-box` | `spin`, `halt` |' \
-  '' '## Exceptions' '' \
+  '| `gizmo` | `turn` |' '' '## Exceptions' '' \
   '- **Bare global commands**: `doctor`.' '- **`redo review` / `redo spec`**: not ops belonging to a `redo` noun.' \
   >"$fixture/docs/agents/cli-conventions.md"
 out="$(scan_cli_nouns "$fixture")"
@@ -4506,6 +4517,7 @@ flags "a converted noun's verb its OPS line names, in neither its row nor Except
 flags "a converted noun's row verb its OPS line lacks is flagged, naming its Python module" \
   "$out" "docs/agents/cli-conventions.md: gadget-box verb halt is in its Current nouns row but scripts/orch_py/orch/gadget_box.py no longer dispatches it"
 spares "a converted noun's verbs come from its OPS line alone" "$out" 'verb (spin|commented|out|x|y) '
+spares "a converted noun's OPS line wins over a bash module of helpers left beside it" "$out" 'gizmo '
 # noun_verbs over the verbs fixture: one awk for every named noun, each
 # module's verbs from its own cmd_<noun>, a noun with no module none.
 verbs_awk="$(TMPDIR="$FIXTURES" counting_bin awk)"

@@ -95,8 +95,8 @@ readonly ISSUE_SEARCH_CAP=1000
 # The repo orch.sh works on (#520): GH_REPO when the caller set it, else the
 # owner/name parsed from the checkout's origin remote - never gh's own default
 # repo, which in a fork is the upstream. repo_resolve sets REPO_NAME to
-# [HOST/]OWNER/REPO and REPO_SOURCE to GH_REPO or origin, printing nothing; it
-# returns non-zero, with both empty, when nothing resolves. A caller that must
+# [HOST/]OWNER/REPO, printing nothing; it returns non-zero, with it empty,
+# when nothing resolves. A caller that must
 # have a repo dies with REPO_REMEDY. orch.repo holds the Python copies, which
 # doctor reports: REPO_CAUSE, giving the remedy on a line of its own, and the
 # bare REPO_MISSING on its skipped line.
@@ -205,20 +205,19 @@ main() {
     # The nouns converted to Python, the one place naming them: each runs
     # through orch_python, and has no module of its own here. Among them
     # init, phase, handoff, redo, ticket, ticket-worktree, pr, review,
-    # autopilot, side-checkout, branch and doctor with its alias health, and
-    # the bare global commands slug, status, archive and help, help with its
-    # option spellings, which the Python entry point runs as help; a bare
-    # orch.sh is help too. orch_python execs python3, so the process `orch.sh
-    # autopilot watch` or `orch.sh autopilot run` starts keeps its pid, which
-    # the watch pidfile and the run records name. Doctor's bash check reports
-    # the bash running this script, which Python cannot see: it is handed on
-    # as ORCH_RUNNING_BASH, trimmed of its "(1)-release" tail.
-    issue|finding-triage|verification|audit|review-pass|spec-review|spec|breakdown|glossary|parallel|route|agent|slug|status|archive|help|-h|--help|init|phase|handoff|redo|ticket|ticket-worktree|pr|review|autopilot|side-checkout|branch|doctor|health)
+    # autopilot, side-checkout, branch, repo and doctor with its alias
+    # health, and the bare global commands slug, status, archive,
+    # default-branch and help, help with its option spellings, which the
+    # Python entry point runs as help; a bare orch.sh is help too.
+    # orch_python execs python3, so the process `orch.sh autopilot watch` or
+    # `orch.sh autopilot run` starts keeps its pid, which the watch pidfile
+    # and the run records name. Doctor's bash check reports the bash running
+    # this script, which Python cannot see: it is handed on as
+    # ORCH_RUNNING_BASH, trimmed of its "(1)-release" tail.
+    issue|finding-triage|verification|audit|review-pass|spec-review|spec|breakdown|glossary|parallel|route|agent|slug|status|archive|help|-h|--help|init|phase|handoff|redo|ticket|ticket-worktree|pr|review|autopilot|side-checkout|branch|repo|default-branch|doctor|health)
       case "$cmd" in doctor|health) export ORCH_RUNNING_BASH="${BASH_VERSION%%(*}" ;; esac
       orch_python "$cmd" "$@" ;;
-    default-branch) cmd_default_branch "$@" ;;
     base)          cmd_base "$@" ;;
-    repo)          cmd_repo "$@" ;;
     state)         cmd_state "$@" ;;
     *) die "unknown command: $cmd (run 'orch.sh help')" ;;
   esac

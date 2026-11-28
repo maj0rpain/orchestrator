@@ -81,11 +81,11 @@ assert_eq "no module loads twice at depth 0" \
   "$(awk '$2 == 0 {print $1}' "$trace" | sort | uniq -d)" ""
 run_traced nonesuch-command
 assert_eq "an unknown command loads no module" "$(cat "$trace")" ""
-# default-branch asks GitHub, here the gh fake, from a command substitution,
-# loading the gh module there: new_repo's origin is a GitHub URL, so the repo
-# resolves.
+# base show asks GitHub for the default branch, here the gh fake, from a
+# command substitution, loading the gh module there: new_repo's origin is a
+# GitHub URL, so the repo resolves.
 fake_github
-run_traced default-branch
+run_traced base show
 restore_suite_env
 assert_eq "a load from a subshell records a depth above 0" \
   "$(awk '$2 > 0 {print $1}' "$trace" | sed -n 1p)" "gh"

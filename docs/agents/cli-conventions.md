@@ -78,5 +78,6 @@ of a converted noun, else the bash one, `scripts/orch/<noun>.sh`.
 
 A new bare global command is a Python noun module, as `init`, `slug`,
 `status`, `archive` and `help` are, with pytest tests in
-`scripts/orch_py/tests/`, unless its job belongs to an existing noun, as
-`default-branch` belongs to `repo`, when it goes in that noun's module.
+`scripts/orch_py/tests/`, unless its job belongs to an existing concept, as
+`default-branch` belongs to the base concept, when it goes in that concept's
+module (`run_default_branch`, in `orch/base.py`).
