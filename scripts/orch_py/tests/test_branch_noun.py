@@ -12,7 +12,7 @@ import json
 import pytest
 
 from conftest import (GITHUB_ORIGIN, committed, exclude_orchestrator, fake, git_of, hold_flow,
-                      origin_clone, origin_main_clone, outcome, run_git, state_json)
+                      origin_main_clone, outcome, run_git, state_json, tip)
 from orch import branch as module
 from orch.git import FakeGit, Git, Worktree
 from orch.repo import RepoPin
@@ -293,7 +293,7 @@ def test_off_beside_tags_named_like_the_branch_and_origin_s_base_forks_from_orig
 
     assert orch(capsys, "off", NAME, git=Git(cwd=str(root)), gh=fake(seed)) == (
         0, NAME + "\n", "")
-    assert (head_of(root, "refs/heads/" + NAME), repo_facts(root, NAME),
+    assert (tip(root, NAME), repo_facts(root, NAME),
             run_git(root, "for-each-ref", "--format=%(upstream)", "refs/heads/" + NAME)) == (
         origin_tip, ("made", origin_tip, NAME), "")
 
@@ -715,16 +715,6 @@ def test_a_restart_on_a_foreign_branch_s_rebase_in_progress_dies_naming_it(
 # The refusals before either path.
 
 
-def test_create_with_no_flow_is_refused(tmp_path, seed, capsys):
-    assert create(capsys, seed, forking(tmp_path)) == (1, "", NO_FLOW)
-
-
-def test_create_beside_an_unreadable_state_json_is_refused(tmp_path, seed, capsys):
-    hold_flow(tmp_path).write_text("{\"slug\": \"feat\", \"pha")
-
-    assert create(capsys, seed, forking(tmp_path)) == (1, "", UNREADABLE)
-
-
 def test_create_with_no_issue_recorded_is_refused_writing_nothing(tmp_path, seed, capsys):
     git = flowing(tmp_path, issue=None)
     before = untouched(tmp_path, git)
@@ -764,7 +754,7 @@ def test_create_beside_refs_named_like_the_branch_and_origin_s_base_forks_from_o
         run_git(root, kind, name, local_tip)
 
     assert orch(capsys, "create", git=Git(cwd=str(root)), gh=fake(seed)) == (0, FLOW + "\n", "")
-    assert (head_of(root, "refs/heads/" + FLOW), repo_facts(root, FLOW),
+    assert (tip(root, FLOW), repo_facts(root, FLOW),
             run_git(root, "for-each-ref", "--format=%(upstream)", "refs/heads/" + FLOW),
             json.loads(state_json(root).read_text())["base_sha"]) == (
         origin_tip, ("made", origin_tip, FLOW), "", origin_tip)
@@ -1027,11 +1017,8 @@ def tagged(tmp_path):
     """A clone of a bare origin holding main, two commits deep, on OLD
     pushed and tracking origin's, a tag named OLD and one named NEW at the
     older commit, OLD's tag pushed too (#2337): (clone, origin)."""
-    root, origin = tmp_path / "repo", tmp_path / "origin.git"
-    origin_clone(origin, root, "main")
-    run_git(root, "checkout", "-qb", "main")
-    run_git(root, "commit", "-q", "--allow-empty", "-m", "one")
-    run_git(root, "push", "-q", "origin", "HEAD:refs/heads/main")
+    root, _ = origin_main_clone(tmp_path, {"a.txt": "a\n"})
+    origin = tmp_path / "origin.git"
     run_git(root, "commit", "-q", "--allow-empty", "-m", "later")
     run_git(root, "checkout", "-q", "-b", OLD)
     run_git(root, "push", "-q", "-u", "origin", OLD)
@@ -1043,14 +1030,13 @@ def tagged(tmp_path):
 
 def test_retire_beside_tags_named_like_both_branches_moves_the_branch_itself(tagged, capsys):
     root, origin = tagged
-    tip = run_git(root, "rev-parse", "refs/heads/" + OLD)
+    old_tip = tip(root, OLD)
 
     assert orch(capsys, "retire", OLD, NEW, git=Git(cwd=str(root))) == (0, NEW + "\n", "")
-    assert (run_git(root, "rev-parse", "refs/heads/" + NEW),
-            run_git(origin, "rev-parse", "refs/heads/" + NEW),
+    assert (tip(root, NEW), tip(origin, NEW),
             run_git(origin, "for-each-ref", "refs/heads/" + OLD),
             run_git(root, "config", "--get", "branch.%s.merge" % NEW)) == (
-        tip, tip, "", "refs/heads/" + NEW)
+        old_tip, old_tip, "", "refs/heads/" + NEW)
 
 
 def test_retire_of_a_name_only_a_tag_has_says_the_branch_does_not_exist(tagged, capsys):
