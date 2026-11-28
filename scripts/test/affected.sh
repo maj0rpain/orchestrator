@@ -88,11 +88,11 @@
 # The whole suite (all.sh) runs for exactly these cases: code outside any
 # function in a shared test support file; a path no row names; a
 # module with no section file of its own; no base, or no merge-base with it.
-# The core set is the sections of the harness and loader section files and
-# every suite but orch_test.sh. It is selected, together with the rest of the
-# diff's selection, by orch.sh, orch/common.sh (plus its own section file),
-# orch/loader.sh, orch_test.sh, all.sh, affected.sh, test_jobs.sh, report.sh,
-# test_tree.sh, git_env.sh, and a deleted module or section file.
+# The core set is the sections of the harness section file and every suite
+# but orch_test.sh. It is selected, together with the rest of the diff's
+# selection, by orch.sh, orch/common.sh (plus its own section file),
+# orch_test.sh, all.sh, affected.sh, test_jobs.sh, report.sh, test_tree.sh,
+# git_env.sh, and a deleted module or section file.
 #
 # --row <path>...: runs nothing and prints "<path>", a tab, and "named" when a
 # row other than the catch-all takes the path, or "none" for a path only the
@@ -393,9 +393,9 @@ CORE_FILES=(scripts/orch.sh scripts/test/git_env.sh scripts/test/all.sh scripts/
 classify() {
   local f="$1" state="$2" file_name
   file_name="${f##*/}"
-  # The core set: the harness and loader section files' sections and every
-  # suite but orch_test.sh, together with whatever the rest of the diff selects.
-  if listed "$f" "${CORE_FILES[@]}" scripts/orch/common.sh scripts/orch/loader.sh; then
+  # The core set: the harness section file's sections and every suite but
+  # orch_test.sh, together with whatever the rest of the diff selects.
+  if listed "$f" "${CORE_FILES[@]}" scripts/orch/common.sh; then
     core=1
   else
     case "$f" in
@@ -479,7 +479,7 @@ while IFS= read -r f; do
 done <<<"$deleted"
 
 if [ "$core" -eq 1 ]; then
-  sections_of harness loader
+  sections_of harness
 fi
 if [ "$sc_all" -eq 1 ]; then
   shellcheck_files "$root"

@@ -285,10 +285,9 @@ def test_the_session_s_verification_runs_are_stopped_by_a_child_orch_sh_in_the_s
 
     w.run()
 
-    [(argv, cwd, env)] = w.starter.stops()
+    [(argv, cwd, _)] = w.starter.stops()
     assert argv == [autopilot.orch_sh(), "verification", "stop", w.side]
     assert cwd == w.side
-    assert env["ORCH_LOAD_TRACE"] == ""
     assert os.path.isfile(autopilot.orch_sh())
 
 

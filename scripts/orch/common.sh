@@ -1,10 +1,7 @@
 # shellcheck shell=bash
-# common.sh - the primitives no concept owns: die, warn, capture, the text
-# helpers and the like. A helper lives in the module of the concept it serves,
-# whichever modules call it, and common.sh calls nothing a noun module
-# defines; its test section checks this. Sourced by orch.sh ahead of the ROOT
-# block, which dies through die when run outside a git repository, and by the
-# autopilot scripts.
+# common.sh - the bash primitives no concept owns: die, warn, capture, the
+# text helpers and the like. Sourced by the autopilot scripts; orch.sh sources
+# nothing, every noun being Python.
 
 # list_has <list> <item>: whether <item> is one of the newline-separated
 # <list>, matched whole-line, literally and case-sensitively. The one
@@ -231,20 +228,12 @@ file_read_text() {
   newlines_strip "$1"
 }
 
-# Ignore every directory in EXCLUDED_DIRS - the flow directory and .scratch/ -
-# without touching a tracked .gitignore, so running the orchestrator in an
-# unfamiliar repo never dirties its working tree. A line already present is
-# never written again. The file is the clone's shared one (the common dir),
-# the only info/exclude git reads, so a linked worktree writes it too. No bash
-# caller is left: the converted nouns write it through orch/common.py's copy.
-exclude_orch_dirs() { exclude_line "$(printf '%s\n' "${EXCLUDED_DIRS[@]}")"; }
-
 # exclude_line <lines>: makes sure each of the newline-separated <lines> is a
 # line of the clone's shared info/exclude, adding it once and never again: it
 # appends the lines exclude_missing finds absent, creating the file's directory
 # first, and does nothing at all when none is missing. The one place that file
-# is appended to, for exclude_orch_dirs and agent sync's agent-copy line alike;
-# it dies naming the missing lines and the file on a failed write.
+# is appended to; it dies naming the missing lines and the file on a failed
+# write.
 exclude_line() {
   local missing ex
   missing="$(exclude_missing "$1")"

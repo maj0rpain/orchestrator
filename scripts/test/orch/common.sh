@@ -26,60 +26,38 @@ fresh_bare_origin() {
   printf -v "$1" '%s' "$fbo_dir"
 }
 
-# --- common.sh is the bottom layer --------------------------------------------
-echo
-echo "common.sh is the bottom layer"
-# common.sh holds the primitives no concept owns and calls nothing a noun
-# module defines: its code view (shell_code) names, as a whole word, no function
-# defined in a module of its orch/ directory other than common.sh. A name in a
-# comment is no call; one in a quoted literal is. common_upcalls <scripts-dir>
-# prints each such name found in <scripts-dir>/orch/common.sh. A definition is
-# a column-0 `name()` line. host.sh and triage-labels.sh sit outside orch/, so
-# common.sh's calls into them are outside the check.
-common_upcalls() { layer_upcalls "$1" common.sh common.sh; }
-layer_dir="$(mktemp -d)"
-mkdir "$layer_dir/orch"
-printf '%s\n' 'noun_fn() {' '  :' '}' >"$layer_dir/orch/noun.sh"
-printf '%s\n' '# noun_fn is named in a comment only' '  # noun_fn again' \
-  'prim() { noun_fnx; }' >"$layer_dir/orch/common.sh"
-assert_eq "a comment or a longer word is no call into a noun module" \
-  "$(common_upcalls "$layer_dir")" ""
-printf '%s\n' 'x=1 # noun_fn' >"$layer_dir/orch/common.sh"
-assert_eq "a name in a trailing comment is no call into a noun module" \
-  "$(common_upcalls "$layer_dir")" ""
-printf '%s\n' 'prim() { noun_fn; }' >"$layer_dir/orch/common.sh"
-assert_eq "a noun-module function called from common.sh is caught" \
-  "$(common_upcalls "$layer_dir")" "noun_fn"
-printf '%s\n' "prim() { trap 'noun_fn' EXIT; }" >"$layer_dir/orch/common.sh"
-assert_eq "a name in a quoted literal is still a call into a noun module" \
-  "$(common_upcalls "$layer_dir")" "noun_fn"
-printf '%s\n' 'own() {' '  :' '}' 'prim() { own; }' >"$layer_dir/orch/common.sh"
-assert_eq "common.sh's own function is no call into a noun module" \
-  "$(common_upcalls "$layer_dir")" ""
-rm -rf "$layer_dir"
-assert_eq "common.sh calls no function a noun module defines" \
-  "$(common_upcalls "$(dirname "$ORCH")" | tr '\n' ' ')" ""
+# The file this section file tests, sourced alone by the two helpers below.
+COMMON_SH="$(dirname "$ORCH")/orch/common.sh"
+# sourced_common <function> [args...]: the function's output and status,
+# called in a child bash that sourced common.sh alone, under the options the
+# autopilot scripts that source it set. The eval form, `sourced_common eval
+# <code>`, runs code that may name or replace any function.
+sourced_common() { bash -c 'set -euo pipefail; source "$1"; shift; "$@"' _ "$COMMON_SH" "$@"; }
+# sourced_common_script <script> [<arg>...]: runs <script> in such a child
+# bash; <arg>... are its positional parameters $1....
+sourced_common_script() {
+  local s="$1"; shift
+  bash -c 'set -euo pipefail; source "$1"; shift; '"$s" _ "$COMMON_SH" "$@"
+}
 
 # --- exclude_line -------------------------------------------------------------
-# exclude_orch_dirs has no bash caller left - the converted nouns write the
-# exclude file through orch/common.py's copy - and is kept because the spec's
-# Stays list keeps it. These cases still pin its failed-write message, naming
-# the missing lines and the file (#1548), and that exclude_line's appends keep
-# an unterminated last line whole (#1912).
+# These cases pin exclude_line's failed-write message, naming the missing lines
+# and the file (#1548), given the two lines the flow directory and .scratch/
+# take, and that its appends keep an unterminated last line whole (#1912).
 echo
 echo "exclude_line"
 new_repo >/dev/null
 el_dir="$(git rev-parse --git-common-dir)"
 rm -rf "$el_dir/info/exclude"
 mkdir -p "$el_dir/info/exclude"
-out="$(sourced_orch exclude_orch_dirs 2>&1)"; st=$?
+out="$(sourced_common exclude_line $'.orchestrator/\n.scratch/' 2>&1)"; st=$?
 assert_status "an exclude file it cannot append to exits 1" "$st" 1
 assert_eq "naming both missing lines and the file" "$out" \
   "orch: cannot add .orchestrator/, .scratch/ to the git exclude file $el_dir/info/exclude"
 rm -rf "$el_dir/info/exclude"
 rm -rf "$el_dir/info"
 : >"$el_dir/info"
-out="$(sourced_orch exclude_orch_dirs 2>&1)"; st=$?
+out="$(sourced_common exclude_line $'.orchestrator/\n.scratch/' 2>&1)"; st=$?
 assert_status "an info that is a plain file exits 1" "$st" 1
 assert_eq "with the same message" "$out" \
   "orch: cannot add .orchestrator/, .scratch/ to the git exclude file $el_dir/info/exclude"
@@ -90,7 +68,7 @@ chmod a-w "$el_dir/info/exclude"
 if [ -w "$el_dir/info/exclude" ]; then
   skip "only the missing line is named" "$el_dir/info/exclude stays writable (running as root?)"
 else
-  out="$(sourced_orch exclude_orch_dirs 2>&1)"; st=$?
+  out="$(sourced_common exclude_line $'.orchestrator/\n.scratch/' 2>&1)"; st=$?
   assert_eq "only the missing line is named" "$out" \
     "orch: cannot add .orchestrator/ to the git exclude file $el_dir/info/exclude"
 fi
@@ -100,24 +78,24 @@ chmod u+w "$el_dir/info/exclude"
 new_repo >/dev/null
 el_ex="$(git rev-parse --git-common-dir)/info/exclude"
 printf 'secrets.env' >"$el_ex"
-sourced_orch exclude_line "extra/"
+sourced_common exclude_line "extra/"
 assert_eq "an unterminated last line stays whole beside the appended one" \
   "$(cat "$el_ex")" $'secrets.env\nextra/'
 rm -f "$el_ex"
-sourced_orch exclude_line "extra/"
+sourced_common exclude_line "extra/"
 assert_eq "a missing file gets just the line" "$(od -An -c "$el_ex" | tr -s ' ')" " e x t r a / \\n"
 : >"$el_ex"
-sourced_orch exclude_line "extra/"
+sourced_common exclude_line "extra/"
 assert_eq "an empty file gets just the line" "$(od -An -c "$el_ex" | tr -s ' ')" " e x t r a / \\n"
 printf 'a\n' >"$el_ex"
-sourced_orch exclude_line "extra/"
+sourced_common exclude_line "extra/"
 assert_eq "a terminated file gets no blank line" "$(od -An -c "$el_ex" | tr -s ' ')" " a \\n e x t r a / \\n"
 printf 'secrets.env' >"$el_ex"
 chmod a-w "$el_ex"
 if [ -w "$el_ex" ]; then
   skip "a read-only unterminated file dies as before" "$el_ex stays writable (running as root?)"
 else
-  out="$(sourced_orch exclude_line "extra/" 2>&1)"; st=$?
+  out="$(sourced_common exclude_line "extra/" 2>&1)"; st=$?
   assert_eq "a read-only unterminated file dies as before" "$out" \
     "orch: cannot add extra/ to the git exclude file $el_ex"
 fi
@@ -129,7 +107,7 @@ echo
 echo "list_has"
 new_repo >/dev/null
 lh_list=$'-n\nbug\na.c\nneeds triage'
-lh_out="$(sourced_orch_script '
+lh_out="$(sourced_common_script '
     for item in -n bug a.c "needs triage" bu abc needs "-" $'"'"'bug\na.c'"'"'; do
       if list_has "$1" "$item"; then printf " y"; else printf " n"; fi
     done
@@ -138,12 +116,12 @@ assert_eq "list_has matches whole lines literally, an item beginning with - incl
   "${lh_out% ?}" " y y y y n n n n n"
 assert_eq "list_has finds nothing in an empty list" "${lh_out##* }" "n"
 assert_eq "list_has matches glob and regex characters and an empty item literally" \
-  "$(sourced_orch_script '
+  "$(sourced_common_script '
     for item in "" "a*" "a?" "[ab]" "a\\b" "x.*" ".*"; do
       if list_has "$1" "$item"; then printf " y"; else printf " n"; fi
     done' $'a*\na?\n[ab]\na\\b\nx.*\n\nq')" " y y y y y y n"
 assert_eq "list_has answers with an empty PATH" \
-  "$(sourced_orch_script '
+  "$(sourced_common_script '
     PATH=
     list_has $'"'"'a\nb'"'"' b && printf y; list_has a b || printf n')" "yn"
 
@@ -152,14 +130,14 @@ assert_eq "list_has answers with an empty PATH" \
 echo
 echo "list_join"
 new_repo >/dev/null
-assert_eq "list_join of empty input is an empty line" "$(sourced_orch list_join "")" ""
-assert_eq "list_join of one item is that item" "$(sourced_orch list_join "a")" "a"
+assert_eq "list_join of empty input is an empty line" "$(sourced_common list_join "")" ""
+assert_eq "list_join of one item is that item" "$(sourced_common list_join "a")" "a"
 assert_eq "list_join joins several items with ', '" \
-  "$(sourced_orch list_join $'a\nb\nc')" "a, b, c"
+  "$(sourced_common list_join $'a\nb\nc')" "a, b, c"
 assert_eq "list_join keeps an item containing a comma whole" \
-  "$(sourced_orch list_join $'a,b.md\nc')" "a,b.md, c"
+  "$(sourced_common list_join $'a,b.md\nc')" "a,b.md, c"
 assert_eq "list_join skips blank lines" \
-  "$(sourced_orch list_join $'\na\n\nb\n')" "a, b"
+  "$(sourced_common list_join $'\na\n\nb\n')" "a, b"
 
 # --- word_listed --------------------------------------------------------------
 # The one space-list membership test: a whole word, never several or part.
@@ -168,13 +146,13 @@ echo "word_listed"
 new_repo >/dev/null
 wl_verdicts=""
 for wl_item in spec implement 'done' 'spec implement' impl '' 'implement review'; do
-  if sourced_orch word_listed "spec implement review done" "$wl_item"; then wl_verdicts="$wl_verdicts y"
+  if sourced_common word_listed "spec implement review done" "$wl_item"; then wl_verdicts="$wl_verdicts y"
   else wl_verdicts="$wl_verdicts n"; fi
 done
 assert_eq "word_listed accepts a whole word of the list, never part of one, two adjacent words or an empty word" \
   "$wl_verdicts" " y y y n n n n"
 assert_eq "word_listed answers with an empty PATH" \
-  "$(sourced_orch_script '
+  "$(sourced_common_script '
     PATH=
     word_listed "a b c" b && printf y; word_listed "a b c" "a b" || printf n')" "yn"
 
@@ -192,7 +170,7 @@ git commit -q --allow-empty -m "more"
 # shellcheck disable=SC2154 # assigned by fresh_bare_origin
 origin_rejects "$gp_bare"
 assert_eq "a rejected push of two refs returns 1 with both ' ! ' lines, joined by '; '" \
-  "$(sourced_orch eval 'git_push why origin HEAD:refs/heads/a HEAD:refs/heads/b || echo "$?: $why"')" \
+  "$(sourced_common eval 'git_push why origin HEAD:refs/heads/a HEAD:refs/heads/b || echo "$?: $why"')" \
   "1: ! [remote rejected] HEAD -> a (pre-receive hook declined); ! [remote rejected] HEAD -> b (pre-receive hook declined)"
 restore_suite_env
 
@@ -201,12 +179,12 @@ echo
 echo "capture_err and capture without a temp file"
 new_repo >/dev/null
 ran_marker="$(mktemp -u)"
-out="$(sourced_orch eval 'TMPDIR=/nonexistent-dir; st=0; capture_err e touch "'"$ran_marker"'" || st=$?; echo "$st|$e"' 2>&1)"
+out="$(sourced_common eval 'TMPDIR=/nonexistent-dir; st=0; capture_err e touch "'"$ran_marker"'" || st=$?; echo "$st|$e"' 2>&1)"
 assert_contains "capture_err says so on stderr" "$out" "could not create a temp file for the command's stderr
 "
 assert_eq "capture_err returns 1, naming the temp file in its variable" "${out##*$'\n'}" "1|could not create a temp file for the command's stderr"
 assert_eq "without running the command" "$(on_disk "$ran_marker")" absent
-out="$(sourced_orch eval 'TMPDIR=/nonexistent-dir; st=0; capture o e touch "'"$ran_marker"'" || st=$?; echo "$st|$e"' 2>&1)"
+out="$(sourced_common eval 'TMPDIR=/nonexistent-dir; st=0; capture o e touch "'"$ran_marker"'" || st=$?; echo "$st|$e"' 2>&1)"
 assert_contains "capture says so on stderr" "$out" "could not create a temp file for the command's stdout
 "
 assert_eq "capture returns 1, naming the temp file in its variable" "${out##*$'\n'}" "1|could not create a temp file for the command's stdout"
@@ -219,20 +197,20 @@ echo "capture, capture_err and file_read"
 new_repo >/dev/null
 cap_tmp="$(mktemp -d)"
 assert_eq "capture strips stdout's trailing newlines" \
-  "$(sourced_orch_script 'capture o e printf "a\n\nb\n\n\n"; printf %s "[$o]"')" "[a
+  "$(sourced_common_script 'capture o e printf "a\n\nb\n\n\n"; printf %s "[$o]"')" "[a
 
 b]"
 assert_eq "capture returns the command's status" \
-  "$(sourced_orch_script 'st=0; capture o e bash -c "echo out; echo err >&2; exit 7" || st=$?; echo "$st [$o] [$e]"')" "7 [out] [err
+  "$(sourced_common_script 'st=0; capture o e bash -c "echo out; echo err >&2; exit 7" || st=$?; echo "$st [$o] [$e]"')" "7 [out] [err
 ]"
 assert_eq "a capture nested in a captured command keeps both results" \
-  "$(sourced_orch_script 'inner() { capture i ie echo in; echo "got $i"; }; capture o e inner; echo "[$o]"')" "[got in]"
+  "$(sourced_common_script 'inner() { capture i ie echo in; echo "got $i"; }; capture o e inner; echo "[$o]"')" "[got in]"
 assert_eq "no temp file is left in the temp directory afterwards" \
-  "$(TMPDIR="$cap_tmp" sourced_orch_script 'capture o e echo hi; capture_err e echo hi >/dev/null; ls -A "$TMPDIR"')" ""
+  "$(TMPDIR="$cap_tmp" sourced_common_script 'capture o e echo hi; capture_err e echo hi >/dev/null; ls -A "$TMPDIR"')" ""
 assert_eq "the temp file is owner-only, read from inside the command" \
-  "$(TMPDIR="$cap_tmp" sourced_orch_script 'umask 022; capture o e bash -c "stat -L -c %a /proc/\$\$/fd/1; stat -L -c %a /proc/\$\$/fd/2 >&2"; echo "$o $e"' | tr -d '\n')" "600 600"
+  "$(TMPDIR="$cap_tmp" sourced_common_script 'umask 022; capture o e bash -c "stat -L -c %a /proc/\$\$/fd/1; stat -L -c %a /proc/\$\$/fd/2 >&2"; echo "$o $e"' | tr -d '\n')" "600 600"
 assert_eq "a file the command makes, and one the caller makes after, get the caller's mask" \
-  "$(TMPDIR="$cap_tmp" sourced_orch_script 'umask 022; capture o e bash -c "touch \"$TMPDIR/by-cmd\""; touch "$TMPDIR/by-caller"; stat -c %a "$TMPDIR/by-cmd" "$TMPDIR/by-caller"; umask')" "644
+  "$(TMPDIR="$cap_tmp" sourced_common_script 'umask 022; capture o e bash -c "touch \"$TMPDIR/by-cmd\""; touch "$TMPDIR/by-caller"; stat -c %a "$TMPDIR/by-cmd" "$TMPDIR/by-caller"; umask')" "644
 644
 0022"
 # with the name function replaced: each thing planted at the first name is left
@@ -248,7 +226,7 @@ for cap_kind in file link dangling fifo; do
     fifo) mkfifo "$cap_tmp/name1" ;;
   esac
   assert_eq "a $cap_kind at the first name is skipped and the next name used" \
-    "$(TMPDIR="$cap_tmp" timeout 10 bash -c 'source "$1"; '"$cap_script" _ "$ORCH" 2>&1)" \
+    "$(TMPDIR="$cap_tmp" timeout 10 bash -c 'set -euo pipefail; source "$1"; '"$cap_script" _ "$COMMON_SH" 2>&1)" \
     "rc=0 [ok]
 $(ls -A "$cap_tmp" | tr '\n' ' ')"
   case "$cap_kind" in
@@ -261,12 +239,12 @@ done
 rm -rf "$cap_tmp"; mkdir "$cap_tmp"
 ran_marker="$cap_tmp/ran"
 assert_eq "a name taken on every try ends in the could-not-create message, the command not run" \
-  "$(TMPDIR="$cap_tmp" sourced_orch_script 'temp_file_name() { printf -v "$1" "%s" "$TMPDIR"; }; st=0; capture o e touch "'"$ran_marker"'" 2>&1 || st=$?; echo "rc=$st [$e]"')" \
+  "$(TMPDIR="$cap_tmp" sourced_common_script 'temp_file_name() { printf -v "$1" "%s" "$TMPDIR"; }; st=0; capture o e touch "'"$ran_marker"'" 2>&1 || st=$?; echo "rc=$st [$e]"')" \
   "could not create a temp file for the command's stdout
 rc=1 [could not create a temp file for the command's stdout]"
 assert_eq "and the command did not run" "$(on_disk "$ran_marker")" absent
 assert_eq "a captured command leaving a background process returns without waiting" \
-  "$(timeout 20 bash -c 'source "$1"; capture o e bash -c "sleep 30 & echo started"; echo "[$o]"' _ "$ORCH" 2>&1)" "[started]"
+  "$(timeout 20 bash -c 'set -euo pipefail; source "$1"; capture o e bash -c "sleep 30 & echo started"; echo "[$o]"' _ "$COMMON_SH" 2>&1)" "[started]"
 # file_read: one sourcing runs every case, one %q-quoted line each; the
 # empty-PATH case is last so the message cases keep cat
 printf 'a\n\n' >"$cap_tmp/nl"; : >"$cap_tmp/empty"
@@ -286,7 +264,7 @@ v=old; st=0; file_read v "$4" 2>/dev/null || st=$?; quoted_line "$st [$v]"
 v=old; st=0; file_read v "$5" 2>/dev/null || st=$?; quoted_line "$st [$v]"
 file_read v "$6"; quoted_line "[$v]"
 PATH=""; file_read v "$7"; quoted_line "[$v]"'
-mapfile -t fr_out < <(sourced_orch_script "$fr_script" "$cap_tmp/empty" "$cap_tmp/missing" "$cap_tmp" "$cap_tmp/unreadable" "$cap_tmp/sock" "$cap_tmp/nul" "$cap_tmp/nl")
+mapfile -t fr_out < <(sourced_common_script "$fr_script" "$cap_tmp/empty" "$cap_tmp/missing" "$cap_tmp" "$cap_tmp/unreadable" "$cap_tmp/sock" "$cap_tmp/nul" "$cap_tmp/nl")
 assert_eq "file_read of an empty file sets an empty variable" "${fr_out[0]}" "$(printf %q "0 []")"
 assert_eq "file_read of a missing file fails with the variable untouched" "${fr_out[1]}" "$(printf %q "1 [old]")"
 assert_eq "file_read of a missing file gives cat's own message" "${fr_out[2]}" "$(printf %q "cat: $cap_tmp/missing: No such file or directory")"
@@ -307,16 +285,16 @@ assert_eq "file_read keeps trailing newlines and runs with an empty PATH" "${fr_
 
 ]")"
 printf 'a\n\n' >"$cap_tmp/frt"
-frt_out="$(sourced_orch_script '
+frt_out="$(sourced_common_script '
   PATH=
   v=old; file_read_text v "$1"; printf "[%s]" "$v"
   v=old; file_read_text v "$2" 2>/dev/null; printf "[%s]" "$v"' "$cap_tmp/frt" "$cap_tmp/missing")"
 assert_eq "file_read_text drops trailing newlines and gives empty for a missing file, with an empty PATH" "$frt_out" "[a][]"
 assert_eq "file_read_text prints the diagnostic of a file it cannot read" \
-  "$(sourced_orch_script 'file_read_text v "$1" 2>&1' "$cap_tmp/missing")" "cat: $cap_tmp/missing: No such file or directory"
+  "$(sourced_common_script 'file_read_text v "$1" 2>&1' "$cap_tmp/missing")" "cat: $cap_tmp/missing: No such file or directory"
 cap_bin="$(mktemp -d)"; ln -s "$(command -v rm)" "$cap_bin/rm"
 assert_eq "capture and capture_err run with a PATH holding only rm" \
-  "$(TMPDIR="$cap_tmp" sourced_orch_script 'PATH="'"$cap_bin"'"; capture o e eval "echo out; echo err >&2"; capture_err e2 eval "echo e2 >&2"; echo "[$o] [$e] [$e2]"')" "[out] [err
+  "$(TMPDIR="$cap_tmp" sourced_common_script 'PATH="'"$cap_bin"'"; capture o e eval "echo out; echo err >&2"; capture_err e2 eval "echo e2 >&2"; echo "[$o] [$e] [$e2]"')" "[out] [err
 ] [e2
 ]"
 rm -rf "$cap_tmp" "$cap_bin"
@@ -326,16 +304,16 @@ restore_suite_env
 echo
 echo "die_hinted and die_opt_check"
 new_repo >/dev/null
-out="$(sourced_orch die_hinted --hint "try again" "it broke" 2>&1)"; st=$?
+out="$(sourced_common die_hinted --hint "try again" "it broke" 2>&1)"; st=$?
 assert_status "die_hinted dies with status 1" "$st" 1
 assert_eq "a hint ends the message as ' - <hint>'" "$out" "orch: it broke - try again"
-out="$(sourced_orch die_hinted --hint "" "it broke" 2>&1)"
+out="$(sourced_common die_hinted --hint "" "it broke" 2>&1)"
 assert_eq "an empty hint adds nothing" "$out" "orch: it broke"
-out="$(sourced_orch die_hinted --exit 2 "it broke" 2>&1)"; st=$?
+out="$(sourced_common die_hinted --exit 2 "it broke" 2>&1)"; st=$?
 assert_status "die_hinted --exit 2 dies with status 2" "$st" 2
-out="$(sourced_orch die_opt_check demo 2 --exit 3 2>&1)"; st=$?
+out="$(sourced_common die_opt_check demo 2 --exit 3 2>&1)"; st=$?
 assert_status "die_opt_check refuses an --exit other than 2" "$st" 1
 assert_eq "naming the caller and the option" "$out" "orch: demo: --exit takes 2, not '3'"
-out="$(sourced_orch die_opt_check demo 1 --hint 2>&1)"; st=$?
+out="$(sourced_common die_opt_check demo 1 --hint 2>&1)"; st=$?
 assert_status "die_opt_check refuses a trailing --hint" "$st" 1
 assert_eq "naming the caller and the option for a bare --hint" "$out" "orch: demo: --hint needs a value"

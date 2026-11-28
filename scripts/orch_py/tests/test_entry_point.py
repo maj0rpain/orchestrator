@@ -15,7 +15,8 @@ from conftest import (CLAUDE, PACKAGE_BOOTSTRAP, TICKET_PARENT, added, comments_
 from orch import cli, ticket
 from orch.common import exclude_orch_dirs
 from orch.gh_fake import FakeStore
-from orch.git import Git
+from orch.git import FakeGit, Git
+from orch.help import HELP
 from orch.__main__ import main
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
@@ -55,6 +56,21 @@ def test_an_unconverted_noun_is_an_unknown_command(capsys):
     assert died_of(capsys, lambda: main(["no-such-noun", "verb"])) == (
         1, "", "orch: unknown command: no-such-noun (run 'orch.sh help')\n"
     )
+
+
+def test_a_run_with_no_noun_prints_help(capsys):
+    assert cli.main([], git=FakeGit(toplevel="/the/checkout"), env={}) == 0
+    assert capsys.readouterr() == (HELP, "")
+
+
+@pytest.mark.parametrize("argv", [("help",), ("slug", "Some Text"), ("no-such-noun",),
+                                  ("status",), ()],
+                         ids=["help", "slug", "unknown-noun", "noun", "no-noun"])
+def test_outside_a_checkout_every_noun_dies_before_it_runs(capsys, argv):
+    assert died_of(capsys, lambda: cli.main(list(argv), git=FakeGit(toplevel=None), env={})) == (
+        1, "", "orch: not inside a git repository (%s) - cd into the repo's checkout (its root"
+        " or a worktree) and run orch.sh there; a mktemp path is for files, not the working"
+        " directory\n" % os.getcwd())
 
 
 def test_every_module_imports_with_site_packages_disabled():
@@ -101,6 +117,8 @@ def test_a_noun_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_path):
     """bash's printf died of SIGPIPE on a pipe whose reader is gone: so does
     a noun this change converts, with no traceback and no flush warning on
     stderr."""
+    git_repo(tmp_path)
+
     run = into_a_closed_pipe(tmp_path, "slug", "Some Text")
 
     assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")

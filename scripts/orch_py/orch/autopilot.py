@@ -1926,7 +1926,7 @@ def run_session(ap: Autopilot, main: str, side: str, issue: str, recorded: str,
     try:
         with open(log, "ab") as err_log:
             stopped = started(ap, [orch_sh(), "verification", "stop", side], cwd=side,
-                              env=dict(ap.env, ORCH_LOAD_TRACE=""), stdin=subprocess.DEVNULL,
+                              env=ap.env, stdin=subprocess.DEVNULL,
                               stdout=subprocess.DEVNULL, stderr=err_log)
     except OSError:
         stopped = 1

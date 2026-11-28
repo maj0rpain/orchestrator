@@ -32,7 +32,7 @@ SOURCEABLE_TEST_HELPERS=(gh_adapter_fake.sh tally.sh fifo.sh counting.sh fails.s
 # - git init, a copy of the runner files, a stub of every suite and of the
 # pytest suite, the harness
 # file (isolation, the parallel runner and the two TR_GATE placement sections)
-# and the loader file - then the section plants its own files and calls
+# - then the section plants its own files and calls
 # tr_commit <dir>, which commits them and records origin/main. tr_put <dir>
 # <path> [<line>...] writes a file: a shebang only for a .sh path, and a single
 # x line for any other path given no lines, so no planted file is empty. tr_git
@@ -42,7 +42,7 @@ SOURCEABLE_TEST_HELPERS=(gh_adapter_fake.sh tally.sh fifo.sh counting.sh fails.s
 # harness file's non-gate sections (in planted order) and the core set.
 TR_GATE="$PYTEST_SUITE,orch_test.sh,test-helper placement (#1006),helper body copies (#3170)"
 TR_HARNESS="isolation,the parallel runner (#780)"
-TR_CORE="$TR_HARNESS,loader one,hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh"
+TR_CORE="$TR_HARNESS,hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh"
 tr_git() { local dir="$1"; shift; git -C "$dir" -c user.name=t -c user.email=t@example.com "$@"; }
 tr_put() {
   local dir="$1" path="$2"
@@ -67,7 +67,6 @@ tr_init() {
   tr_put "$dir" scripts/test/orch/harness.sh '# --- isolation ---' '# --- the parallel runner (#780) ---' \
     '# --- test-helper placement (#1006) ---' \
     '# --- helper body copies (#3170) ---'
-  tr_put "$dir" scripts/test/orch/loader.sh '# --- loader one ---'
 }
 tr_commit() {
   tr_git "$1" add -A
@@ -208,7 +207,7 @@ row_rule() {
 }
 
 # FN_TRACK_AWK: an awk fragment, appended after SHELL_CODE_AWK, that tracks the
-# function a line is in, as helper_placement and orch_load_reads read it.
+# function a line is in, as helper_placement reads it.
 # track(words) takes a line's words view (sc_words), after shell_code_line has
 # run on it, and sets fn to the function the line is in ("" at top level; a
 # definition line is already inside its function) and fn_new to 1 on the line
@@ -417,130 +416,6 @@ helper_copies() {
   return 1
 }
 
-# lazy_sourcing_names <dir>: checks the test files of <dir> (a scripts/ tree)
-# for the on-demand sourcing variable's name, which only the shared setup's
-# sourced_orch, the loader's section file and this file's section on the
-# variable (and this function) may use. In setup.sh and harness.sh a use
-# counts anywhere but inside that function and the comment lines directly
-# above it, and (harness.sh) inside that section; any other line, a comment
-# included, is a use. Prints each file that uses it, as scripts/<path>, and
-# returns 1 when it printed any.
-lazy_sourcing_names() {
-  local dir="$1" f rel out='' fn
-  local count_awk='
-    $0 ~ "^" fn "\\(\\) \\{" { skip = 1; pend = 0; next }
-    /^# --- / { sec = /^# --- on-demand sourcing variable/ }
-    /^[ \t]*#/ { if (!skip && !sec && /ORCH_SOURCE_LAZY/) pend++; next }
-    { n += pend; pend = 0; if (!skip && !sec && /ORCH_SOURCE_LAZY/) n++ }
-    /^\}/ { skip = 0 }
-    END { print n + pend + 0 }'
-  for f in "$dir"/test/*.sh "$dir"/test/orch/*.sh; do
-    rel="${f#"$dir"/}"
-    case "$rel" in
-      test/orch/loader.sh) continue ;;
-      test/orch/harness.sh) fn=lazy_sourcing_names ;;
-      test/orch/setup.sh) fn=sourced_orch ;;
-      *) grep -q 'ORCH_SOURCE_LAZY' "$f" || continue; fn='' ;;
-    esac
-    [ -z "$fn" ] || [ "$(awk -v fn="$fn" "$count_awk" "$f")" != 0 ] || continue
-    out+="scripts/$rel"$'\n'
-  done
-  printf '%s' "$out"
-  [ -z "$out" ]
-}
-
-# The on-demand loading rule, as orch_load_reads' message states it.
-ORCH_LOAD_RULE="The rule: a function, or a module's own top-level code, that reads another module's top-level variable names orch_load <that module> earlier in its own text than the first such read; the variables of the always-loaded files (orch.sh, common.sh, loader.sh and the files orch.sh sources from scripts/) are exempt."
-
-# orch_load_reads <dir>: checks every module of <dir> (a scripts/ tree) -
-# scripts/orch/*.sh but common.sh and loader.sh - for a read of a top-level
-# variable another module owns, and prints one line per file, site and
-# variable, sorted, naming the file (as scripts/<path>), the function or `top
-# level`, the variable, its owning module and the rule; returns 1 when it
-# printed any. A top-level variable is one a module assigns outside any
-# function, plainly or through readonly, declare, export or typeset; one an
-# always-loaded file (orch.sh, common.sh, loader.sh, and the scripts/*.sh
-# files orch.sh sources) also assigns is exempt. A read is $NAME, ${NAME...},
-# ${#NAME} or ${!NAME} in code; a site is a function or the file's top-level
-# code, and a
-# read is covered by an `orch_load <module>` earlier in the same site's text (a
-# function's own, or the file's top-level code's own).
-orch_load_reads() {
-  local dir="$1" owned out f sourced
-  local -a always_files=("$dir/orch.sh" "$dir/orch/common.sh" "$dir/orch/loader.sh") mods=()
-  while IFS= read -r sourced; do
-    [ -f "$dir/$sourced.sh" ] && always_files+=("$dir/$sourced.sh")
-  done < <(sed -n 's/^source "\$ORCH_SCRIPTS\/\([A-Za-z0-9_-]*\)\.sh".*/\1/p' "$dir/orch.sh")
-  for f in "$dir"/orch/*.sh; do
-    case "${f##*/}" in common.sh|loader.sh) ;; *) mods+=("$f") ;; esac
-  done
-  local top_awk="$SHELL_CODE_AWK$FN_TRACK_AWK"
-  # pass 1: every top-level variable, as "<name> <file>" lines, "-" for the
-  # always-loaded files
-  owned="$(awk -v always="${always_files[*]}" "$top_awk"'
-    BEGIN { n = split(always, af, " "); for (i = 1; i <= n; i++) isalways[af[i]] = 1 }
-    {
-      shell_code_line($0); s = sc_words
-      here = track(s)
-      if (here == "" && sc_top) {
-        t = s; sub(/^[ \t]+/, "", t)
-        if (match(t, /^(readonly|declare|export|typeset)[ \t]+/)) {
-          t = substr(t, RLENGTH + 1)
-          while (match(t, /^-[A-Za-z]+[ \t]+/)) t = substr(t, RLENGTH + 1)
-          while (match(t, /^[A-Za-z_][A-Za-z0-9_]*/)) {
-            print substr(t, 1, RLENGTH), (FILENAME in isalways ? "-" : FILENAME)
-            t = substr(t, RLENGTH + 1)
-            if (!match(t, /^[ \t]+/)) break
-            t = substr(t, RLENGTH + 1)
-          }
-        } else if (match(t, /^[A-Za-z_][A-Za-z0-9_]*\+?=/)) {
-          nm = substr(t, 1, RLENGTH - 1); sub(/\+$/, "", nm)
-          print nm, (FILENAME in isalways ? "-" : FILENAME)
-        }
-      }
-      after_track(s)
-    }
-  ' "${always_files[@]}" "${mods[@]}")" || return 2
-  out="$(awk -v rule="$ORCH_LOAD_RULE" -v owned="$owned" "$top_awk"'
-    BEGIN {
-      n = split(owned, row, "\n")
-      for (i = 1; i <= n; i++) {
-        split(row[i], kv, " ")
-        if (kv[2] == "-") { exempt[kv[1]] = 1; continue }
-        m = kv[2]; sub(/.*\//, "", m); sub(/\.sh$/, "", m)
-        if (!((kv[1], m) in owner)) { owner[kv[1], m] = 1; cur = (kv[1] in mods) ? mods[kv[1]] " " : ""; mods[kv[1]] = cur m }
-      }
-    }
-    FNR == 1 { file = FILENAME; sub(/^.*\/orch\//, "scripts/orch/", file); self = file; sub(/^scripts\/orch\//, "", self); sub(/\.sh$/, "", self); delete ltop; lastfn = "" }
-    {
-      shell_code_line($0); here = track(sc_words)
-      if (here != lastfn) { delete lfn; lastfn = here }
-      site = here == "" ? "top level" : here
-      # orch_load <module> calls first, then reads: a call on a line covers its
-      # reads, which sit after it in a one-line site
-      t = sc_code
-      while (match(t, /orch_load[ \t]+"?[A-Za-z0-9_-]+/)) {
-        w = substr(t, RSTART, RLENGTH); sub(/^orch_load[ \t]+"?/, "", w)
-        if (here == "") ltop[w] = 1; else lfn[w] = 1
-        t = substr(t, RSTART + RLENGTH)
-      }
-      t = sc_code
-      while (match(t, /\$\{?[#!]?[A-Za-z_][A-Za-z0-9_]*/)) {
-        w = substr(t, RSTART, RLENGTH); sub(/^\$\{?[#!]?/, "", w)
-        t = substr(t, RSTART + RLENGTH)
-        if ((w in exempt) || !(w in mods) || (w, self) in owner) continue
-        nm = split(mods[w], ml, " "); ok = 0
-        for (k = 1; k <= nm; k++) if (here == "" ? ml[k] in ltop : ml[k] in lfn) ok = 1
-        if (!ok) printf "%s %s reads %s, a top-level variable of the %s module, with no orch_load before it. %s\n", file, site, w, mods[w], rule
-      }
-      after_track(sc_words)
-    }
-  ' "${mods[@]}")" || return 2
-  [ -z "$out" ] && return 0
-  printf '%s\n' "$out" | LC_ALL=C sort -u
-  return 1
-}
-
 # dictionary_locale: prints the first of en_US.UTF-8 and en_US.utf8 whose sort
 # collates as a dictionary does - punctuation ignored (a before _p) and case
 # folded (bug before Review) - listed by locale -a or not, and returns 1,
@@ -618,6 +493,35 @@ term_run() {
   kill -TERM "$pid"
   wait "$pid"; term_st=$?
   term_secs=$((SECONDS - t0))
+}
+
+# assert_not_contains <name> <text> <needle>: passes when <text> holds no
+# <needle>.
+assert_not_contains() {
+  case "$2" in *"$3"*) bad "$1" "output contained '$3': $2" ;; *) ok "$1" ;; esac
+}
+
+# col0_names <file>: the names of the functions defined at column 0 of <file>.
+col0_names() {
+  grep -oE '^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)' "$1" | sed 's/[[:space:]]*()$//'
+}
+
+# shell_code <file>...: prints the code view of the files, in order, one
+# output line per input line - each line's comment dropped, so a comment-only
+# line prints empty, and strings, substitutions and heredoc bodies kept whole.
+# The entry point for a bash scanner; an awk scanner includes SHELL_CODE_AWK.
+shell_code() {
+  awk "$SHELL_CODE_AWK"'{ shell_code_line($0); print sc_code }' "$@"
+}
+
+# tree_copy <subtree>: a copy of the real <subtree> of the plugin (a path
+# under PLUGIN_ROOT, e.g. scripts/test/orch) in a fresh temp directory; prints
+# the copy's path, which ends in the subtree's last component.
+tree_copy() {
+  local dir
+  dir="$(mktemp -d)" || return 1
+  cp -R "$PLUGIN_ROOT/$1" "$dir/" || return 1
+  printf '%s\n' "$dir/${1##*/}"
 }
 
 # --- isolation --------------------------------------------------------------
@@ -1359,80 +1263,6 @@ $(cat "$sh_all_dir/scripts/test/log")" "all.sh: ORCH_TEST_SHARD='3/2' is not <i>
 sh_all ""
 assert_eq "all.sh runs an empty setting as unset" "$(cat "$sh_all_dir/scripts/test/log" | grep -c 'shard=unset')" "${#SUITES[@]}"
 rm -rf "$sh_all_dir" "$sh_dir"
-
-# --- the seeded start (stub cache) --------------------------------------------
-# The runner builds the tree under test's stub cache once, and every section's
-# fresh HOME starts with a copy. The planted orch.sh logs each run to a file
-# outside the tree and writes a cache file into its HOME, as the loader does;
-# the planted sections run no orch.sh and report whether their HOME starts with
-# that file.
-echo
-echo "the seeded start (stub cache)"
-seed_tree="$(planted_minimal_tree <<'PLANTED'
-  # --- planted seeded a
-  echo; echo "planted seeded a"
-  if [ -f "$HOME/.cache/orchestrator/planted.stubs" ]; then ok "cache present a"; else bad "cache missing a" "no cache in $HOME"; fi
-  # --- planted seeded b
-  echo; echo "planted seeded b"
-  if [ -f "$HOME/.cache/orchestrator/planted.stubs" ]; then ok "cache present b"; else bad "cache missing b" "no cache in $HOME"; fi
-PLANTED
-)"
-cat >"$seed_tree/scripts/orch.sh" <<'PLANTED_ORCH'
-#!/usr/bin/env bash
-echo "build" >>"$PLANTED_SEED_LOG"
-mkdir -p "$HOME/.cache/orchestrator" && echo stubs >"$HOME/.cache/orchestrator/planted.stubs"
-PLANTED_ORCH
-seed_log="$(mktemp -d)/runs.log"
-suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" "$(dirname "$SUITE_SCRIPT")" || bad "reads all.sh's suite list" "$SUITES_ERR"
-for seed_s in "${SUITES[@]}"; do
-  [ -e "$seed_tree/scripts/test/$seed_s" ] || echo 'echo; echo "1 passed, 0 failed"' >"$seed_tree/scripts/test/$seed_s"
-done
-# seeded_start_run <label> <env assignment>...: the runner on the planted tree
-# (seed_tree) with a HOME of the harness's own; sets seed_out, seed_st and
-# seed_runs, and asserts the run and its HOME.
-seeded_start_run() {
-  local label="$1" home
-  shift
-  : >"$seed_log"
-  home="$(mktemp -d)"
-  seed_out="$(env -u ORCH_TEST_ONLY -u ORCH_TEST_SHARD HOME="$home" PLANTED_SEED_LOG="$seed_log" ORCH_TEST_QUIET='' "$@" \
-    bash "$seed_tree/scripts/test/orch_test.sh" 2>&1)"; seed_st=$?
-  seed_runs="$(grep -c build "$seed_log")"
-  assert_status "$label: the run passes" "$seed_st" 0
-  assert_eq "$label: the caller's HOME holds no stub cache afterwards" \
-    "$(find "$home" -name '*.stubs' | wc -l | tr -d ' ')" "0"
-  rm -rf "$home"
-}
-seeded_start_run "parallel" ORCH_TEST_JOBS=2
-assert_contains "parallel: a section starts seeded" "$seed_out" "cache present a"
-assert_contains "parallel: the other section starts seeded" "$seed_out" "cache present b"
-assert_eq "parallel: one seed build, none from the children" "$seed_runs" "1"
-seeded_start_run "sequential" ORCH_TEST_JOBS=1
-assert_contains "sequential: a section starts seeded" "$seed_out" "cache present a"
-assert_eq "sequential: one seed build" "$seed_runs" "1"
-seeded_start_run "filtered" ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted seeded a$'
-assert_contains "filtered: a section starts seeded" "$seed_out" "cache present a"
-assert_eq "filtered: one seed build" "$seed_runs" "1"
-seeded_start_run "shard 1/2" ORCH_TEST_JOBS=2 ORCH_TEST_SHARD=1/2
-assert_contains "shard 1/2: a section starts seeded" "$seed_out" "cache present"
-assert_eq "shard 1/2: one seed build" "$seed_runs" "1"
-seeded_start_run "shard 2/2" ORCH_TEST_JOBS=2 ORCH_TEST_SHARD=2/2
-assert_contains "shard 2/2: a section starts seeded" "$seed_out" "cache present"
-assert_eq "shard 2/2: one seed build" "$seed_runs" "1"
-rm -rf "$seed_tree"
-
-# A tree whose orch.sh cannot be built: the run goes on unseeded and silent.
-seed_tree="$(planted_minimal_tree <<'PLANTED'
-  # --- planted unseeded
-  echo; echo "planted unseeded"
-  if [ -e "$HOME/.cache" ]; then bad "cache found at start" "found one"; else ok "unseeded start"; fi
-PLANTED
-)"
-seeded_start_run "unseeded" ORCH_TEST_JOBS=2
-assert_contains "unseeded: the section starts unseeded" "$seed_out" "unseeded start"
-assert_eq "unseeded: the output says nothing about the seed" "$(printf '%s\n' "$seed_out" | grep -v 'planted unseeded\|unseeded start' | grep -ci 'seed')" "0"
-assert_eq "unseeded: no seed build" "$seed_runs" "0"
-rm -rf "$seed_tree" "$(dirname "$seed_log")"
 
 # --- section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858) -----
 # A copy of the scripts tree cut down to planted sections and stub suites, run
@@ -3756,110 +3586,6 @@ out="$(helper_copies "$copies_dir")"; st=$?
 assert_status "a sourceable helper missing beside the tree is a scan failure" "$st" 2
 rm -rf "${copies_dir%/orch}"
 
-# --- orch_load before cross-module reads (#2868) ---------------------
-# orch_load_reads over the real scripts/, then over one copy of it, planted
-# first with an owner module and reader whose reads break the rule (a read in
-# a function and one in a module's top-level code), then re-planted with reads
-# that keep it.
-echo
-echo "orch_load before cross-module reads (#2868)"
-out="$(orch_load_reads "$PLUGIN_ROOT/scripts")"; st=$?
-if [ "$st" -eq 0 ] && [ -z "$out" ]; then
-  ok "no module of the real tree reads another module's top-level variable before its orch_load"
-else
-  bad "no module of the real tree reads another module's top-level variable before its orch_load" "$out"
-fi
-
-load_dir="$(tree_copy scripts)"
-plant_file "$load_dir/orch" zz-owner.sh <<'PLANTED'
-  ZZ_PLAIN=1
-  readonly ZZ_RO="x"
-  declare -g ZZ_DECL=2
-  zz_owner_fn() { local ZZ_LOCAL=3; }
-PLANTED
-plant_file "$load_dir/orch" zz-reader.sh <<'PLANTED'
-  zz_bad_fn() {
-    echo "$ZZ_RO"
-  }
-  zz_bad_decl() {
-    echo "${ZZ_DECL}"
-  }
-  echo "$ZZ_PLAIN"
-PLANTED
-out="$(orch_load_reads "$load_dir")"; st=$?
-assert_status "a read in a function and one in top-level code, with no orch_load, fail" "$st" 1
-assert_eq "naming the file, the site, the variable and the rule" "$out" \
-  "scripts/orch/zz-reader.sh top level reads ZZ_PLAIN, a top-level variable of the zz-owner module, with no orch_load before it. $ORCH_LOAD_RULE
-scripts/orch/zz-reader.sh zz_bad_decl reads ZZ_DECL, a top-level variable of the zz-owner module, with no orch_load before it. $ORCH_LOAD_RULE
-scripts/orch/zz-reader.sh zz_bad_fn reads ZZ_RO, a top-level variable of the zz-owner module, with no orch_load before it. $ORCH_LOAD_RULE"
-plant_file "$load_dir/orch" zz-owner.sh <<'PLANTED'
-  ZZ_PLAIN=1
-  readonly ZZ_RO="x"
-PLANTED
-plant_file "$load_dir/orch" zz-reader.sh <<'PLANTED'
-  orch_load zz-owner
-  echo "$ZZ_PLAIN"
-  zz_good_fn() {
-    orch_load zz-owner
-    echo "$ZZ_RO"
-  }
-  zz_exempt_fn() {
-    echo "$ORCH_DIR_NAME $ROOT $ORCH_MODULE_DIR"
-    # $ZZ_RO named in a comment
-    local ZZ_RO=1; echo "ZZ_RO is not read"
-  }
-PLANTED
-out="$(orch_load_reads "$load_dir")"; st=$?
-assert_status "reads after an orch_load, and of always-loaded variables, pass" "$st" 0
-assert_eq "and print nothing" "$out" ""
-rm -rf "${load_dir%/scripts}"
-
-# --- on-demand sourcing variable (#2820) --------------------------------------
-# lazy_sourcing_names over the real scripts/, then over one copy of it, reused
-# with each planted use of the variable in turn; this section is the one place
-# harness.sh may name it.
-echo
-echo "on-demand sourcing variable (#2820)"
-out="$(lazy_sourcing_names "$PLUGIN_ROOT/scripts")"; st=$?
-if [ "$st" -eq 0 ] && [ -z "$out" ]; then
-  ok "no test file but setup.sh, the loader's section file and this section names the on-demand sourcing variable"
-else
-  bad "no test file but setup.sh, the loader's section file and this section names the on-demand sourcing variable" "$out"
-fi
-load_dir="$(tree_copy scripts)"
-# lazy_reset: restores the two files a case appends to, drops the planted one.
-lazy_reset() {
-  cp "$PLUGIN_ROOT/scripts/test/orch/setup.sh" "$load_dir/test/orch/setup.sh"
-  cp "$PLUGIN_ROOT/scripts/test/orch/harness.sh" "$load_dir/test/orch/harness.sh"
-  rm -f "$load_dir/test/orch/zz-planted.sh"
-}
-printf '%s\n' '# sets ORCH_SOURCE_LAZY=1 itself' >"$load_dir/test/orch/zz-planted.sh"
-out="$(lazy_sourcing_names "$load_dir")"; st=$?
-assert_status "a planted test file naming the variable fails the check" "$st" 1
-assert_eq "naming the file" "$out" "scripts/test/orch/zz-planted.sh"
-lazy_reset
-printf '%s\n' 'second_use() { ORCH_SOURCE_LAZY=1 true; }' >>"$load_dir/test/orch/setup.sh"
-out="$(lazy_sourcing_names "$load_dir")"; st=$?
-assert_status "a second use of the variable in setup.sh fails the check" "$st" 1
-assert_eq "naming setup.sh" "$out" "scripts/test/orch/setup.sh"
-lazy_reset
-printf '%s\n' '# another section naming ORCH_SOURCE_LAZY' >>"$load_dir/test/orch/harness.sh"
-printf '%s\n' 'other_use() { ORCH_SOURCE_LAZY=1 true; }' >>"$load_dir/test/orch/harness.sh"
-out="$(lazy_sourcing_names "$load_dir")"; st=$?
-assert_status "a use of the variable in another harness section fails the check" "$st" 1
-assert_eq "naming harness.sh" "$out" "scripts/test/orch/harness.sh"
-lazy_reset
-printf '%s\n' '# a comment naming ORCH_SOURCE_LAZY outside sourced_orch' >>"$load_dir/test/orch/setup.sh"
-out="$(lazy_sourcing_names "$load_dir")"; st=$?
-assert_status "a comment naming the variable in setup.sh fails the check" "$st" 1
-assert_eq "naming setup.sh for the comment" "$out" "scripts/test/orch/setup.sh"
-lazy_reset
-printf '%s\n' '# a comment naming ORCH_SOURCE_LAZY in another section' >>"$load_dir/test/orch/harness.sh"
-out="$(lazy_sourcing_names "$load_dir")"; st=$?
-assert_status "a comment naming the variable in another harness section fails the check" "$st" 1
-assert_eq "naming harness.sh for the comment" "$out" "scripts/test/orch/harness.sh"
-rm -rf "${load_dir%/scripts}"
-
 # --- declaration substitutions (#1327) ----------------------------------------
 # decl_substitutions over the real scripts/, then over copies of it, each with
 # a planted module: one with every combined form, and one whose lines all keep
@@ -3980,7 +3706,7 @@ assert_eq "under their headers" "$(printf '%s\n' "$out" | grep '^# ')" \
 
 undescribed=""
 for name in list_has git_config_unset capture \
-  tree_copy counting_starts new_repo; do
+  on_disk counting_starts new_repo; do
   grep -qE "^$name"$'\t''[^-]' <<<"$index_default"$'\n'"$out" \
     || undescribed+=" $name"
 done
@@ -4463,8 +4189,8 @@ unset csb_in csb_size csb_dir csb_prog csb_env csb_has_ds csb_stub csb_fb csb_pa
 
 # --- affected.sh, the ticket verification (#2023) -----------------------------
 # affected.sh at its --plan seam, in a throwaway git repo built from tr_init
-# (the real affected.sh and its runner files, a stub of every suite, a harness
-# file and a loader file) with a branch section file of two sections, a few
+# (the real affected.sh and its runner files, a stub of every suite and a
+# harness file) with a branch section file of two sections, a few
 # other section files and one tiny file for each other kind of path planted on
 # top. origin's main is the initial commit, origin's rel that commit plus a
 # change to the branch module, and HEAD is feat, rel plus a change to a doc.
@@ -4538,7 +4264,7 @@ af_mid_merge_end() {
   tr_git "$af" branch -q -D "$1"
 }
 af_branch_titles="branch create,branch (x.y) retire"
-af_core_s="${TR_CORE#*loader one,}"
+af_core_s="${TR_CORE#"$TR_HARNESS",}"
 
 af_reset
 assert_eq "a change to a doc selects only the always-run checks" \
@@ -4612,13 +4338,11 @@ assert_eq "an unmapped file wins over a module" "$(tr_plan "$af" origin/rel)" "a
 af_row "a module with no section file of its own falls back to all.sh" \
   scripts/orch/zz-no-section.sh "all.sh"
 
-# The core set (#3548): the harness and loader sections and every suite but
+# The core set (#3548): the harness sections and every suite but
 # orch_test.sh, together with the rest of the diff's selection.
 af_row "orch.sh selects the core set" scripts/orch.sh "$TR_GATE,$TR_CORE,scripts/orch.sh"
 af_row "the common module selects the core set and its own section file" scripts/orch/common.sh \
-  "$TR_GATE,common one,$TR_HARNESS,loader one,$af_core_s,scripts/orch/common.sh"
-af_row "the loader module selects the core set" scripts/orch/loader.sh \
-  "$TR_GATE,$TR_CORE,scripts/orch/loader.sh"
+  "$TR_GATE,common one,$TR_HARNESS,$af_core_s,scripts/orch/common.sh"
 for af_f in all.sh git_env.sh orch_test.sh affected.sh test_jobs.sh report.sh test_tree.sh; do
   af_reset
   printf '# touched\n' >>"$af/scripts/test/$af_f"
@@ -4629,7 +4353,7 @@ tr_put "$af" scripts/orch.sh changed
 tr_put "$af" scripts/orch/branch.sh 'z=3'
 tr_put "$af" scripts/test/orch/zz-new.sh '# --- zz new ---'
 assert_eq "the core set comes together with the rest of the diff's selection" "$(tr_plan "$af" origin/rel)" \
-  "$TR_GATE,$af_branch_titles,$TR_HARNESS,loader one,zz new,$af_core_s,scripts/orch.sh,scripts/orch/branch.sh,scripts/test/orch/zz-new.sh"
+  "$TR_GATE,$af_branch_titles,$TR_HARNESS,zz new,$af_core_s,scripts/orch.sh,scripts/orch/branch.sh,scripts/test/orch/zz-new.sh"
 af_reset
 tr_put "$af" scripts/orch.sh changed
 tr_put "$af" docs/a.md again
@@ -4642,9 +4366,9 @@ assert_eq "the common module's section file selects its own sections alone" "$(t
 # The new rows (#3548).
 af_hooks_s="hooks_test.sh,docs_lint.sh"
 af_row "flow-state.sh selects the core set and the flow-state sections" scripts/flow-state.sh \
-  "$TR_GATE,flow-state s,$TR_HARNESS,loader one,$af_core_s,scripts/flow-state.sh"
+  "$TR_GATE,flow-state s,$TR_HARNESS,$af_core_s,scripts/flow-state.sh"
 af_row "host.sh selects the core set and the host sections" scripts/host.sh \
-  "$TR_GATE,$TR_HARNESS,host s,loader one,$af_core_s,scripts/host.sh"
+  "$TR_GATE,$TR_HARNESS,host s,$af_core_s,scripts/host.sh"
 af_row "bash-walk.sh selects the hooks suite" scripts/bash-walk.sh "$TR_GATE,$af_hooks_s,scripts/bash-walk.sh"
 af_row "paste-guard.sh selects the hooks suite" scripts/paste-guard.sh "$TR_GATE,$af_hooks_s,scripts/paste-guard.sh"
 af_row "planning-allowlist.sh selects the hooks suite" scripts/planning-allowlist.sh \

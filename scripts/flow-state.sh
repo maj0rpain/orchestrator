@@ -42,9 +42,8 @@
 # because where the state file sits is the one fact orch.sh and the hooks
 # share: the hooks reach it only through flow_state_file, and orch.sh builds
 # its other .orchestrator/ paths on it - so it changes only when the state file
-# moves, never for a reason outside the state format. orch.sh marks it
-# readonly after sourcing this file; it is assigned plainly here because the
-# test setup sources this file too.
+# moves, never for a reason outside the state format. It is assigned plainly,
+# since the hooks and the tests source this file.
 ORCH_DIR_NAME=".orchestrator"
 
 # Every flow state key, one row each, in the order init seeds them into
