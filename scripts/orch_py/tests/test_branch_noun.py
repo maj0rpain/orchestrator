@@ -300,8 +300,10 @@ def test_off_beside_tags_named_like_the_branch_and_origin_s_base_forks_from_orig
 def test_off_offline_beside_tags_named_like_the_base_forks_from_the_local_base(
         off_repo, seed, capsys, tmp_path):
     # Origin unreachable, and no remote-tracking ref of the base: neither the
-    # tag named main nor the one named origin/main is taken for it.
+    # tag named main nor the one named origin/main is taken for it, and
+    # autoSetupMerge=always, which would track the local base, sets nothing.
     root, _, tagged = off_repo
+    run_git(root, "config", "branch.autoSetupMerge", "always")
     run_git(root, "update-ref", "-d", "refs/remotes/origin/main")
     run_git(root, "remote", "set-url", "origin", str(tmp_path / "missing.git"))
     for tag in ("main", "origin/main"):
@@ -310,7 +312,9 @@ def test_off_offline_beside_tags_named_like_the_base_forks_from_the_local_base(
 
     assert orch(capsys, "off", NAME, git=Git(cwd=str(root)), gh=fake(seed)) == (
         0, NAME + "\n", "")
-    assert repo_facts(root, NAME) == ("made", local_tip, NAME)
+    assert (repo_facts(root, NAME),
+            run_git(root, "for-each-ref", "--format=%(upstream)", "refs/heads/" + NAME)) == (
+        ("made", local_tip, NAME), "")
 
 
 def test_off_whose_checkout_clashes_with_an_edit_dies_with_git_s_message_writing_nothing(
