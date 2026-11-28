@@ -118,8 +118,7 @@ def current_open_pr(gh, git, code: int) -> Optional[int]:
 
 class DefaultOnce:
     """The gh adapter <gh>, its default-branch answer - or failure - asked
-    of GitHub once and kept, as bash's default_branch_resolve keeps it for
-    the process. Every other operation is <gh>'s own."""
+    of GitHub once and kept, as the bash lookup kept it for the process. Every other operation is <gh>'s own."""
 
     def __init__(self, gh) -> None:
         self._gh = gh
@@ -158,7 +157,7 @@ class _Run:
         return self._gh
 
     def default(self) -> str:
-        """The default branch, as bash's default_branch_into answers it."""
+        """The default branch, the name the default-branch lookup answers."""
         return default_branch(self.gh(), self.git, self.pin).name
 
 

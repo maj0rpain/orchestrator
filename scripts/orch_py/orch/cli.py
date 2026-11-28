@@ -1,8 +1,11 @@
 """The converted nouns' dispatch, run by the entry point (orch/__main__.py)
 once its interpreter check has passed.
 
-main(argv) takes `<noun> <verb> ...` as orch.sh hands them on. A noun not in
-NOUNS dies as orch.sh dies on an unknown command; `-h` and `--help`, help's
+main(argv) takes `<noun> <verb> ...` as orch.sh hands them on. It resolves
+the checkout root first, through orch.root, so every noun dies outside a git
+repository before it runs - help, slug and an unknown noun included. No noun
+runs help, as a bare orch.sh always has. A noun not in NOUNS dies
+"unknown command: <noun> (run 'orch.sh help')"; `-h` and `--help`, help's
 option spellings, run help, and `health` runs doctor, through ALIASES rather
 than NOUNS.
 
@@ -16,9 +19,11 @@ from __future__ import annotations
 import os
 import signal
 import sys
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Mapping, Optional
 
 from orch.common import die
+from orch.git import Git
+from orch.root import checkout_root
 
 
 def _issue(argv: List[str]) -> int:
@@ -190,6 +195,30 @@ def _branch(argv: List[str]) -> int:
     return run(argv)
 
 
+def _repo(argv: List[str]) -> int:
+    from orch.repo import run
+
+    return run(argv)
+
+
+def _default_branch(argv: List[str]) -> int:
+    from orch.base import run_default_branch
+
+    return run_default_branch(argv)
+
+
+def _base(argv: List[str]) -> int:
+    from orch.base import run
+
+    return run(argv)
+
+
+def _state(argv: List[str]) -> int:
+    from orch.state import run
+
+    return run(argv)
+
+
 # The converted nouns: each takes the arguments after the noun and returns its
 # exit code.
 NOUNS: Dict[str, Callable[[List[str]], int]] = {
@@ -221,6 +250,10 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "autopilot": _autopilot,
     "side-checkout": _side_checkout,
     "branch": _branch,
+    "repo": _repo,
+    "default-branch": _default_branch,
+    "base": _base,
+    "state": _state,
 }
 
 # The other spellings main runs as a noun - help's option spellings and
@@ -232,7 +265,8 @@ ALIASES: Dict[str, str] = {"-h": "help", "--help": "help", "health": "doctor"}
 # keeps its flush failure there, as it always ended.
 SIGPIPE_NOUNS = frozenset({"init", "slug", "status", "archive", "help", "phase", "handoff",
                            "redo", "ticket", "ticket-worktree", "pr", "review", "doctor",
-                           "autopilot", "side-checkout", "branch"})
+                           "autopilot", "side-checkout", "branch", "repo",
+                           "default-branch", "base", "state"})
 
 
 def _sigpipe_as_bash(run: Callable[[List[str]], int], argv: List[str]) -> int:
@@ -250,8 +284,14 @@ def _sigpipe_as_bash(run: Callable[[List[str]], int], argv: List[str]) -> int:
         raise
 
 
-def main(argv: List[str]) -> int:
-    noun = argv[0] if argv else ""
+def main(argv: List[str], git=None, env: Optional[Mapping[str, str]] = None) -> int:
+    """Runs the noun <argv> names, help when it names none or its first
+    argument is empty (bash's ${1:-help}), once the checkout root resolves
+    through the git adapter <git> (a real one when None) and the environment
+    <env> (os.environ when None): outside a checkout every noun dies first,
+    help and an unknown noun included, as the bash orch.sh made it."""
+    checkout_root(Git() if git is None else git, os.environ if env is None else env)
+    noun = (argv[0] if argv else "") or "help"
     name = ALIASES.get(noun, noun)
     run = NOUNS.get(name)
     if run is None:

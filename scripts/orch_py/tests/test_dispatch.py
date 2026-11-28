@@ -8,11 +8,11 @@ route show`, `orch.sh agent <verb>`, `orch.sh slug <text>`, `orch.sh status`,
 `orch.sh init <slug>`, `orch.sh archive`, `orch.sh phase <verb>`, `orch.sh
 handoff <verb>`, `orch.sh redo <op>`, `orch.sh ticket <verb>`, `orch.sh
 ticket-worktree <verb>`, `orch.sh pr <verb>`, `orch.sh autopilot <verb>`,
-`orch.sh side-checkout <verb>`, `orch.sh branch <verb>` or `orch.sh help` (and
-its spellings)
-as a command, in a checkout under tmp_path, against a fake store seeded in the
-layout the bash suite's fake_* helpers write, with ORCH_GH_FAKE_STORE set as
-fake_github sets it."""
+`orch.sh side-checkout <verb>`, `orch.sh branch <verb>`, `orch.sh repo show`,
+`orch.sh default-branch`, `orch.sh base <verb>` or `orch.sh help` (and its
+spellings) as a command, in a checkout under tmp_path, against a fake store
+seeded in the layout scripts/test/gh_adapter_fake.sh documents, with
+ORCH_GH_FAKE_STORE set."""
 from __future__ import annotations
 
 import json
@@ -30,7 +30,6 @@ from conftest import (
     AUDIT_FIXTURES,
     CLAUDE,
     GLOBAL_CONFIG,
-    PACKAGE_BOOTSTRAP,
     VERIFICATION_KNOBS,
     comments_of,
     committed,
@@ -47,6 +46,7 @@ from conftest import (
     until,
     verification_records,
     verification_store,
+    worktree_add,
     wt_path,
 )
 
@@ -172,25 +172,114 @@ def test_a_module_file_in_the_callers_directory_shadows_nothing(tmp_path, repo, 
         "", "orch: usage: orch.sh issue labels <n>...\n", 1)
 
 
-@pytest.mark.parametrize("came_from", ["sub", None], ids=["oldpwd-in-a-checkout", "no-oldpwd"])
-def test_the_noun_run_outside_a_checkout_dies_as_orch_sh_does(tmp_path, repo, came_from):
-    (repo / "sub").mkdir()
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    env = dict(os.environ, HOME=str(tmp_path), PYTHONDONTWRITEBYTECODE="1")
-    env.pop("OLDPWD", None)
-    if came_from is not None:
-        env["OLDPWD"] = str(repo / came_from)
+# --- the entry script --------------------------------------------------------
+# orch.sh itself: its bash version guard, its python3 refusal and its handoff
+# of every argument to the package, which owns the unknown-command and
+# outside-a-checkout deaths.
 
-    def run(*command):
-        done = subprocess.run([*command, "issue", "fetch", "931", "out.md"], cwd=str(outside),
-                              env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE, timeout=30)
-        return done.stdout.decode(), done.stderr.decode(), done.returncode
+GUARD_LINE = "orch: bash %s is too old - orch.sh needs bash 4.2 or newer: brew install bash\n"
+OUTSIDE = ("orch: not inside a git repository (%s) - cd into %s and run orch.sh there;"
+           " a mktemp path is for files, not the working directory\n")
+GENERIC_REMEDY = "the repo's checkout (its root or a worktree)"
 
-    bash = run("/bin/bash", str(SCRIPTS / "orch.sh"))
-    assert bash[2] == 1 and "not inside a git repository" in bash[1]
-    assert run(sys.executable, "-c", PACKAGE_BOOTSTRAP, str(SCRIPTS / "orch_py")) == bash
+
+def test_an_unknown_noun_dies_naming_help(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "bogus", "verb") == (
+        "", "orch: unknown command: bogus (run 'orch.sh help')\n", 1)
+
+
+@pytest.mark.parametrize("argv", [("mp-skill", "to-spec"), ("suite-cost", "run", "--", "true")],
+                         ids=["mp-skill", "suite-cost"])
+def test_a_removed_noun_is_an_unknown_command(tmp_path, repo, seed, argv):
+    assert orch_sh(tmp_path, repo, seed, *argv) == (
+        "", "orch: unknown command: %s (run 'orch.sh help')\n" % argv[0], 1)
+
+
+def test_help_names_no_suite_cost(tmp_path, repo, seed):
+    out, _, code = orch_sh(tmp_path, repo, seed, "help")
+
+    assert code == 0 and "suite-cost" not in out
+
+
+@pytest.fixture
+def outside(tmp_path):
+    """A directory in no repository, tmp_path/outside: its real path."""
+    path = tmp_path / "outside"
+    path.mkdir()
+    return os.path.realpath(str(path))
+
+
+@pytest.mark.parametrize("argv", [("status",), ("help",), ("bogus",), ()],
+                         ids=["noun", "help", "unknown-noun", "no-noun"])
+def test_outside_a_checkout_every_run_dies_with_the_not_in_a_repo_line(
+        tmp_path, outside, seed, argv):
+    assert orch_sh(tmp_path, outside, seed, *argv, knobs={"OLDPWD": ""}) == (
+        "", OUTSIDE % (outside, GENERIC_REMEDY), 1)
+
+
+def test_an_oldpwd_inside_a_linked_worktree_names_that_worktree_s_toplevel(
+        tmp_path, repo, outside, seed):
+    run_git(repo, "commit", "-q", "--allow-empty", "-m", "one")
+    linked = worktree_add(repo, tmp_path / "repo-wt", "-b", "side")
+    (linked / "sub" / "dir").mkdir(parents=True)
+
+    assert orch_sh(tmp_path, outside, seed, "status",
+                   knobs={"OLDPWD": str(linked / "sub" / "dir")}) == (
+        "", OUTSIDE % (outside, "the checkout you came from, %s," % os.path.realpath(str(linked))),
+        1)
+
+
+@pytest.mark.parametrize("came_from", ["elsewhere", ""], ids=["outside-any-repo", "empty"])
+def test_an_oldpwd_in_no_checkout_gives_the_generic_remedy(tmp_path, outside, seed, came_from):
+    if came_from:
+        (tmp_path / came_from).mkdir()
+        came_from = str(tmp_path / came_from)
+
+    assert orch_sh(tmp_path, outside, seed, "status", knobs={"OLDPWD": came_from}) == (
+        "", OUTSIDE % (outside, GENERIC_REMEDY), 1)
+
+
+@pytest.mark.parametrize("argv, named", [((), "help"), (("bogus",), "bogus")],
+                         ids=["no-noun", "unknown-noun"])
+def test_without_python3_a_run_is_refused_naming_its_noun(tmp_path, repo, seed, argv, named):
+    assert orch_sh(tmp_path, repo, seed, *argv, path=path_without(tmp_path, "python3")) == (
+        "", "orch: orch.sh %s needs python3 3.9 or newer (found none) - run orch.sh doctor\n"
+        % named, 1)
+
+
+def test_without_python3_a_run_outside_a_checkout_gets_the_python3_refusal(
+        tmp_path, outside, seed):
+    assert orch_sh(tmp_path, outside, seed, "status", path=path_without(tmp_path, "python3")) == (
+        "", "orch: orch.sh status needs python3 3.9 or newer (found none) - run orch.sh doctor\n",
+        1)
+
+
+@pytest.mark.parametrize("version", ["3.2", "4.1"])
+@pytest.mark.parametrize("noun", ["doctor", "help"])
+def test_an_old_bash_stops_before_anything_runs(tmp_path, repo, seed, version, noun):
+    assert orch_sh(tmp_path, repo, seed, noun, knobs={"ORCH_BASH_VERSION": version}) == (
+        "", GUARD_LINE % version, 1)
+
+
+@pytest.mark.parametrize("version", ["3.2", "4.1"])
+def test_an_old_bash_outside_a_checkout_wins_over_the_repository_stop(
+        tmp_path, outside, seed, version):
+    assert orch_sh(tmp_path, outside, seed, "help", knobs={"ORCH_BASH_VERSION": version}) == (
+        "", GUARD_LINE % version, 1)
+
+
+@pytest.mark.parametrize("version", ["4.2", "5.0", "10.0", ""])
+def test_a_bash_of_4_2_or_newer_passes_the_guard(tmp_path, repo, seed, version):
+    out, err, code = orch_sh(tmp_path, repo, seed, "help", knobs={"ORCH_BASH_VERSION": version})
+
+    assert (out.encode("utf-8"), err, code) == (HELP_GOLDEN.read_bytes(), "", 0)
+
+
+def test_a_lone_entry_script_stops_at_the_guard(tmp_path, outside, seed):
+    shutil.copy(str(SCRIPTS / "orch.sh"), os.path.join(outside, "orch.sh"))
+
+    assert bash_run(tmp_path, outside, ["./orch.sh", "help"],
+                    knobs={"ORCH_BASH_VERSION": "3.2"}) == ("", GUARD_LINE % "3.2", 1)
 
 
 # --- finding-triage ----------------------------------------------------------
@@ -1030,16 +1119,6 @@ def test_help_dies_pointing_at_doctor_without_python3(tmp_path, repo, seed):
         "", "orch: orch.sh help needs python3 3.9 or newer (found none) - run orch.sh doctor\n", 1)
 
 
-def test_help_in_an_empty_home_still_builds_the_stub_cache(tmp_path, repo, seed):
-    """The test runner seeds every section's stub cache by running orch.sh help
-    in an empty HOME: orch.sh builds the cache before its dispatch hands help
-    to Python."""
-    assert not (tmp_path / ".cache").exists()
-
-    assert orch_sh(tmp_path, repo, seed, "help")[1:] == ("", 0)
-    assert list((tmp_path / ".cache" / "orchestrator").iterdir())
-
-
 def test_help_into_a_pipe_closed_unread_dies_of_sigpipe_as_cat_did(tmp_path, repo, seed):
     """The text is longer than a pipe holds, so a reader that reads none of it
     stops the writer, silently, with the status SIGPIPE gives."""
@@ -1113,6 +1192,37 @@ def test_handoff_section_into_a_pipe_closed_unread_dies_of_sigpipe(tmp_path, rep
     assert answer == ("", "", 141)
 
 
+# --- state -----------------------------------------------------------------
+
+
+def test_state_set_then_get_round_trips_through_the_python_noun(tmp_path, repo, seed):
+    hold_flow(repo, slug="s", phase="review", issue=None)
+
+    assert orch_sh(tmp_path, repo, seed, "state", "set", "budget", "3",
+                   path=python3_shim(tmp_path)) == ("", "", 0)
+    assert orch_sh(tmp_path, repo, seed, "state", "get", "budget") == ("3\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_state_dies_pointing_at_doctor_without_python3(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "state", "get", "phase",
+                   path=path_without(tmp_path, "python3")) \
+        == ("", "orch: orch.sh state needs python3 3.9 or newer (found none)"
+                " - run orch.sh doctor\n", 1)
+
+
+def test_state_get_into_a_pipe_closed_unread_dies_of_sigpipe(tmp_path, repo, seed):
+    """The state file is longer than a pipe holds, so a reader that reads
+    none of it stops the writer, silently, with the status SIGPIPE gives."""
+    hold_flow(repo, slug="s" * 200000, phase="review")
+
+    answer = bash_run(tmp_path, repo, ["-c", 'set -o pipefail; "$1" state get | true', "_",
+                                       str(SCRIPTS / "orch.sh")],
+                      knobs={"ORCH_GH_FAKE_STORE": seed.store})
+
+    assert answer == ("", "", 141)
+
+
 # --- branch ----------------------------------------------------------------
 
 
@@ -1131,6 +1241,51 @@ def test_branch_refuses_without_a_usable_python3_pointing_at_doctor(
     assert orch_sh(tmp_path, repo, seed, "branch", "busy", path=path_of(tmp_path)) == (
         "", "orch: orch.sh branch needs python3 3.9 or newer (found %s) - run orch.sh"
             " doctor\n" % found, 1)
+
+
+# --- repo and default-branch ------------------------------------------------
+
+
+def test_repo_show_prints_the_origin_s_repo_through_the_python_noun(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "repo", "show", path=python3_shim(tmp_path),
+                   unset=("GH_REPO",)) == ("acme/widgets (origin)\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_default_branch_prints_github_s_answer_through_the_python_noun(tmp_path, repo, seed):
+    seed.default_branch("trunk\n")
+
+    assert orch_sh(tmp_path, repo, seed, "default-branch", path=python3_shim(tmp_path),
+                   unset=("GH_REPO",)) == ("trunk\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+@pytest.mark.parametrize("noun, argv", [("repo", ("show",)), ("default-branch", ())],
+                         ids=["repo", "default-branch"])
+def test_repo_and_default_branch_refuse_without_python3_pointing_at_doctor(
+        tmp_path, repo, seed, noun, argv):
+    assert orch_sh(tmp_path, repo, seed, noun, *argv,
+                   path=path_without(tmp_path, "python3")) == (
+        "", "orch: orch.sh %s needs python3 3.9 or newer (found none) - run orch.sh"
+            " doctor\n" % noun, 1)
+
+
+# --- base ------------------------------------------------------------------
+
+
+def test_base_show_runs_through_the_python_noun(tmp_path, repo, seed):
+    run_git(repo, "config", "orchestrator.base", "uat")
+
+    assert orch_sh(tmp_path, repo, seed, "base", "show", path=python3_shim(tmp_path)) == (
+        "uat (set)\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_base_refuses_without_python3_pointing_at_doctor(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "base", "show",
+                   path=path_without(tmp_path, "python3")) == (
+        "", "orch: orch.sh base needs python3 3.9 or newer (found none) - run orch.sh"
+            " doctor\n", 1)
 
 
 # --- side-checkout -----------------------------------------------------------

@@ -1,7 +1,7 @@
 """`python3 -m orch <noun> <verb> ...`: the interpreter check, then orch.cli's
 main.
 
-main(argv) takes `<noun> <verb> ...` as orch.sh's orch_python hands them on.
+main(argv) takes `<noun> <verb> ...` as orch.sh's one exec hands them on.
 Below Python 3.9 it dies before doing anything, exit 1, naming the version
 found and the noun, and pointing at `orch.sh doctor`, or for doctor and health
 themselves naming the install.
@@ -42,7 +42,9 @@ def require_python(noun):
 
 
 def main(argv):
-    require_python(argv[0] if argv else "")
+    # A run naming no noun, or an empty one, is help, as orch.cli's main runs
+    # it and orch.sh's orch_python_require names it.
+    require_python((argv[0] if argv else "") or "help")
     from orch.cli import main as run_noun
 
     return run_noun(argv)

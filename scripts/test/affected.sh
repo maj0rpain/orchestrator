@@ -38,7 +38,7 @@
 #   the lens bench's fixture directories (scripts/dev/lens-bench/,
 #   scripts/test/lens-bench/), markdown files included
 #                                     lens_bench_test.sh (wins over *.md)
-#   flow-state.sh                     the core set, plus the state
+#   flow-state.sh                     the core set, plus the flow-state
 #                                     sections
 #   host.sh                           the core set, plus the host sections
 #   bash-walk.sh, paste-guard.sh, planning-allowlist.sh
@@ -48,19 +48,11 @@
 #   scripts/dev/ other than the lens bench, hook-edit-width.sh, width.sh
 #                                     the harness section file's sections
 #   the Python package (scripts/orch_py/), its tests and dev files included
-#                                     the base sections, which call
-#                                     converted nouns' own verbs through
-#                                     the dispatch (their pr open and
-#                                     branch create fixtures),
-#                                     and hooks_test.sh, whose paste guard
+#                                     hooks_test.sh, whose paste guard
 #                                     rows run spec-review check through it
 #                                     (the pytest suite, the .orchestrator
 #                                     entry classification with it, runs on
-#                                     every call);
-#                                     not every section that reaches the
-#                                     package - a flow's init and the
-#                                     status and help calls reach it from
-#                                     many - which CI's whole run covers
+#                                     every call)
 #   the pytest suite's wrapper (scripts/test/orch_py_test.sh)
 #                                     the harness section file's sections
 #   hook-edit-width.sh, width.sh, shell_code.awk
@@ -77,6 +69,7 @@
 #                                     nothing beyond the always-run checks
 #   anything else                     all.sh
 #   scripts/test/orch/setup.sh, counting.sh, fails.sh, fifo.sh, tally.sh
+#   and the gh fake's store layout (gh_adapter_fake.sh)
 #                                     function by function: each function whose
 #                                     code differs from the base selects the
 #                                     sections of every section file, and every
@@ -88,27 +81,14 @@
 #                                     Code outside any function runs all.sh; a
 #                                     change to comments or blank lines alone
 #                                     selects nothing more
-#   the gh fake (gh_adapter_fake.sh)  function by function, as above, operations
-#                                     first: a changed function selects the
-#                                     sections of the gh section file and of
-#                                     the section file of every scripts/orch/
-#                                     module whose code calls the adapter_*
-#                                     operation of that name, or any operation
-#                                     that calls the function; and, as a shared
-#                                     helper does, the section files and suites
-#                                     that call it directly or through those;
-#                                     the core set when nothing reaches it.
-#                                     Code outside any function runs all.sh; a
-#                                     change to comments or blank lines alone
-#                                     selects nothing more
 # The whole suite (all.sh) runs for exactly these cases: code outside any
-# function in a shared test support file or the gh fake; a path no row names; a
+# function in a shared test support file; a path no row names; a
 # module with no section file of its own; no base, or no merge-base with it.
-# The core set is the sections of the harness and loader section files and
-# every suite but orch_test.sh. It is selected, together with the rest of the
-# diff's selection, by orch.sh, orch/common.sh (plus its own section file),
-# orch/loader.sh, orch_test.sh, all.sh, affected.sh, test_jobs.sh, report.sh,
-# test_tree.sh, git_env.sh, and a deleted module or section file.
+# The core set is the sections of the harness section file and every suite
+# but orch_test.sh. It is selected, together with the rest of the diff's
+# selection, by orch.sh, orch/common.sh (plus its own section file),
+# orch_test.sh, all.sh, affected.sh, test_jobs.sh, report.sh, test_tree.sh,
+# git_env.sh, and a deleted module or section file.
 #
 # --row <path>...: runs nothing and prints "<path>", a tab, and "named" when a
 # row other than the catch-all takes the path, or "none" for a path only the
@@ -121,7 +101,7 @@
 #
 # Always run: the pytest suite (orch_py_test.sh, test_tree.sh's PYTEST_SUITE,
 # which takes its own job-pool slots), docs_lint.sh, orch_test.sh's placement
-# sections (test-helper placement, gh op placement, helper body copies), and
+# sections (test-helper placement, helper body copies), and
 # the shellcheck run, at warning severity, on the changed scripts/**/*.sh files
 # that still exist. Sections are chosen through orch_test.sh's ORCH_TEST_ONLY.
 #
@@ -281,7 +261,7 @@ unnamed() {
 }
 
 # The shared test support: the files whose functions select by call.
-SUPPORT_FILES=(scripts/test/orch/setup.sh scripts/test/counting.sh scripts/test/fails.sh scripts/test/fifo.sh scripts/test/tally.sh)
+SUPPORT_FILES=(scripts/test/orch/setup.sh scripts/test/counting.sh scripts/test/fails.sh scripts/test/fifo.sh scripts/test/tally.sh scripts/test/gh_adapter_fake.sh)
 
 # SUPPORT_AWK reads files each introduced by a "@@FILE" line. A function is a
 # column-0 `name() {` line to the next column-0 `}` line, or that line alone
@@ -329,8 +309,6 @@ SUPPORT_AWK='
     for (r in reached) print r
   }'
 
-GH_FAKE=scripts/test/gh_adapter_fake.sh
-
 # suites_load: reads all.sh's suite list into suites, once.
 suites=()
 suites_loaded=0
@@ -370,13 +348,13 @@ files_calling() {
   awk -v re="$re" 'FNR == 1 { done = 0 } !done && $0 !~ /^[ \t]*#/ && $0 ~ re { print FILENAME; done = 1 }' "$@"
 }
 
-# support_select <file> <present|deleted>: one of SUPPORT_FILES, or the gh fake,
-# changed. Each function whose code differs between the base (merge_base) and
-# the tree selects the sections of the section files and the suites that call
-# it, and the core set when orch_test.sh calls it or nothing does; code outside
-# any function runs the whole suite.
+# support_select <file> <present|deleted>: one of SUPPORT_FILES changed. Each
+# function whose code differs between the base (merge_base) and the tree
+# selects the sections of the section files and the suites that call it, and
+# the core set when orch_test.sh calls it or nothing does; code outside any
+# function runs the whole suite.
 support_select() {
-  local f="$1" state="$2" diffed name reached alt hits support module caller sn ops n closure_input
+  local f="$1" state="$2" diffed name reached alt hits support caller sn closure_input
   local -a support_present
   support_load
   support_present=("${SUPPORT_PRESENT[@]}")
@@ -385,8 +363,6 @@ support_select() {
     echo @@FILE; if [ "$state" = present ]; then cat "$f"; fi))"
   [ -n "$diffed" ] || return 0
   case $'\n'"$diffed"$'\n' in *$'\n@top\n'*) full_suite ;; esac
-  # The gh fake's functions also reach through the fake's own.
-  if [ "$f" = "$GH_FAKE" ] && [ -f "$GH_FAKE" ]; then support_present+=("$GH_FAKE"); fi
   closure_input="$(for support in "${support_present[@]}"; do echo @@FILE; cat "$support"; done)"
   while IFS= read -r name; do
     reached="$(awk -v mode=closure -v seeds="$name" "$SUPPORT_AWK" <<<"$closure_input")"
@@ -394,24 +370,8 @@ support_select() {
     if [ -n "$(files_calling "$alt" "$dir/orch_test.sh")" ]; then
       core=1
     fi
-    ops=""
-    if [ "$f" = "$GH_FAKE" ]; then
-      # An adapter operation reached: the gh section file, and the section file
-      # of every module whose code calls it.
-      while IFS= read -r n; do
-        case "$n" in adapter_*) ops="${ops:+$ops|}$n" ;; esac
-      done <<<"$reached"
-      if [ -n "$ops" ]; then
-        sections_of gh
-        while IFS= read -r module; do
-          [ -n "$module" ] || continue
-          sn="${module##*/}"
-          sections_of "${sn%.sh}"
-        done < <(files_calling "$ops" scripts/orch/*.sh)
-      fi
-    fi
     hits="$(files_calling "$alt" "${SUPPORT_CALLERS[@]}")"
-    if [ -z "$hits" ]; then [ -n "$ops" ] || core=1; continue; fi
+    if [ -z "$hits" ]; then core=1; continue; fi
     while IFS= read -r caller; do
       case "$caller" in
         scripts/test/orch/*.sh) sn="${caller##*/}"; sections_of "${sn%.sh}" ;;
@@ -429,9 +389,9 @@ CORE_FILES=(scripts/orch.sh scripts/test/git_env.sh scripts/test/all.sh scripts/
 classify() {
   local f="$1" state="$2" file_name
   file_name="${f##*/}"
-  # The core set: the harness and loader section files' sections and every
-  # suite but orch_test.sh, together with whatever the rest of the diff selects.
-  if listed "$f" "${CORE_FILES[@]}" scripts/orch/common.sh scripts/orch/loader.sh; then
+  # The core set: the harness section file's sections and every suite but
+  # orch_test.sh, together with whatever the rest of the diff selects.
+  if listed "$f" "${CORE_FILES[@]}" scripts/orch/common.sh; then
     core=1
   else
     case "$f" in
@@ -439,12 +399,12 @@ classify() {
         [ "$state" = deleted ] && core=1 ;;
     esac
   fi
-  if listed "$f" "${SUPPORT_FILES[@]}" "$GH_FAKE"; then
+  if listed "$f" "${SUPPORT_FILES[@]}"; then
     # The row form asks only which row takes the path, never what it selects.
     [ "$row" -eq 1 ] || support_select "$f" "$state"
   elif ! listed "$f" "${CORE_FILES[@]}"; then
     case "$f" in
-      scripts/flow-state.sh) core=1; sections_of state ;;
+      scripts/flow-state.sh) core=1; sections_of flow-state ;;
       scripts/host.sh) core=1; sections_of host ;;
       scripts/bash-walk.sh | scripts/paste-guard.sh | scripts/planning-allowlist.sh) want+=(hooks_test.sh) ;;
       scripts/triage-labels.sh) want+=(hooks_test.sh); sections_of triage-labels ;;
@@ -467,7 +427,7 @@ classify() {
       scripts/dev/hook-edit-width.sh | scripts/dev/width.sh | scripts/test/shell_code.awk)
         want+=(hooks_test.sh); sections_of harness ;;
       scripts/dev/*) sections_of harness ;;
-      scripts/orch_py/*) want+=(hooks_test.sh); sections_of base ;;
+      scripts/orch_py/*) want+=(hooks_test.sh) ;;
       scripts/test/orch_py_test.sh) sections_of harness ;;
       docker/* | .dockerignore) want+=(autopilot_container_test.sh autopilot_up_test.sh) ;;
       .claude-plugin/*) want+=(version_bump_test.sh autopilot_up_test.sh) ;;
@@ -515,7 +475,7 @@ while IFS= read -r f; do
 done <<<"$deleted"
 
 if [ "$core" -eq 1 ]; then
-  sections_of harness loader
+  sections_of harness
 fi
 if [ "$sc_all" -eq 1 ]; then
   shellcheck_files "$root"
@@ -538,7 +498,7 @@ harness="scripts/test/orch/harness.sh"
 if [ -f "$harness" ]; then
   while IFS= read -r t; do
     case "$t" in
-      "test-helper placement ("* | "gh op placement ("* | "helper body copies ("*)
+      "test-helper placement ("* | "helper body copies ("*)
         add_title "$t" ;;
     esac
   done < <(titles_of "$harness")

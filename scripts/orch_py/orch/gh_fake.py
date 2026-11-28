@@ -1,25 +1,23 @@
-"""The gh adapter's in-process fake, on the file store the bash fake keeps.
+"""The gh adapter's in-process fake, on the gh fake's file store.
 
 FakeGh offers the real adapter's operations (orch.gh.Gh) on the directory
 ORCH_GH_FAKE_STORE names, in the layout scripts/test/gh_adapter_fake.sh
-documents, so what a bash orch.sh process wrote is there for a Python one and
-the other way round. orch.gh.adapter() picks it whenever ORCH_GH_FAKE_STORE
-is set.
+documents, so what one orch.sh process wrote is there for the next.
+orch.gh.adapter() picks it whenever ORCH_GH_FAKE_STORE is set.
 
-Each operation honours the store's failure files under the bash adapter's
-operation name - adapter_<the method's name>, kept by an operation whose bash
-counterpart is gone, as adapter_issues_labelled_bodies is - read before the
-operation touches the store: fail/<operation>, with its fail/<operation>.after and
-fail/<operation>.times countdowns, offline, ratelimit and noauth. A failure
-goes through the real adapter's rate-limit handling (orch.gh.Limits), the
-rate_limit read answering from the store's quota. The reads the bash fake
-lets lag (lag/<operation>, .after and .stale) lag here too, the stale answer
-read in the shape the real operation reads gh's. A fifo at hold/<operation>
-parks the call as it parks a bash one: the calling process's pid is written
-to `held`, and the call waits until something is written to the fifo.
+Each operation honours the store's failure files under its operation name,
+adapter_<the method's name> - read before the operation touches the store:
+fail/<operation>, with its fail/<operation>.after and fail/<operation>.times
+countdowns, offline, ratelimit and noauth. A failure goes through the real
+adapter's rate-limit handling (orch.gh.Limits), the rate_limit read
+answering from the store's quota. The reads the store lets lag
+(lag/<operation>, .after and .stale) lag, the stale answer read in the shape
+the real operation reads gh's. A fifo at hold/<operation> parks the call:
+the calling process's pid is written to `held`, and the call waits until
+something is written to the fifo.
 
-FakeStore seeds and reads back the store as the bash suite's fake_* helpers
-do, for a test that runs orch.sh on it.
+FakeStore seeds and reads back the store, for a test that runs orch.sh on
+it.
 """
 from __future__ import annotations
 
@@ -120,8 +118,8 @@ def _line_append_once(path: str, n: int) -> None:
 
 
 def _lines_drop(path: str, line: str) -> None:
-    """Every line of the file that is exactly <line> dropped, as the bash
-    fake's fake_lines_drop drops it; nothing where the file is absent."""
+    """Every line of the file that is exactly <line> dropped; nothing where
+    the file is absent."""
     text = read_raw(path)
     if text is None:
         return
@@ -138,7 +136,8 @@ def _numbered(directory: str) -> List[str]:
 
 
 def _store_path(store: str, *parts: object) -> str:
-    """The path of <parts> under the store at <store>, in the fake_* layout."""
+    """The path of <parts> under the store at <store>, in the layout
+    scripts/test/gh_adapter_fake.sh documents."""
     return os.path.join(store, *(str(part) for part in parts))
 
 
@@ -254,7 +253,7 @@ class FakeGh:
 
     def _lagging(self, operation: str) -> Optional[str]:
         """The stale answer while the operation's lag countdown is above zero,
-        counting it down ("" where fake_lag gave none); else None."""
+        counting it down ("" where the lag gave none); else None."""
         lag = _store_path(self.store, "lag", operation)
         if not os.path.isfile(lag) or _countdown(lag + ".after"):
             return None
@@ -573,8 +572,7 @@ class FakeGh:
 
     def label_upsert(self, name: str, colour: str, description: str) -> None:
         """The label, created or rewritten, in the store: named as the
-        store holds it in any casing, moved to the end, as the bash fake's
-        fake_label_put does."""
+        store holds it in any casing, moved to the end."""
         self._failing("adapter_label_upsert")
         labels = _store_path(self.store, "labels")
         name = self._label_canon(name)
@@ -888,7 +886,7 @@ class FakeGh:
         return read_raw(_pr_path(self.store, n, "diff")) or ""
 
     def pr_checks(self, n: int, scope: str) -> Checks:
-        """The next answer of the script fake_checks seeded for the PR and
+        """The next answer of the script checks seeded for the PR and
         scope - one per call, the last repeating once the script runs out -
         each read logged in checks/<n>/reads. An unscripted scope has no
         checks, gh's NO_CHECKS line saying so."""
@@ -1031,8 +1029,8 @@ class FakeGh:
 
 
 class FakeStore:
-    """Seeds the store at <store> and reads it back, as the bash suite's
-    fake_* helpers do, in their layout."""
+    """Seeds the store at <store> and reads it back, in the layout
+    scripts/test/gh_adapter_fake.sh documents."""
 
     def __init__(self, store: str) -> None:
         self.store = store
@@ -1064,7 +1062,7 @@ class FakeStore:
         self, n: int, author: str, association: str, editor: str = "", renamer: str = ""
     ) -> None:
         """Issue #n's author and association, the body's last editor and the
-        title's latest renamer, as fake_issue_authorship seeds them."""
+        title's latest renamer, in the store."""
         for name, value in (("author", author), ("association", association),
                             ("editor", editor), ("renamer", renamer)):
             _write(_issue_path(self.store, n,name), value + "\n")
@@ -1104,8 +1102,8 @@ class FakeStore:
         _write(_pr_path(self.store, n, "labels"), "".join(label + "\n" for label in labels))
 
     def pr_head(self, n: int, oid: str, *commits: str) -> None:
-        """PR #n's head SHA and its commits, oldest first, as fake_pr_head
-        seeds them - given none, the head alone, or none when the head is
+        """PR #n's head SHA and its commits, oldest first, in the store -
+        given none, the head alone, or none when the head is
         empty."""
         _write(_pr_path(self.store, n, "head_oid"), oid + "\n")
         path = _pr_path(self.store, n, "commits")
@@ -1163,8 +1161,7 @@ class FakeStore:
 
     def pr_merged(self, n: int, merged_at: str, *closing: int) -> None:
         """PR #n merged at the UTC timestamp <merged_at>, its
-        closingIssuesReferences the issues given, as fake_pr_merged seeds
-        them."""
+        closingIssuesReferences the issues given."""
         _write(_pr_path(self.store, n, "merged_at"), merged_at + "\n")
         _write(_pr_path(self.store, n, "closing"), "".join("%d\n" % i for i in closing))
 
@@ -1173,8 +1170,8 @@ class FakeStore:
         _write(_issue_path(self.store, n, "created_at"), created_at + "\n")
 
     def checks(self, n: int, scope: str, *answers: str) -> None:
-        """PR #n's checks for <scope>, required or all, scripted as
-        fake_checks scripts them: one answer a call, the last repeating."""
+        """PR #n's checks for <scope>, required or all, scripted: one answer
+        a call, the last repeating."""
         script = _store_path(self.store, "checks", n, scope)
         _write(script, "".join(answer + "\n" for answer in answers))
         if os.path.lexists(script + ".n"):
@@ -1196,8 +1193,7 @@ class FakeStore:
         _write(_pr_path(self.store, n, "cross_repository"), flag + "\n")
 
     def default_branch(self, answer: str) -> None:
-        """The repo's default branch as GitHub answers it, byte for byte, as
-        fake_default_branch seeds it."""
+        """The repo's default branch as GitHub answers it, byte for byte."""
         _write(_store_path(self.store, "default_branch"), answer)
 
     def local_default(self, name: str) -> None:
@@ -1205,7 +1201,7 @@ class FakeStore:
         _write(_store_path(self.store, "local_default"), name + "\n")
 
     def label(self, name: str, colour: str, description: str) -> None:
-        """One more repo label, as fake_label appends it."""
+        """One more repo label, appended."""
         _write(_store_path(self.store, "labels"), "%s\t%s\t%s\n" % (name, colour, description),
                "ab")
 
@@ -1215,8 +1211,8 @@ class FakeStore:
         _write(_pr_path(self.store, n, "mergeable"), value + "\n")
 
     def label_names(self, *names: str) -> None:
-        """The repo's labels: exactly <names>, with no colour or description,
-        as the bash suite's fake_label_names seeds them."""
+        """The repo's labels: exactly <names>, with no colour or
+        description."""
         _write(_store_path(self.store, "labels"), "".join("%s\t\t\n" % name for name in names))
 
     def no_sub_issues(self) -> None:
@@ -1231,13 +1227,12 @@ class FakeStore:
               started: str = "2026-01-01T00:00:00Z", phase: str = "spec") -> None:
         """A claim on issue #n, held by <host> (this host when None) with
         <pid>, from <started> at <phase> - by default pid 1, a start long
-        past and the spec phase, as fake_claim_seed seeds it."""
+        past and the spec phase."""
         _write(_store_path(self.store, "claims", n), "%d\t%s\t%d\t%s\t%s\n" % (
             n, socket.gethostname() if host is None else host, pid, phase, started))
 
     def claim_held(self, n: int) -> bool:
-        """Whether the store holds a claim on issue #n, as fake_claim_held
-        reads it."""
+        """Whether the store holds a claim on issue #n."""
         return os.path.isfile(_store_path(self.store, "claims", n))
 
     def fail(self, operation: str, stderr: Optional[str] = None) -> None:
@@ -1281,12 +1276,11 @@ class FakeStore:
         shutil.rmtree(_store_path(self.store, "fail"), ignore_errors=True)
 
     def ratelimit(self, stderr: str = "API rate limit exceeded for user ID 1.") -> None:
-        """Every operation but the quota read fails with <stderr>, bash
-        fake_ratelimit."""
+        """Every operation but the quota read fails with <stderr>."""
         _write(_store_path(self.store, "ratelimit"), stderr + "\n")
 
     def quota(self, pool: str, remaining: int, limit: int, reset: int) -> None:
-        """The quota read answers one more pool line, bash fake_quota."""
+        """The quota read answers one more pool line."""
         _write(_store_path(self.store, "quota"),
                "%s\t%d\t%d\t%d\n" % (pool, remaining, limit, reset), "ab")
 

@@ -96,8 +96,8 @@ def test_every_top_level_orchestrator_entry_the_code_builds_is_classified():
 
 
 @pytest.mark.parametrize("where, line, name", [
-    ("orch/state.sh", 'newthing_dir() { printf "%s\\n" "$ORCH/brandnew"; }', "brandnew"),
-    ("orch/state.sh", "printf '%s/bashformat' \"$ORCH_DIR_NAME\"", "bashformat"),
+    ("orch/common.sh", 'newthing_dir() { printf "%s\\n" "$ORCH/brandnew"; }', "brandnew"),
+    ("orch/common.sh", "printf '%s/bashformat' \"$ORCH_DIR_NAME\"", "bashformat"),
     ("orch_py/orch/checkout.py", 'PY_NEW = os.path.join("/", ORCH_DIR_NAME, "pynew")', "pynew"),
     ("orch_py/orch/checkout.py", 'PY_FMT = "%s/%s/pyformat/%s" % ("/", ORCH_DIR_NAME, 1)',
      "pyformat"),

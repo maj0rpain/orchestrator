@@ -174,7 +174,7 @@ _NUMBER = re.compile(r"[0-9]+\.?[0-9]*|\.[0-9]+")
 
 def is_number(text: str) -> bool:
     """Whether <text> is a non-negative decimal number, as bash's is_number
-    reads one: digits with at most one point, and not the point alone."""
+    read one: digits with at most one point, and not the point alone."""
     return _NUMBER.fullmatch(text) is not None
 
 
@@ -185,9 +185,9 @@ def is_positive_number(text: str) -> bool:
 
 
 def require_poll_knobs(knobs: Sequence[Tuple[str, str]], code: int = 1) -> None:
-    """Dies, exit <code> (2 where bash dies through die2), unless every
+    """Dies, exit <code> (2 where bash died through die2), unless every
     (name, value) of <knobs> holds a number and the last, the poll interval,
-    one greater than zero, with bash's require_poll_knobs messages: a
+    one greater than zero, with the messages bash's require_poll_knobs gave: a
     non-number would make a poll loop's comparisons meaningless, and a zero
     interval would poll as fast as it can."""
     for name, value in knobs:

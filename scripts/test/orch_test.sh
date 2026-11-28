@@ -4,11 +4,11 @@
 #
 # This file is the suite's runner and its one entry point; it holds no test.
 # The tests live under scripts/test/orch/: every `# ---` section in the file
-# for the orch.sh noun it tests, scripts/test/orch/<noun>.sh (the harness's own
-# sections in harness.sh), and the shared setup and the summary in setup.sh.
-# A ticket's tests go in the file for the noun it touches; a new noun is
-# Python, its tests pytest in scripts/orch_py/tests/, and a new section file
-# is picked up by the runner with no edit here. A noun file holds
+# named for the bash file it tests (common.sh, flow-state.sh, host.sh,
+# triage-labels.sh), the harness's own sections in harness.sh, and the shared
+# setup and the summary in setup.sh. Every orch.sh noun is Python, its tests
+# pytest in scripts/orch_py/tests/, and a new section file is picked up by the
+# runner with no edit here. A section file holds
 # only `# ---` sections, optionally preceded by its preamble: the text before
 # its first `# ---` line, eval'd before that file's sections whenever one of
 # them runs. Every preamble opens with the same shellcheck lines - the shell
@@ -33,10 +33,8 @@
 #
 # Nor does the suite reach the real gh. The shared setup puts a stub gh first
 # on PATH that logs each call and fails, and the summary turns every logged
-# call into one FAIL naming it. A section that runs orch.sh against a repo with
-# a GitHub origin installs fake_github first; the fixture gh, prepended later,
-# still wins over the stub. (base.sh keeps its own failing-gh runner,
-# orch_gh_failing, for its sections alone.)
+# call into one FAIL naming it. A section that needs a gh puts its own ahead of
+# the stub on PATH.
 #
 # Every section must pass on its own, as the parallel runner runs each one;
 # where a test helper lives is checked by harness.sh's test-helper placement
@@ -48,8 +46,6 @@ TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$TEST_DIR/git_env.sh"
 test_git_env_clear || exit 1
 ORCH="$(cd "$TEST_DIR/.." && pwd)/orch.sh"
-# shellcheck disable=SC2034 # read by the sections, eval'd from scripts/test/orch/
-GH_ADAPTER_FAKE="$TEST_DIR/gh_adapter_fake.sh"
 # shellcheck disable=SC2034 # read by the sections, eval'd from scripts/test/orch/
 PLUGIN_ROOT="$(cd "$(dirname "$ORCH")/.." && pwd)"
 SUITE_SCRIPT="$TEST_DIR/$(basename "${BASH_SOURCE[0]}")"
@@ -194,14 +190,15 @@ trap test_jobs_stop_descendants INT TERM
 # so the processes it starts inherit it; a niceness of 10 or more is left
 # alone, so nested runs never stack, and a failing renice is ignored.
 
-# The walk section_titles and section_text share, over setup.sh, the noun
+# The walk section_titles and section_text share, over setup.sh, the section
 # files, then setup.sh again. Each line is in one phase. "setup" is setup.sh's
 # shared setup (from its `# >>> shared setup` line to its `# >>> summary` line),
 # read the first time; "summary" its summary (from its `# >>> summary` line),
-# read the second time; "skip" the rest of setup.sh. In a noun file, "preamble"
-# is the text before its first `# --- ` line, and "sections" the rest, each
-# `# --- ` header numbering its section n across the whole walk, so isolation,
-# harness.sh's first, is 1. title() is test_tree.sh's SECTION_TITLE_AWK.
+# read the second time; "skip" the rest of setup.sh. In a section file,
+# "preamble" is the text before its first `# --- ` line, and "sections" the
+# rest, each `# --- ` header numbering its section n across the whole walk, so
+# isolation, harness.sh's first, is 1. title() is test_tree.sh's
+# SECTION_TITLE_AWK.
 section_walk_awk="$SECTION_TITLE_AWK"'
   BEGIN { setup = ENVIRON["ORCH_SETUP_FILE"] }
   FNR == 1 { phase = "skip"; pre = ""; shown = 0; if (FILENAME == setup) setups++; else phase = "preamble" }
@@ -212,7 +209,7 @@ section_walk_awk="$SECTION_TITLE_AWK"'
 '
 
 # section_walk <awk program> [awk options]: run the walk with the program
-# appended over setup.sh, the noun files and setup.sh.
+# appended over setup.sh, the section files and setup.sh.
 section_walk() {
   local program="$1" files
   shift
@@ -348,10 +345,7 @@ if [ -n "${ORCH_TEST_CHILD_SECTION:-}" ]; then
   # shellcheck disable=SC2034 # read by the summary, eval'd from setup.sh
   orch_counts_file="$ORCH_TEST_CHILD_COUNTS"
   orch_child_times="${ORCH_TEST_CHILD_TIMES:-}"
-  # The runner's seed, which this child builds none of; setup.sh reads it.
-  # shellcheck disable=SC2034 # read by setup.sh, eval'd below
-  orch_seed_dir="${ORCH_TEST_CHILD_SEED:-}"
-  unset ORCH_TEST_CHILD_SECTION ORCH_TEST_CHILD_COUNTS ORCH_TEST_CHILD_TIMES ORCH_TEST_CHILD_SEED
+  unset ORCH_TEST_CHILD_SECTION ORCH_TEST_CHILD_COUNTS ORCH_TEST_CHILD_TIMES
   tally_init
   if [ -n "$orch_child_times" ]; then
     # Timed by the child itself: the section's wall time under `time`, its
@@ -480,19 +474,6 @@ else
   orch_durations_out=""
 fi
 test_jobs_pool_init orch_test.sh || exit 1
-# The seed: the stub cache of the tree under test, built once by running
-# orch.sh in a HOME of the root's own and kept in orch_seed_dir, which
-# setup.sh copies into every section's fresh HOME. A build or a copy that fails
-# leaves the run unseeded, silently. A plain variable, never exported, so no
-# runner a section starts inherits it; the parallel runner hands it to its
-# children through ORCH_TEST_CHILD_SEED.
-orch_seed_dir=""
-if mkdir "$orch_root/seed-home" 2>/dev/null &&
-  HOME="$orch_root/seed-home" bash "$ORCH" help </dev/null >/dev/null 2>&1 &&
-  [ -n "$(ls -A "$orch_root/seed-home/.cache/orchestrator" 2>/dev/null)" ]; then
-  # shellcheck disable=SC2034 # read by setup.sh, eval'd below
-  orch_seed_dir="$orch_root/seed-home/.cache/orchestrator"
-fi
 echo "orch.sh tests"
 if [ "$orch_jobs" -eq 1 ]; then
   # One shell, one slot for the whole run; the runners its sections start
@@ -574,7 +555,7 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     test_jobs_slot_take || { test_jobs_slot_note; break; }
     orch_k=$((orch_order[orch_started] - 1))
     orch_pos="${orch_sections[$orch_k]}"
-    ORCH_TEST_CHILD_SEED="$orch_seed_dir" ORCH_TEST_CHILD_SECTION="$orch_pos" ORCH_TEST_CHILD_COUNTS="$orch_buf/$orch_pos.counts" \
+    ORCH_TEST_CHILD_SECTION="$orch_pos" ORCH_TEST_CHILD_COUNTS="$orch_buf/$orch_pos.counts" \
       ORCH_TEST_CHILD_TIMES="${orch_durations_out:+$orch_buf/$orch_pos.times}" ORCH_TEST_JOBS=1 \
       test_jobs_suite_start bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" 2>"$orch_buf/$orch_pos.err"
     orch_pids[orch_k]="$TEST_JOBS_SUITE_PID"

@@ -435,7 +435,7 @@ def test_a_seed_that_cannot_be_built_dies_leaving_a_done_flow_unarchived(
     without one would be."""
     hold_flow(root, slug="first", phase="done")
     before = state_json(root).read_bytes()
-    monkeypatch.setattr(flow_state, "STATE_KEYS", flow_state.STATE_KEYS + (("bogus", "", "arg"),))
+    monkeypatch.setattr(flow_state, "STATE_KEYS", flow_state.STATE_KEYS + (("bogus", "", "arg", "init seeds it"),))
 
     assert orch_init(seed, checkout_git(root), "next") == 1
     assert capsys.readouterr() == (

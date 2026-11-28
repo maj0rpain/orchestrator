@@ -256,8 +256,8 @@ class Git:
         return self._output(["remote", "get-url", "origin"])
 
     def toplevel(self) -> Optional[str]:
-        """The checkout's root, as orch.sh's ROOT block reads it; None outside
-        a repository."""
+        """The checkout's root, as `git rev-parse --show-toplevel` reads it;
+        None outside a repository."""
         return self.toplevel_at(None)
 
     def toplevel_at(self, path: Optional[str]) -> Optional[str]:
@@ -519,14 +519,13 @@ class Git:
         return self._line_at_top(["config", "--get", key])
 
     # The checkout scan's operations (orch.checkout), the list, and the main
-    # checkout read from it, run where the adapter runs, as bash's
-    # checkout_parse runs, the others in the checkout they name, as bash's
-    # `git -C <path>`.
+    # checkout read from it, run where the adapter runs, the others in the
+    # checkout they name, as bash's `git -C <path>`.
 
     def worktree_list(self) -> Optional[List[Worktree]]:
         """Every checkout of the clone, the main checkout first, read from
-        `git worktree list --porcelain` - bash checkout_parse, the one place
-        the porcelain is read: a Worktree for each `worktree` line, its branch
+        `git worktree list --porcelain` - the one place the porcelain is
+        read: a Worktree for each `worktree` line, its branch
         the `branch refs/heads/` line after it. A worktree whose directory is
         gone is listed too. None when the list fails."""
         run = self._run(["worktree", "list", "--porcelain"])
@@ -624,7 +623,7 @@ class Git:
         return self._push([remote, refspec])
 
     # The claim create's operations, run where the adapter runs, as bash's
-    # adapter_claim_create runs its git.
+    # adapter_claim_create ran its git.
 
     def empty_commit(self, subject: str, body: str) -> Optional[str]:
         """A commit of the empty tree with no parent, its message <subject>
@@ -643,7 +642,7 @@ class Git:
         return self._push(["--force-with-lease=%s:" % ref, remote, "%s:%s" % (commit, ref)])
 
     # The claim list's operations, run where the adapter runs, as bash's
-    # adapter_claim_list runs its git.
+    # adapter_claim_list ran its git.
 
     def fetch_prune(self, remote: str, refspec: str) -> Optional[str]:
         """`git fetch --quiet --prune <remote> <refspec>`: None when it
@@ -694,9 +693,9 @@ class Git:
         return GitFailure(run.returncode, run.stderr.decode("utf-8", "surrogateescape"))
 
     def origin_has_branch(self, name: str) -> Optional[bool]:
-        """Whether origin has branch <name> - bash origin_has_branch, on
-        ls-remote's own exit codes: True yes, False origin answered and it
-        does not, None origin could not be asked."""
+        """Whether origin has branch <name>, on ls-remote's own exit codes:
+        True yes, False origin answered and it does not, None origin could
+        not be asked."""
         code = self._run(
             ["ls-remote", "--quiet", "--exit-code", "origin", "refs/heads/" + name]
         ).returncode

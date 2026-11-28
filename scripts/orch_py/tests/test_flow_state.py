@@ -1,7 +1,7 @@
 """The Flow state module's Python side, pinned to the bash Flow state module
 (scripts/flow-state.sh) by the golden state.json files in flow_state/: each
 file under read/ reads, key for key, as its .expected file says - the same
-files and expected values the bash state section reads through
+files and expected values the bash flow-state section reads through
 flow_state_get_many - each under refused/ is a failed read, and each under
 seed/, which only these tests read, is the state.json bash init wrote, which
 Python's seed, create and phase write reproduce byte for byte. Its key table
@@ -20,7 +20,7 @@ from conftest import bash_sourced, died_of
 
 GOLDEN = Path(__file__).resolve().parent / "flow_state"
 BASH_MODULE = Path(__file__).resolve().parents[2] / "flow-state.sh"
-KEYS = [key for key, _, _ in STATE_KEYS]
+KEYS = [key for key, _, _, _ in STATE_KEYS]
 
 
 def expected_values(path):
@@ -70,20 +70,20 @@ def test_a_nul_inside_a_value_is_dropped(tmp_path):
 def bash_state_rows():
     """The data rows of the bash state key table, STATE_KEYS in
     scripts/flow-state.sh, as its one reader state_rows prints them in a bash
-    child process: (key, default, seed, owner) each, in table order."""
-    return [tuple(line.split("|", 3))
+    child process: (key, default, seed) each, in table order."""
+    return [tuple(line.split("|", 2))
             for line in bash_sourced(BASH_MODULE, "state_rows").splitlines()]
 
 
 @pytest.mark.skipif(not BASH_MODULE.exists(), reason="the bash Flow state module is gone")
 def test_the_key_table_s_keys_and_defaults_equal_the_bash_state_key_table_s():
-    assert [(key, default) for key, default, _ in STATE_KEYS] == \
+    assert [(key, default) for key, default, _, _ in STATE_KEYS] == \
         [row[:2] for row in bash_state_rows()]
 
 
 @pytest.mark.skipif(not BASH_MODULE.exists(), reason="the bash Flow state module is gone")
 def test_the_key_table_s_seed_column_equals_the_bash_state_key_table_s():
-    assert [(key, seed) for key, _, seed in STATE_KEYS] == \
+    assert [(key, seed) for key, _, seed, _ in STATE_KEYS] == \
         [(row[0], row[2]) for row in bash_state_rows()]
 
 
@@ -192,22 +192,17 @@ def test_the_create_fails_making_nothing_when_the_state_directory_is_gone(tmp_pa
 MANY_STATE = '{"phase":"implement","branch":"orch/7-x","pr":12,"redo_count":0,"updated":"x"}'
 
 
-def test_a_multi_key_write_records_every_key_in_one_write_as_bash_s_does(tmp_path):
-    """Python's write and bash flow_state_write_many, on the same state and
-    the same pairs - a null, an integer, a word, and a number marked a
-    string - leave the same bytes."""
-    python, bash = tmp_path / "python.json", tmp_path / "bash.json"
+def test_a_multi_key_write_records_every_key_in_one_write(tmp_path):
+    """The write, on a state and pairs - a null, an integer, a word, and a
+    number marked a string - leaves the bytes the bash multi-key writer left
+    on the same state while it was the writer."""
+    python = tmp_path / "python.json"
     python.write_text(MANY_STATE)
-    bash.write_text(MANY_STATE)
 
     state_write_many(str(python), [("pr", "null"), ("redo_count", "2"), ("budget", "7"),
                                    ("branch", "123", True), ("slug", "word")],
                      lambda: SEED_CLOCK)
-    bash_sourced(BASH_MODULE, 'now() { printf "%s\\n" 2026-01-02T03:04:05Z; }\n'
-                 'flow_state_write_many "$1" pr null redo_count 2 budget 7 --string branch 123 '
-                 'slug word', bash)
 
-    assert python.read_bytes() == bash.read_bytes()
     assert python.read_text() == (
         '{\n  "phase": "implement",\n  "branch": "123",\n  "pr": null,\n  "redo_count": 2,\n'
         '  "updated": "2026-01-02T03:04:05Z",\n  "budget": 7,\n  "slug": "word"\n}\n')

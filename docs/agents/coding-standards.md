@@ -26,9 +26,10 @@ a judgement call.
 
 Never write a hand-rolled `printf 'orch: ...' >&2`. `die` and `die2` print the
 message and exit; `warn` prints it and returns, for a non-fatal message.
-The two exceptions are the version checks that run before `die` can be
-loaded, each printing its own `orch: ` line: the bash version guard at the top
-of `orch.sh`, and `require_python` in the Python entry point
+The exceptions are the checks that run before `die` can be loaded, each
+printing its own `orch: ` line: the bash version guard at the top of `orch.sh`
+and its `python3` check (`orch_python_require`), since `orch.sh` sources
+nothing, and `require_python` in the Python entry point
 (`scripts/orch_py/orch/__main__.py`), which runs before `orch.common`'s `die`
 is imported.
 
@@ -38,11 +39,11 @@ through `die2`, or through a helper's `--exit 2`, while a helper misused by its
 own caller may keep its option check's status 1. The gh guard's death for want
 of a Repo exits 1 whatever the command reserved, so such a command that reaches
 GitHub resolves the Repo itself before its first GitHub read
-(`repo_pin || die2 "$REPO_REMEDY"`). Likewise a noun converted to Python
-(ADR-0067) dies exit 1, whatever its verb reserved, when it finds no python3
-or one below 3.9 (`orch_python` in `orch.sh`, `require_python` in the Python
-entry point): the verb never started, so the death comes before any "no" it
-could mean.
+(`if not gh.pin(): die(REPO_REMEDY, 2)`). Likewise every noun, being Python
+(ADR-0067), dies exit 1, whatever its verb reserved, when it finds no python3
+or one below 3.9 (`orch_python_require` in `orch.sh`, `require_python` in the
+Python entry point): the verb never started, so the death comes before any
+"no" it could mean.
 
 ## 3. No variable named after a file-level helper
 
@@ -72,6 +73,6 @@ file, taking a path's last component or testing membership in a list. Reach for
 the primitives: `temp_file_make` for a private temp file, `file_read` to read a
 file back exactly, `file_read_text` to read it as `$(cat)` gives it,
 `${path##*/}` for a path's last component, `list_has` and
-`word_listed` for membership in a newline or space-separated list, `tsv_split`
-and `lines_split` to split a line or a text into fields, and `newlines_strip` to
+`word_listed` for membership in a newline or space-separated list,
+`trim_split` to trim a text's surrounding whitespace, and `newlines_strip` to
 drop trailing newlines.

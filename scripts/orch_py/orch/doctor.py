@@ -382,8 +382,9 @@ def check_gh(d: Doctor) -> None:
 
 
 def check_jq(d: Doctor) -> None:
-    """The flow state the bash nouns read and write needs jq, which makes
-    "jq is missing" the one message that has to survive without it."""
+    """The hooks read the flow state through the bash Flow state module, which
+    needs jq, so "jq is missing" is the one message that has to survive
+    without it."""
     tool_check(d, "jq", "jq not found - orch.sh reads and writes state.json with it.")
 
 

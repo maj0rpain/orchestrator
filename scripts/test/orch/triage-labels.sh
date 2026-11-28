@@ -5,6 +5,9 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# writeln <line>...: prints each argument on a line of its own.
+writeln() { printf '%s\n' "$@"; }
+
 # --- triage_label_into: parse once, later lookups start no command ------------
 echo
 echo "triage_label_into"

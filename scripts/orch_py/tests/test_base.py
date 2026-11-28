@@ -1,7 +1,6 @@
-"""The base module's default-branch lookup, as the bash side's
-default_branch_resolve and default_branch_seed find it: GitHub's answer
-through the repo pin when it names a branch, else origin/HEAD's branch, else
-main - the name and its source, never a failure."""
+"""The base module's default-branch lookup, as the bash lookup found it:
+GitHub's answer through the repo pin when it names a branch, else
+origin/HEAD's branch, else main - the name and its source, never a failure."""
 from __future__ import annotations
 
 from orch.base import default_branch

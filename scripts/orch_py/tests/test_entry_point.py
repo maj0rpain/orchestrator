@@ -15,7 +15,8 @@ from conftest import (CLAUDE, PACKAGE_BOOTSTRAP, TICKET_PARENT, added, comments_
 from orch import cli, ticket
 from orch.common import exclude_orch_dirs
 from orch.gh_fake import FakeStore
-from orch.git import Git
+from orch.git import FakeGit, Git
+from orch.help import HELP
 from orch.__main__ import main
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
@@ -55,6 +56,37 @@ def test_an_unconverted_noun_is_an_unknown_command(capsys):
     assert died_of(capsys, lambda: main(["no-such-noun", "verb"])) == (
         1, "", "orch: unknown command: no-such-noun (run 'orch.sh help')\n"
     )
+
+
+def test_a_run_with_no_noun_prints_help(capsys):
+    assert cli.main([], git=FakeGit(toplevel="/the/checkout"), env={}) == 0
+    assert capsys.readouterr() == (HELP, "")
+
+
+@pytest.mark.parametrize("argv", [[""], ["", "status"]], ids=["alone", "with-arguments"])
+def test_a_run_whose_first_argument_is_empty_prints_help(capsys, argv):
+    """bash's ${1:-help} ran help for an empty first argument too."""
+    assert cli.main(argv, git=FakeGit(toplevel="/the/checkout"), env={}) == 0
+    assert capsys.readouterr() == (HELP, "")
+
+
+@pytest.mark.parametrize("argv", [[], [""]], ids=["no-noun", "empty-noun"])
+def test_a_python_below_3_9_refuses_a_run_naming_no_noun_as_help(monkeypatch, capsys, argv):
+    monkeypatch.setattr(sys, "version_info", (3, 8, 10, "final", 0))
+
+    assert died_of(capsys, lambda: main(argv)) == (
+        1, "", "orch: orch.sh help needs python3 3.9 or newer (found 3.8.10)"
+        " - run orch.sh doctor\n")
+
+
+@pytest.mark.parametrize("argv", [("help",), ("slug", "Some Text"), ("no-such-noun",),
+                                  ("status",), ()],
+                         ids=["help", "slug", "unknown-noun", "noun", "no-noun"])
+def test_outside_a_checkout_every_noun_dies_before_it_runs(capsys, argv):
+    assert died_of(capsys, lambda: cli.main(list(argv), git=FakeGit(toplevel=None), env={})) == (
+        1, "", "orch: not inside a git repository (%s) - cd into the repo's checkout (its root"
+        " or a worktree) and run orch.sh there; a mktemp path is for files, not the working"
+        " directory\n" % os.getcwd())
 
 
 def test_every_module_imports_with_site_packages_disabled():
@@ -101,6 +133,8 @@ def test_a_noun_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_path):
     """bash's printf died of SIGPIPE on a pipe whose reader is gone: so does
     a noun this change converts, with no traceback and no flush warning on
     stderr."""
+    git_repo(tmp_path)
+
     run = into_a_closed_pipe(tmp_path, "slug", "Some Text")
 
     assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
@@ -150,6 +184,11 @@ def test_redo_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_path, monk
 def test_the_redo_noun_is_converted(capsys):
     assert died_of(capsys, lambda: main(["redo", "wipe"]))[2] == \
         "orch: unknown redo op: wipe (want review|spec)\n"
+
+
+def test_the_state_noun_is_converted(capsys):
+    assert died_of(capsys, lambda: main(["state", "wipe"]))[2] == \
+        "orch: unknown state op: wipe (want get|set)\n"
 
 
 def spec_with_ticket(seed):
@@ -307,6 +346,48 @@ def test_branch_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_path):
 def test_the_branch_noun_is_converted(capsys):
     assert died_of(capsys, lambda: main(["branch", "base-sha", "extra"])) == (
         1, "", "orch: usage: orch.sh branch base-sha\n")
+
+
+@pytest.mark.parametrize("call, origin", [
+    (("repo", "show"), "https://github.com/acme/widgets.git"),
+    (("default-branch",), None),
+], ids=["repo", "default-branch"])
+def test_repo_and_default_branch_writing_into_a_closed_pipe_die_of_sigpipe_silently(
+        tmp_path, call, origin):
+    """`orch.sh repo show | head` and `orch.sh default-branch | head` ended
+    silently as bash's printf did: so do the Python nouns. default-branch
+    runs with no origin, so it asks GitHub nothing."""
+    git_repo(tmp_path, origin)
+
+    run = into_a_closed_pipe(tmp_path, *call)
+
+    assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
+
+
+def test_base_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_path):
+    """`orch.sh base show | head` ended silently as bash's printf did: so
+    does the Python base noun."""
+    git_repo(tmp_path)
+    run_git(tmp_path, "config", "orchestrator.base", "uat")
+
+    run = into_a_closed_pipe(tmp_path, "base", "show")
+
+    assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
+
+
+def test_the_repo_noun_is_converted(capsys):
+    assert died_of(capsys, lambda: main(["repo", "bogus"])) == (
+        1, "", "orch: unknown repo op: bogus (want show)\n")
+
+
+def test_the_default_branch_noun_is_converted(capsys):
+    assert died_of(capsys, lambda: main(["default-branch", "extra"])) == (
+        1, "", "orch: usage: orch.sh default-branch [--sha]\n")
+
+
+def test_the_base_noun_is_converted(capsys):
+    assert died_of(capsys, lambda: main(["base", "show", "extra"])) == (
+        1, "", "orch: usage: orch.sh base show\n")
 
 
 def test_a_noun_converted_earlier_keeps_its_flush_failure_on_a_closed_pipe(tmp_path):

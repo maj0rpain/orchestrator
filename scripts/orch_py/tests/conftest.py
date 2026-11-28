@@ -61,7 +61,7 @@ def store(tmp_path):
 
 @pytest.fixture
 def seed(store):
-    """The store's seeder and reader, as the bash suite's fake_* helpers."""
+    """The store's seeder and reader."""
     return FakeStore(str(store))
 
 
@@ -349,7 +349,7 @@ TICKET7 = TICKET_PARENT + "--t7"
 
 @pytest.fixture
 def ticket_repo(tmp_path, monkeypatch):
-    """bash's tw_repo: a clone of a bare origin with one commit on its
+    """A clone of a bare origin with one commit on its
     default branch pushed, then TICKET_PARENT checked out with a feature.txt
     commit of its own, git's identity set; the process's working directory:
     its root, resolved."""
@@ -1033,7 +1033,6 @@ def fixture_gh(tmp_path):
 CLEARED = (
     "GH_REPO",
     "GH_HOST",
-    "ORCH_GH_ADAPTER",
     "ORCH_GH_FAKE_STORE",
     "ORCH_GH_LIMIT_WAIT",
     "ORCH_ISSUE_LIST_LIMIT",

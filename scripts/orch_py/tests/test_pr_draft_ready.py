@@ -11,7 +11,7 @@ from orch.flow_state import STATE_UNREADABLE_MSG
 from orch.git import FakeGit
 from orch.repo import REPO_REMEDY
 from conftest import (GH_502, GITHUB_ORIGIN, SESSIONS, hold_flow, is_draft, orch_pr, read,
-                      snapshot, state_json)
+                      snapshot, write)
 
 BRANCH = "quick/12-foo"
 # Both verbs, each case of their shared front run through each; every one of
@@ -259,8 +259,7 @@ def test_a_flow_that_does_not_hold_the_branch_lets_it_through(seed, git, root, m
 @VERBS
 def test_a_state_json_that_cannot_be_read_exits_2(seed, git, root, mine, verb, env, capsys):
     starting(seed, verb, 57)
-    state_json(root).parent.mkdir(parents=True)
-    state_json(root).write_text("{\n")
+    write(root, ".orchestrator/state.json", raw="{\n")
     before = snapshot(seed.store)
 
     assert orch_pr(seed, git, verb, env=env) == 2

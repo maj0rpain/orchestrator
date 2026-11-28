@@ -8,20 +8,15 @@ Standards: `CONTRIBUTING.md#Develop`, `docs/agents/cli-conventions.md`,
 
 ## Layout
 
-`scripts/orch.sh` is a thin entry point: each bash noun's code lives in
-`scripts/orch/<noun>.sh`, each helper in the module of the concept it serves,
-and only the primitives no concept owns in `scripts/orch/common.sh`;
-`common.sh` and the module loader `loader.sh` are the two files every start
-loads. A noun converted to Python (ADR-0067; `issue`, `finding-triage`,
-`verification`, `audit`, `review-pass`, `spec-review`, `spec`, `breakdown`,
-`glossary`, `parallel`, `route`, `agent`, `init`, `slug`, `status`, `archive`,
-`phase`, `handoff`, `redo`, `ticket`, `ticket-worktree`, `pr`, `review`,
-`autopilot`, `side-checkout`, `branch`, `doctor` (and its alias `health`) and
-`help` so far)
-has no bash module: `orch.sh`'s one case naming the converted nouns runs it as
-`python3 -m orch <noun> ...` would, through a `-c` bootstrap, from the
-standard-library package in `scripts/orch_py/orch/`, its pytest tests beside it
-in `scripts/orch_py/tests/`. See CONTRIBUTING.md's Layout for the full map.
+`scripts/orch.sh` is a thin entry point: every noun is Python (ADR-0067), and
+`orch.sh` keeps only its bash version guard and `python3` check before it hands
+every argument to the standard-library package in `scripts/orch_py/orch/`, as
+`python3 -m orch <noun> ...` would run it, through a `-c` bootstrap. The
+package owns the noun list, each noun's code in the module of the concept it
+serves, its pytest tests beside it in `scripts/orch_py/tests/`. The bash module
+directory `scripts/orch/` holds only `common.sh`, the bash primitives no
+concept owns, which the autopilot scripts source.
+See CONTRIBUTING.md's Layout for the full map.
 There is no top-level `tests/`, and `hooks/` holds only `hooks.json`.
 
 ## Agent skills
@@ -57,7 +52,7 @@ See `docs/agents/coding-standards.md`.
 
 While iterating, run only the section you are working on:
 `ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`,
-e.g. `ORCH_TEST_ONLY='^base$'`.
+e.g. `ORCH_TEST_ONLY='^list_has$'`.
 A session that adds or edits tests runs `scripts/dev/section-durations.sh
 --stale` before verifying and commits the durations file with its change.
 Run `scripts/test/affected.sh` before each commit. CI runs the whole suite on
@@ -66,9 +61,10 @@ Ticket verification: scripts/test/affected.sh
 Branch verification: scripts/test/affected.sh
 Full verification: scripts/test/all.sh
 orch_test.sh is only the runner: its `# ---` sections live in
-`scripts/test/orch/<noun>.sh`, and a ticket's tests go in the file for the noun
-it touches (a new noun is Python, its tests pytest in `scripts/orch_py/tests/`;
-a concept module with no noun gets a section file named as it is). Sections
+`scripts/test/orch/<name>.sh`, one file per bash file they test, named as it is
+(`common.sh`, `flow-state.sh`, `host.sh`, `triage-labels.sh`), beside the
+harness's `harness.sh` and the shared setup's `setup.sh`. A noun's tests are
+pytest in `scripts/orch_py/tests/`, every noun being Python. Sections
 run in parallel, so every section must pass on its own. The runners share one
 job pool, its slots sized to 75% of the usable CPUs unless
 `ORCH_TEST_POOL_PERCENT` sets another share (see CONTRIBUTING.md).
@@ -77,10 +73,10 @@ test-helper placement section; its failure message states the rule. A test that
 writes out the whole body of a shared or preamble test helper it could call is
 failed by harness.sh's helper body copies section: call the helper, or mark a
 deliberate repeat with `# copy-of <helper>: <reason>`. Before writing or reusing
-a helper, run
-`scripts/dev/helpers.sh` (orch.sh's modules), `scripts/dev/helpers.sh --tests`
-(the shared test setup, the gh fake, the tally, the FIFO wait, the
-counting and failing-command fixtures), or `scripts/dev/helpers.sh <file>` (any
+a helper, run `scripts/dev/helpers.sh` (`scripts/orch/common.sh`),
+`scripts/dev/helpers.sh --tests` (the shared test setup, the gh fake's store
+layout, the tally, the FIFO wait, the counting and failing-command fixtures),
+or `scripts/dev/helpers.sh <file>` (any
 one bash file, e.g. `scripts/test/docs_lint.sh`) instead of grepping, and read
 CONTRIBUTING's Test helpers subsection: the fixtures to reach for first, running
 one section under `bash -x`, and the bash-version rule.
@@ -89,8 +85,8 @@ pytest` (`-k <name>` for one test, `-n auto` for xdist), with the dev
 dependencies of `scripts/orch_py/requirements-dev.txt` installed (the image's
 `/opt/orch-dev` venv has them). They use `tmp_path`, `monkeypatch` and the
 in-process fakes (`orch.gh_fake`'s `FakeGh` and `FakeStore`, on the fake store
-the bash `fake_*` helpers share; `orch.git`'s `FakeGit`), never the bash
-fixtures. `all.sh` and `affected.sh` run the whole pytest suite through
+`scripts/test/gh_adapter_fake.sh` documents; `orch.git`'s `FakeGit`), never the
+bash fixtures. `all.sh` and `affected.sh` run the whole pytest suite through
 `scripts/test/orch_py_test.sh`, outside the durations file.
 See CONTRIBUTING.md's Develop section.
 

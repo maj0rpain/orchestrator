@@ -1,7 +1,7 @@
 """The spec-review noun's prompt verb, run in-process against FakeGit and,
-for the Fidelity lens under autopilot, the gh fake on a store seeded as the
-bash fake_* helpers seed it, with the checkout, its round directories, its
-state.json and its handoff and scratch folders under tmp_path - each call
+for the Fidelity lens under autopilot, the gh fake on a store FakeStore
+seeds, with the checkout, its round directories, its state.json and its
+handoff and scratch folders under tmp_path - each call
 checked by its stdout, its exit code and its `orch:` line, as the bash
 spec-review prompt answers. The plan handoff is the path `handoff path spec`
 gives: the file adapter's, and under autopilot the comment adapter's copy of

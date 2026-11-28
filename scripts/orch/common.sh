@@ -1,12 +1,7 @@
 # shellcheck shell=bash
-# common.sh - the primitives no concept owns: die, warn, note, capture, the
-# text helpers and the like. A helper lives in the module of the concept it
-# serves, whichever modules call it, and common.sh calls nothing a noun module
-# defines; its test section checks this. A concept with no noun has a module
-# of its own too, such as the Checkout module (checkout.sh) and
-# the Trust module (trust.sh). Sourced by orch.sh ahead of the
-# ROOT block, which dies through die when run outside a git repository, and
-# ahead of every noun module.
+# common.sh - the bash primitives no concept owns: die, warn, capture, the
+# text helpers and the like. Sourced by the autopilot scripts; orch.sh sources
+# nothing, every noun being Python.
 
 # list_has <list> <item>: whether <item> is one of the newline-separated
 # <list>, matched whole-line, literally and case-sensitively. The one
@@ -75,54 +70,7 @@ die_hinted() {
 # warn: die's line on stderr, without the exit - for a refusal that returns its
 # own status, or a warning the command carries on past.
 warn() { printf 'orch: %s\n' "$*" >&2; }
-note() { printf '%s\n' "$*"; }
 
-# Float comparison and addition, in awk, because the poll loops' timings are
-# overridable and the tests turn them down to fractions of a second; bash
-# arithmetic is integer only and would read a grace of 0.3 as 0. A fractional
-# `sleep` is a GNU/BSD extension rather than POSIX, which is a line this file
-# can hold because every platform the plugin runs on (Linux, macOS, Git Bash)
-# ships a sleep that takes one: the tests turn the poll timings down to
-# fractions.
-float_lt()  { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'; }
-# float_add <a> <b>: prints a + b to three decimal places.
-float_add() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f\n", a + b }'; }
-
-# autopilot_active: whether this is an autopilot session - the one reader of
-# ORCH_AUTOPILOT, so no skill reads the variable itself.
-autopilot_active() { [ "${ORCH_AUTOPILOT:-}" = 1 ]; }
-
-# is_number <v>: whether <v> is a non-negative decimal number: digits with at
-# most one point, and at least one character. Each caller keeps its reaction.
-is_number() {
-  case "$1" in
-    ''|*[!0-9.]*|*.*.*|.) return 1 ;;
-  esac
-}
-
-# is_positive_number <v>: whether <v> is a number (is_number) above zero. Zero
-# is every character a zero or the point, however it is written - a glob cannot
-# say that without also matching 0.05.
-is_positive_number() { is_number "$1" && [ -n "${1//[0.]/}" ]; }
-
-# require_poll_knobs [die|die2] <var>... <interval-var>: dies (through the dier
-# given, as require_state_read takes it) unless every named variable
-# holds a number and the last, the poll interval, is greater than zero.
-# awk compares a number against a non-numeric string as strings, which makes
-# every `float_lt` true and a poll loop endless. A zero interval is the same
-# hazard by a different route: `sleep 0` returns at once and never advances the
-# clock the loop sleeps on, leaving it to poll as fast as it can. A poll loop's
-# knobs are read once, here, before anything sleeps on one of them.
-require_poll_knobs() {
-  local k v interval="${!#}" __rpk_die=die
-  case "${1:-}" in die | die2) __rpk_die="$1"; shift ;; esac
-  for k in "$@"; do
-    eval "v=\$$k"
-    is_number "$v" || "$__rpk_die" "$k is not a number: $v"
-  done
-  eval "v=\$$interval"
-  is_positive_number "$v" || "$__rpk_die" "$interval must be greater than zero: $v"
-}
 # temp_file_name <var>: sets <var> to a fresh, unpredictable path under the temp
 # directory, built from $RANDOM. temp_file_make takes every name from it, so a
 # test replaces it to force a collision.
@@ -153,17 +101,13 @@ temp_file_make() {
 # stderr byte for byte, and returns its status. It leaves stdout alone, to the
 # caller's own redirect: a body streamed to a file through
 # `capture_err err cat "$file" >"$copy"` keeps its trailing
-# newlines, which capture's strip would remove. A command that reaches GitHub -
-# a GitHub operation, or a function or command that makes one - goes through
-# gh_capture_err instead, which resolves the Repo first. The stderr goes
+# newlines, which capture's strip would remove. The stderr goes
 # through one temp file capture_err makes with temp_file_make and reads back
 # with file_read; only the final rm, and the cat of a failed file_read, start an
 # external command. Call it in the current shell, never inside $(...): it sets
 # the caller's variable with printf -v. Its
 # locals carry a _capture_err_ prefix, so they shadow no caller's variable. The
-# command runs in a subshell: the gh guard's no-repo death then signals the
-# main shell, whose USR1 trap dies with the remedy on the real stderr, rather
-# than dying here with its message redirected into the capture.
+# command runs in a subshell, so an exit in it ends the command alone.
 capture_err() {
   local _capture_err_file _capture_err_text _capture_err_st=0
   temp_file_make _capture_err_file || {
@@ -176,15 +120,6 @@ capture_err() {
   rm -f "$_capture_err_file"
   printf -v "$1" '%s' "$_capture_err_text"
   return "$_capture_err_st"
-}
-# assoc_array_require <caller> <name> <own-prefix>: dies, naming <caller>,
-# unless <name> is a declared associative array and not one of the caller's own
-# <own-prefix>* locals, which an eval of its writes would clobber. A caller's
-# programming error, guarded before the caller writes through the name.
-assoc_array_require() {
-  [[ $2 =~ ^[A-Za-z_][A-Za-z0-9_]*$ && $2 != "$3"* \
-    && $(declare -p "$2" 2>/dev/null) =~ ^declare\ -[A-Za-z]*A ]] \
-    || die "$1: $2 is not a declared associative array"
 }
 # capture <out-var> <err-var> <command...>: capture_err with the stdout taken
 # too - sets <out-var> to the command's stdout (read back with file_read, its
@@ -217,8 +152,8 @@ git_config_unset() {
 }
 # git_push <reason-var> <git push args...>: runs git push with the arguments,
 # sets <reason-var> to git's reason through git_push_reason, and returns the
-# push's status (#1300). Every push orch.sh makes runs through it, so none
-# drops the reason or leaves the status unchecked; each site keeps its own die.
+# push's status (#1300). The bash copy of orch.git's push, which every push
+# orch.sh makes runs through; kept for the common section's tests (#4304).
 # Same rules as capture_err: current shell only, _git_push_-prefixed locals.
 git_push() {
   local _git_push_err _git_push_st=0
@@ -244,52 +179,14 @@ git_push_reason() {
   printf -v "$2" '%s' "${_gpr_bangs:-${_gpr_fatal:-${_gpr_first:-git gave no reason}}}"
 }
 
-# The splitters below cut a string up by parameter expansion, so a hot path
-# spawns no awk, sed, cut or tail to do it. Each assigns to caller-named
-# variables through printf -v, as capture does, and is called in the current
-# shell, never inside $(...).
-#
 # trim_split <text> <var>: <text> with leading and trailing whitespace
-# removed, into <var>.
+# removed, into <var>, by parameter expansion, so it spawns no command. It
+# assigns through printf -v, as capture does, and is called in the current
+# shell, never inside $(...).
 trim_split() {
   local _trim_split_s="$1"
   _trim_split_s="${_trim_split_s#"${_trim_split_s%%[![:space:]]*}"}"
   printf -v "$2" '%s' "${_trim_split_s%"${_trim_split_s##*[![:space:]]}"}"
-}
-
-# tsv_split <line> <var>...: <line>'s tab-separated fields into the named
-# variables in turn, as awk -F '\t' reads them: an empty field stays empty,
-# a field past the last tab is empty, and fields past the last variable are
-# dropped.
-tsv_split() {
-  local _tsv_rest="$1"
-  shift
-  while [ $# -gt 0 ]; do
-    printf -v "$1" '%s' "${_tsv_rest%%$'\t'*}"
-    case "$_tsv_rest" in
-      *$'\t'*) _tsv_rest="${_tsv_rest#*$'\t'}" ;;
-      *) _tsv_rest="" ;;
-    esac
-    shift
-  done
-}
-
-# lines_split <text> <var>... <rest-var>: <text>'s first line into the first
-# variable, its next line into the next, and every line left into
-# <rest-var> - as `sed -n <N>p` and `tail -n +<N>` captured by $(...) read a
-# text with no trailing newline. A line past the end is empty.
-lines_split() {
-  local _ls_rest="$1"
-  shift
-  while [ $# -gt 1 ]; do
-    printf -v "$1" '%s' "${_ls_rest%%$'\n'*}"
-    case "$_ls_rest" in
-      *$'\n'*) _ls_rest="${_ls_rest#*$'\n'}" ;;
-      *) _ls_rest="" ;;
-    esac
-    shift
-  done
-  printf -v "$1" '%s' "$_ls_rest"
 }
 
 # file_read <var> <file>: <file>'s bytes into <var>, exactly - its trailing
@@ -331,47 +228,13 @@ file_read_text() {
   newlines_strip "$1"
 }
 
-# plugin_cmd <command> <fallback>: names a plugin command so any host can act
-# on it. Plugin commands are unverified on Junie (docs/host-capabilities.md),
-# so off Claude Code it also names <fallback>, where the command routes - the
-# same fallback the skills offer. On Claude Code the name stands alone, as it
-# was before 1.0.0 (#121 story 2).
-plugin_cmd() {
-  if [ "$(host_detect)" = claude ]; then
-    printf "/orchestrator:%s" "$1"
-  else
-    printf "/orchestrator:%s (or %s)" "$1" "$2"
-  fi
-}
-
-# Names a flow command, its fallback the orch-flow section it routes to.
-flow_cmd() {
-  local section
-  case "$1" in
-    start) section="Starting a flow" ;;
-    next)  section="Next phase" ;;
-    redo)  section="Redo" ;;
-    abort) section="Abort" ;;
-    finish) section="Finish" ;;
-    *) die "flow_cmd: unknown command: $1" ;;
-  esac
-  plugin_cmd "$1" "orch-flow's $section section"
-}
-
-# Ignore every directory in EXCLUDED_DIRS - the flow directory and .scratch/ -
-# without touching a tracked .gitignore, so running the orchestrator in an
-# unfamiliar repo never dirties its working tree. A line already present is
-# never written again. The file is the clone's shared one (the common dir),
-# the only info/exclude git reads, so a linked worktree writes it too. No bash
-# caller is left: the converted nouns write it through orch/common.py's copy.
-exclude_orch_dirs() { exclude_line "$(printf '%s\n' "${EXCLUDED_DIRS[@]}")"; }
-
 # exclude_line <lines>: makes sure each of the newline-separated <lines> is a
 # line of the clone's shared info/exclude, adding it once and never again: it
 # appends the lines exclude_missing finds absent, creating the file's directory
-# first, and does nothing at all when none is missing. The one place that file
-# is appended to, for exclude_orch_dirs and agent sync's agent-copy line alike;
-# it dies naming the missing lines and the file on a failed write.
+# first, and does nothing at all when none is missing. It dies naming the
+# missing lines and the file on a failed write. The bash copy of
+# orch/common.py's exclude_line, which makes every append orch.sh makes to that
+# file; kept for the common section's tests (#4304).
 exclude_line() {
   local missing ex
   missing="$(exclude_missing "$1")"
@@ -387,8 +250,8 @@ exclude_line() {
 
 # exclude_missing <lines>: prints, one per line, each of the newline-separated
 # <lines> the clone's shared info/exclude lacks - every one when the file is
-# missing. The one place the membership test is written: exclude_line appends
-# exactly this.
+# missing. exclude_line appends exactly this. The bash copy of orch/common.py's
+# exclude_missing; kept for the common section's tests (#4304).
 exclude_missing() {
   local ex l
   ex="$(git rev-parse --git-common-dir)/info/exclude"

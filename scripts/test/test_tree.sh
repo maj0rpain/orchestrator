@@ -100,7 +100,7 @@ shellcheck_files() {
   [ "$had_nullglob" -eq 1 ] || shopt -u nullglob
 }
 
-# The function section_files <section dir> prints the noun files the walk
+# The function section_files <section dir> prints the section files the walk
 # reads, one per line: <section dir>/harness.sh, then every other
 # <section dir>/*.sh but setup.sh, in LC_ALL=C order whatever the caller's
 # locale. There is no list of files: a new one is read. orch_test.sh and

@@ -1,18 +1,14 @@
 # shellcheck shell=bash
-# triage-labels.sh - the triage-label parser, sourced by orch.sh and by
-# hook-grilling.sh.
+# triage-labels.sh - the triage-label parser, sourced by hook-grilling.sh.
 #
 # Reads this repo's triage-labels doc: the table mapping each canonical
 # triage role to the repo's local label name. Needs only ROOT defined, so any
-# script that needs the repo's triage labels can source it alone, without
-# orch.sh's shared mechanism (#575). Its reader is hook-grilling.sh; the
-# Python nouns, doctor, init and autopilot among them, read the doc through
-# its own copy (orch/triage_labels.py).
+# script that needs the repo's triage labels can source it alone (#575). Its
+# reader is hook-grilling.sh; the Python nouns, doctor, init and autopilot
+# among them, read the doc through its own copy (orch/triage_labels.py).
 #
-# LABELS_DOC is assigned plainly here, its one home: orch.sh sources this
-# module and marks it readonly right after, and no module sourced after
-# orch.sh sources this module again - a second assignment of a readonly
-# LABELS_DOC would fail.
+# LABELS_DOC is assigned plainly here, its one home: nothing marks it
+# readonly, so a second source of this module only assigns it again.
 
 LABELS_DOC="docs/agents/triage-labels.md"
 

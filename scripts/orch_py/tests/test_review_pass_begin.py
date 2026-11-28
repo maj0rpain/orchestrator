@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from orch.git import FakeGit
-from conftest import GITHUB_ORIGIN, flow_state, orch_review_pass, state_json
+from conftest import GITHUB_ORIGIN, flow_state, orch_review_pass, state_json, write
 
 BRANCH = "quick/12-foo"
 USAGE = "orch: usage: orch.sh review-pass begin <issue>\n"
@@ -143,8 +143,7 @@ def test_with_nothing_answering_main_is_the_base(root, seed, capsys):
 
 
 def test_the_base_branch_refusal_comes_before_the_state_read(root, seed, capsys):
-    state_json(root).parent.mkdir()
-    state_json(root).write_text("{\n")
+    write(root, ".orchestrator/state.json", raw="{\n")
 
     assert begin(seed, checkout_git(root, base=BRANCH), "12") == 1
 
@@ -229,8 +228,7 @@ def test_an_active_flow_on_another_issue_and_branch_lets_it_through(root, seed, 
 
 
 def test_an_unreadable_state_file_refuses_it(root, seed, capsys):
-    state_json(root).parent.mkdir()
-    state_json(root).write_text("{\n")
+    write(root, ".orchestrator/state.json", raw="{\n")
 
     assert begin(seed, checkout_git(root), "12") == 1
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # helpers.sh [--tests] [<file>]: the helper index. Prints every top-level
-# function of orch.sh's modules (scripts/orch/*.sh), or with --tests of the
-# shared test setup, the gh adapter fake, the assertion tally, the bounded
-# FIFO wait, the counting fixture and the failing-command fixture, or of the one
-# bash <file> named, each with the first line of the comment directly above its
-# definition.
+# function of the bash module directory (scripts/orch/*.sh, common.sh alone),
+# or with --tests of the shared test setup, the gh fake's store layout, the
+# assertion tally, the bounded FIFO wait, the counting fixture and the
+# failing-command fixture, or of the one bash <file> named, each with the
+# first line of the comment directly above its definition.
 #
 # Output, per file: a `# <path>` header - relative to the repo root, or <file>
 # as given - then one `<name><TAB><description>` line per function in file
