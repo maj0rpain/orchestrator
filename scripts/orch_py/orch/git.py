@@ -734,6 +734,13 @@ class Git:
         None when it was made, else git's status and stderr, nothing moved."""
         return self._failure(["checkout", "-q", "--no-track", "-b", name, start])
 
+    def checkout_existing_branch(self, name: str) -> Optional[GitFailure]:
+        """`git checkout -q <name>`: checks out existing local branch <name>,
+        a tag of its name never taken for it - branch create's restart. None
+        when it is checked out, else git's status and stderr, nothing
+        moved."""
+        return self._failure(["checkout", "-q", name])
+
     def branch_delete(self, name: str) -> Optional[GitFailure]:
         """`git branch -q -D <name>`: deletes local branch <name>, merged or
         not, its config section with it. None when it is gone, else git's
@@ -898,8 +905,9 @@ class FakeGit:
     branch_create adds one tracking nothing, checkout_new_branch adds one
     tracking nothing at the commit resolve_commit seeds for its start and
     checks it out - current_branch and HEAD's resolve_commit answering it
-    from then on - and branch_delete drops one with its branch.<name>.
-    config section, as -D does.
+    from then on - checkout_existing_branch checks one out, current_branch
+    answering it from then on, and branch_delete drops one with its
+    branch.<name>. config section, as -D does.
 
     The operations COULD_NOT names answer what seed() set for their
     arguments, and their "could not" value for a call nothing was seeded
@@ -1170,6 +1178,13 @@ class FakeGit:
         self.branches[name] = None
         self.seed("current_branch", answer=name)
         self.seed("resolve_commit", "HEAD", answer=commit)
+        return None
+
+    def checkout_existing_branch(self, name: str) -> Optional[GitFailure]:
+        if name not in self.branches:
+            return GitFailure(1, "error: pathspec '%s' did not match any file(s) known to"
+                              " git\n" % name)
+        self.seed("current_branch", answer=name)
         return None
 
     def branch_delete(self, name: str) -> Optional[GitFailure]:

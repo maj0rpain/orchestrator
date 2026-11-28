@@ -1163,6 +1163,34 @@ def test_a_new_branch_git_refuses_to_check_out_gives_its_status_and_stderr_the_s
     assert (git.current_branch(), fake.current_branch()) == (PARENT, None)
 
 
+# --- an existing branch checked out, as branch create's restart does -------------
+
+
+def test_an_existing_branch_is_checked_out_beside_a_same_named_tag_the_same_from_both(forking):
+    # The tag sits on the newer commit: the branch, never the tag, is taken.
+    branched = run_git(forking, "rev-parse", "HEAD")
+    run_git(forking, "branch", TICKET)
+    committed(forking, {"b.txt": "b\n"}, "two")
+    run_git(forking, "tag", TICKET, "HEAD")
+    git, fake = Git(cwd=str(forking)), FakeGit(branches={PARENT: None, TICKET: None})
+
+    for adapter_ in (git, fake):
+        assert adapter_.checkout_existing_branch(TICKET) is None
+        assert adapter_.current_branch() == TICKET
+    assert run_git(forking, "rev-parse", "HEAD") == branched
+
+
+def test_a_branch_that_does_not_exist_is_refused_with_git_s_status_and_stderr_from_both(forking):
+    git, fake = Git(cwd=str(forking)), FakeGit(branches={PARENT: None})
+    fake.seed("current_branch", answer=PARENT)
+    real = git.checkout_existing_branch("nope")
+
+    assert fake.checkout_existing_branch("nope") == GitFailure(
+        1, "error: pathspec 'nope' did not match any file(s) known to git\n")
+    assert real.code == 1 and "'nope'" in real.stderr
+    assert (git.current_branch(), fake.current_branch()) == (PARENT, PARENT)
+
+
 def test_a_worktree_is_added_on_an_existing_branch_the_same_from_a_real_repo_and_the_fake(
         forking):
     run_git(forking, "branch", TICKET)
