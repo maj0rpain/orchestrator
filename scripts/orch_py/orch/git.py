@@ -18,9 +18,10 @@ create makes, branch retire's local branch reads and rename, origin probe,
 tracking push and remote
 delete (orch.branch), the dirty paths the planning allowlist's flow-start scan
 judges, the scoped git config reads, writes and unsets
-(`config_regexp`, `config_set`, `config_unset`) the agent noun uses, and what
-the ticket nouns need: a ticket branch's create with no tracking and its
-delete (-D), the worktree add that checks it out and the removal that takes
+(`config_regexp`, `config_set`, `config_unset`) the agent noun uses, branch
+off's and branch create's fork (a new branch checked out with no tracking),
+and what the ticket nouns need: a ticket branch's create with no tracking and
+its delete (-D), the worktree add that checks it out and the removal that takes
 it back out, the rebase, rebase abort, unmerged-path listing and
 fast-forward-only merge `ticket merge` runs in a given checkout, the
 status the clean-tree check (orch.common) reads there, and the
@@ -723,6 +724,13 @@ class Git:
         when it was made, else git's status and stderr."""
         return self._failure(["branch", "-q", "--no-track", name, start])
 
+    def checkout_new_branch(self, name: str, start: str) -> Optional[GitFailure]:
+        """`git checkout -q --no-track -b <name> <start>`: a new local branch
+        at <start>, checked out, tracking nothing whatever
+        branch.autoSetupMerge says - branch off's and branch create's fork.
+        None when it was made, else git's status and stderr, nothing moved."""
+        return self._failure(["checkout", "-q", "--no-track", "-b", name, start])
+
     def branch_delete(self, name: str) -> Optional[GitFailure]:
         """`git branch -q -D <name>`: deletes local branch <name>, merged or
         not, its config section with it. None when it is gone, else git's
@@ -862,8 +870,11 @@ class FakeGit:
     refusal; <branches> maps each local branch's name to the full ref it
     tracks, None for none:
     branch_rename moves an entry as git moves a branch and its upstream,
-    branch_create adds one tracking nothing, and branch_delete drops one with
-    its branch.<name>. config section, as -D does.
+    branch_create adds one tracking nothing, checkout_new_branch adds one
+    tracking nothing at the commit resolve_commit seeds for its start and
+    checks it out - current_branch and HEAD's resolve_commit answering it
+    from then on - and branch_delete drops one with its branch.<name>.
+    config section, as -D does.
 
     The operations COULD_NOT names answer what seed() set for their
     arguments, and their "could not" value for a call nothing was seeded
@@ -1113,6 +1124,18 @@ class FakeGit:
         if name in self.branches:
             return GitFailure(128, "fatal: a branch named '%s' already exists\n" % name)
         self.branches[name] = None
+        return None
+
+    def checkout_new_branch(self, name: str, start: str) -> Optional[GitFailure]:
+        if name in self.branches:
+            return GitFailure(128, "fatal: a branch named '%s' already exists\n" % name)
+        commit = self._answer("resolve_commit", start)
+        if commit is None:
+            return GitFailure(128, "fatal: '%s' is not a commit and a branch '%s' cannot be"
+                              " created from it\n" % (start, name))
+        self.branches[name] = None
+        self.seed("current_branch", answer=name)
+        self.seed("resolve_commit", "HEAD", answer=commit)
         return None
 
     def branch_delete(self, name: str) -> Optional[GitFailure]:

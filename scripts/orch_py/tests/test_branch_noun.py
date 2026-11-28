@@ -1,14 +1,17 @@
-"""`orch.sh branch busy|base-sha|retire` and the noun's dispatch, called
-in-process through the branch module's run: busy and retire against FakeGit
-and the gh fake, base-sha against real repositories with a real origin under
-tmp_path, since its fallback is git's merge-base, which a fake would only
-restate. Each message, exit code and order of checks is the bash noun's,
+"""`orch.sh branch off|busy|base-sha|retire` and the noun's dispatch, called
+in-process through the branch module's run: off, busy and retire against
+FakeGit and the gh fake, base-sha against real repositories with a real
+origin under tmp_path, since its fallback is git's merge-base, which a fake
+would only restate - as are off's full-ref naming beside same-named tags and
+git's own refusal of a clashing checkout. Each message, exit code and order of checks is the bash noun's,
 verbatim."""
 from __future__ import annotations
 
+import subprocess
+
 import pytest
 
-from conftest import fake, hold_flow, origin_clone, outcome, run_git
+from conftest import committed, fake, hold_flow, origin_clone, outcome, run_git
 from orch import branch as module
 from orch.git import FakeGit, Git
 
@@ -33,12 +36,296 @@ def test_an_unknown_or_missing_op_is_refused_naming_the_six(capsys, argv, named)
         "orch: unknown branch op: %s (want create|off|busy|base-sha|sync|retire)\n" % named))
 
 
-@pytest.mark.parametrize("op", ["create", "off", "sync"])
+@pytest.mark.parametrize("op", ["create", "sync"])
 def test_a_verb_still_run_in_bash_is_known_never_an_unknown_op(capsys, op):
     # orch.sh routes branch to bash until the switch ticket, so run reaches
     # these only when called directly: a refusal naming the verb, exit 1.
     assert orch(capsys, op) == (1, "", (
         "orch: branch %s is not converted to Python yet - run orch.sh branch %s\n" % (op, op)))
+
+
+# --- off -------------------------------------------------------------------------------
+
+NAME = "quick/9-widgets"
+OFF_USAGE = "orch: usage: orch.sh branch off <name>\n"
+ORIGIN_TIP, LOCAL_TIP = "a" * 40, "b" * 40
+ABORT = "/orchestrator:abort (or orch-flow's Abort section)"
+
+
+def forking(tmp_path, base="main", on="main", dirty=(), fetched=True, branches=(), **config):
+    """A FakeGit at tmp_path on <on>, <dirty> changed (a str for a status
+    that cannot run), its local config holding <config> (each key's - spelled
+    _ and . spelled __), local branch <base> at LOCAL_TIP beside <branches>,
+    origin's <base> at ORIGIN_TIP, its fetch working when <fetched>."""
+    local = {key.replace("__", ".").replace("_", "-"): value for key, value in config.items()}
+    git = FakeGit(toplevel=str(tmp_path), local_config=local,
+                  branches=dict.fromkeys((base, on) + tuple(branches)))
+    git.seed("current_branch", answer=on)
+    git.seed("dirty_paths", answer=dirty if isinstance(dirty, str) else list(dirty))
+    git.seed("fetch_default_branch", base, answer=fetched)
+    git.seed("resolve_commit", "refs/remotes/origin/" + base, answer=ORIGIN_TIP)
+    git.seed("resolve_commit", "refs/heads/" + base, answer=LOCAL_TIP)
+    return git
+
+
+def off(capsys, seed, git, *argv):
+    return orch(capsys, "off", *argv, git=git, gh=fake(seed))
+
+
+def facts(git):
+    """What a refused off must leave as it was: the local branches, the
+    current branch and the local git config."""
+    return (dict(git.branches), git.current_branch(), git.config_regexp("local", "."))
+
+
+def recorded(git, name=NAME):
+    """The base and base SHA <name> records, the branch checked out and its
+    upstream."""
+    return (git.config_value("branch.%s.orchestrator-base" % name),
+            git.config_value("branch.%s.orchestrator-base-sha" % name),
+            git.current_branch(), git.branch_upstream(name))
+
+
+def test_off_forks_from_origin_s_base_records_it_with_no_upstream_and_prints_the_name(
+        tmp_path, seed, capsys):
+    git = forking(tmp_path)
+
+    assert off(capsys, seed, git, NAME) == (0, NAME + "\n", "")
+    assert recorded(git) == ("main", ORIGIN_TIP, NAME, None)
+    assert not (tmp_path / ".orchestrator").exists()
+
+
+def test_off_forks_from_the_base_setting_over_the_default_branch(tmp_path, seed, capsys):
+    git = forking(tmp_path, base="uat", orchestrator__base="uat")
+
+    assert off(capsys, seed, git, NAME) == (0, NAME + "\n", "")
+    assert recorded(git) == ("uat", ORIGIN_TIP, NAME, None)
+
+
+def test_with_no_base_setting_off_forks_from_the_default_branch(tmp_path, seed, capsys):
+    git = forking(tmp_path, base="trunk", on="trunk")
+    git.seed("origin_head_branch", answer="trunk")
+    git.seed("is_branch_name", "trunk", answer=True)
+
+    assert off(capsys, seed, git, NAME) == (0, NAME + "\n", "")
+    assert recorded(git) == ("trunk", ORIGIN_TIP, NAME, None)
+
+
+@pytest.mark.parametrize("argv", [(), (NAME, "extra")], ids=["none", "two"])
+def test_off_with_no_name_or_more_than_one_is_a_usage_error(tmp_path, seed, capsys, argv):
+    assert off(capsys, seed, forking(tmp_path), *argv) == (1, "", OFF_USAGE)
+
+
+def test_off_s_usage_error_comes_before_the_busy_refusal(tmp_path, seed, capsys):
+    # Both its first checks broken: no name, and a flow mid-pipeline.
+    hold_flow(tmp_path, slug="busy", phase="implement")
+
+    assert off(capsys, seed, forking(tmp_path)) == (1, "", OFF_USAGE)
+
+
+@pytest.mark.parametrize("phase", ["spec", "implement", "review"])
+def test_off_beside_a_flow_mid_pipeline_exits_3_writing_nothing(tmp_path, seed, capsys, phase):
+    hold_flow(tmp_path, slug="busy", phase=phase)
+    git = forking(tmp_path)
+    before = facts(git)
+
+    assert off(capsys, seed, git, NAME) == (3, "", (
+        "orch: busy: a flow is mid-pipeline (slug: busy, phase: %s)\n"
+        "     One flow at a time - finish it, or run %s.\n" % (phase, ABORT)))
+    assert facts(git) == before
+
+
+def test_off_beside_an_unreadable_state_json_exits_3_writing_nothing(tmp_path, seed, capsys):
+    hold_flow(tmp_path).write_text("{\"slug\": \"held\", \"pha")
+    git = forking(tmp_path)
+    before = facts(git)
+
+    assert off(capsys, seed, git, NAME) == (3, "", (
+        "orch: busy: a flow's state.json cannot be read\n"
+        "     Run orch.sh doctor --flow, or %s.\n" % ABORT))
+    assert facts(git) == before
+
+
+def test_off_beside_a_done_flow_forks(tmp_path, seed, capsys):
+    hold_flow(tmp_path, slug="finished", phase="done")
+    git = forking(tmp_path)
+
+    assert off(capsys, seed, git, NAME) == (0, NAME + "\n", "")
+    assert recorded(git) == ("main", ORIGIN_TIP, NAME, None)
+
+
+def test_off_on_a_plugin_made_branch_with_no_pr_exits_3_writing_nothing(tmp_path, seed, capsys):
+    git = forking(tmp_path, on="quick/1-running", dirty=["README.md"],
+                  **{"branch__quick/1-running__orchestrator_base": "main"})
+    before = facts(git)
+
+    assert off(capsys, seed, git, NAME) == (3, "", (
+        "orch: busy: branch quick/1-running has no PR yet\n"
+        "     Open its PR, or switch off it.\n"))
+    assert facts(git) == before
+
+
+def test_off_on_a_branch_a_redo_retired_is_not_busy(tmp_path, seed, capsys):
+    git = forking(tmp_path, on="quick/1-old-redo-1",
+                  **{"branch__quick/1-old-redo-1__orchestrator_base": "main",
+                     "branch__quick/1-old-redo-1__orchestrator_retired": "true"})
+
+    assert off(capsys, seed, git, NAME) == (0, NAME + "\n", "")
+
+
+def test_off_on_a_tree_dirty_outside_the_allowlist_exits_3_writing_nothing(
+        tmp_path, seed, capsys):
+    git = forking(tmp_path, dirty=["README.md", "docs/agents/note.md"])
+    before = facts(git)
+
+    assert off(capsys, seed, git, NAME) == (3, "", (
+        "orch: busy: the working tree has changes outside the planning allowlist: README.md\n"
+        "     Commit, stash, or discard these changes.\n"))
+    assert facts(git) == before
+
+
+def test_off_with_only_an_allowlisted_edit_forks(tmp_path, seed, capsys):
+    git = forking(tmp_path, dirty=["docs/agents/note.md"])
+
+    assert off(capsys, seed, git, NAME) == (0, NAME + "\n", "")
+    assert recorded(git) == ("main", ORIGIN_TIP, NAME, None)
+
+
+def test_off_on_a_tree_that_cannot_be_read_exits_1_writing_nothing(tmp_path, seed, capsys):
+    git = forking(tmp_path, dirty="fatal: index file corrupt")
+    before = facts(git)
+
+    assert off(capsys, seed, git, NAME) == (1, "", (
+        "orch: git status failed - cannot check the working tree: fatal: index file corrupt\n"))
+    assert facts(git) == before
+
+
+def test_off_refuses_a_busy_checkout_ahead_of_a_taken_name(tmp_path, seed, capsys):
+    git = forking(tmp_path, dirty=["README.md"], branches=(NAME,))
+
+    assert off(capsys, seed, git, NAME)[0] == 3
+
+
+def test_off_refuses_a_name_already_taken_writing_nothing(tmp_path, seed, capsys):
+    git = forking(tmp_path, branches=(NAME,))
+    before = facts(git)
+
+    assert off(capsys, seed, git, NAME) == (1, "", "orch: branch %s already exists\n" % NAME)
+    assert facts(git) == before
+
+
+def test_off_refuses_a_base_origin_says_is_gone_with_the_default_remedy(tmp_path, seed, capsys):
+    git = forking(tmp_path, fetched=False)
+    git.seed("origin_has_branch", "main", answer=False)
+    git.seed("ref_exists", "refs/remotes/origin/main", answer=True)
+    before = facts(git)
+
+    assert off(capsys, seed, git, NAME) == (1, "", (
+        "orch: base branch main does not exist on origin - push it, or start again on another"
+        " base branch\n"))
+    assert facts(git) == before
+
+
+def test_off_dies_when_the_fetch_fails_while_origin_has_the_base(tmp_path, seed, capsys):
+    git = forking(tmp_path, fetched=False)
+    git.seed("origin_has_branch", "main", answer=True)
+    git.seed("ref_exists", "refs/remotes/origin/main", answer=True)
+    before = facts(git)
+
+    assert off(capsys, seed, git, NAME) == (1, "", "orch: could not fetch main from origin\n")
+    assert facts(git) == before
+
+
+@pytest.mark.parametrize("tracked, tip", [(True, ORIGIN_TIP), (False, LOCAL_TIP)],
+                         ids=["origin-s-local-ref", "local-base"])
+def test_with_origin_unreachable_off_forks_from_origin_s_local_ref_else_the_local_base(
+        tmp_path, seed, capsys, tracked, tip):
+    git = forking(tmp_path, fetched=False)
+    git.seed("ref_exists", "refs/remotes/origin/main", answer=tracked)
+
+    assert off(capsys, seed, git, NAME) == (0, NAME + "\n", "")
+    assert recorded(git) == ("main", tip, NAME, None)
+
+
+def test_a_record_git_refuses_ends_off_with_git_s_status_and_stderr(tmp_path, seed, capsys):
+    # As bash's set -e did: git's own refusal, no orch: line, no name printed.
+    git = forking(tmp_path)
+    git.config_write_fails.add(("local", "branch.%s.orchestrator-base" % NAME))
+
+    assert off(capsys, seed, git, NAME) == (
+        255, "", "error: could not lock config file .git/config: File exists\n")
+    assert git.config_value("branch.%s.orchestrator-base-sha" % NAME) is None
+
+
+@pytest.fixture
+def off_repo(tmp_path):
+    """A clone of a bare origin holding main two commits deep, origin/HEAD
+    naming it, on main one commit behind origin's: (clone, origin's tip,
+    the local tip)."""
+    root = tmp_path / "repo"
+    origin_clone(tmp_path / "origin.git", root, "main")
+    run_git(root, "checkout", "-qb", "main")
+    committed(root, {"docs/agents/notes.md": "one\n"}, "notes")
+    committed(root, {"docs/agents/notes.md": "two\n"}, "origin moves notes")
+    run_git(root, "push", "-q", "origin", "HEAD:refs/heads/main")
+    run_git(root, "reset", "-q", "--hard", "HEAD~1")
+    run_git(root, "fetch", "-q", "origin")
+    run_git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+    return root, head_of(root, "refs/remotes/origin/main"), head_of(root, "HEAD")
+
+
+def repo_facts(root, name):
+    """Whether <name> exists, the base SHA it records, and the branch checked
+    out, in the real repository at <root>."""
+    made = run_git(root, "for-each-ref", "--format=made", "refs/heads/" + name) or "none"
+    sha = subprocess.run(["git", "-C", str(root), "config", "--get",
+                          "branch.%s.orchestrator-base-sha" % name],
+                         stdout=subprocess.PIPE, stdin=subprocess.DEVNULL).stdout.decode().strip()
+    return made, sha or "<unset>", run_git(root, "branch", "--show-current")
+
+
+def test_off_beside_tags_named_like_the_branch_and_origin_s_base_forks_from_origin_s_tip(
+        off_repo, seed, capsys):
+    root, origin_tip, local_tip = off_repo
+    for tag in (NAME, "origin/main"):
+        run_git(root, "tag", tag, local_tip)
+
+    assert orch(capsys, "off", NAME, git=Git(cwd=str(root)), gh=fake(seed)) == (
+        0, NAME + "\n", "")
+    assert (head_of(root, "refs/heads/" + NAME), repo_facts(root, NAME),
+            run_git(root, "for-each-ref", "--format=%(upstream)", "refs/heads/" + NAME)) == (
+        origin_tip, ("made", origin_tip, NAME), "")
+
+
+def test_off_offline_beside_tags_named_like_the_base_forks_from_the_local_base(
+        off_repo, seed, capsys, tmp_path):
+    # Origin unreachable, and no remote-tracking ref of the base: neither the
+    # tag named main nor the one named origin/main is taken for it.
+    root, _, tagged = off_repo
+    run_git(root, "update-ref", "-d", "refs/remotes/origin/main")
+    run_git(root, "remote", "set-url", "origin", str(tmp_path / "missing.git"))
+    for tag in ("main", "origin/main"):
+        run_git(root, "tag", tag, tagged)
+    local_tip = committed(root, {"local.txt": "moves on\n"}, "local base moves on")
+
+    assert orch(capsys, "off", NAME, git=Git(cwd=str(root)), gh=fake(seed)) == (
+        0, NAME + "\n", "")
+    assert repo_facts(root, NAME) == ("made", local_tip, NAME)
+
+
+def test_off_whose_checkout_clashes_with_an_edit_dies_with_git_s_message_writing_nothing(
+        off_repo, seed, capsys):
+    root, _, _ = off_repo
+    with open(root / "docs" / "agents" / "notes.md", "a") as notes:
+        notes.write("mine\n")
+
+    code, out, err = orch(capsys, "off", "quick/7-x", git=Git(cwd=str(root)), gh=fake(seed))
+
+    assert (code, out) == (1, "")
+    assert err.startswith("orch: could not create quick/7-x from refs/remotes/origin/main: ")
+    assert "would be overwritten" in err and "docs/agents/notes.md" in err
+    assert repo_facts(root, "quick/7-x") == ("none", "<unset>", "main")
+    assert (root / "docs" / "agents" / "notes.md").read_text() == "one\nmine\n"
 
 
 # --- busy ------------------------------------------------------------------------------

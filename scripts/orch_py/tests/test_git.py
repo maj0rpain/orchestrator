@@ -1123,6 +1123,46 @@ def test_a_branch_git_cannot_delete_gives_its_status_and_stderr_the_same_from_bo
     assert real.stderr.startswith("error: ") and "'nope'" in real.stderr
 
 
+# --- a new branch checked out, as branch off and branch create fork one ----------
+
+
+@pytest.mark.parametrize("start", ["refs/remotes/origin/" + PARENT, "refs/heads/" + PARENT],
+                         ids=["origin-s-ref", "local-base"])
+def test_a_new_branch_is_checked_out_at_its_start_tracking_nothing_the_same_from_both(
+        forking, start):
+    # The local base moves on past origin's, so each start forks elsewhere.
+    committed(forking, {"b.txt": "b\n"}, "local only")
+    commit = run_git(forking, "rev-parse", start)
+    git = Git(cwd=str(forking))
+    fake = FakeGit(branches={PARENT: "refs/remotes/origin/" + PARENT})
+    fake.seed("resolve_commit", start, answer=commit)
+
+    for adapter_ in (git, fake):
+        assert adapter_.checkout_new_branch(TICKET, start) is None
+        assert (adapter_.current_branch(), adapter_.branch_upstream(TICKET),
+                adapter_.resolve_commit("HEAD")) == (TICKET, None, commit)
+
+
+@pytest.mark.parametrize("name, start, stderr", [
+    (PARENT, "HEAD", "fatal: a branch named '%s' already exists\n" % PARENT),
+    (TICKET, "refs/heads/nope",
+     "fatal: 'refs/heads/nope' is not a commit and a branch '%s' cannot be created from it\n"
+     % TICKET),
+], ids=["taken", "no-such-start"])
+def test_a_new_branch_git_refuses_to_check_out_gives_its_status_and_stderr_the_same_from_both(
+        forking, name, start, stderr):
+    git, fake = Git(cwd=str(forking)), FakeGit(branches={PARENT: None})
+    fake.seed("resolve_commit", "HEAD", answer=run_git(forking, "rev-parse", "HEAD"))
+    real = git.checkout_new_branch(name, start)
+
+    # As for a refused rename: the real run is held to its status and the
+    # names its refusal quotes, the fake to today's wording exactly.
+    assert fake.checkout_new_branch(name, start) == GitFailure(128, stderr)
+    assert real.code == 128
+    assert real.stderr.startswith("fatal: ") and "'%s'" % name in real.stderr
+    assert (git.current_branch(), fake.current_branch()) == (PARENT, None)
+
+
 def test_a_worktree_is_added_on_an_existing_branch_the_same_from_a_real_repo_and_the_fake(
         forking):
     run_git(forking, "branch", TICKET)

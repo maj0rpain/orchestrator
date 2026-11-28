@@ -9,11 +9,13 @@ branch is a plugin-made branch that records a base, the flow's branch name
 was, its bash copy gone), a ticket branch's name, the issue a flow or quick
 branch name gives, the discard rule's own-branch proof and discard (as
 bash's discard_own_branch_work was, its bash copy gone), branch_retire,
-every arm of bash `branch retire <old> <new>`, and the branch noun's run
-(ADR-0067): its dispatch over the six verbs and its busy, base-sha and retire
-verbs, each with the bash noun's usage line, output, exit codes and `orch: `
-messages. create, off and sync are still run in bash, and orch.sh routes
-branch there until they are converted.
+every arm of bash `branch retire <old> <new>`, the start-point decision and
+the fork branch off and branch create share (bash new_branch_start and
+fork_new_branch), and the branch noun's run (ADR-0067): its dispatch over
+the six verbs and its off, busy, base-sha and retire verbs, each with the
+bash noun's usage line, output, exit codes and `orch: ` messages. create and
+sync are still run in bash, and orch.sh routes branch there until they are
+converted.
 """
 from __future__ import annotations
 
@@ -21,7 +23,8 @@ import os
 import sys
 from typing import List, Mapping, Optional
 
-from orch.base import branch_base_get, branch_base_sha_get, recorded_base_into
+from orch.base import (base_branch_into, branch_base_get, branch_base_sha_get,
+                       record_branch_base, recorded_base_into)
 from orch.common import die, plain_number, stderr_write, stdout_write
 from orch.gh import adapter_of
 from orch.git import Git, GitFailure, git_failed
@@ -224,12 +227,59 @@ def branch_retire(git, old: str, new: str) -> None:
 
 
 def _rename_or_exit(git, old: str, new: str) -> None:
-    """Renames <old> to <new>, or ends the run with git's status, its stderr
-    printed, as a failed command under bash's `set -e` does."""
-    failed = git.branch_rename(old, new)
+    """Renames <old> to <new>, or ends the run as _exit_on does."""
+    _exit_on(git.branch_rename(old, new))
+
+
+def _exit_on(failed: Optional[GitFailure]) -> None:
+    """Ends the run with git's status, its stderr printed, when <failed> is
+    a failure, as a failed command under bash's `set -e` does."""
     if failed is not None:
         stderr_write(failed.stderr)
         sys.exit(failed.code)
+
+
+# The remedy for a base origin says is gone, when the caller names none:
+# only a flow has a base it can correct.
+GONE_BASE_REMEDY = "start again on another base branch"
+
+
+def new_branch_start(git, name: str, base: str, remedy: str = GONE_BASE_REMEDY) -> str:
+    """The start point branch <name> forks from off base branch <base> -
+    bash new_branch_start, shared by branch off and branch create, run before
+    anything is written so a refusal leaves the checkout as it was: origin's
+    refs/remotes/origin/<base> after a fetch that worked; when origin could
+    not be asked, that remote-tracking ref if it exists, else the local
+    refs/heads/<base>. Every ref is named in full, so a branch or tag called
+    <name> or origin/<base> never captures the name check or the start point
+    (#1331, #2337). Dies when <name> is taken, when origin answers that
+    <base> is gone (naming <remedy>), or when the fetch failed while origin
+    has <base>."""
+    if git.branch_exists(name):
+        die("branch %s already exists" % name)
+    tracking = "refs/remotes/origin/" + base
+    if git.fetch_default_branch(base):
+        return tracking
+    # Only an origin that could not be asked earns the local fallback: one
+    # that answered "no such branch" means the base is gone, and forking from
+    # a stale local copy of it would build on work nobody will merge; one
+    # that has the base but failed the fetch could leave a stale ref.
+    has = git.origin_has_branch(base)
+    if has is False:
+        die("base branch %s does not exist on origin - push it, or %s" % (base, remedy))
+    if has:
+        die("could not fetch %s from origin" % base)
+    return tracking if git.ref_exists(tracking) else "refs/heads/" + base
+
+
+def fork_new_branch(git, name: str, start: str) -> None:
+    """Checks out new branch <name> at exactly <start>, the start point
+    new_branch_start decided, with no fallback of its own and no upstream
+    (#1152): the base is recorded in the branch's own config, and pr publish
+    sets the real upstream on the first push. Dies with git's refusal."""
+    failed = git.checkout_new_branch(name, start)
+    if failed is not None:
+        die("could not create %s from %s: %s" % (name, start, failed.stderr))
 
 
 # The six verbs, as the bash noun's unknown-op refusal lists them.
@@ -255,11 +305,38 @@ def run(argv: List[str], gh=None, git=None, env: Optional[Mapping[str, str]] = N
             die("usage: orch.sh branch retire <old> <new>")
         branch_retire(git, rest[0], rest[1])
         return 0
-    if op in ("create", "off", "sync"):
+    if op == "off":
+        pin = RepoPin(env, git) if pin is None else pin
+        return off_verb(rest, adapter_of(gh, env, pin), git, root, env, pin)
+    if op in ("create", "sync"):
         # Still bash's verbs: orch.sh routes branch to bash until all six run
         # here, so only a direct call reaches this.
         die("branch %s is not converted to Python yet - run orch.sh branch %s" % (op, op))
     die("unknown branch op: %s (want %s)" % (op or "<none>", OPS))
+
+
+def off_verb(argv: List[str], gh_of, git, root: str, env: Mapping[str, str], pin) -> int:
+    """`branch off <name>`: a quick implementation keeps no state.json, so
+    the caller names the branch. It refuses a busy checkout with exit 3,
+    every signal applying, before anything else, so it never moves another
+    implementation's branch or carries its edits; then forks <name> from the
+    base branch in effect (base_branch_into, through the gh adapter gh_of()
+    makes and the repo pin <pin>), records that base and the base tip at
+    branching as the branch's base SHA in its git config - where pr publish
+    and its reviewers find them, even if the setting moves - and prints the
+    name. A record git refuses ends the run as bash's `set -e` did."""
+    # Imported here: the checkout module reads this one at its own import.
+    from orch.checkout import BUSY_SIGNALS, refuse_busy_checkout
+
+    if len(argv) != 1:
+        die("usage: orch.sh branch off <name>")
+    name = argv[0]
+    refuse_busy_checkout(git, root, env, *BUSY_SIGNALS)
+    base = base_branch_into(gh_of(), git, pin)
+    fork_new_branch(git, name, new_branch_start(git, name, base))
+    _exit_on(record_branch_base(git, name, base, git.resolve_commit("HEAD") or ""))
+    stdout_write(name + "\n")
+    return 0
 
 
 def busy_verb(argv: List[str], git, root: str, env: Mapping[str, str]) -> int:

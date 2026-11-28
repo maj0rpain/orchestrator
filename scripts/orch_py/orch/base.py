@@ -2,7 +2,8 @@
 side's default_branch_resolve and default_branch_seed find it, the base
 branch in effect now, as its base_branch_into reads it, the base a branch
 belongs to, as its recorded_base_into reads it, and the base and base-SHA keys
-a branch records them under, so far; the later `base` noun grows it rather
+a branch records them under, with their getters, their setters and the record
+of both together, so far; the later `base` noun grows it rather
 than moving it.
 
 GitHub is asked first, and only when the repo pin resolves: origin/HEAD is a
@@ -17,6 +18,7 @@ from __future__ import annotations
 from typing import Callable, NamedTuple, Optional
 
 from orch.gh import GhFailed
+from orch.git import GitFailure
 
 # The sources the lookup answers from, as bash's DEFAULT_BRANCH_SOURCE names
 # them.
@@ -80,6 +82,27 @@ def branch_base_sha_get(git, branch: str) -> Optional[str]:
     """The base SHA recorded for <branch> in git config, read through the
     git adapter <git>; None when none is recorded."""
     return git.config_value(branch_base_sha_key(branch))
+
+
+def branch_base_set(git, branch: str, base: str) -> Optional[GitFailure]:
+    """Records <base> as the base branch <branch> was made off, in the
+    repository's own config: None when it wrote, else git's status and
+    stderr."""
+    return git.config_set("local", branch_base_key(branch), base)
+
+
+def branch_base_sha_set(git, branch: str, sha: str) -> Optional[GitFailure]:
+    """Records <sha> as <branch>'s base SHA, in the repository's own config:
+    None when it wrote, else git's status and stderr."""
+    return git.config_set("local", branch_base_sha_key(branch), sha)
+
+
+def record_branch_base(git, branch: str, base: str, sha: str) -> Optional[GitFailure]:
+    """Records <base> and <sha> as branch <branch>'s base and base SHA
+    together in its git config, where branch sync and branch base-sha read
+    them: None when both wrote, else the first write's failure, the base SHA
+    left unwritten when the base's write failed."""
+    return branch_base_set(git, branch, base) or branch_base_sha_set(git, branch, sha)
 
 
 def base_setting(git) -> str:
