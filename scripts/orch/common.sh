@@ -1,9 +1,9 @@
 # shellcheck shell=bash
 # common.sh - the primitives no concept owns: die, warn, note, capture, the
-# text and working-tree helpers and the like. A helper lives in the module of
-# the concept it serves, whichever modules call it, and common.sh calls nothing
-# a noun module defines; its test section checks this. A concept with no noun
-# has a module of its own too, such as the Checkout module (checkout.sh) and
+# text helpers and the like. A helper lives in the module of the concept it
+# serves, whichever modules call it, and common.sh calls nothing a noun module
+# defines; its test section checks this. A concept with no noun has a module
+# of its own too, such as the Checkout module (checkout.sh) and
 # the Trust module (trust.sh). Sourced by orch.sh ahead of the
 # ROOT block, which dies through die when run outside a git repository, and
 # ahead of every noun module.

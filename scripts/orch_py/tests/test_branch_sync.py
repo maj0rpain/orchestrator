@@ -13,7 +13,7 @@ from typing import NamedTuple
 import pytest
 
 from conftest import (committed, exclude_orchestrator, fake, git_identity, git_of, hold_flow,
-                      origin_clone, outcome, run_git, state_json, tip)
+                      origin_main_clone, outcome, run_git, state_json, tip)
 from orch import branch as module
 from orch.git import Git
 
@@ -47,15 +47,10 @@ def repo(tmp_path):
     - branched off origin/main with no upstream, its base and base SHA
     recorded in git config, one commit of its own - held by this checkout's
     flow, which records the same base and base SHA."""
-    origin, root, pusher = tmp_path / "origin.git", tmp_path / "repo", tmp_path / "pusher"
-    origin_clone(origin, root, "main")
+    root, branched = origin_main_clone(tmp_path, {"a.txt": "a\n"})
+    origin, pusher = tmp_path / "origin.git", tmp_path / "pusher"
     git_identity(root)
     exclude_orchestrator(root)
-    run_git(root, "checkout", "-qb", "main")
-    branched = committed(root, {"a.txt": "a\n"}, "one")
-    run_git(root, "push", "-q", "origin", "HEAD:refs/heads/main")
-    run_git(root, "fetch", "-q", "origin")
-    run_git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     run_git(root, "checkout", "-q", "--no-track", "-b", FLOW, "refs/remotes/origin/main")
     record(root, FLOW, "main", branched)
     hold_flow(root, slug="bsync", issue=11, phase="implement", base="main", branch=FLOW,

@@ -25,7 +25,7 @@ from orch.checkout import (BUSY_SIGNALS, checkout_branch, checkout_branch_or_reb
                            checkout_busy, current_branch_or_die, discard_flow_branch_work,
                            merge_in_progress, refuse_busy_checkout, require_flow_branch,
                            work_to_discard)
-from orch.common import die, plain_number, require_clean_tree, stdout_write, warn
+from orch.common import die, plain_number, require_clean_tree, stdout_write
 from orch.flow_state import (flow_base_fallback_into, flow_state_file, require_state_read,
                              require_value, state_write_many)
 from orch.gh import adapter_of
@@ -513,10 +513,9 @@ def _merged_base_tip(git, root: str, branch: str, base: str) -> str:
     progress, a dirty tree, a failed fetch or a merge git could not start."""
     if merge_in_progress(git, root):
         if on_origin_base(git, git.resolve_commit("MERGE_HEAD"), base):
-            warn("a merge of origin/%s into %s is pending resolution - the merge is left in"
-                 " progress; resolve and commit it, then run orch.sh branch sync --finish"
-                 % (base, branch))
-            sys.exit(3)
+            die("a merge of origin/%s into %s is pending resolution - the merge is left in"
+                " progress; resolve and commit it, then run orch.sh branch sync --finish"
+                % (base, branch), 3)
         die("a merge is in progress on %s - commit it (or git merge --abort), then rerun"
             " orch.sh branch sync" % branch)
     require_clean_tree(git, root, "the working tree is dirty - commit or discard its changes"
@@ -526,9 +525,8 @@ def _merged_base_tip(git, root: str, branch: str, base: str) -> str:
     tip = git.resolve_commit("refs/remotes/origin/" + base) or ""
     if git.merge_no_edit_at(root, "refs/remotes/origin/" + base) is not None:
         if merge_in_progress(git, root):
-            warn("merging origin/%s into %s hit a conflict - the merge is left in progress;"
-                 " resolve and commit it, then run orch.sh branch sync --finish"
-                 % (base, branch))
-            sys.exit(3)
+            die("merging origin/%s into %s hit a conflict - the merge is left in progress;"
+                " resolve and commit it, then run orch.sh branch sync --finish"
+                % (base, branch), 3)
         die("git could not merge origin/%s into %s" % (base, branch))
     return tip

@@ -276,6 +276,20 @@ def origin_clone(origin, root, branch=None):
     return git_repo(root, str(origin))
 
 
+def origin_main_clone(tmp_path, files):
+    """A clone at <tmp_path>/repo of a bare origin at <tmp_path>/origin.git,
+    on main with one commit writing <files>, pushed as origin's main and
+    fetched, origin/HEAD naming it: (the clone's root, that commit)."""
+    root = tmp_path / "repo"
+    origin_clone(tmp_path / "origin.git", root, "main")
+    run_git(root, "checkout", "-qb", "main")
+    first = committed(root, files, "one")
+    run_git(root, "push", "-q", "origin", "HEAD:refs/heads/main")
+    run_git(root, "fetch", "-q", "origin")
+    run_git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+    return root, first
+
+
 def run_git(root, *args, env=None):
     """git <args> in the repository at <root>, as a test author t with
     signing off, in <env> when given, else this process's environment: its

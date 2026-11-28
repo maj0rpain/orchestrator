@@ -19,12 +19,14 @@ tracking push and remote
 delete (orch.branch), the dirty paths the planning allowlist's flow-start scan
 judges, the scoped git config reads, writes and unsets
 (`config_regexp`, `config_set`, `config_unset`) the agent noun uses, branch
-off's and branch create's fork (a new branch checked out with no tracking),
-and what the ticket nouns need: a ticket branch's create with no tracking and
-its delete (-D), the worktree add that checks it out and the removal that takes
-it back out, the rebase, rebase abort, unmerged-path listing and
-fast-forward-only merge `ticket merge` runs in a given checkout, the
-status the clean-tree check (orch.common) reads there, and the
+off's and branch create's fork (a new branch checked out with no tracking)
+and branch create's restart (an existing branch checked out), branch sync's
+merge in a given checkout, its newest first-parent merge commit and that
+merge's second parent, and what the ticket nouns need: a ticket branch's
+create with no tracking and its delete (-D), the worktree add that checks it
+out and the removal that takes it back out, the rebase, rebase abort,
+unmerged-path listing and fast-forward-only merge `ticket merge` runs in a
+given checkout, the status the clean-tree check (orch.common) reads there, and the
 merge-in-progress probe, merge abort, hard reset and clean of the
 discard sequence (orch.checkout). A ticket branch's ref verify is
 branch_exists, and the toplevel read at its worktree's path toplevel_at.
@@ -716,14 +718,9 @@ class Git:
             return None
         return git_push_reason(run.stderr.decode("utf-8", "surrogateescape"))
 
-    # The ticket nouns' operations: a ticket branch made and deleted where the
-    # adapter runs, as bash's ticket-worktree add and teardown run them.
-
-    def branch_create(self, name: str, start: str) -> Optional[GitFailure]:
-        """`git branch -q --no-track <name> <start>`: a new local branch at
-        <start> that tracks nothing, whatever branch.autoSetupMerge says. None
-        when it was made, else git's status and stderr."""
-        return self._failure(["branch", "-q", "--no-track", name, start])
+    # Branch off's and branch create's operations (orch.branch): a branch
+    # checked out where the adapter runs, new for the fork, existing for
+    # create's restart.
 
     def checkout_new_branch(self, name: str, start: str) -> Optional[GitFailure]:
         """`git checkout -q --no-track -b <name> <start>`: a new local branch
@@ -738,6 +735,15 @@ class Git:
         when it is checked out, else git's status and stderr, nothing
         moved."""
         return self._failure(["checkout", "-q", name])
+
+    # The ticket nouns' operations: a ticket branch made and deleted where the
+    # adapter runs, as bash's ticket-worktree add and teardown run them.
+
+    def branch_create(self, name: str, start: str) -> Optional[GitFailure]:
+        """`git branch -q --no-track <name> <start>`: a new local branch at
+        <start> that tracks nothing, whatever branch.autoSetupMerge says. None
+        when it was made, else git's status and stderr."""
+        return self._failure(["branch", "-q", "--no-track", name, start])
 
     def branch_delete(self, name: str) -> Optional[GitFailure]:
         """`git branch -q -D <name>`: deletes local branch <name>, merged or

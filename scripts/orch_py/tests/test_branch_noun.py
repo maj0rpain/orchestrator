@@ -8,12 +8,11 @@ message, exit code and order of checks is the bash noun's, verbatim."""
 from __future__ import annotations
 
 import json
-import subprocess
 
 import pytest
 
-from conftest import (GITHUB_ORIGIN, committed, exclude_orchestrator, fake, hold_flow,
-                      origin_clone, outcome, run_git, state_json)
+from conftest import (GITHUB_ORIGIN, committed, exclude_orchestrator, fake, git_of, hold_flow,
+                      origin_clone, origin_main_clone, outcome, run_git, state_json)
 from orch import branch as module
 from orch.git import FakeGit, Git, Worktree
 from orch.repo import RepoPin
@@ -270,25 +269,19 @@ def off_repo(tmp_path):
     """A clone of a bare origin holding main two commits deep, origin/HEAD
     naming it, on main one commit behind origin's: (clone, origin's tip,
     the local tip)."""
-    root = tmp_path / "repo"
-    origin_clone(tmp_path / "origin.git", root, "main")
-    run_git(root, "checkout", "-qb", "main")
-    committed(root, {"docs/agents/notes.md": "one\n"}, "notes")
+    root, local_tip = origin_main_clone(tmp_path, {"docs/agents/notes.md": "one\n"})
     committed(root, {"docs/agents/notes.md": "two\n"}, "origin moves notes")
     run_git(root, "push", "-q", "origin", "HEAD:refs/heads/main")
     run_git(root, "reset", "-q", "--hard", "HEAD~1")
     run_git(root, "fetch", "-q", "origin")
-    run_git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
-    return root, head_of(root, "refs/remotes/origin/main"), head_of(root, "HEAD")
+    return root, head_of(root, "refs/remotes/origin/main"), local_tip
 
 
 def repo_facts(root, name):
     """Whether <name> exists, the base SHA it records, and the branch checked
     out, in the real repository at <root>."""
     exists = run_git(root, "for-each-ref", "--format=made", "refs/heads/" + name) or "none"
-    sha = subprocess.run(["git", "-C", str(root), "config", "--get",
-                          "branch.%s.orchestrator-base-sha" % name],
-                         stdout=subprocess.PIPE, stdin=subprocess.DEVNULL).stdout.decode().strip()
+    sha = git_of(root, "config", "--get", "branch.%s.orchestrator-base-sha" % name)
     return exists, sha or "<unset>", run_git(root, "branch", "--show-current")
 
 
@@ -925,13 +918,7 @@ def sha_repo(tmp_path):
     """A clone of a bare origin holding main, origin/HEAD naming it, on QUICK
     branched off origin/main with one commit of its own and nothing
     recorded: the clone's root."""
-    root = tmp_path / "repo"
-    origin_clone(tmp_path / "origin.git", root, "main")
-    run_git(root, "checkout", "-qb", "main")
-    run_git(root, "commit", "-q", "--allow-empty", "-m", "one")
-    run_git(root, "push", "-q", "origin", "HEAD:refs/heads/main")
-    run_git(root, "fetch", "-q", "origin")
-    run_git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+    root, _ = origin_main_clone(tmp_path, {"a.txt": "a\n"})
     run_git(root, "checkout", "-q", "--no-track", "-b", QUICK, "refs/remotes/origin/main")
     run_git(root, "commit", "-q", "--allow-empty", "-m", "work on the branch")
     return root
