@@ -208,6 +208,12 @@ def _base(argv: List[str]) -> int:
     return run(argv)
 
 
+def _state(argv: List[str]) -> int:
+    from orch.state import run
+
+    return run(argv)
+
+
 # The converted nouns: each takes the arguments after the noun and returns its
 # exit code.
 NOUNS: Dict[str, Callable[[List[str]], int]] = {
@@ -242,6 +248,7 @@ NOUNS: Dict[str, Callable[[List[str]], int]] = {
     "repo": _repo,
     "default-branch": _default_branch,
     "base": _base,
+    "state": _state,
 }
 
 # The other spellings main runs as a noun - help's option spellings and
@@ -254,7 +261,7 @@ ALIASES: Dict[str, str] = {"-h": "help", "--help": "help", "health": "doctor"}
 SIGPIPE_NOUNS = frozenset({"init", "slug", "status", "archive", "help", "phase", "handoff",
                            "redo", "ticket", "ticket-worktree", "pr", "review", "doctor",
                            "autopilot", "side-checkout", "branch", "repo",
-                           "default-branch", "base"})
+                           "default-branch", "base", "state"})
 
 
 def _sigpipe_as_bash(run: Callable[[List[str]], int], argv: List[str]) -> int:

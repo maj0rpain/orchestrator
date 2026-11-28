@@ -66,11 +66,11 @@
 ORCH_DIR_NAME=".orchestrator"
 
 # Every flow state key, one row each, in the order init seeds them into
-# state.json: key|default|seed|owner. state_get and state set read it, so
-# adding a key is one row here and one in the Python Flow state module's
-# STATE_KEYS, which Python init seeds from; an arg row also needs its value in
-# that module's _SEED_ARGS, and without it init dies "could not build the
-# state seed". The seed column is the shared format's bash record, which
+# state.json: key|default|seed. state_get reads it, so adding a key is one row
+# here and one in the Python Flow state module's STATE_KEYS, which Python init
+# seeds from and whose owner column state set reads; an arg row also needs its
+# value in that module's _SEED_ARGS, and without it init dies "could not build
+# the state seed". The seed column is the shared format's bash record, which
 # pytest's parity test pins Python's to. state_rows is its one reader: lines
 # starting with # are comments, and blank lines are skipped.
 #
@@ -80,44 +80,42 @@ ORCH_DIR_NAME=".orchestrator"
 #   stored false (jq's `//` would treat false like null).
 # seed: the JSON literal init writes, or arg where init supplies the value at
 #   run time; Python init writes it (orch/flow_state.py's _SEED_ARGS).
-# owner: - for a key state set may write (state_key_settable); otherwise the
-#   reason it refuses, printed as "state set refuses <key>: <owner>".
-STATE_KEYS='slug||arg|init seeds it
+STATE_KEYS='slug||arg
 # init records the spec phase straight after it seeds the file.
-phase||null|use phase advance (review ready and redo also move it)
+phase||null
 # Seeded from --issue when given; state.json carries no field for whether it
 # was adopted or published - nothing downstream needs that distinction
 # recorded (ADR-0005).
-issue||arg|-
+issue||arg
 # When a flow base may change: see the docstring of set_flow in orch/base.py.
-base||arg|init seeds it
-branch||null|branch create records it
-pr||null|pr open records it
-base_sha||null|branch create records it
+base||arg
+branch||null
+pr||null
+base_sha||null
 # Null until the review loop asks a human for one; review begin reads null as
 # the default.
-budget||null|-
-iteration|0|0|review begin counts it
+budget||null
+iteration|0|0
 # Seeded here, at flow level, because redo and a re-entry leave it alone and a
 # later loop renews it: one per loop, spent or not, renewed by review begin at
 # the first iteration of each loop, so that one refilled each iteration could
 # not become an infinite retry loop.
-flake_rerun_used|false|false|-
-redo_count|0|0|a redo that retires a branch counts it
+flake_rerun_used|false|false
+redo_count|0|0
 # Marks a flow whose handoffs must record Host fallbacks (handoff.py reads
 # it); an older flow without it reads false.
-host_fallbacks|false|true|init seeds it
-created||arg|init seeds it
-updated||arg|every state change stamps it'
+host_fallbacks|false|true
+created||arg
+updated||arg'
 
-# Prints each data row of STATE_KEYS as key|default|seed|owner, in table
-# order: the only reader of $STATE_KEYS, so every other reader skips the same
-# comment and blank lines.
+# Prints each data row of STATE_KEYS as key|default|seed, in table order: the
+# only reader of $STATE_KEYS, so every other reader skips the same comment and
+# blank lines.
 state_rows() {
-  local k d s o
-  while IFS='|' read -r k d s o; do
+  local k d s
+  while IFS='|' read -r k d s; do
     case "$k" in '#'*|'') continue ;; esac
-    printf '%s|%s|%s|%s\n' "$k" "$d" "$s" "$o"
+    printf '%s|%s|%s\n' "$k" "$d" "$s"
   done <<EOF
 $STATE_KEYS
 EOF
@@ -126,22 +124,21 @@ EOF
 # The created and updated timestamp: ISO-8601, UTC, to the second.
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
-# flow_state_key_field <key> <column>: prints column <column> (default, seed
-# or owner) of <key>'s row. An unknown key prints nothing and returns 1; an
+# flow_state_key_field <key> <column>: prints column <column> (default or
+# seed) of <key>'s row. An unknown key prints nothing and returns 1; an
 # unknown column is a programming error, not caller input, and returns 2, so
 # it is never read as an unknown key.
 flow_state_key_field() {
-  local k d s o
+  local k d s
   case "$2" in
-    default|seed|owner) ;;
+    default|seed) ;;
     *) return 2 ;;
   esac
-  while IFS='|' read -r k d s o; do
+  while IFS='|' read -r k d s; do
     [ "$k" = "$1" ] || continue
     case "$2" in
       default) printf '%s\n' "$d" ;;
       seed)    printf '%s\n' "$s" ;;
-      owner)   printf '%s\n' "$o" ;;
     esac
     return 0
   done <<EOT
@@ -177,7 +174,7 @@ flow_state_resolve_many_arg() {
   __fsrma_var="${1%%=*}"
   __fsrma_key="${1#*=}"
   [ -n "$__fsrma_var" ] || return 2
-  while IFS='|' read -r __fsrma_k __fsrma_d _ _; do
+  while IFS='|' read -r __fsrma_k __fsrma_d _; do
     [ "$__fsrma_k" = "$__fsrma_key" ] || continue
     printf -v "${3}var" '%s' "$__fsrma_var"
     printf -v "${3}key" '%s' "$__fsrma_key"

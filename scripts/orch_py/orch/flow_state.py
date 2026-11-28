@@ -1,15 +1,16 @@
 """The Flow state module's Python side: a checkout's flow state,
 .orchestrator/state.json, read by the rules of the bash Flow state module's
-multi-key reader (scripts/flow-state.sh's flow_state_get_many), which stays
-the state format's owner. Python init writes a new flow's seed - built from
-the key table's seed column, created, and stamped with its spec phase - the
-multi-key writer (state_write_many, and state_write_many_try for a caller
-that words its own failure) sets several keys in one write as bash's
-state_write_many did (its bash copy gone with the bash branch noun), each
-value coerced as bash's flow_state_json coerces
-it unless its pair is marked a string, the Python phase writers (phase_write
-and phase_write_try) record a phase, with any further keys in the same
-write, and bash makes every other change.
+readers (scripts/flow-state.sh's flow_state_get_many, and flow_state_get for
+the one key the state noun reads), which stays the state format's owner.
+Python init writes a new flow's seed - built from the key table's seed
+column, created, and stamped with its spec phase - the multi-key writer
+(state_write_many, and state_write_many_try for a caller that words its own
+failure) sets several keys in one write as bash's state_write_many did (its
+bash copy gone with the bash branch noun), each value coerced as bash's
+flow_state_json coerces it unless its pair is marked a string, the Python
+phase writers (phase_write and phase_write_try) record a phase, with any
+further keys in the same write, and the state noun's `state set`
+(orch.state) writes one settable key: no bash command writes the file.
 The golden state.json files of tests/flow_state/ pin the two sides to each
 other (ADR-0067): those under read/ and refused/ the readers, and those
 under seed/ the seed Python writes to the bytes bash init wrote.
@@ -43,29 +44,34 @@ from orch.base import default_branch
 from orch.common import ORCH_DIR_NAME, UTC_STAMP_FORMAT, die, file_write_atomic, plain_number
 from orch.host import flow_cmd
 
-# The key, default and seed columns of the bash state key table (STATE_KEYS
-# in scripts/flow-state.sh), in table order. default: what a key reads as
-# when it is null or missing. seed: the JSON literal Python init writes, or
-# arg where init supplies the value at run time (flow_state_seed's _SEED_ARGS);
-# bash writes every later change. The owner column serves `state set`, which
-# stays in bash.
+# Every flow state key, in table order, with its default, seed and owner. The
+# key, default and seed columns are the bash state key table's (STATE_KEYS in
+# scripts/flow-state.sh, where each key's row says why it is kept), which
+# pytest's golden tests pin them to. default: what a key reads as when it is
+# null or missing. seed: the JSON literal Python init writes, or arg where
+# init supplies the value at run time (flow_state_seed's _SEED_ARGS). owner:
+# - for a key `state set` may write; otherwise the reason it refuses, printed
+# as "state set refuses <key>: <owner>". Only the keys skill prose sets are
+# settable: every other key has a command that owns it, and that command's
+# guard is the point - a phase set here would skip the handoff phase advance
+# validates.
 STATE_KEYS = (
-    ("slug", "", "arg"),
-    ("phase", "", "null"),
-    ("issue", "", "arg"),
-    ("base", "", "arg"),
-    ("branch", "", "null"),
-    ("pr", "", "null"),
-    ("base_sha", "", "null"),
-    ("budget", "", "null"),
-    ("iteration", "0", "0"),
-    ("flake_rerun_used", "false", "false"),
-    ("redo_count", "0", "0"),
-    ("host_fallbacks", "false", "true"),
-    ("created", "", "arg"),
-    ("updated", "", "arg"),
+    ("slug", "", "arg", "init seeds it"),
+    ("phase", "", "null", "use phase advance (review ready and redo also move it)"),
+    ("issue", "", "arg", "-"),
+    ("base", "", "arg", "init seeds it"),
+    ("branch", "", "null", "branch create records it"),
+    ("pr", "", "null", "pr open records it"),
+    ("base_sha", "", "null", "branch create records it"),
+    ("budget", "", "null", "-"),
+    ("iteration", "0", "0", "review begin counts it"),
+    ("flake_rerun_used", "false", "false", "-"),
+    ("redo_count", "0", "0", "a redo that retires a branch counts it"),
+    ("host_fallbacks", "false", "true", "init seeds it"),
+    ("created", "", "arg", "init seeds it"),
+    ("updated", "", "arg", "every state change stamps it"),
 )
-_DEFAULTS = {key: default for key, default, _ in STATE_KEYS}
+_DEFAULTS = {key: default for key, default, _, _ in STATE_KEYS}
 
 # The one spelling of the refusal an unparseable state.json earns.
 STATE_UNREADABLE_MSG = "state.json cannot be read - run orch.sh doctor --flow"
@@ -112,7 +118,7 @@ def flow_state_seed(slug: str, issue: str, base: str,
     raises KeyError: a programming error, never a seed of null."""
     stamp = now(clock)
     return {key: _SEED_ARGS[key](slug, issue, base, stamp) if seed == "arg" else json.loads(seed)
-            for key, _, seed in STATE_KEYS}
+            for key, _, seed, _ in STATE_KEYS}
 
 
 def flow_state_create(path: str, state: Mapping[str, Any]) -> bool:
@@ -261,6 +267,22 @@ def flow_state_get_many(path: str, keys: Sequence[str]) -> Optional[Dict[str, st
     return values
 
 
+def flow_state_get(path: str, key: str) -> Optional[str]:
+    """<key>'s value in the state file at <path>, as jq's tostring prints
+    it, or its table default when it is null or missing - never for a stored
+    false or 0 - as bash's flow_state_get reads one key: a NUL inside it is
+    kept, as jq -r printed it. None for a failed read: no file, or one that
+    is not exactly one JSON object. A key outside the table raises
+    ValueError, before any read: a programming error, never a failed read."""
+    if key not in _DEFAULTS:
+        raise ValueError("not a flow state key: %s" % key)
+    state = _state_object(path)
+    if state is None:
+        return None
+    value = state.get(key)
+    return _DEFAULTS[key] if value is None else _tostring(value)
+
+
 class Hold(NamedTuple):
     """An active flow's hold on a branch or issue: its phase, and the issue
     it holds, both from the one read that found the hold."""
@@ -382,3 +404,4 @@ def flow_base_fallback_into(raw: str, gh_of: Callable[[], Any], git, pin) -> str
     if raw:
         return raw
     return default_branch(gh_of(), git, pin).name
+

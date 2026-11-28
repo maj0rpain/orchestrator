@@ -20,7 +20,7 @@ from conftest import bash_sourced, died_of
 
 GOLDEN = Path(__file__).resolve().parent / "flow_state"
 BASH_MODULE = Path(__file__).resolve().parents[2] / "flow-state.sh"
-KEYS = [key for key, _, _ in STATE_KEYS]
+KEYS = [key for key, _, _, _ in STATE_KEYS]
 
 
 def expected_values(path):
@@ -70,20 +70,20 @@ def test_a_nul_inside_a_value_is_dropped(tmp_path):
 def bash_state_rows():
     """The data rows of the bash state key table, STATE_KEYS in
     scripts/flow-state.sh, as its one reader state_rows prints them in a bash
-    child process: (key, default, seed, owner) each, in table order."""
-    return [tuple(line.split("|", 3))
+    child process: (key, default, seed) each, in table order."""
+    return [tuple(line.split("|", 2))
             for line in bash_sourced(BASH_MODULE, "state_rows").splitlines()]
 
 
 @pytest.mark.skipif(not BASH_MODULE.exists(), reason="the bash Flow state module is gone")
 def test_the_key_table_s_keys_and_defaults_equal_the_bash_state_key_table_s():
-    assert [(key, default) for key, default, _ in STATE_KEYS] == \
+    assert [(key, default) for key, default, _, _ in STATE_KEYS] == \
         [row[:2] for row in bash_state_rows()]
 
 
 @pytest.mark.skipif(not BASH_MODULE.exists(), reason="the bash Flow state module is gone")
 def test_the_key_table_s_seed_column_equals_the_bash_state_key_table_s():
-    assert [(key, seed) for key, _, seed in STATE_KEYS] == \
+    assert [(key, seed) for key, _, seed, _ in STATE_KEYS] == \
         [(row[0], row[2]) for row in bash_state_rows()]
 
 

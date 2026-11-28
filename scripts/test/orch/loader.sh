@@ -46,10 +46,10 @@ loader_run() {
   out="$(bash -c 'source "$1/common.sh"; source "$1/loader.sh"; '"$1" _ "$loader_dir" 2>&1)" && status=0 || status=$?
 }
 
-loader_run 'orch_load state; declare -F cmd_state >/dev/null && echo defined'
+loader_run 'orch_load state; declare -F state_get >/dev/null && echo defined'
 assert_eq "orch_load sources a module" "$out" "defined"
 
-loader_run 'orch_load state; unset -f cmd_state; orch_load state; declare -F cmd_state >/dev/null || echo not-resourced'
+loader_run 'orch_load state; unset -f state_get; orch_load state; declare -F state_get >/dev/null || echo not-resourced'
 assert_eq "a second orch_load of a module does nothing" "$out" "not-resourced"
 
 loader_run 'orch_load nonesuch; echo reached'
@@ -73,22 +73,25 @@ new_repo >/dev/null
 trace="$(mktemp)"
 # run_traced <args>: orch.sh as a command with the load trace on.
 run_traced() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash "$ORCH" "$@" >/dev/null 2>&1 || true; }
+# src_run <script>: <script> run with $1 = orch.sh, the trace emptied first.
+src_run() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash -c "$1" _ "$ORCH" 2>&1; }
+lazy_pre='ORCH_SOURCE_LAZY=1; source "$1"; shift; '
+# lazy_state_get: the state module's reader of phase, called with orch.sh
+# sourced to load on demand; its stdout and stderr. No bash noun is left to
+# run it as a command.
+lazy_state_get() { bash -c "$lazy_pre"'state_get phase' _ "$ORCH" 2>&1; }
 
-run_traced state get phase
-assert_trace_names_no "state get loads the state module and never the checkout module" "$trace" checkout
-assert_contains "state get loads the state module" "$(cat "$trace")" "state 0"
+src_run "$lazy_pre"'state_get phase || true' >/dev/null
+assert_trace_names_no "state_get loads the state module and never the checkout module" "$trace" checkout
+assert_contains "state_get loads the state module" "$(cat "$trace")" "state 0"
 assert_eq "no module loads twice at depth 0" \
   "$(awk '$2 == 0 {print $1}' "$trace" | sort | uniq -d)" ""
 run_traced nonesuch-command
 assert_eq "an unknown command loads no module" "$(cat "$trace")" ""
-out="$(bash "$ORCH" state get phase 2>&1)"; status=$?
-out2="$(ORCH_LOAD_TRACE=/nonexistent/dir/trace bash "$ORCH" state get phase 2>&1)"; status2=$?
-assert_eq "an unwritable ORCH_LOAD_TRACE leaves the command's output as it is" "$out2" "$out"
+out="$(lazy_state_get)"; status=$?
+out2="$(ORCH_LOAD_TRACE=/nonexistent/dir/trace lazy_state_get)"; status2=$?
+assert_eq "an unwritable ORCH_LOAD_TRACE leaves the call's output as it is" "$out2" "$out"
 assert_status "and its exit status" "$status2" "$status"
-
-# src_run <script>: <script> run with $1 = orch.sh, the trace emptied first.
-src_run() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash -c "$1" _ "$ORCH" 2>&1; }
-lazy_pre='ORCH_SOURCE_LAZY=1; source "$1"; shift; '
 
 # default_branch_into asks GitHub, here the gh fake, from a command
 # substitution, loading the gh module there: new_repo's origin is a GitHub URL,
@@ -156,7 +159,7 @@ src_home="$(mktemp -d)"
 HOME="$src_home" src_run 'source "$1"'
 assert_eq "sourced plainly, no cache file is written" "$(ls -A "$src_home/.cache/orchestrator" 2>/dev/null | wc -l | tr -d ' ')" "0"
 rm -rf "$src_home"
-out="$(src_run 'source "$1"; cmd_state() { echo replaced; }; cmd_state')"
+out="$(src_run 'source "$1"; state_get() { echo replaced; }; state_get')"
 assert_eq "a function replaced after source stays replaced" "$out" "replaced"
 
 src_run 'ORCH_SOURCE_LAZY=1; source "$1"' >/dev/null
@@ -279,19 +282,28 @@ fi
 rm -f "$cache_dir"/*
 cache_cmd "$cache_scripts"
 cf="$(cache_file)"
-sed -i.bak 's/^cmd_state() { orch_stub state /cmd_state() { orch_stub repo /' "$cf"; rm -f "$cf.bak"
-assert_contains "the planted table names the wrong module" "$(cat "$cf")" "cmd_state() { orch_stub repo "
+# No bash noun is left to call a stub as a command, so a call of base's
+# is_branch_name with orch.sh sourced to load on demand - which reads the same
+# cache - goes through it.
+# cache_branch_name_cmd: that call over the planted copy with the temporary
+# home, setting out and status.
+cache_branch_name_cmd() {
+  out="$(HOME="$cache_home" bash -c 'ORCH_SOURCE_LAZY=1; source "$1/orch.sh"; is_branch_name main && echo valid' \
+    _ "$cache_scripts" 2>&1)" && status=0 || status=$?
+}
+sed -i.bak 's/^is_branch_name() { orch_stub base /is_branch_name() { orch_stub state /' "$cf"; rm -f "$cf.bak"
+assert_contains "the planted table names the wrong module" "$(cat "$cf")" "is_branch_name() { orch_stub state "
 touch -d '+10 minutes' "$cf"
-out="$(HOME="$cache_home" bash "$cache_scripts/orch.sh" state get phase 2>&1)" && status=0 || status=$?
-assert_eq "a planted wrong table is rebuilt and the call goes on" "$out" "$(bash "$ORCH" state get phase 2>&1)"
-assert_contains "and the cache holds the rebuilt table" "$(cat "$cf")" "cmd_state() { orch_stub state "
+cache_branch_name_cmd
+assert_eq "a planted wrong table is rebuilt and the call goes on" "$out" "valid"
+assert_contains "and the cache holds the rebuilt table" "$(cat "$cf")" "is_branch_name() { orch_stub base "
 
-sed -i.bak 's/^cmd_state() {/cmd_state_gone() {/' "$cache_scripts/orch/state.sh"; rm -f "$cache_scripts/orch/state.sh.bak"
+sed -i.bak 's/^is_branch_name() {/is_branch_name_gone() {/' "$cache_scripts/orch/base.sh"; rm -f "$cache_scripts/orch/base.sh.bak"
 touch -d '+11 minutes' "$cf"
-out="$(HOME="$cache_home" bash "$cache_scripts/orch.sh" state get phase 2>&1)" && status=0 || status=$?
+cache_branch_name_cmd
 assert_status "a table naming a function no module defines stops with exit 1" "$status" 1
-assert_eq "naming the cache file" "$out" "orch: cmd_state is in the stub table but no module defines it - remove $cf and run again"
-assert_eq "with the cache already rebuilt" "$(grep -c '^cmd_state()' "$cf")" "0"
+assert_eq "naming the cache file" "$out" "orch: is_branch_name is in the stub table but no module defines it - remove $cf and run again"
+assert_eq "with the cache already rebuilt" "$(grep -c '^is_branch_name()' "$cf")" "0"
 
 # Two plugin copies use two files.
 cache_scripts2="$(tree_copy scripts)"

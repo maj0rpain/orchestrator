@@ -1113,6 +1113,42 @@ def test_handoff_section_into_a_pipe_closed_unread_dies_of_sigpipe(tmp_path, rep
     assert answer == ("", "", 141)
 
 
+# --- state -----------------------------------------------------------------
+
+
+def test_state_set_then_get_round_trips_through_the_python_noun(tmp_path, repo, seed):
+    hold_flow(repo, slug="s", phase="review", issue=None)
+
+    assert orch_sh(tmp_path, repo, seed, "state", "set", "budget", "3",
+                   path=python3_shim(tmp_path)) == ("", "", 0)
+    assert orch_sh(tmp_path, repo, seed, "state", "get", "budget") == ("3\n", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+def test_an_unknown_state_op_is_refused_through_the_python_noun(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "state", "bogus") == (
+        "", "orch: unknown state op: bogus (want get|set)\n", 1)
+
+
+def test_state_dies_pointing_at_doctor_without_python3(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "state", "get", "phase",
+                   path=path_without(tmp_path, "python3")) \
+        == ("", "orch: orch.sh state needs python3 3.9 or newer (found none)"
+                " - run orch.sh doctor\n", 1)
+
+
+def test_state_get_into_a_pipe_closed_unread_dies_of_sigpipe(tmp_path, repo, seed):
+    """The state file is longer than a pipe holds, so a reader that reads
+    none of it stops the writer, silently, with the status SIGPIPE gives."""
+    hold_flow(repo, slug="s" * 200000, phase="review")
+
+    answer = bash_run(tmp_path, repo, ["-c", 'set -o pipefail; "$1" state get | true', "_",
+                                       str(SCRIPTS / "orch.sh")],
+                      knobs={"ORCH_GH_FAKE_STORE": seed.store})
+
+    assert answer == ("", "", 141)
+
+
 # --- branch ----------------------------------------------------------------
 
 

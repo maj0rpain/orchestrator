@@ -5,12 +5,6 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# fake_flow <slug>: a section's starting point on the store-backed GitHub fake
-# - a bare new_repo, fake_github, and a flow named <slug> just started in it,
-# cwd inside it. Unlike fresh_flow it brings no healthy_repo environment; the
-# section still ends with its own restore_suite_env.
-fake_flow() { new_repo >/dev/null; fake_github; "$ORCH" init "$1" >/dev/null; }
-
 # The documented triage-label table, in the shape the setup skill writes it:
 # a header row, a separator row, and backticked labels in the second column.
 labels_doc() {
@@ -66,11 +60,6 @@ assert_state_unreadable() {
   assert_not_contains "$1 leaks no jq text" "$3" "parse error"
 }
 
-# state_write_fails_bin: a fails_bin for mktemp that fails a state.json.*
-# template - the temp file every state write makes - and nothing else. Unlike
-# chmod a-w, it also fails as root.
-state_write_fails_bin() { fails_bin mktemp '*state.json.*'; }
-
 # fake_pr_draft <n>: seeds PR #n as a draft.
 fake_pr_draft() { : >"$ORCH_GH_FAKE_STORE/prs/$1/draft"; }
 
@@ -115,66 +104,6 @@ complete_handoff() {
   done <<<"$headings" >"$1"
 }
 
-# --- state ------------------------------------------------------------------
-echo
-echo "state"
-fake_flow state
-assert_eq "round-trips a string value" \
-  "$("$ORCH" state set budget unbounded; "$ORCH" state get budget)" "unbounded"
-"$ORCH" state set budget 3
-assert_eq "sets budget" "$("$ORCH" state get budget)" "3"
-"$ORCH" state set flake_rerun_used true
-assert_eq "sets flake_rerun_used" "$("$ORCH" state get flake_rerun_used)" "true"
-"$ORCH" state set budget null
-"$ORCH" state set flake_rerun_used false
-before="$("$ORCH" state get phase)"
-out="$("$ORCH" state set phase review 2>&1)"; st=$?
-assert_status "refuses to set phase" "$st" 1
-assert_eq "naming phase advance as its owner, in full" "$out" \
-  "orch: state set refuses phase: use phase advance (review ready and redo also move it)"
-assert_eq "and leaves the phase as it was" "$("$ORCH" state get phase)" "$before"
-# Each refusal is pinned as its whole line, so a change to any wording fails.
-for pair in "branch|branch create records it" "base_sha|branch create records it" \
-            "pr|pr open records it" "iteration|review begin counts it" \
-            "redo_count|a redo that retires a branch counts it" "slug|init seeds it" \
-            "base|init seeds it" "created|init seeds it" \
-            "host_fallbacks|init seeds it" "updated|every state change stamps it" \
-            "bogus|settable keys are issue, budget, flake_rerun_used"; do
-  key="${pair%%|*}"; owner="${pair#*|}"
-  out="$("$ORCH" state set "$key" 1 2>&1)"; st=$?
-  assert_status "refuses to set $key" "$st" 1
-  assert_eq "naming what owns $key, in full" "$out" "orch: state set refuses $key: $owner"
-done
-"$ORCH" state set issue 42
-assert_eq "coerces a numeric value to a number" "$("$ORCH" state get issue)" "42"
-assert_eq "stores issue as JSON number, not string" \
-  "$("$ORCH" state get | jq -r '.issue | type')" "number"
-"$ORCH" state set issue null
-assert_eq "accepts an explicit null" "$("$ORCH" state get | jq -r '.issue | type')" "null"
-for b in true false; do
-  "$ORCH" state set flake_rerun_used "$b"
-  assert_eq "stores flake_rerun_used $b as a JSON boolean" \
-    "$("$ORCH" state get | jq -r '.flake_rerun_used | type')" "boolean"
-  assert_eq "reads flake_rerun_used $b back as $b" "$("$ORCH" state get flake_rerun_used)" "$b"
-done
-for pair in unbounded:string 3:number null:null; do
-  "$ORCH" state set budget "${pair%%:*}"
-  assert_eq "stores budget ${pair%%:*} as a JSON ${pair#*:}" \
-    "$("$ORCH" state get | jq -r '.budget | type')" "${pair#*:}"
-done
-"$ORCH" state set budget false
-assert_eq "reads a stored false back as false, not the key's default" \
-  "$("$ORCH" state get budget)" "false"
-# Digits with a trailing newline are not all digits, so they are stored as a
-# string. jq's regex `$` used to match before the newline, and the set then
-# died on tonumber's error (#711).
-"$ORCH" state set budget $'12\n'; st=$?
-assert_status "accepts digits with a trailing newline" "$st" 0
-assert_eq "stores them as a JSON string" \
-  "$("$ORCH" state get | jq -r '.budget | type')" "string"
-assert_eq "and leaves the rest of state.json intact" "$("$ORCH" state get slug)" "state"
-restore_suite_env
-
 # --- a flow from before the budget shipped ----------------------------------
 # An in-flight flow carries whatever state the version that started it wrote:
 # no `budget`, no `loop`, no `flake_rerun_used`. Failing on any absence would
@@ -215,46 +144,25 @@ assert_eq "recording done as it goes" "$("$ORCH" state get phase)" "done"
 assert_eq "with the PR no longer a draft" "$(fake_pr_draft_of 3)" "no"
 restore_suite_env
 
-# --- state get reads every key with its default -----------------------------
-# A state file written by an older flow lacks keys a fresh one seeds; each key
-# still reads back as what an absent value has always meant.
+# --- doctor --flow on a state.json lacking keys -----------------------------
+# A state file written by an older flow lacks keys a fresh one seeds; doctor
+# --flow still passes it.
 echo
-echo "state get defaults"
+echo "doctor --flow on a sparse state.json"
 fresh_flow sparse
 state_fixture_drop iteration redo_count host_fallbacks flake_rerun_used budget
-assert_eq "an absent iteration reads as 0" "$("$ORCH" state get iteration)" "0"
-assert_eq "an absent redo_count reads as 0" "$("$ORCH" state get redo_count)" "0"
-assert_eq "an absent host_fallbacks reads as false" "$("$ORCH" state get host_fallbacks)" "false"
-assert_eq "an absent flake_rerun_used reads as false" "$("$ORCH" state get flake_rerun_used)" "false"
-assert_eq "an absent budget reads as empty" "$("$ORCH" state get budget)" ""
-out="$("$ORCH" state get nonsense 2>&1)"; st=$?
-assert_status "a key outside the schema is refused" "$st" 1
-assert_eq "as an unknown state key, naming it" "$out" "orch: unknown state key: nonsense"
 complete_handoff "$("$ORCH" handoff path spec)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "doctor --flow passes a state file lacking those keys" "$st" 0
-# The string keys read back empty when missing too. phase goes only now: the
-# doctor --flow check above would fail a state file lacking it.
-state_fixture_drop slug phase issue base branch pr base_sha created updated
-for key in slug phase issue base branch pr base_sha created updated; do
-  out="$("$ORCH" state get "$key" 2>&1)"; st=$?
-  assert_status "an absent $key still reads" "$st" 0
-  assert_eq "an absent $key reads as empty" "$out" ""
-done
 restore_suite_env
 
 # --- state.json schema ------------------------------------------------------
-# What a fresh init writes, pinned: every key it seeds reads back through
-# state get, and the raw file holds exactly these keys, in this order, with
-# these seeds. A change to the state-key schema that alters state.json or loses
-# a key's default fails here.
+# What a fresh init writes, pinned: the raw file holds exactly these keys, in
+# this order, with these seeds. A change to the state-key schema that alters
+# state.json fails here.
 echo
 echo "state.json schema"
 fresh_flow schema
-for key in $(jq -r 'keys_unsorted[]' .orchestrator/state.json); do
-  "$ORCH" state get "$key" >/dev/null 2>&1; st=$?
-  assert_status "state get reads $key, which init writes" "$st" 0
-done
 assert_eq "slug, base, created and updated are non-empty strings" \
   "$(jq -c '[.slug, .base, .created, .updated] | map(type == "string" and . != "")' .orchestrator/state.json)" \
   "[true,true,true,true]"
@@ -263,34 +171,20 @@ assert_eq "state.json holds the pinned keys, order and seeds" \
   '{"slug":"S","phase":"spec","issue":null,"base":"B","branch":null,"pr":null,"base_sha":null,"budget":null,"iteration":0,"flake_rerun_used":false,"redo_count":0,"host_fallbacks":true,"created":"C","updated":"U"}'
 restore_suite_env
 
-# --- state set on a corrupt state.json --------------------------------------
-# A write jq cannot apply stops orch.sh and leaves the file as it found it,
-# with no temp file left beside it. The invalid JSON is written raw: no writer
-# can produce it.
+# --- state_fixture on a corrupt state.json ---------------------------------
+# A fixture arranging state on a file jq cannot parse fails, so a failed
+# arrangement fails its test rather than leaving a state the test did not ask
+# for, and leaves the file as it found it, with no temp file left beside it.
+# The invalid JSON is written raw: no writer can produce it.
 echo
-echo "state set on a corrupt state.json"
+echo "state_fixture on a corrupt state.json"
 fresh_flow corrupt
 printf 'not json\n' >.orchestrator/state.json
 before_ls="$(ls -A .orchestrator)"
-"$ORCH" state set budget 3 >/dev/null 2>&1; st=$?
-assert_ne "state set on an unparseable state.json exits non-zero" "$st" 0
-assert_eq "and leaves it byte-identical" "$(cat .orchestrator/state.json)" "not json"
-assert_eq "with nothing new beside it" "$(ls -A .orchestrator)" "$before_ls"
-# A fixture arranging state on such a file fails too, so a failed arrangement
-# fails its test rather than leaving a state the test did not ask for.
 state_fixture budget 3 2>/dev/null; st=$?
 assert_ne "state_fixture on an unparseable state.json returns non-zero" "$st" 0
 assert_eq "and leaves it untouched" "$(cat .orchestrator/state.json)" "not json"
 assert_eq "with nothing new beside it, after the fixture" "$(ls -A .orchestrator)" "$before_ls"
-# A read of it fails with the status jq itself gives on the file, not a
-# lookup's; a known key still reads, and an unknown one is still refused.
-jq . .orchestrator/state.json >/dev/null 2>&1; jq_st=$?
-out="$("$ORCH" state get budget 2>&1 >/dev/null)"; st=$?
-assert_status "state get on an unparseable state.json fails with jq's own status" "$st" "$jq_st"
-assert_contains "printing jq's parse error" "$out" "parse error"
-out="$("$ORCH" state get nonsense 2>&1)"; st=$?
-assert_status "state get of an unknown key on it still dies" "$st" 1
-assert_eq "as an unknown state key" "$out" "orch: unknown state key: nonsense"
 restore_suite_env
 
 # --- the Flow state module, sourced alone -----------------------------------
@@ -556,20 +450,6 @@ state_truncate
 out="$(sourced_orch state_get_many_in "$rd_file" a=phase 2>&1)"; st=$?
 assert_status "state_get_many_in on a truncated file returns 2" "$st" 2
 assert_eq "and prints nothing" "$out" ""
-restore_suite_env
-
-# --- state set with a failed write (#1931) ------------------------------------
-# A write that cannot land stops state set with an orch: message, whatever
-# context the write runs in, and leaves the flow as it was.
-echo
-echo "state set with a failed write"
-set_write_fails_bin="$(state_write_fails_bin)"
-fresh_flow failedwrite
-out="$(PATH="$set_write_fails_bin:$PATH" "$ORCH" state set budget 3 2>&1)"; st=$?
-assert_status "state set with a failed write exits 1" "$st" 1
-assert_contains "naming the key and the state file" "$out" \
-  "orch: could not record budget in $PWD/.orchestrator/state.json - the flow is unchanged"
-assert_eq "leaving the budget unset" "$("$ORCH" state get budget)" ""
 restore_suite_env
 
 # --- the entry read ----------------------------------------------------------

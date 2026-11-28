@@ -1,7 +1,8 @@
 # shellcheck shell=bash
-# state.sh - orch.sh's state command (state get and state set), with the state
-# helpers it calls (state_get, state_write, require_state_exists) and
-# require_state_read, a command's entry read that no bash command calls now.
+# state.sh - the bash state helpers (state_get, state_write_string,
+# require_state_exists) and require_state_read, a command's entry read, which
+# no bash noun calls now: the state noun itself is Python (orch.state), its
+# bash cmd_state gone.
 # The readers: state_get and state_get_many, the unguarded own-checkout
 # readers, and state_get_many_in, the guarded shared one, which costs one jq.
 # A command's entry read is require_state_read: the two refusals and
@@ -13,20 +14,6 @@
 # functions - lives in scripts/flow-state.sh, the Flow state module orch.sh
 # sources before this file. The functions below wrap it with their $STATE-bound
 # names and orch.sh's die messages.
-
-# Prints column $2 (default, seed or owner) of state key $1's row. An unknown
-# key prints nothing and returns 1; the caller dies with its own message. An
-# unknown column is a programming error, not caller input: it exits 2, never
-# 1, so it is never read as an unknown key, and its caller exits with that
-# status without a second message.
-state_key_field() {
-  local rc
-  flow_state_key_field "$1" "$2" || {
-    rc=$?
-    [ "$rc" -ne 2 ] || die2 "state_key_field has no column: $2"
-    return "$rc"
-  }
-}
 
 # The own-checkout reader, unguarded: every read of this checkout's state.json
 # goes through here, so what an absent key means is decided in the STATE_KEYS
@@ -95,18 +82,10 @@ state_many_recheck() {
   done
 }
 
-# The unrestricted writer behind every internal state change, over
-# flow_state_write's coercion on $STATE. A failed write dies, whatever context
-# the caller runs in: flow_state_write returns its status, and a caller in a
-# condition would suspend set -e.
-state_write() {
-  flow_state_write "$STATE" "$1" "$2" ||
-    die "could not record $1 in $STATE - the flow is unchanged"
-}
-
 # Stores value $2 under key $1 as a JSON string, always, over
-# flow_state_write_string on $STATE.
-# A failed write dies, as state_write's does.
+# flow_state_write_string on $STATE. A failed write dies, whatever context the
+# caller runs in: flow_state_write_string returns its status, and a caller in a
+# condition would suspend set -e.
 state_write_string() {
   flow_state_write_string "$STATE" "$1" "$2" ||
     die "could not record $1 in $STATE - the flow is unchanged"
@@ -116,8 +95,7 @@ state_write_string() {
 STATE_UNREADABLE_MSG="state.json cannot be read - run orch.sh doctor --flow"
 
 # require_state_exists [die2]: dies unless an active flow's state file exists,
-# for cmd_state, whose bare get still prints a state.json that does not parse,
-# and for require_state_read, which checks parsing after it.
+# for require_state_read, which checks parsing after it.
 require_state_exists() {
   [ -f "$STATE" ] || "${1:-die}" "no active flow ($ORCH_DIR_NAME/state.json not found). Run $(flow_cmd start) first."
 }
@@ -145,57 +123,4 @@ require_state_read() {
 # recorded - in the caller's shell. Never fails.
 flow_base_fallback_into() {
   if [ -n "$2" ]; then printf -v "$1" '%s' "$2"; else default_branch_into "$1"; fi
-}
-
-# Succeeds when state set may write key $1: its owner column is -. The one
-# place an owner is compared against -; an unknown key is not settable.
-state_key_settable() {
-  local owner rc
-  owner="$(state_key_field "$1" owner)" || {
-    rc=$?
-    [ "$rc" -eq 1 ] || exit "$rc"
-    return 1
-  }
-  [ "$owner" = - ]
-}
-
-# Prints every state key, one per line, in table order.
-state_keys() {
-  local k rest
-  while IFS='|' read -r k rest; do
-    printf '%s\n' "$k"
-  done <<EOF
-$(state_rows)
-EOF
-}
-
-cmd_state() {
-  local op="${1:-get}"
-  shift || true
-  case "$op" in
-    get)
-      require_state_exists
-      if [ $# -gt 0 ]; then state_get "$1"; else cat "$STATE"; fi
-      ;;
-    set)
-      require_state_exists
-      [ $# -eq 2 ] || die "usage: orch.sh state set <key> <value>"
-      # Only the keys skill prose sets are public. Every other key has a
-      # command that owns it, and that command's guard is the point: a phase
-      # set here would skip the handoff phase advance validates.
-      local owner settable="" k rc
-      owner="$(state_key_field "$1" owner)" || {
-        rc=$?
-        [ "$rc" -eq 1 ] || exit "$rc"
-        for k in $(state_keys); do
-          state_key_settable "$k" || continue
-          settable="${settable:+$settable, }$k"
-        done
-        die "state set refuses $1: settable keys are $settable"
-      }
-      state_key_settable "$1" || die "state set refuses $1: $owner"
-      state_write "$1" "$2"
-      ;;
-    *) die "unknown state op: $op (want get|set)" ;;
-  esac
 }
