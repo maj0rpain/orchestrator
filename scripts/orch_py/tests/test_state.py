@@ -7,8 +7,8 @@ set on each settable key with its coercion, the refusal of an owned and an
 unknown key, the usage line, a failed write and an unreadable file; the
 unknown-op refusal. On an unreadable state.json `state get <key>` and `state
 set` die with STATE_UNREADABLE_MSG, where bash passed jq's parse error
-through, and so does `state get` on one that cannot be opened, where bash
-passed cat's: the conversion's one departure from parity."""
+through: the conversion's one departure from parity. `state get` with no key
+on one that cannot be opened prints cat's error, as bash did."""
 from __future__ import annotations
 
 import json
@@ -103,11 +103,14 @@ def test_get_with_no_key_prints_an_unreadable_file_too(root, capsys):
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root reads any file")
-def test_get_with_no_key_of_a_file_that_cannot_be_opened_dies_as_unreadable(root, capsys):
+def test_get_with_no_key_of_a_file_that_cannot_be_opened_prints_cat_s_error(root, capsys):
+    """Bash's `cat "$STATE"`: cat's own message and its status, no `orch: `
+    line."""
     a_flow(root)
     os.chmod(str(state_json(root)), 0)
     try:
-        assert orch_state(capsys, root, "get") == (1, "", UNREADABLE)
+        assert orch_state(capsys, root, "get") == (
+            1, "", "cat: %s: Permission denied\n" % state_json(root))
     finally:
         os.chmod(str(state_json(root)), 0o644)
 

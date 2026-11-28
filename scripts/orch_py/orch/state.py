@@ -9,16 +9,17 @@ orch.flow_state's STATE_KEYS.
 The one departure from bash: on a state.json that is not exactly one JSON
 object, `state get <key>` and `state set` die with STATE_UNREADABLE_MSG, as
 the converted nouns' entry read does, where bash passed jq's own parse error
-and status through; so does `state get` with no key on one that cannot be
-opened, where bash passed cat's.
+and status through. `state get` with no key on one that cannot be opened
+prints cat's error and status, as bash's `cat` did.
 """
 from __future__ import annotations
 
 import os
+import sys
 import time
 from typing import Callable, List, Mapping, Optional, Sequence
 
-from orch.common import die, read_raw, stdout_write
+from orch.common import die, stderr_write, stdout_write
 from orch.flow_state import (STATE_KEYS, STATE_UNREADABLE_MSG, flow_state_file, flow_state_get,
                              require_state_exists, require_state_readable, state_write_many)
 from orch.git import Git
@@ -37,14 +38,18 @@ def get(argv: Sequence[str], state_file: str, env: Mapping[str, str]) -> None:
     """`orch.sh state get [<key>]`: <key>'s value (flow_state_get), or with
     no key the whole file as it stands, JSON or not. Dies with no flow, for
     a key outside the table "unknown state key: <key>", and with
-    STATE_UNREADABLE_MSG when the file cannot be read - with no key, only
-    when it cannot be opened. Any further argument is ignored, as bash
-    ignored it."""
+    STATE_UNREADABLE_MSG when the key's file cannot be read. With no key, a
+    file that cannot be opened prints cat's error, `cat: <path>: <reason>`,
+    and exits 1, as bash's `cat` did. Any further argument is ignored, as
+    bash ignored it."""
     require_state_exists(state_file, env)
     if not argv:
-        text = read_raw(state_file)
-        if text is None:
-            die(STATE_UNREADABLE_MSG)
+        try:
+            with open(state_file, "rb") as f:
+                text = f.read().decode("utf-8", "surrogateescape")
+        except OSError as err:
+            stderr_write("cat: %s: %s\n" % (state_file, os.strerror(err.errno)))
+            sys.exit(1)
         stdout_write(text)
         return
     try:
