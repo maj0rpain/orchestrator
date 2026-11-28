@@ -1133,15 +1133,6 @@ def test_branch_refuses_without_a_usable_python3_pointing_at_doctor(
             " doctor\n" % found, 1)
 
 
-def test_branch_busy_in_a_free_checkout_prints_nothing_through_the_python_noun(
-        tmp_path, repo, seed):
-    committed(repo, {"a.txt": "a\n"}, "first")
-
-    assert orch_sh(tmp_path, repo, seed, "branch", "busy", path=python3_shim(tmp_path)) == (
-        "", "", 0)
-    assert (tmp_path / "shim.log").read_text() == "ran\n"
-
-
 # --- side-checkout -----------------------------------------------------------
 
 

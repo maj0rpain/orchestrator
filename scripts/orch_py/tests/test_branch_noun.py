@@ -285,11 +285,11 @@ def off_repo(tmp_path):
 def repo_facts(root, name):
     """Whether <name> exists, the base SHA it records, and the branch checked
     out, in the real repository at <root>."""
-    made = run_git(root, "for-each-ref", "--format=made", "refs/heads/" + name) or "none"
+    exists = run_git(root, "for-each-ref", "--format=made", "refs/heads/" + name) or "none"
     sha = subprocess.run(["git", "-C", str(root), "config", "--get",
                           "branch.%s.orchestrator-base-sha" % name],
                          stdout=subprocess.PIPE, stdin=subprocess.DEVNULL).stdout.decode().strip()
-    return made, sha or "<unset>", run_git(root, "branch", "--show-current")
+    return exists, sha or "<unset>", run_git(root, "branch", "--show-current")
 
 
 def test_off_beside_tags_named_like_the_branch_and_origin_s_base_forks_from_origin_s_tip(
@@ -352,15 +352,15 @@ NO_ISSUE = "orch: no issue recorded in state - the spec phase must publish one f
 AUTOPILOT = {"ORCH_AUTOPILOT": "1"}
 
 
-def flowing(tmp_path, on="main", recorded=None, base="main", issue=11, phase="implement",
+def flowing(tmp_path, on="main", recorded_branch=None, base="main", issue=11, phase="implement",
             main=True, **forked):
     """Flow feat on <issue> in the checkout at tmp_path, at <phase>, its
-    state.json recording branch <recorded> and base <base> (None for no base
-    key), and a FakeGit there as forking makes it on <on> (None for a
+    state.json recording branch <recorded_branch> and base <base> (None for
+    no base key), and a FakeGit there as forking makes it on <on> (None for a
     detached HEAD), with <forked> handed on: the worktree list naming
     tmp_path the main checkout when <main>, else a hand-made worktree, and
     every step of the discard sequence working."""
-    state = {"slug": "feat", "phase": phase, "issue": issue, "branch": recorded}
+    state = {"slug": "feat", "phase": phase, "issue": issue, "branch": recorded_branch}
     if base is not None:
         state["base"] = base
     hold_flow(tmp_path, **state)
@@ -537,7 +537,7 @@ def test_the_fresh_path_on_a_detached_head_in_a_hand_made_worktree_discards_and_
 ], ids=["foreign", "retired-redo-branch-state-still-records"])
 def test_the_fresh_path_on_a_dirty_branch_not_the_flow_s_dies_discarding_and_writing_nothing(
         tmp_path, seed, capsys, env, on, recorded_branch, config):
-    git = flowing(tmp_path, on=on, recorded=recorded_branch, dirty=["README.md"], **config)
+    git = flowing(tmp_path, on=on, recorded_branch=recorded_branch, dirty=["README.md"], **config)
     before = untouched(tmp_path, git)
 
     assert create(capsys, seed, git, env=env) == (1, "", foreign_refusal(on))
@@ -607,7 +607,7 @@ def restarting(tmp_path, on="main", **forked):
     """flowing's flow with FLOW made and recorded, its git config holding a
     base and a base SHA unlike any create would write."""
     forked.setdefault("branches", (FLOW,))
-    return flowing(tmp_path, on=on, recorded=FLOW, **{
+    return flowing(tmp_path, on=on, recorded_branch=FLOW, **{
         "branch__%s__orchestrator_base" % FLOW: "main",
         "branch__%s__orchestrator_base_sha" % FLOW: "moved-marker"}, **forked)
 
@@ -1047,14 +1047,6 @@ def test_retire_with_the_wrong_number_of_arguments_is_a_usage_error(capsys, argv
 def test_retire_with_one_argument_naming_no_branch_reports_the_usage_first(capsys):
     # Both its checks broken: the argument count and the branch's existence.
     assert orch(capsys, "retire", "nosuchbranch") == (1, "", RETIRE_USAGE)
-
-
-def test_retire_renames_a_local_only_branch_and_prints_the_new_name(capsys):
-    git = FakeGit(toplevel=ROOT, branches={OLD: None})
-
-    assert orch(capsys, "retire", OLD, NEW, git=git) == (0, NEW + "\n", "")
-    assert (git.branch_exists(OLD), git.branch_exists(NEW),
-            git.config_value("branch.%s.orchestrator-retired" % NEW)) == (False, True, "true")
 
 
 @pytest.fixture

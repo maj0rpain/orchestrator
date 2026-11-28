@@ -47,8 +47,8 @@ it falls back to the full suite.
 far are `issue`, `finding-triage`, `verification`, `audit`, `review-pass`,
 `spec-review`, `spec`, `breakdown`, `glossary`, `parallel`, `route`, `agent`,
 `phase`, `handoff`, `redo`, `ticket`, `ticket-worktree`, `pr`, `review`,
-`autopilot`, `side-checkout`, `doctor` with its alias `health`, and the bare
-global commands `init`, `slug`, `status`, `archive` and `help`; a
+`autopilot`, `side-checkout`, `branch`, `doctor` with its alias `health`, and
+the bare global commands `init`, `slug`, `status`, `archive` and `help`; a
 helper a converted noun needs is copied into the package module of the concept
 it serves, under its bash name, and its bash copy stays while a bash caller
 remains. `orch.sh` stays the one entry point: main's one case naming the

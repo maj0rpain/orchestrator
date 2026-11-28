@@ -545,9 +545,9 @@ class Git:
         return worktrees[0].path if worktrees else None
 
     def branch_at(self, path: str) -> Optional[str]:
-        """The branch checked out in the checkout at <path> - bash
-        checkout_branch <path>, its refs/heads/ taken off: None on a
-        detached HEAD, or where <path> is no checkout."""
+        """The branch checked out in the checkout at <path>, its refs/heads/
+        taken off: None on a detached HEAD, or where <path> is no
+        checkout."""
         ref = self._output(["-C", path, "symbolic-ref", "--quiet", "HEAD"])
         if ref is None:
             return None
@@ -601,8 +601,7 @@ class Git:
         outside a repository."""
         return self._output(["rev-parse", "--git-common-dir"])
 
-    # The review pass's operation, run where the adapter runs, as bash's
-    # checkout_branch runs its `git -C .`.
+    # The review pass's operation, run where the adapter runs.
 
     def current_branch(self) -> Optional[str]:
         """The branch HEAD names, its refs/heads/ taken off, as `symbolic-ref
@@ -665,8 +664,7 @@ class Git:
         # next ref's field.
         return [(fields[k].lstrip("\n"), fields[k + 1]) for k in range(0, len(fields) - 1, 2)]
 
-    # Branch retire's operations (orch.branch), run where the adapter runs, as
-    # bash's `branch retire` runs its git.
+    # Branch retire's operations (orch.branch), run where the adapter runs.
 
     def branch_exists(self, name: str) -> bool:
         """Whether local branch <name> exists: `rev-parse --verify --quiet
@@ -794,7 +792,7 @@ class Git:
         return self._failure(["-C", path, "merge", "-q", "--ff-only", ref])
 
     # Branch sync's operations (orch.branch): the merge run in the checkout it
-    # names, as bash's sync merges in $ROOT, the reads where the adapter runs.
+    # names, the checkout's root, the reads where the adapter runs.
 
     def merge_no_edit_at(self, path: str, ref: str) -> Optional[GitFailure]:
         """`git -C <path> merge --quiet --no-edit <ref>`: merges <ref> into
@@ -817,7 +815,8 @@ class Git:
 
     # The clean-tree check's operation (orch.common) and the discard
     # sequence's (orch.checkout), each run in the checkout it names. The
-    # sequence's steps answer only whether they ran, as bash silences them.
+    # sequence's steps answer only whether they ran, their output captured
+    # and dropped.
 
     def status_at(self, path: str) -> Union[str, GitFailure]:
         """`git -C <path> status --porcelain`'s text, empty for a clean

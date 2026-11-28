@@ -21,7 +21,7 @@ from typing import List, Mapping, Optional
 
 from orch.base import (base_branch_into, branch_base_get, branch_base_sha_get,
                        branch_base_sha_set, record_branch_base, recorded_base_into)
-from orch.common import die, plain_number, require_clean_tree, stderr_write, stdout_write, warn
+from orch.common import die, plain_number, require_clean_tree, stdout_write, warn
 from orch.flow_state import (flow_base_fallback_into, flow_state_file, require_state_read,
                              require_value, state_write_many)
 from orch.gh import adapter_of
@@ -176,7 +176,7 @@ def branch_retire(git, old: str, new: str) -> None:
         die("branch %s does not exist" % old)
     elif old_ok:
         upstream = git.branch_upstream(old)
-        _rename_or_exit(git, old, new)
+        _exit_on(git.branch_rename(old, new))
     else:
         # <old> is already gone and <new> already exists: a previous call
         # renamed locally (issue #63). That state is also what a completed
@@ -203,7 +203,7 @@ def branch_retire(git, old: str, new: str) -> None:
             # An undo git refuses ends the run as bash's `set -e` did, before
             # the line below.
             if not resumed:
-                _rename_or_exit(git, new, old)
+                _exit_on(git.branch_rename(new, old))
             die("could not push %s to origin: %s" % (new, why))
         why = git.remote_delete("origin", "refs/heads/" + old)
         if why is not None:
@@ -224,16 +224,10 @@ def branch_retire(git, old: str, new: str) -> None:
     stdout_write(new + "\n")
 
 
-def _rename_or_exit(git, old: str, new: str) -> None:
-    """Renames <old> to <new>, or ends the run as _exit_on does."""
-    _exit_on(git.branch_rename(old, new))
-
-
 def _exit_on(failed: Optional[GitFailure]) -> None:
     """Ends the run with git's status, its stderr printed, when <failed> is
     a failure, as a failed command under bash's `set -e` does."""
-    if failed is not None:
-        stderr_write(failed.stderr)
+    if git_failed(failed):
         sys.exit(failed.code)
 
 
@@ -293,25 +287,23 @@ def run(argv: List[str], gh=None, git=None, env: Optional[Mapping[str, str]] = N
     git = Git() if git is None else git
     root = checkout_root(git, env)
     op, rest = (argv[0], argv[1:]) if argv else ("", [])
+    pin = RepoPin(env, git) if pin is None else pin
+    gh_of = adapter_of(gh, env, pin)
     if op == "busy":
         return busy_verb(rest, git, root, env)
     if op == "base-sha":
-        pin = RepoPin(env, git) if pin is None else pin
-        return base_sha_verb(rest, adapter_of(gh, env, pin), git, pin)
+        return base_sha_verb(rest, gh_of, git, pin)
     if op == "retire":
         if len(rest) != 2:
             die("usage: orch.sh branch retire <old> <new>")
         branch_retire(git, rest[0], rest[1])
         return 0
     if op == "off":
-        pin = RepoPin(env, git) if pin is None else pin
-        return off_verb(rest, adapter_of(gh, env, pin), git, root, env, pin)
+        return off_verb(rest, gh_of, git, root, env, pin)
     if op == "sync":
-        pin = RepoPin(env, git) if pin is None else pin
-        return sync_verb(rest, adapter_of(gh, env, pin), git, pin, root, env)
+        return sync_verb(rest, gh_of, git, pin, root, env)
     if op == "create":
-        pin = RepoPin(env, git) if pin is None else pin
-        return create_verb(rest, adapter_of(gh, env, pin), git, root, env, pin)
+        return create_verb(rest, gh_of, git, root, env, pin)
     die("unknown branch op: %s (want %s)" % (op or "<none>", OPS))
 
 
@@ -370,9 +362,7 @@ def create_verb(argv: List[str], gh_of, git, root: str, env: Mapping[str, str], 
     if state["branch"] == name and git.branch_exists(name):
         discard_create_work(git, root, env, name)
         if checkout_branch(git) != name:
-            failed = git.checkout_existing_branch(name)
-            if failed is not None:
-                stderr_write(failed.stderr)
+            if git_failed(git.checkout_existing_branch(name)):
                 die("could not check out %s" % name)
         stdout_write(name + "\n")
         return 0
