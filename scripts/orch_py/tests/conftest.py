@@ -276,6 +276,20 @@ def origin_clone(origin, root, branch=None):
     return git_repo(root, str(origin))
 
 
+def origin_main_clone(tmp_path, files):
+    """A clone at <tmp_path>/repo of a bare origin at <tmp_path>/origin.git,
+    on main with one commit writing <files>, pushed as origin's main and
+    fetched, origin/HEAD naming it: (the clone's root, that commit)."""
+    root = tmp_path / "repo"
+    origin_clone(tmp_path / "origin.git", root, "main")
+    run_git(root, "checkout", "-qb", "main")
+    first = committed(root, files, "one")
+    run_git(root, "push", "-q", "origin", "HEAD:refs/heads/main")
+    run_git(root, "fetch", "-q", "origin")
+    run_git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+    return root, first
+
+
 def run_git(root, *args, env=None):
     """git <args> in the repository at <root>, as a test author t with
     signing off, in <env> when given, else this process's environment: its
@@ -397,6 +411,28 @@ def tip(root, branch):
     """The commit local branch <branch> of the repository at <root> is at,
     named in full so a same-named tag is never read."""
     return run_git(root, "rev-parse", "refs/heads/" + branch)
+
+
+def commit_of(root, rev="HEAD"):
+    """The commit <rev> names in the repository at <root>; "" when it names
+    none."""
+    return git_of(root, "rev-parse", rev)
+
+
+def base_sha_of(root, branch):
+    """<branch>'s base SHA as its git config records it in the repository at
+    <root>; "" when none is."""
+    return git_of(root, "config", "--get", "branch.%s.orchestrator-base-sha" % branch)
+
+
+def record_base(root, branch, base=None, sha=None):
+    """<branch>'s base and base SHA, each when given, recorded in the git
+    config of the repository at <root>, as branch off and branch create
+    record them."""
+    if base is not None:
+        run_git(root, "config", "branch.%s.orchestrator-base" % branch, base)
+    if sha is not None:
+        run_git(root, "config", "branch.%s.orchestrator-base-sha" % branch, sha)
 
 
 def lock_ref(repo, branch):

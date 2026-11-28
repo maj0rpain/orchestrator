@@ -1123,6 +1123,74 @@ def test_a_branch_git_cannot_delete_gives_its_status_and_stderr_the_same_from_bo
     assert real.stderr.startswith("error: ") and "'nope'" in real.stderr
 
 
+# --- a new branch checked out, as branch off and branch create fork one ----------
+
+
+@pytest.mark.parametrize("start", ["refs/remotes/origin/" + PARENT, "refs/heads/" + PARENT],
+                         ids=["origin-s-ref", "local-base"])
+def test_a_new_branch_is_checked_out_at_its_start_tracking_nothing_the_same_from_both(
+        forking, start):
+    # The local base moves on past origin's, so each start forks elsewhere.
+    committed(forking, {"b.txt": "b\n"}, "local only")
+    commit = run_git(forking, "rev-parse", start)
+    git = Git(cwd=str(forking))
+    fake = FakeGit(branches={PARENT: "refs/remotes/origin/" + PARENT})
+    fake.seed("resolve_commit", start, answer=commit)
+
+    for adapter_ in (git, fake):
+        assert adapter_.checkout_new_branch(TICKET, start) is None
+        assert (adapter_.current_branch(), adapter_.branch_upstream(TICKET),
+                adapter_.resolve_commit("HEAD")) == (TICKET, None, commit)
+
+
+@pytest.mark.parametrize("name, start, stderr", [
+    (PARENT, "HEAD", "fatal: a branch named '%s' already exists\n" % PARENT),
+    (TICKET, "refs/heads/nope",
+     "fatal: 'refs/heads/nope' is not a commit and a branch '%s' cannot be created from it\n"
+     % TICKET),
+], ids=["taken", "no-such-start"])
+def test_a_new_branch_git_refuses_to_check_out_gives_its_status_and_stderr_the_same_from_both(
+        forking, name, start, stderr):
+    git, fake = Git(cwd=str(forking)), FakeGit(branches={PARENT: None})
+    fake.seed("resolve_commit", "HEAD", answer=run_git(forking, "rev-parse", "HEAD"))
+    real = git.checkout_new_branch(name, start)
+
+    # As for a refused rename: the real run is held to its status and the
+    # names its refusal quotes, the fake to today's wording exactly.
+    assert fake.checkout_new_branch(name, start) == GitFailure(128, stderr)
+    assert real.code == 128
+    assert real.stderr.startswith("fatal: ") and "'%s'" % name in real.stderr
+    assert (git.current_branch(), fake.current_branch()) == (PARENT, None)
+
+
+# --- an existing branch checked out, as branch create's restart does -------------
+
+
+def test_an_existing_branch_is_checked_out_beside_a_same_named_tag_the_same_from_both(forking):
+    # The tag sits on the newer commit: the branch, never the tag, is taken.
+    branched = run_git(forking, "rev-parse", "HEAD")
+    run_git(forking, "branch", TICKET)
+    committed(forking, {"b.txt": "b\n"}, "two")
+    run_git(forking, "tag", TICKET, "HEAD")
+    git, fake = Git(cwd=str(forking)), FakeGit(branches={PARENT: None, TICKET: None})
+
+    for adapter_ in (git, fake):
+        assert adapter_.checkout_existing_branch(TICKET) is None
+        assert adapter_.current_branch() == TICKET
+    assert run_git(forking, "rev-parse", "HEAD") == branched
+
+
+def test_a_branch_that_does_not_exist_is_refused_with_git_s_status_and_stderr_from_both(forking):
+    git, fake = Git(cwd=str(forking)), FakeGit(branches={PARENT: None})
+    fake.seed("current_branch", answer=PARENT)
+    real = git.checkout_existing_branch("nope")
+
+    assert fake.checkout_existing_branch("nope") == GitFailure(
+        1, "error: pathspec 'nope' did not match any file(s) known to git\n")
+    assert real.code == 1 and "'nope'" in real.stderr
+    assert (git.current_branch(), fake.current_branch()) == (PARENT, PARENT)
+
+
 def test_a_worktree_is_added_on_an_existing_branch_the_same_from_a_real_repo_and_the_fake(
         forking):
     run_git(forking, "branch", TICKET)
@@ -1347,3 +1415,55 @@ def test_a_reset_or_clean_that_cannot_run_fails_the_same_from_both(tmp_path):
 
     assert fails_alike(git, "reset_hard_at", str(tmp_path)) is False
     assert fails_alike(git, "clean_at", str(tmp_path)) is False
+
+
+# --- branch sync's operations ----------------------------------------------------------
+
+
+def test_a_plain_merge_makes_a_merge_commit_with_git_s_own_message_the_same_from_both(
+        landing):
+    main, _ = landing
+    before = tip(main, PARENT)
+
+    assert alike(Git(cwd=str(main)), "merge_no_edit_at", str(main), "refs/heads/" + TICKET) is None
+    assert (run_git(main, "rev-parse", "HEAD^1"), run_git(main, "rev-parse", "HEAD^2")) == (
+        before, tip(main, TICKET))
+    assert run_git(main, "log", "-1", "--format=%s") == (
+        "Merge branch 'refs/heads/%s' into %s" % (TICKET, PARENT))
+
+
+def test_a_conflicting_merge_fails_leaving_the_merge_in_progress(landing):
+    main, _ = landing
+    conflicted(landing)
+    before = tip(main, PARENT)
+    git = Git(cwd=str(main))
+    failed = git.merge_no_edit_at(str(main), "refs/heads/" + TICKET)
+
+    assert failed.code == 1 and git.merge_in_progress_at(str(main)) is True
+    assert tip(main, PARENT) == before
+    assert FakeGit().merge_no_edit_at(str(main), "refs/heads/" + TICKET) == GitFailure(1, "")
+
+
+def test_the_newest_merge_on_the_first_parent_chain_is_found_under_fix_commits(landing):
+    main, _ = landing
+    git = Git(cwd=str(main))
+    unmerged = alike(git, "newest_merge_commit", "HEAD")
+    run_git(main, "merge", "-q", "--no-edit", "refs/heads/" + TICKET)
+    merge = run_git(main, "rev-parse", "HEAD")
+    committed(main, {"fix.txt": "fix\n"}, "a fix above the merge")
+
+    assert (unmerged, alike(git, "newest_merge_commit", "HEAD")) == (None, merge)
+
+
+def test_a_commit_s_second_parent_reads_the_same_from_both(landing):
+    main, _ = landing
+    git = Git(cwd=str(main))
+    run_git(main, "merge", "-q", "--no-edit", "refs/heads/" + TICKET)
+
+    assert alike(git, "second_parent", run_git(main, "rev-parse", "HEAD")) == tip(main, TICKET)
+    assert fails_alike(git, "second_parent", run_git(main, "rev-parse", "HEAD^1")) is None
+    assert fails_alike(git, "second_parent", "nosuch") is None
+
+
+def test_there_is_no_newest_merge_where_git_cannot_read_the_chain(tmp_path):
+    assert fails_alike(Git(cwd=str(tmp_path)), "newest_merge_commit", "HEAD") is None

@@ -13,9 +13,9 @@ a run directory is named with, the git exclude writer, the copy bash's cp
 makes, the directory bash's mkdir -p makes, the removals bash's rm -f and
 rm -rf make, the move of named files aside into a folder, every name
 checked before the first move, as bash's move_files_aside made it (its bash
-copy gone), the clean-tree refusal bash's require_clean_tree makes, the
-capture of a call's stderr and death that bash's capture makes, with the
-first-line quote bash's err_line made (its bash copy gone),
+copy gone), the clean-tree refusal bash's require_clean_tree made (its bash
+copy gone), the capture of a call's stderr and death that bash's capture
+makes, with the first-line quote bash's err_line made (its bash copy gone),
 and the status a call ends with that bash's subshell gives (subshell).
 
 Every `orch: ` message goes through die or warn, as in the bash side's
@@ -503,7 +503,8 @@ def exclude_missing(lines: Sequence[str], git) -> List[str]:
 
 
 def tree_status(git, path: str) -> Tuple[Optional[str], str]:
-    """bash tree_status: the working tree at <path>'s `git status
+    """As bash's tree_status was, its bash copy gone: the working tree at
+    <path>'s `git status
     --porcelain` text, read through the git adapter <git>'s status_at -
     empty when it is clean - and "". A git status that cannot run must never
     read as a clean tree, so instead (None, the line saying why, naming
@@ -516,8 +517,8 @@ def tree_status(git, path: str) -> Tuple[Optional[str], str]:
 
 
 def require_clean_tree(git, path: str, dirty: str) -> None:
-    """bash require_clean_tree: returns when the working tree at <path> is
-    clean (tree_status). Dies with <dirty> when it is dirty, and with
+    """As bash's require_clean_tree was, its bash copy gone: returns when
+    the working tree at <path> is clean (tree_status). Dies with <dirty> when it is dirty, and with
     tree_status's own line when git status cannot run: that must refuse,
     never read as a clean tree."""
     status, why = tree_status(git, path)

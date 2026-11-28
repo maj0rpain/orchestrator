@@ -1,6 +1,6 @@
 3	4	isolation	fbbe392d3f11a8a4c4258bbbc3b78581ca954d61
-23	16	isolation under a git hook (#1905)	9c61a45a878f77d4b041254c4ad2c32cc6e6c3c2
-24	28	the section filter (ORCH_TEST_ONLY, #612)	c4be52c6edd7e7ce6e6f9b7981c4c15b4cda07d7
+34	37	isolation under a git hook (#1905)	58af9dc8fa4f4bd6070754f10fc313b7af60b48e
+1	29	the section filter (ORCH_TEST_ONLY, #612)	05a32eeb77b666f6166d7414a44afd87c66b2d1c
 15	15	quiet mode (ORCH_TEST_QUIET, #614)	b382f1f9eeb42b2af87240d2a8c8c8895b4c5052
 290	88	the parallel runner (ORCH_TEST_JOBS, #780)	cfe127e3ea47178c239dfa015e80134925eda7c5
 24	41	the parallel runner's start order (#2857)	5633bfd8c7e40516be10abb0333849e858e4eaf2
@@ -24,7 +24,7 @@
 5	5	orch_load before cross-module reads (#2868)	211ca552ea40ed23b396e0709308bb7bbd6e3039
 5	6	on-demand sourcing variable (#2820)	588612dc6578d59367a03fcba5c1f17b195151d4
 1	3	declaration substitutions (#1327)	d244b7bb3071821e93a51867aed89182539df091
-9	14	the helper index (#1144)	e370e0181b12351c7434d4e30c3bb803a83815b5
+9	14	the helper index (#1144)	c9611d24cddc17c8704576fc2083da0bd367455a
 1	1	stand-in adapter (#2465)	00b6b42c4a9eeddd968fe5a85164cf37753f4cf0
 1	3	git env clear (#1905)	ea2c2785d85308d60935451721ea9462dcdf33ca
 5	5	runner git isolation (#1905)	b02ad7c4ca4143ca17f4c2208cb8abbfc5dd814f
@@ -32,42 +32,24 @@
 3	3	the suite start (#3582)	cefd264a716ac5174552850010c5d3c0e4793269
 10	11	the pytest suite (#3912)	2eed944bdf4fdb550f91c724b9e95d44949a57df
 3	4	the counting fixture's stdin counter (#3434)	388249050f13ca085aeda08ddc9970a9e3c3d73a
-113	136	affected.sh, the ticket verification (#2023)	782f52387c16fe53fa5dea5d0a36907389b1a291
-6	8	the row rule (#3549)	2120bc56f0a8ec40eb24ac396ab1053c95ba31b5
+109	132	affected.sh, the ticket verification (#2023)	d118c7fef102c2e3ab730f67ce9c64c6a390d5a5
+8	9	the row rule (#3549)	905415fdd83bab4db8fccd6423adbd9cd43fabdb
 10	13	the shared test support, function by function (#3550)	578c1dbbd56a7af9bcbd79db74b24008ec7e577d
 8	10	the gh fake, operation by operation (#3551)	894e4915ce9af472d4afda6726e2f7197d181659
-18	19	base	3dfb2ca9c0260cc996972c7beeb6f4d59ac11b43
-30	33	a flow's base branch	a38a88e4fd87d244f389a36c20379a4ae9f40714
-4	4	base set on a truncated state.json (#1929)	1120aedf3fa2ad596a3f884d5b8f1bcf2db9c172
-20	14	branch create	240dcb835473d4ccc19ab2f2abc701fbbc5c3fed
-20	15	branch off	53230a2d24bd96e90f173641b61ec5fd8d38f551
-10	11	a quick implementation's base branch	cd7e8e9dbc5ff4efb05c6aa1a71e942ad1138e49
-8	9	a quick implementation's base SHA (#243)	62521c6a6f9b6e85840b9d2dabdb4e3e6500cf31
-16	10	plugin-made branches have no upstream (#1152)	e9f72d675ee79d2fb0163f151af1d7ebf54ca104
-14	15	branch retire	5d2dce9122e0b4182db1d9a5e698b601cb21d70e
-1	3	branch_records_base (#1713)	d99ee98d0558bf4b84d8fae41ab0840070a68813
-40	44	branch sync (#792)	3416031312d30a03a0dbf5d5fd886b6d5a8eeba7
-21	19	branch busy (#1201)	7f796815b2dd3d149d6b857805bfdb0c01bdc28b
-1	14	branch off and branch create refuse a busy checkout (#1202)	d08b5f3a4213dd4fa144d06a9b09a37276f0bf77
-30	28	branch create on a restart (ADR-0054)	a297201442da31e3ad49f6aaca9b48326d714b9d
-64	30	branch create off the flow's branch (#1911)	ff97f88e6d4b7699b4771194719f942dbcb6847f
-15	15	the fork start point is decided where origin is asked (#1930)	7b8bba4b7ca03de1a260c1eb512f6d131bac880d
-1	1	branch: unknown op	88253d5e7dfdf486e8239033ed6bd15d3d1099eb
-4	5	branch retire beside a same-named tag (#2337)	a1d8d7a2e45782dc38729c2cf493316b21fe0092
-14	8	branch create and branch off beside a same-named tag (#2337)	4b9d4c121fc89aad2677b726c56c8a232c7c113d
-4	5	checkout (#1078)	555f5c0426e20bbce681af7b3eb77e36bb6ebd62
-4	4	checkout current branch (#1079)	d402f627ba50a3c716ac0ac24115f71bb152fd28
-20	14	checkout busy, redo-retired branch (#1981)	0608e4d5c7b58927eb7859c5d847edb713e43621
-8	10	common.sh is the bottom layer	04f7eed4e1b745bc381196f09f7ddd3c7337cc02
-4	5	exclude_line	2f2b70803ce6bfb6d93731b1baeb524c703eac62
-1	1	list_has	5d665bbaedef272afcd04ace046930cc9c533f4c
-0	1	list_join	2cdab9701b23386ed65209c4834779316c9e7994
-1	2	word_listed	57898b88e72e83296291ec2606d7f5d85024c603
-1	1	git_push (#1300)	4428d6f3c13ae854b436b35225f299d8c3909abb
-1	2	capture_err and capture without a temp file (#1780)	fc19f584557286e04c9abe1748bf4408b90215bf
-7	9	capture, capture_err and file_read	15f31dc392fbcce33a8210b2b13e103e6a539901
-0	1	die_hinted and die_opt_check	a31d5ea9ef99f315cf022f51ad5894482feffb9e
-26	29	every gh call pinned to the repo (#520)	12610a497fb3c413d19c717ca88ddcb833e0bc10
+18	19	base	388122a56eb6ae14f5661d9c1aeb4b1ad336872a
+31	34	a flow's base branch	40fcfb284f9df3421807f8375df00e9529b97541
+4	4	base set on a truncated state.json (#1929)	0c4339a110cc7a8aad20c2a1665b136ab24619cc
+3	3	checkout (#1078)	c64e0220a8e2bb6b868e9269e95cac8fb4696b89
+3	4	common.sh is the bottom layer	46e928103573bdf3ac1245519d29a38df3dc7743
+4	5	exclude_line	4b971792f6ef07b32a78f6760945a728d56877db
+1	3	list_has	ca59b7c8f69ee5249e0c3e439e0352591058ba0e
+1	3	list_join	59522c5d555a5e56791334cf4a12db3cfecd4392
+3	3	word_listed	93f2793196592935cd582676c665311fb1d0a9c7
+1	3	git_push (#1300)	3e4e67ba12a9402701ac77321fba9863df66c5e7
+1	3	capture_err and capture without a temp file (#1780)	e73db6513748e53cb8e7751d8d187c7029574458
+6	8	capture, capture_err and file_read	8bd3f9b6ef3a53e1cf0854b7cdb2ac9b69dfd943
+1	3	die_hinted and die_opt_check	0d73e3777471b0435ab3ac877ac50ed64589009e
+28	29	every gh call pinned to the repo (#520)	2a679af3281b4aa5b571c957832b97569c8dc229
 2	2	gh_reason and capture_err (#846)	6ec07789da152ae208e3f61e20e338f2cbd29845
 1	2	label_listed	e12ea96e22abb77ff7769944d5df8a6c91157c48
 0	14	gh failure verb and readers (#1022)	75ef42f4ea18e4bf9ab64ca1c6efbfdeafff0e09
@@ -79,25 +61,24 @@
 18	19	gh rate limits: the GitHub pause and the hit file (#2577)	64542a8ec1bd27e51900edea076032be8561208f
 1	2	host detection (host.sh, #281)	810863fbb3e926aaff3a2d2d00c5e6caa68f55d7
 6	7	orch_load	b7690e1c2206cbbb9683deef992bff879a329c86
-10	13	on-demand loading	75fb0b8414a4b4d27a09dd73528c40ae565dd5e3
+10	13	on-demand loading	938483236ebbb0674e14dca8cf6ee39c33463eec
 16	19	stub table cache	f08da23fcef1d9cfbb031ed5cab21326cda0ee8c
 1	2	mp-skill	e60393c4f6e6f95d5fba4df7ab64704fd650e873
 4	5	bash version guard	b9c291545a1708ed286831ce6e7ed83b277ce540
 1	2	outside a checkout (#931)	0ae7f89078991baf6f44277fef5b969e1b217f1f
-9	10	repo show	03b579d082d6e4e5353a860b91cb90f1006013d0
-8	9	default-branch	2ab1b9bd03b98654ef71dcf00efa0fd1f0f07c16
+17	18	repo show	984e55a74b9ef36613d276306b171c5e45cf66b0
+10	11	default-branch	8a887d26ac854f1f06987d738148f5641c1f93bb
 15	16	state	3d75b253654bfb1efa9cba28e87d6a395de96f01
 19	18	a flow from before the budget shipped	0b2a7522c824aa2a8eb033090ab4ad07d78025f1
 9	10	state get reads every key with its default	f3133624f521e8688aaf3c17e49d3e863170a045
 5	6	state.json schema	bec5df0c217496e18701b708f3f1ea723c59a78a
 4	5	state set on a corrupt state.json	4eeed11f8253ad144fd6ac72976cf9a5ea1c17f6
 15	16	the Flow state module, sourced alone	87a9775046e0ebf8782f04a868b972bcdbc7151b
-4	4	commands on a truncated state.json (#1929)	cc62ecd52f98f9f3a1997edf4b64273d1e266440
 4	5	the shared and own-checkout readers on a truncated state.json	7dcee23baf4559af4134a8b5b35820fa7756ff2b
-5	6	state set with a failed write (#1931)	5b37efa84b905c7a436aa6299b277e03c4838897
-8	9	the entry read and the required-field helpers	7a18bb4c6d3146ad6924f76e88ed2e35d3dc3e6c
+4	5	state set with a failed write (#1931)	7afd5346f80db063561d4cd0d988774a8cdc8f3f
+6	8	the entry read	f4a50a6477933661551f308acf2b9e41f7cd3697
 1	2	triage_label_into: parse once, later lookups start no command	ba2dc83098993a7a23392d37d31c6a721b76254e
-20	21	trust module	615f22288119405de8017b3e2dd001edc9e72f79
+22	23	trust module	91012f70e1eddf53cf027a6b8d2c410d1d35bc38
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594
 247	307	docs_lint.sh	4b2eea3cf50ca0b51822bf947ece35768b3c7a93
 40	30	version_bump_test.sh	13c6acda626586d9df9be1d51a465dd889fdc723

@@ -5,6 +5,24 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# sc_clone: a fresh clone of a bare origin holding main, cwd inside it, with no
+# exclude entries yet. Call it in the current shell: it cd's.
+sc_clone() {
+  local clone sc_seed sc_origin
+  new_repo >/dev/null
+  sc_seed="$PWD"
+  sc_origin="$(mktemp -d)/origin.git"
+  git init -q --bare "$sc_origin"
+  git -C "$sc_seed" push -q "$sc_origin" HEAD:refs/heads/main
+  git -C "$sc_origin" symbolic-ref HEAD refs/heads/main
+  clone="$(mktemp -d)/clone"
+  git clone -q "$sc_origin" "$clone"
+  cd "$clone" || exit 1
+  git config user.email test@example.com
+  git config user.name Test
+  export GH_REPO=acme/widgets
+}
+
 # fake_issue_authorship <n> <author> <association> [<editor> [<renamer>]]: sets
 # issue #n's author and association, the last editor of its body and the latest
 # renamer of its title - the last two empty (never edited, never renamed) unless

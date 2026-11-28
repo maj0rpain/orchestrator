@@ -1,12 +1,11 @@
 # shellcheck shell=bash
 # state.sh - orch.sh's state command (state get and state set), with the state
-# helpers every module calls (state_get, state_write, require_state_exists,
-# require_state_read, require_value).
+# helpers it calls (state_get, state_write, require_state_exists) and
+# require_state_read, a command's entry read that no bash command calls now.
 # The readers: state_get and state_get_many, the unguarded own-checkout
 # readers, and state_get_many_in, the guarded shared one, which costs one jq.
 # A command's entry read is require_state_read: the two refusals and
-# every key it needs in one jq. require_value checks a required field on a
-# value the caller already holds.
+# every key it needs in one jq.
 # Its tests: scripts/test/orch/state.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -113,28 +112,6 @@ state_write_string() {
     die "could not record $1 in $STATE - the flow is unchanged"
 }
 
-# state_write_many [--string] <key> <value> [[--string] <key> <value>]...: the
-# many-key form of state_write: every key is set in one write, and --string
-# before a pair stores its value as a JSON string. The pairs are built by
-# flow_state_pairs_json and merged into $STATE by flow_state_merge. A
-# malformed pair list dies "malformed state write: <args>". A failed write
-# dies naming each key given once, in order (never a --string marker), as
-# state_write's does, or naming no key when a value will not convert or the
-# object's keys cannot be read. Both no-key failure paths share the one
-# fall-through die.
-state_write_many() {
-  local obj keys
-  if obj="$(flow_state_pairs_json "$@")"; then
-    flow_state_merge "$STATE" "$obj" && return 0
-    if keys="$(jq -r 'keys_unsorted | join(", ")' <<<"$obj")"; then
-      die "could not record $keys in $STATE - the flow is unchanged"
-    fi
-  elif [ $? = 2 ]; then
-    die "malformed state write: $*"
-  fi
-  die "could not record the state write in $STATE - the flow is unchanged"
-}
-
 # The one spelling of the refusal an unparseable state.json earns.
 STATE_UNREADABLE_MSG="state.json cannot be read - run orch.sh doctor --flow"
 
@@ -161,28 +138,6 @@ require_state_read() {
   flow_state_get_many "$STATE" "$@" 2>/dev/null && return
   state_many_recheck "$@"
   "$__rsr_die" "$STATE_UNREADABLE_MSG"
-}
-
-# The one spelling of each required field's message, by key: sets the caller's
-# __rv_msg (require_value's local), with no subshell. Returns 1 for a key with
-# no message.
-state_required_msg() {
-  case "$1" in
-    issue) __rv_msg="no issue recorded in state - the spec phase must publish one first" ;;
-    branch) __rv_msg="no branch recorded in state" ;;
-    pr) __rv_msg="no PR recorded in state - the implement phase opens it" ;;
-    base_sha) __rv_msg="no base SHA recorded in state - branch create records it" ;;
-    *) return 1 ;;
-  esac
-}
-
-# require_value <key> <value> [die2]: dies with <key>'s required-field message,
-# through die or die2, when <value> is empty. It reads nothing. A key with no
-# message exits 2, whatever the value.
-require_value() {
-  local __rv_msg
-  state_required_msg "$1" || die2 "no required-field message for state key: $1"
-  [ -n "$2" ] || "${3:-die}" "$__rv_msg"
 }
 
 # flow_base_fallback_into <var> <raw>: sets <var> to the base read from state,

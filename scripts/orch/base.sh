@@ -1,14 +1,16 @@
 # shellcheck shell=bash
 # base.sh - orch.sh's base command: the checkout's base branch setting and a
-# flow's own base, with the branch helpers every module calls
-# (default_branch_into, origin_has_branch, require_on_origin). The readers
-# (default_branch_into, base_branch_into, recorded_base_into) set a
-# caller-named variable in the caller's own shell, so the first read memoises
-# the answer (DEFAULT_BRANCH, DEFAULT_BRANCH_SOURCE) for the rest of that
-# shell, with nothing to arrange beforehand. A reader that runs inside a $(...)
-# subshell memoises only for that subshell, which never hands its variables
-# back. default_branch_seed is the memo's one writer; default_branch_local is
-# the memo-free local fallback under it.
+# flow's own base, with default_branch_into, which repo.sh and state.sh call
+# too, and the base command's own origin checks, origin_has_branch and
+# require_on_origin. The two readers, default_branch_into and base_branch_into,
+# set a caller-named variable in the caller's own shell, so the first read
+# memoises the answer (DEFAULT_BRANCH, DEFAULT_BRANCH_SOURCE) for the rest of
+# that shell, with nothing to arrange beforehand. A reader that runs inside a
+# $(...) subshell memoises only for that subshell, which never hands its
+# variables back. default_branch_seed is the memo's one writer;
+# default_branch_local is the memo-free local fallback under it. The base a
+# branch belongs to, which branch base-sha and pr publish read, is
+# orch/base.py's recorded_base_into.
 # Its tests: scripts/test/orch/base.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -92,7 +94,7 @@ is_branch_name() {
 }
 
 # The base branch in effect now: the checkout's orchestrator.base setting, else
-# the default branch. The one answer every fork and PR target asks for -
+# the default branch: the answer the base command and base_note report -
 # default_branch_into keeps meaning GitHub's default branch alone.
 # Local git config rather than state.json or a tracked file: it outlives
 # abort and archiving, every worktree of the clone shares it, and it never
@@ -113,17 +115,6 @@ origin_has_branch() {
   local st=0
   git ls-remote --quiet --exit-code origin "refs/heads/$1" >/dev/null 2>&1 || st=$?
   return "$st"
-}
-
-# The base branch a branch belongs to: the one branch off recorded for it, else,
-# for a branch made before that was recorded, the base branch in effect now.
-# The one rule pr publish targets and branch base-sha falls back to, so the PR
-# and the SHA its review diffs from never name different bases.
-# recorded_base_into <var> <branch> sets <var> to it, in the caller's shell.
-recorded_base_into() {
-  local _rb_b
-  if _rb_b="$(branch_base_get "$2")"; then printf -v "$1" '%s' "$_rb_b"; else base_branch_into "$1"; fi
-  return 0
 }
 
 # Prints the base note, "<base> (<source>)". Sets nothing in the caller's shell.

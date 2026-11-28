@@ -9,13 +9,14 @@
 # through flow_state_file). The records - the glossary and ADRs - are not on it:
 # planning records a glossary or ADR change as spec wording, word for word, not
 # as an edit, so it lands with the change it describes. The edit guard
-# (hook-guard.sh) denies edits outside the allowlist during planning; the
-# flow-start working-tree check in orch.sh refuses to start when changes fall
-# outside it (ADR-0013). Both use the records list to choose the redirect
-# message. Both source this file so they can never disagree, and
-# hook-grilling.sh prints the allowlist into the planning message on both hosts.
-# Its Python copy, scripts/orch_py/orch/planning_allowlist.py, is pinned to it
-# by scripts/orch_py/tests/test_planning_allowlist.py: change both together.
+# (hook-guard.sh) sources this file and denies edits outside the allowlist
+# during planning, using the records list to choose the redirect message;
+# hook-grilling.sh sources it too and prints the allowlist into the planning
+# message on both hosts. The flow-start working-tree check, which refuses to
+# start when changes fall outside the allowlist (ADR-0013), reads the Python
+# copy, scripts/orch_py/orch/planning_allowlist.py, which
+# scripts/orch_py/tests/test_planning_allowlist.py pins to this file so the
+# check and the guard can never disagree: change both together.
 # Sourced, not executed on its own.
 
 # Entries ending in "/" are directory prefixes; the rest are exact paths.

@@ -30,11 +30,11 @@ from orch.checkout import (checkout_branch, checkout_gitdir_into, checkout_has_f
                            main_checkout_or_die, refuse_ticket_worktrees)
 from orch.common import (ORCH_DIR_NAME, capture, die, dir_stamp, err_line, exclude_orch_dirs,
                          file_write_atomic, first_line, mkdir_p_or_die, normalize_slug, plain_number,
-                         require_clean_tree, state_word, stderr_write, stdout_write, subshell,
+                         require_clean_tree, state_word, stdout_write, subshell,
                          tree_status, warn)
 from orch.flow_state import flow_state_file, flow_state_get_many, recorded_pr
 from orch.gh import GhFailed, Unparsed, adapter_of, gh_reason
-from orch.git import Git
+from orch.git import Git, git_failed
 from orch.repo import RepoPin
 from orch.root import checkout_root
 from orch.trust import trust_filter_prs
@@ -684,9 +684,8 @@ def side_checkout_add(argv: Sequence[str], gh, git, env: Mapping[str, str], root
         exclude_orch_dirs(git)
         if not git.fetch_branch_at(main_root, base):
             die("could not fetch base branch %s from origin - no side checkout was made" % base)
-        refused = git.worktree_add_detached_at(main_root, path, "refs/remotes/origin/" + base)
-        if refused is not None:
-            stderr_write(refused.stderr)
+        if git_failed(git.worktree_add_detached_at(main_root, path,
+                                                   "refs/remotes/origin/" + base)):
             die("could not add side checkout " + path)
         gitdir = git.absolute_git_dir_at(path)
         if gitdir is None or not _marker_written(gitdir, issue):

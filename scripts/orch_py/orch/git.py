@@ -18,12 +18,15 @@ create makes, branch retire's local branch reads and rename, origin probe,
 tracking push and remote
 delete (orch.branch), the dirty paths the planning allowlist's flow-start scan
 judges, the scoped git config reads, writes and unsets
-(`config_regexp`, `config_set`, `config_unset`) the agent noun uses, and what
-the ticket nouns need: a ticket branch's create with no tracking and its
-delete (-D), the worktree add that checks it out and the removal that takes
-it back out, the rebase, rebase abort, unmerged-path listing and
-fast-forward-only merge `ticket merge` runs in a given checkout, the
-status the clean-tree check (orch.common) reads there, and the
+(`config_regexp`, `config_set`, `config_unset`) the agent noun uses, branch
+off's and branch create's fork (a new branch checked out with no tracking)
+and branch create's restart (an existing branch checked out), branch sync's
+merge in a given checkout, its newest first-parent merge commit and that
+merge's second parent, and what the ticket nouns need: a ticket branch's
+create with no tracking and its delete (-D), the worktree add that checks it
+out and the removal that takes it back out, the rebase, rebase abort,
+unmerged-path listing and fast-forward-only merge `ticket merge` runs in a
+given checkout, the status the clean-tree check (orch.common) reads there, and the
 merge-in-progress probe, merge abort, hard reset and clean of the
 discard sequence (orch.checkout). A ticket branch's ref verify is
 branch_exists, and the toplevel read at its worktree's path toplevel_at.
@@ -128,6 +131,9 @@ COULD_NOT: Dict[str, Any] = {
     "rebase_abort_at": GitFailure(1, ""),
     "unmerged_paths_at": [],
     "merge_ff_only_at": GitFailure(1, ""),
+    "merge_no_edit_at": GitFailure(1, ""),
+    "newest_merge_commit": None,
+    "second_parent": None,
     "status_at": GitFailure(1, ""),
     "merge_in_progress_at": False,
     "merge_abort_at": False,
@@ -541,9 +547,9 @@ class Git:
         return worktrees[0].path if worktrees else None
 
     def branch_at(self, path: str) -> Optional[str]:
-        """The branch checked out in the checkout at <path> - bash
-        checkout_branch <path>, its refs/heads/ taken off: None on a
-        detached HEAD, or where <path> is no checkout."""
+        """The branch checked out in the checkout at <path>, its refs/heads/
+        taken off: None on a detached HEAD, or where <path> is no
+        checkout."""
         ref = self._output(["-C", path, "symbolic-ref", "--quiet", "HEAD"])
         if ref is None:
             return None
@@ -597,8 +603,7 @@ class Git:
         outside a repository."""
         return self._output(["rev-parse", "--git-common-dir"])
 
-    # The review pass's operation, run where the adapter runs, as bash's
-    # checkout_branch runs its `git -C .`.
+    # The review pass's operation, run where the adapter runs.
 
     def current_branch(self) -> Optional[str]:
         """The branch HEAD names, its refs/heads/ taken off, as `symbolic-ref
@@ -661,8 +666,7 @@ class Git:
         # next ref's field.
         return [(fields[k].lstrip("\n"), fields[k + 1]) for k in range(0, len(fields) - 1, 2)]
 
-    # Branch retire's operations (orch.branch), run where the adapter runs, as
-    # bash's `branch retire` runs its git.
+    # Branch retire's operations (orch.branch), run where the adapter runs.
 
     def branch_exists(self, name: str) -> bool:
         """Whether local branch <name> exists: `rev-parse --verify --quiet
@@ -670,8 +674,8 @@ class Git:
         return self._run(["rev-parse", "--verify", "--quiet", "refs/heads/" + name]).returncode == 0
 
     def branch_upstream(self, name: str) -> Optional[str]:
-        """The full ref branch <name> tracks - bash branch_upstream; None when
-        it tracks none, or there is no such branch."""
+        """The full ref branch <name> tracks; None when it tracks none, or
+        there is no such branch."""
         return self._output(
             ["rev-parse", "--symbolic-full-name", "--verify", "--quiet", name + "@{upstream}"]
         ) or None
@@ -713,6 +717,24 @@ class Git:
         if run.returncode == 0:
             return None
         return git_push_reason(run.stderr.decode("utf-8", "surrogateescape"))
+
+    # Branch off's and branch create's operations (orch.branch): a branch
+    # checked out where the adapter runs, new for the fork, existing for
+    # create's restart.
+
+    def checkout_new_branch(self, name: str, start: str) -> Optional[GitFailure]:
+        """`git checkout -q --no-track -b <name> <start>`: a new local branch
+        at <start>, checked out, tracking nothing whatever
+        branch.autoSetupMerge says - branch off's and branch create's fork.
+        None when it was made, else git's status and stderr, nothing moved."""
+        return self._failure(["checkout", "-q", "--no-track", "-b", name, start])
+
+    def checkout_existing_branch(self, name: str) -> Optional[GitFailure]:
+        """`git checkout -q <name>`: checks out existing local branch <name>,
+        a tag of its name never taken for it - branch create's restart. None
+        when it is checked out, else git's status and stderr, nothing
+        moved."""
+        return self._failure(["checkout", "-q", name])
 
     # The ticket nouns' operations: a ticket branch made and deleted where the
     # adapter runs, as bash's ticket-worktree add and teardown run them.
@@ -775,9 +797,32 @@ class Git:
         and stderr, the branch left at its tip."""
         return self._failure(["-C", path, "merge", "-q", "--ff-only", ref])
 
+    # Branch sync's operations (orch.branch): the merge run in the checkout it
+    # names, the checkout's root, the reads where the adapter runs.
+
+    def merge_no_edit_at(self, path: str, ref: str) -> Optional[GitFailure]:
+        """`git -C <path> merge --quiet --no-edit <ref>`: merges <ref> into
+        the branch checked out at <path>, with git's own message. None when
+        it merged, else git's status and stderr - a conflict's merge left in
+        progress."""
+        return self._failure(["-C", path, "merge", "--quiet", "--no-edit", ref])
+
+    def newest_merge_commit(self, rev: str) -> Optional[str]:
+        """The newest merge commit on <rev>'s first-parent chain, <rev>
+        itself included, as `rev-list --first-parent --min-parents=2 -1`
+        finds it: single-parent commits above it are passed over. None when
+        the chain holds no merge, or git cannot read it."""
+        return self._output(["rev-list", "--first-parent", "--min-parents=2", "-1", rev]) or None
+
+    def second_parent(self, commit: str) -> Optional[str]:
+        """The full SHA of <commit>'s second parent; None when it has none,
+        or names no commit."""
+        return self._output(["rev-parse", "--verify", "--quiet", commit + "^2^{commit}"]) or None
+
     # The clean-tree check's operation (orch.common) and the discard
     # sequence's (orch.checkout), each run in the checkout it names. The
-    # sequence's steps answer only whether they ran, as bash silences them.
+    # sequence's steps answer only whether they ran, their output captured
+    # and dropped.
 
     def status_at(self, path: str) -> Union[str, GitFailure]:
         """`git -C <path> status --porcelain`'s text, empty for a clean
@@ -862,8 +907,12 @@ class FakeGit:
     refusal; <branches> maps each local branch's name to the full ref it
     tracks, None for none:
     branch_rename moves an entry as git moves a branch and its upstream,
-    branch_create adds one tracking nothing, and branch_delete drops one with
-    its branch.<name>. config section, as -D does.
+    branch_create adds one tracking nothing, checkout_new_branch adds one
+    tracking nothing at the commit resolve_commit seeds for its start and
+    checks it out - current_branch and HEAD's resolve_commit answering it
+    from then on - checkout_existing_branch checks one out, current_branch
+    answering it from then on, and branch_delete drops one with its
+    branch.<name>. config section, as -D does.
 
     The operations COULD_NOT names answer what seed() set for their
     arguments, and their "could not" value for a call nothing was seeded
@@ -1059,6 +1108,15 @@ class FakeGit:
     def merge_ff_only_at(self, path: str, ref: str) -> Optional[GitFailure]:
         return self._answer("merge_ff_only_at", path, ref)
 
+    def merge_no_edit_at(self, path: str, ref: str) -> Optional[GitFailure]:
+        return self._answer("merge_no_edit_at", path, ref)
+
+    def newest_merge_commit(self, rev: str) -> Optional[str]:
+        return self._answer("newest_merge_commit", rev)
+
+    def second_parent(self, commit: str) -> Optional[str]:
+        return self._answer("second_parent", commit)
+
     def status_at(self, path: str) -> Union[str, GitFailure]:
         return self._answer("status_at", path)
 
@@ -1113,6 +1171,25 @@ class FakeGit:
         if name in self.branches:
             return GitFailure(128, "fatal: a branch named '%s' already exists\n" % name)
         self.branches[name] = None
+        return None
+
+    def checkout_new_branch(self, name: str, start: str) -> Optional[GitFailure]:
+        if name in self.branches:
+            return GitFailure(128, "fatal: a branch named '%s' already exists\n" % name)
+        commit = self._answer("resolve_commit", start)
+        if commit is None:
+            return GitFailure(128, "fatal: '%s' is not a commit and a branch '%s' cannot be"
+                              " created from it\n" % (start, name))
+        self.branches[name] = None
+        self.seed("current_branch", answer=name)
+        self.seed("resolve_commit", "HEAD", answer=commit)
+        return None
+
+    def checkout_existing_branch(self, name: str) -> Optional[GitFailure]:
+        if name not in self.branches:
+            return GitFailure(1, "error: pathspec '%s' did not match any file(s) known to"
+                              " git\n" % name)
+        self.seed("current_branch", answer=name)
         return None
 
     def branch_delete(self, name: str) -> Optional[GitFailure]:

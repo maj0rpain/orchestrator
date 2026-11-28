@@ -18,8 +18,9 @@ only local git and state facts, and `orch.sh branch busy` exposes it. A branch
 counts as having a PR once `pr open` or `pr publish` records
 `branch.<b>.orchestrator-pr` in its git config, so the check never asks GitHub.
 `branch off`, `branch create` and `init` each refuse a busy checkout with exit
-3, each checking the signals that apply to it: `branch create` skips the flow
-signal, the flow mid-pipeline being its own, and `init` skips the dirty tree,
+3, each checking the signals that apply to it: `branch create` checks the
+branch signal only, skipping the flow signal, the flow mid-pipeline being its
+own, and the tree signal, and `init` skips the dirty tree,
 which keeps its own exit-1 refusal so a stray planning edit is never quietly
 taken into a side checkout.
 

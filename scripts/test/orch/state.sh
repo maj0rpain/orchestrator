@@ -472,20 +472,6 @@ assert_eq "flow_state_active answers yes for it" \
   "status 0"
 restore_suite_env
 
-# --- commands on a truncated state.json (#1929) -----------------------------
-# An unparseable state.json is refused with one orch: line, never jq's raw
-# error; archive still runs on it.
-echo
-echo "commands on a truncated state.json"
-fresh_flow trunc
-state_truncate
-out="$("$ORCH" branch create 2>&1)"; st=$?
-assert_state_unreadable "branch create" 1 "$out" "$st"
-"$ORCH" archive >/dev/null 2>&1; st=$?
-assert_status "archive on it exits 0" "$st" 0
-assert_eq "and leaves no state.json behind" "$([ -e .orchestrator/state.json ] && echo present || echo gone)" "gone"
-restore_suite_env
-
 # --- the shared and own-checkout readers on a truncated state.json -----------
 # state_get_many_in guards: an unreadable file returns 2 and prints nothing, a
 # readable one reads as ever. state_get stays unguarded: jq's text comes
@@ -518,9 +504,8 @@ assert_eq "and prints nothing" "$out" ""
 restore_suite_env
 
 # --- state set with a failed write (#1931) ------------------------------------
-# A write that cannot land - state set or state_write_many - stops orch.sh
-# with an orch: message, whatever context the write runs in, and leaves the
-# flow as it was.
+# A write that cannot land stops state set with an orch: message, whatever
+# context the write runs in, and leaves the flow as it was.
 echo
 echo "state set with a failed write"
 set_write_fails_bin="$(state_write_fails_bin)"
@@ -530,35 +515,12 @@ assert_status "state set with a failed write exits 1" "$st" 1
 assert_contains "naming the key and the state file" "$out" \
   "orch: could not record budget in $PWD/.orchestrator/state.json - the flow is unchanged"
 assert_eq "leaving the budget unset" "$("$ORCH" state get budget)" ""
-out="$(sourced_orch state_write_many --string base_sha 123 budget 4 2>&1)"; st=$?
-assert_status "state_write_many sets its keys" "$st" 0
-assert_eq "as strings or coerced" "$(jq -c '[.base_sha, .budget]' .orchestrator/state.json)" '["123",4]'
-before="$(cat .orchestrator/state.json)"
-out="$(PATH="$set_write_fails_bin:$PATH" sourced_orch state_write_many budget 5 --string branch b budget 6 2>&1)"; st=$?
-assert_status "a failed state_write_many exits 1" "$st" 1
-assert_eq "naming every key once, in order, with no --string" "$out" \
-  "orch: could not record budget, branch in $PWD/.orchestrator/state.json - the flow is unchanged"
-assert_eq "leaving state.json byte for byte" "$(cat .orchestrator/state.json)" "$before"
-out="$(sourced_orch state_write_many budget 4 pr 2>&1)"; st=$?
-assert_status "state_write_many with a key with no value exits 1" "$st" 1
-assert_eq "with the malformed message" "$out" "orch: malformed state write: budget 4 pr"
-assert_eq "leaving state.json byte for byte for it" "$(cat .orchestrator/state.json)" "$before"
-out="$(PATH="$(fails_bin jq '*tonumber*'):$PATH" sourced_orch state_write_many budget 5 2>&1)"; st=$?
-assert_status "state_write_many on a value that will not convert exits 1" "$st" 1
-assert_eq "with the no-key message" "$out" \
-  "orch: could not record the state write in $PWD/.orchestrator/state.json - the flow is unchanged"
-assert_eq "leaving state.json byte for byte for that" "$(cat .orchestrator/state.json)" "$before"
-out="$(PATH="$set_write_fails_bin:$(fails_bin jq '*keys_unsorted*'):$PATH" sourced_orch state_write_many budget 5 2>&1)"; st=$?
-assert_status "state_write_many whose key read fails exits 1" "$st" 1
-assert_eq "with the no-key message for it" "$out" \
-  "orch: could not record the state write in $PWD/.orchestrator/state.json - the flow is unchanged"
-assert_eq "leaving state.json byte for byte for it too" "$(cat .orchestrator/state.json)" "$before"
 restore_suite_env
 
-# --- the entry read and the required-field helpers ---------------------------
-# require_state_read, require_value and the one-jq readers.
+# --- the entry read ----------------------------------------------------------
+# require_state_read, the one-jq entry read.
 echo
-echo "require_state_read and require_value"
+echo "require_state_read"
 fresh_flow entry
 rs_file="$PWD/.orchestrator/state.json"
 rs_jq="$(counting_bin jq)"
@@ -571,24 +533,6 @@ assert_status "require_state_read dies on a key outside the table" "$st" 1
 assert_eq "as an unknown state key" "$out" "orch: unknown state key: nonsense"
 out="$(sourced_orch require_state_read nokey 2>&1)"
 assert_eq "and on a malformed argument" "$out" "orch: malformed state read: nokey"
-for rv in "issue|no issue recorded in state - the spec phase must publish one first" \
-  "branch|no branch recorded in state" \
-  "pr|no PR recorded in state - the implement phase opens it" \
-  "base_sha|no base SHA recorded in state - branch create records it"; do
-  rv_key="${rv%%|*}"; rv_msg="${rv#*|}"
-  out="$(sourced_orch require_value "$rv_key" "" 2>&1)"; st=$?
-  assert_status "require_value $rv_key empty dies" "$st" 1
-  assert_eq "with its message" "$out" "orch: $rv_msg"
-  out="$(sourced_orch require_value "$rv_key" "" die2 2>&1)"; st=$?
-  assert_status "and through die2" "$st" 2
-  assert_eq "with its message through die2" "$out" "orch: $rv_msg"
-done
-out="$(sourced_orch require_value issue 7 2>&1)"; st=$?
-assert_status "require_value passes a non-empty value" "$st" 0
-out="$(sourced_orch require_value nonsense "" 2>&1)"; st=$?
-assert_status "require_value on a key with no message exits 2" "$st" 2
-out="$(sourced_orch require_value nonsense 7 2>&1)"; st=$?
-assert_status "require_value on a key with no message exits 2 with a value too" "$st" 2
 rm -f "$rs_file"
 out="$(sourced_orch require_state_read a=phase 2>&1)"; st=$?
 assert_status "require_state_read with no state file dies" "$st" 1
