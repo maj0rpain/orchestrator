@@ -7,7 +7,8 @@ set on each settable key with its coercion, the refusal of an owned and an
 unknown key, the usage line, a failed write and an unreadable file; the
 unknown-op refusal. On an unreadable state.json `state get <key>` and `state
 set` die with STATE_UNREADABLE_MSG, where bash passed jq's parse error
-through: the conversion's one departure from parity."""
+through, and so does `state get` on one that cannot be opened, where bash
+passed cat's: the conversion's one departure from parity."""
 from __future__ import annotations
 
 import json
@@ -99,6 +100,16 @@ def test_get_with_no_key_prints_an_unreadable_file_too(root, capsys):
     write(root, ".orchestrator/state.json", raw="not json\n")
 
     assert orch_state(capsys, root, "get") == (0, "not json\n", "")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads any file")
+def test_get_with_no_key_of_a_file_that_cannot_be_opened_dies_as_unreadable(root, capsys):
+    a_flow(root)
+    os.chmod(str(state_json(root)), 0)
+    try:
+        assert orch_state(capsys, root, "get") == (1, "", UNREADABLE)
+    finally:
+        os.chmod(str(state_json(root)), 0o644)
 
 
 @pytest.mark.parametrize("argv", [("get", "phase"), ("get",), ("set", "budget", "3"), ("set",)],
