@@ -1,8 +1,9 @@
 """The base concept's module, holding the default-branch lookup, as the bash
 side's default_branch_resolve and default_branch_seed find it, the base
-branch in effect now, as its base_branch_into reads it, and the base a branch
-belongs to, as its recorded_base_into reads it, so far; the later
-`base` noun grows it rather than moving it.
+branch in effect now, as its base_branch_into reads it, the base a branch
+belongs to, as its recorded_base_into reads it, and the base and base-SHA keys
+a branch records them under, so far; the later `base` noun grows it rather
+than moving it.
 
 GitHub is asked first, and only when the repo pin resolves: origin/HEAD is a
 local pointer frozen at clone time, which in a clone taken while a feature
@@ -67,6 +68,18 @@ def branch_base_get(git, branch: str) -> Optional[str]:
     """The base recorded for <branch> in git config, read through the git
     adapter <git>; None when none is recorded."""
     return git.config_value(branch_base_key(branch))
+
+
+def branch_base_sha_key(branch: str) -> str:
+    """The git config key recording <branch>'s base SHA: its base branch's
+    tip when it branched, or at its latest base sync."""
+    return "branch.%s.orchestrator-base-sha" % branch
+
+
+def branch_base_sha_get(git, branch: str) -> Optional[str]:
+    """The base SHA recorded for <branch> in git config, read through the
+    git adapter <git>; None when none is recorded."""
+    return git.config_value(branch_base_sha_key(branch))
 
 
 def base_setting(git) -> str:

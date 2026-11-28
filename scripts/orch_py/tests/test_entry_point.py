@@ -291,6 +291,24 @@ def test_the_autopilot_noun_is_converted(capsys):
         "orch: usage: orch.sh autopilot run <issue>\n"
 
 
+def test_branch_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_path):
+    """`orch.sh branch base-sha | head` ended silently as bash's printf did:
+    so does the Python branch noun."""
+    git_repo(tmp_path)
+    run_git(tmp_path, "commit", "-q", "--allow-empty", "-m", "first")
+    run_git(tmp_path, "checkout", "-q", "-b", "quick/1-x")
+    run_git(tmp_path, "config", "branch.quick/1-x.orchestrator-base-sha", "a" * 40)
+
+    run = into_a_closed_pipe(tmp_path, "branch", "base-sha")
+
+    assert (run.returncode, run.stderr) == (-signal.SIGPIPE, "")
+
+
+def test_the_branch_noun_is_converted(capsys):
+    assert died_of(capsys, lambda: main(["branch", "base-sha", "extra"])) == (
+        1, "", "orch: usage: orch.sh branch base-sha\n")
+
+
 def test_a_noun_converted_earlier_keeps_its_flush_failure_on_a_closed_pipe(tmp_path):
     """A noun converted before init, slug, status, archive and help ends a
     closed stdout pipe as it always did: Python's failed flush at exit,

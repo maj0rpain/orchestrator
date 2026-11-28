@@ -255,6 +255,26 @@ def test_a_fresh_retire_whose_push_fails_undoes_its_rename_and_dies(capsys):
     assert (after(git), git.branch_upstream(B)) == ((True, False, None), "refs/remotes/origin/" + B)
 
 
+class TakenWhilePushing(FakeGit):
+    """FakeGit whose tracking push makes a branch named B before it fails,
+    as a pre-push hook might, so the rename back cannot be made."""
+
+    def push_set_upstream(self, remote, refspec):
+        self.branches[B] = None
+        return super().push_set_upstream(remote, refspec)
+
+
+def test_a_fresh_retire_whose_rename_back_git_refuses_ends_with_git_s_status_and_stderr(capsys):
+    # Bash's `set -e` ended the run on the failed `git branch -m` there,
+    # before its could-not-push line.
+    git = TakenWhilePushing(branches={B: "refs/remotes/origin/" + B})
+    git.seed("push_set_upstream", *PUSH, answer=REJECTED)
+
+    assert died_of(capsys, lambda: branch_retire(git, B, NEW)) == (
+        128, "", "fatal: a branch named '%s' already exists\n" % B)
+    assert after(git) == (True, True, None)
+
+
 def test_a_resumed_retire_whose_push_fails_dies_leaving_the_rename_be(capsys):
     git = retiring(NEW, origin=True, push=REJECTED)
 
@@ -287,13 +307,14 @@ def test_a_failed_delete_origin_still_has_or_cannot_answer_for_dies_unrecorded(
     assert after(git) == (False, True, None)
 
 
-def test_a_retirement_record_git_refuses_dies_with_only_its_own_line_naming_key_and_rerun(
+def test_a_retirement_record_git_refuses_dies_after_git_s_own_refusal_naming_key_and_rerun(
         capsys):
-    # The fake's blocked write answers git's lock refusal; bash's branch
-    # retire silenced it, so only the orch: line reaches stderr.
+    # The fake's blocked write answers git's lock refusal, which bash's
+    # branch retire let through to stderr ahead of its own orch: line.
     git = retiring(B, upstream=None, config_write_fails=[("local", RETIRED_KEY)])
 
     assert died_of(capsys, lambda: branch_retire(git, B, NEW)) == (1, "", (
+        "error: could not lock config file .git/config: File exists\n"
         "orch: could not record %s - %s is retired; %s to record it\n" % (RETIRED_KEY, NEW, RERUN)))
     assert after(git) == (False, True, None)
 

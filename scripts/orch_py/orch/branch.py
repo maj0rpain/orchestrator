@@ -8,18 +8,25 @@ branch is a plugin-made branch that records a base, the flow's branch name
 (bash branch_name_flow_into) and its redo form (as bash's branch_name_redo
 was, its bash copy gone), a ticket branch's name, the issue a flow or quick
 branch name gives, the discard rule's own-branch proof and discard (as
-bash's discard_own_branch_work was, its bash copy gone), and branch_retire,
-every arm of bash `branch retire <old> <new>`. A later `branch` noun grows
-it rather than moving it, as the base module was grown for `base`.
+bash's discard_own_branch_work was, its bash copy gone), branch_retire,
+every arm of bash `branch retire <old> <new>`, and the branch noun's run
+(ADR-0067): its dispatch over the six verbs and its busy, base-sha and retire
+verbs, each with the bash noun's usage line, output, exit codes and `orch: `
+messages. create, off and sync are still run in bash, and orch.sh routes
+branch there until they are converted.
 """
 from __future__ import annotations
 
+import os
 import sys
-from typing import Mapping, Optional
+from typing import List, Mapping, Optional
 
-from orch.base import branch_base_get
+from orch.base import branch_base_get, branch_base_sha_get, recorded_base_into
 from orch.common import die, plain_number, stderr_write, stdout_write
-from orch.git import GitFailure, git_failed
+from orch.gh import adapter_of
+from orch.git import Git, GitFailure, git_failed
+from orch.repo import RepoPin
+from orch.root import checkout_root
 
 
 def branch_name_flow(issue: str, slug: str) -> str:
@@ -192,8 +199,10 @@ def branch_retire(git, old: str, new: str) -> None:
         if why is not None:
             # The fresh arm's rename is local-only and free to undo, which
             # keeps <old> a branch a retry can find; the resume arm made none.
+            # An undo git refuses ends the run as bash's `set -e` did, before
+            # the line below.
             if not resumed:
-                git_failed(git.branch_rename(new, old))
+                _rename_or_exit(git, new, old)
             die("could not push %s to origin: %s" % (new, why))
         why = git.remote_delete("origin", "refs/heads/" + old)
         if why is not None:
@@ -207,8 +216,8 @@ def branch_retire(git, old: str, new: str) -> None:
                 die("could not confirm origin/%s is gone: could not ask origin whether it is"
                     " still there after its delete failed (%s); %s is pushed but its"
                     " retirement is not recorded; %s" % (old, why, new, rerun))
-    # Bash silenced the record's write, so git's own refusal stays unprinted.
-    if branch_retired_set(git, new) is not None:
+    # Bash let the record's write print git's own refusal, ahead of its line.
+    if git_failed(branch_retired_set(git, new)):
         die("could not record %s - %s is retired; %s to record it"
             % (branch_retired_key(new), new, rerun))
     stdout_write(new + "\n")
@@ -221,3 +230,82 @@ def _rename_or_exit(git, old: str, new: str) -> None:
     if failed is not None:
         stderr_write(failed.stderr)
         sys.exit(failed.code)
+
+
+# The six verbs, as the bash noun's unknown-op refusal lists them.
+OPS = "create|off|busy|base-sha|sync|retire"
+
+
+def run(argv: List[str], gh=None, git=None, env: Optional[Mapping[str, str]] = None,
+        pin=None) -> int:
+    """`orch.sh branch <op>`: the real adapters and the process's environment
+    unless a test hands in others. Outside a checkout it dies first, as
+    orch.sh does, whatever the op."""
+    env = os.environ if env is None else env
+    git = Git() if git is None else git
+    root = checkout_root(git, env)
+    op, rest = (argv[0], argv[1:]) if argv else ("", [])
+    if op == "busy":
+        return busy_verb(rest, git, root, env)
+    if op == "base-sha":
+        pin = RepoPin(env, git) if pin is None else pin
+        return base_sha_verb(rest, adapter_of(gh, env, pin), git, pin)
+    if op == "retire":
+        if len(rest) != 2:
+            die("usage: orch.sh branch retire <old> <new>")
+        branch_retire(git, rest[0], rest[1])
+        return 0
+    if op in ("create", "off", "sync"):
+        # Still bash's verbs: orch.sh routes branch to bash until all six run
+        # here, so only a direct call reaches this.
+        die("branch %s is not converted to Python yet - run orch.sh branch %s" % (op, op))
+    die("unknown branch op: %s (want %s)" % (op or "<none>", OPS))
+
+
+def busy_verb(argv: List[str], git, root: str, env: Mapping[str, str]) -> int:
+    """`branch busy`: whether the checkout at <root> is a busy checkout,
+    every signal applying - exit 3 with the one line naming what holds it on
+    stdout, exit 0 printing nothing when it is free, exit 1 on a usage error
+    or a working tree that cannot be read. Exit 3 is used by no other
+    failure, so a skill can branch on it."""
+    # Imported here: the checkout module reads this one at its own import.
+    from orch.checkout import BUSY_SIGNALS, checkout_busy
+
+    if argv:
+        die("usage: orch.sh branch busy")
+    busy = checkout_busy(git, root, env, BUSY_SIGNALS)
+    if busy is None:
+        return 0
+    stdout_write(busy[0] + "\n")
+    return 3
+
+
+def base_sha_verb(argv: List[str], gh_of, git, pin) -> int:
+    """`branch base-sha`: the current branch's base SHA, as branch off,
+    branch create or branch sync recorded it. A branch made before that was
+    recorded falls back to the merge-base with the base it belongs to
+    (recorded_base_into, through the gh adapter gh_of() makes and the repo
+    pin <pin>), preferring origin's copy of it to the local one. Only a
+    fallback: a base merged in mid-branch moves the merge-base and silently
+    shrinks the diff it bounds."""
+    # Imported here: the checkout module reads this one at its own import.
+    from orch.checkout import current_branch_or_die
+
+    if argv:
+        die("usage: orch.sh branch base-sha")
+    branch = current_branch_or_die(git)
+    sha = branch_base_sha_get(git, branch)
+    if sha:
+        stdout_write(sha + "\n")
+        return 0
+    base = recorded_base_into(gh_of(), git, pin, branch)
+    ref = next((ref for ref in ("refs/remotes/origin/" + base, "refs/heads/" + base)
+                if git.ref_exists(ref)), None)
+    if ref is None:
+        die("base branch %s of %s is neither on origin nor local - no base SHA to fall back to"
+            % (base, branch))
+    merge_base = git.merge_base("HEAD", ref)
+    if merge_base is None:
+        die("%s shares no history with base branch %s" % (branch, base))
+    stdout_write(merge_base + "\n")
+    return 0
