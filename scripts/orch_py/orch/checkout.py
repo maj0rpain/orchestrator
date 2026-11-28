@@ -360,17 +360,16 @@ def refuse_ticket_worktrees(git, root: str, reason: str) -> None:
         "     Remove each with orch.sh ticket-worktree remove <n> first." % (root, reason, named))
 
 
-# The busy signals the Python side checks, in the order bash checkout_busy
-# checks them. Its tree signal stays in bash: init gives a dirty tree its own
-# planning-allowlist refusal.
-BUSY_SIGNALS = ("flow", "branch")
+# The busy signals, in the order bash checkout_busy checks them. init checks
+# no tree signal: it gives a dirty tree its own planning-allowlist refusal.
+BUSY_SIGNALS = ("flow", "branch", "tree")
 
 
 def checkout_busy(git, root: str, env: Mapping[str, str],
                   signals: Tuple[str, ...]) -> Optional[Tuple[str, str]]:
     """The line naming what makes the checkout at <root> a busy checkout -
     one holding work a new branch must not move - and its remedy, or None
-    when it is free - bash checkout_busy for the flow and branch signals.
+    when it is free - bash checkout_busy.
     Reads local git and state facts only, through the git adapter <git>,
     never GitHub. The signals are checked in this order, the first that
     holds reported, and only those in <signals> apply:
@@ -379,6 +378,8 @@ def checkout_busy(git, root: str, env: Mapping[str, str],
       branch  the current branch records a base but no PR; a detached HEAD
               never does, nor does a branch a redo retired, nor a ticket
               branch
+      tree    the working tree has changes outside the planning allowlist;
+              a tree that cannot be read dies, exit 1, never read as free
     A signal outside BUSY_SIGNALS raises ValueError: a programming error.
     The host's abort command is named from <env>."""
     unknown = [signal for signal in signals if signal not in BUSY_SIGNALS]
@@ -401,6 +402,11 @@ def checkout_busy(git, root: str, env: Mapping[str, str],
                 and branch_pr_get(git, branch) is None):
             return ("busy: branch %s has no PR yet" % branch,
                     "Open its PR, or switch off it.")
+    if "tree" in signals:
+        dirty = dirty_outside_allowlist(git)
+        if dirty:
+            return ("busy: the working tree has changes outside the planning allowlist: %s"
+                    % list_join(dirty), "Commit, stash, or discard these changes.")
     return None
 
 

@@ -333,9 +333,20 @@ def test_a_busy_and_dirty_checkout_is_refused_busy_exit_3(main, capsys):
         "     Open its PR, or switch off it.\n"))
 
 
+def test_a_tree_dirty_outside_the_allowlist_is_busy_on_the_tree_signal_exit_3(main, capsys):
+    (main / "a.txt").write_text("edited\n")
+    (main / "docs").mkdir()
+    (main / "docs" / "agents").mkdir()
+    (main / "docs" / "agents" / "note.md").write_text("planned\n")
+
+    assert refused(capsys, main, "flow", "branch", "tree") == (3, "", (
+        "orch: busy: the working tree has changes outside the planning allowlist: a.txt\n"
+        "     Commit, stash, or discard these changes.\n"))
+
+
 def test_an_unknown_signal_is_a_programming_error(main):
-    with pytest.raises(ValueError, match="tree"):
-        refuse_busy_checkout(Git(cwd=str(main)), str(main), ENV, "tree")
+    with pytest.raises(ValueError, match="bogus"):
+        refuse_busy_checkout(Git(cwd=str(main)), str(main), ENV, "bogus")
 
 
 # --- the branch reads -----------------------------------------------------------------
