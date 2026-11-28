@@ -130,13 +130,6 @@ def test_get_of_an_unknown_key_on_an_unreadable_file_still_dies_as_an_unknown_st
 # --- state set -------------------------------------------------------------------------
 
 
-def test_set_round_trips_a_string_value(root, capsys):
-    a_flow(root)
-
-    assert orch_state(capsys, root, "set", "budget", "unbounded") == (0, "", "")
-    assert orch_state(capsys, root, "get", "budget") == (0, "unbounded\n", "")
-
-
 @pytest.mark.parametrize("key, value, stored", [
     ("budget", "3", 3), ("issue", "42", 42), ("issue", "null", None), ("budget", "null", None),
     ("flake_rerun_used", "true", True), ("flake_rerun_used", "false", False),

@@ -1754,7 +1754,7 @@ for tally_suite in "${SUITES[@]}"; do
 done
 
 # --- the section files (#932) -------------------------------------------------
-# A minimal test tree given new noun files:
+# A minimal test tree given new section files:
 # zz-planted.sh, _planted.sh, a-planted.sh, two files with a preamble and one
 # with nothing but a preamble. Each preamble prints a line, so the output shows
 # when and how often it is eval'd. _planted.sh sorts before a-planted.sh under
@@ -1796,11 +1796,11 @@ plant_file "$files_orch" pre-c.sh <<'PLANTED'
 PLANTED
 
 out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='' bash "$files_suite" 2>&1)"; st=$?
-assert_status "an unfiltered sequential run of new noun files passes" "$st" 0
+assert_status "an unfiltered sequential run of new section files passes" "$st" 0
 assert_eq "runs every new file's sections, each preamble once before them" "$(files_marks "$out")" \
   "isolation,planted underscore,planted a,planted preamble a ran,planted preamble a one,planted preamble a two,planted preamble b ran,planted preamble b one,planted new file,"
 out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='' bash "$files_suite" 2>&1)"; st=$?
-assert_status "an unfiltered parallel run of new noun files passes" "$st" 0
+assert_status "an unfiltered parallel run of new section files passes" "$st" 0
 assert_eq "runs a new file's section in parallel too" "$(count_lines -x 'planted new file' "$out")" "1"
 
 out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^planted new file$' bash "$files_suite" 2>&1)"; st=$?

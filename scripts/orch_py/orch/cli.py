@@ -285,13 +285,13 @@ def _sigpipe_as_bash(run: Callable[[List[str]], int], argv: List[str]) -> int:
 
 
 def main(argv: List[str], git=None, env: Optional[Mapping[str, str]] = None) -> int:
-    """Runs the noun <argv> names, help when it names none, once the
-    checkout root resolves through the git adapter <git> (a real one when
-    None) and the environment <env> (os.environ when None): outside a
-    checkout every noun dies first, help and an unknown noun included, as
-    orch.sh's ROOT block made it."""
+    """Runs the noun <argv> names, help when it names none or its first
+    argument is empty (bash's ${1:-help}), once the checkout root resolves
+    through the git adapter <git> (a real one when None) and the environment
+    <env> (os.environ when None): outside a checkout every noun dies first,
+    help and an unknown noun included, as the bash orch.sh made it."""
     checkout_root(Git() if git is None else git, os.environ if env is None else env)
-    noun = argv[0] if argv else "help"
+    noun = (argv[0] if argv else "") or "help"
     name = ALIASES.get(noun, noun)
     run = NOUNS.get(name)
     if run is None:

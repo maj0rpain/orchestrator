@@ -256,8 +256,8 @@ class Git:
         return self._output(["remote", "get-url", "origin"])
 
     def toplevel(self) -> Optional[str]:
-        """The checkout's root, as orch.sh's ROOT block reads it; None outside
-        a repository."""
+        """The checkout's root, as `git rev-parse --show-toplevel` reads it;
+        None outside a repository."""
         return self.toplevel_at(None)
 
     def toplevel_at(self, path: Optional[str]) -> Optional[str]:

@@ -42,7 +42,9 @@ def require_python(noun):
 
 
 def main(argv):
-    require_python(argv[0] if argv else "")
+    # A run naming no noun, or an empty one, is help, as orch.cli's main runs
+    # it and orch.sh's orch_python_require names it.
+    require_python((argv[0] if argv else "") or "help")
     from orch.cli import main as run_noun
 
     return run_noun(argv)

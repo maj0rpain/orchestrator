@@ -8,7 +8,7 @@
 383	287	section durations (ORCH_TEST_DURATIONS, section-durations.sh, #2858)	c367beac6e62cba296ae5a5c3a97d33033c21a90
 5	7	assertions in a subshell (#1904)	031ae4758939bb673b0ce90ee519ffcc64a12518
 2	4	the standalone suites' tally (#1904)	16b61bb2703ee517199520c9febcab4fc2830eda
-21	29	the section files (#932)	d898569f3d2bdcba05491ab776c0002ceb58cf15
+24	27	the section files (#932)	01dc3f7ffe3fbe40ae3b32d8e060a3095791c73f
 439	54	the suite's temp root (#807)	d5717adbda28e3a2b4d8186528e0a2b2c4a31643
 2	2	the real-gh guard (#779)	fdb96af79a9df5d1522f58fa6772933cc008a7c8
 6	60	all.sh, the single entry point (#615)	fdcdd228d5ea6d904f23d0be50010e14f5bc4fb8
@@ -42,7 +42,7 @@
 1	2	host detection (host.sh, #281)	810863fbb3e926aaff3a2d2d00c5e6caa68f55d7
 1	1	triage_label_into: parse once, later lookups start no command	e6cea4b87c87e036e84f91d0ae69695a8fdd295c
 311	377	hooks_test.sh	a9b96b44977968d5a4038202ec1db0a55e007846
-300	373	docs_lint.sh	fb6812c5521d24e65177d6b9e2dd98ab3436b925
+301	375	docs_lint.sh	ba1a55210fcb7887fda29382e5de7097b7125050
 40	30	version_bump_test.sh	13c6acda626586d9df9be1d51a465dd889fdc723
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 39	41	autopilot_up_test.sh	68a84aa80b2feb5cc7dddc8103eb23c82b0c5155

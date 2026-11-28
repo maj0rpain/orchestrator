@@ -4350,73 +4350,30 @@ routed_nouns() {
       if ($0 ~ /^}/ || $0 ~ /^(NOUNS|ALIASES).*}[[:space:]]*$/) inb = 0
     }' "$1"
 }
-# noun_module <root> <noun> <var>: sets <var> to the root-relative path of the
-# noun's module: the Python module of a noun converted to Python (ADR-0067),
-# scripts/orch_py/orch/<noun>.py with each - as _, when it holds an `OPS = `
-# line - a bash module of helpers its conversion left beside it is not the
-# noun's; else scripts/orch/<noun>.sh, when the root holds it; else the Python
-# path. Starts no process.
+# noun_module <noun> <var>: sets <var> to the root-relative path of the
+# noun's module, scripts/orch_py/orch/<noun>.py with each - as _: every noun
+# is Python (ADR-0067). Starts no process.
 noun_module() {
-  local __nm_py="scripts/orch_py/orch/${2//-/_}.py" __nm_line
-  if [ -f "$1/$__nm_py" ]; then
-    while IFS= read -r __nm_line; do
-      if [[ $__nm_line == 'OPS = "'* ]]; then printf -v "$3" '%s' "$__nm_py"; return 0; fi
-    done <"$1/$__nm_py"
-  fi
-  if [ -f "$1/scripts/orch/$2.sh" ]; then __nm_py="scripts/orch/$2.sh"; fi
-  printf -v "$3" '%s' "$__nm_py"
+  printf -v "$2" '%s' "scripts/orch_py/orch/${1//-/_}.py"
 }
 # noun_verbs <root> <noun>...: one "<noun><TAB><verb>" line per verb each named
-# noun dispatches - each name on a top-level arm of the first case in cmd_<noun>
-# (- mapped to _) of its module, scripts/orch/<noun>.sh under the root, its
-# option spellings, the catch-all and nested cases' arms left out. A noun
-# converted to Python, with no bash module, has its verbs on the one top-level
-# `OPS = "<verb>|..."` line of its Python module, printed first, by bash alone.
-# A noun with no module yields none; when no named noun has a bash one, no awk
-# starts.
+# noun dispatches, in the order named: the verbs on the one top-level
+# `OPS = "<verb>|..."` line of its module under the root, read by bash alone.
+# A noun with no module, or a module with no OPS line, yields none.
 noun_verbs() {
-  local r="$1" noun line op module files=()
+  local r="$1" noun line op module
   local -a ops=()
   shift
   for noun in "$@"; do
-    noun_module "$r" "$noun" module
-    case "$module" in
-      *.sh) [ -f "$r/$module" ] && files+=("$module") ;;
-      *)
-        [ -f "$r/$module" ] || continue
-        while IFS= read -r line; do
-          [[ $line =~ ^OPS\ =\ \"([a-z|-]+)\"$ ]] || continue
-          IFS='|' read -ra ops <<<"${BASH_REMATCH[1]}"
-          for op in "${ops[@]}"; do printf '%s\t%s\n' "$noun" "$op"; done
-          break
-        done <"$r/$module"
-        ;;
-    esac
+    noun_module "$noun" module
+    [ -f "$r/$module" ] || continue
+    while IFS= read -r line; do
+      [[ $line =~ ^OPS\ =\ \"([a-z|-]+)\"$ ]] || continue
+      IFS='|' read -ra ops <<<"${BASH_REMATCH[1]}"
+      for op in "${ops[@]}"; do printf '%s\t%s\n' "$noun" "$op"; done
+      break
+    done <"$r/$module"
   done
-  [ "${#files[@]}" -gt 0 ] || return 0
-  (cd "$r" && awk "$SHELL_CODE_AWK"'
-    FNR == 1 {
-      noun = FILENAME; sub(/^.*\//, "", noun); sub(/\.sh$/, "", noun)
-      fn = "cmd_" noun; gsub(/-/, "_", fn)
-      inf = 0; fin = 0; depth = 0; started = 0
-    }
-    { shell_code_line($0) }
-    fin { next }
-    sc_top && index(sc_code, fn "()") == 1 { inf = 1; next }
-    !inf { next }
-    sc_top && sc_code ~ /^\}/ { fin = 1; next }
-    {
-      if (depth == 1 && sc_top && match(sc_code, /^[[:space:]]+[a-z-][a-z|-]*\)/)) {
-        arm = substr(sc_code, RSTART, RLENGTH - 1); gsub(/[[:space:]]/, "", arm)
-        n = split(arm, names, "|")
-        for (i = 1; i <= n; i++) if (names[i] !~ /^-/) print noun "\t" names[i]
-      }
-      t = sc_words; opens = gsub(/(^|[;[:space:]])case[[:space:]]/, "", t)
-      t = sc_words; closes = gsub(/(^|[;[:space:]])esac([;[:space:])]|$)/, "", t)
-      if (opens) started = 1
-      depth += opens - closes
-      if (started && depth <= 0) fin = 1
-    }' "${files[@]}")
 }
 # scan_cli_nouns <plugin root>: each routed noun in neither the table nor the
 # Exceptions section, and each verb out of step with its noun's row or
@@ -4435,7 +4392,7 @@ scan_cli_nouns() {
     [ -n "$n" ] && verbs_of[$n]+="$v"$'\n'
   done <<<"$all_verbs"
   for noun in "${nouns[@]}"; do
-    noun_module "$r" "$noun" module
+    noun_module "$noun" module
     verbs="${verbs_of[$noun]:-}"
     row="$(grep -E -- "^[[:space:]]*\|[[:space:]]*\`$noun\`" <<<"$table" | awk -v n=1 'NR<=n')"
     if [ -z "$row" ]; then
@@ -4478,34 +4435,22 @@ spares "a noun in the table, or in Exceptions, is not" "$out" 'noun (base|redo|h
 spares "nor an option spelling, a commented entry, or a key outside NOUNS and ALIASES" \
   "$out" 'noun (-h|--help|commented|stray) '
 # The verbs fixture: base dispatches an unlisted verb and no longer dispatches
-# a row verb, redo dispatches a verb Exceptions does not name, and the rest is
-# spared.
+# a row verb, redo dispatches a verb Exceptions does not name, gadget-box the
+# same through a hyphenated noun's module, and the rest is spared.
 fixture="$(new_fixture)"
-mkdir -p "$fixture/scripts/orch" "$fixture/scripts/orch_py/orch" "$fixture/docs/agents"
+mkdir -p "$fixture/scripts/orch_py/orch" "$fixture/docs/agents"
 printf '%s\n' 'NOUNS = {' '    "base": _base, "redo": _redo, "doctor": _doctor,' \
-  '    "widget-thing": _widget_thing, "gadget-box": _gadget_box, "gizmo": _gizmo,' '}' \
+  '    "widget-thing": _widget_thing, "gadget-box": _gadget_box,' '}' \
   >"$fixture/scripts/orch_py/orch/cli.py"
 printf '%s\n' '"""A converted noun."""' '# OPS = "commented|out"' 'OPS = "spin|stop"' 'MORE = "x|y"' \
   >"$fixture/scripts/orch_py/orch/gadget_box.py"
-# base: a Python module of readers with no OPS line beside it, so its verbs
-# stay its bash module's.
-printf '%s\n' '"""Base readers."""' 'MORE = "x|y"' >"$fixture/scripts/orch_py/orch/base.py"
-# gizmo: converted, its bash module left holding helpers alone.
-printf '%s\n' '"""A converted noun beside a bash module of helpers."""' 'OPS = "turn"' \
-  >"$fixture/scripts/orch_py/orch/gizmo.py"
-printf '%s\n' 'gizmo_helper() {' '  case "$1" in' '    left) echo ;;' '  esac' '}' >"$fixture/scripts/orch/gizmo.sh"
-printf '%s\n' 'cmd_base() {' '  case "$1" in' '    set)' '      case "$2" in' '        major)' '          x=1 ;;' \
-  '        green)' '          x=2 ;;' '      esac' '      ;;' '    show|-x|--long) echo ;;' '    extra) echo ;;' \
-  '    *) die "unknown base op" ;;' '  esac' '  case "$1" in' '    later) echo ;;' '  esac' '}' >"$fixture/scripts/orch/base.sh"
-printf '%s\n' 'cmd_redo() {' '  case "$1" in' '    review) cmd_redo_review ;;' '    spec) cmd_redo_spec ;;' \
-  '    zap) cmd_redo_zap ;;' '    *) die nope ;;' '  esac' '}' >"$fixture/scripts/orch/redo.sh"
-printf '%s\n' 'cmd_doctor() {' '  case "$1" in' '    --flow) echo ;;' '    check) echo ;;' '  esac' '}' \
-  >"$fixture/scripts/orch/doctor.sh"
-printf '%s\n' 'cmd_widget_thing() {' '  case "$1" in' '    go|stop) echo ;;' '  esac' '}' \
-  >"$fixture/scripts/orch/widget-thing.sh"
+printf '%s\n' 'OPS = "set|show|extra"' >"$fixture/scripts/orch_py/orch/base.py"
+printf '%s\n' 'OPS = "review|spec|zap"' >"$fixture/scripts/orch_py/orch/redo.py"
+printf '%s\n' 'OPS = "check"' >"$fixture/scripts/orch_py/orch/doctor.py"
+printf '%s\n' 'OPS = "go|stop"' >"$fixture/scripts/orch_py/orch/widget_thing.py"
 printf '%s\n' '# CLI' '' '## Current nouns' '' '| Noun | Verbs |' '| --- | --- |' \
   '| `base` | `set`, `show`, `clear` |' '| `widget-thing` | `go`, `stop` |' '| `gadget-box` | `spin`, `halt` |' \
-  '| `gizmo` | `turn` |' '' '## Exceptions' '' \
+  '' '## Exceptions' '' \
   '- **Bare global commands**: `doctor`.' '- **`redo review` / `redo spec`**: not ops belonging to a `redo` noun.' \
   >"$fixture/docs/agents/cli-conventions.md"
 out="$(scan_cli_nouns "$fixture")"
@@ -4515,51 +4460,18 @@ flags "a redo verb not named redo <verb> in Exceptions is flagged" \
   "$out" "docs/agents/cli-conventions.md: redo verb zap is dispatched but in neither"
 flags "a row verb its module no longer dispatches is flagged" \
   "$out" "docs/agents/cli-conventions.md: base verb clear is in its Current nouns row but"
-spares "nested-case arms, option spellings, the catch-all and a later case are not verbs" \
-  "$out" 'verb (major|green|-x|--long|\*|later) '
 spares "a row verb, a redo <verb> in Exceptions, and a hyphenated noun's verbs are spared" \
   "$out" '(base verb (set|show) |redo verb (review|spec) |widget-thing verb )'
 spares "a bare global command in Exceptions has no verbs to check" "$out" '(doctor|routed noun) '
-flags "a converted noun's verb its OPS line names, in neither its row nor Exceptions, is flagged" \
+flags "a hyphenated noun's verb its OPS line names, in neither its row nor Exceptions, is flagged" \
   "$out" "docs/agents/cli-conventions.md: gadget-box verb stop is dispatched but in neither"
-flags "a converted noun's row verb its OPS line lacks is flagged, naming its Python module" \
+flags "a row verb its OPS line lacks is flagged, naming its Python module" \
   "$out" "docs/agents/cli-conventions.md: gadget-box verb halt is in its Current nouns row but scripts/orch_py/orch/gadget_box.py no longer dispatches it"
-spares "a converted noun's verbs come from its OPS line alone" "$out" 'verb (spin|commented|out|x|y) '
-spares "a converted noun's OPS line wins over a bash module of helpers left beside it" "$out" 'gizmo '
-# noun_verbs over the verbs fixture: one awk for every named noun, each
-# module's verbs from its own cmd_<noun>, a noun with no module none.
-verbs_awk="$(TMPDIR="$FIXTURES" counting_bin awk)"
+spares "a noun's verbs come from its top-level OPS line alone" "$out" 'verb (commented|out|x|y) '
 assert_eq "noun_verbs prints one line per verb of each module, none for a noun with no module" \
-  "$(PATH="$verbs_awk:$PATH" noun_verbs "$fixture" base redo doctor widget-thing gadget-box ghost)" \
-  "$(printf '%s\t%s\n' gadget-box spin gadget-box stop base set base show base extra redo review redo spec redo zap \
-    doctor check widget-thing go widget-thing stop)"
-assert_eq "noun_verbs started exactly one awk" "$(counting_starts "$verbs_awk" awk)" "1"
-# Planted fixtures for the shared code rule: a case/esac in a trailing comment
-# or a quoted string, and a quoted arm pattern, inside cmd_<noun>, change
-# neither the verbs nor the nouns reported.
-fixture="$(new_fixture)"
-mkdir -p "$fixture/scripts/orch" "$fixture/scripts/orch_py/orch" "$fixture/docs/agents"
-printf '%s\n' 'NOUNS = {"base": _base}' >"$fixture/scripts/orch_py/orch/cli.py"
-cat >"$fixture/scripts/orch/base.sh" <<'PLANT'
-cmd_base() {
-  echo hi # a trailing comment with esac in it
-  echo "a string with esac in it"
-  echo "a string with case x in it"
-  echo hi # case y in
-  case "$1" in
-    set) echo ;;
-    "") echo ;;
-    after) echo "esac" ;; # esac
-  esac
-  case "$1" in
-    later) echo ;;
-  esac
-}
-PLANT
-printf '%s\n' '# CLI' '' '## Current nouns' '' '| Noun | Verbs |' '| --- | --- |' \
-  '| `base` | `set`, `after` |' '' '## Exceptions' '' >"$fixture/docs/agents/cli-conventions.md"
-assert_empty "comments, strings, heredocs and a quoted arm pattern change no noun or verb" \
-  "$(scan_cli_nouns "$fixture")"
+  "$(noun_verbs "$fixture" base redo doctor widget-thing gadget-box ghost)" \
+  "$(printf '%s\t%s\n' base set base show base extra redo review redo spec redo zap doctor check \
+    widget-thing go widget-thing stop gadget-box spin gadget-box stop)"
 check "every noun orch.sh routes, and every verb it dispatches, is in the CLI conventions table or its Exceptions" \
   "$(scan_cli_nouns "$PLUGIN_ROOT")"
 

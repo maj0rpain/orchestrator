@@ -63,6 +63,22 @@ def test_a_run_with_no_noun_prints_help(capsys):
     assert capsys.readouterr() == (HELP, "")
 
 
+@pytest.mark.parametrize("argv", [[""], ["", "status"]], ids=["alone", "with-arguments"])
+def test_a_run_whose_first_argument_is_empty_prints_help(capsys, argv):
+    """bash's ${1:-help} ran help for an empty first argument too."""
+    assert cli.main(argv, git=FakeGit(toplevel="/the/checkout"), env={}) == 0
+    assert capsys.readouterr() == (HELP, "")
+
+
+@pytest.mark.parametrize("argv", [[], [""]], ids=["no-noun", "empty-noun"])
+def test_a_python_below_3_9_refuses_a_run_naming_no_noun_as_help(monkeypatch, capsys, argv):
+    monkeypatch.setattr(sys, "version_info", (3, 8, 10, "final", 0))
+
+    assert died_of(capsys, lambda: main(argv)) == (
+        1, "", "orch: orch.sh help needs python3 3.9 or newer (found 3.8.10)"
+        " - run orch.sh doctor\n")
+
+
 @pytest.mark.parametrize("argv", [("help",), ("slug", "Some Text"), ("no-such-noun",),
                                   ("status",), ()],
                          ids=["help", "slug", "unknown-noun", "noun", "no-noun"])

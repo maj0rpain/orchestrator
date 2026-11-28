@@ -190,14 +190,15 @@ trap test_jobs_stop_descendants INT TERM
 # so the processes it starts inherit it; a niceness of 10 or more is left
 # alone, so nested runs never stack, and a failing renice is ignored.
 
-# The walk section_titles and section_text share, over setup.sh, the noun
+# The walk section_titles and section_text share, over setup.sh, the section
 # files, then setup.sh again. Each line is in one phase. "setup" is setup.sh's
 # shared setup (from its `# >>> shared setup` line to its `# >>> summary` line),
 # read the first time; "summary" its summary (from its `# >>> summary` line),
-# read the second time; "skip" the rest of setup.sh. In a noun file, "preamble"
-# is the text before its first `# --- ` line, and "sections" the rest, each
-# `# --- ` header numbering its section n across the whole walk, so isolation,
-# harness.sh's first, is 1. title() is test_tree.sh's SECTION_TITLE_AWK.
+# read the second time; "skip" the rest of setup.sh. In a section file,
+# "preamble" is the text before its first `# --- ` line, and "sections" the
+# rest, each `# --- ` header numbering its section n across the whole walk, so
+# isolation, harness.sh's first, is 1. title() is test_tree.sh's
+# SECTION_TITLE_AWK.
 section_walk_awk="$SECTION_TITLE_AWK"'
   BEGIN { setup = ENVIRON["ORCH_SETUP_FILE"] }
   FNR == 1 { phase = "skip"; pre = ""; shown = 0; if (FILENAME == setup) setups++; else phase = "preamble" }
@@ -208,7 +209,7 @@ section_walk_awk="$SECTION_TITLE_AWK"'
 '
 
 # section_walk <awk program> [awk options]: run the walk with the program
-# appended over setup.sh, the noun files and setup.sh.
+# appended over setup.sh, the section files and setup.sh.
 section_walk() {
   local program="$1" files
   shift
