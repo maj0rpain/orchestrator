@@ -60,12 +60,14 @@ def worktree_list_or_die(git) -> List[Worktree]:
     return worktrees
 
 
-def current_branch_or_die(git, code: int = 1) -> str:
+def current_branch_or_die(git, code: int = 1, suffix: str = "") -> str:
     """The current branch, through the git adapter <git>; dies on a detached
-    HEAD, exit <code> - 2 where the bash caller dies through die2."""
+    HEAD, exit <code> - 2 where the bash caller dies through die2 - saying
+    "not on a branch (detached HEAD)" and <suffix>, as bash's optional
+    suffix has it."""
     branch = git.current_branch()
     if branch is None:
-        die("not on a branch (detached HEAD)", code)
+        die("not on a branch (detached HEAD)" + suffix, code)
     return branch
 
 

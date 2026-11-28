@@ -1387,3 +1387,55 @@ def test_a_reset_or_clean_that_cannot_run_fails_the_same_from_both(tmp_path):
 
     assert fails_alike(git, "reset_hard_at", str(tmp_path)) is False
     assert fails_alike(git, "clean_at", str(tmp_path)) is False
+
+
+# --- branch sync's operations ----------------------------------------------------------
+
+
+def test_a_plain_merge_makes_a_merge_commit_with_git_s_own_message_the_same_from_both(
+        landing):
+    main, _ = landing
+    before = tip(main, PARENT)
+
+    assert alike(Git(cwd=str(main)), "merge_no_edit_at", str(main), "refs/heads/" + TICKET) is None
+    assert (run_git(main, "rev-parse", "HEAD^1"), run_git(main, "rev-parse", "HEAD^2")) == (
+        before, tip(main, TICKET))
+    assert run_git(main, "log", "-1", "--format=%s") == (
+        "Merge branch 'refs/heads/%s' into %s" % (TICKET, PARENT))
+
+
+def test_a_conflicting_merge_fails_leaving_the_merge_in_progress(landing):
+    main, _ = landing
+    conflicted(landing)
+    before = tip(main, PARENT)
+    git = Git(cwd=str(main))
+    failed = git.merge_no_edit_at(str(main), "refs/heads/" + TICKET)
+
+    assert failed.code == 1 and git.merge_in_progress_at(str(main)) is True
+    assert tip(main, PARENT) == before
+    assert FakeGit().merge_no_edit_at(str(main), "refs/heads/" + TICKET) == GitFailure(1, "")
+
+
+def test_the_newest_merge_on_the_first_parent_chain_is_found_under_fix_commits(landing):
+    main, _ = landing
+    git = Git(cwd=str(main))
+    unmerged = alike(git, "newest_merge_commit", "HEAD")
+    run_git(main, "merge", "-q", "--no-edit", "refs/heads/" + TICKET)
+    merge = run_git(main, "rev-parse", "HEAD")
+    committed(main, {"fix.txt": "fix\n"}, "a fix above the merge")
+
+    assert (unmerged, alike(git, "newest_merge_commit", "HEAD")) == (None, merge)
+
+
+def test_a_commit_s_second_parent_reads_the_same_from_both(landing):
+    main, _ = landing
+    git = Git(cwd=str(main))
+    run_git(main, "merge", "-q", "--no-edit", "refs/heads/" + TICKET)
+
+    assert alike(git, "second_parent", run_git(main, "rev-parse", "HEAD")) == tip(main, TICKET)
+    assert fails_alike(git, "second_parent", run_git(main, "rev-parse", "HEAD^1")) is None
+    assert fails_alike(git, "second_parent", "nosuch") is None
+
+
+def test_there_is_no_newest_merge_where_git_cannot_read_the_chain(tmp_path):
+    assert fails_alike(Git(cwd=str(tmp_path)), "newest_merge_commit", "HEAD") is None

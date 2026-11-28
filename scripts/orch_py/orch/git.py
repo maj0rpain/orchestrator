@@ -129,6 +129,9 @@ COULD_NOT: Dict[str, Any] = {
     "rebase_abort_at": GitFailure(1, ""),
     "unmerged_paths_at": [],
     "merge_ff_only_at": GitFailure(1, ""),
+    "merge_no_edit_at": GitFailure(1, ""),
+    "newest_merge_commit": None,
+    "second_parent": None,
     "status_at": GitFailure(1, ""),
     "merge_in_progress_at": False,
     "merge_abort_at": False,
@@ -783,6 +786,28 @@ class Git:
         and stderr, the branch left at its tip."""
         return self._failure(["-C", path, "merge", "-q", "--ff-only", ref])
 
+    # Branch sync's operations (orch.branch): the merge run in the checkout it
+    # names, as bash's sync merges in $ROOT, the reads where the adapter runs.
+
+    def merge_no_edit_at(self, path: str, ref: str) -> Optional[GitFailure]:
+        """`git -C <path> merge --quiet --no-edit <ref>`: merges <ref> into
+        the branch checked out at <path>, with git's own message. None when
+        it merged, else git's status and stderr - a conflict's merge left in
+        progress."""
+        return self._failure(["-C", path, "merge", "--quiet", "--no-edit", ref])
+
+    def newest_merge_commit(self, rev: str) -> Optional[str]:
+        """The newest merge commit on <rev>'s first-parent chain, <rev>
+        itself included, as `rev-list --first-parent --min-parents=2 -1`
+        finds it: single-parent commits above it are passed over. None when
+        the chain holds no merge, or git cannot read it."""
+        return self._output(["rev-list", "--first-parent", "--min-parents=2", "-1", rev]) or None
+
+    def second_parent(self, commit: str) -> Optional[str]:
+        """The full SHA of <commit>'s second parent; None when it has none,
+        or names no commit."""
+        return self._output(["rev-parse", "--verify", "--quiet", commit + "^2^{commit}"]) or None
+
     # The clean-tree check's operation (orch.common) and the discard
     # sequence's (orch.checkout), each run in the checkout it names. The
     # sequence's steps answer only whether they ran, as bash silences them.
@@ -1069,6 +1094,15 @@ class FakeGit:
 
     def merge_ff_only_at(self, path: str, ref: str) -> Optional[GitFailure]:
         return self._answer("merge_ff_only_at", path, ref)
+
+    def merge_no_edit_at(self, path: str, ref: str) -> Optional[GitFailure]:
+        return self._answer("merge_no_edit_at", path, ref)
+
+    def newest_merge_commit(self, rev: str) -> Optional[str]:
+        return self._answer("newest_merge_commit", rev)
+
+    def second_parent(self, commit: str) -> Optional[str]:
+        return self._answer("second_parent", commit)
 
     def status_at(self, path: str) -> Union[str, GitFailure]:
         return self._answer("status_at", path)

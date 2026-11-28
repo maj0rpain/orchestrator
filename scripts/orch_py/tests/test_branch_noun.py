@@ -36,7 +36,7 @@ def test_an_unknown_or_missing_op_is_refused_naming_the_six(capsys, argv, named)
         "orch: unknown branch op: %s (want create|off|busy|base-sha|sync|retire)\n" % named))
 
 
-@pytest.mark.parametrize("op", ["create", "sync"])
+@pytest.mark.parametrize("op", ["create"])
 def test_a_verb_still_run_in_bash_is_known_never_an_unknown_op(capsys, op):
     # orch.sh routes branch to bash until the switch ticket, so run reaches
     # these only when called directly: a refusal naming the verb, exit 1.

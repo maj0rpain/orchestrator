@@ -12,10 +12,9 @@ bash's discard_own_branch_work was, its bash copy gone), branch_retire,
 every arm of bash `branch retire <old> <new>`, the start-point decision and
 the fork branch off and branch create share (bash new_branch_start and
 fork_new_branch), and the branch noun's run (ADR-0067): its dispatch over
-the six verbs and its off, busy, base-sha and retire verbs, each with the
-bash noun's usage line, output, exit codes and `orch: ` messages. create and
-sync are still run in bash, and orch.sh routes branch there until they are
-converted.
+the six verbs and its off, busy, base-sha, sync and retire verbs, each with
+the bash noun's usage line, output, exit codes and `orch: ` messages. create
+is still run in bash, and orch.sh routes branch there until it is converted.
 """
 from __future__ import annotations
 
@@ -24,8 +23,10 @@ import sys
 from typing import List, Mapping, Optional
 
 from orch.base import (base_branch_into, branch_base_get, branch_base_sha_get,
-                       record_branch_base, recorded_base_into)
-from orch.common import die, plain_number, stderr_write, stdout_write
+                       branch_base_sha_set, record_branch_base, recorded_base_into)
+from orch.common import die, plain_number, require_clean_tree, stderr_write, stdout_write, warn
+from orch.flow_state import (flow_base_fallback_into, flow_state_file, require_state_read,
+                             state_write_many)
 from orch.gh import adapter_of
 from orch.git import Git, GitFailure, git_failed
 from orch.repo import RepoPin
@@ -308,7 +309,10 @@ def run(argv: List[str], gh=None, git=None, env: Optional[Mapping[str, str]] = N
     if op == "off":
         pin = RepoPin(env, git) if pin is None else pin
         return off_verb(rest, adapter_of(gh, env, pin), git, root, env, pin)
-    if op in ("create", "sync"):
+    if op == "sync":
+        pin = RepoPin(env, git) if pin is None else pin
+        return sync_verb(rest, adapter_of(gh, env, pin), git, pin, root, env)
+    if op == "create":
         # Still bash's verbs: orch.sh routes branch to bash until all six run
         # here, so only a direct call reaches this.
         die("branch %s is not converted to Python yet - run orch.sh branch %s" % (op, op))
@@ -386,3 +390,107 @@ def base_sha_verb(argv: List[str], gh_of, git, pin) -> int:
         die("%s shares no history with base branch %s" % (branch, base))
     stdout_write(merge_base + "\n")
     return 0
+
+
+def on_origin_base(git, sha: Optional[str], base: str) -> bool:
+    """Whether the local origin/<base> resolves and <sha> is on it - its tip
+    or an ancestor of it - bash on_origin_base."""
+    ref = "refs/remotes/origin/" + base
+    return sha is not None and git.ref_exists(ref) and git.is_ancestor(sha, ref)
+
+
+def sync_verb(argv: List[str], gh_of, git, pin, root: str, env: Mapping[str, str]) -> int:
+    """`branch sync [--finish]`: a base sync of the current plugin-made
+    branch - origin's tip of its base merged in, never a rebase, never the
+    local base - its base SHA moved to that tip, and a push when it tracks
+    its own name. The branch is the one this checkout's flow holds, its base
+    the flow's (through the flow base fallback, made by gh_of() and the repo
+    pin <pin>), else one whose git config records a base. Exit 3 is a
+    conflict, or a pending base merge a failed sync left, the merge left in
+    progress for a resolver with nothing else moved; every refusal is exit 1
+    with nothing moved. A failed push is the one exit 1 after something
+    moved: the merge and base SHA stand, and a rerun retries the push.
+    --finish never fetches: the newest merge on HEAD's first-parent chain,
+    fix commits above it accepted, must have its second parent on the local
+    origin/<base>; that parent is recorded as the base SHA, then pushed."""
+    # Imported here: the checkout module reads this one at its own import.
+    from orch.checkout import current_branch_or_die, merge_in_progress
+
+    # bash's case on "$*": the arguments joined by spaces.
+    joined = " ".join(argv)
+    if joined not in ("", "--finish"):
+        die("usage: orch.sh branch sync [--finish]")
+    finish = joined == "--finish"
+    branch = current_branch_or_die(git, suffix=" - nothing was synced")
+    state_file = flow_state_file(root)
+    state = {"branch": "", "base": ""}
+    if os.path.isfile(state_file):
+        state = require_state_read(state_file, env, ("branch", "base"), 1)
+    held = state["branch"] == branch
+    if held:
+        base = flow_base_fallback_into(state["base"], gh_of, git, pin)
+    elif branch_records_base(git, branch):
+        base = branch_base_get(git, branch) or ""
+    else:
+        die("%s is not a branch the plugin made: no flow here holds it and it records no base"
+            " - nothing was synced" % branch)
+    if branch == base:
+        die("%s is its own base branch - nothing was synced" % branch)
+    if finish:
+        if merge_in_progress(git, root):
+            die("a merge is in progress on %s - commit it (or git merge --abort), then rerun"
+                " orch.sh branch sync --finish; nothing was synced" % branch)
+        merge = git.newest_merge_commit("HEAD")
+        if merge is None:
+            die("no merge commit on the first-parent chain of %s - nothing to finish; nothing"
+                " was synced" % branch)
+        tip = git.second_parent(merge)
+        if not on_origin_base(git, tip, base):
+            die("the second parent of the newest merge on %s is not on origin/%s - nothing to"
+                " finish; nothing was synced" % (branch, base))
+    else:
+        tip = _merged_base_tip(git, root, branch, base)
+    _exit_on(branch_base_sha_set(git, branch, tip))
+    if held:
+        state_write_many(state_file, [("base_sha", tip, True)])
+    # Its own upstream only: a branch made before branch create and branch off
+    # passed --no-track (#1152) may still track its base until its first push.
+    if git.config_value("branch.%s.merge" % branch) == "refs/heads/" + branch:
+        remote = git.config_value("branch.%s.remote" % branch) or "origin"
+        why = git.push(remote, "refs/heads/%s:refs/heads/%s" % (branch, branch))
+        if why is not None:
+            die("could not push %s - the merge and base SHA are recorded; rerun orch.sh branch"
+                " sync%s to push: %s" % (branch, " --finish" if finish else "", why))
+    stdout_write("%s synced with origin/%s at %s\n" % (branch, base, tip))
+    return 0
+
+
+def _merged_base_tip(git, root: str, branch: str, base: str) -> str:
+    """A plain sync's merge of origin's tip of <base> into <branch>: that
+    tip. Ends the run with exit 3 on a pending base merge (nothing fetched)
+    or a conflict (the merge left in progress), and dies on another merge in
+    progress, a dirty tree, a failed fetch or a merge git could not start."""
+    # Imported here: the checkout module reads this one at its own import.
+    from orch.checkout import merge_in_progress
+
+    if merge_in_progress(git, root):
+        if on_origin_base(git, git.resolve_commit("MERGE_HEAD"), base):
+            warn("a merge of origin/%s into %s is pending resolution - the merge is left in"
+                 " progress; resolve and commit it, then run orch.sh branch sync --finish"
+                 % (base, branch))
+            sys.exit(3)
+        die("a merge is in progress on %s - commit it (or git merge --abort), then rerun"
+            " orch.sh branch sync" % branch)
+    require_clean_tree(git, root, "the working tree is dirty - commit or discard its changes"
+                       " first; nothing was synced")
+    if not git.fetch_branch_at(root, base):
+        die("could not fetch %s from origin - nothing was synced" % base)
+    tip = git.resolve_commit("refs/remotes/origin/" + base) or ""
+    if git.merge_no_edit_at(root, "refs/remotes/origin/" + base) is not None:
+        if merge_in_progress(git, root):
+            warn("merging origin/%s into %s hit a conflict - the merge is left in progress;"
+                 " resolve and commit it, then run orch.sh branch sync --finish"
+                 % (base, branch))
+            sys.exit(3)
+        die("git could not merge origin/%s into %s" % (base, branch))
+    return tip
