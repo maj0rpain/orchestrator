@@ -34,8 +34,9 @@
 # Nor does the suite reach the real gh. The shared setup puts a stub gh first
 # on PATH that logs each call and fails, and the summary turns every logged
 # call into one FAIL naming it. A section that runs orch.sh against a repo with
-# a GitHub origin installs fake_github first, or uses orch_gh_failing where it
-# tests gh's own argv; the fixture gh, prepended later, still wins over it.
+# a GitHub origin installs fake_github first; the fixture gh, prepended later,
+# still wins over the stub. (base.sh keeps its own failing-gh runner,
+# orch_gh_failing, for its sections alone.)
 #
 # Every section must pass on its own, as the parallel runner runs each one;
 # where a test helper lives is checked by harness.sh's test-helper placement

@@ -7,7 +7,6 @@ order of checks is the bash verb's, verbatim."""
 from __future__ import annotations
 
 import json
-import subprocess
 from typing import NamedTuple
 
 import pytest
@@ -110,13 +109,6 @@ def origin_tip(repo, branch):
 def merging(root):
     """Whether a merge is in progress in the checkout at <root>."""
     return head(root, "MERGE_HEAD") != ""
-
-
-def try_git(root, *args):
-    """git <args> in <root>, as a test author, whatever it exits."""
-    subprocess.run(["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@t", *args],
-                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                   stderr=subprocess.DEVNULL)
 
 
 def conflicted(capsys, repo, seed):
@@ -324,7 +316,7 @@ def test_a_merge_in_progress_of_a_ref_not_on_the_base_is_refused(repo, seed, cap
     committed(repo.root, {"other.txt": "other\n"}, "other side")
     run_git(repo.root, "checkout", "-q", FLOW)
     committed(repo.root, {"other.txt": "mine\n"}, "mine")
-    try_git(repo.root, "merge", "-q", "--no-edit", "refs/heads/other")
+    git_of(repo.root, "merge", "-q", "--no-edit", "refs/heads/other")
 
     assert sync(capsys, repo, seed) == (1, "", MERGING)
     assert merging(repo.root)

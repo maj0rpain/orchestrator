@@ -817,35 +817,23 @@ BUSY_USAGE = "orch: usage: orch.sh branch busy\n"
 TREE_BUSY = "busy: the working tree has changes outside the planning allowlist: "
 
 
-def checkout(tmp_path, dirty=(), branch=None, **config):
-    """A FakeGit at tmp_path, its status finding <dirty> changed (a str for a
-    status that cannot run), on <branch> (None for a detached HEAD), its git
-    config holding <config>, each key's - spelled _ and . spelled __."""
-    git = FakeGit(toplevel=str(tmp_path))
-    git.seed("dirty_paths", answer=dirty if isinstance(dirty, str) else list(dirty))
-    git.seed("current_branch", answer=branch)
-    for key, value in config.items():
-        git.seed("config_value", key.replace("__", ".").replace("_", "-"), answer=value)
-    return git
-
-
 def busy(capsys, git, *argv):
     return orch(capsys, "busy", *argv, git=git)
 
 
 @pytest.mark.parametrize("dirty", [(), ("docs/agents/note.md",)], ids=["clean", "allowlisted"])
 def test_a_checkout_clean_outside_the_allowlist_is_free_printing_nothing(tmp_path, capsys, dirty):
-    assert busy(capsys, checkout(tmp_path, dirty, "main")) == (0, "", "")
+    assert busy(capsys, forking(tmp_path, dirty=dirty)) == (0, "", "")
 
 
 def test_a_dirty_tree_outside_the_allowlist_is_busy_naming_every_path(tmp_path, capsys):
-    git = checkout(tmp_path, ["README.md", "docs/agents/note.md", "stray.txt"], "main")
+    git = forking(tmp_path, dirty=["README.md", "docs/agents/note.md", "stray.txt"])
 
     assert busy(capsys, git) == (3, TREE_BUSY + "README.md, stray.txt\n", "")
 
 
 def test_a_working_tree_that_cannot_be_read_exits_1_printing_no_busy_line(tmp_path, capsys):
-    git = checkout(tmp_path, "fatal: index file corrupt", "main")
+    git = forking(tmp_path, dirty="fatal: index file corrupt")
 
     assert busy(capsys, git) == (1, "", (
         "orch: git status failed - cannot check the working tree: fatal: index file corrupt\n"))
@@ -853,19 +841,20 @@ def test_a_working_tree_that_cannot_be_read_exits_1_printing_no_busy_line(tmp_pa
 
 def test_an_argument_is_a_usage_error_before_the_tree_is_read(tmp_path, capsys):
     # Both its checks broken: the argument and the unreadable tree.
-    git = checkout(tmp_path, "fatal: index file corrupt", "main")
+    git = forking(tmp_path, dirty="fatal: index file corrupt")
 
     assert busy(capsys, git, "extra") == (1, "", BUSY_USAGE)
 
 
 def test_a_detached_head_is_never_a_plugin_made_branch(tmp_path, capsys):
-    assert busy(capsys, checkout(tmp_path, ["docs/agents/x.md"])) == (0, "", "")
+    assert busy(capsys, forking(tmp_path, on=None, dirty=["docs/agents/x.md"])) == (0, "", "")
 
 
 @pytest.mark.parametrize("name", ["quick/5-held", "orch/30-unheld", "orch/42-cap-redo-3"],
                          ids=["quick", "orch", "live-redo-slug"])
 def test_a_plugin_made_branch_with_no_pr_is_busy_ahead_of_a_dirty_tree(tmp_path, capsys, name):
-    git = checkout(tmp_path, ["README.md"], name, **{"branch__%s__orchestrator_base" % name: "main"})
+    git = forking(tmp_path, on=name, dirty=["README.md"],
+                  **{"branch__%s__orchestrator_base" % name: "main"})
 
     assert busy(capsys, git) == (3, "busy: branch %s has no PR yet\n" % name, "")
 
@@ -881,14 +870,14 @@ def test_a_branch_with_a_pr_retired_or_a_ticket_s_is_free(tmp_path, capsys, key,
     if key != "orchestrator_ticket_parent":
         config["branch__%s__orchestrator_base" % name] = "main"
 
-    assert busy(capsys, checkout(tmp_path, (), name, **config)) == (0, "", "")
+    assert busy(capsys, forking(tmp_path, on=name, **config)) == (0, "", "")
 
 
 @pytest.mark.parametrize("phase", ["spec", "implement", "review"])
 def test_a_flow_mid_pipeline_is_busy_ahead_of_the_branch_and_tree(tmp_path, capsys, phase):
     hold_flow(tmp_path, slug="held", phase=phase)
-    git = checkout(tmp_path, ["README.md"], "quick/5-held",
-                   **{"branch__quick/5-held__orchestrator_base": "main"})
+    git = forking(tmp_path, on="quick/5-held", dirty=["README.md"],
+                  **{"branch__quick/5-held__orchestrator_base": "main"})
 
     assert busy(capsys, git) == (
         3, "busy: a flow is mid-pipeline (slug: held, phase: %s)\n" % phase, "")
@@ -897,13 +886,13 @@ def test_a_flow_mid_pipeline_is_busy_ahead_of_the_branch_and_tree(tmp_path, caps
 def test_a_done_flow_is_free(tmp_path, capsys):
     hold_flow(tmp_path, slug="held", phase="done")
 
-    assert busy(capsys, checkout(tmp_path, (), "main")) == (0, "", "")
+    assert busy(capsys, forking(tmp_path)) == (0, "", "")
 
 
 def test_a_flow_whose_state_json_cannot_be_read_is_busy(tmp_path, capsys):
     (hold_flow(tmp_path)).write_text("{\"slug\": \"held\", \"pha")
 
-    assert busy(capsys, checkout(tmp_path, (), "main")) == (
+    assert busy(capsys, forking(tmp_path)) == (
         3, "busy: a flow's state.json cannot be read\n", "")
 
 
@@ -1026,14 +1015,11 @@ OLD, NEW = "orch/7-feature", "orch/7-feature-redo-1"
 RETIRE_USAGE = "orch: usage: orch.sh branch retire <old> <new>\n"
 
 
-@pytest.mark.parametrize("argv", [(), (OLD,), (OLD, NEW, "extra")], ids=["none", "one", "three"])
+# The one argument names no branch, so the usage check comes before the branch's existence.
+@pytest.mark.parametrize("argv", [(), (OLD,), (OLD, NEW, "extra")],
+                         ids=["none", "one-naming-no-branch", "three"])
 def test_retire_with_the_wrong_number_of_arguments_is_a_usage_error(capsys, argv):
     assert orch(capsys, "retire", *argv) == (1, "", RETIRE_USAGE)
-
-
-def test_retire_with_one_argument_naming_no_branch_reports_the_usage_first(capsys):
-    # Both its checks broken: the argument count and the branch's existence.
-    assert orch(capsys, "retire", "nosuchbranch") == (1, "", RETIRE_USAGE)
 
 
 @pytest.fixture
