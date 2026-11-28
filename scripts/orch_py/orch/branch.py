@@ -21,6 +21,10 @@ from typing import List, Mapping, Optional
 
 from orch.base import (base_branch_into, branch_base_get, branch_base_sha_get,
                        branch_base_sha_set, record_branch_base, recorded_base_into)
+from orch.checkout import (BUSY_SIGNALS, checkout_branch, checkout_branch_or_rebasing,
+                           checkout_busy, current_branch_or_die, discard_flow_branch_work,
+                           merge_in_progress, refuse_busy_checkout, require_flow_branch,
+                           work_to_discard)
 from orch.common import die, plain_number, require_clean_tree, stdout_write, warn
 from orch.flow_state import (flow_base_fallback_into, flow_state_file, require_state_read,
                              require_value, state_write_many)
@@ -144,9 +148,6 @@ def discard_own_branch_work(git, root: str, env: Mapping[str, str], who: str, br
     this reads none.
     Own is the branch the flow records, in any phase; else, with an active
     flow, the flow-branch proof dies on it; with none, a `quick` branch."""
-    # Imported here: the checkout module reads this one at its own import.
-    from orch.checkout import discard_flow_branch_work, require_flow_branch
-
     if recorded != branch:
         if active:
             require_flow_branch(who, branch, recorded)
@@ -321,10 +322,6 @@ def discard_create_work(git, root: str, env: Mapping[str, str], name: str) -> No
     the branch it rebases - it discards nothing: with no work to discard it
     returns, so the caller goes on, and with any it dies, exit 1, naming that
     branch."""
-    # Imported here: the checkout module reads this one at its own import.
-    from orch.checkout import (checkout_branch_or_rebasing, discard_flow_branch_work,
-                               work_to_discard)
-
     branch = checkout_branch_or_rebasing(git, root)
     if branch is None or branch == name:
         discard_flow_branch_work(git, root, env)
@@ -350,9 +347,6 @@ def create_verb(argv: List[str], gh_of, git, root: str, env: Mapping[str, str], 
     where branch sync and branch base-sha find them once the flow is gone;
     the name printed. A refusal before the fork writes and discards nothing.
     The state refusals come before the usage check, as bash's did."""
-    # Imported here: the checkout module reads this one at its own import.
-    from orch.checkout import checkout_branch, refuse_busy_checkout
-
     state_file = flow_state_file(root)
     state = require_state_read(state_file, env, ("slug", "issue", "branch", "base"), 1)
     if argv:
@@ -388,9 +382,6 @@ def off_verb(argv: List[str], gh_of, git, root: str, env: Mapping[str, str], pin
     branching as the branch's base SHA in its git config - where pr publish
     and its reviewers find them, even if the setting moves - and prints the
     name. A record git refuses ends the run as bash's `set -e` did."""
-    # Imported here: the checkout module reads this one at its own import.
-    from orch.checkout import BUSY_SIGNALS, refuse_busy_checkout
-
     if len(argv) != 1:
         die("usage: orch.sh branch off <name>")
     name = argv[0]
@@ -408,9 +399,6 @@ def busy_verb(argv: List[str], git, root: str, env: Mapping[str, str]) -> int:
     stdout, exit 0 printing nothing when it is free, exit 1 on a usage error
     or a working tree that cannot be read. Exit 3 is used by no other
     failure, so a skill can branch on it."""
-    # Imported here: the checkout module reads this one at its own import.
-    from orch.checkout import BUSY_SIGNALS, checkout_busy
-
     if argv:
         die("usage: orch.sh branch busy")
     busy = checkout_busy(git, root, env, BUSY_SIGNALS)
@@ -428,9 +416,6 @@ def base_sha_verb(argv: List[str], gh_of, git, pin) -> int:
     pin <pin>), preferring origin's copy of it to the local one. Only a
     fallback: a base merged in mid-branch moves the merge-base and silently
     shrinks the diff it bounds."""
-    # Imported here: the checkout module reads this one at its own import.
-    from orch.checkout import current_branch_or_die
-
     if argv:
         die("usage: orch.sh branch base-sha")
     branch = current_branch_or_die(git)
@@ -472,9 +457,6 @@ def sync_verb(argv: List[str], gh_of, git, pin, root: str, env: Mapping[str, str
     --finish never fetches: the newest merge on HEAD's first-parent chain,
     fix commits above it accepted, must have its second parent on the local
     origin/<base>; that parent is recorded as the base SHA, then pushed."""
-    # Imported here: the checkout module reads this one at its own import.
-    from orch.checkout import current_branch_or_die, merge_in_progress
-
     # bash's case on "$*": the arguments joined by spaces.
     joined = " ".join(argv)
     if joined not in ("", "--finish"):
@@ -529,9 +511,6 @@ def _merged_base_tip(git, root: str, branch: str, base: str) -> str:
     tip. Ends the run with exit 3 on a pending base merge (nothing fetched)
     or a conflict (the merge left in progress), and dies on another merge in
     progress, a dirty tree, a failed fetch or a merge git could not start."""
-    # Imported here: the checkout module reads this one at its own import.
-    from orch.checkout import merge_in_progress
-
     if merge_in_progress(git, root):
         if on_origin_base(git, git.resolve_commit("MERGE_HEAD"), base):
             warn("a merge of origin/%s into %s is pending resolution - the merge is left in"

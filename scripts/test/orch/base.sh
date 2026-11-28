@@ -22,6 +22,13 @@ fake_next_pr() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_pr"; }
 fake_pr_base_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/base" 2>/dev/null; }
 fake_pr_body_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/body" 2>/dev/null; }
 
+# GH_FAILING: a PATH directory holding a gh that fails - a fixture gh given no
+# reply - for a repo whose origin GitHub cannot answer for (a local bare repo):
+# default-branch settles on origin/HEAD, so a test running orch.sh with it
+# first on PATH (orch_gh_failing) pins that rather than leaving it to this
+# machine's gh.
+GH_FAILING="$(gh_fixture && printf '%s\n' "$GH_FIXTURE/bin")"
+
 # orch_gh_failing <args>...: runs orch.sh with the failing fixture gh first
 # on PATH.
 orch_gh_failing() { PATH="$GH_FAILING:$PATH" "$ORCH" "$@"; }

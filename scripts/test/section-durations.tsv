@@ -36,11 +36,11 @@
 8	9	the row rule (#3549)	905415fdd83bab4db8fccd6423adbd9cd43fabdb
 10	13	the shared test support, function by function (#3550)	578c1dbbd56a7af9bcbd79db74b24008ec7e577d
 8	10	the gh fake, operation by operation (#3551)	894e4915ce9af472d4afda6726e2f7197d181659
-18	20	base	c777d2383e14490cd2781fd0fd65ba5c9697912e
-32	34	a flow's base branch	1c0e9c04e4b1066487047ef1ead46b76bcf3c9c9
-4	4	base set on a truncated state.json (#1929)	9a31d6d93cbfe50d9f3e3a25f97914b01f381860
-3	3	checkout (#1078)	4581a04e83371affb1e108ca529e1850017d0ccc
-4	5	common.sh is the bottom layer	bff31a5de19ea71f869df4c1114667088207a14a
+18	19	base	388122a56eb6ae14f5661d9c1aeb4b1ad336872a
+31	34	a flow's base branch	40fcfb284f9df3421807f8375df00e9529b97541
+4	4	base set on a truncated state.json (#1929)	0c4339a110cc7a8aad20c2a1665b136ab24619cc
+3	3	checkout (#1078)	c64e0220a8e2bb6b868e9269e95cac8fb4696b89
+3	4	common.sh is the bottom layer	46e928103573bdf3ac1245519d29a38df3dc7743
 4	5	exclude_line	4b971792f6ef07b32a78f6760945a728d56877db
 1	3	list_has	ca59b7c8f69ee5249e0c3e439e0352591058ba0e
 1	3	list_join	59522c5d555a5e56791334cf4a12db3cfecd4392
@@ -78,7 +78,7 @@
 4	5	state set with a failed write (#1931)	7afd5346f80db063561d4cd0d988774a8cdc8f3f
 6	8	the entry read	f4a50a6477933661551f308acf2b9e41f7cd3697
 1	2	triage_label_into: parse once, later lookups start no command	ba2dc83098993a7a23392d37d31c6a721b76254e
-23	24	trust module	435aa62c05cf158f524dd42fb7c53bee62b2e3f1
+22	23	trust module	91012f70e1eddf53cf027a6b8d2c410d1d35bc38
 47	346	hooks_test.sh	06a048d1f5523d7c45c266c03b5af70f52ed7594
 247	307	docs_lint.sh	4b2eea3cf50ca0b51822bf947ece35768b3c7a93
 40	30	version_bump_test.sh	13c6acda626586d9df9be1d51a465dd889fdc723

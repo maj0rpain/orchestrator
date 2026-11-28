@@ -6,10 +6,9 @@
 (( 0 )) && source setup.sh
 
 # sc_clone: a fresh clone of a bare origin holding main, cwd inside it, with no
-# exclude entries yet. Call it in the current shell: it cd's. sc_seed is the
-# repo the origin was pushed from, kept to move origin's main on.
+# exclude entries yet. Call it in the current shell: it cd's.
 sc_clone() {
-  local clone
+  local clone sc_seed sc_origin
   new_repo >/dev/null
   sc_seed="$PWD"
   sc_origin="$(mktemp -d)/origin.git"

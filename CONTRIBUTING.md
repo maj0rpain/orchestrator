@@ -630,7 +630,7 @@ scripts/hook-*.sh             the seven hooks; hook-bash.sh makes the one decisi
 scripts/paste-guard.sh        the transcript scan and paste check the two paste guards share, sourced by hook-paste-guard.sh and hook-paste-stop-guard.sh
 scripts/bash-walk.sh          the command walker the Bash hook sources, sourced by hook-bash.sh
 scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie) output shared by the hooks
-scripts/planning-allowlist.sh the planning allowlist and planning records, shared by the edit guard and orch.sh, with a Python copy beside it (scripts/orch_py/orch/planning_allowlist.py) that a pytest parity test pins to it
+scripts/planning-allowlist.sh the planning allowlist and planning records, sourced by hook-guard.sh and hook-grilling.sh, with a Python copy beside it (scripts/orch_py/orch/planning_allowlist.py), the one the flow-start check reads, that a pytest parity test pins to it
 scripts/autopilot-container.sh the autopilot container's entrypoint: checks the env file, configures git and the permission mode, clones the repo, writes and validates the other autopilot and role settings in it, then execs the watcher; `scripts/test/autopilot_container_test.sh` tests it
 scripts/autopilot-up.sh        brings the autopilot compose projects up or rebuilds them from the checkout (how-it-works' Updating the plugin); `scripts/test/autopilot_up_test.sh` tests it
 docker/                       the autopilot container: `Dockerfile`, `compose.yaml` and `.env.example` (how-it-works' Autopilot Setup documents them)

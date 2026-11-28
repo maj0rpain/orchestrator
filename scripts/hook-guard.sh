@@ -8,8 +8,9 @@
 # rejection lands back in the model's context as a correction.
 #
 # The allowlist of planning artifacts, and the planning records (glossary and
-# ADRs) that get their own redirect, live in planning-allowlist.sh, shared with
-# orch.sh's flow-start working-tree check.
+# ADRs) that get their own redirect, live in planning-allowlist.sh, whose
+# Python copy the flow-start working-tree check reads, pinned to it by a parity
+# test.
 
 set -euo pipefail
 

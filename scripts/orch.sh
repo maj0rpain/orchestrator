@@ -155,11 +155,6 @@ else
   unset ORCH_SOURCE_LAZY lazy_flags
 fi
 
-# The one definition of the planning allowlist and the planning records,
-# shared with hook-guard.sh so the flow-start check and the edit guard can
-# never disagree about them.
-source "$ORCH_SCRIPTS/planning-allowlist.sh"
-
 # orch_python's -c bootstrap: drops the empty entry -c puts first on sys.path
 # (the caller's directory) before importing anything, puts the package
 # directory, argv[1], first in its place, and runs the orch package's __main__

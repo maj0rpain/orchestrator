@@ -501,13 +501,6 @@ GH
   PATH="$GH_FIXTURE/bin:$PATH"
 }
 
-# GH_FAILING: a PATH directory holding a gh that fails - a fixture gh given no
-# reply - for a repo whose origin GitHub cannot answer for (a local bare repo):
-# default-branch settles on origin/HEAD, so a test running orch.sh with it
-# first on PATH (base.sh's orch_gh_failing) pins that rather than leaving it to
-# this machine's gh.
-GH_FAILING="$(gh_fixture && printf '%s\n' "$GH_FIXTURE/bin")"
-
 # The missing-repo wording, built the way orch.sh builds REPO_MISSING,
 # REPO_CAUSE and REPO_REMEDY - but spelled out here, never read from orch.sh,
 # so a wording change there that the suite does not mirror still fails a test.

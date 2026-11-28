@@ -5,14 +5,6 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# git_fails_bin <pattern>: a fails_bin (the failing-command fixture,
-# scripts/test/fails.sh) for git.
-git_fails_bin() { fails_bin git "$1"; }
-
-# worktree_list_fails_bin: a git_fails_bin where git worktree list fails and
-# nothing else does, so it fails every checkout_parse reader.
-worktree_list_fails_bin() { git_fails_bin '" worktree list "*'; }
-
 # fresh_dir: a new empty directory's physical path, as git records it.
 fresh_dir() { (cd "$(mktemp -d)" && pwd -P); }
 
@@ -30,8 +22,8 @@ assert_eq "main_checkout prints the main checkout from a side checkout" \
   "$(cd "$side" && sourced_orch main_checkout)" "$top"
 
 # main_checkout_or_die: what main_checkout prints, or the message for when git
-# worktree list fails.
-worktree_list_fails="$(worktree_list_fails_bin)"
+# worktree list fails. The fails_bin fails git worktree list and nothing else.
+worktree_list_fails="$(fails_bin git '" worktree list "*')"
 assert_eq "main_checkout_or_die prints the main checkout" \
   "$(cd "$side" && sourced_orch main_checkout_or_die)" "$top"
 out="$(PATH="$worktree_list_fails:$PATH" sourced_orch main_checkout_or_die 2>&1)"; st=$?

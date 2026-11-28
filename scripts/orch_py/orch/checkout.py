@@ -16,7 +16,6 @@ import os
 from typing import List, Mapping, NamedTuple, Optional, Tuple
 
 from orch.autopilot import autopilot_active
-from orch.branch import branch_is_retired, branch_pr_get, branch_records_base
 from orch.common import ORCH_DIR_NAME, die, list_join, plain_positive_number, read_raw
 from orch.flow_state import flow_state_file, flow_state_get_many
 from orch.git import Worktree
@@ -395,6 +394,9 @@ def checkout_busy(git, root: str, env: Mapping[str, str],
                     % (state["slug"], state["phase"]),
                     "One flow at a time - finish it, or run %s." % flow_cmd(env, "abort"))
     if "branch" in signals:
+        # Imported here: the branch module reads this one at its own import.
+        from orch.branch import branch_is_retired, branch_pr_get, branch_records_base
+
         branch = git.current_branch()
         if (branch is not None and branch_records_base(git, branch)
                 and not branch_is_retired(git, branch)
