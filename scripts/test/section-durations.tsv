@@ -42,7 +42,7 @@
 1	2	host detection (host.sh, #281)	810863fbb3e926aaff3a2d2d00c5e6caa68f55d7
 1	1	triage_label_into: parse once, later lookups start no command	e6cea4b87c87e036e84f91d0ae69695a8fdd295c
 311	377	hooks_test.sh	a9b96b44977968d5a4038202ec1db0a55e007846
-287	358	docs_lint.sh	2a647dd4b0dc5ea8cfe32f0d504fd5f34bd3752a
+300	373	docs_lint.sh	fb6812c5521d24e65177d6b9e2dd98ab3436b925
 40	30	version_bump_test.sh	13c6acda626586d9df9be1d51a465dd889fdc723
 66	68	autopilot_container_test.sh	c2ee3c70644066d178983072ba4d5d0110e544bf
 39	41	autopilot_up_test.sh	68a84aa80b2feb5cc7dddc8103eb23c82b0c5155
