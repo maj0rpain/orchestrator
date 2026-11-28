@@ -33,10 +33,8 @@
 #
 # Nor does the suite reach the real gh. The shared setup puts a stub gh first
 # on PATH that logs each call and fails, and the summary turns every logged
-# call into one FAIL naming it. A section that runs orch.sh against a repo with
-# a GitHub origin installs fake_github first; the fixture gh, prepended later,
-# still wins over the stub. (base.sh keeps its own failing-gh runner,
-# orch_gh_failing, for its sections alone.)
+# call into one FAIL naming it. A section that needs a gh puts its own ahead of
+# the stub on PATH.
 #
 # Every section must pass on its own, as the parallel runner runs each one;
 # where a test helper lives is checked by harness.sh's test-helper placement
@@ -48,8 +46,6 @@ TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$TEST_DIR/git_env.sh"
 test_git_env_clear || exit 1
 ORCH="$(cd "$TEST_DIR/.." && pwd)/orch.sh"
-# shellcheck disable=SC2034 # read by the sections, eval'd from scripts/test/orch/
-GH_ADAPTER_FAKE="$TEST_DIR/gh_adapter_fake.sh"
 # shellcheck disable=SC2034 # read by the sections, eval'd from scripts/test/orch/
 PLUGIN_ROOT="$(cd "$(dirname "$ORCH")/.." && pwd)"
 SUITE_SCRIPT="$TEST_DIR/$(basename "${BASH_SOURCE[0]}")"

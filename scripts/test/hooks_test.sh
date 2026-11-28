@@ -103,10 +103,11 @@ echo "hook-common"
 source "$COMMON"
 
 # write_flow_state <key> <value>...: writes $REPO's state file as orch.sh
-# would, applying the Flow state module's writer (sourced through hook-common)
-# to {} once per key and value. The hooks tests' well-formed states (slug,
-# phase and issue present) come from here; partial and invalid ones stay raw,
-# to prove the hooks tolerate anything on disk. A failed write fails its case.
+# would: {} with every key and value set, coerced, in one write by the Python
+# Flow state module's state_write_many, in a python3 child. The hooks tests'
+# well-formed states (slug, phase and issue present) come from here; partial
+# and invalid ones stay raw, to prove the hooks tolerate anything on disk. A
+# failed write fails its case.
 write_flow_state() { write_flow_state_at "$REPO" "$@"; }
 # write_flow_state_at <root> <key> <value>...: the same, for <root>'s state.
 write_flow_state_at() {
@@ -115,13 +116,16 @@ write_flow_state_at() {
   file="$(flow_state_file "$root")"
   mkdir -p "${file%/*}"
   echo '{}' >"$file"
-  while [ "$#" -gt 1 ]; do
-    if ! flow_state_write "$file" "$1" "$2"; then
-      bad "writes the flow state $1=$2" "flow_state_write failed on $file"
-      return 1
-    fi
-    shift 2
-  done
+  if ! python3 -c '
+import sys
+sys.path.insert(0, sys.argv.pop(1))
+from orch.flow_state import state_write_many
+args = sys.argv[2:]
+state_write_many(sys.argv[1], list(zip(args[0::2], args[1::2])))
+' "$DIR/orch_py" "$file" "$@" </dev/null; then
+    bad "writes the flow state $*" "state_write_many failed on $file"
+    return 1
+  fi
 }
 
 # run_tolerant <name> <hook>: runs <hook> on the payload on stdin and sets

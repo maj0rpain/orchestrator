@@ -1033,7 +1033,6 @@ def fixture_gh(tmp_path):
 CLEARED = (
     "GH_REPO",
     "GH_HOST",
-    "ORCH_GH_ADAPTER",
     "ORCH_GH_FAKE_STORE",
     "ORCH_GH_LIMIT_WAIT",
     "ORCH_ISSUE_LIST_LIMIT",

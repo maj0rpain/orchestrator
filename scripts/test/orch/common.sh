@@ -14,18 +14,29 @@ origin_rejects() {
   chmod +x "$hook"
 }
 
+# fresh_bare_origin <var>: make a fresh bare repo, point origin at it and store
+# its path in <var>. Pushes nothing; each caller pushes the refs it needs. It
+# prints nothing and is called in the current shell, never inside $(...): a
+# command substitution would drop the <var> assignment.
+fresh_bare_origin() {
+  local fbo_dir
+  fbo_dir="$(mktemp -d)/origin.git"
+  git init -q --bare "$fbo_dir"
+  git remote set-url origin "$fbo_dir"
+  printf -v "$1" '%s' "$fbo_dir"
+}
+
 # --- common.sh is the bottom layer --------------------------------------------
 echo
 echo "common.sh is the bottom layer"
 # common.sh holds the primitives no concept owns and calls nothing a noun
 # module defines: its code view (shell_code) names, as a whole word, no function
-# defined in a module of its orch/ directory other than common.sh and gh.sh,
-# the adapter layer below it. A name in a comment is no call; one in a quoted
-# literal is. common_upcalls <scripts-dir> prints each such
-# name found in <scripts-dir>/orch/common.sh. A definition is a column-0
-# `name()` line. host.sh and triage-labels.sh sit outside orch/, so
+# defined in a module of its orch/ directory other than common.sh. A name in a
+# comment is no call; one in a quoted literal is. common_upcalls <scripts-dir>
+# prints each such name found in <scripts-dir>/orch/common.sh. A definition is
+# a column-0 `name()` line. host.sh and triage-labels.sh sit outside orch/, so
 # common.sh's calls into them are outside the check.
-common_upcalls() { layer_upcalls "$1" common.sh common.sh gh.sh; }
+common_upcalls() { layer_upcalls "$1" common.sh common.sh; }
 layer_dir="$(mktemp -d)"
 mkdir "$layer_dir/orch"
 printf '%s\n' 'noun_fn() {' '  :' '}' >"$layer_dir/orch/noun.sh"
@@ -42,9 +53,8 @@ assert_eq "a noun-module function called from common.sh is caught" \
 printf '%s\n' "prim() { trap 'noun_fn' EXIT; }" >"$layer_dir/orch/common.sh"
 assert_eq "a name in a quoted literal is still a call into a noun module" \
   "$(common_upcalls "$layer_dir")" "noun_fn"
-printf '%s\n' 'gh() {' '  :' '}' >"$layer_dir/orch/gh.sh"
-printf '%s\n' 'own() {' '  :' '}' 'prim() { gh; own; }' >"$layer_dir/orch/common.sh"
-assert_eq "a gh.sh-only function or common.sh's own is no call into a noun module" \
+printf '%s\n' 'own() {' '  :' '}' 'prim() { own; }' >"$layer_dir/orch/common.sh"
+assert_eq "common.sh's own function is no call into a noun module" \
   "$(common_upcalls "$layer_dir")" ""
 rm -rf "$layer_dir"
 assert_eq "common.sh calls no function a noun module defines" \

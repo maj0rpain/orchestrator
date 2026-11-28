@@ -5,19 +5,11 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# adapter_stood_in <definitions> <cmd>...: runs <cmd> with ORCH_GH_ADAPTER at a
-# stand-in adapter, a temp file that sources the gh adapter fake and then holds
-# <definitions> (bash text) verbatim. The file is removed whatever <cmd>'s
-# status, and that status is returned. When the mktemp or the write fails,
-# nothing runs, any file made is removed, and it returns non-zero.
-adapter_stood_in() {
-  local definitions="$1" stand_in st
-  shift
-  stand_in="$(mktemp)" || return 1
-  printf 'source %q\n%s\n' "$GH_ADAPTER_FAKE" "$definitions" >"$stand_in" || { rm -f "$stand_in"; return 1; }
-  ORCH_GH_ADAPTER="$stand_in" "$@"; st=$?
-  rm -f "$stand_in"
-  return "$st"
+# log_count <log> [<tag>]: the lines in <log>, only those starting with "<tag> "
+# when a tag is given; 0 for a <log> that is absent, in both forms.
+log_count() {
+  [ -f "$1" ] || { echo 0; return 0; }
+  if [ -n "${2:-}" ]; then grep -c "^$2 " "$1" || true; else wc -l <"$1" | tr -d ' '; fi
 }
 
 # ALL_RUNNER_FILES: the files, by name in scripts/test/, that make up all.sh's
@@ -35,11 +27,11 @@ ALL_RUNNER_FILES=(all.sh test_jobs.sh report.sh test_tree.sh)
 # preamble, is not a helper and stays out.
 SOURCEABLE_TEST_HELPERS=(gh_adapter_fake.sh tally.sh fifo.sh counting.sh fails.sh)
 
-# The throwaway repo the three affected.sh --plan sections plan in (the ticket
-# verification, the shared test support and the gh fake): tr_init <dir> makes it
+# The throwaway repo the two affected.sh --plan sections plan in (the ticket
+# verification and the shared test support): tr_init <dir> makes it
 # - git init, a copy of the runner files, a stub of every suite and of the
 # pytest suite, the harness
-# file (isolation, the parallel runner and the three TR_GATE placement sections)
+# file (isolation, the parallel runner and the two TR_GATE placement sections)
 # and the loader file - then the section plants its own files and calls
 # tr_commit <dir>, which commits them and records origin/main. tr_put <dir>
 # <path> [<line>...] writes a file: a shebang only for a .sh path, and a single
@@ -48,7 +40,7 @@ SOURCEABLE_TEST_HELPERS=(gh_adapter_fake.sh tally.sh fifo.sh counting.sh fails.s
 # <arg>... on one line (no default ref), and tr_reset <dir> drops the tree's
 # changes. TR_GATE, TR_HARNESS and TR_CORE are the plan's always-run items, the
 # harness file's non-gate sections (in planted order) and the core set.
-TR_GATE="$PYTEST_SUITE,orch_test.sh,test-helper placement (#1006),gh op placement (#1037),helper body copies (#3170)"
+TR_GATE="$PYTEST_SUITE,orch_test.sh,test-helper placement (#1006),helper body copies (#3170)"
 TR_HARNESS="isolation,the parallel runner (#780)"
 TR_CORE="$TR_HARNESS,loader one,hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh"
 tr_git() { local dir="$1"; shift; git -C "$dir" -c user.name=t -c user.email=t@example.com "$@"; }
@@ -73,7 +65,7 @@ tr_init() {
     [ -e "$dir/scripts/test/$s" ] || tr_put "$dir" "scripts/test/$s"
   done
   tr_put "$dir" scripts/test/orch/harness.sh '# --- isolation ---' '# --- the parallel runner (#780) ---' \
-    '# --- test-helper placement (#1006) ---' '# --- gh op placement (#1037) ---' \
+    '# --- test-helper placement (#1006) ---' \
     '# --- helper body copies (#3170) ---'
   tr_put "$dir" scripts/test/orch/loader.sh '# --- loader one ---'
 }
@@ -425,82 +417,6 @@ helper_copies() {
   return 1
 }
 
-# The multi-field gh ops gh_op_placement looks for outside the gh module,
-# space-separated, and the trust read it also lets the Trust module name.
-GH_MULTI_FIELD_OPS="adapter_issue_title_labels"
-GH_TRUST_READ_OPS="adapter_issue_authorship"
-
-# The gh op placement rule, as gh_op_placement's message states it.
-GH_OP_PLACEMENT_RULE="The rule: only the gh module, scripts/orch/gh.sh, names a multi-field gh op (${GH_MULTI_FIELD_OPS// /, }); every other script reads one through its reader, which decodes its fields - and adapter_issue_authorship is also named by the Trust module, scripts/orch/trust.sh, whose reader it is."
-
-# name_placement <dir> <rule> <names> <owner-path>...: checks every shell
-# script under <dir> (a scripts/ tree) outside the owner paths (find's ./ form,
-# e.g. ./orch/gh.sh) and test/ for a name of <names> (space-separated), and
-# prints one line per file and name, sorted, naming the file (as
-# scripts/<path>), the name after `names`, and <rule>; returns 1 when it
-# printed any. A name counts as a
-# whole word anywhere in code - a command word, an argument to any runner, or a
-# word inside a string; each line is read through SHELL_CODE_AWK's code view, so
-# its comment is dropped first, and a name inside a longer name is no match.
-name_placement() {
-  local dir="$1" rule="$2" names="$3" out p
-  local owners=()
-  shift 3
-  for p in "$@"; do owners+=(! -path "$p"); done
-  out="$(cd "$dir" && find . -name '*.sh' "${owners[@]}" ! -path './test/*' \
-    -exec awk -v rule="$rule" -v namelist="$names" "$SHELL_CODE_AWK"'
-    BEGIN { nnames = split(namelist, name, " ") }
-    {
-      shell_code_line($0)
-      s = sc_code; file = FILENAME; sub(/^\.\//, "scripts/", file)
-      for (k = 1; k <= nnames; k++) {
-        t = s
-        while (match(t, name[k])) {
-          before = substr(t, RSTART - 1, 1); after = substr(t, RSTART + RLENGTH, 1)
-          if (before !~ /[A-Za-z0-9_]/ && after !~ /[A-Za-z0-9_]/) {
-            printf "%s names %s. %s\n", file, name[k], rule; break
-          }
-          t = substr(t, RSTART + 1)
-        }
-      }
-    }
-  ' {} +)" || return 2
-  [ -z "$out" ] && return 0
-  printf '%s\n' "$out" | LC_ALL=C sort -u
-  return 1
-}
-
-# name_placement_pairs <dir> <rule> <pair>...: name_placement over each
-# "<names>|<owners>" pair (owners a space-separated path list), the parts
-# joined, sorted and unique: returns 2 when a scan fails, 1 when it printed
-# any line, else 0.
-name_placement_pairs() {
-  local dir="$1" rule="$2" rc=0 out="" part names owners pair
-  shift 2
-  for pair in "$@"; do
-    names="${pair%%|*}" owners="${pair#*|}"
-    rc=0
-    # owners is a space-separated path list: split it into arguments
-    # shellcheck disable=SC2086
-    part="$(name_placement "$dir" "$rule" "$names" $owners)" || rc=$?
-    [ "$rc" -ne 2 ] || return 2
-    [ -z "$part" ] || out="${out:+$out
-}$part"
-  done
-  [ -z "$out" ] && return 0
-  printf '%s\n' "$out" | LC_ALL=C sort -u
-  return 1
-}
-
-# gh_op_placement <dir>: name_placement for the multi-field gh ops, outside
-# the gh module, orch/gh.sh - adapter_issue_authorship also outside the Trust
-# module, orch/trust.sh, which reads it; a line is "<file> names <op>. <rule>".
-gh_op_placement() {
-  name_placement_pairs "$1" "$GH_OP_PLACEMENT_RULE" \
-    "$GH_MULTI_FIELD_OPS|./orch/gh.sh" \
-    "$GH_TRUST_READ_OPS|./orch/gh.sh ./orch/trust.sh"
-}
-
 # lazy_sourcing_names <dir>: checks the test files of <dir> (a scripts/ tree)
 # for the on-demand sourcing variable's name, which only the shared setup's
 # sourced_orch, the loader's section file and this file's section on the
@@ -753,8 +669,8 @@ echo
 echo "isolation under a git hook (#1905)"
 # A child run started as a git hook in a linked worktree starts it: GIT_DIR
 # and GIT_INDEX_FILE are absolute paths into a victim repo. The child runs
-# isolation and a flow's base branch, whose fixtures write to a repo and run
-# branch create; the victim's HEAD, refs and config must come back unchanged.
+# isolation and git_push, whose fixtures write to a repo and push to a bare
+# origin; the victim's HEAD, refs and config must come back unchanged.
 victim="$(mktemp -d)"
 git -C "$victim" init -q main
 git -C "$victim/main" -c user.name=v -c user.email=v@example.com commit -q --allow-empty -m victim
@@ -770,12 +686,12 @@ victim_before="$(victim_snap)"
 out="$(GIT_DIR="$victim_gd" GIT_INDEX_FILE="$victim_gd/index" GIT_AUTHOR_NAME=Hook \
   GIT_COMMITTER_EMAIL=hook@example.com GIT_SSH_COMMAND="ssh -v" \
   ORCH_TEST_GIT_ENV_PROBE=1 ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' \
-  ORCH_TEST_ONLY="^(isolation|a flow's base branch)\$" bash "$SUITE_SCRIPT" 2>&1)"; st=$?
+  ORCH_TEST_ONLY="^(isolation\$|git_push )" bash "$SUITE_SCRIPT" 2>&1)"; st=$?
 assert_status "a child run started with a hook's git variables passes" "$st" 0
 assert_contains "the child sees the repo-local and identity variables unset" "$out" \
   "ok   no repo-local or identity git variable is set"
 assert_contains "the child keeps GIT_SSH_COMMAND" "$out" "ok   GIT_SSH_COMMAND is kept"
-assert_contains "the child ran a flow's base branch" "$out" "a flow's base branch"
+assert_contains "the child ran git_push" "$out" "ok   a rejected push of two refs"
 assert_eq "the victim's HEAD, refs and config are unchanged" "$(victim_snap)" "$victim_before"
 rm -rf "$victim"
 unset -f victim_snap
@@ -880,11 +796,9 @@ assert_eq "says on stderr that it lists the selectable sections" "$(cat "$filter
   "orch_test.sh: ORCH_TEST_ONLY='^no such section\$' matches no section; the selectable sections are:"
 rm -f "$filter_err"
 assert_eq "lists the sections from isolation on" "$(printf '%s\n' "$out" | sed -n 1p)" "isolation"
-assert_eq "lists a sub-section as a title of its own" \
-  "$(count_lines -xF 'gh rate limits: the GitHub pause and the hit file (#2577)' "$out")" "1"
+assert_eq "lists a title extending another as a title of its own" \
+  "$(count_lines -xF 'isolation under a git hook (#1905)' "$out")" "1"
 assert_eq "lists titles without trailing dashes" "$(count_lines -- '-$' "$out")" "0"
-assert_eq "lists no shared-setup header" \
-  "$(count_lines -E 'healthy repo|fixture gh' "$out")" "0"
 assert_eq "runs nothing" "$(count_lines 'passed' "$out")" "0"
 
 # --- quiet mode (ORCH_TEST_QUIET, #614) ---------------------------------------
@@ -1458,8 +1372,6 @@ seed_tree="$(planted_minimal_tree <<'PLANTED'
   # --- planted seeded a
   echo; echo "planted seeded a"
   if [ -f "$HOME/.cache/orchestrator/planted.stubs" ]; then ok "cache present a"; else bad "cache missing a" "no cache in $HOME"; fi
-  seeded_home >sh.out 2>&1; seeded_home_st=$?; seeded_home_out="$(cat sh.out)"
-  if [ "$seeded_home_st" -eq 0 ] && [ -z "$seeded_home_out" ] && [ -f "$HOME/.cache/orchestrator/planted.stubs" ] && [ ! -L "$HOME/.cache/orchestrator/planted.stubs" ] && [ "$(stat -c %a "$HOME/.cache/orchestrator/planted.stubs")" = 600 ]; then ok "seeded_home start"; else bad "seeded_home start" "no private cache copy"; fi
   # --- planted seeded b
   echo; echo "planted seeded b"
   if [ -f "$HOME/.cache/orchestrator/planted.stubs" ]; then ok "cache present b"; else bad "cache missing b" "no cache in $HOME"; fi
@@ -1514,8 +1426,6 @@ seed_tree="$(planted_minimal_tree <<'PLANTED'
   # --- planted unseeded
   echo; echo "planted unseeded"
   if [ -e "$HOME/.cache" ]; then bad "cache found at start" "found one"; else ok "unseeded start"; fi
-  seeded_home >sh.out 2>&1; seeded_home_st=$?; seeded_home_out="$(cat sh.out)"
-  if [ "$seeded_home_st" -eq 0 ] && [ -z "$seeded_home_out" ] && [ ! -e "$HOME/.cache" ] && [ -d "$HOME" ]; then ok "unseeded start via the helper"; else bad "helper start not clean" "st $seeded_home_st out $seeded_home_out"; fi
 PLANTED
 )"
 seeded_start_run "unseeded" ORCH_TEST_JOBS=2
@@ -3846,106 +3756,6 @@ out="$(helper_copies "$copies_dir")"; st=$?
 assert_status "a sourceable helper missing beside the tree is a scan failure" "$st" 2
 rm -rf "${copies_dir%/orch}"
 
-# --- gh op placement (#1037) --------------------------------------------------
-# gh_op_placement over the real scripts/, then over copies of it, each with a
-# planted file naming a multi-field gh op: three that break the rule, and three
-# that keep it.
-echo
-echo "gh op placement (#1037)"
-out="$(gh_op_placement "$PLUGIN_ROOT/scripts")"; st=$?
-if [ "$st" -eq 0 ] && [ -z "$out" ]; then
-  ok "no script of the real tree names a multi-field gh op outside the gh module"
-else
-  bad "no script of the real tree names a multi-field gh op outside the gh module" "$out"
-fi
-
-gh_op_dir="$(tree_copy scripts)"
-plant_file "$gh_op_dir/orch" zz-command.sh <<'PLANTED'
-  planted_read() {
-    adapter_issue_title_labels "$1"
-  }
-PLANTED
-out="$(gh_op_placement "$gh_op_dir")"; st=$?
-assert_status "an op as a command word fails" "$st" 1
-assert_eq "naming the file, the op and the rule" "$out" \
-  "scripts/orch/zz-command.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE"
-rm -rf "${gh_op_dir%/scripts}"
-
-gh_op_dir="$(tree_copy scripts)"
-plant_file "$gh_op_dir/orch" zz-capture.sh <<'PLANTED'
-  if ! capture out err adapter_issue_title_labels "$n"; then :; fi
-PLANTED
-out="$(gh_op_placement "$gh_op_dir")"; st=$?
-assert_status "an op as an argument to capture fails" "$st" 1
-assert_eq "naming the file and the op" "$out" \
-  "scripts/orch/zz-capture.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE"
-rm -rf "${gh_op_dir%/scripts}"
-
-gh_op_dir="$(tree_copy scripts)"
-plant_file "$gh_op_dir" zz-die.sh <<'PLANTED'
-  gh_or_die --out title "could not read #$n" adapter_issue_title_labels "$n"
-PLANTED
-out="$(gh_op_placement "$gh_op_dir")"; st=$?
-assert_status "an op as an argument to gh_or_die fails" "$st" 1
-assert_eq "naming the file and the op" "$out" \
-  "scripts/zz-die.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE"
-rm -rf "${gh_op_dir%/scripts}"
-
-gh_op_dir="$(tree_copy scripts)"
-plant_file "$gh_op_dir/orch" zz-keep.sh <<'PLANTED'
-  # adapter_issue_title_labels in a comment, as issue_title_labels_read reads it
-  x=1  # and adapter_issue_title_labels after code
-  planted_adapter_issue_title_labels() { my_adapter_issue_title_labels_x; }
-  adapter_issue_title_labels_read n title labels err
-PLANTED
-printf '%s\n' 'planted_gh() { adapter_issue_title_labels "$1"; }' \
-  >>"$gh_op_dir/orch/gh.sh"
-out="$(gh_op_placement "$gh_op_dir")"; st=$?
-assert_status "comments, longer names and the gh module pass" "$st" 0
-assert_eq "and print nothing" "$out" ""
-rm -rf "${gh_op_dir%/scripts}"
-
-gh_op_dir="$(tree_copy scripts)"
-plant_file "$gh_op_dir/orch" zz-multiline.sh <<'PLANTED'
-  x="a string opened here
-  # and closed on this line" adapter_issue_title_labels "$n"
-PLANTED
-plant_file "$gh_op_dir/orch" zz-param.sh <<'PLANTED'
-  y=${x#pat} adapter_issue_title_labels "$n"
-PLANTED
-plant_file "$gh_op_dir/orch" zz-ansi.sh <<'PLANTED'
-  y=$'it\'s # no comment' adapter_issue_title_labels "$n"
-PLANTED
-plant_file "$gh_op_dir/orch" zz-heredoc.sh <<'PLANTED'
-  cat <<EOF
-  # adapter_issue_title_labels on a heredoc body line
-  EOF
-PLANTED
-plant_file "$gh_op_dir/orch" zz-literal.sh <<'PLANTED'
-  trap 'adapter_issue_title_labels' EXIT
-  echo "adapter_issue_authorship"
-PLANTED
-out="$(gh_op_placement "$gh_op_dir")"; st=$?
-assert_status "an op after a # in \${...}, in \$'...', on a heredoc body line or inside a multi-line string, or in a quoted literal, fails" "$st" 1
-assert_eq "naming each file and op" "$out" \
-  "scripts/orch/zz-ansi.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE
-scripts/orch/zz-heredoc.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE
-scripts/orch/zz-literal.sh names adapter_issue_authorship. $GH_OP_PLACEMENT_RULE
-scripts/orch/zz-literal.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE
-scripts/orch/zz-multiline.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE
-scripts/orch/zz-param.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE"
-rm -rf "${gh_op_dir%/scripts}"
-
-gh_op_dir="$(tree_copy scripts)"
-plant_file "$gh_op_dir/orch" zz-trust.sh <<'PLANTED'
-  planted_read() { adapter_issue_authorship "$1"; }
-PLANTED
-out="$(gh_op_placement "$gh_op_dir")"; st=$?
-assert_status "the authorship op outside the gh and Trust modules fails" "$st" 1
-assert_eq "naming the file and the op" "$out" \
-  "scripts/orch/zz-trust.sh names adapter_issue_authorship. $GH_OP_PLACEMENT_RULE"
-rm -rf "${gh_op_dir%/scripts}"
-
 # --- orch_load before cross-module reads (#2868) ---------------------
 # orch_load_reads over the real scripts/, then over one copy of it, planted
 # first with an owner module and reader whose reads break the rule (a read in
@@ -4169,8 +3979,8 @@ assert_eq "under their headers" "$(printf '%s\n' "$out" | grep '^# ')" \
   "$(printf '# %s\n' "${index_tests[@]}")"
 
 undescribed=""
-for name in default_branch_into is_branch_name float_add \
-  require_state_exists fake_unfail sourced_orch; do
+for name in list_has git_config_unset capture \
+  tree_copy counting_starts new_repo; do
   grep -qE "^$name"$'\t''[^-]' <<<"$index_default"$'\n'"$out" \
     || undescribed+=" $name"
 done
@@ -4271,37 +4081,13 @@ assert_contains "naming the file" "$out" "scripts/test/shell_code.awk"
 rm -rf "${nolib_dir%/scripts}"
 
 for args in "--tests orch/zz-planted.sh" "orch/missing.sh" "--bogus" \
-  "orch/zz-planted.sh orch/base.sh"; do
+  "orch/zz-planted.sh orch/common.sh"; do
   # shellcheck disable=SC2086 # the words are the arguments
   out="$(cd "$index_dir" && ./dev/helpers.sh $args 2>&1 >/dev/null)"; st=$?
   assert_status "helpers.sh $args is a usage error" "$st" 2
   assert_contains "and prints a usage line on stderr" "$out" "usage: "
 done
 rm -rf "${index_dir%/scripts}"
-
-# --- stand-in adapter (#2465) ------------------------------------------------
-# adapter_stood_in <definitions> <cmd>...: runs <cmd> against a temp adapter
-# that sources the gh fake and holds <definitions>, removes it whatever <cmd>'s
-# status, and returns that status; a failed mktemp or write runs nothing.
-echo
-echo "stand-in adapter (#2465)"
-sia_dir="$(mktemp -d)"
-sia_cmd='printf "%s" "$(adapter_issue_json)"'
-out="$(TMPDIR="$sia_dir" adapter_stood_in 'adapter_issue_json() { printf "it'"'"'s stood in"; }' \
-  bash -c 'source "$ORCH_GH_ADAPTER"; '"$sia_cmd")"; st=$?
-assert_eq "the command sees the redefined function, a quote honoured" "$out" "it's stood in"
-assert_status "a passing command returns its status" "$st" 0
-assert_eq "and leaves TMPDIR empty" "$(ls -A "$sia_dir")" ""
-TMPDIR="$sia_dir" adapter_stood_in 'true' bash -c 'exit 7'; st=$?
-assert_status "a failing command's status passes through" "$st" 7
-assert_eq "and leaves TMPDIR empty (failing)" "$(ls -A "$sia_dir")" ""
-rm -rf "$sia_dir"
-sia_ran="$(mktemp)"
-TMPDIR=/nonexistent/zz adapter_stood_in 'true' bash -c "echo ran >$(printf %q "$sia_ran")" 2>/dev/null; st=$?
-assert_ne "a failed mktemp returns non-zero" "$st" 0
-assert_eq "and runs nothing" "$(cat "$sia_ran")" ""
-rm -f "$sia_ran"
-unset sia_dir sia_cmd sia_ran
 
 # --- git env clear (#1905) ----------------------------------------------------
 # test_git_env_clear in scripts/test/git_env.sh, sourced in a child shell with
@@ -4691,13 +4477,13 @@ assert_eq "affected.sh is executable, as CLAUDE.md runs it directly" "$st" "0"
 af="$(mktemp -d)"
 tr_init "$af"
 tr_put "$af" scripts/test/orch/branch.sh 'x=1' '# --- branch create ---' '# --- branch (x.y) retire ---'
-tr_put "$af" scripts/test/orch/state.sh '# --- state ---'
+tr_put "$af" scripts/test/orch/planted.sh '# --- planted ---'
 tr_put "$af" scripts/test/orch/common.sh '# --- common one ---'
-for af_f in base host init redo review triage-labels; do
+for af_f in flow-state host init redo review triage-labels; do
   tr_put "$af" "scripts/test/orch/$af_f.sh" "# --- $af_f s ---"
 done
 for af_f in scripts/orch.sh scripts/orch/common.sh scripts/orch/branch.sh \
-  scripts/orch/state.sh scripts/test/orch/setup.sh \
+  scripts/orch/planted.sh scripts/test/orch/setup.sh \
   scripts/test/gh_adapter_fake.sh scripts/hook-guard.sh \
   scripts/version-bump.sh scripts/autopilot-container.sh scripts/autopilot-up.sh \
   scripts/dev/lens-bench.sh scripts/dev/other.sh \
@@ -4734,10 +4520,10 @@ af_behind() {
   tr_git "$af" commit -qam doc
 }
 # af_merge_resolve <ref>: merge <ref> with --no-commit into the checked-out
-# branch and write a resolution of state.sh.
+# branch and write a resolution of planted.sh.
 af_merge_resolve() {
   tr_git "$af" merge -q --no-commit --no-ff "$1" >/dev/null 2>&1
-  tr_put "$af" scripts/orch/state.sh 'resolved=1'
+  tr_put "$af" scripts/orch/planted.sh 'resolved=1'
 }
 # af_mid_merge <branch> <ref>: af_behind <branch>, then af_merge_resolve <ref>.
 af_mid_merge() {
@@ -4771,10 +4557,10 @@ tr_put "$af" scripts/test/orch/zz-new.sh '# --- zz new ---'
 assert_eq "an untracked section file selects its sections" "$(tr_plan "$af" origin/rel)" \
   "$TR_GATE,zz new,docs_lint.sh,scripts/test/orch/zz-new.sh"
 af_reset
-tr_put "$af" scripts/test/orch/state.sh '# --- state ---' '# --- state two ---'
+tr_put "$af" scripts/test/orch/planted.sh '# --- planted ---' '# --- planted two ---'
 tr_git "$af" add -A
 assert_eq "a staged change counts" "$(tr_plan "$af" origin/rel)" \
-  "$TR_GATE,state,state two,docs_lint.sh,scripts/test/orch/state.sh"
+  "$TR_GATE,planted,planted two,docs_lint.sh,scripts/test/orch/planted.sh"
 af_reset
 printf '%s\n' '# --- more ---' >>"$af/scripts/test/orch/harness.sh"
 assert_eq "harness.sh selects all of its sections, the placement ones once" \
@@ -4807,9 +4593,8 @@ af_row "a markdown lens-bench fixture selects the lens bench suite" scripts/dev/
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
 af_row "a markdown lens-bench test fixture selects the lens bench suite" scripts/test/lens-bench/run-1/map.md \
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
-af_py_s="base s"
-af_row "a Python package module selects the sections of the nouns that run a converted noun's verb and the hooks suite, not the full suite" \
-  scripts/orch_py/orch/cli.py "$TR_GATE,$af_py_s,hooks_test.sh,docs_lint.sh"
+af_row "a Python package module selects the hooks suite, not the full suite" \
+  scripts/orch_py/orch/cli.py "$TR_GATE,hooks_test.sh,docs_lint.sh"
 af_row "the pytest suite's wrapper selects the harness sections, and shellchecks itself" \
   "scripts/test/$PYTEST_SUITE" "$TR_GATE,$TR_HARNESS,docs_lint.sh,scripts/test/$PYTEST_SUITE"
 af_row "a skill selects nothing more" skills/s/SKILL.md "$TR_GATE,docs_lint.sh"
@@ -4856,8 +4641,8 @@ assert_eq "the common module's section file selects its own sections alone" "$(t
 
 # The new rows (#3548).
 af_hooks_s="hooks_test.sh,docs_lint.sh"
-af_row "flow-state.sh selects the core set and the state sections" scripts/flow-state.sh \
-  "$TR_GATE,$TR_HARNESS,loader one,state,$af_core_s,scripts/flow-state.sh"
+af_row "flow-state.sh selects the core set and the flow-state sections" scripts/flow-state.sh \
+  "$TR_GATE,flow-state s,$TR_HARNESS,loader one,$af_core_s,scripts/flow-state.sh"
 af_row "host.sh selects the core set and the host sections" scripts/host.sh \
   "$TR_GATE,$TR_HARNESS,host s,loader one,$af_core_s,scripts/host.sh"
 af_row "bash-walk.sh selects the hooks suite" scripts/bash-walk.sh "$TR_GATE,$af_hooks_s,scripts/bash-walk.sh"
@@ -4894,23 +4679,23 @@ assert_eq ".shellcheckrc selects the harness sections and shellchecks every scri
 # The line order, with every kind of change at once.
 af_reset
 for af_f in scripts/dev/lens-bench.sh scripts/autopilot-up.sh scripts/autopilot-container.sh \
-  scripts/version-bump.sh scripts/hook-guard.sh scripts/orch/state.sh; do
+  scripts/version-bump.sh scripts/hook-guard.sh scripts/orch/planted.sh; do
   tr_put "$af" "$af_f" changed
 done
 tr_put "$af" scripts/test/orch/branch.sh 'x=2' '# --- branch create ---' '# --- branch (x.y) retire ---'
 assert_eq "the suites in all.sh's order, sections after orch_test.sh, shellcheck last" \
   "$(tr_plan "$af" origin/rel)" \
-  "$TR_GATE,branch create,branch (x.y) retire,state,hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh,scripts/autopilot-container.sh,scripts/autopilot-up.sh,scripts/dev/lens-bench.sh,scripts/hook-guard.sh,scripts/orch/state.sh,scripts/test/orch/branch.sh,scripts/version-bump.sh"
+  "$TR_GATE,branch create,branch (x.y) retire,planted,hooks_test.sh,docs_lint.sh,version_bump_test.sh,autopilot_container_test.sh,autopilot_up_test.sh,lens_bench_test.sh,scripts/autopilot-container.sh,scripts/autopilot-up.sh,scripts/dev/lens-bench.sh,scripts/hook-guard.sh,scripts/orch/planted.sh,scripts/test/orch/branch.sh,scripts/version-bump.sh"
 
 # Deletions.
 af_reset
 rm "$af/scripts/hook-guard.sh"
 assert_eq "a deleted shell file is not shellchecked" "$(tr_plan "$af" origin/rel)" \
   "$TR_GATE,hooks_test.sh,docs_lint.sh"
-rm "$af/scripts/orch/state.sh"
+rm "$af/scripts/orch/planted.sh"
 assert_eq "a deleted module selects the core set" "$(tr_plan "$af" origin/rel)" "$TR_GATE,$TR_CORE"
 af_reset
-tr_git "$af" rm -q scripts/test/orch/state.sh
+tr_git "$af" rm -q scripts/test/orch/planted.sh
 assert_eq "a deleted section file selects the core set" "$(tr_plan "$af" origin/rel)" "$TR_GATE,$TR_CORE"
 
 # The ref.
@@ -5089,7 +4874,7 @@ af_behind behind
 assert_eq "with no merge in progress a branch behind its base selects its own change" \
   "$(tr_plan "$af" origin/rel)" "$TR_GATE,docs_lint.sh"
 af_merge_resolve origin/rel
-af_resolved="$TR_GATE,state,docs_lint.sh,scripts/orch/state.sh"
+af_resolved="$TR_GATE,planted,docs_lint.sh,scripts/orch/planted.sh"
 assert_eq "a merge of the base in progress selects the branch's change and the resolution, not the base's incoming files" \
   "$(tr_plan "$af" origin/rel)" "$af_resolved"
 af_mid_merge_end behind
@@ -5250,11 +5035,11 @@ unset -f af_reset af_row
 echo
 echo "the row rule (#3549)"
 af_script="$PLUGIN_ROOT/scripts/test/affected.sh"
-out="$(bash "$af_script" --row scripts/orch/state.sh scripts/flow-state.sh scripts/dev/helpers.sh \
+out="$(bash "$af_script" --row scripts/orch/common.sh scripts/flow-state.sh scripts/dev/helpers.sh \
   scripts/test/hooks_test.sh scripts/test/orch/setup.sh scripts/test/section-durations.tsv \
   scripts/nothing.txt scripts/orch/zz-no-section.sh scripts/orch/zz-gone.sh </dev/null)"; st=$?
 assert_status "--row exits 0 whether it prints named or none" "$st" 0
-assert_eq "--row prints named for each kind of row and none for an unnamed path" "$out" "scripts/orch/state.sh	named
+assert_eq "--row prints named for each kind of row and none for an unnamed path" "$out" "scripts/orch/common.sh	named
 scripts/flow-state.sh	named
 scripts/dev/helpers.sh	named
 scripts/test/hooks_test.sh	named
@@ -5265,10 +5050,10 @@ scripts/orch/zz-no-section.sh	none
 scripts/orch/zz-gone.sh	none"
 out="$(bash "$af_script" --row scripts/test/orch/zz-nonexistent.sh </dev/null)"
 assert_eq "--row matches a path that does not exist by name" "$out" "scripts/test/orch/zz-nonexistent.sh	named"
-out="$(bash "$af_script" --row --plan scripts/orch/state.sh 2>&1 </dev/null)"; st=$?
+out="$(bash "$af_script" --row --plan scripts/orch/common.sh 2>&1 </dev/null)"; st=$?
 assert_status "--row beside --plan is refused" "$st" 2
 assert_contains "--row beside --plan prints the usage" "$out" "usage: affected.sh"
-out="$(bash "$af_script" HEAD --row scripts/orch/state.sh 2>&1 </dev/null)"; st=$?
+out="$(bash "$af_script" HEAD --row scripts/orch/common.sh 2>&1 </dev/null)"; st=$?
 assert_status "--row beside a <ref> is refused" "$st" 2
 out="$(bash "$af_script" --row 2>&1 </dev/null)"; st=$?
 assert_status "--row with no path is refused" "$st" 2
@@ -5304,7 +5089,7 @@ tr_put "$sf" scripts/test/fifo.sh 'fifo_probe() { :; }'
 tr_put "$sf" scripts/test/counting.sh 'counting_probe() { :; }'
 tr_put "$sf" scripts/test/fails.sh 'fails_bin() { :; }'
 tr_put "$sf" scripts/test/orch/branch.sh '# --- branch one ---' 'helper_a'
-tr_put "$sf" scripts/test/orch/state.sh '# --- state one ---' 'helper_b'
+tr_put "$sf" scripts/test/orch/planted.sh '# --- planted one ---' 'helper_b'
 tr_put "$sf" scripts/test/orch/wrap.sh '# --- wrap one ---' 'helper_wrap'
 tr_commit "$sf"
 sf_setup=scripts/test/orch/setup.sh
@@ -5315,12 +5100,12 @@ tr_put "$sf" "$sf_setup" '# helper_a is called by branch.sh.' \
   'helper_lonely() { echo l; }' \
   'helper_wrap() { fails_bin git x; }'
 assert_eq "a changed helper selects the section files that call it, directly and through another helper" \
-  "$(tr_plan "$sf" origin/main)" "$TR_GATE,branch one,state one,docs_lint.sh,$sf_setup"
+  "$(tr_plan "$sf" origin/main)" "$TR_GATE,branch one,planted one,docs_lint.sh,$sf_setup"
 tr_reset "$sf"
 tr_put "$sf" "$sf_setup" 'helper_b() {' '  helper_a' '}' 'helper_lonely() { echo l; }' \
   'helper_wrap() { fails_bin git x; }'
 assert_eq "a removed helper selects the files that still call it" \
-  "$(tr_plan "$sf" origin/main)" "$TR_GATE,branch one,state one,docs_lint.sh,$sf_setup"
+  "$(tr_plan "$sf" origin/main)" "$TR_GATE,branch one,planted one,docs_lint.sh,$sf_setup"
 tr_reset "$sf"
 tr_put "$sf" scripts/test/fifo.sh 'fifo_probe() { :; :; }'
 assert_eq "a changed helper selects the suites that call it" \
@@ -5354,69 +5139,3 @@ tr_put "$sf" scripts/test/counting.sh 'counting_probe() { :; }' 'x=1'
 assert_eq "code outside any function in a shared test support file runs the whole suite" \
   "$(tr_plan "$sf" origin/main)" "all.sh"
 rm -rf "$sf"
-
-# --- the gh fake, operation by operation (#3551) --------------------------
-# affected.sh --plan in a throwaway repo whose gh fake holds a few planted
-# operations and helpers, called by planted modules, section files and suites.
-echo
-echo "the gh fake, operation by operation (#3551)"
-gf="$(mktemp -d)"
-tr_init "$gf"
-gf_fake=scripts/test/gh_adapter_fake.sh
-gf_setup_body='echo s'
-# gf_fake_put <op-a-body> <helper-body> <lonely-body> [<extra-line>...]
-gf_fake_put() {
-  local a="$1" h="$2" l="$3"
-  shift 3
-  tr_put "$gf" "$gf_fake" '# adapter_op_b is a comment here.' \
-    "adapter_op_a() { $a; }" \
-    'adapter_op_b() {' '  # calls fake_help' '  fake_help' '}' \
-    "fake_help() { $h; }" \
-    "fake_shared() { $h; }" \
-    "fake_setup() { $gf_setup_body; }" \
-    "fake_lonely() { $l; }" "$@"
-}
-tr_put "$gf" scripts/test/hooks_test.sh 'x=1'
-gf_fake_put 'echo a' 'echo h' 'echo l'
-tr_put "$gf" scripts/orch/gh.sh 'x=1'
-tr_put "$gf" scripts/orch/branch.sh 'adapter_op_a "$1"'
-tr_put "$gf" scripts/orch/state.sh '# adapter_op_a only in a comment' 'adapter_op_b "$1"'
-tr_put "$gf" scripts/orch/pr.sh 'x=1'
-tr_put "$gf" scripts/test/orch/gh.sh '# --- gh one ---'
-tr_put "$gf" scripts/test/orch/branch.sh '# --- branch one ---' 'setup_x'
-tr_put "$gf" scripts/test/orch/state.sh '# --- state one ---'
-tr_put "$gf" scripts/test/orch/pr.sh '# --- pr one ---' 'fake_shared'
-tr_put "$gf" scripts/test/orch/setup.sh 'setup_x() { fake_setup; }'
-tr_commit "$gf"
-
-gf_fake_put 'echo A' 'echo h' 'echo l'
-assert_eq "a changed operation selects the gh sections and its calling modules' sections" \
-  "$(tr_plan "$gf" origin/main)" "$TR_GATE,branch one,gh one,docs_lint.sh,$gf_fake"
-tr_reset "$gf"
-gf_fake_put 'echo a' 'echo H' 'echo l'
-assert_eq "a changed helper selects through its operations and as a shared helper" \
-  "$(tr_plan "$gf" origin/main)" "$TR_GATE,gh one,pr one,state one,docs_lint.sh,$gf_fake"
-tr_reset "$gf"
-gf_fake_put 'echo a' 'echo h' 'echo L'
-assert_eq "a gh fake function nothing reaches selects the core set" \
-  "$(tr_plan "$gf" origin/main)" "$TR_GATE,$TR_CORE,$gf_fake"
-tr_reset "$gf"
-gf_setup_body='echo S'
-gf_fake_put 'echo a' 'echo h' 'echo l'
-assert_eq "a gh fake function shared test support calls directly selects as a shared helper" \
-  "$(tr_plan "$gf" origin/main)" "$TR_GATE,branch one,docs_lint.sh,$gf_fake"
-gf_setup_body='echo s'
-tr_reset "$gf"
-gf_fake_put 'echo a' 'echo h' 'echo l' '# a new comment' ''
-tr_put "$gf" "$gf_fake" '# a changed comment' '' \
-  'adapter_op_a() { echo a; }' \
-  'adapter_op_b() {' '  fake_help' '' '}' \
-  'fake_help() { echo h; }' 'fake_shared() { echo h; }' 'fake_setup() { echo s; }' 'fake_lonely() { echo l; }'
-assert_eq "a comment-only and a blank-line-only change select nothing more" \
-  "$(tr_plan "$gf" origin/main)" "$TR_GATE,docs_lint.sh,$gf_fake"
-tr_reset "$gf"
-gf_fake_put 'echo a' 'echo h' 'echo l' 'x=1'
-assert_eq "code outside any function in the gh fake runs the whole suite" \
-  "$(tr_plan "$gf" origin/main)" "all.sh"
-rm -rf "$gf"
-unset -f gf_fake_put

@@ -1,26 +1,21 @@
 # shellcheck shell=bash
 # flow-state.sh - the Flow state module: the one owner of the state format of
 # a checkout's flow, .orchestrator/state.json - its keys, their defaults,
-# reading (one key per jq, or several in one), its writers and the active-flow
-# check - sourced by orch.sh and by hook-common.sh. It stays the format's
-# owner. The Python package's Flow state module,
-# scripts/orch_py/orch/flow_state.py, copies flow_state_get_many's rules and
-# the key table's key, default and seed columns, and writes a new flow's seed
-# for Python init, the only writer that creates the file, then stamps the
-# seed's spec phase through the Python phase writer, which checks it against
-# handoff.py's phase table. The Python phase writers record every
-# phase move - init's, phase advance's, review ready's and the redos'; bash
-# writes every other change. The
-# golden state.json files in scripts/orch_py/tests/flow_state/ pin the two:
-# those under read/ and refused/ the readers, which the state section reads
-# through flow_state_get_many too, and those under seed/, which only pytest
-# reads, the seed to the bytes bash init wrote.
+# reading (one key per jq, or several in one) and the active-flow check -
+# sourced by orch.sh and by hook-common.sh. It writes nothing: the Python
+# package's Flow state module, scripts/orch_py/orch/flow_state.py, makes every
+# write of the file, copies flow_state_get_many's rules and the key table's
+# key, default and seed columns, and writes a new flow's seed for Python init,
+# the only writer that creates the file. The golden state.json files in
+# scripts/orch_py/tests/flow_state/ pin the two: those under read/ and refused/
+# the readers, which the flow-state section reads through flow_state_get_many
+# too, and those under seed/, which only pytest reads, the seed to the bytes
+# bash init wrote.
 #
 # It needs nothing from orch.sh, so the hooks can source it alone, as they do
 # host.sh: every function takes the state file's path as an argument, none
 # reads $ROOT or $STATE, none calls die, and none prints a diagnostic of its
-# own - only a reader's value, a builder's JSON (flow_state_json,
-# flow_state_pairs_json) and flow_state_file's path reach stdout. Every
+# own - only a reader's value and flow_state_file's path reach stdout. Every
 # outcome is a status:
 #
 # - Key lookups (flow_state_key_field, and flow_state_get before it reads):
@@ -38,23 +33,10 @@
 #   any failure nothing is assigned.
 # - flow_state_resolve_many_arg: 1 for a key outside the table and 2 for a
 #   malformed <var>=<key>, which is caller input, not a programming error.
-# - flow_state_pairs_json: 2 for a dangling --string or a key with no value,
-#   caller input; any other non-zero status for a value that will not convert,
-#   whichever its one walk meets first. Either way it prints nothing.
-# - flow_state_merge: non-zero, the file untouched and no temp file left, for
-#   an absent file or a failed replace.
-# - Writers (flow_state_write, flow_state_write_string, flow_state_write_many):
-#   non-zero, the state file untouched and no temp file left, when the write
-#   fails. Each changes an existing state file: an absent one is a failed
-#   write, and nothing is created - Python init creates it.
-#   flow_state_write_many takes --string before a pair to store that pair's
-#   value as a JSON string, as flow_state_write_string does; a malformed pair
-#   list is a failed write.
 #
-# Every function carries the flow_state_ prefix but state_rows and now, so
-# none collides with orch.sh's wrappers, which keep today's names. It stays
+# Every function carries the flow_state_ prefix but state_rows. It stays
 # bash-3.2 compatible (no namerefs). Its tests: the "Flow state module"
-# section of scripts/test/orch/state.sh.
+# section of scripts/test/orch/flow-state.sh.
 
 # The directory under a checkout's root holding its flow state. It lives here
 # because where the state file sits is the one fact orch.sh and the hooks
@@ -120,9 +102,6 @@ state_rows() {
 $STATE_KEYS
 EOF
 }
-
-# The created and updated timestamp: ISO-8601, UTC, to the second.
-now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 # flow_state_key_field <key> <column>: prints column <column> (default or
 # seed) of <key>'s row. An unknown key prints nothing and returns 1; an
@@ -240,100 +219,6 @@ flow_state_get_many() {
   for ((__fsgm_i = 0; __fsgm_i < __fsgm_n; __fsgm_i++)); do
     printf -v "${__fsgm_vars[$__fsgm_i]}" '%s' "${__fsgm_vals[$__fsgm_i]}"
   done
-}
-
-# flow_state_replace <file> <jq-arg>...: replaces <file> whole with what jq
-# prints given <jq-arg>..., private to the writers below. The temp file sits
-# beside <file> and replaces it only when jq succeeds; on any failure it is
-# removed and the status returned. Every command runs in a conditional, so a
-# caller's set -e cannot stop it before the cleanup.
-flow_state_replace() {
-  local file="$1" tmp rc
-  shift
-  tmp="$(mktemp "$file.XXXXXX")" || return
-  jq "$@" >"$tmp" \
-    && mv "$tmp" "$file" \
-    || { rc=$?; rm -f "$tmp"; return "$rc"; }
-}
-
-# flow_state_merge <file> <json-object>: the one write of keys. It stamps
-# updated before it sets the object's keys, so a write of updated itself
-# sticks. An absent <file> is a failure.
-flow_state_merge() {
-  [ -f "$1" ] || return 1
-  flow_state_replace "$1" --argjson o "$2" --arg now "$(now)" \
-    '.updated = $now | . + $o' "$1"
-}
-
-# flow_state_put <file> <key> <json>: sets one key through flow_state_merge.
-flow_state_put() {
-  local obj
-  obj="$(jq -nc --arg k "$2" --argjson v "$3" '{($k): $v}')" || return
-  flow_state_merge "$1" "$obj"
-}
-
-# flow_state_write <file> <key> <value>: the coercing writer. "null" stores a
-# JSON null, "true" and "false" a boolean, and an all-digit value a number, so
-# a key cleared, flagged or counted here reads back the way init seeded it.
-# Every other value is stored as a string. Keys are not checked against the
-# table: only lookups are.
-flow_state_write() {
-  flow_state_put "$1" "$2" "$(flow_state_json "$3")"
-}
-
-# flow_state_json <value>: prints <value> as flow_state_write stores it: null,
-# true and false literally, an all-digit value as a number, anything else as a
-# JSON string.
-flow_state_json() {
-  case "$1" in
-    null|true|false) printf '%s\n' "$1" ;;
-    *[!0-9]*|"") jq -n --arg v "$1" '$v' ;;
-    *) jq -n --arg v "$1" '$v | tonumber' ;;
-  esac
-}
-
-# flow_state_pairs_json [--string] <key> <value> [[--string] <key> <value>]...:
-# the one walk of the multi-key pair grammar, die-free and silent. Prints the
-# pairs as one JSON object: each value coerced as flow_state_json does, or a
-# JSON string after --string, as flow_state_write_string stores it. Returns 2
-# for a dangling --string or a key with no value, and any other non-zero
-# status for a value that will not convert, whichever the walk meets first;
-# it prints nothing then.
-flow_state_pairs_json() {
-  local obj='{}' k v str
-  while [ $# -gt 0 ]; do
-    str=""
-    if [ "$1" = --string ]; then str=1; shift; fi
-    [ $# -ge 2 ] || return 2
-    k="$1"
-    if [ -n "$str" ]; then
-      v="$(jq -n --arg v "$2" '$v' 2>/dev/null)" || return 1
-    else
-      v="$(flow_state_json "$2" 2>/dev/null)" || return 1
-    fi
-    obj="$(jq -n --argjson o "$obj" --arg k "$k" --argjson v "$v" '$o + {($k): $v}' 2>/dev/null)" || return 1
-    shift 2
-  done
-  printf '%s\n' "$obj"
-}
-
-# flow_state_write_many <file> [--string] <key> <value> [[--string] <key>
-# <value>]...: sets every key in one replace, the pairs read by
-# flow_state_pairs_json and merged by flow_state_merge, which stamps updated.
-# A failure - a malformed pair list, a value that will not convert, or a
-# failed replace - leaves <file> untouched and no temp file.
-flow_state_write_many() {
-  local file="$1" obj
-  shift
-  obj="$(flow_state_pairs_json "$@")" || return
-  flow_state_merge "$file" "$obj"
-}
-
-# flow_state_write_string <file> <key> <value>: stores <value> as a JSON
-# string, always - a branch can bear any name flow_state_write would coerce,
-# and a base is always a string, as init stores it.
-flow_state_write_string() {
-  flow_state_put "$1" "$2" "$(jq -n --arg v "$3" '$v')"
 }
 
 # flow_state_active <file>: whether <file> names an active flow. An absent
