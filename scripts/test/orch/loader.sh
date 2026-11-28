@@ -5,11 +5,11 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# orch_modules_list: every module of scripts/orch, one name per line, in
-# C-locale order: what a sourced orch.sh loads.
+# orch_modules_list <scripts-dir>: every module of <scripts-dir>/orch, one
+# name per line, in C-locale order: what a sourced orch.sh there loads.
 orch_modules_list() {
   local f n
-  for f in "$PLUGIN_ROOT/scripts/orch"/*.sh; do
+  for f in "$1/orch"/*.sh; do
     n="${f##*/}"; n="${n%.sh}"
     case "$n" in common|loader) ;; *) echo "$n" ;; esac
   done | LC_ALL=C sort
@@ -32,6 +32,21 @@ assert_trace_names_no() {
   done
 }
 
+# planted_modules_tree: a copy of the plugin's scripts/ with four planted
+# modules beside common.sh and loader.sh, since the real tree holds none:
+# zz-one (zz_one, and zz_check, which succeeds for "ok" alone), zz-two
+# (zz_two), zz-outer (zz_outer, printing what zz_inner prints, called in a
+# command substitution) and zz-inner (zz_inner). Prints the copy's path.
+planted_modules_tree() {
+  local dir
+  dir="$(tree_copy scripts)" || return 1
+  printf '%s\n' 'zz_one() { echo one; }' 'zz_check() { [ "$1" = ok ]; }' >"$dir/orch/zz-one.sh"
+  printf '%s\n' 'zz_two() { echo two; }' >"$dir/orch/zz-two.sh"
+  printf '%s\n' 'zz_outer() { local v; v="$(zz_inner)"; echo "$v"; }' >"$dir/orch/zz-outer.sh"
+  printf '%s\n' 'zz_inner() { echo inner; }' >"$dir/orch/zz-inner.sh"
+  printf '%s\n' "$dir"
+}
+
 # guard_line_for <version>: the line orch.sh's bash version guard prints for
 # a running bash of <version>.
 guard_line_for() { echo "orch: bash $1 is too old - orch.sh needs bash 4.2 or newer: brew install bash"; }
@@ -39,17 +54,18 @@ guard_line_for() { echo "orch: bash $1 is too old - orch.sh needs bash 4.2 or ne
 # --- orch_load ----------------------------------------------------------------
 echo
 echo "orch_load"
-loader_dir="$PLUGIN_ROOT/scripts/orch"
+loader_scripts="$(planted_modules_tree)"
+loader_dir="$loader_scripts/orch"
 # loader_run <script>: runs it in a fresh bash that has sourced common.sh and
 # loader.sh, setting out and status.
 loader_run() {
   out="$(bash -c 'source "$1/common.sh"; source "$1/loader.sh"; '"$1" _ "$loader_dir" 2>&1)" && status=0 || status=$?
 }
 
-loader_run 'orch_load state; declare -F state_get >/dev/null && echo defined'
+loader_run 'orch_load zz-one; declare -F zz_one >/dev/null && echo defined'
 assert_eq "orch_load sources a module" "$out" "defined"
 
-loader_run 'orch_load state; unset -f state_get; orch_load state; declare -F state_get >/dev/null || echo not-resourced'
+loader_run 'orch_load zz-one; unset -f zz_one; orch_load zz-one; declare -F zz_one >/dev/null || echo not-resourced'
 assert_eq "a second orch_load of a module does nothing" "$out" "not-resourced"
 
 loader_run 'orch_load nonesuch; echo reached'
@@ -59,56 +75,72 @@ assert_eq "and says which" "$out" "orch: orch_load: no module nonesuch"
 loader_run 'orch_load common'
 assert_eq "common.sh is no module" "$out" "orch: orch_load: no module common"
 
+# A modules directory holding only common.sh and loader.sh: the loader loads
+# nothing, prints nothing and reads no stdin.
+bare_dir="$(tree_copy scripts/orch)"
+for f in "$bare_dir"/*.sh; do
+  case "${f##*/}" in common.sh|loader.sh) ;; *) rm -f "$f" ;; esac
+done
+bare_home="$(mktemp -d)"
+out="$(bash -c 'source "$1/common.sh"; source "$1/loader.sh"; orch_modules | wc -l | tr -d " "' _ "$bare_dir" 2>&1)"
+assert_eq "with no module, orch_modules prints no line" "$out" "0"
+out="$(bash -c 'source "$1/common.sh"; source "$1/loader.sh"; orch_load_all; echo loaded' _ "$bare_dir" 2>&1)"
+assert_eq "with no module, orch_load_all loads nothing and returns" "$out" "loaded"
+out="$(printf 'kept\n' | HOME="$bare_home" bash -c 'source "$1/common.sh"; source "$1/loader.sh"; orch_stubs; cat' _ "$bare_dir" 2>&1)"
+assert_eq "with no module, orch_stubs leaves stdin unread and prints nothing" "$out" "kept"
+rm -rf "${bare_dir%/orch}" "$bare_home"
+
 assert_eq "orch.sh sources no module but common.sh and loader.sh" \
   "$(grep -E '^[[:space:]]*(source|\.) ' "$PLUGIN_ROOT/scripts/orch.sh" | grep -cE 'orch/' | tr -d ' ')" "2"
 
-# loader.sh, like common.sh, names no function a module defines (gh.sh too).
+# loader.sh, like common.sh, names no function a module defines.
 assert_eq "loader.sh names no function a module defines" \
-  "$(layer_upcalls "$PLUGIN_ROOT/scripts" loader.sh common.sh loader.sh)" ""
+  "$(layer_upcalls "$loader_scripts" loader.sh common.sh loader.sh)" ""
+rm -rf "${loader_scripts%/scripts}"
 
 # --- on-demand loading --------------------------------------------------------
 echo
 echo "on-demand loading"
 new_repo >/dev/null
 trace="$(mktemp)"
+# The real tree holds no module, so the loads run over a planted one.
+od_scripts="$(planted_modules_tree)"
+od_orch="$od_scripts/orch.sh"
 # run_traced <args>: orch.sh as a command with the load trace on.
-run_traced() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash "$ORCH" "$@" >/dev/null 2>&1 || true; }
-# src_run <script>: <script> run with $1 = orch.sh, the trace emptied first.
-src_run() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash -c "$1" _ "$ORCH" 2>&1; }
+run_traced() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash "$od_orch" "$@" >/dev/null 2>&1 || true; }
+# src_run <script>: <script> run with $1 = the planted orch.sh, the trace
+# emptied first.
+src_run() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash -c "$1" _ "$od_orch" 2>&1; }
 lazy_pre='ORCH_SOURCE_LAZY=1; source "$1"; shift; '
-# lazy_state_get: the state module's reader of phase, called with orch.sh
-# sourced to load on demand; its stdout and stderr. No bash noun is left to
-# run it as a command.
-lazy_state_get() { bash -c "$lazy_pre"'state_get phase' _ "$ORCH" 2>&1; }
+# lazy_one: zz_one, called with the planted orch.sh sourced to load on
+# demand; its stdout and stderr.
+lazy_one() { bash -c "$lazy_pre"'zz_one' _ "$od_orch" 2>&1; }
 
-src_run "$lazy_pre"'state_get phase || true' >/dev/null
-assert_trace_names_no "state_get loads the state module and never the checkout module" "$trace" checkout
-assert_contains "state_get loads the state module" "$(cat "$trace")" "state 0"
+src_run "$lazy_pre"'zz_one' >/dev/null
+assert_trace_names_no "zz_one loads its module and never another" "$trace" zz-two
+assert_contains "zz_one loads its module" "$(cat "$trace")" "zz-one 0"
 assert_eq "no module loads twice at depth 0" \
   "$(awk '$2 == 0 {print $1}' "$trace" | sort | uniq -d)" ""
 run_traced nonesuch-command
 assert_eq "an unknown command loads no module" "$(cat "$trace")" ""
-out="$(lazy_state_get)"; status=$?
-out2="$(ORCH_LOAD_TRACE=/nonexistent/dir/trace lazy_state_get)"; status2=$?
+out="$(lazy_one)"; status=$?
+out2="$(ORCH_LOAD_TRACE=/nonexistent/dir/trace lazy_one)"; status2=$?
 assert_eq "an unwritable ORCH_LOAD_TRACE leaves the call's output as it is" "$out2" "$out"
 assert_status "and its exit status" "$status2" "$status"
 
-# default_branch_into asks GitHub, here the gh fake, from a command
-# substitution, loading the gh module there: new_repo's origin is a GitHub URL,
-# so the repo resolves. No bash noun left runs it, so it is called sourced.
-fake_github
-src_run "$lazy_pre"'default_branch_into b' >/dev/null
-restore_suite_env
+# zz_outer calls zz_inner from a command substitution, loading its module
+# there.
+src_run "$lazy_pre"'zz_outer' >/dev/null
 assert_eq "a load from a subshell records a depth above 0" \
-  "$(awk '$2 > 0 {print $1}' "$trace" | sed -n 1p)" "gh"
+  "$(awk '$2 > 0 {print $1}' "$trace" | sed -n 1p)" "zz-inner"
 
-src_run "$lazy_pre"'(is_branch_name main); true'
-assert_eq "a stub called in a subshell loads its module there only" "$(cat "$trace")" "base 1"
+src_run "$lazy_pre"'(zz_two); true' >/dev/null
+assert_eq "a stub called in a subshell loads its module there only" "$(cat "$trace")" "zz-two 1"
 
 # A stub passes its arguments and returns the real function's status.
-out="$(src_run "$lazy_pre"'st=0; is_branch_name main || st=$?; echo "st=$st"')"
-assert_eq "a stub passes its arguments and returns the real function's status for a valid branch name" "$out" "st=0"
-out="$(src_run "$lazy_pre"'st=0; is_branch_name "a..b" || st=$?; echo "st=$st"')"
+out="$(src_run "$lazy_pre"'st=0; zz_check ok || st=$?; echo "st=$st"')"
+assert_eq "a stub passes its arguments and returns the real function's status for a passing call" "$out" "st=0"
+out="$(src_run "$lazy_pre"'st=0; zz_check no || st=$?; echo "st=$st"')"
 assert_contains "and returns a failing status" "$out" "st=1"
 
 # A stub whose module no longer defines the function: one the function moved
@@ -154,35 +186,39 @@ rm -rf "${colon_root%/c:olon}"
 # Sourced, every module loads, no stub table or cache is written, and a
 # function replaced after the source stays replaced.
 src_run 'source "$1"'
-assert_eq "sourced plainly, every module loads" "$(awk '{print $1}' "$trace")" "$(orch_modules_list)"
+assert_eq "sourced plainly, every module loads" "$(awk '{print $1}' "$trace")" "$(orch_modules_list "$od_scripts")"
 src_home="$(mktemp -d)"
 HOME="$src_home" src_run 'source "$1"'
 assert_eq "sourced plainly, no cache file is written" "$(ls -A "$src_home/.cache/orchestrator" 2>/dev/null | wc -l | tr -d ' ')" "0"
 rm -rf "$src_home"
-out="$(src_run 'source "$1"; state_get() { echo replaced; }; state_get')"
+out="$(src_run 'source "$1"; zz_one() { echo replaced; }; zz_one')"
 assert_eq "a function replaced after source stays replaced" "$out" "replaced"
 
 src_run 'ORCH_SOURCE_LAZY=1; source "$1"' >/dev/null
-assert_trace_names_no "a plain ORCH_SOURCE_LAZY=1 loads on demand" "$trace" checkout
+assert_trace_names_no "a plain ORCH_SOURCE_LAZY=1 loads on demand" "$trace" zz-one
 out="$(src_run 'ORCH_SOURCE_LAZY=1; source "$1"; echo "${ORCH_SOURCE_LAZY-unset}"')"
 assert_eq "and is unset after the source" "$out" "unset"
 out="$(src_run 'export ORCH_SOURCE_LAZY=1; source "$1"; echo "${ORCH_SOURCE_LAZY-unset}"')"
 assert_eq "an exported ORCH_SOURCE_LAZY=1 is unset after the source" "$out" "unset"
-assert_eq "and loads every module" "$(awk '{print $1}' "$trace")" "$(orch_modules_list)"
+assert_eq "and loads every module" "$(awk '{print $1}' "$trace")" "$(orch_modules_list "$od_scripts")"
 out="$(src_run 'ORCH_SOURCE_LAZY=2; source "$1"; echo "${ORCH_SOURCE_LAZY-unset}"')"
 assert_eq "a value of 2 is unset after the source" "$out" "unset"
-assert_eq "and loads every module" "$(awk '{print $1}' "$trace")" "$(orch_modules_list)"
+assert_eq "and loads every module" "$(awk '{print $1}' "$trace")" "$(orch_modules_list "$od_scripts")"
 
 : >"$trace"
-ORCH_LOAD_TRACE="$trace" sourced_orch is_branch_name main || true
-assert_trace_names_no "sourced_orch loads on demand" "$trace" checkout
+ORCH="$od_orch" ORCH_LOAD_TRACE="$trace" sourced_orch zz_two >/dev/null || true
+assert_trace_names_no "sourced_orch loads on demand" "$trace" zz-one
 : >"$trace"
-ORCH_LOAD_TRACE="$trace" sourced_orch eval 'true'
-assert_eq "sourced_orch eval loads every module" "$(awk '{print $1}' "$trace")" "$(orch_modules_list)"
+ORCH="$od_orch" ORCH_LOAD_TRACE="$trace" sourced_orch eval 'true'
+assert_eq "sourced_orch eval loads every module" "$(awk '{print $1}' "$trace")" "$(orch_modules_list "$od_scripts")"
 : >"$trace"
-ORCH_LOAD_TRACE="$trace" sourced_orch_script 'true'
-assert_eq "sourced_orch_script loads every module" "$(awk '{print $1}' "$trace")" "$(orch_modules_list)"
+ORCH="$od_orch" ORCH_LOAD_TRACE="$trace" sourced_orch_script 'true'
+assert_eq "sourced_orch_script loads every module" "$(awk '{print $1}' "$trace")" "$(orch_modules_list "$od_scripts")"
+# The real tree, holding no module, still sources whole.
+assert_eq "sourced plainly with no module, orch.sh returns to its caller" \
+  "$(sourced_orch eval 'echo sourced' 2>&1)" "sourced"
 rm -f "$trace"
+rm -rf "${od_scripts%/scripts}"
 
 # --- stub table cache ---------------------------------------------------------
 echo
@@ -209,15 +245,9 @@ seeded_cache_checks() {
 }
 seeded_cache_checks "a section's HOME" "$HOME/.cache/orchestrator/$seed_file_name"
 
-# A HOME the shared helper makes starts the same way, with a copy of its own.
-seeded_home
-assert_ne "a seeded_home is a HOME of its own" "$HOME" "$SUITE_HOME"
-seeded_cache_checks "a seeded_home" "$HOME/.cache/orchestrator/$seed_file_name"
-rm -rf "$HOME"; restore_suite_env
-
 new_repo >/dev/null
 cache_root="$(mktemp -d)"
-cache_scripts="$(tree_copy scripts)"
+cache_scripts="$(planted_modules_tree)"
 cache_home="$cache_root/home"
 cache_dir="$cache_home/.cache/orchestrator"
 mkdir -p "$cache_home"
@@ -239,7 +269,7 @@ cache_cmd "$cache_scripts"
 assert_status "the second run succeeds" "$status" 0
 assert_contains "and reuses the cache" "$(cat "$cf")" "# planted marker"
 
-touch -d '+2 minutes' "$cache_scripts/orch/state.sh"
+touch -d '+2 minutes' "$cache_scripts/orch/zz-one.sh"
 cache_cmd "$cache_scripts"
 assert_eq "a module file newer than the cache rebuilds it" "$(grep -c 'planted marker' "$cf")" "0"
 assert_eq "the cache file is mode 600" "$(stat -c %a "$cf" 2>/dev/null || stat -f %Lp "$cf")" "600"
@@ -282,28 +312,27 @@ fi
 rm -f "$cache_dir"/*
 cache_cmd "$cache_scripts"
 cf="$(cache_file)"
-# No bash noun is left to call a stub as a command, so a call of base's
-# is_branch_name with orch.sh sourced to load on demand - which reads the same
-# cache - goes through it.
-# cache_branch_name_cmd: that call over the planted copy with the temporary
-# home, setting out and status.
-cache_branch_name_cmd() {
-  out="$(HOME="$cache_home" bash -c 'ORCH_SOURCE_LAZY=1; source "$1/orch.sh"; is_branch_name main && echo valid' \
+# A call of zz_check with the planted orch.sh sourced to load on demand reads
+# the same cache a command does.
+# cache_check_cmd: that call over the planted copy with the temporary home,
+# setting out and status.
+cache_check_cmd() {
+  out="$(HOME="$cache_home" bash -c 'ORCH_SOURCE_LAZY=1; source "$1/orch.sh"; zz_check ok && echo valid' \
     _ "$cache_scripts" 2>&1)" && status=0 || status=$?
 }
-sed -i.bak 's/^is_branch_name() { orch_stub base /is_branch_name() { orch_stub state /' "$cf"; rm -f "$cf.bak"
-assert_contains "the planted table names the wrong module" "$(cat "$cf")" "is_branch_name() { orch_stub state "
+sed -i.bak 's/^zz_check() { orch_stub zz-one /zz_check() { orch_stub zz-two /' "$cf"; rm -f "$cf.bak"
+assert_contains "the planted table names the wrong module" "$(cat "$cf")" "zz_check() { orch_stub zz-two "
 touch -d '+10 minutes' "$cf"
-cache_branch_name_cmd
+cache_check_cmd
 assert_eq "a planted wrong table is rebuilt and the call goes on" "$out" "valid"
-assert_contains "and the cache holds the rebuilt table" "$(cat "$cf")" "is_branch_name() { orch_stub base "
+assert_contains "and the cache holds the rebuilt table" "$(cat "$cf")" "zz_check() { orch_stub zz-one "
 
-sed -i.bak 's/^is_branch_name() {/is_branch_name_gone() {/' "$cache_scripts/orch/base.sh"; rm -f "$cache_scripts/orch/base.sh.bak"
+sed -i.bak 's/^zz_check() {/zz_check_gone() {/' "$cache_scripts/orch/zz-one.sh"; rm -f "$cache_scripts/orch/zz-one.sh.bak"
 touch -d '+11 minutes' "$cf"
-cache_branch_name_cmd
+cache_check_cmd
 assert_status "a table naming a function no module defines stops with exit 1" "$status" 1
-assert_eq "naming the cache file" "$out" "orch: is_branch_name is in the stub table but no module defines it - remove $cf and run again"
-assert_eq "with the cache already rebuilt" "$(grep -c '^is_branch_name()' "$cf")" "0"
+assert_eq "naming the cache file" "$out" "orch: zz_check is in the stub table but no module defines it - remove $cf and run again"
+assert_eq "with the cache already rebuilt" "$(grep -c '^zz_check()' "$cf")" "0"
 
 # Two plugin copies use two files.
 cache_scripts2="$(tree_copy scripts)"

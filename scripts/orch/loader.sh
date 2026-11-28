@@ -58,7 +58,8 @@ orch_load() {
 
 # orch_modules: prints every module's name, one per line, in the C-locale
 # order of the names without .sh (a module x before a module x-y, though
-# x-y.sh sorts before x.sh). Sorted in bash, so no process is spawned.
+# x-y.sh sorts before x.sh), and no line when there is none. Sorted in bash, so
+# no process is spawned.
 orch_modules() {
   local LC_ALL=C f name i j tmp
   local -a names=()
@@ -76,7 +77,7 @@ orch_modules() {
     done
     names[j + 1]="$tmp"
   done
-  printf '%s\n' "${names[@]}"
+  [ "${#names[@]}" -eq 0 ] || printf '%s\n' "${names[@]}"
 }
 
 # orch_load_all: loads every module, in orch_modules' order.
@@ -84,7 +85,7 @@ orch_load_all() {
   local m
   local -a mods=()
   mapfile -t mods < <(orch_modules)
-  for m in "${mods[@]}"; do orch_load "$m"; done
+  for m in ${mods[@]+"${mods[@]}"}; do orch_load "$m"; done
 }
 
 # The module that defines each function at column 0, by function name, as the
@@ -100,7 +101,12 @@ orch_stub_scan() {
   local -a mods=() files=()
   ORCH_STUB_OWNER=()
   mapfile -t mods < <(orch_modules)
-  for mod in "${mods[@]}"; do files+=("$ORCH_MODULE_DIR/$mod.sh"); done
+  for mod in ${mods[@]+"${mods[@]}"}; do files+=("$ORCH_MODULE_DIR/$mod.sh"); done
+  # No module, no table: grep given no file would read stdin instead.
+  if [ "${#files[@]}" -eq 0 ]; then
+    ORCH_STUB_DEFS=''
+    return 0
+  fi
   # Each line is <dir>/<module>.sh:<match>; the directory prefix is removed
   # whole rather than split on ":", which a path may contain.
   while IFS= read -r line; do
