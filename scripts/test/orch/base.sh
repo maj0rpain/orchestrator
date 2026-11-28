@@ -5,6 +5,27 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# pr_body_complete <file>: writes to <file> a PR body carrying every piece pr
+# open and pr publish require (#1387) - ## Summary, ## Evidence, and ## Merge
+# Danger with its **Door:** and **Blast Radius:** lines - its Summary holding
+# 'Implements the thing.' and 'Some detail.'.
+pr_body_complete() {
+  writeln '## Summary' '' 'Implements the thing.' '' 'Some detail.' '' \
+    '## Evidence' '' 'make test - pass' '' \
+    '## Merge Danger' '' '**Door:** two-way' '**Blast Radius:** the widget module' >"$1"
+}
+
+# fake_next_pr <n>: the number the next PR opened takes.
+fake_next_pr() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_pr"; }
+
+# PR #n read back from the store: its base branch and body.
+fake_pr_base_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/base" 2>/dev/null; }
+fake_pr_body_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/body" 2>/dev/null; }
+
+# orch_gh_failing <args>...: runs orch.sh with the failing fixture gh first
+# on PATH.
+orch_gh_failing() { PATH="$GH_FAILING:$PATH" "$ORCH" "$@"; }
+
 # default_reads_run <log> <cmd>...: runs <cmd> with the adapter's default-branch
 # read appending a line to <log> per call, so log_count <log> is how many times
 # <cmd> asked GitHub for it. It seeds nothing: the caller sets the fake's reply.

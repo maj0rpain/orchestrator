@@ -5,6 +5,17 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# new_repo_with_origin [branch]: new_repo, plus tracking refs for its origin:
+# origin/<branch> (default: the checked-out branch) set to HEAD, and
+# origin/HEAD pointing at it. Call it in the current shell, never inside $(...):
+# new_repo cd's.
+new_repo_with_origin() {
+  new_repo >/dev/null
+  local b="${1:-$(git branch --show-current)}"
+  git update-ref "refs/remotes/origin/$b" HEAD
+  git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$b"
+}
+
 # --- repo show ----------------------------------------------------------------
 # The GitHub repo orch.sh works on (#520): GH_REPO when the caller set it, else
 # the checkout's origin - never gh's own default, which in a fork is upstream.

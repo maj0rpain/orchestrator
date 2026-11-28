@@ -75,7 +75,7 @@ trace="$(mktemp)"
 run_traced() { : >"$trace"; ORCH_LOAD_TRACE="$trace" bash "$ORCH" "$@" >/dev/null 2>&1 || true; }
 
 run_traced state get phase
-assert_trace_names_no "state get loads the state module and never the branch module" "$trace" branch
+assert_trace_names_no "state get loads the state module and never the checkout module" "$trace" checkout
 assert_contains "state get loads the state module" "$(cat "$trace")" "state 0"
 assert_eq "no module loads twice at depth 0" \
   "$(awk '$2 == 0 {print $1}' "$trace" | sort | uniq -d)" ""
@@ -170,7 +170,7 @@ assert_eq "a value of 2 is unset after the source" "$out" "unset"
 assert_eq "and loads every module" "$(awk '{print $1}' "$trace")" "$(orch_modules_list)"
 
 : >"$trace"
-ORCH_LOAD_TRACE="$trace" sourced_orch branch_records_base orch/40-flowing || true
+ORCH_LOAD_TRACE="$trace" sourced_orch is_branch_name main || true
 assert_trace_names_no "sourced_orch loads on demand" "$trace" checkout
 : >"$trace"
 ORCH_LOAD_TRACE="$trace" sourced_orch eval 'true'

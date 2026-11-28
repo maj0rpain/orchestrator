@@ -7,8 +7,9 @@ spec <verb>`, `orch.sh glossary <verb>`, `orch.sh parallel show`, `orch.sh
 route show`, `orch.sh agent <verb>`, `orch.sh slug <text>`, `orch.sh status`,
 `orch.sh init <slug>`, `orch.sh archive`, `orch.sh phase <verb>`, `orch.sh
 handoff <verb>`, `orch.sh redo <op>`, `orch.sh ticket <verb>`, `orch.sh
-ticket-worktree <verb>`, `orch.sh pr <verb>`, `orch.sh autopilot <verb>` or
-`orch.sh help` (and its spellings)
+ticket-worktree <verb>`, `orch.sh pr <verb>`, `orch.sh autopilot <verb>`,
+`orch.sh side-checkout <verb>`, `orch.sh branch <verb>` or `orch.sh help` (and
+its spellings)
 as a command, in a checkout under tmp_path, against a fake store seeded in the
 layout the bash suite's fake_* helpers write, with ORCH_GH_FAKE_STORE set as
 fake_github sets it."""
@@ -1110,6 +1111,35 @@ def test_handoff_section_into_a_pipe_closed_unread_dies_of_sigpipe(tmp_path, rep
                       knobs={"ORCH_GH_FAKE_STORE": seed.store})
 
     assert answer == ("", "", 141)
+
+
+# --- branch ----------------------------------------------------------------
+
+
+def test_an_unknown_branch_op_is_refused_through_the_python_noun(tmp_path, repo, seed):
+    assert orch_sh(tmp_path, repo, seed, "branch", "bogus", path=python3_shim(tmp_path)) == (
+        "", "orch: unknown branch op: bogus (want create|off|busy|base-sha|sync|retire)\n", 1)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
+
+
+@pytest.mark.parametrize("path_of, found", [
+    (lambda tmp_path: path_without(tmp_path, "python3"), "none"),
+    (py38_path, "3.8.10"),
+], ids=["missing", "below-3.9"])
+def test_branch_refuses_without_a_usable_python3_pointing_at_doctor(
+        tmp_path, repo, seed, path_of, found):
+    assert orch_sh(tmp_path, repo, seed, "branch", "busy", path=path_of(tmp_path)) == (
+        "", "orch: orch.sh branch needs python3 3.9 or newer (found %s) - run orch.sh"
+            " doctor\n" % found, 1)
+
+
+def test_branch_busy_in_a_free_checkout_prints_nothing_through_the_python_noun(
+        tmp_path, repo, seed):
+    committed(repo, {"a.txt": "a\n"}, "first")
+
+    assert orch_sh(tmp_path, repo, seed, "branch", "busy", path=python3_shim(tmp_path)) == (
+        "", "", 0)
+    assert (tmp_path / "shim.log").read_text() == "ran\n"
 
 
 # --- side-checkout -----------------------------------------------------------

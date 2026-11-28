@@ -5,7 +5,8 @@ the state format's owner. Python init writes a new flow's seed - built from
 the key table's seed column, created, and stamped with its spec phase - the
 multi-key writer (state_write_many, and state_write_many_try for a caller
 that words its own failure) sets several keys in one write as bash's
-state_write_many does, each value coerced as bash's flow_state_json coerces
+state_write_many did (its bash copy gone with the bash branch noun), each
+value coerced as bash's flow_state_json coerces
 it unless its pair is marked a string, the Python phase writers (phase_write
 and phase_write_try) record a phase, with any further keys in the same
 write, and bash makes every other change.
@@ -22,7 +23,8 @@ gone with the bash review noun, its one bash caller),
 require_state_readable, the refusal of a state file that exists but cannot
 be read, which handoff validate makes (its bash copy gone with the bash
 handoff noun), require_state_read, a command's entry read of the keys it
-needs, require_value, the refusal of a required field left empty, and
+needs, require_value, the refusal of a required field left empty (its bash
+copy gone with the bash branch noun), and
 require_issue, the entry read of the flow's issue a command that needs one
 makes (its bash copy gone with the bash handoff noun); then what the base reads as when a flow never recorded it,
 flow_base_fallback_into, whose bash copy stays for the bash nouns that read
@@ -170,7 +172,7 @@ def state_write_many(path: str, pairs: Sequence[Pair],
                      clock: Callable[[], float] = time.time) -> None:
     """state_write_many_try, dying "could not record <keys> in <path> - the
     flow is unchanged" where the write fails, each key named once, in order,
-    as bash's state_write_many dies."""
+    as bash's state_write_many died."""
     if not state_write_many_try(path, pairs, clock):
         die("could not record %s in %s - the flow is unchanged"
             % (", ".join(state_pairs_json(pairs)), path))
@@ -343,7 +345,7 @@ REQUIRED_MSGS = {
 
 def require_value(key: str, value: str, code: int = 1) -> None:
     """Dies, exit <code>, with <key>'s required-field message when <value>
-    is empty - bash require_value. It reads nothing. A key with no message
+    is empty, as bash's require_value did. It reads nothing. A key with no message
     exits 2, whatever the value: a programming error."""
     message = REQUIRED_MSGS.get(key)
     if message is None:

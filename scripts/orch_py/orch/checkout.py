@@ -1,15 +1,14 @@
 """The checkout concept's module, as far as a converted noun needs it: the
 main checkout, the current branch and a checkout's branch, the branch a
-rebase in progress is rebasing, the checkout a branch is checked out in, whether a path is a ticket worktree's, the
-checkout scan, one checkout's kind, what a checkout holds, whether a merge
-or a rebase is in progress, the ticket-worktree refusal, the busy-checkout
-refusal, and the discard rule's pieces (ADR-0054): the flow-branch proof,
-the work to discard, the discard sequence in a checkout and the flow-branch
-discard - as the bash side's checkout.sh reads them, and its ticket-worktree
-module did until the ticket nouns were converted. The bash copies of those
-bash modules still call stay (ADR-0067); the scan, the kind classification,
-what a checkout holds and the ticket-worktree listing and refusal are this
-module's alone, their bash copies gone with the bash side-checkout noun.
+rebase in progress is rebasing, the checkout a branch is checked out in,
+whether a path is a ticket worktree's, the checkout scan, one checkout's
+kind, what a checkout holds, whether a merge or a rebase is in progress,
+the ticket-worktree refusal, the busy-checkout refusal, and the discard
+rule's pieces (ADR-0054): the flow-branch proof, the work to discard, the
+discard sequence in a checkout and the flow-branch discard. All of it is
+this module's alone, the bash copies gone with the bash side-checkout,
+ticket and branch nouns (ADR-0067), but for the main checkout's read, which
+the bash Checkout module keeps for the gh adapter's GitHub limit record.
 """
 from __future__ import annotations
 
@@ -62,9 +61,8 @@ def worktree_list_or_die(git) -> List[Worktree]:
 
 def current_branch_or_die(git, code: int = 1, suffix: str = "") -> str:
     """The current branch, through the git adapter <git>; dies on a detached
-    HEAD, exit <code> - 2 where the bash caller dies through die2 - saying
-    "not on a branch (detached HEAD)" and <suffix>, as bash's optional
-    suffix has it."""
+    HEAD, exit <code> - 2 for a verb that reserves exit 1 for a "no" -
+    saying "not on a branch (detached HEAD)" and <suffix>."""
     branch = git.current_branch()
     if branch is None:
         die("not on a branch (detached HEAD)" + suffix, code)
@@ -73,7 +71,7 @@ def current_branch_or_die(git, code: int = 1, suffix: str = "") -> str:
 
 def checkout_branch(git, path: Optional[str] = None) -> Optional[str]:
     """The branch checked out in the checkout at <path> (where the git
-    adapter <git> runs when None) - bash checkout_branch, read in full and
+    adapter <git> runs when None), read in full and
     its refs/heads/ taken off, never through --short; None on a detached
     HEAD."""
     return git.current_branch() if path is None else git.branch_at(path)
@@ -82,9 +80,8 @@ def checkout_branch(git, path: Optional[str] = None) -> Optional[str]:
 def checkout_branch_or_rebasing(git, path: str) -> Optional[str]:
     """checkout_branch of the checkout at <path>, but a rebase in progress -
     which detaches HEAD - yields the branch it is rebasing, read from git's
-    own rebase-merge or rebase-apply head-name record - bash
-    checkout_branch_or_rebasing. None on a detached HEAD with no rebase in
-    progress."""
+    own rebase-merge or rebase-apply head-name record. None on a detached
+    HEAD with no rebase in progress."""
     branch = checkout_branch(git, path)
     if branch is not None:
         return branch
@@ -205,8 +202,8 @@ def checkout_holding(git, path: str) -> str:
 
 
 def checkout_gitdir_into(git, path: str) -> Optional[str]:
-    """The absolute git folder of the checkout at <path> - bash
-    checkout_gitdir_into - read from its own git pointer without starting
+    """The absolute git folder of the checkout at <path>, read from its own
+    git pointer without starting
     git for a readable pointer: <path>/.git is the git folder itself in a
     main worktree, and in a linked worktree a file whose "gitdir: <dir>"
     line names it, <dir> relative to <path> when it is not absolute, its .
@@ -226,8 +223,8 @@ def checkout_gitdir_into(git, path: str) -> Optional[str]:
 def _pointed_gitdir(base: str, pointer: str) -> Optional[str]:
     """The folder the "gitdir: <dir>" first line of the git pointer file
     <pointer> names, read from the worktree at <base>, its . and .. parts
-    resolved as bash's walk resolves them; None when the file cannot be read
-    or its first line names none."""
+    resolved by name alone, never through the filesystem; None when the file
+    cannot be read or its first line names none."""
     try:
         with open(pointer, "rb") as f:
             line = f.readline().decode("utf-8", "surrogateescape")
@@ -271,7 +268,7 @@ def rebase_in_progress(git, path: str) -> bool:
 
 def discard_work_in(git, path: str, who: str) -> None:
     """The discard sequence every site of the discard rule (ADR-0054) runs
-    in the checkout at <path> - bash discard_work_in: a merge or rebase in
+    in the checkout at <path>: a merge or rebase in
     progress is aborted, then the tree is reset and cleaned, through the git
     adapter <git>, git's output dropped. Nothing to discard changes nothing.
     A failed step dies "<who>: <git command> failed in <path>"."""
@@ -301,7 +298,7 @@ def require_flow_branch(who: str, branch: str, recorded: str) -> None:
 
 def work_to_discard(git, root: str) -> Tuple[bool, bool, List[str]]:
     """The one definition of work to discard in the checkout at <root>,
-    the git adapter <git>'s own - bash work_to_discard: (a merge in
+    the git adapter <git>'s own: (a merge in
     progress, a rebase in progress, the paths dirty outside the planning
     allowlist). A tree that cannot be read dies, never read as no work to
     discard."""
@@ -310,8 +307,8 @@ def work_to_discard(git, root: str) -> Tuple[bool, bool, List[str]]:
 
 
 def discard_flow_branch_work(git, root: str, env: Mapping[str, str]) -> None:
-    """The flow-branch case of the discard rule (ADR-0054) - bash
-    discard_flow_branch_work - in the checkout at <root>, the git adapter
+    """The flow-branch case of the discard rule (ADR-0054), in the checkout
+    at <root>, the git adapter
     <git>'s own: a merge or rebase in progress is aborted, and a tree dirty
     outside the planning allowlist is reset and cleaned. Each caller first
     settles that the branch is the one to discard on; this checks no
@@ -362,7 +359,7 @@ def refuse_ticket_worktrees(git, root: str, reason: str) -> None:
         "     Remove each with orch.sh ticket-worktree remove <n> first." % (root, reason, named))
 
 
-# The busy signals, in the order bash checkout_busy checks them. init checks
+# The busy signals, in the order checkout_busy checks them. init checks
 # no tree signal: it gives a dirty tree its own planning-allowlist refusal.
 BUSY_SIGNALS = ("flow", "branch", "tree")
 
@@ -371,7 +368,7 @@ def checkout_busy(git, root: str, env: Mapping[str, str],
                   signals: Tuple[str, ...]) -> Optional[Tuple[str, str]]:
     """The line naming what makes the checkout at <root> a busy checkout -
     one holding work a new branch must not move - and its remedy, or None
-    when it is free - bash checkout_busy.
+    when it is free.
     Reads local git and state facts only, through the git adapter <git>,
     never GitHub. The signals are checked in this order, the first that
     holds reported, and only those in <signals> apply:
@@ -413,7 +410,7 @@ def checkout_busy(git, root: str, env: Mapping[str, str],
 
 
 def refuse_busy_checkout(git, root: str, env: Mapping[str, str], *signals: str) -> None:
-    """The busy-checkout refusal, bash refuse_busy_checkout: checks the
+    """The busy-checkout refusal: checks the
     <signals> named, as checkout_busy does; in a busy checkout it dies with
     the line naming what holds it and its remedy, exit 3, a code no other
     failure of its callers uses, so a skill can tell a busy checkout apart

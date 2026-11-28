@@ -170,71 +170,9 @@ fresh_bare_origin() {
   printf -v "$1" '%s' "$fbo_dir"
 }
 
-# pr_body_complete <file>: writes to <file> a PR body carrying every piece pr
-# open and pr publish require (#1387) - ## Summary, ## Evidence, and ## Merge
-# Danger with its **Door:** and **Blast Radius:** lines - its Summary holding
-# 'Implements the thing.' and 'Some detail.'.
-pr_body_complete() {
-  writeln '## Summary' '' 'Implements the thing.' '' 'Some detail.' '' \
-    '## Evidence' '' 'make test - pass' '' \
-    '## Merge Danger' '' '**Door:** two-way' '**Blast Radius:** the widget module' >"$1"
-}
-
-# origin_rejects <bare>: installs a pre-receive hook in the bare origin at
-# <bare> that rejects every push, so a push fails with git's real rejection
-# stderr, offline (#1300). Removing <bare>/hooks/pre-receive lifts it.
-origin_rejects() {
-  local hook="$1/hooks/pre-receive"
-  printf '%s\n' '#!/bin/sh' 'echo "rejected by test hook" >&2' 'exit 1' >"$hook"
-  chmod +x "$hook"
-}
-
-# new_repo_with_origin [branch]: new_repo, plus tracking refs for its origin:
-# origin/<branch> (default: the checked-out branch) set to HEAD, and
-# origin/HEAD pointing at it. Call it in the current shell, never inside $(...):
-# new_repo cd's.
-new_repo_with_origin() {
-  new_repo >/dev/null
-  local b="${1:-$(git branch --show-current)}"
-  git update-ref "refs/remotes/origin/$b" HEAD
-  git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$b"
-}
-
-# sc_clone: a fresh clone of a bare origin holding main, cwd inside it, with no
-# exclude entries yet. Call it in the current shell: it cd's. sc_seed is the
-# repo the origin was pushed from, kept to move origin's main on.
-sc_clone() {
-  local clone
-  new_repo >/dev/null
-  sc_seed="$PWD"
-  sc_origin="$(mktemp -d)/origin.git"
-  git init -q --bare "$sc_origin"
-  git -C "$sc_seed" push -q "$sc_origin" HEAD:refs/heads/main
-  git -C "$sc_origin" symbolic-ref HEAD refs/heads/main
-  clone="$(mktemp -d)/clone"
-  git clone -q "$sc_origin" "$clone"
-  cd "$clone" || exit 1
-  git config user.email test@example.com
-  git config user.name Test
-  export GH_REPO=acme/widgets
-}
-
 # col0_names <file>: the names of the functions defined at column 0 of <file>.
 col0_names() {
   grep -oE '^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)' "$1" | sed 's/[[:space:]]*()$//'
-}
-
-# clash_commits <clash-branch>: from the current branch (or detached HEAD),
-# creates <clash-branch> with clash.txt holding its name, and commits
-# clash.txt holding "<clash-branch> base" on the starting point, leaving the
-# checkout there.
-clash_commits() {
-  local base
-  base="$(git symbolic-ref -q --short HEAD || git rev-parse HEAD)"
-  git checkout -q -b "$1"
-  echo "$1" >clash.txt && git add clash.txt && git commit -qm "$1"
-  git checkout -q "$base"
-  echo "$1 base" >clash.txt && git add clash.txt && git commit -qm "$1 base"
 }
 
 # on_disk <path>: present or absent, whether anything is at <path>.
@@ -264,14 +202,6 @@ exit $2
 SSH
   chmod +x "$ssh_stub_dir/ssh"
 }
-# fails_bin lives in the failing-command fixture, scripts/test/fails.sh.
-
-# git_fails_bin <pattern>: a fails_bin for git.
-git_fails_bin() { fails_bin git "$1"; }
-
-# worktree_list_fails_bin: a git_fails_bin where git worktree list fails and
-# nothing else does, so it fails every checkout_parse reader.
-worktree_list_fails_bin() { git_fails_bin '" worktree list "*'; }
 # sourced_orch <function> [args...]: the function's output, called in a shell
 # that sourced orch.sh, with its status. It sets ORCH_SOURCE_LAZY=1 before the
 # source line, so the modules load on demand, as orch.sh does as a command and
@@ -492,13 +422,6 @@ fake_pr() {
   printf '%s\n' "$4" >"$d/base"
 }
 
-# fake_next_pr <n>: the number the next PR opened takes.
-fake_next_pr() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_pr"; }
-
-# PR #n read back from the store: its base branch and body.
-fake_pr_base_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/base" 2>/dev/null; }
-fake_pr_body_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/body" 2>/dev/null; }
-
 # fake_fail <operation> [stderr]: every later call of the named adapter
 # operation fails, non-zero, with stderr (default "fake gh: <operation>
 # failed") as gh's own error. An explicit empty stderr seeds a failure that
@@ -578,14 +501,12 @@ GH
   PATH="$GH_FIXTURE/bin:$PATH"
 }
 
-# orch.sh run with a PATH gh that fails - a fixture gh given no reply - for a
-# repo whose origin GitHub cannot answer for (a local bare repo): default-branch
-# settles on origin/HEAD, so a test using it pins that rather than leaving it to
+# GH_FAILING: a PATH directory holding a gh that fails - a fixture gh given no
+# reply - for a repo whose origin GitHub cannot answer for (a local bare repo):
+# default-branch settles on origin/HEAD, so a test running orch.sh with it
+# first on PATH (base.sh's orch_gh_failing) pins that rather than leaving it to
 # this machine's gh.
 GH_FAILING="$(gh_fixture && printf '%s\n' "$GH_FIXTURE/bin")"
-# orch_gh_failing <args>...: runs orch.sh with the failing fixture gh first
-# on PATH.
-orch_gh_failing() { PATH="$GH_FAILING:$PATH" "$ORCH" "$@"; }
 
 # The missing-repo wording, built the way orch.sh builds REPO_MISSING,
 # REPO_CAUSE and REPO_REMEDY - but spelled out here, never read from orch.sh,

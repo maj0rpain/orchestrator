@@ -16,6 +16,7 @@ from conftest import (GITHUB_ORIGIN, committed, exclude_orchestrator, fake, hold
                       origin_clone, outcome, run_git, state_json)
 from orch import branch as module
 from orch.git import FakeGit, Git, Worktree
+from orch.repo import RepoPin
 
 ROOT = "/nonexistent/checkout"
 
@@ -94,6 +95,19 @@ def test_off_forks_from_the_base_setting_over_the_default_branch(tmp_path, seed,
 
     assert off(capsys, seed, git, NAME) == (0, NAME + "\n", "")
     assert recorded(git) == ("uat", ORIGIN_TIP, NAME, None)
+
+
+def test_off_with_a_base_setting_never_looks_up_an_ssh_alias_origin_s_host(tmp_path, capsys):
+    """With the base set, off reads only local git: the repo is never
+    resolved, so an SSH-alias origin's host is never looked up (#3148)."""
+    git = forking(tmp_path, base="uat", orchestrator__base="uat")
+    git.remotes["origin"] = "git@github-work:fork/widgets.git"
+    looked_up = []
+    pin = RepoPin({}, git, ssh_lookup=lambda host: looked_up.append(host) or host)
+
+    assert outcome(capsys, lambda: module.run(["off", NAME], git=git, env={}, pin=pin)) == (
+        0, NAME + "\n", "")
+    assert looked_up == []
 
 
 def test_with_no_base_setting_off_forks_from_the_default_branch(tmp_path, seed, capsys):
@@ -855,7 +869,8 @@ def test_a_detached_head_is_never_a_plugin_made_branch(tmp_path, capsys):
     assert busy(capsys, checkout(tmp_path, ["docs/agents/x.md"])) == (0, "", "")
 
 
-@pytest.mark.parametrize("name", ["quick/5-held", "orch/30-unheld"])
+@pytest.mark.parametrize("name", ["quick/5-held", "orch/30-unheld", "orch/42-cap-redo-3"],
+                         ids=["quick", "orch", "live-redo-slug"])
 def test_a_plugin_made_branch_with_no_pr_is_busy_ahead_of_a_dirty_tree(tmp_path, capsys, name):
     git = checkout(tmp_path, ["README.md"], name, **{"branch__%s__orchestrator_base" % name: "main"})
 

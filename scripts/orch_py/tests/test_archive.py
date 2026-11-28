@@ -122,3 +122,15 @@ def test_a_failed_checkout_read_archives_nothing(main, monkeypatch, capsys):
         main, monkeypatch, git=FakeGit(toplevel=str(main)))) == (
         1, "", "orch: could not read the checkouts - nothing was archived\n")
     assert (main / ".orchestrator" / "state.json").is_file()
+
+
+def test_archive_on_a_truncated_state_json_still_archives_it(main, monkeypatch, capsys):
+    """An unparseable state.json refuses the commands that read the flow, but
+    never archive, which is how such a flow is cleared."""
+    done_flow(main, "my-feature")
+    (main / ".orchestrator" / "state.json").write_text("{\"slug\": \"my-feature\", \"pha")
+
+    assert orch_archive(main, monkeypatch) == 0
+    assert capsys.readouterr() == (".orchestrator/archive/%s-unreadable\n" % ARCHIVE_STAMP, "")
+    assert not (main / ".orchestrator" / "state.json").exists()
+    assert (archived(main, "unreadable") / "state.json").is_file()

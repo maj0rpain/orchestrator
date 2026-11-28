@@ -738,8 +738,8 @@ echo
 echo "isolation under a git hook (#1905)"
 # A child run started as a git hook in a linked worktree starts it: GIT_DIR
 # and GIT_INDEX_FILE are absolute paths into a victim repo. The child runs
-# isolation and branch create, whose fixtures write to a repo; the victim's
-# HEAD, refs and config must come back unchanged.
+# isolation and a flow's base branch, whose fixtures write to a repo and run
+# branch create; the victim's HEAD, refs and config must come back unchanged.
 victim="$(mktemp -d)"
 git -C "$victim" init -q main
 git -C "$victim/main" -c user.name=v -c user.email=v@example.com commit -q --allow-empty -m victim
@@ -755,12 +755,12 @@ victim_before="$(victim_snap)"
 out="$(GIT_DIR="$victim_gd" GIT_INDEX_FILE="$victim_gd/index" GIT_AUTHOR_NAME=Hook \
   GIT_COMMITTER_EMAIL=hook@example.com GIT_SSH_COMMAND="ssh -v" \
   ORCH_TEST_GIT_ENV_PROBE=1 ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' \
-  ORCH_TEST_ONLY='^(isolation|branch create)$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
+  ORCH_TEST_ONLY="^(isolation|a flow's base branch)\$" bash "$SUITE_SCRIPT" 2>&1)"; st=$?
 assert_status "a child run started with a hook's git variables passes" "$st" 0
 assert_contains "the child sees the repo-local and identity variables unset" "$out" \
   "ok   no repo-local or identity git variable is set"
 assert_contains "the child keeps GIT_SSH_COMMAND" "$out" "ok   GIT_SSH_COMMAND is kept"
-assert_contains "the child ran branch create" "$out" "branch create"
+assert_contains "the child ran a flow's base branch" "$out" "a flow's base branch"
 assert_eq "the victim's HEAD, refs and config are unchanged" "$(victim_snap)" "$victim_before"
 rm -rf "$victim"
 unset -f victim_snap
@@ -866,7 +866,7 @@ assert_eq "says on stderr that it lists the selectable sections" "$(cat "$filter
 rm -f "$filter_err"
 assert_eq "lists the sections from isolation on" "$(printf '%s\n' "$out" | sed -n 1p)" "isolation"
 assert_eq "lists a sub-section as a title of its own" \
-  "$(count_lines -xF 'branch: unknown op' "$out")" "1"
+  "$(count_lines -xF 'gh rate limits: the GitHub pause and the hit file (#2577)' "$out")" "1"
 assert_eq "lists titles without trailing dashes" "$(count_lines -- '-$' "$out")" "0"
 assert_eq "lists no shared-setup header" \
   "$(count_lines -E 'healthy repo|fixture gh' "$out")" "0"
@@ -4155,7 +4155,7 @@ assert_eq "under their headers" "$(printf '%s\n' "$out" | grep '^# ')" \
 
 undescribed=""
 for name in base_branch_into base_source float_add \
-  require_state_exists fake_default_branch orch_gh_failing; do
+  require_state_exists fake_default_branch sourced_orch; do
   grep -qE "^$name"$'\t''[^-]' <<<"$index_default"$'\n'"$out" \
     || undescribed+=" $name"
 done
@@ -4792,7 +4792,7 @@ af_row "a markdown lens-bench fixture selects the lens bench suite" scripts/dev/
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
 af_row "a markdown lens-bench test fixture selects the lens bench suite" scripts/test/lens-bench/run-1/map.md \
   "$TR_GATE,docs_lint.sh,lens_bench_test.sh"
-af_py_s="base s,$af_branch_titles"
+af_py_s="base s"
 af_row "a Python package module selects the sections of the nouns that run a converted noun's verb and the hooks suite, not the full suite" \
   scripts/orch_py/orch/cli.py "$TR_GATE,$af_py_s,hooks_test.sh,docs_lint.sh"
 af_row "the pytest suite's wrapper selects the harness sections, and shellchecks itself" \
@@ -5235,11 +5235,11 @@ unset -f af_reset af_row
 echo
 echo "the row rule (#3549)"
 af_script="$PLUGIN_ROOT/scripts/test/affected.sh"
-out="$(bash "$af_script" --row scripts/orch/branch.sh scripts/flow-state.sh scripts/dev/helpers.sh \
+out="$(bash "$af_script" --row scripts/orch/state.sh scripts/flow-state.sh scripts/dev/helpers.sh \
   scripts/test/hooks_test.sh scripts/test/orch/setup.sh scripts/test/section-durations.tsv \
   scripts/nothing.txt scripts/orch/zz-no-section.sh scripts/orch/zz-gone.sh </dev/null)"; st=$?
 assert_status "--row exits 0 whether it prints named or none" "$st" 0
-assert_eq "--row prints named for each kind of row and none for an unnamed path" "$out" "scripts/orch/branch.sh	named
+assert_eq "--row prints named for each kind of row and none for an unnamed path" "$out" "scripts/orch/state.sh	named
 scripts/flow-state.sh	named
 scripts/dev/helpers.sh	named
 scripts/test/hooks_test.sh	named
@@ -5250,10 +5250,10 @@ scripts/orch/zz-no-section.sh	none
 scripts/orch/zz-gone.sh	none"
 out="$(bash "$af_script" --row scripts/test/orch/zz-nonexistent.sh </dev/null)"
 assert_eq "--row matches a path that does not exist by name" "$out" "scripts/test/orch/zz-nonexistent.sh	named"
-out="$(bash "$af_script" --row --plan scripts/orch/branch.sh 2>&1 </dev/null)"; st=$?
+out="$(bash "$af_script" --row --plan scripts/orch/state.sh 2>&1 </dev/null)"; st=$?
 assert_status "--row beside --plan is refused" "$st" 2
 assert_contains "--row beside --plan prints the usage" "$out" "usage: affected.sh"
-out="$(bash "$af_script" HEAD --row scripts/orch/branch.sh 2>&1 </dev/null)"; st=$?
+out="$(bash "$af_script" HEAD --row scripts/orch/state.sh 2>&1 </dev/null)"; st=$?
 assert_status "--row beside a <ref> is refused" "$st" 2
 out="$(bash "$af_script" --row 2>&1 </dev/null)"; st=$?
 assert_status "--row with no path is refused" "$st" 2

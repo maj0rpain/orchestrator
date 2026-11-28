@@ -1,21 +1,17 @@
-"""The branch concept's module, as far as the busy checkout's branch signal,
-the review loop's terminal-state read, redo, the ticket nouns and pr need
-it: the PR, retired and forked-from keys bash's branch.sh spells for a
-branch, read through the git adapter's config_value, and the PR and
-forked-from ones written through its config_set (bash keeps no writer of the
-PR key since pr converted), the branch kinds (bash branch_kind) and whether a
-branch is a plugin-made branch that records a base, the flow's branch name
-(bash branch_name_flow_into) and its redo form (as bash's branch_name_redo
-was, its bash copy gone), a ticket branch's name, the issue a flow or quick
-branch name gives, the discard rule's own-branch proof and discard (as
-bash's discard_own_branch_work was, its bash copy gone), branch_retire,
-every arm of bash `branch retire <old> <new>`, the start-point decision and
-the fork branch off and branch create share (bash new_branch_start and
-fork_new_branch), branch create's own discard-rule decision (bash
-discard_create_work), and the branch noun's run (ADR-0067): its dispatch
-over the six verbs and its create, off, busy, base-sha, sync and retire
-verbs, each with the bash noun's usage line, output, exit codes and `orch: `
-messages. orch.sh still routes branch to bash until the noun is switched.
+"""The branch concept's module and the branch noun (ADR-0067), its one copy
+since the noun converted and the bash branch module went: the PR, retired
+and forked-from keys spelled for a branch, read through the git adapter's
+config_value, and the PR and forked-from ones written through its
+config_set, the branch kinds and whether a branch is a plugin-made branch
+that records a base, the flow's branch name and its redo form, a ticket
+branch's name, the issue a flow or quick branch name gives, the discard
+rule's own-branch proof and discard (as bash's discard_own_branch_work was),
+branch_retire, every arm of `branch retire <old> <new>`, the start-point
+decision and the fork branch off and branch create share, branch create's
+own discard-rule decision, and the noun's run: its dispatch over the six
+verbs and its create, off, busy, base-sha, sync and retire verbs, each with
+the bash noun's usage line, output, exit codes and `orch: ` messages, which
+orch.sh's converted-noun case runs.
 """
 from __future__ import annotations
 
@@ -36,7 +32,7 @@ from orch.root import checkout_root
 
 def branch_name_flow(issue: str, slug: str) -> str:
     """The flow's branch name for <issue> and <slug>: the one place the
-    `orch/<issue>-<slug>` format lives, as bash branch_name_flow_into."""
+    `orch/<issue>-<slug>` format lives."""
     return "orch/%s-%s" % (issue, slug)
 
 
@@ -52,8 +48,8 @@ def branch_name_ticket(parent: str, n: str) -> str:
 
 
 def branch_issue_of(name: str) -> Optional[str]:
-    """The issue number of a flow or quick branch name - bash
-    branch_issue_of: the digits after orch/ or quick/ up to the first `-`.
+    """The issue number of a flow or quick branch name: the digits after
+    orch/ or quick/ up to the first `-`.
     None unless that run is non-empty, all digits and followed by a
     non-empty slug."""
     for prefix in ("orch/", "quick/"):
@@ -114,8 +110,8 @@ def forked_from_set(git, branch: str, parent: str) -> Optional[GitFailure]:
 
 
 def branch_kind(git, branch: str) -> str:
-    """What kind of branch <branch> is - bash branch_kind, the one
-    definition of branch kinds - read from git config, through the git
+    """What kind of branch <branch> is - the one definition of branch
+    kinds - read from git config, through the git
     adapter <git>, and the name only. A plugin-made branch is a `ticket` (a
     ticket parent is recorded), a `flow` (a base is recorded and the name is
     orch/<issue>-<slug>, redo form included) or a `quick` (a base is
@@ -247,8 +243,8 @@ GONE_BASE_REMEDY = "start again on another base branch"
 
 
 def new_branch_start(git, name: str, base: str, remedy: str = GONE_BASE_REMEDY) -> str:
-    """The start point branch <name> forks from off base branch <base> -
-    bash new_branch_start, shared by branch off and branch create, run before
+    """The start point branch <name> forks from off base branch <base>,
+    shared by branch off and branch create, run before
     anything is written so a refusal leaves the checkout as it was: origin's
     refs/remotes/origin/<base> after a fetch that worked; when origin could
     not be asked, that remote-tracking ref if it exists, else the local
@@ -325,8 +321,8 @@ FLOW_GONE_BASE_REMEDY = "point this flow at another base: orch.sh base set <bran
 
 
 def discard_create_work(git, root: str, env: Mapping[str, str], name: str) -> None:
-    """The discard rule's decision for both branch create paths (bash
-    discard_create_work), <name> being the flow's branch, in the checkout at
+    """The discard rule's decision for both branch create paths, <name>
+    being the flow's branch, in the checkout at
     <root>: on the flow's own branch, or a detached HEAD with no rebase in
     progress, it applies discard_flow_branch_work. On any other branch -
     foreign, or plugin-made but not the flow's, a rebase in progress naming
@@ -467,7 +463,7 @@ def base_sha_verb(argv: List[str], gh_of, git, pin) -> int:
 
 def on_origin_base(git, sha: Optional[str], base: str) -> bool:
     """Whether the local origin/<base> resolves and <sha> is on it - its tip
-    or an ancestor of it - bash on_origin_base."""
+    or an ancestor of it."""
     ref = "refs/remotes/origin/" + base
     return sha is not None and git.ref_exists(ref) and git.is_ancestor(sha, ref)
 

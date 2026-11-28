@@ -674,8 +674,8 @@ class Git:
         return self._run(["rev-parse", "--verify", "--quiet", "refs/heads/" + name]).returncode == 0
 
     def branch_upstream(self, name: str) -> Optional[str]:
-        """The full ref branch <name> tracks - bash branch_upstream; None when
-        it tracks none, or there is no such branch."""
+        """The full ref branch <name> tracks; None when it tracks none, or
+        there is no such branch."""
         return self._output(
             ["rev-parse", "--symbolic-full-name", "--verify", "--quiet", name + "@{upstream}"]
         ) or None

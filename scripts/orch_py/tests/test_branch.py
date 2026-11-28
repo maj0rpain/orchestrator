@@ -1,6 +1,6 @@
 """The branch concept module: the branch keys the busy checkout's branch
-signal reads, through FakeGit's config answers, as bash's branch.sh reads
-them from git config, the branch kinds and names, branch retire's arms, on
+signal reads, through FakeGit's config answers, under the names the bash
+branch module spelled in git config, the branch kinds and names, branch retire's arms, on
 FakeGit's local branches and seeded origin answers, and the discard rule's
 own-branch proof, its discards in a real repository."""
 from __future__ import annotations

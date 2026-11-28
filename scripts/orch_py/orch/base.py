@@ -1,10 +1,10 @@
 """The base concept's module, holding the default-branch lookup, as the bash
 side's default_branch_resolve and default_branch_seed find it, the base
 branch in effect now, as its base_branch_into reads it, the base a branch
-belongs to, as its recorded_base_into reads it, and the base and base-SHA keys
-a branch records them under, with their getters, their setters and the record
-of both together, so far; the later `base` noun grows it rather
-than moving it.
+belongs to, and the base and base-SHA keys a branch records them under, with
+their getters, their setters and the record of both together - the one
+place those keys are spelled, the bash copies gone with the bash branch noun
+- so far; the later `base` noun grows it rather than moving it.
 
 GitHub is asked first, and only when the repo pin resolves: origin/HEAD is a
 local pointer frozen at clone time, which in a clone taken while a feature

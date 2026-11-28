@@ -16,8 +16,8 @@ loads. A noun converted to Python (ADR-0067; `issue`, `finding-triage`,
 `verification`, `audit`, `review-pass`, `spec-review`, `spec`, `breakdown`,
 `glossary`, `parallel`, `route`, `agent`, `init`, `slug`, `status`, `archive`,
 `phase`, `handoff`, `redo`, `ticket`, `ticket-worktree`, `pr`, `review`,
-`autopilot`, `side-checkout`, `doctor` (and its alias `health`) and `help` so
-far)
+`autopilot`, `side-checkout`, `branch`, `doctor` (and its alias `health`) and
+`help` so far)
 has no bash module: `orch.sh`'s one case naming the converted nouns runs it as
 `python3 -m orch <noun> ...` would, through a `-c` bootstrap, from the
 standard-library package in `scripts/orch_py/orch/`, its pytest tests beside it
@@ -57,7 +57,7 @@ See `docs/agents/coding-standards.md`.
 
 While iterating, run only the section you are working on:
 `ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`,
-e.g. `ORCH_TEST_ONLY='^branch create$'`.
+e.g. `ORCH_TEST_ONLY='^base$'`.
 A session that adds or edits tests runs `scripts/dev/section-durations.sh
 --stale` before verifying and commits the durations file with its change.
 Run `scripts/test/affected.sh` before each commit. CI runs the whole suite on

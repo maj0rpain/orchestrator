@@ -5,6 +5,15 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# origin_rejects <bare>: installs a pre-receive hook in the bare origin at
+# <bare> that rejects every push, so a push fails with git's real rejection
+# stderr, offline (#1300). Removing <bare>/hooks/pre-receive lifts it.
+origin_rejects() {
+  local hook="$1/hooks/pre-receive"
+  printf '%s\n' '#!/bin/sh' 'echo "rejected by test hook" >&2' 'exit 1' >"$hook"
+  chmod +x "$hook"
+}
+
 # --- common.sh is the bottom layer --------------------------------------------
 echo
 echo "common.sh is the bottom layer"
@@ -192,8 +201,6 @@ assert_contains "capture says so on stderr" "$out" "could not create a temp file
 "
 assert_eq "capture returns 1, naming the temp file in its variable" "${out##*$'\n'}" "1|could not create a temp file for the command's stdout"
 assert_eq "capture too runs no command" "$(on_disk "$ran_marker")" absent
-out="$(sourced_orch eval 'TMPDIR=/nonexistent-dir; d="$(dirty_outside_allowlist)" || echo "refused"' 2>&1)"
-assert_contains "a git-status check under || names the temp file, not git" "$out" "could not create a temp file for git status"
 restore_suite_env
 
 # --- capture, capture_err and file_read ---------------------------------------
