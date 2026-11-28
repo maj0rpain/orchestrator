@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # state.sh - orch.sh's state command (state get and state set), with the state
-# helpers every module calls (state_get, state_write, require_state_exists,
-# require_state_read).
+# helpers it calls (state_get, state_write, require_state_exists) and
+# require_state_read, a command's entry read that no bash command calls now.
 # The readers: state_get and state_get_many, the unguarded own-checkout
 # readers, and state_get_many_in, the guarded shared one, which costs one jq.
 # A command's entry read is require_state_read: the two refusals and

@@ -413,6 +413,28 @@ def tip(root, branch):
     return run_git(root, "rev-parse", "refs/heads/" + branch)
 
 
+def commit_of(root, rev="HEAD"):
+    """The commit <rev> names in the repository at <root>; "" when it names
+    none."""
+    return git_of(root, "rev-parse", rev)
+
+
+def base_sha_of(root, branch):
+    """<branch>'s base SHA as its git config records it in the repository at
+    <root>; "" when none is."""
+    return git_of(root, "config", "--get", "branch.%s.orchestrator-base-sha" % branch)
+
+
+def record_base(root, branch, base=None, sha=None):
+    """<branch>'s base and base SHA, each when given, recorded in the git
+    config of the repository at <root>, as branch off and branch create
+    record them."""
+    if base is not None:
+        run_git(root, "config", "branch.%s.orchestrator-base" % branch, base)
+    if sha is not None:
+        run_git(root, "config", "branch.%s.orchestrator-base-sha" % branch, sha)
+
+
 def lock_ref(repo, branch):
     """A lock file on local branch <branch>'s ref, as a git run holding it
     leaves one, so no git can delete the branch."""

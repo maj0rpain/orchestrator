@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from conftest import (CLAUDE, PACKAGE_BOOTSTRAP, TICKET_PARENT, added, comments_of, committed,
-                      died_of, fake, git_repo, hold_flow, run_git, wt_path)
+                      died_of, fake, git_repo, hold_flow, record_base, run_git, wt_path)
 from orch import cli, ticket
 from orch.common import exclude_orch_dirs
 from orch.gh_fake import FakeStore
@@ -297,7 +297,7 @@ def test_branch_writing_into_a_closed_pipe_dies_of_sigpipe_silently(tmp_path):
     git_repo(tmp_path)
     run_git(tmp_path, "commit", "-q", "--allow-empty", "-m", "first")
     run_git(tmp_path, "checkout", "-q", "-b", "quick/1-x")
-    run_git(tmp_path, "config", "branch.quick/1-x.orchestrator-base-sha", "a" * 40)
+    record_base(tmp_path, "quick/1-x", sha="a" * 40)
 
     run = into_a_closed_pipe(tmp_path, "branch", "base-sha")
 

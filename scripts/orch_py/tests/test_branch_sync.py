@@ -11,8 +11,9 @@ from typing import NamedTuple
 
 import pytest
 
-from conftest import (committed, exclude_orchestrator, fake, git_identity, git_of, hold_flow,
-                      origin_main_clone, outcome, run_git, state_json, tip)
+from conftest import (base_sha_of, commit_of, committed, exclude_orchestrator, fake, git_identity,
+                      git_of, hold_flow, origin_main_clone, outcome, record_base, run_git,
+                      state_json, tip)
 from orch import branch as module
 from orch.git import Git
 
@@ -51,21 +52,13 @@ def repo(tmp_path):
     git_identity(root)
     exclude_orchestrator(root)
     run_git(root, "checkout", "-q", "--no-track", "-b", FLOW, "refs/remotes/origin/main")
-    record(root, FLOW, "main", branched)
+    record_base(root, FLOW, "main", branched)
     hold_flow(root, slug="bsync", issue=11, phase="implement", base="main", branch=FLOW,
               base_sha=branched)
     committed(root, {"work.txt": "work\n"}, "work on the branch")
     run_git(tmp_path, "clone", "-q", str(origin), str(pusher))
     git_identity(pusher)
     return Repo(root, origin, pusher)
-
-
-def record(root, branch, base, sha=None):
-    """<branch>'s base, and its base SHA when given, recorded in git config
-    as branch off and branch create record them."""
-    run_git(root, "config", "branch.%s.orchestrator-base" % branch, base)
-    if sha is not None:
-        run_git(root, "config", "branch.%s.orchestrator-base-sha" % branch, sha)
 
 
 def advance(repo, name, text, branch="main"):
@@ -88,17 +81,8 @@ def synced(branch, tip_sha):
     return "%s synced with origin/main at %s\n" % (branch, tip_sha)
 
 
-def sha_of_base(root, branch=FLOW):
-    """<branch>'s base SHA as its git config records it; "" when none is."""
-    return git_of(root, "config", "--get", "branch.%s.orchestrator-base-sha" % branch)
-
-
 def state_sha(root):
     return json.loads(state_json(root).read_text())["base_sha"]
-
-
-def head(root, rev="HEAD"):
-    return git_of(root, "rev-parse", rev)
 
 
 def origin_tip(repo, branch):
@@ -108,7 +92,7 @@ def origin_tip(repo, branch):
 
 def merging(root):
     """Whether a merge is in progress in the checkout at <root>."""
-    return head(root, "MERGE_HEAD") != ""
+    return commit_of(root, "MERGE_HEAD") != ""
 
 
 def conflicted(capsys, repo, seed):
@@ -132,21 +116,21 @@ def rejecting(repo):
 
 
 def test_with_nothing_to_merge_it_records_origin_s_tip_and_makes_no_commit(repo, seed, capsys):
-    before, main_tip = head(repo.root), head(repo.root, "refs/remotes/origin/main")
+    before, main_tip = commit_of(repo.root), commit_of(repo.root, "refs/remotes/origin/main")
 
     assert sync(capsys, repo, seed) == (0, synced(FLOW, main_tip), "")
-    assert (head(repo.root), sha_of_base(repo.root), state_sha(repo.root)) == (
+    assert (commit_of(repo.root), base_sha_of(repo.root, FLOW), state_sha(repo.root)) == (
         before, main_tip, main_tip)
 
 
 def test_origin_s_base_tip_is_merged_never_the_local_base_and_never_rebased(repo, seed, capsys):
-    local_main, before = tip(repo.root, "main"), head(repo.root)
+    local_main, before = tip(repo.root, "main"), commit_of(repo.root)
     new_tip = advance(repo, "other.txt", "from main\n")
 
     assert sync(capsys, repo, seed) == (0, synced(FLOW, new_tip), "")
-    assert (head(repo.root, "HEAD^1"), head(repo.root, "HEAD^2")) == (before, new_tip)
+    assert (commit_of(repo.root, "HEAD^1"), commit_of(repo.root, "HEAD^2")) == (before, new_tip)
     assert tip(repo.root, "main") == local_main
-    assert (sha_of_base(repo.root), state_sha(repo.root)) == (new_tip, new_tip)
+    assert (base_sha_of(repo.root, FLOW), state_sha(repo.root)) == (new_tip, new_tip)
 
 
 def test_a_branch_with_no_upstream_is_never_pushed(repo, seed, capsys):
@@ -164,7 +148,7 @@ def test_a_local_branch_and_a_tag_named_origin_main_never_stand_in_for_origin_s_
     new_tip = advance(repo, "stray.txt", "stray\n")
 
     assert sync(capsys, repo, seed) == (0, synced(FLOW, new_tip), "")
-    assert (head(repo.root, "HEAD^2"), sha_of_base(repo.root)) == (new_tip, new_tip)
+    assert (commit_of(repo.root, "HEAD^2"), base_sha_of(repo.root, FLOW)) == (new_tip, new_tip)
 
 
 def uat_apart(repo):
@@ -176,12 +160,12 @@ def uat_apart(repo):
 def test_a_held_branch_syncs_with_the_flow_s_base_over_its_config_s_and_the_setting(
         repo, seed, capsys):
     uat_apart(repo)
-    run_git(repo.root, "config", "branch.%s.orchestrator-base" % FLOW, "uat")
+    record_base(repo.root, FLOW, "uat")
     run_git(repo.root, "config", "orchestrator.base", "uat")
-    before, main_tip = head(repo.root), head(repo.root, "refs/remotes/origin/main")
+    before, main_tip = commit_of(repo.root), commit_of(repo.root, "refs/remotes/origin/main")
 
     assert sync(capsys, repo, seed) == (0, synced(FLOW, main_tip), "")
-    assert (head(repo.root), sha_of_base(repo.root)) == (before, main_tip)
+    assert (commit_of(repo.root), base_sha_of(repo.root, FLOW)) == (before, main_tip)
 
 
 def test_a_held_flow_recording_no_base_syncs_with_the_default_branch(repo, seed, capsys):
@@ -189,12 +173,12 @@ def test_a_held_flow_recording_no_base_syncs_with_the_default_branch(repo, seed,
     uat_apart(repo)
     hold_flow(repo.root, slug="bsync", issue=11, phase="implement", base="", branch=FLOW,
               base_sha="")
-    run_git(repo.root, "config", "branch.%s.orchestrator-base" % FLOW, "uat")
+    record_base(repo.root, FLOW, "uat")
     run_git(repo.root, "config", "orchestrator.base", "uat")
     new_tip = advance(repo, "main.txt", "main\n")
 
     assert sync(capsys, repo, seed) == (0, synced(FLOW, new_tip), "")
-    assert (head(repo.root, "HEAD^2"), state_sha(repo.root)) == (new_tip, new_tip)
+    assert (commit_of(repo.root, "HEAD^2"), state_sha(repo.root)) == (new_tip, new_tip)
 
 
 @pytest.mark.parametrize("phase", ["done", "pr"])
@@ -213,7 +197,7 @@ def test_an_archived_flow_s_branch_syncs_through_its_config_writing_no_state(
     new_tip = advance(repo, "archived.txt", "archived\n")
 
     assert sync(capsys, repo, seed) == (0, synced(FLOW, new_tip), "")
-    assert (head(repo.root, "HEAD^2"), sha_of_base(repo.root)) == (new_tip, new_tip)
+    assert (commit_of(repo.root, "HEAD^2"), base_sha_of(repo.root, FLOW)) == (new_tip, new_tip)
     assert not state_json(repo.root).exists()
 
 
@@ -221,13 +205,13 @@ def test_an_archived_flow_s_branch_syncs_through_its_config_writing_no_state(
 def test_a_branch_recording_a_base_syncs_through_its_config_leaving_another_flow_s_state(
         repo, seed, capsys, name):
     run_git(repo.root, "checkout", "-q", "--no-track", "-b", name, "refs/remotes/origin/main")
-    record(repo.root, name, "main")
+    record_base(repo.root, name, "main")
     committed(repo.root, {"quick.txt": "quick\n"}, "quick work")
     state_before = state_json(repo.root).read_text()
     new_tip = advance(repo, "quick.txt.base", "base\n")
 
     assert sync(capsys, repo, seed) == (0, synced(name, new_tip), "")
-    assert (head(repo.root, "HEAD^2"), sha_of_base(repo.root, name)) == (new_tip, new_tip)
+    assert (commit_of(repo.root, "HEAD^2"), base_sha_of(repo.root, name)) == (new_tip, new_tip)
     assert state_json(repo.root).read_text() == state_before
 
 
@@ -239,7 +223,7 @@ def test_a_branch_tracking_its_own_name_has_the_merge_pushed(repo, seed, capsys)
     advance(repo, "more.txt", "more\n")
 
     assert sync(capsys, repo, seed)[0] == 0
-    assert origin_tip(repo, FLOW) == head(repo.root)
+    assert origin_tip(repo, FLOW) == commit_of(repo.root)
 
 
 def test_a_branch_still_tracking_its_base_is_never_pushed(repo, seed, capsys):
@@ -260,7 +244,7 @@ def test_the_push_goes_to_the_branch_s_own_remote(repo, seed, capsys, tmp_path):
 
     assert sync(capsys, repo, seed)[0] == 0
     assert git_of(repo.root, "ls-remote", str(fork), "refs/heads/" + FLOW).split("\t")[0] == (
-        head(repo.root))
+        commit_of(repo.root))
     assert origin_tip(repo, FLOW) == ""
 
 
@@ -275,7 +259,7 @@ def test_a_failed_push_exits_1_with_the_merge_and_base_sha_standing(repo, seed, 
     assert (code, out) == (1, "")
     assert err.startswith("orch: could not push %s - the merge and base SHA are recorded; rerun"
                           " orch.sh branch sync to push: " % FLOW)
-    assert (head(repo.root, "HEAD^2"), sha_of_base(repo.root), state_sha(repo.root)) == (
+    assert (commit_of(repo.root, "HEAD^2"), base_sha_of(repo.root, FLOW), state_sha(repo.root)) == (
         new_tip, new_tip, new_tip)
     assert origin_tip(repo, FLOW) == pushed
 
@@ -288,26 +272,27 @@ def test_a_conflict_exits_3_leaving_the_merge_in_progress_and_nothing_else_moved
     run_git(repo.root, "push", "-q", "-u", "origin", FLOW)
     committed(repo.root, {"clash.txt": "ours\n"}, "clash: ours")
     run_git(repo.root, "push", "-q")
-    before, pushed = head(repo.root), origin_tip(repo, FLOW)
-    sha_before = sha_of_base(repo.root)
+    before, pushed = commit_of(repo.root), origin_tip(repo, FLOW)
+    sha_before = base_sha_of(repo.root, FLOW)
     advance(repo, "clash.txt", "theirs\n")
 
     assert sync(capsys, repo, seed) == (3, "", CONFLICT)
     assert merging(repo.root)
-    assert (head(repo.root), sha_of_base(repo.root), state_sha(repo.root)) == (
+    assert (commit_of(repo.root), base_sha_of(repo.root, FLOW), state_sha(repo.root)) == (
         before, sha_before, sha_before)
     assert origin_tip(repo, FLOW) == pushed
 
 
 def test_a_pending_base_merge_exits_3_again_fetching_and_moving_nothing(repo, seed, capsys):
     conflicted(capsys, repo, seed)
-    merge_head, fetched = head(repo.root, "MERGE_HEAD"), head(repo.root, "refs/remotes/origin/main")
+    merge_head = commit_of(repo.root, "MERGE_HEAD")
+    fetched = commit_of(repo.root, "refs/remotes/origin/main")
     tree = git_of(repo.root, "status", "--porcelain")
     advance(repo, "later.txt", "later\n")
 
     assert sync(capsys, repo, seed) == (3, "", PENDING)
-    assert (head(repo.root, "MERGE_HEAD"), head(repo.root, "refs/remotes/origin/main")) == (
-        merge_head, fetched)
+    assert (commit_of(repo.root, "MERGE_HEAD"),
+            commit_of(repo.root, "refs/remotes/origin/main")) == (merge_head, fetched)
     assert git_of(repo.root, "status", "--porcelain") == tree
 
 
@@ -326,16 +311,16 @@ def test_a_merge_git_could_not_start_exits_1_as_no_conflict(repo, seed, capsys, 
     # merge.ff=only refuses the diverged merge before git writes any merge
     # state.
     advance(repo, "ffonly.txt", "ffonly\n")
-    before = head(repo.root)
+    before = commit_of(repo.root)
     for key, value in (("GIT_CONFIG_COUNT", "1"), ("GIT_CONFIG_KEY_0", "merge.ff"),
                        ("GIT_CONFIG_VALUE_0", "only")):
         monkeypatch.setenv(key, value)
-    sha_before = sha_of_base(repo.root)
+    sha_before = base_sha_of(repo.root, FLOW)
 
     assert sync(capsys, repo, seed) == (
         1, "", "orch: git could not merge origin/main into %s\n" % FLOW)
     assert not merging(repo.root)
-    assert (head(repo.root), sha_of_base(repo.root)) == (before, sha_before)
+    assert (commit_of(repo.root), base_sha_of(repo.root, FLOW)) == (before, sha_before)
 
 
 # --- --finish --------------------------------------------------------------------------
@@ -349,7 +334,7 @@ def resolved(capsys, repo, seed):
     (repo.root / "clash.txt").write_text("both\n")
     run_git(repo.root, "add", "clash.txt")
     run_git(repo.root, "commit", "-q", "--no-edit")
-    return head(repo.root), theirs
+    return commit_of(repo.root), theirs
 
 
 def test_finish_records_the_merge_s_second_parent_and_pushes_never_fetching(
@@ -358,15 +343,15 @@ def test_finish_records_the_merge_s_second_parent_and_pushes_never_fetching(
     # origin's main moves on again, fetched, then again, not fetched.
     advance(repo, "again.txt", "again\n")
     run_git(repo.root, "fetch", "-q", "origin")
-    fetched = head(repo.root, "refs/remotes/origin/main")
+    fetched = commit_of(repo.root, "refs/remotes/origin/main")
     advance(repo, "unfetched.txt", "unfetched\n")
 
     assert sync(capsys, repo, seed, "--finish") == (0, synced(FLOW, theirs), "")
     assert not merging(repo.root)
-    assert (head(repo.root), sha_of_base(repo.root), state_sha(repo.root)) == (
+    assert (commit_of(repo.root), base_sha_of(repo.root, FLOW), state_sha(repo.root)) == (
         merge, theirs, theirs)
     assert origin_tip(repo, FLOW) == merge
-    assert head(repo.root, "refs/remotes/origin/main") == fetched
+    assert commit_of(repo.root, "refs/remotes/origin/main") == fetched
 
 
 def test_finish_accepts_fix_commits_above_the_merge(repo, seed, capsys):
@@ -375,16 +360,16 @@ def test_finish_accepts_fix_commits_above_the_merge(repo, seed, capsys):
     committed(repo.root, {"fixup.txt": "fix again\n"}, "resolver fix again")
 
     assert sync(capsys, repo, seed, "--finish") == (0, synced(FLOW, theirs), "")
-    assert (sha_of_base(repo.root), origin_tip(repo, FLOW)) == (theirs, head(repo.root))
+    assert (base_sha_of(repo.root, FLOW), origin_tip(repo, FLOW)) == (theirs, commit_of(repo.root))
 
 
 def test_finish_on_a_chain_holding_no_merge_is_refused(repo, seed, capsys):
-    sha_before = sha_of_base(repo.root)
+    sha_before = base_sha_of(repo.root, FLOW)
 
     assert sync(capsys, repo, seed, "--finish") == (1, "", (
         "orch: no merge commit on the first-parent chain of %s - nothing to finish; nothing"
         " was synced\n" % FLOW))
-    assert sha_of_base(repo.root) == sha_before
+    assert base_sha_of(repo.root, FLOW) == sha_before
 
 
 def test_finish_on_a_merge_whose_second_parent_is_not_on_origin_s_base_is_refused(
@@ -393,21 +378,21 @@ def test_finish_on_a_merge_whose_second_parent_is_not_on_origin_s_base_is_refuse
     foreign = run_git(repo.root, "commit-tree", "-p", "HEAD", "-p", side, "-m", "foreign merge",
                       "HEAD^{tree}")
     run_git(repo.root, "reset", "-q", "--hard", foreign)
-    sha_before = sha_of_base(repo.root)
+    sha_before = base_sha_of(repo.root, FLOW)
 
     assert sync(capsys, repo, seed, "--finish") == (1, "", (
         "orch: the second parent of the newest merge on %s is not on origin/main - nothing to"
         " finish; nothing was synced\n" % FLOW))
-    assert (head(repo.root), sha_of_base(repo.root)) == (foreign, sha_before)
+    assert (commit_of(repo.root), base_sha_of(repo.root, FLOW)) == (foreign, sha_before)
 
 
 def test_finish_while_a_merge_is_in_progress_is_refused(repo, seed, capsys):
     conflicted(capsys, repo, seed)
-    sha_before = sha_of_base(repo.root)
+    sha_before = base_sha_of(repo.root, FLOW)
 
     assert sync(capsys, repo, seed, "--finish") == (1, "", FINISH_MERGING)
     assert merging(repo.root)
-    assert sha_of_base(repo.root) == sha_before
+    assert base_sha_of(repo.root, FLOW) == sha_before
 
 
 def test_finish_whose_push_is_rejected_records_the_base_sha_and_a_rerun_pushes(
@@ -420,7 +405,7 @@ def test_finish_whose_push_is_rejected_records_the_base_sha_and_a_rerun_pushes(
         "orch: could not push %s - the merge and base SHA are recorded; rerun orch.sh branch"
         " sync --finish to push: ! [remote rejected] %s -> %s (pre-receive hook declined)\n"
         % (FLOW, FLOW, FLOW)))
-    assert (sha_of_base(repo.root), origin_tip(repo, FLOW)) == (theirs, pushed)
+    assert (base_sha_of(repo.root, FLOW), origin_tip(repo, FLOW)) == (theirs, pushed)
     hook.unlink()
     assert sync(capsys, repo, seed, "--finish")[0] == 0
     assert origin_tip(repo, FLOW) == merge
@@ -430,11 +415,11 @@ def test_finish_on_an_unheld_branch_records_its_config_only_and_pushes_nothing(
         repo, seed, capsys):
     merge, theirs = resolved(capsys, repo, seed)
     run_git(repo.root, "checkout", "-q", "--no-track", "-b", QUICK, merge)
-    record(repo.root, QUICK, "main")
+    record_base(repo.root, QUICK, "main")
     state_before = state_json(repo.root).read_text()
 
     assert sync(capsys, repo, seed, "--finish") == (0, synced(QUICK, theirs), "")
-    assert sha_of_base(repo.root, QUICK) == theirs
+    assert base_sha_of(repo.root, QUICK) == theirs
     assert state_json(repo.root).read_text() == state_before
     assert origin_tip(repo, QUICK) == ""
 
@@ -443,14 +428,14 @@ def test_finish_on_an_unheld_branch_records_its_config_only_and_pushes_nothing(
 
 
 def test_a_dirty_tree_is_refused_moving_nothing(repo, seed, capsys):
-    before, sha_before = head(repo.root), sha_of_base(repo.root)
+    before, sha_before = commit_of(repo.root), base_sha_of(repo.root, FLOW)
     advance(repo, "refused.txt", "refused\n")
     (repo.root / "a.txt").write_text("dirty\n")
 
     assert sync(capsys, repo, seed) == (1, "", (
         "orch: the working tree is dirty - commit or discard its changes first; nothing was"
         " synced\n"))
-    assert (head(repo.root), sha_of_base(repo.root)) == (before, sha_before)
+    assert (commit_of(repo.root), base_sha_of(repo.root, FLOW)) == (before, sha_before)
     assert (repo.root / "a.txt").read_text() == "dirty\n"
 
 
@@ -458,50 +443,50 @@ def test_a_failed_fetch_is_refused_never_merging_the_local_base(repo, seed, caps
     run_git(repo.root, "checkout", "-q", "main")
     committed(repo.root, {"local.txt": "local\n"}, "local main only")
     run_git(repo.root, "checkout", "-q", FLOW)
-    before, sha_before = head(repo.root), sha_of_base(repo.root)
+    before, sha_before = commit_of(repo.root), base_sha_of(repo.root, FLOW)
     run_git(repo.root, "config", "remote.origin.url", str(tmp_path / "missing.git"))
 
     assert sync(capsys, repo, seed) == (
         1, "", "orch: could not fetch main from origin - nothing was synced\n")
-    assert (head(repo.root), sha_of_base(repo.root)) == (before, sha_before)
+    assert (commit_of(repo.root), base_sha_of(repo.root, FLOW)) == (before, sha_before)
 
 
 def test_a_detached_head_is_refused_saying_nothing_was_synced(repo, seed, capsys):
     run_git(repo.root, "checkout", "-q", "--detach")
-    before = head(repo.root)
+    before = commit_of(repo.root)
 
     assert sync(capsys, repo, seed) == (
         1, "", "orch: not on a branch (detached HEAD) - nothing was synced\n")
-    assert head(repo.root) == before
+    assert commit_of(repo.root) == before
 
 
 def test_a_branch_recording_no_base_is_refused_even_with_a_base_setting(repo, seed, capsys):
     run_git(repo.root, "checkout", "-q", "-b", "feature/hand-made")
-    before = head(repo.root)
+    before = commit_of(repo.root)
     bare = sync(capsys, repo, seed)
     run_git(repo.root, "config", "orchestrator.base", "main")
 
     assert (bare, sync(capsys, repo, seed)) == (
         (1, "", NOT_MADE % "feature/hand-made"),) * 2
-    assert (head(repo.root), sha_of_base(repo.root, "feature/hand-made")) == (before, "")
+    assert (commit_of(repo.root), base_sha_of(repo.root, "feature/hand-made")) == (before, "")
 
 
 def test_the_base_branch_itself_is_refused_as_no_plugin_made_branch(repo, seed, capsys):
     run_git(repo.root, "checkout", "-q", "main")
-    before = head(repo.root)
+    before = commit_of(repo.root)
 
     assert sync(capsys, repo, seed) == (1, "", NOT_MADE % "main")
-    assert head(repo.root) == before
+    assert commit_of(repo.root) == before
 
 
 def test_a_branch_recorded_as_its_own_base_is_refused(repo, seed, capsys):
     run_git(repo.root, "checkout", "-q", "main")
-    record(repo.root, "main", "main")
-    before = head(repo.root)
+    record_base(repo.root, "main", "main")
+    before = commit_of(repo.root)
 
     assert sync(capsys, repo, seed) == (
         1, "", "orch: main is its own base branch - nothing was synced\n")
-    assert (head(repo.root), sha_of_base(repo.root, "main")) == (before, "")
+    assert (commit_of(repo.root), base_sha_of(repo.root, "main")) == (before, "")
 
 
 def test_a_ticket_branch_is_refused_as_no_plugin_made_branch_to_sync(repo, seed, capsys):
@@ -534,12 +519,12 @@ def test_a_base_sha_git_will_not_record_ends_the_run_with_git_s_refusal(repo, se
     # A lock on the config, as a git run holding it leaves one: bash's bare
     # `git config` under set -e let git's refusal and status through.
     new_tip = advance(repo, "locked.txt", "locked\n")
-    sha_before = sha_of_base(repo.root)
+    sha_before = base_sha_of(repo.root, FLOW)
     (repo.root / ".git" / "config.lock").write_text("")
 
     code, out, err = sync(capsys, repo, seed)
 
     assert (code, out) == (255, "")
     assert err.startswith("error: could not lock config file")
-    assert head(repo.root, "HEAD^2") == new_tip
-    assert (sha_of_base(repo.root), state_sha(repo.root)) == (sha_before, sha_before)
+    assert commit_of(repo.root, "HEAD^2") == new_tip
+    assert (base_sha_of(repo.root, FLOW), state_sha(repo.root)) == (sha_before, sha_before)

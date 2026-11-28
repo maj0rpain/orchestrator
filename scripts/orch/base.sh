@@ -1,15 +1,16 @@
 # shellcheck shell=bash
 # base.sh - orch.sh's base command: the checkout's base branch setting and a
-# flow's own base, with the branch helpers every module calls
-# (default_branch_into, origin_has_branch, require_on_origin). The two readers,
-# default_branch_into and base_branch_into, set a caller-named variable in the
-# caller's own shell, so the first read memoises the answer (DEFAULT_BRANCH,
-# DEFAULT_BRANCH_SOURCE) for the rest of that shell, with nothing to arrange
-# beforehand. A reader that runs inside a $(...) subshell memoises only for
-# that subshell, which never hands its variables back. default_branch_seed is
-# the memo's one writer; default_branch_local is the memo-free local fallback
-# under it. The base a branch belongs to, which branch base-sha and pr publish
-# read, is orch/base.py's recorded_base_into.
+# flow's own base, with default_branch_into, which repo.sh and state.sh call
+# too, and the base command's own origin checks, origin_has_branch and
+# require_on_origin. The two readers, default_branch_into and base_branch_into,
+# set a caller-named variable in the caller's own shell, so the first read
+# memoises the answer (DEFAULT_BRANCH, DEFAULT_BRANCH_SOURCE) for the rest of
+# that shell, with nothing to arrange beforehand. A reader that runs inside a
+# $(...) subshell memoises only for that subshell, which never hands its
+# variables back. default_branch_seed is the memo's one writer;
+# default_branch_local is the memo-free local fallback under it. The base a
+# branch belongs to, which branch base-sha and pr publish read, is
+# orch/base.py's recorded_base_into.
 # Its tests: scripts/test/orch/base.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -93,7 +94,7 @@ is_branch_name() {
 }
 
 # The base branch in effect now: the checkout's orchestrator.base setting, else
-# the default branch. The one answer every fork and PR target asks for -
+# the default branch: the answer the base command and base_note report -
 # default_branch_into keeps meaning GitHub's default branch alone.
 # Local git config rather than state.json or a tracked file: it outlives
 # abort and archiving, every worktree of the clone shares it, and it never

@@ -11,8 +11,9 @@ import json
 
 import pytest
 
-from conftest import (GITHUB_ORIGIN, committed, exclude_orchestrator, fake, git_of, hold_flow,
-                      origin_main_clone, outcome, run_git, state_json, tip)
+from conftest import (GITHUB_ORIGIN, commit_of, committed, exclude_orchestrator, fake, git_of,
+                      hold_flow, origin_main_clone, outcome, record_base, run_git, state_json,
+                      tip)
 from orch import branch as module
 from orch.git import FakeGit, Git, Worktree
 from orch.repo import RepoPin
@@ -274,15 +275,17 @@ def off_repo(tmp_path):
     run_git(root, "push", "-q", "origin", "HEAD:refs/heads/main")
     run_git(root, "reset", "-q", "--hard", "HEAD~1")
     run_git(root, "fetch", "-q", "origin")
-    return root, head_of(root, "refs/remotes/origin/main"), local_tip
+    return root, commit_of(root, "refs/remotes/origin/main"), local_tip
 
 
 def repo_facts(root, name):
-    """Whether <name> exists, the base SHA it records, and the branch checked
-    out, in the real repository at <root>."""
+    """Whether <name> exists, the base SHA it records, the branch checked
+    out, and the upstream <name> tracks ("" when none), in the real
+    repository at <root>."""
     exists = run_git(root, "for-each-ref", "--format=made", "refs/heads/" + name) or "none"
     sha = git_of(root, "config", "--get", "branch.%s.orchestrator-base-sha" % name)
-    return exists, sha or "<unset>", run_git(root, "branch", "--show-current")
+    upstream = run_git(root, "for-each-ref", "--format=%(upstream)", "refs/heads/" + name)
+    return exists, sha or "<unset>", run_git(root, "branch", "--show-current"), upstream
 
 
 def test_off_beside_tags_named_like_the_branch_and_origin_s_base_forks_from_origin_s_tip(
@@ -293,9 +296,8 @@ def test_off_beside_tags_named_like_the_branch_and_origin_s_base_forks_from_orig
 
     assert orch(capsys, "off", NAME, git=Git(cwd=str(root)), gh=fake(seed)) == (
         0, NAME + "\n", "")
-    assert (tip(root, NAME), repo_facts(root, NAME),
-            run_git(root, "for-each-ref", "--format=%(upstream)", "refs/heads/" + NAME)) == (
-        origin_tip, ("made", origin_tip, NAME), "")
+    assert (tip(root, NAME), repo_facts(root, NAME)) == (
+        origin_tip, ("made", origin_tip, NAME, ""))
 
 
 def test_off_offline_beside_tags_named_like_the_base_forks_from_the_local_base(
@@ -313,9 +315,7 @@ def test_off_offline_beside_tags_named_like_the_base_forks_from_the_local_base(
 
     assert orch(capsys, "off", NAME, git=Git(cwd=str(root)), gh=fake(seed)) == (
         0, NAME + "\n", "")
-    assert (repo_facts(root, NAME),
-            run_git(root, "for-each-ref", "--format=%(upstream)", "refs/heads/" + NAME)) == (
-        ("made", local_tip, NAME), "")
+    assert repo_facts(root, NAME) == ("made", local_tip, NAME, "")
 
 
 def test_off_whose_checkout_clashes_with_an_edit_dies_with_git_s_message_writing_nothing(
@@ -329,7 +329,7 @@ def test_off_whose_checkout_clashes_with_an_edit_dies_with_git_s_message_writing
     assert (code, out) == (1, "")
     assert err.startswith("orch: could not create quick/7-x from refs/remotes/origin/main: ")
     assert "would be overwritten" in err and "docs/agents/notes.md" in err
-    assert repo_facts(root, "quick/7-x") == ("none", "<unset>", "main")
+    assert repo_facts(root, "quick/7-x") == ("none", "<unset>", "main", "")
     assert (root / "docs" / "agents" / "notes.md").read_text() == "one\nmine\n"
 
 
@@ -745,9 +745,8 @@ def test_create_beside_refs_named_like_the_branch_and_origin_s_base_forks_from_o
 
     assert orch(capsys, "create", git=Git(cwd=str(root)), gh=fake(seed)) == (0, FLOW + "\n", "")
     assert (tip(root, FLOW), repo_facts(root, FLOW),
-            run_git(root, "for-each-ref", "--format=%(upstream)", "refs/heads/" + FLOW),
             json.loads(state_json(root).read_text())["base_sha"]) == (
-        origin_tip, ("made", origin_tip, FLOW), "", origin_tip)
+        origin_tip, ("made", origin_tip, FLOW, ""), origin_tip)
 
 
 def test_create_whose_fork_clashes_with_an_edit_dies_with_git_s_message_writing_nothing(
@@ -767,7 +766,7 @@ def test_create_whose_fork_clashes_with_an_edit_dies_with_git_s_message_writing_
     assert "would be overwritten" in err and "docs/agents/notes.md" in err
     assert (repo_facts(root, FLOW), state.read_text(),
             (root / "docs" / "agents" / "notes.md").read_text()) == (
-        ("none", "<unset>", "main"), before, "one\nmine\n")
+        ("none", "<unset>", "main", ""), before, "one\nmine\n")
 
 
 def test_a_restart_whose_checkout_git_refuses_dies_with_git_s_message_after_it(
@@ -897,10 +896,6 @@ def base_sha(capsys, seed, root, *argv):
     return orch(capsys, "base-sha", *argv, git=Git(cwd=str(root)), gh=fake(seed))
 
 
-def head_of(root, ref):
-    return run_git(root, "rev-parse", ref)
-
-
 def advance_origin_main(root):
     """Moves origin's main one commit on, fetched, and merges it into QUICK:
     origin's new tip."""
@@ -911,13 +906,13 @@ def advance_origin_main(root):
     run_git(root, "checkout", "-q", QUICK)
     run_git(root, "branch", "-q", "-D", "advance")
     run_git(root, "merge", "-q", "--no-edit", "refs/remotes/origin/main")
-    return head_of(root, "refs/remotes/origin/main")
+    return commit_of(root, "refs/remotes/origin/main")
 
 
 def test_base_sha_prints_the_recorded_base_sha_however_the_base_moved(
         sha_repo, seed, capsys):
-    branched = head_of(sha_repo, "refs/remotes/origin/main")
-    run_git(sha_repo, "config", "branch.%s.orchestrator-base-sha" % QUICK, branched)
+    branched = commit_of(sha_repo, "refs/remotes/origin/main")
+    record_base(sha_repo, QUICK, sha=branched)
     advance_origin_main(sha_repo)
 
     assert base_sha(capsys, seed, sha_repo) == (0, branched + "\n", "")
@@ -925,7 +920,7 @@ def test_base_sha_prints_the_recorded_base_sha_however_the_base_moved(
 
 def test_with_no_recorded_sha_it_prints_the_merge_base_with_origin_s_base_over_the_local(
         sha_repo, seed, capsys):
-    run_git(sha_repo, "config", "branch.%s.orchestrator-base" % QUICK, "main")
+    record_base(sha_repo, QUICK, "main")
     moved = advance_origin_main(sha_repo)
 
     # Local main still sits at the branched tip; origin's copy answers.
@@ -933,17 +928,17 @@ def test_with_no_recorded_sha_it_prints_the_merge_base_with_origin_s_base_over_t
 
 
 def test_with_no_remote_tracking_ref_it_uses_the_local_base(sha_repo, seed, capsys):
-    branched = head_of(sha_repo, "refs/remotes/origin/main")
+    branched = commit_of(sha_repo, "refs/remotes/origin/main")
     advance_origin_main(sha_repo)
     run_git(sha_repo, "branch", "-q", "localbase", branched)
-    run_git(sha_repo, "config", "branch.%s.orchestrator-base" % QUICK, "localbase")
+    record_base(sha_repo, QUICK, "localbase")
 
     assert base_sha(capsys, seed, sha_repo) == (0, branched + "\n", "")
 
 
 def test_with_neither_key_it_uses_the_base_setting_else_the_default_branch(
         sha_repo, seed, capsys):
-    branched = head_of(sha_repo, "refs/remotes/origin/main")
+    branched = commit_of(sha_repo, "refs/remotes/origin/main")
     run_git(sha_repo, "checkout", "-q", "-b", "uat", branched)
     run_git(sha_repo, "commit", "-q", "--allow-empty", "-m", "uat only")
     run_git(sha_repo, "push", "-q", "origin", "uat:refs/heads/uat")
@@ -955,7 +950,7 @@ def test_with_neither_key_it_uses_the_base_setting_else_the_default_branch(
     run_git(sha_repo, "config", "--unset", "orchestrator.base")
 
     assert (setting, base_sha(capsys, seed, sha_repo)) == (
-        (0, head_of(sha_repo, "refs/remotes/origin/uat") + "\n", ""), (0, branched + "\n", ""))
+        (0, commit_of(sha_repo, "refs/remotes/origin/uat") + "\n", ""), (0, branched + "\n", ""))
 
 
 def test_a_detached_head_is_refused(sha_repo, seed, capsys):
@@ -972,7 +967,7 @@ def test_an_argument_is_a_usage_error_before_the_detached_head(sha_repo, seed, c
 
 
 def test_a_base_neither_on_origin_nor_local_is_refused(sha_repo, seed, capsys):
-    run_git(sha_repo, "config", "branch.%s.orchestrator-base" % QUICK, "gone")
+    record_base(sha_repo, QUICK, "gone")
 
     assert base_sha(capsys, seed, sha_repo) == (1, "", (
         "orch: base branch gone of %s is neither on origin nor local - no base SHA to fall"
@@ -983,7 +978,7 @@ def test_a_base_sharing_no_history_with_the_branch_is_refused(sha_repo, seed, ca
     run_git(sha_repo, "checkout", "-q", "--orphan", "unrelated")
     run_git(sha_repo, "commit", "-q", "--allow-empty", "-m", "elsewhere")
     run_git(sha_repo, "checkout", "-q", QUICK)
-    run_git(sha_repo, "config", "branch.%s.orchestrator-base" % QUICK, "unrelated")
+    record_base(sha_repo, QUICK, "unrelated")
 
     assert base_sha(capsys, seed, sha_repo) == (1, "", (
         "orch: %s shares no history with base branch unrelated\n" % QUICK))
